@@ -277,7 +277,7 @@ test('the bins are tight: a light is in few tiles past those its reach touches',
   assert.ok(set <= touched * 1.15 + 4 * lights.length, `on the screen ${set} tiles set where the lights touch ${touched}`);
 });
 
-test('lighting.lightTileSize: tiles of other sizes, a power of two or not, lay out their grid and stay conservative', () => {
+test('lighting.lightCullingTileSize: tiles of other sizes, a power of two or not, lay out their grid and stay conservative', () => {
   const cam = camera({ x: -120, y: 60, zoom: 1.3, rot: 0.4 });
   for (const tile of [4, 8, 24, 32, 64]) {
     const { t } = binned(cam, [], { tile });

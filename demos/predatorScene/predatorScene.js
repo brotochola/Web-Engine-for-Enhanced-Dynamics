@@ -273,10 +273,12 @@ export class PredatorScene extends WEED.Scene {
       resolution: predatorPositiveParam('lightingRes', LIGHT3D ? 0.5 : 0.25),
       shadowResolution: predatorPositiveParam('shadowRes', LIGHT3D ? 0.5 : 0.25),
       shadowUpdateInterval: predatorPositiveParam('shadowInterval', 1),
-      // `?shadowSamples=<1..9>` (how soft the shadow maps' edges are) and `?lightTileSize=<px>` (the light pass's screen
-      // tiles), to compare their cost; without them the engine's defaults.
+      // `?shadowSamples=<1..9>` (how soft the shadow maps' edges are) and `?lightCullingTileSize=<px>` (the light pass's
+      // culling tiles), to compare their cost; without them the engine's defaults.
       ...(predatorSearchParam('shadowSamples') != null ? { shadowSamples: predatorNumberParam('shadowSamples', 5) } : {}),
-      ...(predatorSearchParam('lightTileSize') != null ? { lightTileSize: predatorNumberParam('lightTileSize', 16) } : {}),
+      ...(predatorSearchParam('lightCullingTileSize') != null
+        ? { lightCullingTileSize: predatorNumberParam('lightCullingTileSize', 16) }
+        : {}),
       // ?light3d=1: the sun's shadow map (it takes out the sun alone and falls on what has height), a shadow map a lamp
       // (the lamps light each other's shadows, the bulbs' heights in the shadows' lengths), and self-shadow.
       // maxVolumes: the houses' boxes (shadowCaster.setBox) need their room, one a house of the pool.

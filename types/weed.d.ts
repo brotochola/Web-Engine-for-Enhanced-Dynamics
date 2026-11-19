@@ -362,11 +362,11 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   shadowSamples?: number;
   /**
-   * The side, in px of the light's target, of the screen tiles whose lights each light pixel loops over, 4 to 256 (default
-   * 16). Smaller tiles follow the lights' reach closer but cost the renderer worker more binning each frame. Read when the
-   * scene starts.
+   * Tiled light culling: the side, in px of the light's target, of the screen tiles whose lists of lights each light pixel
+   * loops over, 4 to 256 (default 16). Not a resolution: the picture is the same at any size, only the work moves. Smaller
+   * tiles follow the lights' reach closer but cost the renderer worker more binning each frame. Read when the scene starts.
    */
-  lightTileSize?: number;
+  lightCullingTileSize?: number;
   /**
    * Dither the light by half an 8-bit step, so a lamp's dim falloff does not band into rings on a plain dark surface (no pixel
    * moves more than one level). Default false: on an Intel HD 620 it cost about 4 % of the drawn frames.
