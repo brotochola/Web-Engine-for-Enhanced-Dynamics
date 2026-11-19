@@ -26,14 +26,16 @@ export const GPU_STATIC_FLOATS = 11;
  * texels of the texture its vertex shader fetches them from (gpuPack.c pack_sprites_indexed_scatter).
  */
 export const GPU_INDEXED_STATIC_FLOATS = 12;
+/** E-514. The word of an indexed statics row that holds its texture (gpuPack.c INDEXED_TEX_WORD, spriteIndexed.js weedS1.z). */
+export const GPU_INDEXED_TEX_WORD = 6;
 /** E-162. An indexed frame's slot pair, in draw order: the statics' row (a float) and the slot's depth. */
 // E-186: a slot is its statics row alone (a float); the depth it carried was never read (no batch draws with a depth
 // test).
 export const GPU_INDEXED_SLOT_FLOATS = 1;
 /** E-162. Statics rows a texture row holds: three RGBA32UI texels each, a texture 3 072 texels wide. */
 export const GPU_INDEXED_TEX_ROW = 1024;
-export const GPU_HEADER_INTS = 12;
-export const GPU_QUEUE_VERSION = 6;
+export const GPU_HEADER_INTS = 18;
+export const GPU_QUEUE_VERSION = 7;
 
 export const GPU_HDR_SPRITE = 0;
 export const GPU_HDR_GLOW = 1;
@@ -84,6 +86,23 @@ export const GPU_HDR_SLOTS_GEN = 10;
  * stamp row's stampLightIdx counts them (a lamp's tile in the lamps' shadow map is that index).
  */
 export const GPU_HDR_STAMP_LIGHTS = 11;
+/**
+ * E-514: with an indexed frame whose statics were written, the rows of them that changed (gpuPack.c diff_indexed_statics):
+ * GPU_HDR_IXUP updates in spriteIxUpdates and GPU_HDR_IXUP_TEX texture updates in spriteIxTexUpdates (the keyed formats,
+ * GPU_KEYED_ROW_WORDS and GPU_KEYED_TEX_WORDS), relative to either of two bases, a statics generation and its rows each
+ * (GPU_HDR_IXUP_GEN_A / _ROWS_A, GPU_HDR_IXUP_GEN_B / _ROWS_B; generation 0: no base). -1 updates: no list (the renderer
+ * takes every row). A renderer whose statics are one base takes the lists instead of every row.
+ */
+export const GPU_HDR_IXUP = 12;
+export const GPU_HDR_IXUP_TEX = 13;
+export const GPU_HDR_IXUP_GEN_A = 14;
+export const GPU_HDR_IXUP_ROWS_A = 15;
+export const GPU_HDR_IXUP_GEN_B = 16;
+export const GPU_HDR_IXUP_ROWS_B = 17;
+/** E-514: the room for each list: a quarter of the indexed statics rows (past it every row goes up as before). */
+export function gpuIndexedUpdateRows(maxSprites) {
+  return gpuIndexedStaticRows(maxSprites) >> 2;
+}
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
@@ -145,6 +164,8 @@ export function gpuQueueCaps(maxSprites, lighting, indexedSprites = false) {
     // zIndex bands of the pixel depth read them).
     maxGbuf: lightsOn ? sprites : 0,
     indexedSprites: !!indexedSprites,
+    // E-514: an indexed frame's lists of the statics rows that changed.
+    maxIndexedUpdates: indexedSprites ? gpuIndexedUpdateRows(sprites) : 0,
   };
 }
 
@@ -163,8 +184,14 @@ export function computeGpuQueueBufferSize(caps) {
   offset += (c.maxGbuf | 0) * GPU_GBUF_FLOATS * 4;
   // N-212: each stamp light's fade at the cut.
   offset += (c.maxStampLights | 0) * 4;
+  // E-514: the indexed statics' update lists.
+  offset += (c.maxIndexedUpdates | 0) * (GPU_IXUP_ROW_WORDS + GPU_IXUP_TEX_WORDS) * 4;
   return align4(offset);
 }
+
+/** E-514: the words of an indexed statics update and of a texture update (gpuPackClient's GPU_KEYED_ROW_WORDS, _TEX_WORDS). */
+const GPU_IXUP_ROW_WORDS = 16;
+const GPU_IXUP_TEX_WORDS = 2;
 
 function regionF32(sab, offset, count) {
   const n = count | 0;
@@ -216,6 +243,12 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   // the G-buffer words so every other region stays where it was.
   const stampLightFade = stampLightN > 0 ? new Float32Array(sab, offset, stampLightN) : new Float32Array(0);
   offset += stampLightN * 4;
+  // E-514: the indexed statics' update lists, last, so every other region stays where it was.
+  const ixUpN = c.maxIndexedUpdates | 0;
+  const spriteIxUpdates = ixUpN > 0 ? new Uint32Array(sab, offset, ixUpN * GPU_IXUP_ROW_WORDS) : new Uint32Array(0);
+  offset += ixUpN * GPU_IXUP_ROW_WORDS * 4;
+  const spriteIxTexUpdates = ixUpN > 0 ? new Uint32Array(sab, offset, ixUpN * GPU_IXUP_TEX_WORDS) : new Uint32Array(0);
+  offset += ixUpN * GPU_IXUP_TEX_WORDS * 4;
   return {
     header,
     sprites: sprites.view,
@@ -238,6 +271,8 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     stampLightIds,
     spriteGbuf,
     stampLightFade,
+    spriteIxUpdates,
+    spriteIxTexUpdates,
     caps: c,
     byteLength: offset - start,
   };
@@ -257,6 +292,12 @@ export function clearGpuQueueHeader(header) {
   header[GPU_HDR_INDEXED_ROWS] = 0;
   header[GPU_HDR_SLOTS_GEN] = 0;
   header[GPU_HDR_STAMP_LIGHTS] = 0;
+  header[GPU_HDR_IXUP] = -1;
+  header[GPU_HDR_IXUP_TEX] = 0;
+  header[GPU_HDR_IXUP_GEN_A] = 0;
+  header[GPU_HDR_IXUP_ROWS_A] = 0;
+  header[GPU_HDR_IXUP_GEN_B] = 0;
+  header[GPU_HDR_IXUP_ROWS_B] = 0;
 }
 
 export function writeGpuQueueHeader(header, counts, flags) {
@@ -273,6 +314,14 @@ export function writeGpuQueueHeader(header, counts, flags) {
   header[GPU_HDR_INDEXED_ROWS] = counts.indexedRows | 0;
   header[GPU_HDR_SLOTS_GEN] = counts.slotsGen | 0;
   header[GPU_HDR_STAMP_LIGHTS] = counts.stampLights | 0;
+  // E-514: the indexed statics' lists (none unless the frame wrote them).
+  const ixUp = counts.ixUpdates;
+  header[GPU_HDR_IXUP] = typeof ixUp === 'number' ? ixUp | 0 : -1;
+  header[GPU_HDR_IXUP_TEX] = counts.ixTexUpdates | 0;
+  header[GPU_HDR_IXUP_GEN_A] = counts.ixGenA | 0;
+  header[GPU_HDR_IXUP_ROWS_A] = counts.ixRowsA | 0;
+  header[GPU_HDR_IXUP_GEN_B] = counts.ixGenB | 0;
+  header[GPU_HDR_IXUP_ROWS_B] = counts.ixRowsB | 0;
 }
 
 /**

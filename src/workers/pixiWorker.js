@@ -167,6 +167,12 @@ import {
   GPU_KEYED_CASTER_FLOATS,
   GPU_KEYED_STAMP_FLOATS,
   GPU_HDR_INDEXED_ROWS,
+  GPU_HDR_IXUP,
+  GPU_HDR_IXUP_GEN_A,
+  GPU_HDR_IXUP_GEN_B,
+  GPU_HDR_IXUP_ROWS_A,
+  GPU_HDR_IXUP_ROWS_B,
+  GPU_HDR_IXUP_TEX,
   GPU_HDR_SLOTS_GEN,
   GPU_INDEXED_SLOT_FLOATS,
   GPU_INDEXED_STATIC_FLOATS,
@@ -574,6 +580,11 @@ class PixiRenderer extends AbstractWorker {
     this._staticsScatterGl = null;
     // E-187: the keyed statics scatter's pipelines and buffers on WebGPU (staticsScatterGpu.js), made on first use.
     this._staticsScatterGpu = null;
+    // E-514: an indexed frame's lists of the statics rows that changed, as commitIndexed takes them (the GPU queue
+    // header's GPU_HDR_IXUP*, the queue's update regions).
+    this._ixCommit = {
+      updates: new Uint32Array(0), texUpdates: new Uint32Array(0), count: -1, texCount: 0, genA: 0, rowsA: 0, genB: 0, rowsB: 0,
+    };
     // E-475: the WebGL programs made while the worker starts (GlProgram.weedMade), linked together before it reports
     // ready (_linkProgramsAhead).
     this._madePrograms = [];
@@ -2074,9 +2085,19 @@ class PixiRenderer extends AbstractWorker {
           this.visibleEntityCount = batch.commitSplit(gpu.spritePose, gpu.spriteStatic, packedN, gpu.header[GPU_HDR_STATIC_GEN]);
         } else if (packedFlags & GPU_FLAG_INDEXED) {
           // E-162: the poses and slot pairs, every queue row's statics to the texture when their generation moved.
+          // E-514: or only the rows that changed, where pre-render listed them against what the texture holds.
+          const ix = this._ixCommit;
+          ix.updates = gpu.spriteIxUpdates;
+          ix.texUpdates = gpu.spriteIxTexUpdates;
+          ix.count = gpu.header[GPU_HDR_IXUP];
+          ix.texCount = gpu.header[GPU_HDR_IXUP_TEX];
+          ix.genA = gpu.header[GPU_HDR_IXUP_GEN_A];
+          ix.rowsA = gpu.header[GPU_HDR_IXUP_ROWS_A];
+          ix.genB = gpu.header[GPU_HDR_IXUP_GEN_B];
+          ix.rowsB = gpu.header[GPU_HDR_IXUP_ROWS_B];
           this.visibleEntityCount = batch.commitIndexed(
             gpu.spritePose, gpu.spriteSlots, gpu.spriteRowStatics, packedN,
-            gpu.header[GPU_HDR_INDEXED_ROWS], gpu.header[GPU_HDR_STATIC_GEN], gpu.header[GPU_HDR_SLOTS_GEN]
+            gpu.header[GPU_HDR_INDEXED_ROWS], gpu.header[GPU_HDR_STATIC_GEN], gpu.header[GPU_HDR_SLOTS_GEN], ix
           );
         } else if (packedN === 0) {
           // No sprite rows: pre-render's pack wrote none, so it split none. Nothing to draw.

@@ -106,7 +106,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_casters_keyed_scan_xy',
     'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
     'pack_casters_framed', 'pack_casters_scatter_framed', 'pack_sprites_split_gbuf', 'pack_sprites_split_scatter_gbuf',
-    'pack_sprites_indexed_scatter_gbuf',
+    'pack_sprites_indexed_scatter_gbuf', 'diff_indexed_statics',
   ]);
   return {
     buffer: memory.buffer,
@@ -121,6 +121,8 @@ export async function bindGpuPack(memory, layout) {
     spritesSplitScatter: k.pack_sprites_split_scatter,
     // E-162: the pose and the statics' row in draw order, the statics in the queue's row order.
     spritesIndexedScatter: k.pack_sprites_indexed_scatter,
+    // E-514: an indexed frame's statics with the rows that changed listed as keyed updates.
+    diffIndexedStatics: k.diff_indexed_statics,
     // E-444: the three with the sprites' G-buffer words too (pre-render's; exports of their own: the plain ones keep
     // their code).
     spritesSplitGbuf: k.pack_sprites_split_gbuf,
@@ -383,6 +385,38 @@ export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity, gbuf
   if (gbufByte > 0) gbuf.written = true;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;
+}
+
+/**
+ * E-514: every queue row's statics written at `stat` as packIndexedRowsWasm writes them, and the rows that differ from what
+ * the renderer's copy may hold listed in `out` (out.updates: GPU_KEYED_ROW_WORDS u32 a row, out.texUpdates:
+ * GPU_KEYED_TEX_WORDS a row for a row whose texture alone changed; room for out.max of each). The copy holds one of two
+ * bases: `stat` before the call (its first selfRows rows; -1: not a base) or `other` (its first otherRows rows; null: not
+ * a base). Call it after the frame's pack (it writes its results where the pack wrote its particle count).
+ * @returns {boolean} whether it wrote the statics; out.count is then the updates, or -1 when either list ran past
+ *   out.max (the renderer takes every row), and out.texCount the texture updates
+ */
+export function diffIndexedStaticsWasm(b, q, stat, selfRows, other, otherRows, out) {
+  out.count = -1;
+  out.texCount = 0;
+  if (!b || !q || !stat || !b.diffIndexedStatics) return false;
+  if (stat.buffer !== b.buffer || out.updates.buffer !== b.buffer || out.texUpdates.buffer !== b.buffer) return false;
+  if (other !== null && other.buffer !== b.buffer) return false;
+  const n = q.count | 0;
+  const max = out.max | 0;
+  if (stat.length < n * GPU_INDEXED_STATIC_FLOATS) return false;
+  if (out.updates.length < max * GPU_KEYED_ROW_WORDS || out.texUpdates.length < max * GPU_KEYED_TEX_WORDS) return false;
+  const otherN = other !== null ? (otherRows < n ? otherRows | 0 : n) : 0;
+  if (other !== null && other.length < otherN * GPU_INDEXED_STATIC_FLOATS) return false;
+  const table = tableFor(b, q);
+  if (table < 0) return false;
+  const selfBase = selfRows >= 0 ? 1 : 0;
+  b.diffIndexedStatics(table, n, stat.byteOffset, selfBase, selfBase ? selfRows | 0 : 0, other !== null ? other.byteOffset : 0,
+    otherN, out.updates.byteOffset, out.texUpdates.byteOffset, max, b.particlesByte);
+  const r = b.particlesByte >> 2;
+  out.count = b.u32[r + 2] !== 0 ? -1 : b.u32[r];
+  out.texCount = b.u32[r + 2] !== 0 ? 0 : b.u32[r + 1];
+  return true;
 }
 
 /** E-177: the words of an update (gpuPack.c KEYED_ROW_WORDS): the statics, then the key. */

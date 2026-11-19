@@ -676,6 +676,82 @@ uint32_t pack_sprites_indexed_scatter_gbuf(uint32_t table, uint32_t indices, uin
                               rowCount, 0, G, 1, 0);
 }
 
+/* E-514: the word of an indexed statics row that holds its texture (sprite_static's d[6]). */
+#define INDEXED_TEX_WORD 6
+
+/* E-514: which of a statics row's 12 words (s0, s1, s2) differ from the row at b, a bit a word. */
+INLINE uint32_t statics_diff(const v128_t s0, const v128_t s1, const v128_t s2, const uint32_t *b) {
+  const uint32_t m0 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s0, wasm_v128_load(b)));
+  const uint32_t m1 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s1, wasm_v128_load(b + 4)));
+  const uint32_t m2 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s2, wasm_v128_load(b + 8)));
+  return m0 | (m1 << 4) | (m2 << 8);
+}
+
+/* E-514: an indexed frame's statics at dstStatic, every row as pack_indexed_scatter writes them, and the rows that differ
+   from what the renderer's copy may hold, as keyed updates, so it sends those alone instead of every row. The copy holds
+   one of two bases: this buffer's own statics before this call (selfBase: its first selfRows rows), or the other buffer's
+   (otherStatic, 0 for none: its first otherRows rows). A row differs when a word differs from a base that has it, and
+   always from a base whose rows end before it. A row whose texture word alone differs from every base (an animation's
+   frame) is a texture update (KEYED_TEX_WORDS: its row, the word); any other that differs an update (KEYED_ROW_WORDS:
+   its words, then its row). Past maxUpdates of either kind the lists stop and results[2] is 1 (the renderer then takes
+   every row); the statics are written all the same. results[0] counts the updates, results[1] the texture updates. */
+__attribute__((export_name("diff_indexed_statics")))
+uint32_t diff_indexed_statics(uint32_t table, uint32_t rowCount, uint32_t dstStatic, uint32_t selfBase, uint32_t selfRows,
+                              uint32_t otherStatic, uint32_t otherRows, uint32_t updatesByte, uint32_t texUpdatesByte,
+                              uint32_t maxUpdates, uint32_t resultsByte) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  uint32_t *stat = (uint32_t *)(uintptr_t)dstStatic;
+  const uint32_t *other = (const uint32_t *)(uintptr_t)otherStatic;
+  uint32_t *updates = (uint32_t *)(uintptr_t)updatesByte;
+  uint32_t *tex = (uint32_t *)(uintptr_t)texUpdatesByte;
+  uint32_t *results = (uint32_t *)(uintptr_t)resultsByte;
+  float s[INDEXED_STATIC_FLOATS] __attribute__((aligned(16)));
+  uint32_t u = 0;
+  uint32_t tu = 0;
+  uint32_t over = 0;
+  for (uint32_t i = 0; i < rowCount; i++) {
+    sprite_static(t, i, s, 0.0);
+    s[11] = 0;
+    const v128_t s0 = wasm_v128_load(s);
+    const v128_t s1 = wasm_v128_load(s + 4);
+    const v128_t s2 = wasm_v128_load(s + 8);
+    uint32_t *d = stat + i * INDEXED_STATIC_FLOATS;
+    if (!over) {
+      uint32_t mask = 0;
+      if (selfBase) mask = i < selfRows ? statics_diff(s0, s1, s2, d) : 0xfffu;
+      if (other) mask |= i < otherRows ? statics_diff(s0, s1, s2, other + i * INDEXED_STATIC_FLOATS) : 0xfffu;
+      if (mask == (1u << INDEXED_TEX_WORD)) {
+        if (tu < maxUpdates) {
+          uint32_t *tx = tex + tu * KEYED_TEX_WORDS;
+          tx[0] = i;
+          __builtin_memcpy(tx + 1, s + INDEXED_TEX_WORD, 4);
+          tu++;
+        } else {
+          over = 1;
+        }
+      } else if (mask) {
+        if (u < maxUpdates) {
+          uint32_t *up = updates + u * KEYED_ROW_WORDS;
+          wasm_v128_store(up, s0);
+          wasm_v128_store(up + 4, s1);
+          wasm_v128_store(up + 8, s2);
+          wasm_v128_store(up + 12, wasm_i32x4_make((int32_t)i, 0, 0, 0));
+          u++;
+        } else {
+          over = 1;
+        }
+      }
+    }
+    wasm_v128_store(d, s0);
+    wasm_v128_store(d + 4, s1);
+    wasm_v128_store(d + 8, s2);
+  }
+  results[0] = u;
+  results[1] = tu;
+  results[2] = over;
+  return u;
+}
+
 /* E-177: the pose and slot streams at dstPose and dstSlots, the updates at updatesByte (room for cap), the results at
    resultsByte; the queue's key column at keyByte. E-189: the texture updates at texUpdatesByte (room for cap; 0: none). */
 __attribute__((export_name("pack_sprites_keyed")))

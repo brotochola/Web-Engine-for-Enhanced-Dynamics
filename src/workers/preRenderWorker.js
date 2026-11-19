@@ -95,7 +95,7 @@ import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_S
 import { Layer } from '../core/layer.js';
 import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
-    bindGpuPack, lampFramesWasm, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
+    bindGpuPack, diffIndexedStaticsWasm, lampFramesWasm, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
     KEYED_SUN_CONTACT, KEYED_SUN_DEFER, KEYED_SUN_LAMP_GEO, KEYED_SUN_SHEET, KEYED_SUN_SHEETS, KEYED_SUN_SHEET_WORDS,
     KEYED_SUN_SOLID, KEYED_SUN_TABLE, KEYED_SUN_UNIFORM,
 } from '../render/gpuPackClient.js';
@@ -1518,6 +1518,16 @@ class PreRenderWorker extends AbstractWorker {
         this._packIndexedGen = 0;
         this._packIndexedRows = 0;
         this._packIndexedSlotsGen = 0;
+        // E-514: this frame's lists of the statics rows that changed (_packSpritesIndexed): the updates (-1: none, Pixi
+        // takes every row), the texture updates, and the two bases they are relative to (a generation, 0 none, and its
+        // rows); the diff's out parameter.
+        this._packIxUpdates = -1;
+        this._packIxTexUpdates = 0;
+        this._packIxGenA = 0;
+        this._packIxRowsA = 0;
+        this._packIxGenB = 0;
+        this._packIxRowsB = 0;
+        this._ixDiffOut = { updates: EMPTY_U32, texUpdates: EMPTY_U32, max: 0, count: -1, texCount: 0 };
         // An indexed frame's slot pairs' generation (_sortedSlotsGen): its number, and the painter's orderGen, the
         // slots and the depth scale it was given for.
         this._slotsContentGen = 0;
@@ -5423,15 +5433,47 @@ class PreRenderWorker extends AbstractWorker {
      * only when this GPU queue buffer does not hold the queue's current generation (renderQueueStaticGen) for the same
      * rows. The painter's order and the depth scale are the slots', so they move no statics. -1 when the kernel does not
      * take the frame (a list under SCATTER_MIN_ROWS or under half the queue); the caller then packs it split.
+     * E-514: statics written where either GPU queue buffer held a generation (Pixi's copy holds one of the two, or an older
+     * one) are written by the diff, which lists the rows that differ from both, so Pixi sends those alone.
      */
     _packSpritesIndexed(q, ctx, dst, cap, slot, genView, gbuf) {
         const gen = genView.length ? genView[0] >>> 0 : 0;
         const rows = q.count | 0;
         const current = gen !== 0 && this._gpuIndexedGen[slot] === gen && this._gpuIndexedRows[slot] === rows;
-        const n = packIndexedRowsWasm(
-            this._gpuPackWasm, q, ctx, dst.spritePose, dst.spriteSlots, current ? null : dst.spriteRowStatics, cap, gbuf
+        const other = slot ^ 1;
+        const selfRows = this._gpuIndexedGen[slot] !== 0 ? this._gpuIndexedRows[slot] : -1;
+        const otherRows = this._gpuIndexedGen[other] !== 0 ? this._gpuIndexedRows[other] : -1;
+        const diff = !current && gen !== 0 && (selfRows >= 0 || otherRows >= 0) && dst.spriteIxUpdates.length > 0;
+        let n = packIndexedRowsWasm(
+            this._gpuPackWasm, q, ctx, dst.spritePose, dst.spriteSlots, current || diff ? null : dst.spriteRowStatics, cap, gbuf
         );
         if (n < 0) return -1;
+        this._packIxUpdates = -1;
+        this._packIxTexUpdates = 0;
+        this._packIxGenA = selfRows >= 0 ? this._gpuIndexedGen[slot] : 0;
+        this._packIxRowsA = selfRows >= 0 ? selfRows : 0;
+        this._packIxGenB = otherRows >= 0 ? this._gpuIndexedGen[other] : 0;
+        this._packIxRowsB = otherRows >= 0 ? otherRows : 0;
+        if (diff) {
+            const out = this._ixDiffOut;
+            out.updates = dst.spriteIxUpdates;
+            out.texUpdates = dst.spriteIxTexUpdates;
+            // A quarter of this frame's rows: past it the lists (64 bytes a row, a draw) cost what every row (48 bytes
+            // a row) does, as a panning camera's do (rows shift as entities come and go).
+            const room = this.gpuQueueCaps.maxIndexedUpdates | 0;
+            out.max = rows >> 2 < room ? rows >> 2 : room;
+            const otherStat = otherRows >= 0 ? this.gpuQueueBuffers[other].spriteRowStatics : null;
+            if (diffIndexedStaticsWasm(this._gpuPackWasm, q, dst.spriteRowStatics, selfRows, otherStat, otherRows, out)) {
+                this._packIxUpdates = out.count;
+                this._packIxTexUpdates = out.texCount;
+            } else {
+                // The diff declined the call: the statics as before, every row.
+                n = packIndexedRowsWasm(
+                    this._gpuPackWasm, q, ctx, dst.spritePose, dst.spriteSlots, dst.spriteRowStatics, cap, gbuf
+                );
+                if (n < 0) return -1;
+            }
+        }
         this._packGbufWritten = gbuf !== null && gbuf.written;
         this._gpuIndexedGen[slot] = gen;
         this._gpuIndexedRows[slot] = rows;
@@ -5605,6 +5647,14 @@ class PreRenderWorker extends AbstractWorker {
         counts.staticGen = sprites.staticGen | 0;
         counts.indexedRows = sprites.indexedRows | 0;
         counts.slotsGen = sprites.slotsGen | 0;
+        // E-514: an indexed frame's lists of the statics rows that changed, and their bases.
+        const ix = (counts.flags & GPU_FLAG_INDEXED) !== 0 && this._packIndexedUsed;
+        counts.ixUpdates = ix ? this._packIxUpdates : -1;
+        counts.ixTexUpdates = ix ? this._packIxTexUpdates : 0;
+        counts.ixGenA = ix ? this._packIxGenA : 0;
+        counts.ixRowsA = ix ? this._packIxRowsA : 0;
+        counts.ixGenB = ix ? this._packIxGenB : 0;
+        counts.ixRowsB = ix ? this._packIxRowsB : 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
     }
