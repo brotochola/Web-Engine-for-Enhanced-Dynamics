@@ -140,10 +140,10 @@ import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
   gidPageSize,
-  gidPageByteLength,
   gidPageHasTile,
   gidPageQuads,
-  packGidPageRgba8,
+  gidLayersPerDraw,
+  packGidStacksRgba8,
 } from '../render/tilemapGid.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
@@ -8722,27 +8722,33 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const atlasH = atlas.height || atlasSource.height || 1;
     const tw = tileMapData.tileWidth || 1;
     const th = tileMapData.tileHeight || 1;
-    const pages = listGidPages(tileMapData.mapWidth, tileMapData.mapHeight);
+    const mapW = tileMapData.mapWidth;
+    const pages = listGidPages(mapW, tileMapData.mapHeight);
     const layersFilter = tm.buildOptions && tm.buildOptions.layers;
-    const layers = tileMapData.getLayers();
-    for (let li = 0; li < layers.length; li++) {
-      const layer = layers[li];
-      if (layersFilter && !layersFilter.includes(layer.name)) continue;
-      if (!layer.visible) continue;
-      for (let pi = 0; pi < pages.length; pi++) {
-        const page = pages[pi];
-        const { pageW, pageH } = gidPageSize(page);
-        if (pageW <= 0 || pageH <= 0) continue;
-        if (!gidPageHasTile(layer.data, tileMapData.mapWidth, page)) continue;
-        // E-432: the page drawn only over its chunks with tiles, not as one quad.
-        const quads = gidPageQuads(layer.data, tileMapData.mapWidth, page, tw, th);
+    // The layers drawn, bottom first.
+    const drawn = tileMapData
+      .getLayers()
+      .filter((layer) => layer.visible && (!layersFilter || layersFilter.includes(layer.name)));
+    const maxSide = this._maxTextureSide();
+    for (let pi = 0; pi < pages.length; pi++) {
+      const page = pages[pi];
+      const { pageW, pageH } = gidPageSize(page);
+      if (pageW <= 0 || pageH <= 0) continue;
+      const withTiles = drawn.filter((layer) => gidPageHasTile(layer.data, mapW, page));
+      // E-432: one draw composites up to perDraw of the page's layers (each tile's stack of them in one texture), front
+      // to back in the shader, over the chunks where one of them has tiles. Pages do not overlap, so only the order of a
+      // page's draws matters: its bottom layers first.
+      const perDraw = gidLayersPerDraw(pageH, maxSide);
+      for (let g = 0; g < withTiles.length; g += perDraw) {
+        const group = withTiles.slice(g, g + perDraw);
+        const data = group.map((layer) => layer.data);
+        const quads = gidPageQuads(data, mapW, page, tw, th);
         if (quads.quads === 0) continue;
-        const bytes = new Uint8Array(gidPageByteLength(pageW, pageH));
-        packGidPageRgba8(layer.data, tileMapData.mapWidth, page, bytes);
+        const { depth, bytes } = packGidStacksRgba8(data, mapW, page);
         const gidSource = TextureSource.from({
           resource: bytes,
           width: pageW,
-          height: pageH,
+          height: pageH * depth,
           format: 'rgba8unorm',
           scaleMode: 'nearest',
           addressMode: 'clamp-to-edge',
@@ -8763,6 +8769,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           },
           indexBuffer: quads.indices,
         });
+        // Each layer's opacity, the group's layer l (a stack entry's index) at l (0 to 3 low, 4 to 7 high).
+        const opacity = new Float32Array(8);
+        for (let l = 0; l < group.length; l++) opacity[l] = group[l].opacity !== undefined ? +group[l].opacity : 1;
         const uniforms = {
           uTileSize: { value: new Float32Array([tw, th]), type: 'vec2<f32>' },
           uPageOrigin: { value: new Float32Array([page.minX, page.minY]), type: 'vec2<f32>' },
@@ -8770,7 +8779,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           uFirstGid: { value: tileset.firstgid || 1, type: 'f32' },
           uColumns: { value: tileset.columns || 1, type: 'f32' },
           uAtlasSize: { value: new Float32Array([atlasW, atlasH]), type: 'vec2<f32>' },
-          uOpacity: { value: layer.opacity !== undefined ? +layer.opacity : 1, type: 'f32' },
+          uStackDepth: { value: depth, type: 'f32' },
+          uOpacityLo: { value: opacity.slice(0, 4), type: 'vec4<f32>' },
+          uOpacityHi: { value: opacity.slice(4, 8), type: 'vec4<f32>' },
         };
         const shader = this._createTilemapGidShader(gidSource, atlasSource, uniforms);
         const mesh = new Mesh({ geometry, shader });
@@ -8779,6 +8790,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         tm.pages.push({ mesh, gidSource });
       }
     }
+  }
+
+  /** E-432: the GPU's largest 2D texture side (WebGL's MAX_TEXTURE_SIZE, WebGPU's maxTextureDimension2D). */
+  _maxTextureSide() {
+    const renderer = this.pixiApp?.renderer;
+    if (this._useWebGpu) return renderer?.gpu?.device?.limits?.maxTextureDimension2D || 8192;
+    const gl = renderer?.gl;
+    return gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 2048;
   }
 
   _createTilemapScenery(layerId, layerName, tilemapId, options = {}, parallaxX, parallaxY) {
