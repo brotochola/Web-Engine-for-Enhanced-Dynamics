@@ -22086,7 +22086,8 @@
         "R-1581",
         "R-1550",
         "R-1551",
-        "R-1582"
+        "R-1582",
+        "R-1552"
       ],
       "id": "E-514",
       "kind": "speed",
@@ -22095,7 +22096,7 @@
       "date": "2026-11-17",
       "title": "The indexed path uploads its statics texture whole whenever the queue's statics generation moves (every frame in the barrio, its people's animation frames): upload only the rows whose statics changed",
       "statusText": "Kept 2026-11-19 (12b519fb), at the owner's ask; merged to main the same day",
-      "result": "HD 620 (R-1581): statics upload in Chrome's GPU process -74 %, barrio by day drawn +2.2 % (4/4), renderer own -8.5 % day, -6 % night (4/4); main PC: upload a frame 873 -> 414 KB with the camera still, workers under their floors (R-1550)",
+      "result": "HD 620 (R-1581, against the A/A R-1582): statics upload in Chrome's GPU process -74 %, renderer own -8.5 % day, -6 % night (past its 2.9 % noise); drawn +2.2 % by day, inside the 3.8 % noise; main PC: upload a frame 873 -> 414 KB with the camera still, workers under their floors (R-1550)",
       "next": "WebGL already scatters statics rows into a texture (render/webgl/staticsScatterGl.js, the keyed path's _scatterStaticsGl). Plan: pre-render's indexed kernel compares each row's new statics with what its queue buffer slot held (two frames back, a superset of last frame's changes) and lists the rows that differ; Pixi scatters those rows into its statics texture instead of uploading it whole. The double buffer's catch: Pixi must know its texture holds the statics the list is relative to (a skipped frame, a resume): the frame carries the generation the list starts from, and Pixi uploads whole when its own differs. Measure bytesTexture and gpuProcessTrace in the barrio, and the HD 620's drawn frames (the laptop's CrGpuMain is the target). Also: E-513's snap in C instead of JS (pre-render +4.7 % under the floor)."
     },
     {
@@ -39303,6 +39304,13 @@
       "title": "The barrio's A/A on the HD 620 at hour 22: drawn frames +3.8 % and the renderer +2.9 % between identical sides (4 rounds); pre-render and spatial0 swing 30 % run to run",
       "verdict": "note",
       "text": "ASUS lab job 0899i3 (16:38-16:43): an A/A of the barrio on the HD 620, the same tree on both sides (main b190651d),\nhour 22, time frozen, 2000 people, still camera, 4 rounds alternated, as kdrawn ran E-514 (R-1581). Medians of 4,\nand the 4 runs of each side:\n\n| | A | A2 | A2 vs A |\n|---|---|---|---|\n| drawn frames in 10 s | 316 [314 315 341 316] | 328 [328 340 310 314] | +3.8 % |\n| renderer own ms | 7.25 | 7.46 | +2.9 % |\n| pre-render own ms | 10.26 (8.7 to 10.8) | 10.30 (8.5 to 14.0) | +0.4 % |\n| logic0 own ms | 4.70 | 4.75 | +1.1 % |\n| physics own ms | 7.69 | 7.84 | +1.9 % |\n| spatial0 own ms | 12.7 (8.6 to 13.7) | 14.4 (9.7 to 28.5) | +14 % |\n\n- **Detection limit of this scene on the ASUS, 4 rounds:** drawn frames about 4 %, renderer about 3 %. Pre-render and\n  spatial0 move 30 % and more from run to run: they trade 2 cores with the other workers. Single runs of drawn frames\n  span 310 to 341.\n- **For R-1581:** E-514's renderer -6 % and -8.5 % (4 of 4 pairs) clear this limit. Drawn frames +2.2 % at hour 13 is\n  under it, though E-514 led in 4 of 4 pairs. Pre-render +13 % at night sits inside pre-render's run-to-run spread\n  here; on the main PC the diff costs 0.07 ms at night."
+    },
+    {
+      "id": "R-1552",
+      "date": "2026-11-19",
+      "title": "E-514 against the HD 620's A/A (R-1582): the renderer's -6 / -8.5 % clears its noise, the drawn frames' +2.2 % does not (3.8 %)",
+      "verdict": "note",
+      "text": "**E-514's reading against the barrio's noise on the HD 620 (R-1582, the ASUS's A/A at hour 22, b190651d on both sides, 4 rounds): the renderer's -6 and -8.5 % clear it (the renderer read 2.9 % apart between identical sides); the drawn frames' +2.2 % does not (3.8 %), 4 of 4 pairs or not.** So E-514 is kept on the renderer and on Chrome's GPU process (the statics upload -74 %), not on the frames drawn; pre-render's +13 % at night lies inside its own spread there (8.5 to 14.0 ms run to run), as R-1551 read it. The DEVLOG's entry says so (it said 2 % more frames)."
     }
   ],
   "leads": [
