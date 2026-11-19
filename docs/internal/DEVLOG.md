@@ -20,8 +20,8 @@ The odd ones out are 2, 3, 6 and 7, which take a row or a diagonal more than the
 it; the guide says so instead of forbidding them. In Predator the light pass took 0.95, 1.03 and 1.10 ms in the afternoon
 with 1, 5 and 9, in a GPU frame near 7 ms. The default stays 5, the cross it always read, in the same order.
 
-**`lighting.lightTileSize`.** The light sorts its lights into screen tiles and each pixel loops over its tile's lights
-only; the tiles were 16 px, fixed. A scene can now ask for its own size. In Predator at night 8, 16 and 32 px drew the
+**`lighting.lightCullingTileSize`.** The light sorts its lights into screen tiles and each pixel loops over its tile's
+lights only (tiled light culling); the tiles were 16 px, fixed. A scene can now ask for its own size. In Predator at night 8, 16 and 32 px drew the
 light alike, because its lamps are big next to any of them; 8 px only made the tiles' texture more than three times bigger. A scene of many
 small lights may want smaller tiles, and now it can have them.
 

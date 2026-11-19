@@ -24139,11 +24139,12 @@
     },
     {
       "records": [
-        "R-1547"
+        "R-1547",
+        "R-1549"
       ],
       "refs": [],
       "id": "DX-LIGHTKNOBS",
-      "title": "Two light knobs for the developer: lighting.shadowSamples (the shadow maps' taps a light pixel averages, 1 to 9 of the 3 x 3 texels, default 5) and lighting.lightTileSize (the light pass's screen tiles in px, 4 to 256, default 16)",
+      "title": "Two light knobs for the developer: lighting.shadowSamples (the shadow maps' taps a light pixel averages, 1 to 9 of the 3 x 3 texels, default 5) and lighting.lightCullingTileSize (tiled light culling: the light pass's screen tiles in px, 4 to 256, default 16)",
       "status": "kept",
       "statusText": "Asked for by the owner on 2026-11-19 after seeing 5 taps against 1 (\"es un knob\"); built and measured on dx/light-knobs (73ae2ba3, 8587a28c, 413183e1), merged to main 2026-11-19 (f0006e2e, bundles f0531fb1), not pushed",
       "date": "2026-11-19",
@@ -24153,6 +24154,7 @@
       "kind": "dx",
       "aliases": [
         "shadow samples",
+        "light culling tile size",
         "light tile size",
         "soft shadow taps"
       ]
@@ -39224,6 +39226,16 @@
       "title": "Capacity on the ASUS (2 cores, HD 620) at main 8c310e43, the low-end baseline: predator and predatorNight under crowd 0.25, boids 28 000, bunnyMark 15 000 (GPU-bound), keyedPack 90 000",
       "verdict": "note",
       "text": "ASUS lab job 0899f (14:16-14:27). runCapacity found, for each capacity scene, the largest load held at 60 fps: page\npresented and renderer drawn at 59 fps or more, every worker's own work p99 at most 16.7 ms, held in 2 runs.\n\nMachine: i7-7500U, 2 cores / 4 logical CPUs, HD 620 on Intel 31.0.101.2145, HDD. Build: main 8c310e43 (0.14.46, branch\npcmain19), headed, warm-up 9 s, window 10 s. Starts were set lower than the main PC's. This is the low-end capacity\nbaseline.\n\n| Scene | Capacity on the ASUS | What breaks above it |\n|---|---|---|\n| predator | under its floor: crowd 0.25 (4 000) fails | physics. At crowd 0.25, p99 19.6 ms. At crowd 0.3, physics ran 209 frames in 10 s (21 Hz) at 46.5 ms a step, with spatial 16.2, pre-render 14.4, logic0 8.9 and the renderer 8.4 ms: about 96 ms of CPU a 16.7 ms frame on 4 logical CPUs. |\n| predatorNight (light3d, hour 22) | under its floor: crowd 0.25 (4 000) fails | drawn 24.2 fps at 0.25: the GPU |\n| boids | 28 000 | physics p99 21.8 ms at 29 000 |\n| bunnyMark | 15 000 | drawn: 53.3 fps at 20 000 and 37.1 at 30 000, with the renderer at 4.8 to 6.3 ms p95: the GPU |\n| keyedPack | 90 000 | pre-render p99 21.8 ms at 95 000 |\n\n- **The 128 ms p99s in the log are frameTotals' histogram ceiling** (1024 bins x 0.125 ms): a step that long or\n  longer. They are not a spike of that size.\n- **Predator is oversubscribed here, not mis-threaded.** Box2D's thread count was tried on this laptop: R-1275 (4\n  threads best, 1 +30 %), R-1314. The engine already turns the pool's spin off here (E-298, E-426).\n- **bunnyMark is GPU-bound at 15 000 on the HD 620.** The renderer's CPU is small and drawn frames fall with the count.\n  A per-draw GPU recording of it (job 0899g2) looks at where the HD 620's time goes.\n- **Reference:** the main PC (GTX 1650) holds about 570 000 bunnies and 85 000 boids (R-1452 to R-1460)."
+    },
+    {
+      "id": "R-1549",
+      "date": "2026-11-19",
+      "title": "lighting.lightTileSize renamed lighting.lightCullingTileSize: the owner read it as a resolution; it is tiled light culling's tile",
+      "verdict": "kept",
+      "text": "**`lighting.lightTileSize` renamed `lighting.lightCullingTileSize` (2c3217b9), at the owner's word.** He set it to 128 in the barrio and expected blockier shadows; it is tiled light culling's tile (which lights each pixel loops over), and the picture is the same at any size. The new name says what it is; the config comment, the types and the guide now say it is not a resolution and name the knobs that are (`shadowResolution`, `lampShadowTile`, `shadowSamples`). No alias (the old name never shipped). Suites green (3273 node, 121 demos); nothing measured (a rename).",
+      "commits": [
+        "2c3217b9"
+      ]
     }
   ],
   "leads": [
