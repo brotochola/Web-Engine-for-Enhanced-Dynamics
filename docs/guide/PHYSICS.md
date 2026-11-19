@@ -312,7 +312,7 @@ See [Collision Filtering](./bible_of_weed_js.md#collision-filtering) in the bibl
 ### Scene `physics` config: substeps
 
 - **`subStepCount`** — Box2D solver sub-step count per physics tick (`world.step(dt, subStepCount)`). Raise for stiffer stacking / joints at higher CPU cost. Minimum `1`.
-- **`awakeReorderInterval`** (default `0`, off) — every N steps Box2D puts its awake bodies back in body-id order: the same results, and the step reads memory in order (Predator crowd 2.5: physics −8 % at 30, −6.8 % at 120). The reorder itself costs one step about 6.5 ms at 38 000 awake bodies, so the frame tail grows (E-322).
+- **`awakeReorderInterval`** (default `0`, off) — every N steps Box2D puts its awake bodies back in body-id order: the same results, and the step reads memory in order (Predator crowd 2.5: physics −8 % at 30, −6.8 % at 120). The reorder runs on the physics workers and is spread over a few steps: at 38 000 awake bodies the step that starts it pays about 1.3 ms for the bodies, and the next four about 0.5 ms each for the contacts (one step of 6.5 ms before, which grew the frame tail) (E-322).
 
 Contacts for gameplay callbacks come from a **sequenced contact ring** (`box2dContactRing`): nested `weedjsPost` publishes Box2D begin/end (+ sensor) records with body generations after each step; each logic worker keeps its own read cursor (no physics/logic lockstep). Stale generations and inactive entities are rejected; ring overrun clears local pair state.
 
