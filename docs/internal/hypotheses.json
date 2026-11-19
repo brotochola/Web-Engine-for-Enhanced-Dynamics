@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-19",
+  "updated": "2026-11-18",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -23915,9 +23915,9 @@
       "status": "kept",
       "kind": "speed",
       "area": "load",
-      "date": "2026-11-19",
-      "statusText": "kept 2026-11-19 (6753b301, R-1504): the slot's entry decoded beside the key",
-      "result": "Kept 2026-11-19 (R-1504): the slot's one entry read and decoded while the key hashes, kept when the keys match; Predator by night's atlas on the page 1 090 -> 1 006 ms warm from source."
+      "date": "2026-11-18",
+      "statusText": "kept 2026-11-18 (6753b301, R-1504): the slot's entry decoded beside the key",
+      "result": "Kept 2026-11-18 (R-1504): the slot's one entry read and decoded while the key hashes, kept when the keys match; Predator by night's atlas on the page 1 090 -> 1 006 ms warm from source."
     },
     {
       "records": [
@@ -23929,9 +23929,9 @@
       "status": "kept",
       "kind": "speed",
       "area": "physics",
-      "date": "2026-11-19",
-      "statusText": "kept 2026-11-19 (b463325c, R-1505): commands claimed before the sync skipped for the bodies it made",
-      "result": "Kept 2026-11-19 (R-1505): the physics prime 96 -> 62 ms warm; spawns during play skip the same commands."
+      "date": "2026-11-18",
+      "statusText": "kept 2026-11-18 (b463325c, R-1505): commands claimed before the sync skipped for the bodies it made",
+      "result": "Kept 2026-11-18 (R-1505): the physics prime 96 -> 62 ms warm; spawns during play skip the same commands."
     }
   ],
   "records": [
@@ -38175,11 +38175,11 @@
     {
       "id": "R-1474",
       "date": "2026-11-18",
-      "time": "22:31",
+      "time": "22:29",
       "timeFrom": "recorded",
       "title": "E-328 and E-476 in Predator crowd 2.5 with two spatial workers: together spatial -24.3 % (0 of 4 worse) and its p99 16.1 -> 6.9 ms, long frames 5 to 14 a window -> 0; E-476 alone p99 8.7, E-328 alone the mean only",
       "verdict": "kept",
-      "text": "**E-328 and E-476 in Predator crowd 2.5 with two spatial workers: together, spatial's own work 6.51 -> 4.95 ms (-24.3 %,\n0 of 4 pairs worse) and its p99 16.1 -> 6.9 ms, frames over the budget 5 to 14 a window -> 0; each alone gives half.**\nrunMultiArm e328-e476, A = opt/spatial-tail f2cbdc9c (+ the bench page's knobs, 46015f0c) with both keys at their\ndefaults, arms by query on the same build, `--full-rev --pool`, spatial owner, 4 rounds, 10 s + 10 s,\n`crowd=2.5&zoom=0.216&spatialWorkers=2`, 2026-11-18 22:12 to 22:31, the main PC on AC, SITTING.lock held.\n\n| arm | spatial mean (paired) | spatial0 p95 / p99 (median of 4) | long frames a window | other workers |\n|---|---|---|---|---|\n| A (vsync, none) | 6.511 ms | 11.97 / 16.13 | 14, 5, 9, 7 | |\n| `spatialStartOn=logicDone` (E-328) | 5.454 (-17.4 %, 0/4) | 10.25 / 17.69 | 8, 14, 18, 19 | preRender -7.8 %, logic -0.7, physics +0.3 |\n| `spatialRefreshSpread=idBlocks` (E-476) | 5.837 (-7.6 %, 0/4) | 8.00 / 8.71 | 1, 0, 0, 0 | logic +3.3 % (3/4, cv 8 %): REGRESSION by the rules |\n| both | 4.945 (-24.3 %, 0/4) | 6.26 / 6.92 | 0, 0, 0, 0 | preRender -9.8 %, logic +0.6, physics -0.2 |\n\nspatial1 reads the same (A p99 16.50, both 7.06). E-328 alone moves spatial's frame after logic's, off the cores logic\nand pre-render use (its own work cheaper, pre-render's too) but leaves the periodic rebuilds; E-476 alone removes the\nrebuilds (the long frames) but not the contention. Logic's +3.3 % in the idBlocks arm does not show with both keys on\n(logic0 5.58 against 5.79 ms) and the change cannot add work to logic's frame (the same lists, refreshed on other\nframes): read as noise at its cv, to be checked by the capacity runs. Physics' p99 and long frames swing 2 to 75 a\nwindow on every arm alike.",
+      "text": "**E-328 and E-476 in Predator crowd 2.5 with two spatial workers: together, spatial's own work 6.51 -> 4.95 ms (-24.3 %,\n0 of 4 pairs worse) and its p99 16.1 -> 6.9 ms, frames over the budget 5 to 14 a window -> 0; each alone gives half.**\nrunMultiArm e328-e476, A = opt/spatial-tail f2cbdc9c (+ the bench page's knobs, 46015f0c) with both keys at their\ndefaults, arms by query on the same build, `--full-rev --pool`, spatial owner, 4 rounds, 10 s + 10 s,\n`crowd=2.5&zoom=0.216&spatialWorkers=2`, 2026-11-18 22:17 to 22:29, the main PC on AC, SITTING.lock held.\n\n| arm | spatial mean (paired) | spatial0 p95 / p99 (median of 4) | long frames a window | other workers |\n|---|---|---|---|---|\n| A (vsync, none) | 6.511 ms | 11.97 / 16.13 | 14, 5, 9, 7 | |\n| `spatialStartOn=logicDone` (E-328) | 5.454 (-17.4 %, 0/4) | 10.25 / 17.69 | 8, 14, 18, 19 | preRender -7.8 %, logic -0.7, physics +0.3 |\n| `spatialRefreshSpread=idBlocks` (E-476) | 5.837 (-7.6 %, 0/4) | 8.00 / 8.71 | 1, 0, 0, 0 | logic +3.3 % (3/4, cv 8 %): REGRESSION by the rules |\n| both | 4.945 (-24.3 %, 0/4) | 6.26 / 6.92 | 0, 0, 0, 0 | preRender -9.8 %, logic +0.6, physics -0.2 |\n\nspatial1 reads the same (A p99 16.50, both 7.06). E-328 alone moves spatial's frame after logic's, off the cores logic\nand pre-render use (its own work cheaper, pre-render's too) but leaves the periodic rebuilds; E-476 alone removes the\nrebuilds (the long frames) but not the contention. Logic's +3.3 % in the idBlocks arm does not show with both keys on\n(logic0 5.58 against 5.79 ms) and the change cannot add work to logic's frame (the same lists, refreshed on other\nframes): read as noise at its cv, to be checked by the capacity runs. Physics' p99 and long frames swing 2 to 75 a\nwindow on every arm alike.",
       "commits": [
         "227e0cc4",
         "47113afc",
@@ -38217,7 +38217,7 @@
     {
       "id": "R-1477",
       "date": "2026-11-18",
-      "time": "23:00",
+      "time": "22:55",
       "timeFrom": "recorded",
       "title": "N-311 fixed: the scoreboard's worker rows judge STEP_MS less WAIT_MS (plus QUERY_WAKE_MS on physics), as every sitting does",
       "verdict": "kept-hygiene",
@@ -38229,11 +38229,11 @@
     {
       "id": "R-1478",
       "date": "2026-11-18",
-      "time": "23:03",
+      "time": "22:56",
       "timeFrom": "recorded",
       "title": "N-293's microbench: the contended case starts its timer when every contender is ready, not after a fixed 300 ms (the ASUS's finding, R-1481)",
       "verdict": "kept-hygiene",
-      "text": "**N-293's microbench fixed: audioSlotMicrobench's contended case starts its timer when its contenders are past their\nwarm-up, not after a fixed 300 ms.** The ASUS session found it (R-1481): on its disk main's workers, with a larger module\ngraph, were sometimes not ready after 300 ms, so the timed window held their start-up (30 to 42 k ops/s with 0 to 2\nready, 71 635 with all 3, v0.14.0 73 907). ce7b158e: each contender adds to a ready count after its 200 warm-up calls,\nand the main thread polls it every millisecond until all are ready (a 60 s deadline throws). On the main PC the case reads\n158 151 calls/s with every contender ready (one run, 2026-11-18 23:03). A tools fix: the kernel itself was not a\nregression.",
+      "text": "**N-293's microbench fixed: audioSlotMicrobench's contended case starts its timer when its contenders are past their\nwarm-up, not after a fixed 300 ms.** The ASUS session found it (R-1481): on its disk main's workers, with a larger module\ngraph, were sometimes not ready after 300 ms, so the timed window held their start-up (30 to 42 k ops/s with 0 to 2\nready, 71 635 with all 3, v0.14.0 73 907). ce7b158e: each contender adds to a ready count after its 200 warm-up calls,\nand the main thread polls it every millisecond until all are ready (a 60 s deadline throws). On the main PC the case reads\n158 151 calls/s with every contender ready (one run, 2026-11-18 22:56). A tools fix: the kernel itself was not a\nregression.",
       "commits": [
         "ce7b158e"
       ]
@@ -38241,11 +38241,11 @@
     {
       "id": "R-1479",
       "date": "2026-11-18",
-      "time": "23:05",
+      "time": "22:56",
       "timeFrom": "recorded",
       "title": "SST-10, the flowfields: static flowfields in shared memory; the barrio's init messages 205 -> 53 ms, its warm first frame about 2.83 -> 2.66 s",
       "verdict": "kept",
-      "text": "**SST-10, the flowfields: the barrio's page sent its ten workers' init messages in 205 ms, now 53 ms; its first frame\non a warm visit about 2.83 -> 2.66 s.** A probe (timing each init postMessage, and a structured clone of each key of the\ninit data) read about 20 ms per worker's message (the renderer's 38 ms), most of it `staticFlowfields`, whose Int8Array\ncells each message copied (23 ms for one clone; spritesheetMetadata 7.8 ms, the rest under 2 ms). dd8f11e8:\nNavGrid.loadStaticFlowfields copies a field's cells into a SharedArrayBuffer once on the page, so every init message\nshares them (the workers only read them, and register any Int8Array as it comes); one copy in memory instead of ten.\nloadWaterfall on Buenos Aires `hour=22`, source, 2 runs, cold and warm, 2026-11-18 23:05: `init data` to `init sent`\n53 ms warm (205 before, the probe sitting at 22:00), 62 cold (196); first frame warm 2 637 and 2 684 ms (2 879 and 2 770\nbefore). Predator by night has no static flowfield. spritesheetMetadata goes to every worker too, but spatial, physics\nand particle code read the registry as well (particleEmitter, collider), so it is left as is.",
+      "text": "**SST-10, the flowfields: the barrio's page sent its ten workers' init messages in 205 ms, now 53 ms; its first frame\non a warm visit about 2.83 -> 2.66 s.** A probe (timing each init postMessage, and a structured clone of each key of the\ninit data) read about 20 ms per worker's message (the renderer's 38 ms), most of it `staticFlowfields`, whose Int8Array\ncells each message copied (23 ms for one clone; spritesheetMetadata 7.8 ms, the rest under 2 ms). dd8f11e8:\nNavGrid.loadStaticFlowfields copies a field's cells into a SharedArrayBuffer once on the page, so every init message\nshares them (the workers only read them, and register any Int8Array as it comes); one copy in memory instead of ten.\nloadWaterfall on Buenos Aires `hour=22`, source, 2 runs, cold and warm, 2026-11-18 22:56: `init data` to `init sent`\n53 ms warm (205 before, the probe sitting at 22:16), 62 cold (196); first frame warm 2 637 and 2 684 ms (2 879 and 2 770\nbefore). Predator by night has no static flowfield. spritesheetMetadata goes to every worker too, but spatial, physics\nand particle code read the registry as well (particleEmitter, collider), so it is left as is.",
       "commits": [
         "dd8f11e8"
       ]
@@ -38253,11 +38253,11 @@
     {
       "id": "R-1500",
       "date": "2026-11-18",
-      "time": "22:05",
+      "time": "22:13",
       "timeFrom": "recorded",
       "title": "SST-12's second part, read: the physics worker's 16 siblings take 760 to 1 335 ms of a source start, but in Predator it ends with the atlas and the workers' scripts; the parallel load waits",
       "verdict": "note",
-      "text": "**SST-12's second part, read: the physics worker spends 760 to 880 ms (Predator by night) and 1 335 ms (the barrio) of\na source build's start on its 16 sibling scripts, one synchronous importScripts after another; but in Predator it now\nends with the atlas and the workers' scripts, so a parallel load would gain there only once those come down too.**\n4f2cd68f marks weedjsPost.js's start and its siblings loaded (with the worker's origin). loadWaterfall, source, Predator\n`light3d=1&hour=22` 3 runs and the barrio `hour=22` 2 runs, cold and warm, 2026-11-18 21:35 to 22:05:\n\n| ms after loadScene (warm, median) | Predator | the barrio |\n|---|---|---|\n| physics: worker origin, weedjsPost started, siblings loaded | 44, 241, 1 003 | 61, 398, 1 733 |\n| the engine block answered (`box2d block`) | 1 040 | 1 819 (1 296 in a later sitting) |\n| the atlas branch done | 1 090 | 1 626 (1 210) |\n| logic0's boot scripts done | 1 076 | 1 901 |\n\nOne mark per sibling (a probe, not kept): 10 to 175 ms each, not in proportion to size (the 31 KB command ring 110 to\n175 ms, a 6 KB file 7 to 46), the latency of a request among the ~2 000 a source start makes (435 different files:\nevery worker fetches its own 160 to 220 modules, the shared ones 7 times a visit; the bench server answers in 1.3 ms at\nthe median). Serving the scripts cacheable (an experiment, max-age, not kept) cut the siblings to 508 ms and the atlas\nworker's modules 674 -> 485 ms, but logic's modules stayed at about 700 ms and the first frame did not move (warm 1.76\nagainst 1.60 s, noisy): the floor of a source start is the workers' own module and script evaluation (SST-14), with the\natlas (SST-13) and physics just under it. So the parallel sibling load (fetch them at once in an entry script, then run\nthem in order from blob URLs, as the bundle does) waits: it would take about 100 ms off the barrio's warm start, where\nphysics still ends last, and nothing off Predator's.",
+      "text": "**SST-12's second part, read: the physics worker spends 760 to 880 ms (Predator by night) and 1 335 ms (the barrio) of\na source build's start on its 16 sibling scripts, one synchronous importScripts after another; but in Predator it now\nends with the atlas and the workers' scripts, so a parallel load would gain there only once those come down too.**\n4f2cd68f marks weedjsPost.js's start and its siblings loaded (with the worker's origin). loadWaterfall, source, Predator\n`light3d=1&hour=22` 3 runs and the barrio `hour=22` 2 runs, cold and warm, 2026-11-18 21:56 to 22:13:\n\n| ms after loadScene (warm, median) | Predator | the barrio |\n|---|---|---|\n| physics: worker origin, weedjsPost started, siblings loaded | 44, 241, 1 003 | 61, 398, 1 733 |\n| the engine block answered (`box2d block`) | 1 040 | 1 819 (1 296 in a later sitting) |\n| the atlas branch done | 1 090 | 1 626 (1 210) |\n| logic0's boot scripts done | 1 076 | 1 901 |\n\nOne mark per sibling (a probe, not kept): 10 to 175 ms each, not in proportion to size (the 31 KB command ring 110 to\n175 ms, a 6 KB file 7 to 46), the latency of a request among the ~2 000 a source start makes (435 different files:\nevery worker fetches its own 160 to 220 modules, the shared ones 7 times a visit; the bench server answers in 1.3 ms at\nthe median). Serving the scripts cacheable (an experiment, max-age, not kept) cut the siblings to 508 ms and the atlas\nworker's modules 674 -> 485 ms, but logic's modules stayed at about 700 ms and the first frame did not move (warm 1.76\nagainst 1.60 s, noisy): the floor of a source start is the workers' own module and script evaluation (SST-14), with the\natlas (SST-13) and physics just under it. So the parallel sibling load (fetch them at once in an entry script, then run\nthem in order from blob URLs, as the bundle does) waits: it would take about 100 ms off the barrio's warm start, where\nphysics still ends last, and nothing off Predator's.",
       "commits": [
         "4f2cd68f",
         "e1c31489"
@@ -38275,11 +38275,11 @@
     {
       "id": "R-1502",
       "date": "2026-11-18",
-      "time": "22:10",
+      "time": "22:15",
       "timeFrom": "recorded",
       "title": "N-312 filed: the barrio's preload fetches its files after the workers are ready (200 ms), then loadBarrio takes 440 ms",
       "verdict": "note",
-      "text": "**N-312 filed (demo): the barrio's preload fetches its floor, its traffic and its scene file only once the workers are\nready, then spends 440 ms in loadBarrio.** Load marks in BuenosAiresScene.preload (a probe, not kept), loadWaterfall\n`hour=22`, source, 2 runs, warm, 2026-11-18 22:10: workers ready 1 743 ms after loadScene, the three files fetched\n1 944, floor and traffic filled 1 956, loadBarrio done 2 395 (its things spawned), cars 2 402, people 2 409, preload 2 409;\ncreate and createNewGame then 2 410 -> 2 701. The fetches (about 200 ms) could start when the scene's module loads and be\nawaited in preload, off the engine's load; or the engine could fetch a scene's own files with its assets (an API choice\nfor the owner). loadBarrio's 440 ms is the next thing to read there."
+      "text": "**N-312 filed (demo): the barrio's preload fetches its floor, its traffic and its scene file only once the workers are\nready, then spends 440 ms in loadBarrio.** Load marks in BuenosAiresScene.preload (a probe, not kept), loadWaterfall\n`hour=22`, source, 2 runs, warm, 2026-11-18 22:15: workers ready 1 743 ms after loadScene, the three files fetched\n1 944, floor and traffic filled 1 956, loadBarrio done 2 395 (its things spawned), cars 2 402, people 2 409, preload 2 409;\ncreate and createNewGame then 2 410 -> 2 701. The fetches (about 200 ms) could start when the scene's module loads and be\nawaited in preload, off the engine's load; or the engine could fetch a scene's own files with its assets (an API choice\nfor the owner). loadBarrio's 440 ms is the next thing to read there."
     },
     {
       "id": "R-1483",
@@ -38293,35 +38293,35 @@
     {
       "id": "R-1503",
       "date": "2026-11-18",
-      "time": "23:55",
+      "time": "23:24",
       "timeFrom": "recorded",
       "title": "SST-15: physics primed before the start: Predator by night's first physics step 197 -> 56 ms warm (100 cold), the start about 96 ms later",
       "verdict": "kept",
-      "text": "**SST-15: Predator by night's first physics step after the start took 197 ms, 138 of them making the spawned world's\nbodies and draining its commands; with the prime before the start it takes 56 ms warm (100 cold), and the start comes\nabout 96 ms later.** The load waterfall's \"longest own step after the start\" read physics at >= 128 ms (its histogram's\ntop) in every Predator run, source and bundle. A probe (each of the first six steps' phases, posted as load marks, not\nkept), loadWaterfall `light3d=1&hour=22`, source, 2026-11-18 23:45: step 1 = syncBodies 90.8 ms (18 248 bodies made),\ndrainCommands 47.5 ms (52 696 commands), Box2D's step 51.4 ms (every contact new), after 5.5; steps 2 and 3 15 and 18 ms.\nf3e180ec: the scene, once its world is spawned (after createNewGame and the spawn flush), sends the physics worker\n'prime' and waits for 'primeDone' (10 s at most, then the first step does it as before); the host runs weedjsPrime\n(weedjsPost.js: syncBodies, drainCommands, syncJoints, what the first step does before stepping, in that order; no step,\nno time) and answers with its marks, also after a Box2D abort. The same probe on top, 2 runs, cold and warm,\n2026-11-18 23:55: step 1 sync 0, drain 0, Box2D 45.8 ms warm (86.8 cold) + 8 to 11 after; physics' longest own step in\nthe first seconds 56 ms warm (>= 128 before), 100 cold; `world` -> `physics primed` 96 ms warm; first frame warm 1 708\nand 1 735 ms (1 583 to 1 607 before). tests/node/physicsPrime.test.js. Next: Box2D's first step itself (pairs and\ncontacts of every new proxy: a collide-only export run in the prime), and the body creation's cost (5 us a body, about\n3 commands each).",
+      "text": "**SST-15: Predator by night's first physics step after the start took 197 ms, 138 of them making the spawned world's\nbodies and draining its commands; with the prime before the start it takes 56 ms warm (100 cold), and the start comes\nabout 96 ms later.** The load waterfall's \"longest own step after the start\" read physics at >= 128 ms (its histogram's\ntop) in every Predator run, source and bundle. A probe (each of the first six steps' phases, posted as load marks, not\nkept), loadWaterfall `light3d=1&hour=22`, source, 2026-11-18 23:21: step 1 = syncBodies 90.8 ms (18 248 bodies made),\ndrainCommands 47.5 ms (52 696 commands), Box2D's step 51.4 ms (every contact new), after 5.5; steps 2 and 3 15 and 18 ms.\nf3e180ec: the scene, once its world is spawned (after createNewGame and the spawn flush), sends the physics worker\n'prime' and waits for 'primeDone' (10 s at most, then the first step does it as before); the host runs weedjsPrime\n(weedjsPost.js: syncBodies, drainCommands, syncJoints, what the first step does before stepping, in that order; no step,\nno time) and answers with its marks, also after a Box2D abort. The same probe on top, 2 runs, cold and warm,\n2026-11-18 23:24: step 1 sync 0, drain 0, Box2D 45.8 ms warm (86.8 cold) + 8 to 11 after; physics' longest own step in\nthe first seconds 56 ms warm (>= 128 before), 100 cold; `world` -> `physics primed` 96 ms warm; first frame warm 1 708\nand 1 735 ms (1 583 to 1 607 before). tests/node/physicsPrime.test.js. Next: Box2D's first step itself (pairs and\ncontacts of every new proxy: a collide-only export run in the prime), and the body creation's cost (5 us a body, about\n3 commands each).",
       "commits": [
         "f3e180ec"
       ]
     },
     {
       "id": "R-1504",
-      "date": "2026-11-19",
-      "time": "00:10",
+      "date": "2026-11-18",
+      "time": "23:29",
       "timeFrom": "recorded",
       "title": "SST-16: the atlas cache entry decoded beside its key: Predator by night's atlas 84 ms sooner on a warm source start (1 090 -> 1 006 ms)",
       "verdict": "kept",
-      "text": "**SST-16: the atlas cache's entry decoded while its key is computed: Predator by night's atlas reaches the page 84 ms\nsooner on a warm source start (1 090 -> 1 006 ms), the decode ending at 895 instead of 987.** The bundle's waterfall\n(2026-11-18 23:30, main 15c651ba, 3 runs warm, first frame about 880 ms) showed the atlas branch as its critical path:\nthe key hashed every source (113 ms after the worker's modules) and only then was the entry read and its PNG decoded\n(145 ms). An atlas's slot holds one entry (writeAtlasCache drops the others), so 6753b301 reads the slot's entry and\nstarts its decode at once, beside the key's hashing, and keeps it only when its key is the key computed (another key:\nits bitmaps closed, packed as before; a cache that fails to read: no cache, as before). readAtlasCacheSlot and\natlasCacheSlotOf in atlasCache.js; a test holds the sources' fetches and sees the decode start first, and a stale\nentry decoded then dropped. loadWaterfall source, 2 runs, 2026-11-19 00:10: atlas worker modules 641, key 806, decoded\n895, bitmaps 971, page `atlas` 1 006 (674, 796, 987, 1 066, 1 090 before); assets now wait for the engine block (1 025),\n1 062 against 1 097. The bundle's number comes with the next dist.",
+      "text": "**SST-16: the atlas cache's entry decoded while its key is computed: Predator by night's atlas reaches the page 84 ms\nsooner on a warm source start (1 090 -> 1 006 ms), the decode ending at 895 instead of 987.** The bundle's waterfall\n(2026-11-18 23:18, main 15c651ba, 3 runs warm, first frame about 880 ms) showed the atlas branch as its critical path:\nthe key hashed every source (113 ms after the worker's modules) and only then was the entry read and its PNG decoded\n(145 ms). An atlas's slot holds one entry (writeAtlasCache drops the others), so 6753b301 reads the slot's entry and\nstarts its decode at once, beside the key's hashing, and keeps it only when its key is the key computed (another key:\nits bitmaps closed, packed as before; a cache that fails to read: no cache, as before). readAtlasCacheSlot and\natlasCacheSlotOf in atlasCache.js; a test holds the sources' fetches and sees the decode start first, and a stale\nentry decoded then dropped. loadWaterfall source, 2 runs, 2026-11-18 23:29: atlas worker modules 641, key 806, decoded\n895, bitmaps 971, page `atlas` 1 006 (674, 796, 987, 1 066, 1 090 before); assets now wait for the engine block (1 025),\n1 062 against 1 097. The bundle's number comes with the next dist.",
       "commits": [
         "6753b301"
       ]
     },
     {
       "id": "R-1505",
-      "date": "2026-11-19",
-      "time": "00:35",
+      "date": "2026-11-18",
+      "time": "23:38",
       "timeFrom": "recorded",
       "title": "SST-17: SET_TRANSFORMs claimed before a sync skipped for the bodies it made: Predator by night's physics prime 96 -> 62 ms warm",
       "verdict": "kept",
-      "text": "**SST-17: Predator by night's physics prime 96 -> 62 ms warm (103 -> 70 cold): the 36 496 SET_TRANSFORM commands its\nspawns left, two per body, no longer move bodies made in the same sync.** A probe counting the prime's commands by op\n(2026-11-19 00:20, not kept): SET_TRANSFORM 36 496 and SET_FIXED_ROTATION 16 200 for 18 248 bodies. A spawn's x and y\nsetters each write the column and enqueue the pose; physics then makes the body from the columns and drained both\ncommands after it, each moving the body's broadphase proxy, waking it and marking it teleported. A first fix that compared\na command's pose with the body's creation pose was wrong (the x setter's command carries the old y: applied, it moved the\nbody, and the y setter's matching command was then skipped) and was not committed. b463325c: the setter writes the columns\nbefore it claims its ring slot (a CAS on the write position), so a command claimed before the sync began is one the body\nmade in that sync already reflects; the sync reads the ring's write position first (commandRingWritePosition), the drain\nhands each SET_TRANSFORM its position, and a command below that mark for a body made in this sync is skipped (int32\npositions compared by difference). Spawns during play skip the same commands. tests/node/commandRingPositions.test.js.\nloadWaterfall source, 2 runs, 2026-11-19 00:35: `world` -> `physics primed` 62 ms warm and 70 cold (96 and 103 before);\nphysics' longest own step after the start 57 ms warm (56); first frame warm 1 636 and 1 597 ms (1 681 and 1 666). The\nfixed-rotation commands stay: their handler also zeroes the angular velocity and the rotation columns.",
+      "text": "**SST-17: Predator by night's physics prime 96 -> 62 ms warm (103 -> 70 cold): the 36 496 SET_TRANSFORM commands its\nspawns left, two per body, no longer move bodies made in the same sync.** A probe counting the prime's commands by op\n(2026-11-18 23:32, not kept): SET_TRANSFORM 36 496 and SET_FIXED_ROTATION 16 200 for 18 248 bodies. A spawn's x and y\nsetters each write the column and enqueue the pose; physics then makes the body from the columns and drained both\ncommands after it, each moving the body's broadphase proxy, waking it and marking it teleported. A first fix that compared\na command's pose with the body's creation pose was wrong (the x setter's command carries the old y: applied, it moved the\nbody, and the y setter's matching command was then skipped) and was not committed. b463325c: the setter writes the columns\nbefore it claims its ring slot (a CAS on the write position), so a command claimed before the sync began is one the body\nmade in that sync already reflects; the sync reads the ring's write position first (commandRingWritePosition), the drain\nhands each SET_TRANSFORM its position, and a command below that mark for a body made in this sync is skipped (int32\npositions compared by difference). Spawns during play skip the same commands. tests/node/commandRingPositions.test.js.\nloadWaterfall source, 2 runs, 2026-11-18 23:38: `world` -> `physics primed` 62 ms warm and 70 cold (96 and 103 before);\nphysics' longest own step after the start 57 ms warm (56); first frame warm 1 636 and 1 597 ms (1 681 and 1 666). The\nfixed-rotation commands stay: their handler also zeroes the angular velocity and the rotation columns.",
       "commits": [
         "b463325c"
       ]
