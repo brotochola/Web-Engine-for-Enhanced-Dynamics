@@ -1724,6 +1724,25 @@ class Scene {
    *   demand (the inspector, the download)
    * @param {object} [compiledAdobeAssets]
    */
+  /**
+   * SST-19: the atlas's pictures transferred to the renderer now ('atlasBitmaps'), before the init data is built: it
+   * makes their sources and uploads them while the page and the other workers go on. The atlas keeps null in their
+   * place (the init carries no picture; loadSpritesheets takes the early ones).
+   * @param {{ imageBitmap?: ImageBitmap | null, mapsBitmap?: ImageBitmap | null }} atlas
+   */
+  _postAtlasEarly(atlas) {
+    const renderer = this.workers?.renderer;
+    if (!renderer || !atlas?.imageBitmap) return;
+    const imageBitmap = atlas.imageBitmap;
+    const mapsBitmap = atlas.mapsBitmap || null;
+    renderer.postMessage(
+      { msg: 'atlasBitmaps', sheets: { bigAtlas: { imageBitmap, mapsBitmap } } },
+      mapsBitmap ? [imageBitmap, mapsBitmap] : [imageBitmap],
+    );
+    atlas.imageBitmap = null;
+    atlas.mapsBitmap = null;
+  }
+
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
     const { json, imageBitmap, mapsBitmap = null, decals = null, inspect = null } = atlas;
     // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
@@ -1997,6 +2016,9 @@ class Scene {
         throw error;
       }
     })();
+
+    // SST-19: the atlas's pictures to the renderer as soon as it is in, so it uploads them while the rest loads.
+    atlasPromise.then((atlas) => this._postAtlasEarly(atlas), () => {});
 
     const flowfieldsPromise = imageUrls?.flowfields
       ? NavGrid.loadStaticFlowfields(

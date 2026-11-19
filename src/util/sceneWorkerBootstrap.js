@@ -760,7 +760,8 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
 
   const transferables = [
     ...Object.values(scene.loadedTextures),
-    ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.imageBitmap),
+    // SST-19: the atlas's pictures went to the renderer before (null here).
+    ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.imageBitmap).filter(Boolean),
     ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.mapsBitmap).filter(Boolean),
     ...Object.values(tilesetBitmaps),
     ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
