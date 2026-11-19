@@ -58,6 +58,7 @@ import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRa
 import { readMovedBodiesHeader, copyMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { tickBucketPhase } from '../util/logicOwner.js';
 import { addWaitMs } from '../util/waitMeter.js';
+import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import { HEADER_BYTES, LOGIC_SLOT0, MAX_LOGIC, SLOT_BYTES, TIME_ORIGIN } from '../util/frameClock.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
@@ -708,16 +709,7 @@ class SpatialWorker extends AbstractWorker {
    * Rebuilds owned grid rows and computes neighbors for entities in those rows
    */
   update(deltaTime, dtRatio, resuming) {
-    // Reset stats
-    this.entitiesProcessedThisFrame = 0;
-    this.neighborsFoundThisFrame = 0;
-    this.cellsCheckedThisFrame = 0;
-    this.rebuildTimeThisFrame = 0;
-    this.neighborSearchTimeThisFrame = 0;
-    this.neighborsReusedThisFrame = 0;
-    this.neighborsRebuiltThisFrame = 0;
-    this.neighborsPublishedThisFrame = 0;
-    this.sleepNeighborSkipsThisFrame = 0;
+    this._resetFrameCounters();
 
     // STEP 1: Rebuild grid (only owned rows), or rewrite it for what changed (E-126)
     const detail = this.collectDetailedStats;
@@ -741,6 +733,65 @@ class SpatialWorker extends AbstractWorker {
     if (detail) {
       this.neighborSearchTimeThisFrame = performance.now() - startTime;
     }
+  }
+
+  /** The per-frame counters update() and the prime start from (reportFPS publishes a frame's). */
+  _resetFrameCounters() {
+    this.entitiesProcessedThisFrame = 0;
+    this.neighborsFoundThisFrame = 0;
+    this.cellsCheckedThisFrame = 0;
+    this.rebuildTimeThisFrame = 0;
+    this.neighborSearchTimeThisFrame = 0;
+    this.neighborsReusedThisFrame = 0;
+    this.neighborsRebuiltThisFrame = 0;
+    this.neighborsPublishedThisFrame = 0;
+    this.sleepNeighborSkipsThisFrame = 0;
+  }
+
+  /**
+   * SST-21: the scene's prime before the start (Scene._primeSpatial), in two rounds, since a search reads every worker's
+   * cells: 'grid' builds this worker's rows of the grid (primeGrid), 'neighbors', once every spatial worker has its rows,
+   * every list its rows own (primeNeighbors). Each answers 'spatialPrimeDone' with its load marks, after a throw too.
+   */
+  handleCustomMessage(data) {
+    if (data?.msg !== 'spatialPrime') {
+      super.handleCustomMessage(data);
+      return;
+    }
+    try {
+      if (data.phase === 'grid') {
+        this.primeGrid();
+        loadMark('grid primed');
+      } else {
+        this.primeNeighbors();
+        loadMark('neighbors primed');
+      }
+    } finally {
+      self.postMessage({ msg: 'spatialPrimeDone', id: data.id | 0, loadMarks: takeLoadMarks() });
+    }
+  }
+
+  /**
+   * SST-21: the prime's first round, update()'s first step before the start: this worker's rows of the grid from the
+   * poses the spawns wrote (the full rebuild, or E-126's latch), and the pose generation.
+   */
+  primeGrid() {
+    this._resetFrameCounters();
+    this._rebuildGrid();
+    if (this._poseChanged || !this._poseGenShared) Atomics.add(this._poseGen, 0, 2);
+    this._poseChanged = false;
+  }
+
+  /**
+   * SST-21: the prime's second round, update()'s second step: every list this worker's rows own, searched and published
+   * by the frame's own search (no branch added to its loop). Logic has run no frame and no list exists yet, so the
+   * schedule skips none (E-200 skips only a list it has) and every entity with a visualRange is searched; its reuse and
+   * its stagger start here, so the first frames after the start rebuild only what those say.
+   */
+  primeNeighbors() {
+    this._resetFrameCounters();
+    this._findNeighbors();
+    this._flushWasmPublish();
   }
 
   /**

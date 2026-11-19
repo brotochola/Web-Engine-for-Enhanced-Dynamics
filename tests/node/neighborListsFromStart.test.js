@@ -5,12 +5,15 @@ import { Collider } from '../../src/components/collider.js';
 import { Transform } from '../../src/components/transform.js';
 import { Grid } from '../../src/core/grid.js';
 import { setupSpatialKernel } from '../bench/spatialWorkerMicrobench.mjs';
+import { postedMessages } from '../bench/workerHarness.mjs';
 
 // SST-21: every entity with a visualRange gets its neighbour list (that is what a visualRange is for), whatever its
 // code has read so far, and an entity without one gets none. E-176 learnt the readers at run time instead: no type was
 // marked before logic's first frame, so spatial's first frame built no list, its second built them all at once (Predator
-// by night: 10 000 lists, 49 ms of search and 10 of publish), and logic's first frame read empty lists. On real spatial
-// workers (spatialWorkerMicrobench's setupSpatialKernel), Predator's spatial settings and classes.
+// by night: 10 000 lists, 49 ms of search and 10 of publish), and logic's first frame read empty lists. And the scene
+// primes the spatial workers before the start (Scene._primeSpatial): every worker's grid, then every list, so the first
+// frames after it rebuild only what their schedule says. On real spatial workers (spatialWorkerMicrobench's
+// setupSpatialKernel), Predator's spatial settings and classes.
 
 const N = 2000;
 const WORLD = { worldWidth: 3000, worldHeight: 2000 };
@@ -76,7 +79,66 @@ test('the first frame builds the list of every entity with a visualRange, of any
   const k = await setupSpatialKernel({ n: N, workers: 1, types: 'predator', spatial: WORLD });
   k.frame();
   assertRowsComplete(k, 'frame 1');
-  let withRange = 0;
-  for (let a = 0; a < k.n; a++) if (Collider.visualRange[a] > 0) withRange++;
-  assert.equal(k.workers[0].neighborsRebuiltThisFrame, withRange, 'frame 1 searched every entity with a visualRange');
+  assert.equal(rebuilt(k), withRange(k), 'frame 1 searched every entity with a visualRange');
+});
+
+/** Lists the workers searched in their last frame or prime round. */
+function rebuilt(k) {
+  let n = 0;
+  for (const w of k.workers) n += w.neighborsRebuiltThisFrame;
+  return n;
+}
+
+function withRange(k) {
+  let n = 0;
+  for (let a = 0; a < k.n; a++) if (Transform.active[a] && Collider.visualRange[a] > 0) n++;
+  return n;
+}
+
+/**
+ * Scene._primeSpatial's two rounds, through the workers' own message handler: every worker's grid, then every worker's
+ * lists. Each round's answers come back with their id and load marks.
+ */
+async function prime(k) {
+  const posted = postedMessages();
+  let id = 0;
+  for (const phase of ['grid', 'neighbors']) {
+    id++;
+    const from = posted.length;
+    for (const w of k.workers) await w.handleMessage({ data: { msg: 'spatialPrime', id, phase } });
+    const answers = posted.slice(from).filter((m) => m && m.msg === 'spatialPrimeDone');
+    assert.equal(answers.length, k.workers.length, `every worker answers the ${phase} round`);
+    for (const m of answers) {
+      assert.equal(m.id, id);
+      assert.ok(m.loadMarks.includes(`${phase} primed`), `the ${phase} round's mark`);
+    }
+  }
+}
+
+test('the prime builds every list before the first frame, on two spatial workers, and the first frame rebuilds few', async () => {
+  const k = await setupSpatialKernel({ n: N, workers: 2, types: 'predator', spatial: WORLD });
+  await prime(k);
+  const primed = rebuilt(k);
+  assert.equal(primed, withRange(k), 'the prime searched every entity with a visualRange');
+  assertRowsComplete(k, 'after the prime');
+  // Spatial's first frame after the start (logic's frame 1): the lists its schedule and the skin say, where without the
+  // prime it searched every one (the test above).
+  k.frame();
+  const first = rebuilt(k);
+  assert.ok(first < primed / 4, `the first frame after the prime rebuilt ${first} lists of ${primed}`);
+});
+
+test('the prime\'s lists are the ones a frame builds when every list is due, every worker\'s rows read', async () => {
+  const k = await setupSpatialKernel({ n: N, workers: 2, still: true, types: 'predator', spatial: WORLD });
+  await prime(k);
+  const primedRows = [];
+  for (let a = 0; a < k.n; a++) primedRows.push(row(a));
+  // Every list due again: none kept by the schedule or the skin.
+  for (const w of k.workers) {
+    w._candidateCountOf.fill(0);
+    w._entityReuseInitialized.fill(0);
+  }
+  k.frame();
+  assert.equal(rebuilt(k), withRange(k));
+  for (let a = 0; a < k.n; a++) assert.deepEqual(row(a), primedRows[a], `entity ${a}'s list`);
 });
