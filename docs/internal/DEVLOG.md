@@ -6,6 +6,44 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 19 November 2026 (small hours) — A Start Without the Stumble
+
+The bundle's load waterfall, the start a player gets, showed one thing the source builds had hidden under their slower
+loads: the first physics step after the start took about 200 ms. Physics made the scene's bodies in it, 18 000 of them in
+Predator by night, drained the 52 000 commands their spawns had queued, then stepped with every contact new. A dozen frames
+lost as the game begins, every time.
+
+**Ready before the start.** The owner's rule for this plan is that a game starts with everything ready, so the bodies are
+now made before it: once the world is spawned, the scene asks physics to make them and waits. That moved about 140 ms into
+the load, so two more changes followed to pay for it. Most of those commands were each spawned body's two position commands,
+sent by its x and y setters and applied to a body physics had just made from those same values; a body made in a sync no
+longer takes the commands its own spawn queued before it, and a setter inside a spawn no longer sends one. And physics
+now makes the bodies while logic is still spawning the world, beside it on another core, instead of after it: what is left
+for it to do once the spawns are in takes 4 ms. The last of it was Box2D meeting every pair at once in its first step; a step of no time, which finds
+the pairs and contacts without solving anything, now runs in the prime too. The first physics step after the start takes
+18 ms where it took 200: as long as any other.
+
+**The developer's reload.** A source build fetches each worker's modules one by one, and the physics worker loaded its
+sixteen scripts in a row, a second in the barrio; its entry now fetches them all at once and runs them in order. The
+renderer used to upload the atlas only once its init came; the page now hands it the pictures as soon as the atlas is in.
+The debug overlay, which every worker of a source build evaluated through the engine's index, loads when a game shows it.
+Predator by night now reaches its first frame from source in about 1.6 s on a warm reload.
+
+**And physics, again.** Box2D can put its awake bodies back in id order so its step reads memory in order; it cost one
+step 6.5 ms, which made it lose on the frame's tail. Spread over the next few steps and run on Box2D's own threads, it now
+costs 1.3 ms and then 0.5 ms a step, and it is on by default: Predator's physics step 12 % cheaper at its biggest crowd,
+its tail lower too.
+
+**The whole plan, measured once.** Against the engine from before it, timed from the moment the page asks for the
+scene: Predator by night starts in 913 ms from the bundle on a warm visit, where it took 3.1 s (-71 %), and in 1.6 s from
+source (3.5 s); the barrio in 1.9 s from the bundle (3.5 s). A cold visit gains 9 to 43 %. bunnyMark, with almost nothing
+to load, starts as it did.
+
+**Also.** A scene can list its own files (a level, a map, a binary table) beside its images and sounds, and get them
+before preload() runs; the barrio fetches its floor and its scene file that way. The atlas cache names a bundle's code by
+the hash of the sources it was built from. One idea was dropped on paper: starting the atlas worker when the engine is
+imported, which would start it about ten milliseconds earlier, since a page's modules all load before any of them runs.
+
 ## Wednesday 18 November 2026 (late night) — Spatial's Long Frames, Spread Out
 
 The start-up work left two scenes breaking on the same thing: spatial's tail. Predator's capacity was not set by
