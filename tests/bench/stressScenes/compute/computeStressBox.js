@@ -20,7 +20,6 @@ export class ComputeStressBox extends GameObject {
     this.collider.shapeType = ShapeType.Box;
     this.collider.width = width;
     this.collider.height = height;
-    this.collider.visualRange = 64;
     this.setSprite('_white');
     this.setAnchor(0.5, 0.5);
     this.setScale(Math.max(width, height) / 14);

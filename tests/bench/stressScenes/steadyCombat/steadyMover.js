@@ -11,7 +11,6 @@ export class SteadyMover extends GameObject {
     this._vx = vx;
     this._vy = vy;
     this.collider.radius = radius;
-    this.collider.visualRange = 180;
     this.setSprite('ball');
     this.setScale((radius * 2) / 14);
     this.setAnchor(0.5, 0.5);
