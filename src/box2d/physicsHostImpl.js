@@ -21,7 +21,9 @@
   var TIME_ORIGIN = typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0;
   // SST-0 / SST-12: this worker's load marks, on the clock every thread shares (a classic script cannot import
   // src/util/loadMarks.js): posted with the engine block's answer and with the ready message.
-  var loadMarks = ['host evaluated', TIME_ORIGIN + performance.now()];
+  // weedjsPost.js starts the list (the worker's origin, its own start, its siblings loaded).
+  var loadMarks = (global.__weedPhysicsLoadMarks || []).concat('host evaluated', TIME_ORIGIN + performance.now());
+  global.__weedPhysicsLoadMarks = null;
   function loadMark(name) {
     loadMarks.push(name, TIME_ORIGIN + performance.now());
   }

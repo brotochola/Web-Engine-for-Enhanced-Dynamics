@@ -7,6 +7,13 @@
     return;
   }
 
+  // SST-12: this worker's first load marks, on the clock every thread shares (see physicsHostImpl.js, which posts
+  // them): the realm's creation, this file's start (after the glue was fetched and run) and its siblings loaded.
+  const PHYSICS_TIME_ORIGIN = performance.timeOrigin;
+  self.__weedPhysicsLoadMarks = [
+    'worker origin', PHYSICS_TIME_ORIGIN,
+    'post evaluated', PHYSICS_TIME_ORIGIN + performance.now(),
+  ];
   importScripts(
     'box2dConstantsImpl.js',
     'physicsConfigImpl.js',
@@ -25,6 +32,7 @@
     'liquidFunExtractImpl.js',
     'liquidFunUserDataListImpl.js',
   );
+  self.__weedPhysicsLoadMarks.push('siblings loaded', PHYSICS_TIME_ORIGIN + performance.now());
   const drainBox2dCommandRing = Box2dCommandRing.drainCommandRing;
   const readBox2dCommandRingOverflow = Box2dCommandRing.readCommandRingOverflow;
   const publishBox2dContactEvent = Box2dContactRing.publishContactEvent;
