@@ -1,12 +1,12 @@
 // lighting.shadowSamples: the shadow maps' taps a light pixel averages, 1 to 9 of the 3 x 3 texels around its point, the
 // same layout in GLSL and WGSL at the three lookups (the sun's map, a lamp's tile, a lamp's tile for a floor point); 5 is
-// the cross the pass always read, in its order; pixelArt reads one.
+// the cross the pass always read, in its order; pixelArt reads one. lighting.lightTileSize's range beside it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { lightingSource, shadowTapsOf } from '../../src/render/faceMap.js';
-import { LIGHTING_DEFAULTS, shadowSamplesOf } from '../../src/util/configDefaults.js';
+import { LIGHTING_DEFAULTS, lightTileSizeOf, shadowSamplesOf } from '../../src/util/configDefaults.js';
 
 const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
 const FLAGS = { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true, tiles: true };
@@ -96,10 +96,13 @@ for (const lang of LANGS) {
   });
 }
 
-test('a scene\'s shadowSamples: a whole number in range, the default\'s when missing or not a number', () => {
+test('a scene\'s shadowSamples and lightTileSize: whole numbers in range, the default\'s when missing or not a number', () => {
   assert.equal(shadowSamplesOf(undefined), 5);
   assert.equal(shadowSamplesOf({}), 5);
   assert.equal(shadowSamplesOf({ shadowSamples: '9' }), 5);
   assert.equal(shadowSamplesOf({ shadowSamples: NaN }), 5);
   assert.deepEqual([1, 9, 0, 14, 2.6, -1].map((v) => shadowSamplesOf({ shadowSamples: v })), [1, 9, 1, 9, 3, 1]);
+  assert.equal(lightTileSizeOf(undefined), 16);
+  assert.equal(lightTileSizeOf({ lightTileSize: null }), 16);
+  assert.deepEqual([8, 32, 24, 1, 1000, 12.4].map((v) => lightTileSizeOf({ lightTileSize: v })), [8, 32, 24, 4, 256, 12]);
 });

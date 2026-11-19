@@ -44,8 +44,11 @@ import {
   LAYER_KIND,
   LAYER_SCALE_MODE,
   PARTICLE_DEFAULTS,
+  LIGHT_TILE_SIZE_MAX,
+  LIGHT_TILE_SIZE_MIN,
   SHADOW_SAMPLES_MAX,
   lightBehindWallsOf,
+  lightTileSizeOf,
   normalShadingOf,
   resolveZenithalMaxHeight,
   shadowSamplesOf,
@@ -1068,6 +1071,8 @@ class PixiRenderer extends AbstractWorker {
     this._lightTilesSource = null;
     this._lightTilesUnit = 0;
     this._lightTilesMade = false;
+    /** lighting.lightTileSize: the tiles' side asked for, in px of the light pass's target (lightTileSizeOf). */
+    this._lightTileSize = LIGHTING_DEFAULTS.lightTileSize;
     /** lighting.shadowSamples: the shadow maps' taps a light pixel averages, 1 to 9 (shadowSamplesOf). */
     this._shadowSamples = LIGHTING_DEFAULTS.shadowSamples;
     // E-259: each float data source's GL texture once allocated, and its size: later uploads are a texSubImage2D on it.
@@ -5376,7 +5381,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _updateLightTiles(u, count) {
     const t = this._lightTiles;
-    if (layoutLightTiles(t, u.uViewport[0] | 0, u.uViewport[1] | 0, this.maxLights | 0, this._useWebGpu ? 64 : 1)) {
+    const rowAlign = this._useWebGpu ? 64 : 1;
+    if (layoutLightTiles(t, u.uViewport[0] | 0, u.uViewport[1] | 0, this.maxLights | 0, rowAlign, this._lightTileSize)) {
       this._lightTilesMade = false;
     }
     const cam = t.cam;
@@ -9504,11 +9510,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
       // DX-PIXELSHADOW: each world pixel lit whole, the maps read with one tap (lighting.pixelArt).
       this._pixelArtLight = lightingConfig.pixelArt === true;
-      // lighting.shadowSamples: a number outside 1..9 is clamped, anything else not a number takes the default, and it says
-      // so once.
+      // lighting.shadowSamples and lighting.lightTileSize: a number outside their range is clamped, anything else not a number
+      // takes the default, and either says so once.
       this._shadowSamples = shadowSamplesOf(lightingConfig);
       if (lightingConfig.shadowSamples !== undefined && lightingConfig.shadowSamples !== this._shadowSamples) {
         console.warn(`WeedJS: lighting.shadowSamples is a whole number from 1 to ${SHADOW_SAMPLES_MAX}, not ${JSON.stringify(lightingConfig.shadowSamples)}: the shadows take ${this._shadowSamples}`);
+      }
+      this._lightTileSize = lightTileSizeOf(lightingConfig);
+      if (lightingConfig.lightTileSize !== undefined && lightingConfig.lightTileSize !== this._lightTileSize) {
+        console.warn(`WeedJS: lighting.lightTileSize is a whole number of px from ${LIGHT_TILE_SIZE_MIN} to ${LIGHT_TILE_SIZE_MAX}, not ${JSON.stringify(lightingConfig.lightTileSize)}: the light's tiles take ${this._lightTileSize}`);
       }
       // E-205: the light pass loops over the lights of each pixel's screen tile: the same picture, faster at every light
       // count gpuPassBench measured (4 to 128). The shader keeps the loop over every light for when this is false.
