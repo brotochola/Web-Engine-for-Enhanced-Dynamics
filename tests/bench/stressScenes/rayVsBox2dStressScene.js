@@ -12,7 +12,8 @@ const SEED = 0xc0ffee;
  * Query knobs (E-57): `?singleCasts=N` sets the single sync casts per tick of the
  * box2d-single scenes; `?physicsLoad=busy` adds the bouncing balls to any of them,
  * and `?busyBalls=N` how many (800), so the physics step has a baseline over the
- * protocol floors.
+ * protocol floors. `?casts=N` (DX-SCORELOAD) sets the batched casts per tick of the other scenes (the driver's
+ * default without it), so a slower machine's scoreboard can raise their load over its floor.
  */
 function queryParam(name) {
   try {
@@ -133,7 +134,8 @@ export class RayVsBox2dStressScene extends Scene {
 
     const castsKnob = parseInt(queryParam('singleCasts'), 10);
     const singleCasts = castsKnob > 0 ? castsKnob : this.constructor.singleCasts;
-    RayStressDriver.spawn({ seed: SEED, backend, singleCasts });
+    const batchKnob = parseInt(queryParam('casts'), 10);
+    RayStressDriver.spawn({ seed: SEED, backend, singleCasts, ...(batchKnob > 0 ? { casts: batchKnob } : {}) });
 
     Camera.centerOn(worldW * 0.5, worldH * 0.5);
     Camera.setZoom(0.45);
