@@ -1,32 +1,21 @@
 import { CollisionListener } from '../components/collisionListener.js';
 import { CameraInOutListener } from '../components/cameraInOutListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
+import { ENTITY_HOOKS, definesHook } from '../core/entityHooks.js';
+
+const GATES = { CollisionListener, CameraInOutListener, JointBreakListener, DirectionalSprite };
 
 /**
- * Callbacks that only run when the entity type lists a tag component.
- * Defining one without its tag is legal and silent at runtime: the hook never
- * runs. The scene checks this once at registration (main thread) and warns.
+ * Callbacks that only run when the entity type lists a component (the hook table's gates): [hook, component].
+ * Defining one without its component is legal and silent at runtime: the hook never runs. The scene checks this once
+ * at registration (main thread) and warns. A static form counts as a method does (E-528).
  */
-const GATED_HOOKS = [
-  ['onCollisionEnter', CollisionListener],
-  ['onCollisionStay', CollisionListener],
-  ['onCollisionExit', CollisionListener],
-  ['onCollisionHit', CollisionListener],
-  ['onScreenEnter', CameraInOutListener],
-  ['onScreenExit', CameraInOutListener],
-  ['onJointBreak', JointBreakListener],
-];
-
-/** True when EntityClass (or a game base class below BaseClass) defines `name`. */
-export function definesBelow(EntityClass, BaseClass, name) {
-  let proto = EntityClass.prototype;
-  const stop = BaseClass.prototype;
-  while (proto && proto !== stop) {
-    if (Object.prototype.hasOwnProperty.call(proto, name)) return true;
-    proto = Object.getPrototypeOf(proto);
-  }
-  return false;
-}
+const GATED_HOOKS = ENTITY_HOOKS.filter((h) => h.gate !== null).map((h) => {
+  const Tag = GATES[h.gate];
+  if (Tag === undefined) throw new Error(`listenerTags: no component for the gate ${h.gate} of ${h.name}`);
+  return [h.name, Tag];
+});
 
 /**
  * Tags an entity class needs for the gated hooks it overrides but does not list.
@@ -39,7 +28,7 @@ export function missingListenerTags(EntityClass, components, BaseClass) {
   const missing = [];
   for (const [hook, Tag] of GATED_HOOKS) {
     if (components.includes(Tag)) continue;
-    if (!definesBelow(EntityClass, BaseClass, hook)) continue;
+    if (!definesHook(EntityClass, BaseClass, hook)) continue;
     let entry = missing.find((m) => m.tag === Tag);
     if (!entry) {
       entry = { tag: Tag, hooks: [] };

@@ -198,7 +198,11 @@ export class DirectionalSprite extends Component {
 
   /** The direction drawn: its name in the sheet ('left', 'downRight', '12'), or null before the first. */
   get direction() {
-    const i = this.index;
+    return DirectionalSprite.directionName(this.index);
+  }
+
+  /** Entity i's drawn direction by name, as `direction` reads it, with no instance (a static onDirectionChanged's). */
+  static directionName(i) {
     const k = DirectionalSprite.directionIndex[i];
     if (k === NO_DIRECTION) return null;
     const t = tableOf(SpriteRenderer.spritesheetId[i]);

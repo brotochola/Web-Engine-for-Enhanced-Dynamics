@@ -79,3 +79,15 @@ test('isCollidingWith with no CollisionListener anywhere in the scene warns once
   }
   assert.deepEqual(warningsFor(Hunter, Listener), []);
 });
+
+test('a static hook (E-528) counts as its method does, and onDirectionChanged needs DirectionalSprite', () => {
+  class Mine extends GameObject {
+    static components = [Collider];
+    static onCollisionEnter() {}
+    static onDirectionChanged() {}
+  }
+  const w = warningsFor(Mine);
+  assert.equal(w.length, 2);
+  assert.match(w[0], /Mine defines onCollisionEnter .*CollisionListener/);
+  assert.match(w[1], /Mine defines onDirectionChanged .*DirectionalSprite/);
+});

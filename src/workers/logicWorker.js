@@ -14,7 +14,7 @@ import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { drainMessages } from '../util/messageRing.js';
-import { definesBelow } from '../util/listenerTags.js';
+import { clearStaticHookTables, createStaticHookTables, definesHook, resolveStaticHooks } from '../core/entityHooks.js';
 import { Joint } from '../core/joint.js';
 import { Mouse } from '../core/mouse.js';
 import {
@@ -130,6 +130,12 @@ const PAIR_TABLE_MIN = 2048;
 function pairHash(minE, maxE, shift) {
   return Math.imul(Math.imul(minE, 0x9e3779b1) ^ maxE, 0x85ebca6b) >>> shift;
 }
+
+// E-528: collisionStayByType per type: no onCollisionStay, the method, or the static form. The stay walk calls the
+// pairs of every frame: its flag load tells which, so the method's path reads nothing more than before.
+const STAY_NONE = 0;
+const STAY_METHOD = 1;
+const STAY_STATIC = 2;
 
 /** Stale pairs owned by another logic worker are dropped at least this often. */
 const FOREIGN_SWEEP_FRAMES = 30;
@@ -312,6 +318,11 @@ class LogicWorker extends AbstractWorker {
     this.messageListenerByType = new Uint8Array(0);
     this.animEndListenerByType = new Uint8Array(0);
     this.anyTypeNeedsJointBreaks = false; // Scene-level kill switch
+
+    // E-528: each hook's static form by entity type (entityHooks.js), null where the instance's method runs; resolved
+    // in createGameObjectInstances. A slot for every Uint8 entity type, so one never resolved reads null. Dispatch calls
+    // a static form with the type's class as `this` (_entityClassByType) and makes no instance.
+    this.staticHooks = createStaticHookTables(256);
 
     // ========================================
     // TICK DECIMATION OPTIMIZATION
@@ -512,6 +523,34 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
+   * E-528: a hot swap copies a class's new static hooks onto it, and the dispatch tables hold the old functions: each
+   * type's are read again (adding or removing a hook needs a reload, hotSwap.js's shape check), and so is its stay flag,
+   * which says which of the two forms the stay walk calls.
+   * @param {{ url: string, version: number }} data
+   */
+  async hotSwap(data) {
+    const result = await super.hotSwap(data);
+    if (result.swapped.length > 0) {
+      const classes = this._entityClassByType;
+      for (let entityType = 0; entityType < classes.length; entityType++) {
+        const EntityClass = classes[entityType];
+        if (EntityClass === undefined) continue;
+        resolveStaticHooks(this.staticHooks, EntityClass, entityType, GameObject);
+        if (this.collisionListenerByType !== null && this.collisionListenerByType[entityType] === 1) {
+          this.collisionStayByType[entityType] = this._stayFlagOf(EntityClass, entityType);
+        }
+      }
+    }
+    return result;
+  }
+
+  /** E-528: which onCollisionStay the stay walk calls for a type: its static form (resolved first), its method, none. */
+  _stayFlagOf(EntityClass, entityType) {
+    if (this.staticHooks.onCollisionStay[entityType] !== null) return STAY_STATIC;
+    return definesHook(EntityClass, GameObject, 'onCollisionStay') ? STAY_METHOD : STAY_NONE;
+  }
+
+  /**
    * Create GameObject instances for all registered entity classes - dynamically
    * DENSE ALLOCATION: entityIndex === componentIndex for all components
    * Call after pose bind (box2dReady HEAP, or weed pose at init when physics is off).
@@ -553,6 +592,7 @@ class LogicWorker extends AbstractWorker {
     this.animEndListenerByType = new Uint8Array(numTypes);
     this.markActiveTypes = [];
     this._entityClassByType = [];
+    clearStaticHookTables(this.staticHooks);
 
     for (const classInfo of this.registeredClasses) {
       const { name, poolSize, startIndex, endIndex, entityType } = classInfo;
@@ -567,6 +607,7 @@ class LogicWorker extends AbstractWorker {
         EntityClass.entityType = entityType; // Auto-assigned entity type ID
         this._entityClassByType[entityType] = EntityClass;
         GameObject.classByType[entityType] = EntityClass;
+        resolveStaticHooks(this.staticHooks, EntityClass, entityType, GameObject);
 
         // Pre-computed typed array of all entity indices for this class
         // Uses Uint16 since max entities = 65535 (fits in 16 bits)
@@ -600,7 +641,7 @@ class LogicWorker extends AbstractWorker {
           directionalEntry = {
             activeList: EntityClass._activeList,
             entityType,
-            hook: definesBelow(EntityClass, GameObject, 'onDirectionChanged'),
+            hook: definesHook(EntityClass, GameObject, 'onDirectionChanged'),
             // E-364: the type's decimatedTypes entry when it ticks every N frames (its entities resolve on their tick frames).
             decimated: null,
           };
@@ -609,15 +650,15 @@ class LogicWorker extends AbstractWorker {
 
         if (needsCollisionCallbacks) {
           this.collisionListenerByType[entityType] = 1;
-          if (definesBelow(EntityClass, GameObject, 'onCollisionStay')) this.collisionStayByType[entityType] = 1;
+          this.collisionStayByType[entityType] = this._stayFlagOf(EntityClass, entityType);
         }
         if (needsJointBreakCallbacks) {
           this.jointBreakListenerByType[entityType] = 1;
         }
-        if (definesBelow(EntityClass, GameObject, 'onMessage')) {
+        if (definesHook(EntityClass, GameObject, 'onMessage')) {
           this.messageListenerByType[entityType] = 1;
         }
-        if (definesBelow(EntityClass, GameObject, 'onAnimationEnd')) {
+        if (definesHook(EntityClass, GameObject, 'onAnimationEnd')) {
           this.animEndListenerByType[entityType] = 1;
         }
         if (EntityClass.reportMarkActive) {
@@ -2103,6 +2144,8 @@ class LogicWorker extends AbstractWorker {
     const myIndex = this.workerIndex;
     const gameObjects = this.gameObjects;
     const pins = GameObject.forceProcessOnLogicWorker;
+    const entityType = Transform.entityType;
+    const staticShot = this.staticHooks.onGotShot;
 
     for (let c = from; c !== to; c = (c + 1) | 0) {
       const base = (c & mask) * IMPACT_FLOATS;
@@ -2116,6 +2159,17 @@ class LogicWorker extends AbstractWorker {
       const ownerId = impactData[base + 4] | 0;
       const shooterEntityType = impactData[base + 5] | 0;
 
+      // E-528: the type's static onGotShot, with no instance (an index outside the pools reads undefined: no type).
+      const type = entityType[targetId];
+      const shot = staticShot[type];
+      if (shot != null) {
+        try {
+          shot.call(this._entityClassByType[type], targetId, damage, hitX, hitY, ownerId, shooterEntityType);
+        } catch (error) {
+          this._entityThrew(error, targetId, 'onGotShot');
+        }
+        continue;
+      }
       const obj = gameObjects[targetId] ?? this._makeInstance(targetId);
       if (obj && obj.onGotShot) {
         try {
@@ -2175,17 +2229,25 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const aListens = runA && collisionFlags[entityType[a]];
     const bListens = runB && collisionFlags[entityType[b]];
-    // A throw is caught per call so the ring drain still advances its cursor.
+    // A throw is caught per call so the ring drain still advances its cursor. E-528: a type's static form, with no
+    // instance, else the instance's method.
+    const staticHit = this.staticHooks.onCollisionHit;
     if (aListens) {
       try {
-        (gameObjects[a] ?? this._makeInstance(a))?.onCollisionHit(b, px, py, nx, ny, speed);
+        const typeA = entityType[a];
+        const hitA = staticHit[typeA];
+        if (hitA !== null) hitA.call(this._entityClassByType[typeA], a, b, px, py, nx, ny, speed);
+        else (gameObjects[a] ?? this._makeInstance(a))?.onCollisionHit(b, px, py, nx, ny, speed);
       } catch (error) {
         this._entityThrew(error, a, 'onCollisionHit');
       }
     }
     if (bListens) {
       try {
-        (gameObjects[b] ?? this._makeInstance(b))?.onCollisionHit(a, px, py, -nx, -ny, speed);
+        const typeB = entityType[b];
+        const hitB = staticHit[typeB];
+        if (hitB !== null) hitB.call(this._entityClassByType[typeB], b, a, px, py, -nx, -ny, speed);
+        else (gameObjects[b] ?? this._makeInstance(b))?.onCollisionHit(a, px, py, -nx, -ny, speed);
       } catch (error) {
         this._entityThrew(error, b, 'onCollisionHit');
       }
@@ -2218,16 +2280,24 @@ class LogicWorker extends AbstractWorker {
     const aListens = runA && jointBreakFlags[entityType[entityA]];
     const bListens = runB && jointBreakFlags[entityType[entityB]];
     if (!aListens && !bListens) return;
+    // E-528: a type's static form, with no instance, else the instance's method.
+    const staticBreak = this.staticHooks.onJointBreak;
     if (aListens) {
       try {
-        (gameObjects[entityA] ?? this._makeInstance(entityA))?.onJointBreak(jointIndex, entityA, entityB);
+        const typeA = entityType[entityA];
+        const breakA = staticBreak[typeA];
+        if (breakA !== null) breakA.call(this._entityClassByType[typeA], entityA, jointIndex, entityA, entityB);
+        else (gameObjects[entityA] ?? this._makeInstance(entityA))?.onJointBreak(jointIndex, entityA, entityB);
       } catch (error) {
         this._entityThrew(error, entityA, 'onJointBreak');
       }
     }
     if (bListens) {
       try {
-        (gameObjects[entityB] ?? this._makeInstance(entityB))?.onJointBreak(jointIndex, entityA, entityB);
+        const typeB = entityType[entityB];
+        const breakB = staticBreak[typeB];
+        if (breakB !== null) breakB.call(this._entityClassByType[typeB], entityB, jointIndex, entityA, entityB);
+        else (gameObjects[entityB] ?? this._makeInstance(entityB))?.onJointBreak(jointIndex, entityA, entityB);
       } catch (error) {
         this._entityThrew(error, entityB, 'onJointBreak');
       }
@@ -2237,15 +2307,21 @@ class LogicWorker extends AbstractWorker {
   /** One inbox message: dropped if its target despawned since it was sent. */
   _onMessageEvent(target, from, nameId, gen, a, b, c, d) {
     if (Transform.active[target] === 0 || Messages.spawnGen[target] !== gen) return;
-    const obj = this.gameObjects[target] ?? this._makeInstance(target);
-    if (!obj) return;
     if (nameId === MESSAGE_ANIMATION_END) {
-      this._deliverAnimationEnd(obj, target, a, b);
+      this._deliverAnimationEnd(target, a, b);
       return;
     }
-    if (this.messageListenerByType[Transform.entityType[target]] !== 1) return;
+    const type = Transform.entityType[target];
+    if (this.messageListenerByType[type] !== 1) return;
+    // E-528: the type's static form, with no instance, else the instance's method.
+    const onMessage = this.staticHooks.onMessage[type];
     try {
-      obj.onMessage(Messages.names[nameId], from, a, b, c, d);
+      if (onMessage !== null) {
+        onMessage.call(this._entityClassByType[type], target, Messages.names[nameId], from, a, b, c, d);
+      } else {
+        const obj = this.gameObjects[target] ?? this._makeInstance(target);
+        if (obj) obj.onMessage(Messages.names[nameId], from, a, b, c, d);
+      }
     } catch (error) {
       this._entityThrew(error, target, 'onMessage');
     }
@@ -2322,18 +2398,25 @@ class LogicWorker extends AbstractWorker {
     const k = DirectionalSprite.directionIndex[e];
     DirectionalSprite.notified[e] = k;
     if (!hook || k === NO_DIRECTION) return;
-    const obj = this.gameObjects[e] ?? this._makeInstance(e);
-    if (!obj) return;
+    // E-528: the type's static form, with no instance, else the instance's method.
+    const type = Transform.entityType[e];
+    const onDirectionChanged = this.staticHooks.onDirectionChanged[type];
     try {
-      obj.onDirectionChanged(obj.directionalSprite.direction);
+      if (onDirectionChanged !== null) {
+        onDirectionChanged.call(this._entityClassByType[type], e, DirectionalSprite.directionName(e));
+      } else {
+        const obj = this.gameObjects[e] ?? this._makeInstance(e);
+        if (obj) obj.onDirectionChanged(DirectionalSprite.directionName(e));
+      }
     } catch (error) {
       this._entityThrew(error, e, 'onDirectionChanged');
     }
   }
 
   /** kind 0: sprite animation `id`; kind 1: Adobe clip `id`. Delivered by name. */
-  _deliverAnimationEnd(obj, target, kind, id) {
-    if (this.animEndListenerByType[Transform.entityType[target]] !== 1) return;
+  _deliverAnimationEnd(target, kind, id) {
+    const type = Transform.entityType[target];
+    if (this.animEndListenerByType[type] !== 1) return;
     let name;
     if (kind === 0) {
       // DX-DIRSPRITE: a directional entity hears the name it asked for ('slash', not 'slash_left').
@@ -2343,8 +2426,16 @@ class LogicWorker extends AbstractWorker {
     } else {
       name = AdobeAnimRegistry.getClipName(AdobeAnimComponent.assetId[target], id);
     }
+    if (name === undefined || name === null) name = '';
+    // E-528: the type's static form, with no instance, else the instance's method.
+    const onAnimationEnd = this.staticHooks.onAnimationEnd[type];
     try {
-      obj.onAnimationEnd(name === undefined || name === null ? '' : name);
+      if (onAnimationEnd !== null) {
+        onAnimationEnd.call(this._entityClassByType[type], target, name);
+      } else {
+        const obj = this.gameObjects[target] ?? this._makeInstance(target);
+        if (obj) obj.onAnimationEnd(name);
+      }
     } catch (error) {
       this._entityThrew(error, target, 'onAnimationEnd');
     }
@@ -2353,7 +2444,10 @@ class LogicWorker extends AbstractWorker {
   /** Report a throw from game code on one entity (class + index + phase). Error path only. */
   _entityThrew(error, entityIndex, phase) {
     const obj = entityIndex >= 0 ? this.gameObjects[entityIndex] : null;
-    const className = obj && obj.constructor ? obj.constructor.name : '';
+    // E-528: a static hook's entity may have no instance; its class by type then.
+    const EntityClass =
+      obj && obj.constructor ? obj.constructor : entityIndex >= 0 ? this._entityClassByType[Transform.entityType[entityIndex]] : null;
+    const className = EntityClass ? EntityClass.name : '';
     reportWorkerError(error, phase, className, entityIndex);
   }
 
@@ -2607,16 +2701,24 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const aListens = (sides & 1) !== 0 && collisionFlags[entityType[minE]];
     const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
+    // E-528: a type's static form, with no instance, else the instance's method.
+    const staticExit = this.staticHooks.onCollisionExit;
     if (aListens) {
       try {
-        (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionExit(maxE);
+        const typeA = entityType[minE];
+        const exitA = staticExit[typeA];
+        if (exitA !== null) exitA.call(this._entityClassByType[typeA], minE, maxE);
+        else (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionExit(maxE);
       } catch (error) {
         this._entityThrew(error, minE, 'onCollisionExit');
       }
     }
     if (bListens) {
       try {
-        (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionExit(minE);
+        const typeB = entityType[maxE];
+        const exitB = staticExit[typeB];
+        if (exitB !== null) exitB.call(this._entityClassByType[typeB], maxE, minE);
+        else (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionExit(minE);
       } catch (error) {
         this._entityThrew(error, maxE, 'onCollisionExit');
       }
@@ -2675,16 +2777,24 @@ class LogicWorker extends AbstractWorker {
     const aListens = (sides & sideA) !== 0 && collisionFlags[entityType[rawA]];
     const bListens = (sides & (3 ^ sideA)) !== 0 && collisionFlags[entityType[rawB]];
     if (!aListens && !bListens) return;
+    // E-528: a type's static form, with no instance, else the instance's method.
+    const staticEnter = this.staticHooks.onCollisionEnter;
     if (aListens) {
       try {
-        (gameObjects[rawA] ?? this._makeInstance(rawA))?.onCollisionEnter(rawB);
+        const typeA = entityType[rawA];
+        const enterA = staticEnter[typeA];
+        if (enterA !== null) enterA.call(this._entityClassByType[typeA], rawA, rawB);
+        else (gameObjects[rawA] ?? this._makeInstance(rawA))?.onCollisionEnter(rawB);
       } catch (error) {
         this._entityThrew(error, rawA, 'onCollisionEnter');
       }
     }
     if (bListens) {
       try {
-        (gameObjects[rawB] ?? this._makeInstance(rawB))?.onCollisionEnter(rawA);
+        const typeB = entityType[rawB];
+        const enterB = staticEnter[typeB];
+        if (enterB !== null) enterB.call(this._entityClassByType[typeB], rawB, rawA);
+        else (gameObjects[rawB] ?? this._makeInstance(rawB))?.onCollisionEnter(rawA);
       } catch (error) {
         this._entityThrew(error, rawB, 'onCollisionEnter');
       }
@@ -2708,7 +2818,7 @@ class LogicWorker extends AbstractWorker {
     // E-302: with no stay listener the walk below only drops dead pairs, which has(), begin and end check for
     // themselves this frame (_lazyPairs); it then runs as a sweep every FOREIGN_SWEEP_FRAMES. Set before the drain.
     const stayFlags = this.collisionStayByType;
-    const lazy = stayFlags === null || stayFlags.indexOf(1) === -1;
+    const lazy = stayFlags === null || (stayFlags.indexOf(STAY_METHOD) === -1 && stayFlags.indexOf(STAY_STATIC) === -1);
     this._lazyPairs = lazy;
 
     const result = drainContactRing(
@@ -2748,10 +2858,13 @@ class LogicWorker extends AbstractWorker {
     const genMax = this._pairGenMax;
     const began = this._pairBegan;
     const pairSides = this._pairSides;
+    const staticStay = this.staticHooks.onCollisionStay;
+    const classByType = this._entityClassByType;
 
     // Purge pairs whose generation changed or entities went inactive.
     // A throwing onCollisionStay is reported and the walk resumes at the next
     // pair (s is already past it); the try sits outside the loop.
+    // E-528: a side's stay flag says the method (STAY_METHOD) or the static form (STAY_STATIC, no instance).
     // E-131: the generations are plain reads. Physics bumps them; a bump this walk misses is caught on the
     // next frame's, as one that lands just after an Atomics.load would be. Atomics.load here cost the contact
     // flow kernel 22 to 24 % of its time.
@@ -2776,12 +2889,14 @@ class LogicWorker extends AbstractWorker {
           s++;
           if (beganNow) continue;
           const sides = pairSides[s - 1];
-          const aListens = (sides & 1) !== 0 && stayFlags[entityType[minE]];
-          const bListens = (sides & 2) !== 0 && stayFlags[entityType[maxE]];
+          const aStay = (sides & 1) !== 0 ? stayFlags[entityType[minE]] : STAY_NONE;
+          const bStay = (sides & 2) !== 0 ? stayFlags[entityType[maxE]] : STAY_NONE;
           calling = minE;
-          if (aListens) (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionStay(maxE);
+          if (aStay === STAY_METHOD) (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionStay(maxE);
+          else if (aStay === STAY_STATIC) staticStay[entityType[minE]].call(classByType[entityType[minE]], minE, maxE);
           calling = maxE;
-          if (bListens) (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionStay(minE);
+          if (bStay === STAY_METHOD) (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionStay(minE);
+          else if (bStay === STAY_STATIC) staticStay[entityType[maxE]].call(classByType[entityType[maxE]], maxE, minE);
         }
         break;
       } catch (error) {
@@ -2802,7 +2917,13 @@ class LogicWorker extends AbstractWorker {
       Transform.y[entityIndex],
     ) ? 1 : 0;
     const wasVisible = this.previousScreenVisibility[entityIndex];
-    noteScreenVisibility(currentlyVisible, wasVisible, obj);
+    if (currentlyVisible !== wasVisible) {
+      // E-528: the type's static form, with no instance, else the instance's method.
+      const type = Transform.entityType[entityIndex];
+      const onScreen = (currentlyVisible === 1 ? this.staticHooks.onScreenEnter : this.staticHooks.onScreenExit)[type];
+      if (onScreen !== null) onScreen.call(this._entityClassByType[type], entityIndex);
+      else noteScreenVisibility(currentlyVisible, wasVisible, obj);
+    }
     this.previousScreenVisibility[entityIndex] = currentlyVisible;
   }
 
