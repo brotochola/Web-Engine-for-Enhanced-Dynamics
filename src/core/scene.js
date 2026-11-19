@@ -1309,6 +1309,7 @@ class Scene {
       await this._flushCreateSpawns();
     } else {
       await this.createNewGame(this.data);
+      loadMark('new game');
       await this._flushCreateSpawns();
     }
     this._loadStep('world');

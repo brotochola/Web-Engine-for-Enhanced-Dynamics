@@ -76,6 +76,7 @@ export const MILESTONES = [
   'layers content',
   'preload',
   'create',
+  'new game',
   'world',
   'start',
   'loadScene end',
