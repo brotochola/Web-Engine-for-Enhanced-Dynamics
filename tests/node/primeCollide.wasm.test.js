@@ -1,20 +1,43 @@
 /**
- * collide_world (wasm_wrapper.c, PhysicsWorld.collide) runs the part of a step that finds the world's contacts with no
- * solver and no time: b2World_Step with dt 0. For SST-15's final prime: in Predator by night's first step every contact
- * was new: Box2D found the broad-phase pairs of every new body, made the contacts and computed their first manifolds
- * (46 ms warm, 87 ms cold; later steps 10-15). These run the shipped module and physicsApi.js's PhysicsWorld as shipped.
+ * SST-15's final prime finds the world's contacts before the start. In Predator by night's first step every contact was
+ * new: Box2D found the broad-phase pairs of every new body, made the contacts and computed their first manifolds (46 ms
+ * warm, 87 ms cold; later steps 10-15). collide_world (wasm_wrapper.c, PhysicsWorld.collide) runs that part of a step
+ * with no solver and no time: b2World_Step with dt 0. The final prime ('prime', not SST-18's loop) calls it and
+ * publishes its contact events (weedjsPost.js weedjsPrime(true)). These run the shipped module, physicsApi.js's
+ * PhysicsWorld, and weedjsPost.js's prime and contact publish as shipped.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { instantiateBox2dWasm } from '../helpers/box2dWasmInstance.mjs';
 import { EVENT_HEADER } from '../../src/box2d/box2dConstants.js';
+import {
+  BOX2D_CONTACT_KIND,
+  createContactRingSab,
+  bindContactRing,
+  publishContactEvent,
+  drainContactRing,
+} from '../../src/box2d/box2dContactRing.js';
 
 const STATIC = 0;
 const DYNAMIC = 1;
 const ALL = 0xffffffff;
 const STATE_CHANNELS = 6; // x, y, rotation, vx, vy, angular velocity
 const apiSource = readFileSync(new URL('../../src/box2d/physicsApi.js', import.meta.url), 'utf8');
+const postSource = readFileSync(new URL('../../src/box2d/weedjsPost.js', import.meta.url), 'utf8');
+const hostSource = readFileSync(new URL('../../src/box2d/physicsHostImpl.js', import.meta.url), 'utf8');
+
+/** The source of `function <name>(...) { ... }` in a shipped file, braces matched. */
+function functionSource(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `${name} is missing`);
+  let depth = 0;
+  for (let i = source.indexOf('{', start); i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}' && --depth === 0) return source.slice(start, i + 1);
+  }
+  throw new Error(`${name} has no end`);
+}
 
 /** The shipped module behind physicsApi.js's PhysicsWorld, gravity +y, sleeping on, its buffers bound. */
 function makeWorld({ maxBodies = 64, awakeReorderInterval = 30 } = {}) {
@@ -162,4 +185,77 @@ test('the step after collide_world gives the poses of a world that skipped it, t
     for (let i = c * n; i < (c + 1) * n; i++) max = Math.max(max, Math.abs(withCollide.state[i] - without.state[i]));
     assert.ok(max <= limits[c], `channel ${c}: ${max} > ${limits[c]}`);
   }
+});
+
+/** weedjsPost.js's prime and contact publish as shipped, on a real PhysicsWorld and a real contact ring. */
+function shippedPrime(world) {
+  const calls = [];
+  const ringSab = createContactRingSab(1024);
+  bindContactRing(ringSab);
+  const weedjsPrime = new Function(
+    'world', 'calls', 'EVENT_HEADER', 'CONTACT_KIND', 'publishBox2dContactEvent', 'contactRingI32',
+    `let publishContactRing = true, hitRingBound = false, bodyGeneration = null, hostEntityCount = 8;
+    const syncBodies = () => (calls.push('syncBodies'), 0);
+    const drainCommands = () => calls.push('drainCommands');
+    const syncJoints = () => calls.push('syncJoints');
+    const publishContactHit = () => calls.push('hit');
+    const publishMovedBodies = () => calls.push('moved');
+    ${functionSource(postSource, 'entityGen')}
+    ${functionSource(postSource, 'publishPairBuffer')}
+    ${functionSource(postSource, 'publishContactRingFromWasm')}
+    ${functionSource(postSource, 'publishHitsFromWasm')}
+    ${functionSource(postSource, 'weedjsPrime')}
+    return weedjsPrime;`,
+  )(world, calls, EVENT_HEADER, BOX2D_CONTACT_KIND, publishContactEvent, new Int32Array(ringSab));
+  let cursor = 0;
+  const drain = () => {
+    const got = [];
+    const result = drainContactRing(new Int32Array(ringSab), cursor, (kind, a, b) => got.push([kind, Math.min(a, b), Math.max(a, b)]));
+    cursor = result.nextCursor;
+    return got.sort((p, q) => p[0] - q[0] || p[1] - q[1] || p[2] - q[2]);
+  };
+  return { weedjsPrime, calls, drain };
+}
+
+test('the final prime publishes the begin events of bodies spawned touching; the loop\'s primes do not collide', () => {
+  const w = makeWorld();
+  const { weedjsPrime, calls, drain } = shippedPrime(w.world);
+  spawnTouching(w);
+  const collides = [];
+  const collide = w.world.collide.bind(w.world);
+  w.world.collide = () => {
+    collides.push(calls.length);
+    collide();
+  };
+
+  weedjsPrime(false); // SST-18's loop
+  weedjsPrime();
+  assert.deepEqual(collides, []);
+  assert.deepEqual(drain(), []);
+
+  weedjsPrime(true);
+  assert.deepEqual(collides, [9], 'after the bodies, commands and joints of the final prime');
+  assert.deepEqual(calls.slice(6), ['syncBodies', 'drainCommands', 'syncJoints'], 'and no moved bodies published');
+  const { CONTACT_BEGIN, SENSOR_BEGIN } = BOX2D_CONTACT_KIND;
+  assert.deepEqual(drain(), [
+    ...TOUCHING.map(([a, b]) => [CONTACT_BEGIN, a, b]),
+    ...SENSING.map(([a, b]) => [SENSOR_BEGIN, a, b]),
+  ]);
+});
+
+test('the physics host\'s final prime asks for the contacts, its loop does not', () => {
+  const asked = [];
+  const global = { weedjsPrime: (final) => asked.push(final) };
+  const state = { box2dReady: true, box2dAborted: false };
+  const primeOnce = new Function('global', 'state', `${functionSource(hostSource, 'primeOnce')}\nreturn primeOnce;`)(
+    global,
+    state,
+  );
+  primeOnce(true);
+  primeOnce(false);
+  primeOnce();
+  assert.deepEqual(asked, [true, false, false]);
+  // The loop and the 'prime' message, where they call it.
+  assert.match(functionSource(hostSource, 'primeLoop'), /primeOnce\(false\);/);
+  assert.match(hostSource, /data\.msg === 'prime'\) \{[^}]*?stopPrimeLoop\(\);\s*primeOnce\(true\);/);
 });
