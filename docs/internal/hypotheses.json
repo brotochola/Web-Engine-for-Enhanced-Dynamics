@@ -24088,7 +24088,8 @@
         "R-1545",
         "R-1558",
         "R-1590",
-        "R-1561"
+        "R-1561",
+        "R-1593"
       ],
       "refs": [],
       "id": "SST-21",
@@ -39632,6 +39633,15 @@
       "commits": [
         "207ac7f3"
       ]
+    },
+    {
+      "id": "R-1593",
+      "date": "2026-11-19",
+      "time": "20:08",
+      "timeFrom": "recorded",
+      "title": "SST-21 on the ASUS: Predator by night at its default crowd overloads spatial0 on both sides; its longest step in the first 2 s 250 -> 167 ms (median of 12 visits), first draws level",
+      "verdict": "note",
+      "text": "ASUS lab job 0899r (19:50-20:08): SST-21 (neighbour lists by visualRange, the spatial prime before the start) on the\n2-core laptop. loadWaterfall --series spatial0, Predator `light3d=1&hour=22` (its default crowd), --bundle, 3 runs,\ncold and warm, settle 5 s, two invocations a side ABBA. Main a8b5afd2 (N-318 and SST-21 in) against c026f7e6 (the\nmain before the evening's merges, its own dist, --root). 12 visits a side.\n\n- **Predator by night at its default crowd is far past this laptop's capacity** (crowd 0.2, R-1587). spatial0 runs over\n  20 ms in most frames of every visit, on both sides: 115 to 584 such frames a visit, medians 29 to 113 ms. So the\n  first frames' hitch SST-21 removes on the main PC (64 -> 12 ms cold) is not visible apart from the steady overload\n  here.\n- **spatial0's longest step in the first 2 s after the first draw:** median 250 ms on c026f7e6 (166 to 388), 167 ms on\n  a8b5afd2 (109 to 293). About a third shorter, in a scene where every frame is over budget.\n- **First draw after loadScene (ms):**\n  - Cold, the runs after the first (which reads the HDD): main 4 490 to 4 975, base 4 280 to 5 184.\n  - Warm: main 2 562 to 3 250 (one 4 496), base 2 509 to 3 079.\n  - Level within the spread. The main PC put N-318's prime at +150 to 200 ms.\n- **The longest own step reads ≥ 128 ms for spatial0, physics and the renderer on both sides:** the histogram's\n  ceiling, in an overloaded scene.\n- To see SST-21's first-frames effect on low-end, run the same at a crowd the laptop holds (0.2). Not run: SST-21 is\n  kept on the main PC's evidence, and nothing here points to a regression."
     }
   ],
   "leads": [
