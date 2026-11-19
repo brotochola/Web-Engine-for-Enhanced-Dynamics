@@ -23582,7 +23582,9 @@
         "updateAll",
         "group by state"
       ],
-      "records": []
+      "records": [
+        "R-1529"
+      ]
     },
     {
       "id": "E-528",
@@ -23608,8 +23610,8 @@
     {
       "id": "E-527",
       "title": "tickAll with tickInterval: a type with a static tickAll and tickInterval above 1 gets only the entities of the frame's bucket, in a copied loop of its own, and the same scaled dt that tick() gets; interval 1 keeps the zero-copy view of E-218 unchanged",
-      "status": "open",
-      "statusText": "proposed 2026-11-18 by the owner, design agreed; not measured, nothing built. Today _runTickAllTypes ignores tickInterval (only the tick() path has the buckets)",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (aef88471 on dx/startup); E-528 and E-526 next",
       "next": "Read how the tick() path scales dt and builds its buckets (_tickIntervalBucket, _rebuildTickBuckets in logicWorker.js), then add the bucketed loop for tickInterval above 1 as its own copy of the loop (no loop-invariant branch in the interval 1 loop, CLAUDE.md hot loops). A node test through workerHarness: a type with tickAll and tickInterval 4 sees each entity once in 4 frames, with dt x 4. Interval 1 must stay bit-identical and keep its view (E-218): kernel or Predator gate only if its loop changes. First step of E-526 (FSMs under tickAll).",
       "refs": [
         "EXECUTION_PLAN.md#E-526"
@@ -23620,10 +23622,12 @@
         "staggered tickAll"
       ],
       "date": "2026-11-18",
-      "result": "",
+      "result": "Kept 2026-11-19 (R-1529): a tickAll type with tickInterval > 1 gets each frame's bucket under logic.staggeredUpdates, with the frame's dtRatio as tick(); interval 1 unchanged (kernel noise); interval 4 -67 to -71 % in the kernel.",
       "area": "logic",
       "kind": "speed",
-      "records": []
+      "records": [
+        "R-1529"
+      ]
     },
     {
       "id": "E-522",
@@ -38788,6 +38792,21 @@
         "3fd598c3",
         "06d05824",
         "b8c0d786"
+      ]
+    },
+    {
+      "id": "R-1529",
+      "date": "2026-11-19",
+      "time": "04:20",
+      "timeFrom": "recorded",
+      "title": "E-527 built: tickAll honours tickInterval with staggeredUpdates (each frame's bucket, the frame's dtRatio); interval 1 the same code (kernel noise), interval 4 a quarter of the work (-67 to -71 %)",
+      "verdict": "kept-kernel",
+      "text": "**E-527 built (an agent, 2026-11-19): with logic.staggeredUpdates, a tickAll type with tickInterval above 1 gets each\nframe's bucket, the ids tick() would tick on it; interval 1 is the same code as before.** a85484c6: tickAll types with\ntickInterval > 1 (and GameObject.nextTick, the gate tick() uses) go to tickAllBucketTypes, run by _runTickAllBucketTypes\nafter _runTickAllTypes (unchanged byte for byte); the buckets come from _rebuildTickBuckets, rebuilt on the type's own list\nversion (E-180), split among the workers as _tickIntervalBucket splits them, pinned types by tick()'s countdown split;\na type with no body whose share is all active gets a view of its bucket cached per phase (E-218's way), otherwise the\nscratch; with a body its own loop resets the accelerations of that frame's entities only. Bucket fields declared in the\nliteral (E-349). 80db3998: guard C3 names a tickAll class with tickInterval > 1 in a scene without staggeredUpdates.\nf2a953f8: tickAllIntervalMicrobench (the shipped update() of a real logic worker through workerHarness, types classified\nby createGameObjectInstances, six cases, a checksum of the ids tickAll got). tests/node/tickAllInterval.test.js: interval\n4 against tick() (the same ids and dtRatio each frame, each entity once per 4 frames), interval 1 beside a bucketed type,\na despawned entity, two workers with and without a pinned entity, staggeredUpdates off. Types and the guide updated.\n\nKernel, Node, 200 000 entities, 200 frames x 7 rounds per run, warmed through 3 000 frames on 64 entities\n(kernelTierAudit: only _rebuildTickBuckets and setup ran as OSR, untimed), ABAB under lockrun --timing, to 04:20:\ninterval 1, 8 pairs: no body 0.603 -> 0.592 ms a frame (-1.8 %, 6/8), body 1.233 -> 1.232 (-0.1 %, 2/8), the second of two\nworkers 0.290 -> 0.281 (-3.3 %, 5/8): noise (the kernel moves about 10 % run to run), same checksums. Interval 4, 4 pairs\n(to 04:18): 0.574 -> 0.166 (-71 %), body 1.359 -> 0.435 (-68 %), two workers 0.298 -> 0.098 (-67 %), 4/4 each: a quarter of\nthe entities a frame, by design; the cost per entity visited rises (2.9 -> 3.3 ns, body 6.8 -> 8.7) since a bucket's ids are\nevery 4th slot, as tick()'s are. No sitting: no scene uses tickAll with an interval above 1, and the interval 1 loop is the\nsame code. Suites green (3 246, 121); merged into dx/startup (aef88471).\n\nThe row's next step said dt x 4; the tick() path gives the frame's dtRatio (the FSM and Predator's Boid multiply by\ntickInterval themselves), so tickAll gets the frame's dtRatio too and the guide says to scale by the interval; changing\nthat would change tick() as well, and E-526 must not scale twice. Left: E-364's directional sprites and E-200's neighbour\ndelivery do not see bucketed tickAll types (both correct, more work); a tickAll class with tickInterval 0 still runs every\nframe, and one with a CameraInOutListener never gets tickAll.",
+      "commits": [
+        "f2a953f8",
+        "a85484c6",
+        "80db3998",
+        "aef88471"
       ]
     }
   ],
