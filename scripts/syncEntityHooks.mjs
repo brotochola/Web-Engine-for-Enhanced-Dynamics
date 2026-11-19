@@ -10,7 +10,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+
+import { ENTITY_HOOKS } from '../src/core/entityHooks.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const TYPES_FILE = path.join(root, 'types/weed.d.ts');
@@ -95,13 +97,12 @@ export function replaceRegion(text, begin, end, region, file) {
 }
 
 /** Both files as the table writes them: { file, current, wanted }. */
-export async function expectedFiles() {
-  const { ENTITY_HOOKS } = await import(pathToFileURL(path.join(root, 'src/core/entityHooks.js')).href);
+export async function expectedFiles(hooks = ENTITY_HOOKS) {
   const types = fs.readFileSync(TYPES_FILE, 'utf8');
   const guide = fs.readFileSync(GUIDE_FILE, 'utf8');
   return [
-    { file: TYPES_FILE, current: types, wanted: replaceRegion(types, TYPES_BEGIN, TYPES_END, renderTypesRegion(ENTITY_HOOKS), TYPES_FILE) },
-    { file: GUIDE_FILE, current: guide, wanted: replaceRegion(guide, GUIDE_BEGIN, GUIDE_END, renderGuideRegion(ENTITY_HOOKS), GUIDE_FILE) },
+    { file: TYPES_FILE, current: types, wanted: replaceRegion(types, TYPES_BEGIN, TYPES_END, renderTypesRegion(hooks), TYPES_FILE) },
+    { file: GUIDE_FILE, current: guide, wanted: replaceRegion(guide, GUIDE_BEGIN, GUIDE_END, renderGuideRegion(hooks), GUIDE_FILE) },
   ];
 }
 
