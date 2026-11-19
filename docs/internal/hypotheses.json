@@ -23586,14 +23586,15 @@
         "group by state"
       ],
       "records": [
-        "R-1529"
+        "R-1529",
+        "R-1537"
       ]
     },
     {
       "id": "E-528",
       "title": "Every entity hook has a static form with no instance, resolved once per entityType: static onCollisionEnter(i, other), onCollisionStay, onCollisionExit, onCollisionHit, onGotShot(i, damage, …), onSpawned(i, cfg), onDespawned(i), onScreenEnter(i), onScreenExit(i), onMessage, onAnimationEnd, onJointBreak; the worker keeps a handlers[entityType] table (function or null) and a type with only static hooks never makes an instance",
-      "status": "open",
-      "statusText": "proposed 2026-11-18 by the owner, design agreed the same day (the owner: the entity classes keep no instance properties, so the static form loses nothing); not measured, nothing built. Rejected for now: one shared cursor instance rebound per call (a nested callback overwrites it, component getters keep their own index)",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (ceff7d5e on dx/startup); E-526 next",
       "next": "One table of hooks in the engine (name, argument shape, who dispatches it) that drives the dispatch, weed.d.ts, the guide and the tests, so a hook is not added by hand in four places. The static form wins over the instance method of the same name (a static is inherited down the extends chain like a prototype method); the worker resolves handlers[entityType] when it registers a type, and dispatch is an array load where it is now gameObjects[a] ?? _makeInstance(a). typeNeedsLogicTick and needsScreenCallbacks also read the static hooks, so a type with static onScreenEnter can stay on tickAll. Batch forms for the events that come many a frame (onSpawnedAll(ids, n), onScreenEnterAll) are the owner's open question; collisions and shots stay one call each. Measure: a collision stress scene (logic STEP_MS) and the memory of a type that never makes an instance. Second step of E-526.",
       "refs": [
         "EXECUTION_PLAN.md#E-526"
@@ -23605,10 +23606,12 @@
         "no instances"
       ],
       "date": "2026-11-18",
-      "result": "",
+      "result": "Kept 2026-11-19 (R-1537): src/core/entityHooks.js drives dispatch, types and the guide; static hooks make no instance; Predator crowd 2.5 logic 8.12 -> 7.08 ms (-12.4 %, 4/4); the static form -39 % in the contact kernel.",
       "area": "logic",
       "kind": "dx",
-      "records": []
+      "records": [
+        "R-1537"
+      ]
     },
     {
       "id": "E-527",
@@ -23629,7 +23632,8 @@
       "area": "logic",
       "kind": "speed",
       "records": [
-        "R-1529"
+        "R-1529",
+        "R-1537"
       ]
     },
     {
@@ -38899,6 +38903,24 @@
       "title": "E-326 rejected: waking Box2D's pool at step_world's start reads -1.0 % in the harness; waking it at the physics frame's start costs the others (Predator crowd 2.5: spatial +2.9 % 4/4, pre-render +3.5 %, physics +1.2 %)",
       "verdict": "rejected",
       "text": "**E-326 rejected: waking Box2D's pool before the step costs the other workers more than it saves physics.** Box2D\nb2World_WakeWorkers (stepping set, every sleeping worker signalled; nothing with the spin off) and the export\nworld_wake_workers. First form, step_world wakes the pool as it begins (crowd harness, weed mode, 6 rounds against main,\n05:48): b2World_Step -1.0 % (5/6), hashes identical, under the bar: the lead (the sleep paint, the step's serial prelude)\nis short. Second form, the physics host's doStep wakes it right after its wait for logic, before draining commands and\napplying accelerations, and step_world as well (WeedJS on dx/startup 7d9bc966): runPredatorAbab e326-predator,\n`crowd=2.5&zoom=0.216`, physics owner, 4 pairs, to 06:05: REGRESSION, physics 13.830 -> 14.067 ms (+1.2 %, worse 3/4),\nspatial +2.9 % (4/4), pre-render +3.5 % (3/4), logic +2.9 % (3/4): three pool threads spinning through the host's\nprelude take cores the other workers use. ballsHeavy (06:09): NEUTRAL, physics -1.5 % (2/4). Dropped; both patches are\nin the session's scratchpad (e326-patch/)."
+    },
+    {
+      "id": "R-1537",
+      "date": "2026-11-19",
+      "time": "06:28",
+      "timeFrom": "recorded",
+      "title": "E-528 kept: every entity hook has a static form resolved per entity type from one hook table; Predator crowd 2.5 logic -12.4 % (4/4, -8.2 % against the others)",
+      "verdict": "kept",
+      "text": "**E-528 built (an agent, 2026-11-19): every entity hook has a static form resolved per entity type, from one hook table.**\nBranch opt/e528-static-hooks (6 commits on 84011ddc), merged into dx/startup ceff7d5e.\n- d67a6370: collisionHooksMicrobench (the kernel, first).\n- 949ac459: src/core/entityHooks.js, ENTITY_HOOKS (13 hooks: onSpawned, onDespawned, onCollisionEnter, onCollisionStay,\n  onCollisionExit, onCollisionHit, onJointBreak, onScreenEnter, onScreenExit, onGotShot, onMessage, onAnimationEnd and\n  onDirectionChanged, which the row left out), `static onX(entityIndex, ...params)` with the class as this; the static\n  form wins over a method of the same name (inherited down the extends chain); definesHook replaces definesBelow; the\n  logic worker's staticHooks tables (a function or null per entity type) at every dispatch site; despawn through\n  GameObject._despawnAt makes no instance for a type whose onDespawned is static or absent; error reports name the class\n  without an instance; hot swap re-resolves the tables.\n- e8dc4b7b: a type without tick() hears its screen hooks from a pass after the ticks (_runScreenTypes) and keeps tickAll,\n  which also fixes E-527's leftover (a tickAll type with CameraInOutListener never got tickAll).\n- cd101257: scripts/syncEntityHooks.mjs writes weed.d.ts's hook declarations and the guide's hook table from the table\n  (entityHooksSync.test.js fails while either is stale).\n- 89d468dd: contact begin, end and hit read the static form from the collision flag they already load (bit 0 listens,\n  bits 1 to 3 static enter, exit, hit; the stay flag 1 method, 2 static); rarer events read the table slot.\n- 95aafcee: contactDrainStressScene `?hooks=static`.\nTests: staticHooks.test.js (8, real worker): every hook's arguments with this === Class and no instance made; spawn and\ndespawn; static beats a method; inheritance; the table's invariants; hot-swap shape rules; a tickAll type with static\nscreen hooks stays on tickAll; a tick() type's static screen hook. Suites green (3 259, 121 on the merge), types drift clean.\n\ncollisionHooksMicrobench (40 000 entities, 20 000 pairs, one logic worker, 7 rounds of 200 frames a process, TurboFan per\nkernelTierAudit), 8 pairs against d67a6370, ended 05:57:48: the instance path 1.2227 -> 1.1170 ms a frame with stays (pair\nmedian -3.0 %, 5/8) and 1.3030 -> 1.1387 with events (-9.2 %, 6/8), checksums identical: not slower (no speed claimed).\ncontactsMicrobench in the same sitting: contact 7 789 -> 8 665 ops/s (+11.2 %, 8/8), dense bimodal (a tie). The static\nform against instances, same build, 6 runs (06:00): stays 1.5546 -> 0.9481 ms (-39 %, 6/6), events 1.9498 -> 1.8274\n(-6.3 %, 4/6), 40 000 instances -> 0. Predator gate, runPredatorAbab e528-gate, A 8cb24ab6, B ceff7d5e, `crowd=2.5&zoom=0.216` (the default crowd is under the floor, 06:22), logic owner, 4 pairs, to 06:28: KEPT, logic 8.116 -> 7.081 ms (-12.4 %, worse 0/4; -8.2 % against the other workers, 4/4), pre-render -6.8 %, spatial -4.1 %, physics -3.4 % (part of those drift).\n\nFor the owner: spawn still makes the instance (spawn() returns it and its config keys go through its setters), so \"no\ninstance\" holds for every dispatch and despawn but not for the spawning thread; an instance-free spawn would be its own\nAPI item. Behaviour: tickless CameraInOutListener types hear their screen hooks after all ticks, not among them; a type\nwith tick(), tickInterval 0 and CameraInOutListener no longer has tick() called during the screen visit; no demo uses\nscreen hooks. Not done: batch forms (onSpawnedAll), no demo converted to static hooks. The agent's suite run overlapped a\nsitting of mine between 05:50:40 and 05:51:34 (lockrun waits only at its start): E-316's main-build harness check, which\nread as the earlier ones did.",
+      "commits": [
+        "d67a6370",
+        "949ac459",
+        "e8dc4b7b",
+        "cd101257",
+        "89d468dd",
+        "95aafcee",
+        "ceff7d5e"
+      ]
     }
   ],
   "leads": [
