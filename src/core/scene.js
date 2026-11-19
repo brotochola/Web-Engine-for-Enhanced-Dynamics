@@ -337,6 +337,9 @@ class Scene {
     /** SST-15: the physics prime the start waits for ({ id, resolve }), and its sequence. */
     this._primeWaiter = null;
     this._primeSeq = 0;
+    /** SST-21: the spatial workers' prime round the start waits for ({ id, left, resolve }), and its sequence. */
+    this._spatialPrimeWaiter = null;
+    this._spatialPrimeSeq = 0;
 
     // create()/createNewGame() spawns: see _flushCreateSpawns.
     this._spawnBatchOpen = true;
@@ -1322,9 +1325,13 @@ class Scene {
     }
     this._loadStep('world');
     this._spawnBatchOpen = false;
-    // SST-15: physics makes the spawned bodies now, not in its first step after the start.
-    await this._primePhysics();
-    loadMark('physics primed');
+    // SST-15: physics makes the spawned bodies now, not in its first step after the start. SST-21: meanwhile the spatial
+    // workers build the grid and every neighbour list from the poses the spawns wrote (physics' prime moves none), not in
+    // their first frames after it, and logic's first frame reads its neighbours.
+    await Promise.all([
+      this._primePhysics().then(() => loadMark('physics primed')),
+      this._primeSpatial().then(() => loadMark('spatial primed')),
+    ]);
 
     // create() may have set the sun; the workers' first frame comes before the main loop's first publish.
     Sun.publish();
@@ -1375,6 +1382,59 @@ class Scene {
     const waiter = this._primeWaiter;
     if (!waiter || waiter.id !== id) return;
     this._primeWaiter = null;
+    waiter.resolve();
+  }
+
+  /**
+   * SST-21: ask every spatial worker to build its rows of the grid, then, once all have (a search reads every worker's
+   * cells), every neighbour list its rows own, and publish them; wait for both rounds. The first frames after the start
+   * then rebuild only the lists their schedule says, where they built every one at once (Predator by night: 10 000 and
+   * 6 544 lists in spatial0's frames 2 and 3, about 105 ms), and logic's first frame reads its neighbours. A round some
+   * worker does not answer in timeoutMs ends the prime (no search on a grid that may miss rows): the frames build the
+   * lists, as before.
+   * @param {number} [timeoutMs=10000]
+   * @returns {Promise<void>}
+   */
+  async _primeSpatial(timeoutMs = 10000) {
+    const workers = this.workers?.spatialWorkers || [];
+    if (workers.length === 0) return;
+    if (!(await this._askSpatialPrime(workers, 'grid', timeoutMs))) return;
+    await this._askSpatialPrime(workers, 'neighbors', timeoutMs);
+  }
+
+  /**
+   * SST-21: one round of the spatial prime ('grid' or 'neighbors') to every spatial worker.
+   * @returns {Promise<boolean>} false when some worker did not answer in timeoutMs
+   */
+  _askSpatialPrime(workers, phase, timeoutMs) {
+    const id = ++this._spatialPrimeSeq;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        const waiter = this._spatialPrimeWaiter;
+        if (waiter?.id !== id) return;
+        console.warn(
+          `[Scene] ${waiter.left} spatial worker(s) did not answer the prime's ${phase} round; the first frames build the neighbour lists`,
+        );
+        this._spatialPrimeWaiter = null;
+        resolve(false);
+      }, timeoutMs);
+      this._spatialPrimeWaiter = {
+        id,
+        left: workers.length,
+        resolve: () => {
+          clearTimeout(timer);
+          resolve(true);
+        },
+      };
+      for (const worker of workers) worker.postMessage({ msg: 'spatialPrime', id, phase });
+    });
+  }
+
+  /** SST-21: a spatial worker's answer to a round of _primeSpatial. */
+  _takeSpatialPrimeDone(id) {
+    const waiter = this._spatialPrimeWaiter;
+    if (!waiter || waiter.id !== id || --waiter.left > 0) return;
+    this._spatialPrimeWaiter = null;
     waiter.resolve();
   }
 
@@ -2262,6 +2322,9 @@ class Scene {
     } else if (e.data.msg === 'primeDone') {
       this._takeWorkerLoadMarks(e.currentTarget.name, e.data.loadMarks);
       this._takePrimeDone(e.data.id);
+    } else if (e.data.msg === 'spatialPrimeDone') {
+      this._takeWorkerLoadMarks(e.currentTarget.name, e.data.loadMarks);
+      this._takeSpatialPrimeDone(e.data.id);
     } else if (e.data.msg === 'barrierDone') {
       const b = this._barrier;
       if (b && b.id === e.data.id && --b.left === 0) {

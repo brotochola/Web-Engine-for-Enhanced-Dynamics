@@ -295,7 +295,6 @@ export function buildSceneSharedBuffers(scene) {
     forceProcessOnLogicWorkerData: scene.buffers.forceProcessOnLogicWorkerData || null,
     entityTypeHasForcedLogicWorker: scene.buffers.entityTypeHasForcedLogicWorker || null,
     entityTypeForcedLogicWorkerCount: scene.buffers.entityTypeForcedLogicWorkerCount || null,
-    neighborReaders: scene.buffers.neighborReaders || null,
     typeListVersions: scene.buffers.typeListVersions || null,
     mouseData: scene.buffers.mouseData,
     gamepadData: scene.buffers.gamepadData,

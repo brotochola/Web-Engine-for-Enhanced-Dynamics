@@ -34,7 +34,8 @@ export class Trash extends Lootable {
         this.rigidBody.linearDamping = 0.8;
         this.collider.radius = 30
 
-        this.collider.visualRange = this.collider.radius * 2
+        // Reads no neighbours: no visualRange (a visualRange gives an entity its neighbour list, SST-21).
+        this.collider.visualRange = 0;
         // this.collider.offsetY = -15;
 
         // The silhouette 1.5 times as long, its foot 0.1 of the sprite above the anchor. With ?light3d=1 the camera gives

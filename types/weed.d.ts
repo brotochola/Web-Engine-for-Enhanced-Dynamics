@@ -4461,8 +4461,8 @@ export declare class LightEmitter extends Component {
   static castShadows: Uint8Array;
   /**
    * How far its shadows reach, in px; 0 (the default) is its radius. Layer shadows, the walls that stop it with
-   * lighting.walls (the light finds them itself: no Collider.visualRange to set, unless its class reads its neighbours,
-   * whose list stays what its visualRange gives; the light's walls are then within it), and with lighting.lampShadows
+   * lighting.walls (the light finds them itself: no Collider.visualRange to set, unless its entity has a visualRange (it
+   * reads its neighbours), whose list stays what that visualRange gives; the light's walls are then within it), and with lighting.lampShadows
    * 'map' the span of its tile: past it the lamp lights without shadows, which fade out over the last fifth. A shorter
    * reach costs less.
    */

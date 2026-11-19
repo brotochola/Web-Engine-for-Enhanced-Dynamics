@@ -562,10 +562,10 @@ let compileNeighborReads = true;
 
 /**
  * E-289: neighborCount and getNeighbor compiled for one entity class, with GameObject's bodies. GameObject's are one
- * getter and one method every class inherits, so their loads of `_neighborOffset`, `_neighborReaderMarked` and
- * `_onPage` saw every class's map and were megamorphic (LoadIC_Megamorphic calls in the machine code); a copy of one's
- * own has its own feedback (E-170 compiles component fields apart for the same reason). Null under a CSP without
- * 'unsafe-eval'. tests/node/neighborReadsPerClass.test.js holds them to GameObject's.
+ * getter and one method every class inherits, so their loads of `_neighborOffset` saw every class's map and were
+ * megamorphic (LoadIC_Megamorphic calls in the machine code); a copy of one's own has its own feedback (E-170 compiles
+ * component fields apart for the same reason). Null under a CSP without 'unsafe-eval'.
+ * tests/node/neighborReadsPerClass.test.js holds them to GameObject's.
  * @returns {{ neighborCount: PropertyDescriptor, getNeighbor: PropertyDescriptor } | null}
  */
 function compiledNeighborReads() {
@@ -579,8 +579,6 @@ function compiledNeighborReads() {
     const nd = Grid._neighborData;
     const o = this._neighborOffset;
     if (nd === null || o < 0) return 0;
-    if (!this._neighborReaderMarked) this._markNeighborReader();
-    else if (this._onPage) Grid.markNeighborReader(this.index);
     return nd[o];
   },
   getNeighbor(i) {
@@ -867,7 +865,6 @@ export class GameObject {
    * @param {SharedArrayBuffer} [entityTypeHasForcedLogicWorkerBuffer] - Uint8 per entityType
    * @param {SharedArrayBuffer} [entityTypeForcedLogicWorkerCountBuffer] - Uint16 per entityType
    * @param {number} [neighborByte] - the neighbour rows' offset in neighborBuffer
-   * @param {SharedArrayBuffer} [neighborReadersBuffer] - Uint8 per entityType: reads neighbours (E-176, Grid.neighborReaders)
    * @param {SharedArrayBuffer} [typeListVersionsBuffer] - Int32 per entityType: its active list's version (E-180)
    */
   static initializeArrays(
@@ -878,7 +875,6 @@ export class GameObject {
     entityTypeHasForcedLogicWorkerBuffer = null,
     entityTypeForcedLogicWorkerCountBuffer = null,
     neighborByte = 0,
-    neighborReadersBuffer = null,
     typeListVersionsBuffer = null
   ) {
     this.globalEntityCount = count;
@@ -905,7 +901,6 @@ export class GameObject {
     this.entityTypeForcedLogicWorkerCount = entityTypeForcedLogicWorkerCountBuffer
       ? new Uint16Array(entityTypeForcedLogicWorkerCountBuffer)
       : null;
-    Grid.neighborReaders = neighborReadersBuffer ? new Uint8Array(neighborReadersBuffer) : null;
     this.typeListVersions = typeListVersionsBuffer ? new Int32Array(typeListVersionsBuffer) : null;
   }
 
@@ -1224,9 +1219,6 @@ export class GameObject {
       this._neighborOffset = -1;
       this._neighbors = null;
     }
-    // E-176: this instance has marked its type a neighbour reader (Grid.neighborReaders). A page instance is frozen:
-    // true from the start, and its reads mark through Grid.markNeighborReader.
-    this._neighborReaderMarked = page;
 
     Ctor._ensureComponentAccessors();
     // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c11 (only
@@ -3091,24 +3083,15 @@ export class GameObject {
 
   /**
    * Get count of neighbors for this entity
-   * Reads directly from spatial worker's SAB - always current
+   * Reads directly from spatial worker's SAB - always current. The spatial workers build a list for every entity
+   * with a visualRange (Collider.visualRange > 0), from before the first frame (SST-21); without one it stays 0.
    * @returns {number} Number of neighbors
    */
   get neighborCount() {
     const nd = Grid._neighborData;
     const o = this._neighborOffset;
     if (nd === null || o < 0) return 0;
-    // E-176: this type reads neighbours, so the spatial worker builds its lists. Once per instance: a loop that reads
-    // neighborCount each pass pays one field test.
-    if (!this._neighborReaderMarked) this._markNeighborReader();
-    else if (this._onPage) Grid.markNeighborReader(this.index);
     return nd[o];
-  }
-
-  /** E-176: marks this entity's type a neighbour reader, once per (worker) instance. */
-  _markNeighborReader() {
-    Grid.markNeighborReader(this.index);
-    this._neighborReaderMarked = true;
   }
 
   /** Typed view into the neighbor SAB. Created on first read, not at bind. */

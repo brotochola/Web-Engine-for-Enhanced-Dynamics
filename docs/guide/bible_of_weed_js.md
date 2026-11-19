@@ -196,7 +196,7 @@ async preload() {
   - `this.neighborCount`
   - `this.getNeighbor(i)`
   - `this.getAllNeighborIds()`
-  - Lists are built only for classes whose code reads them (and, in a scene with walls, for lights, whose walls come from theirs). The first read of a class turns its lists on: that read and the next frame or two see none. A class that reads only now and then still gets its lists every frame from then on.
+  - An entity gets its list when it has a visualRange (`this.collider.visualRange > 0`): that is what a visualRange says, that its code reads its neighbours. Without one its `neighborCount` is 0. The lists exist from the game's first frame: the spatial workers build them before the start. Each list costs spatial time, so give a visualRange only to entities that read their neighbours, and keep it tight. (In a scene with walls, a light that casts gets a list too: its walls.)
 
 Lifecycle hooks: `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` each frame, or `static tickAll(list, count, dtRatio)` for the whole type (see Workers), or neither for a type whose FSMs are all it runs (see State machines), and the hooks below. `isCollidingWith(other)` needs at least one entity type in the scene with `CollisionListener` (see Collision Filtering).
 
@@ -2083,7 +2083,7 @@ In a scene with `lighting: { enabled: true, walls: true }`, each light in view t
 
 The light finds those walls by itself: there is no `Collider.visualRange` to set for it. It needs to be in the spatial grid, which an entity with a sprite or a `Collider` is; a light with neither finds no walls. A light with `castShadows = 0` gathers none: no wall stops it.
 
-One exception: a light on an entity whose class reads its neighbours (`this.neighborCount`, `this.getNeighbor(i)`). That list is the entity's own, and the light's reach would change what its code sees (a hero with a 1500 px flashlight would find enemies 1500 px away). So it stays what the entity's `visualRange` gives, and the light finds its walls within it: give such an entity a `visualRange` as long as its light should cast, or carry the light on an entity of its own.
+One exception: a light on an entity with a `visualRange`. That entity reads its neighbours (`this.neighborCount`, `this.getNeighbor(i)`), and the list is its own: the light's reach would change what its code sees (a hero with a 1500 px flashlight would find enemies 1500 px away). So it stays what the entity's `visualRange` gives, and the light finds its walls within it: give such an entity a `visualRange` as long as its light should cast, or carry the light on an entity of its own.
 
 ```javascript
 // In a lamp's onSpawned, in a scene with walls:

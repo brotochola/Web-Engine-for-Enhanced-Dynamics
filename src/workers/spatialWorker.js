@@ -58,6 +58,7 @@ import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRa
 import { readMovedBodiesHeader, copyMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { tickBucketPhase } from '../util/logicOwner.js';
 import { addWaitMs } from '../util/waitMeter.js';
+import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import { HEADER_BYTES, LOGIC_SLOT0, MAX_LOGIC, SLOT_BYTES, TIME_ORIGIN } from '../util/frameClock.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
@@ -235,7 +236,7 @@ class SpatialWorker extends AbstractWorker {
     this._neighborReuseSkin = 0;
     /**
      * Raycasted lighting: lights take neighbour lists (its occluder gather reads them). In basic lighting nothing reads
-     * a light's list, so a light takes one only when its class reads its neighbours (N-153).
+     * a light's list, so a light takes one only when its entity has a visualRange (N-153).
      */
     this._raycastLights = false;
     /** Full candidate rebuild every N frames (1 = every frame). */
@@ -708,16 +709,7 @@ class SpatialWorker extends AbstractWorker {
    * Rebuilds owned grid rows and computes neighbors for entities in those rows
    */
   update(deltaTime, dtRatio, resuming) {
-    // Reset stats
-    this.entitiesProcessedThisFrame = 0;
-    this.neighborsFoundThisFrame = 0;
-    this.cellsCheckedThisFrame = 0;
-    this.rebuildTimeThisFrame = 0;
-    this.neighborSearchTimeThisFrame = 0;
-    this.neighborsReusedThisFrame = 0;
-    this.neighborsRebuiltThisFrame = 0;
-    this.neighborsPublishedThisFrame = 0;
-    this.sleepNeighborSkipsThisFrame = 0;
+    this._resetFrameCounters();
 
     // STEP 1: Rebuild grid (only owned rows), or rewrite it for what changed (E-126)
     const detail = this.collectDetailedStats;
@@ -741,6 +733,65 @@ class SpatialWorker extends AbstractWorker {
     if (detail) {
       this.neighborSearchTimeThisFrame = performance.now() - startTime;
     }
+  }
+
+  /** The per-frame counters update() and the prime start from (reportFPS publishes a frame's). */
+  _resetFrameCounters() {
+    this.entitiesProcessedThisFrame = 0;
+    this.neighborsFoundThisFrame = 0;
+    this.cellsCheckedThisFrame = 0;
+    this.rebuildTimeThisFrame = 0;
+    this.neighborSearchTimeThisFrame = 0;
+    this.neighborsReusedThisFrame = 0;
+    this.neighborsRebuiltThisFrame = 0;
+    this.neighborsPublishedThisFrame = 0;
+    this.sleepNeighborSkipsThisFrame = 0;
+  }
+
+  /**
+   * SST-21: the scene's prime before the start (Scene._primeSpatial), in two rounds, since a search reads every worker's
+   * cells: 'grid' builds this worker's rows of the grid (primeGrid), 'neighbors', once every spatial worker has its rows,
+   * every list its rows own (primeNeighbors). Each answers 'spatialPrimeDone' with its load marks, after a throw too.
+   */
+  handleCustomMessage(data) {
+    if (data?.msg !== 'spatialPrime') {
+      super.handleCustomMessage(data);
+      return;
+    }
+    try {
+      if (data.phase === 'grid') {
+        this.primeGrid();
+        loadMark('grid primed');
+      } else {
+        this.primeNeighbors();
+        loadMark('neighbors primed');
+      }
+    } finally {
+      self.postMessage({ msg: 'spatialPrimeDone', id: data.id | 0, loadMarks: takeLoadMarks() });
+    }
+  }
+
+  /**
+   * SST-21: the prime's first round, update()'s first step before the start: this worker's rows of the grid from the
+   * poses the spawns wrote (the full rebuild, or E-126's latch), and the pose generation.
+   */
+  primeGrid() {
+    this._resetFrameCounters();
+    this._rebuildGrid();
+    if (this._poseChanged || !this._poseGenShared) Atomics.add(this._poseGen, 0, 2);
+    this._poseChanged = false;
+  }
+
+  /**
+   * SST-21: the prime's second round, update()'s second step: every list this worker's rows own, searched and published
+   * by the frame's own search (no branch added to its loop). Logic has run no frame and no list exists yet, so the
+   * schedule skips none (E-200 skips only a list it has) and every entity with a visualRange is searched; its reuse and
+   * its stagger start here, so the first frames after the start rebuild only what those say.
+   */
+  primeNeighbors() {
+    this._resetFrameCounters();
+    this._findNeighbors();
+    this._flushWasmPublish();
   }
 
   /**
@@ -1996,10 +2047,9 @@ class SpatialWorker extends AbstractWorker {
   _findNeighbors() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
-    // E-176: lists only for types whose code reads them, and with walls (lighting.walls) for active lights that cast
-    // shadows (pre-render gathers their occluders from them; N-153: nothing reads a light's list in basic lighting).
-    const readers = Grid.neighborReaders;
-    const entityType = Transform.entityType;
+    // SST-21: a list for every entity with a visualRange (that is what it is for: its code reads its neighbours), and
+    // with walls (lighting.walls) for an active light that casts shadows (pre-render gathers its occluders from it;
+    // N-153: nothing reads a light's list in basic lighting).
     const lightActive = this._raycastLights ? LightEmitter.active || null : null; // null: no light takes a list
     const lightCasts = lightActive !== null ? LightEmitter.castShadows : null;
     const lightRadius = lightActive !== null ? LightEmitter.radius : null;
@@ -2076,22 +2126,19 @@ class SpatialWorker extends AbstractWorker {
 
       let myVisualRange = visualRange[entityA];
       // DX-LIGHTAPI: a light searches its own reach (shadowRange, or its radius) past its offset from the entity, so
-      // no Collider.visualRange has to cover it. Not when its class reads its neighbours: the row is that code's list
+      // no Collider.visualRange has to cover it. Not when its entity has a visualRange: the row is its code's list
       // too, and the light's reach would widen what it sees (a hero with a flashlight would find enemies 1500 px off).
       // Such a light finds its occluders within the entity's visualRange, as every light did before.
       const isLight = lightActive !== null && lightActive[entityA] !== 0 && lightCasts[entityA] !== 0;
-      if (isLight && readers !== null && readers[entityType[entityA]] === 0) {
+      if (isLight && myVisualRange <= 0) {
         const sr = lightShadowRange[entityA];
         const ox = lightOffsetX[entityA];
         const oy = lightOffsetY[entityA];
         const reach = (sr > 0 ? sr : lightRadius[entityA]) + Math.sqrt(ox * ox + oy * oy);
         // A float32, as the column the reuse signature keeps (a double would never match it).
-        if (reach > myVisualRange) myVisualRange = Math.fround(reach);
+        if (reach > 0) myVisualRange = Math.fround(reach);
       }
-      if (
-        myVisualRange <= 0 ||
-        (readers !== null && readers[entityType[entityA]] === 0 && !isLight)
-      ) {
+      if (myVisualRange <= 0) {
         // A row this worker cleared stays clear: only its publish writes it. Its own write each frame
         // dirtied a cache line per entity (130 bytes a row at maxNeighbors 64). With other spatial
         // workers, one of them may have published the row before this one took the entity over.

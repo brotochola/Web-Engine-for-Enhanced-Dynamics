@@ -20,8 +20,8 @@
  *
  *   node tests/bench/spatialWorkerMicrobench.mjs
  *   node tests/bench/spatialWorkerMicrobench.mjs --n 16500 --output tests/results/spatial-worker.json
- * `--unread` (E-268): no logic reads any type's neighbours (Grid.neighborReaders all 0), so the three workers keep every
- * row clear: stationarySpatialWideScene's and WaterAndBoxes' regime.
+ * `--unread` (E-268): no entity has a visualRange, so no list is built and the three workers keep every row clear:
+ * stationarySpatialWideScene's and WaterAndBoxes' regime (until SST-21 their types had a visualRange no code read).
  *   node tests/bench/spatialWorkerMicrobench.mjs --still --skin 0.04 --max-frames 15 --tick 1
  *   node tests/bench/spatialWorkerMicrobench.mjs --types boids
  */
@@ -196,9 +196,6 @@ export async function setupSpatialKernel(opts = {}) {
     });
   }
   let logicFrame = 0;
-  // --unread (E-268): no logic reads any type's neighbours, so each row is kept clear (with several workers, its head
-  // is read to see it is).
-  if (opts.unread) Grid.neighborReaders = new Uint8Array(Math.max(1, classes.length));
 
   bindPoseColumns(n);
   const rng = mulberry32(seed);
@@ -263,7 +260,8 @@ export async function setupSpatialKernel(opts = {}) {
     Collider.active[i] = 1;
     Collider.shapeType[i] = ShapeType.Circle;
     Collider.radius[i] = kind < 0.9 ? 8 : 16;
-    Collider.visualRange[i] = kind < 0.7 ? 150 : kind < 0.8 ? 250 : kind < 0.97 ? 0 : 400;
+    // --unread (E-268): no visualRange, so each row is kept clear (with several workers, its head is read to see it is).
+    Collider.visualRange[i] = opts.unread ? 0 : kind < 0.7 ? 150 : kind < 0.8 ? 250 : kind < 0.97 ? 0 : 400;
     SpriteRenderer.active[i] = 1;
     RigidBody.active[i] = kind < 0.8 ? 1 : 0;
     for (const c of classes) if (i >= c.startIndex && i < c.endIndex) Transform.entityType[i] = c.entityType;

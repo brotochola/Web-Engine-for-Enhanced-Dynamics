@@ -8,7 +8,7 @@
  *     active, entityType, rotC and rotS (for colliders that are not circles: the circle branches never read a
  *     rotation), Collider active, shapeType, radius, width, height, offsets, visualRange and its polygon columns,
  *     SpriteRenderer.active, RigidBody.active, the LightEmitter columns in a scene with walls (lighting.walls: a light
- *     searches its own reach), Grid.neighborReaders (E-176) and the shared active list;
+ *     searches its own reach) and the shared active list;
  *   - logic 0's frame number in frameRateData (E-200's typed stagger), the active-query version, and physics' moved
  *     list header (E-126: generation, count, sequence) with its entries when the movers path could read them (a count
  *     of at most half the active entities; past MOVERS_MAX_FRACTION the worker reads only the header).
@@ -94,7 +94,6 @@ export async function spatialRecorderInWorker(args) {
     ...(sw._raycastLights
       ? ['active', 'castShadows', 'radius', 'shadowRange', 'offsetX', 'offsetY'].map((k) => ({ name: `LightEmitter.${k}` }))
       : []),
-    { name: 'Grid.neighborReaders', whole: true },
     { name: 'activeList', length: n + 1 },
   ];
   const specs = [];
@@ -304,8 +303,6 @@ export async function createSpatialReplay(meta, opts = {}) {
   }
   buffers.componentData = coreComponentData(n);
   if (meta.raycastLights) buffers.componentData.LightEmitter = new SharedArrayBuffer(LightEmitter.getBufferSize(n));
-  const readers = meta.columns.find((c) => c.name === 'Grid.neighborReaders');
-  if (readers) buffers.neighborReaders = new SharedArrayBuffer(Math.max(1, readers.length));
   const stride = meta.frameRateStride || 16;
   const logicRow = meta.logicFrameSlot >= 0 ? (meta.logicFrameSlot - 1) / stride : -1;
   buffers.frameRateData = new SharedArrayBuffer(Math.max(W, logicRow + 1) * stride * 4);

@@ -8,8 +8,8 @@ import { patchClass } from '../../src/core/debug/hotSwap.js';
 import { isEngineAccessor } from '../../src/core/engineAccessors.js';
 
 // E-289: each entity class gets its own compiled neighborCount and getNeighbor (GameObject's are shared by every class,
-// so their field loads went megamorphic). The copies must read what GameObject's read, mark readers as they do, leave
-// a class's own versions alone, and survive a hot swap.
+// so their field loads went megamorphic). The copies must read what GameObject's read, on worker and page instances,
+// leave a class's own versions alone, and survive a hot swap.
 
 const N = 12;
 const MAX_NEIGHBORS = 4;
@@ -21,15 +21,13 @@ function setup() {
   const stride = 1 + MAX_NEIGHBORS;
   const neighborBuffer = new SharedArrayBuffer(N * stride * 2);
   Grid.initialize({ neighborBuffer }, { cellSize: 64, gridWidth: 1, gridHeight: 1, maxNeighbors: MAX_NEIGHBORS, entityIdBytes: 2 });
-  const readers = new SharedArrayBuffer(GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT);
-  GameObject.initializeArrays(N, neighborBuffer, null, null, null, null, 0, readers);
+  GameObject.initializeArrays(N, neighborBuffer, null, null, null, null, 0);
   const rows = Grid.neighborData;
   for (let e = 0; e < N; e++) {
     const n = e % (MAX_NEIGHBORS + 1);
     rows[e * stride] = n;
     for (let k = 0; k < n; k++) rows[e * stride + 1 + k] = (e * 5 + k * 3) % N;
   }
-  return new Uint8Array(readers);
 }
 
 function make(Classes) {
@@ -63,25 +61,17 @@ test('E-289: a class gets its own neighbour reads, which read what GameObject\'s
   Grid.reset();
 });
 
-test('E-289: the copies mark the reader type once, and a page instance on every read', () => {
-  const readers = setup();
+test('E-289: the copies read the row on a worker instance and on a page instance alike', () => {
+  setup();
   class Bat extends GameObject {}
   GameObject._assignComponentClassMap(Bat);
   const e = new Bat(3, {}, null);
-  Transform.entityType[3] = 7;
-  assert.equal(readers[7], 0);
   assert.equal(e.neighborCount, 3);
-  assert.equal(readers[7], 1);
-  readers[7] = 0;
-  assert.equal(e.neighborCount, 3);
-  assert.equal(readers[7], 0, 'a worker instance marks once');
+  assert.equal(e.getNeighbor(2), baseGet.call(e, 2));
   const page = new Bat(4, {}, null, { page: true });
-  Transform.entityType[4] = 9;
   assert.equal(page.neighborCount, 4);
-  assert.equal(readers[9], 1);
-  readers[9] = 0;
-  assert.equal(page.neighborCount, 4);
-  assert.equal(readers[9], 1, 'a page instance marks on every read');
+  assert.equal(page.neighborCount, baseCount.call(page));
+  for (let k = 0; k < 4; k++) assert.equal(page.getNeighbor(k), (4 * 5 + k * 3) % N);
   Grid.reset();
 });
 
