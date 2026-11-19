@@ -9494,7 +9494,8 @@
         "R-0770",
         "R-0771",
         "R-0774",
-        "R-0782"
+        "R-0782",
+        "R-1545"
       ],
       "status": "kept",
       "date": "2026-10-29",
@@ -24040,7 +24041,8 @@
       "records": [
         "R-1517",
         "R-1533",
-        "R-1544"
+        "R-1544",
+        "R-1545"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24049,7 +24051,7 @@
       "kind": "speed",
       "area": "spatial",
       "date": "2026-11-19",
-      "statusText": "found 2026-11-19 (R-1544): the first full neighbour build; next a spatial prime beside physics' (plan in R-1544)",
+      "statusText": "found 2026-11-19 (R-1544); the prime waits on the owner: how the readers are known before the start (R-1545)",
       "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames."
     },
     {
@@ -39053,6 +39055,15 @@
       "commits": [
         "e103f813"
       ]
+    },
+    {
+      "id": "R-1545",
+      "date": "2026-11-19",
+      "time": "07:55",
+      "timeFrom": "recorded",
+      "title": "SST-21's prime needs the neighbour readers known before the start; E-176 learns them at run time (logic's first frame): a static declaration on the class, or every type with a visualRange counted as a reader until logic's first frame; the owner's call",
+      "verdict": "note",
+      "text": "**SST-21's plan meets E-176: which types read their neighbours is learnt at run time, so a prime cannot know what to\nbuild; the owner's call.** Read of src (no run): Grid.markNeighborReader marks a type in Grid.neighborReaders the first\ntime its code reads a neighbour (getNeighborCount and the GameObject accessors), and _findNeighbors clears and skips the\nrows of every type not marked (E-176: no list for a type whose code never reads one). At the start no type is marked\nuntil logic's first frame runs its code, which reads empty lists and marks the readers; so spatial's frame 1 builds no\nlist (R-1544: nothing rebuilt, nothing reused) and frame 2 builds them all. A prime before the start would build nothing,\nand one that built every type's list would see its rows cleared by spatial's frame 1 (no type marked yet). Two ways,\neach an engine decision:\n- a static declaration on the class (a type that reads its neighbours says so), marked when the type is registered, so\n  the prime and frame 1 build its lists; an API addition (the owner's rule: one API, descriptive names);\n- the prime and the frames before logic's first one treat every type with a visualRange as a reader: no API, but the\n  first frames build lists for types that never read them (E-176's saving lost for those frames only), and the clearing\n  of unmarked rows waits for logic's first frame.\nEither also gives the AI its neighbours in its first frame, where today it reads empty lists."
     }
   ],
   "leads": [
