@@ -16088,7 +16088,8 @@
         "R-1335",
         "R-1494",
         "R-1495",
-        "R-1496"
+        "R-1496",
+        "R-1497"
       ]
     },
     {
@@ -22078,7 +22079,8 @@
         "indexed statics partial upload"
       ],
       "records": [
-        "R-1496"
+        "R-1496",
+        "R-1497"
       ],
       "id": "E-514",
       "kind": "speed",
@@ -39124,6 +39126,15 @@
       "title": "The barrio's drawn-frame loss on the HD 620 is not Chrome's GPU process (lighter at 8c310e43: 731-746 against 778-781 ms/s; E-514's statics upload +10 ms/s); pre-render waits more (0.2-0.6 -> 1.0-6.2 ms a frame) and makes fewer frames: the frame chain is the lead",
       "verdict": "note",
       "text": "ASUS lab job 0899d (12:05-12:20): gpuProcessTrace --decoder (Chrome's GPU process threads, self time by event,\nper-command slices) of Buenos Aires at night on the HD 620, 69d1a10f against 8c310e43. Headed, A B A B, 3 s traces\nafter 20 s warm-up, Intel 31.0.101.2145. The question was where R-1494's drawn-frame loss comes from, since GPU time\na frame is unchanged (R-1495).\n\n| CrGpuMain, ms a second | 69d1a10f r1 / r2 | 8c310e43 r1 / r2 |\n|---|---|---|\n| In slices | 778.5 / 781.4 | 745.9 / 730.5 |\n| glDrawElementsInstancedANGLE self | 257.1 / 276.2 | 168.4 / 177.7 |\n| glTexSubImage2DRobustANGLE | 7.4 / 8.1 (102/s) | 18.3 / 18.1 (160/s) |\n| glClientWaitSync | none / 4.7 (264/s) | 7.9 / 7.7 (568/s) |\n| Presents (DXGISwapChainImageBacking::Present) | 28 / 29 a second | 35 / 34 a second |\n\n- **The GPU process is lighter at 8c310e43, not heavier.** The instanced draws cost a third less (fewer instances).\n  E-514's statics-texture upload (3072x12 RGBA32UI, every other frame) adds about 10 ms a second. glClientWaitSync\n  calls doubled, but total under 8 ms a second.\n- **Under tracing the order flips:** 8c310e43 presents more frames (34 to 35 a second, against 28 to 29). The tracing\n  overhead lands on 69d1a10f's heavier draw stream. So CrGpuMain is not what holds 8c310e43's drawn frames down either.\n- **The lead is in R-1494's own pairs: pre-render waits.** Its exact-frame wait rose from 0.56 / 0.26 / 0.16 / 0.32 ms\n  (69d1a10f) to 2.42 / 0.97 / 4.75 / 6.23 ms (8c310e43). Its frames in the window fell from 345 / 340 / 341 / 335 to\n  323 / 326 / 323 / 318, while its own work halved. Pre-render produces fewer frames because it waits more. That points\n  to the frame chain between pre-render and the renderer (the bell, or a buffer returned late), not the GPU.\n- **Next:** a worker timeline (devtools.timeline) of pre-render and the renderer at 8c310e43, to see what pre-render\n  waits for."
+    },
+    {
+      "id": "R-1497",
+      "date": "2026-11-19",
+      "time": "16:12",
+      "timeFrom": "recorded",
+      "title": "The barrio's drawn frames on the HD 620 with E-198's pose wait off: 325 against 319 a 10 s window (about 2 %, 3 of 4 rounds); the rest of R-1494's loss fits vsync quantization (GPU 15.7 ms plus renderer 7.5 ms past one vsync)",
+      "verdict": "note",
+      "text": "ASUS lab job 0899e (16:06-16:12) asked whether R-1494's drawn-frame loss is E-198's pose wait. Pre-render waits for\nphysics's next pose with a budget of the frame period less its own step less 4 ms. At 69d1a10f its step (~17 ms)\nleft no budget; at 8c310e43 (~7 to 11 ms) it waits. A Windows wait past 1 ms can run to the timer period.\n\nThe test: k198.mjs flipped the default preRender.waitForPose in the lab tree pool-b (8c310e43, src/util/configDefaults.js)\nbetween runs, headed Buenos Aires at night, 15 s warm-up, 10 s window, 4 rounds alternated. The file went back after\n(git status clean).\n\n| waitForPose | Renderer frames drawn (10 s), rounds 1 to 4 | Median | Pre-render wait, median |\n|---|---|---|---|\n| true (as shipped) | 321 319 311 308 | 319 | 2.33 ms |\n| false | 341 325 296 319 | 325 | 0.00 ms |\n\n- **E-198's pose wait costs about 2 % of the drawn frames here.** No-wait was better in 3 of 4 rounds: +20, +6, -15,\n  +11. That is a small part of R-1494's -8.9 %, and inside the noise of 4 rounds.\n- **The rest fits vsync quantization.** About 15.7 ms of GPU a frame (R-1495) plus the renderer's ~7.5 ms is more\n  than a 16.7 ms vsync, so most frames take two vsyncs (30 fps). The 32 to 35 fps drawn are the share that make one.\n  Near that edge, small per-frame costs move the share a lot, and so the drawn rate.\n- **Reading:** nothing to fix in the frame chain. Drawn frames on this iGPU rise only with a shorter GPU frame: the\n  passes that grew (the lamps' map, the full-res statics pass), E-514's whole-texture statics upload, or E-520 and\n  E-521, the houses as one instance or a cached layer. The HD 620 is not the yardstick (owner, 2026-11-18)."
     }
   ],
   "leads": [
