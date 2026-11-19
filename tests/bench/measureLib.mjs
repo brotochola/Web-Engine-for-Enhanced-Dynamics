@@ -133,6 +133,13 @@ export function workloadOk(baseSum, hypSum, keys) {
       });
       continue;
     }
+    // N-322: a key the base counts as 0 and the other side as 1 or more is load that appeared (SST-21's lists made
+    // NEIGHBORS_REUSED 0 -> 4210 in a scoreboard row that read "load matches"). A key the base does not publish at all
+    // (an older revision) stays unjudged.
+    if (b?.median === 0 && h?.median >= 1) {
+      drifts.push({ key, pct: null, reason: `baseline ${key} median is 0, the other side's ${h.median}` });
+      continue;
+    }
     if (!(b?.median > 0)) continue;
     const d = pctDelta(h?.median, b.median);
     if (d == null) continue;
