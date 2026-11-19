@@ -37,10 +37,10 @@ import {
 } from './webgl/instancedSpriteGlsl.js';
 import {
   GPU_GBUF_FLOATS, GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS,
-  GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
+  GPU_INDEXED_TEX_WORD, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows, gpuIndexedUpdateRows,
 } from './gpuQueueLayout.js';
 import {
-  GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
+  GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
 import {
@@ -573,6 +573,19 @@ export class InstancedSpriteBatch {
     // it stays out of the arena.
     this._rowStatics = (this.indexed && !this.keyed && arena && arena.f32(staticFloats)) || new Float32Array(staticFloats);
     this._rowStaticsU32 = new Uint32Array(this._rowStatics.buffer, this._rowStatics.byteOffset, staticFloats);
+    // E-514: an indexed frame's lists of the statics rows that changed (pre-render's diff, room for a quarter of the rows
+    // each), copied out of the render-queue memory (WebGL takes no shared view) for the scatter into the statics.
+    this._ixUpdateRows = this.indexed && !this.keyed && typeof statics?.scatter === 'function'
+      ? gpuIndexedUpdateRows(this.capacity) : 0;
+    const ixWords = this._ixUpdateRows * GPU_KEYED_ROW_WORDS;
+    const ixCopy = (ixWords > 0 && arena && arena.f32(ixWords)) || new Float32Array(ixWords);
+    this._ixUpdates = new Uint32Array(ixCopy.buffer, ixCopy.byteOffset, ixWords);
+    const ixTexWords = this._ixUpdateRows * GPU_KEYED_TEX_WORDS;
+    const ixTexCopy = (ixTexWords > 0 && arena && arena.f32(ixTexWords)) || new Float32Array(ixTexWords);
+    this._ixTexUpdates = new Uint32Array(ixTexCopy.buffer, ixTexCopy.byteOffset, ixTexWords);
+    // Frames whose statics went up as lists, and as every row (a test and a probe read them).
+    this._ixScattered = 0;
+    this._ixWhole = 0;
     // E-177: the keyed pack's regions (gpuPackClient.packKeyedRowsWasm's `keyed`), the slot pairs it writes over the
     // static stream's half of the shared rows, its updates and their copy, and the resync header.
     const k = this.keyed ? keyed : null;
@@ -2745,9 +2758,11 @@ export class InstancedSpriteBatch {
    * GPU_FLAG_INDEXED): the poses and the slot pairs in draw order, and `rows` queue rows' statics in row order, `gen`
    * their generation (0: unknown). The statics go up, the texture rows they fill, only when the generation or the
    * rows moved; the slot pairs only when their own generation `slotsGen` (the painter's order) or the slots moved.
-   * A frame whose order moved uploads 24 bytes a sprite, one whose order holds 16.
+   * A frame whose order moved uploads 24 bytes a sprite, one whose order holds 16. E-514: `ix` (null: none), the frame's
+   * lists of the statics rows that changed and their bases (gpuQueueLayout GPU_HDR_IXUP): when the statics here are one
+   * base, only those rows go up (_scatterIndexedStatics).
    */
-  commitIndexed(pose, slots, rowStatics, count, rows, gen, slotsGen) {
+  commitIndexed(pose, slots, rowStatics, count, rows, gen, slotsGen, ix = null) {
     const n = count | 0;
     const keep = n > this.capacity ? this.capacity : n;
     if (keep <= 0) return this._finishUpload(0, SPLIT_POSE_FLOATS * 4);
@@ -2755,15 +2770,20 @@ export class InstancedSpriteBatch {
     const r = rows > cap ? cap : rows | 0;
     const g = gen >>> 0;
     if (g === 0 || g !== this._ixGen || r !== this._ixRows) {
+      if (r === (rows | 0) && this._scatterIndexedStatics(ix, g)) {
+        this._ixScattered++;
+      } else {
+        this._ixWhole++;
+        this.copyIn(this._rowStatics, rowStatics, r * GPU_INDEXED_STATIC_FLOATS);
+        if (this._useWebGpu) {
+          this._staticsSource.update(r * GPU_INDEXED_STATIC_FLOATS * 4);
+        } else {
+          const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
+          this._statics.upload(this._staticsSource, this._rowStaticsU32, width, this._staticsHeight, 0, staticsTextureHeight(r));
+        }
+      }
       this._ixGen = g;
       this._ixRows = r;
-      this.copyIn(this._rowStatics, rowStatics, r * GPU_INDEXED_STATIC_FLOATS);
-      if (this._useWebGpu) {
-        this._staticsSource.update(r * GPU_INDEXED_STATIC_FLOATS * 4);
-      } else {
-        const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
-        this._statics.upload(this._staticsSource, this._rowStaticsU32, width, this._staticsHeight, 0, staticsTextureHeight(r));
-      }
     }
     const sg = slotsGen >>> 0;
     if (sg === 0 || sg !== this._ixSlotsGen || keep !== this._ixSlots) {
@@ -2776,6 +2796,40 @@ export class InstancedSpriteBatch {
     // E-448: an indexed frame draws no opaque pass.
     this.dropOpaquePass();
     return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4, true);
+  }
+
+  /**
+   * E-514: an indexed frame's statics (generation `gen`) as the rows that changed, when the statics here are one of the
+   * bases pre-render listed them against (ix.genA / ix.rowsA, ix.genB / ix.rowsB): the lists copied out of the shared
+   * memory, applied to the CPU copy (a later upload of every row starts from it) and scattered into the texture (WebGL)
+   * or the storage buffer (WebGPU) by the keyed batches' scatter. False, nothing done, without lists, a base or a scatter:
+   * the caller then sends every row.
+   */
+  _scatterIndexedStatics(ix, gen) {
+    if (ix === null || gen === 0 || this._ixGen === 0 || this._ixUpdateRows === 0) return false;
+    const n = ix.count | 0;
+    const nt = ix.texCount | 0;
+    if (n < 0 || n > this._ixUpdateRows || nt < 0 || nt > this._ixUpdateRows) return false;
+    const held = this._ixGen;
+    const heldRows = this._ixRows;
+    const onA = (ix.genA >>> 0) === held && (ix.rowsA | 0) === heldRows;
+    const onB = (ix.genB >>> 0) === held && (ix.rowsB | 0) === heldRows;
+    if (!onA && !onB) return false;
+    const U = this._ixUpdates;
+    const T = this._ixTexUpdates;
+    if (n > 0) this.copyIn(U, ix.updates, n * GPU_KEYED_ROW_WORDS);
+    if (nt > 0) this.copyIn(T, ix.texUpdates, nt * GPU_KEYED_TEX_WORDS);
+    const S = this._rowStaticsU32;
+    for (let k = 0; k < n; k++) {
+      const at = k * GPU_KEYED_ROW_WORDS;
+      const to = U[at + GPU_KEYED_KEY_WORD] * GPU_INDEXED_STATIC_FLOATS;
+      for (let w = 0; w < GPU_INDEXED_STATIC_FLOATS; w++) S[to + w] = U[at + w];
+    }
+    for (let k = 0; k < nt; k++) S[T[2 * k] * GPU_INDEXED_STATIC_FLOATS + GPU_INDEXED_TEX_WORD] = T[2 * k + 1];
+    if (n > 0 || nt > 0) {
+      this._statics.scatter(this._staticsSource, U, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight, T, nt);
+    }
+    return true;
   }
 
   /**
