@@ -100,9 +100,16 @@ try {
         await page.locator('#info').evaluate((el) => {
           el.style.display = 'none';
         }).catch(() => {});
-        const png = await captureCanvasPng(page);
-        const analysis = await analyzePng(page, png);
-        console.log(`  canvas: nonBlack=${analysis.nonBlack}/${analysis.pixels} max=${analysis.maxChannel}`);
+        // `ready` is the renderer's first frame counted, which can still be an empty one: the capture tries again for
+        // up to 5 s before it calls the canvas black (one bundle in two runs of eight read black there, at random).
+        let analysis = await analyzePng(page, await captureCanvasPng(page));
+        let tries = 1;
+        for (; analysis.nonBlack < 100 && tries < 20; tries++) {
+          await page.waitForTimeout(250);
+          analysis = await analyzePng(page, await captureCanvasPng(page));
+        }
+        console.log(`  canvas: nonBlack=${analysis.nonBlack}/${analysis.pixels} max=${analysis.maxChannel}`
+          + (tries > 1 ? ` (capture ${tries})` : ''));
         if (analysis.nonBlack < 100) {
           canvasBlack = true;
         }
