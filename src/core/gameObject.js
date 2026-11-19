@@ -373,7 +373,17 @@ function poseMoved(e) {
     // after it, from the columns this setter wrote (the spawn publishes its lifecycle last): a SET_TRANSFORM now would
     // move a body that is not there (Predator by night: two a spawned body, 36 496 at its start).
     if (!isSpawningHere(i)) enqueuePoseOf(i);
-  } else if (Transform.parent[i] < entityIdNone) childPoseWritten(i);
+  } else if (anyChildLinked() && Transform.parent[i] < entityIdNone) childPoseWritten(i);
+}
+
+/**
+ * N-218: whether any entity has a parent (transform.parent). The pose writes read Transform.parent[i] only then: at
+ * 250 000 entities that column missed the cache in every write, also for entities with no parent. A plain read of the
+ * shared count: a link made on another worker this very frame may be seen a frame late, and physics puts that child
+ * back from its parent anyway.
+ */
+function anyChildLinked() {
+  return Transform.links[LINK_COUNT] !== 0;
 }
 
 /** A set x or set y wrote child i's column: its pose put back from its parent, and the warning. */
@@ -388,7 +398,7 @@ function setPositionFromArgs(e) {
   const y = SETTER_ARGS[1];
   const i = e.index;
   if (Transform.x[i] === x && Transform.y[i] === y) return e;
-  if (Transform.parent[i] < entityIdNone) {
+  if (anyChildLinked() && Transform.parent[i] < entityIdNone) {
     ignoreChildPoseWrite(i);
     return e;
   }
@@ -1463,7 +1473,7 @@ export class GameObject {
     const i = this.index;
     if (Transform.rotation && Transform.rotation[i] === Math.fround(value)) return;
     // DX-PARENT: a child turns with its parent (localRotation).
-    if (Transform.parent[i] < entityIdNone) {
+    if (anyChildLinked() && Transform.parent[i] < entityIdNone) {
       ignoreChildPoseWrite(i);
       return;
     }
@@ -1488,7 +1498,7 @@ export class GameObject {
   setRotationCS(c, s) {
     const i = this.index;
     // DX-PARENT: a child turns with its parent (localRotation).
-    if (Transform.parent[i] < entityIdNone) {
+    if (anyChildLinked() && Transform.parent[i] < entityIdNone) {
       ignoreChildPoseWrite(i);
       return;
     }
