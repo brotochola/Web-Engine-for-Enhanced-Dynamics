@@ -19,7 +19,7 @@
  *   node tests/bench/loadWaterfall.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
  *     [--query "light3d=1&hour=22"] [--runs 3] [--visits cold,warm] [--settle-ms 5000] [--bundle] [--headless]
  *     [--weed-bundle files/weed.prod.bundle.esm.min.js] [--http-cache] [--canvas 1920x1080] [--output report.json]
- *     [--js-flags no-liftoff]
+ *     [--js-flags no-liftoff] [--series spatial0]
  *
  * --weed-bundle names the dist ESM bundle (implies --bundle; files/… is the file mode, buildBundle.js --files).
  * --http-cache serves like a static host (ETag, 304), so a later visit can reuse scripts, wasm and their compiled
@@ -211,6 +211,36 @@ async function readLongestSteps() {
 }
 
 /**
+ * SST-21: in the page, before the load: on every animation frame, the named worker's slot in frameTotals (its frames and
+ * the sum of its own steps, STEP_MS - WAIT_MS), so the deltas between reads are its steps frame by frame (two frames
+ * between reads come as their sum). The slot is found once the scene has its buffers; window.__weedSeries holds
+ * [time on the marks' clock, frames, own-step sum] rows.
+ */
+function recordSeries(name) {
+  window.__weedSeries = [];
+  let slot = -1;
+  let f64 = null;
+  const look = async () => {
+    const s = window.game && window.game.currentScene;
+    const sab = s && s.buffers && s.buffers.frameTotals;
+    if (sab && slot < 0) {
+      const ft = await import('/src/util/frameTotals.js');
+      const fc = await import('/src/util/frameClock.js');
+      const m = /^(logic|spatial)(\d+)$/.exec(name);
+      const at = m ? (m[1] === 'logic' ? fc.LOGIC_SLOT0 : fc.SPATIAL_SLOT0) + Number(m[2]) : fc.FRAME_CLOCK_SLOTS[name];
+      if (at === undefined) return;
+      slot = (at * ft.SLOT_BYTES) / 8;
+      f64 = new Float64Array(sab);
+    }
+    if (f64) {
+      window.__weedSeries.push([performance.timeOrigin + performance.now(), f64[slot + 1], f64[slot + 2] - f64[slot + 3]]);
+    }
+    if (window.__weedSeries.length < 20000) requestAnimationFrame(look);
+  };
+  requestAnimationFrame(look);
+}
+
+/**
  * In the page, before the load: on every animation frame, whether the renderer has counted its first frame in
  * frameTotals (as isolationLoadTime.mjs reads it); its time, on the marks' clock, goes in window.__weedFirstFrameAt.
  * This is the first frame whatever path Pixi drew it by; Pixi's own 'first draw' mark is read beside it.
@@ -233,6 +263,7 @@ async function visitOnce(page, url, opts) {
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 60000 });
   await page.evaluate(watchFirstFrame, RENDERER_FRAMES_F64);
+  if (opts.series) await page.evaluate(recordSeries, opts.series);
   const prepareAt = await page.evaluate(() => performance.timeOrigin + performance.now());
   await page.evaluate(
     (o) => window.__WEED_BENCHMARK__.prepare(o),
@@ -264,7 +295,21 @@ async function visitOnce(page, url, opts) {
   marks.t0From = opts.t0From;
   await sleep(opts.settleMs);
   const steps = await page.evaluate(readLongestSteps);
-  return { marks, steps };
+  const series = opts.series ? await page.evaluate(() => window.__weedSeries) : null;
+  return { marks, steps, series };
+}
+
+/** SST-21: the series' frames over 20 ms: [ms after the first frame drawn, frame number, own step ms (the sum when a read saw more than one frame)]. */
+function longFrames(series, firstFrameAt) {
+  const out = [];
+  for (let i = 1; i < (series || []).length; i++) {
+    const [t, frames, work] = series[i];
+    const [, frames0, work0] = series[i - 1];
+    if (frames === frames0) continue;
+    const ms = work - work0;
+    if (ms >= 20) out.push([Math.round(t - firstFrameAt), frames, Math.round(ms * 10) / 10, frames - frames0]);
+  }
+  return out;
 }
 
 async function main() {
@@ -283,6 +328,8 @@ async function main() {
     // --t0 prepare: time every side from the bench page's prepare call (its module imports, then loadScene), so a
     // revision without load marks compares with one that has them.
     t0From: args.t0 === 'prepare' ? 'prepare' : 'loadScene',
+    // --series spatial0 (or logic0, physics, renderer…): that worker's own step frame by frame (SST-21).
+    series: typeof args.series === 'string' ? args.series : '',
   };
   const runs = Number(args.runs ?? 3);
   const visits = String(args.visits || 'cold').split(',');
@@ -324,7 +371,11 @@ async function main() {
       const page = await context.newPage();
       page.on('pageerror', (e) => console.error(`[page error] ${e.message}`));
       for (const visit of visits) {
-        const { marks, steps } = await visitOnce(page, url, opts);
+        const { marks, steps, series } = await visitOnce(page, url, opts);
+        if (opts.series) {
+          const rows = longFrames(series, marks.firstFrameAt);
+          console.log(`  ${opts.series} frames over 20 ms (ms after the first frame drawn, frame, own step ms, frames in the read): ${rows.length ? rows.map((r) => `[${r.join(', ')}]`).join(' ') : 'none'}`);
+        }
         const w = waterfall(marks);
         const navToT0 = w.t0 - marks.pageOrigin;
         results.push({ run: r, visit, navToT0, waterfall: w, steps });
