@@ -24,8 +24,9 @@
     commandRingCapacity: 4096,
     sleeping: true,
     hitEventThreshold: 0,
-    // E-322: every this many steps Box2D puts the awake bodies back in body id order (0: never).
-    awakeReorderInterval: 0,
+    // E-322: every this many steps Box2D puts the awake bodies back in body id order (0: never). Predator crowd 2.5:
+    // physics -11.9 % at 30, its p95 and p99 lower too (the reorder spread over steps on the workers).
+    awakeReorderInterval: 30,
     liquidFun: Object.freeze({
       enabled: false, // scene sets true to auto-create the system at physics init
       radius: 10, // particle radius, world px

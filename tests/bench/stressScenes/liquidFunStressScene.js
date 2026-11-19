@@ -15,9 +15,10 @@ const { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } = WEED;
 // ?water=f: the water block's height and LiquidFun's maxCount times f (1 by default), the scene's load knob: physics
 // runs ~5.5 ms at 1, under the 6 ms floor of a speed verdict.
 const WATER = Number(WEED.params?.get('water')) > 0 ? Number(WEED.params.get('water')) : 1;
-// E-322: ?awakeReorder=<n> puts Box2D's awake bodies back in body id order every n steps (0, the default: never), so
+// E-322: ?awakeReorder=<n> puts Box2D's awake bodies back in body id order every n steps (0: never; without it, the engine's default), so
 // the LiquidFun gates can time a Box2D build with the reorder on.
-const AWAKE_REORDER = Math.max(0, Math.trunc(Number(WEED.params?.get('awakeReorder')) || 0));
+const AWAKE_REORDER_PARAM = WEED.params?.get('awakeReorder');
+const AWAKE_REORDER = AWAKE_REORDER_PARAM == null ? undefined : Math.max(0, Math.trunc(Number(AWAKE_REORDER_PARAM) || 0));
 
 export class LiquidFunStressScene extends WEED.Scene {
   static config = {
@@ -48,7 +49,7 @@ export class LiquidFunStressScene extends WEED.Scene {
       noLimitFPS: false,
       gravity: { x: 0, y: 980 },
       sleeping: false,
-      awakeReorderInterval: AWAKE_REORDER,
+      ...(AWAKE_REORDER === undefined ? {} : { awakeReorderInterval: AWAKE_REORDER }),
       liquidFun: { enabled: true, radius: 8, maxCount: Math.ceil(15000 * WATER), subSteps: 1, strictContactCheck: false },
     },
 
