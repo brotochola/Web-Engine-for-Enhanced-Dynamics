@@ -17012,7 +17012,8 @@
         "R-1240",
         "R-1471",
         "R-1473",
-        "R-1509"
+        "R-1509",
+        "R-1520"
       ]
     },
     {
@@ -18858,12 +18859,12 @@
     {
       "id": "E-426",
       "title": "Box2D's three pool threads stay on a CPU about 750 ms a second each (2.25 cores) through the step's spin (E-298's step 1), are preempted 126 to 143 times a second and leave the logic workers preempted 36 to 39 times a second: Predator crowd 2.5 has more runnable threads than cores at the frame's peak",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from a WPR capture with CSwitch and ReadyThread (cswitchStats.mjs, wprPmc.mjs) on Predator crowd 2.5",
+      "status": "rejected",
+      "statusText": "rejected on the main PC 2026-11-19 (R-1519); physics.stepSpin lets a scene force it",
       "date": "2026-11-16",
       "area": "physics",
       "kind": "speed",
-      "result": "Window 8.76 s: physics thread 950 ms/s on CPU (84 preemptions a second); pool threads 754, 752, 743 ms/s (WrAlertByThreadId about 62 a second: one sleep a frame; 126 to 143 preemptions a second; 45 to 50 CCX moves a second); logic 610 and 538 ms/s (39 and 36 preemptions); spatial and pre-render 708 and 572. E-298 kept the spin on ballsHeavy (physics -7.7 %) with a clean Predator gate.",
+      "result": "Rejected on the main PC 2026-11-19 (R-1519): spin off NEUTRAL (physics +1.9 %), pool of two physics +8.7 % (spatial -6.4 %) at Predator crowd 2.5; physics.stepSpin 'auto' stays the default.",
       "next": "A pool of two threads, or a spin bounded by the step's own work, measured on every worker of Predator crowd 2.5 (not only physics): the cores the spin takes may cost logic, spatial and pre-render more than the solver gains.",
       "refs": [],
       "aliases": [
@@ -18876,9 +18877,9 @@
         "R-1238",
         "R-1244",
         "R-1250",
-        "R-1252"
-      ],
-      "rank": 5
+        "R-1252",
+        "R-1519"
+      ]
     },
     {
       "id": "E-427",
@@ -24011,6 +24012,20 @@
       "date": "2026-11-19",
       "statusText": "found 2026-11-19 by DX-STARTUP's final matrix (R-1517)",
       "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames."
+    },
+    {
+      "records": [
+        "R-1520"
+      ],
+      "refs": [],
+      "id": "N-313",
+      "title": "E-322's reorder raises Box2D's memory peak 45 to 70 MB at Predator crowd 2.5 (548 -> 593 to 619 MB of 669, the 90 % warning fires): its gathers take new buffers before freeing the old ones",
+      "status": "open",
+      "kind": "bug",
+      "area": "physics",
+      "date": "2026-11-19",
+      "statusText": "found 2026-11-19 checking E-322's default (R-1520); the peak holds, it does not grow",
+      "next": "Keep the reorder's gather buffers between reorders (a scratch arena sized by the awake set's capacity, grown when it grows) instead of b2Alloc per pass; check the peak at Predator crowd 2.5 and the harness's pose hash."
     }
   ],
   "records": [
@@ -38596,6 +38611,30 @@
         "95595210",
         "d3e01475",
         "958f3560"
+      ]
+    },
+    {
+      "id": "R-1519",
+      "date": "2026-11-19",
+      "time": "02:35",
+      "timeFrom": "recorded",
+      "title": "E-426 on the main PC: the pool spin off is NEUTRAL, a two-thread pool costs physics (the limiter) 8.7 %: rejected here, 'auto' stays; physics.stepSpin added",
+      "verdict": "rejected",
+      "text": "**E-426 on the main PC (16 logical CPUs): Box2D's pool spin costs the other workers nothing measurable at Predator crowd\n2.5, and a pool of two threads costs physics, the limiter, 8.7 %: rejected here; 'auto' stays.** cbce44b5 adds\nphysics.stepSpin ('auto', E-298's rule; true or false force it) and the bench page's ?physicsSpin=0|1. runMultiArm e426,\ndx/startup with E-322 on, `crowd=2.5&zoom=0.216`, physics owner, 4 rounds, `--full-rev --pool`, to 2026-11-19 02:35:\n- spinOff (`physicsSpin=0`): NEUTRAL, physics 11.759 -> 11.805 ms (+1.9 %, 3/4 worse), spatial +1.7 %, the others under\n  the floor;\n- pool2 (`physicsWorkers=3`): REGRESSION, physics 11.759 -> 12.694 (+8.7 %, 4/4), spatial -6.4 % (0/4), logic and\n  pre-render lower under the floor;\n- both: REGRESSION, physics +5.1 % (4/4), spatial -8.1 %.\nThe cores the spin and the third pool thread take do cost spatial a little, but physics is Predator's limit (R-1509), so\nthe trade loses. Where the engine has more threads than logical CPUs, 'auto' turns the spin off already (E-298, E-501's\nASUS gain); the knob stays for scenes and machines that want to choose.",
+      "commits": [
+        "cbce44b5"
+      ]
+    },
+    {
+      "id": "R-1520",
+      "date": "2026-11-19",
+      "time": "02:56",
+      "timeFrom": "recorded",
+      "title": "E-322 on by default, checked: Box2D's memory peak +45 to 70 MB at Predator crowd 2.5 and holding; Boids 85 000 NEUTRAL (spatial -2.1 % off, physics +0.9 %)",
+      "verdict": "note",
+      "text": "**E-322 on by default, checked for what the sittings did not show: Box2D's memory peak rises 45 to 70 MB at Predator crowd\n2.5 and holds there (it does not grow over a run); Boids at 85 000 shows no change in memory and none in its frame.** The\nphysics stats of the runs (MEMORY_PEAK_KB, HEAP_USED_KB, statsEnd): Predator crowd 2.5 with the reorder off peaks at\n548 MB of 669 (heap in use 544), with it on at 593 to 619 MB (in use 543 to 555), so the engine's warning at 90 % now\nfires at that crowd (92 %); a 70 s window (2026-11-19 02:38) peaks at 619 MB as the 20 s ones did. The reorder's gathers\ntake new buffers before they free the old ones, and the break keeps the room. Boids at 85 000 (all awake, few contacts,\n02:40): peak 221 MB with the reorder, 219 without, no warning. runPredatorAbab boids-e322, `boids=85000`, B\n`awakeReorder=0` (the bench page's knob, 5f697160), spatial owner, 4 pairs, to 02:56: NEUTRAL, spatial 10.867 -> 10.468\nms with it off (-2.1 %, 1/4 worse), physics +0.9 %, spatial p99 alike. Two Boids capacity searches with the reorder on\n(02:43, 02:49; the second asked ?awakeReorder=0, which Boids did not read then) held 85 000 and 77 000: a search swings\nthat much; 91 000 at 22:44. Filed N-313 for the memory.",
+      "commits": [
+        "5f697160"
       ]
     }
   ],
