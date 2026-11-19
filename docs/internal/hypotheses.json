@@ -23474,7 +23474,9 @@
         "R-1364",
         "R-1365",
         "R-1435",
-        "R-1436"
+        "R-1436",
+        "R-1461",
+        "R-1462"
       ],
       "result": "",
       "next": "Find the feature that sets it off. 32 runs per arm on the HD 620, each run's Chrome log kept (CHROME_LOG_FILE plus --dumpio); the log's ProduceSkia or \"GPU state invalid\" lines mark a frozen run. Arms: the barrio by day (hour=12); at night with its lamps off; with shadows off; with the G-buffer off. Then a smaller scene with the suspect alone. Also try WebGPU on the HD 620, and the Radeon iGPU here when this PC is free.",
@@ -37970,6 +37972,24 @@
       "title": "SST-8 timed: the bundle's file mode, Predator by night cold 5 852 -> 3 542 ms (-39 %, 4 of 4), warm and hot a tie; the single-file bundle stays the default",
       "verdict": "kept",
       "text": "**SST-8 timed: the bundle's file mode against the single-file bundle, first frame after loadScene: Predator by night cold\n5 852 -> 3 542 ms (median of 4, -39 %), warm 1 168 -> 1 148 (a tie), hot 1 190 -> 1 195 (a tie); bunnyMark cold 1 309 ->\n735 ms, warm and hot level (about 640 to 690).** 2026-11-18 21:19 to 21:29, the main PC, tests/bench/loadWaterfall.mjs in\nthe bundle agent's worktree (its dist/ built: the single-file prod ESM bundle and dist/files/), --http-cache, visits\ncold, warm and hot (the hot one where V8 can use a script's code cache), one run of each mode alternated, 4 rounds.\n\n| | single cold | files cold | single warm | files warm | single hot | files hot |\n| --- | --- | --- | --- | --- | --- | --- |\n| Predator light3d=1&hour=22 | 8 926, 3 638, 5 775, 5 929 | 3 355, 4 130, 3 730, 3 202 | 1 194, 1 134, 1 178, 1 158 | 1 151, 1 126, 1 144, 1 159 | 1 209, 1 175, 1 165, 1 205 | 1 198, 1 176, 1 200, 1 191 |\n| bunnyMark | 715, 1 598, 1 020, 2 033 | 744, 726, 2 837, 721 | 638, 634, 642, 686 | 679, 643, 660, 647 | 665, 691, 652, 656 | 664, 644, 641, 646 |\n\nCold visits swing on this HDD, but the file mode won 4 of 4 in Predator. Warm and hot do not move on this 8-core CPU: the\ncode cache barely shows here; the ASUS (2 cores, HDD) is where it should. Also seen: Predator by night in the bundle starts\nin about 1.15 s warm against about 2.0 s from source (the source build's hundreds of module fetches). The single-file\nbundle stays the default; switching deploys to the file mode is the owner's call (the agent's report lists what it takes)."
+    },
+    {
+      "id": "R-1461",
+      "date": "2026-11-18",
+      "time": "20:44",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze recorded with WPR: the 1 s waits are the Intel D3D11 driver's own worker threads timing out on a file lock they share on its shader cache (LocalLow\\Intel\\ShaderCache); Chrome's GPU main thread waits for them",
+      "verdict": "note",
+      "text": "ASUS lab jobs 0896y and 0896z (19:15-20:44), freezeProbe v6: Windows' recorder (WPR) in memory from before Chrome\nstarts, kept for frozen runs. A cut-down profile (weedlab.wprp: context switches and ready-thread with stacks, DxgKrnl;\nno CPU sampling; 320 MB of fixed buffers) after WPR's built-in CPU+GPU+DiskIO took 1.3 GB, 240 s to stop, and slowed\nthe scene's load to 37 s. An elevated helper (wprAgent.mjs) starts and stops it, as the Task Scheduler took 30 s to\n2 min per launch. The capture is read with tracerpt and a lab tool (wprWaits.mjs: each wait's length, reason, readier\nand both stacks as module+offset). Buenos Aires at night, HD 620, WebGL D3D11, src at main 70ba822b.\n\n- With the recorder running, the barrio froze 7 of 16 runs (about 3 % without it): the recorder's stack walk on every\n  context switch makes the freeze far more likely. Every freeze recovered.\n- The chain, frozen run 1, the same in the others read: Chrome's GPU main thread waits inside the Intel D3D11 driver\n  (chrome.dll > d3d11.dll > igd10iumd64.dll+0x19a2af, WaitForSingleObject) for one of the driver's own three worker\n  threads (start igd10iumd64.dll+0x2debea). That worker waits at igd10iumd64.dll+0x310b21 (WaitForSingleObject with a\n  timeout). In a normal run, Ntfs.sys ends that wait from one of the same three workers (6 waits, all under 500 ms): a\n  file lock they share. In the frozen stretch the waits end at exactly 1000 ms, readied by the timer (8 of 8 of 950 ms\n  or more), the worker goes on, and only then releases the GPU main thread. About 30 shader links pay 1 s each; the\n  freeze ends when the scene has no more shaders to build.\n- The file is the driver's own shader cache: LocalLow\\Intel\\ShaderCache, one file per program; Chrome's was 221 MB\n  and grows about 200 KB every run (the driver appends the whole set each time). The disk sat at 0 to 8 % busy during\n  the freeze (0896w's counters), so it is the lock, not the disk.\n- Driver: Intel 27.20.100.8682 (2020-09) on the HD 620."
+    },
+    {
+      "id": "R-1462",
+      "date": "2026-11-18",
+      "time": "21:48",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze vs the Intel driver's shader cache for Chrome: fresh file 3 of 12, real file 0 of 12, no cache file 0 of 12 (recorder as load); size and a previous Chrome are not the cause",
+      "verdict": "note",
+      "text": "ASUS lab job 0897d (21:11-21:48), freezeProbe v7: the Intel driver's shader cache for Chrome set before each run,\nthe recorder running as load (started and cancelled, nothing kept), a tracerpt loop added as more load from round 7.\nArms interleaved, 12 rounds, Buenos Aires at night, HD 620, WebGL D3D11, src at main 70ba822b. Each run waits until\nthe last run's Chrome has exited.\n\n| Chrome's Intel cache | Frozen |\n|---|---|\n| keep (the real 221 MB file) | 0 of 12 |\n| fresh (the real file parked; the driver writes a new one, about 195 KB) | 3 of 12 |\n| none (the real file parked, file creation denied in the folder; the driver makes no file) | 0 of 12 |\n\n- A fresh, tiny file froze (36 KB written when frozen): the file's size is not the cause.\n- A previous Chrome still exiting is not the cause either: 0897b froze with the last Chrome gone 76 ms before.\n- 3 against 0 of 12 is about 1 in 10 by chance; 0897e runs fresh against none for 30 rounds to settle it.\n- How: the folder cannot be renamed (explorer.exe keeps its own cache file there open), so only Chrome's two files\n  (8f3daeab..., ec95df26...) are parked, and none adds a deny ACE for Everyone on creating files. The cache was copied\n  to C:\\weedlab\\intel-shadercache-backup first; an earlier version of the probe overwrote the parked real file, which\n  came back from that copy. The real files are back in place."
     }
   ],
   "leads": [
