@@ -402,6 +402,13 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   sleeping: SIM.sleeping,
   /** Min relative approach speed (px/s) to emit a Collider.enableHitEvents contact-hit. 0 = Box2D default. */
   hitEventThreshold: SIM.hitEventThreshold,
+  /**
+   * E-322: every this many physics steps (0 = never, the default), at the start of the step, Box2D puts its awake
+   * bodies back in body id order and its contacts in body order, which sleeping and waking scramble. Results are the
+   * same bit for bit; the step reads memory in order. One reorder costs about 6.5 ms at 38 000 awake bodies, inside
+   * that step. Changes apply at once (Scene.updatePhysicsConfig).
+   */
+  awakeReorderInterval: SIM.awakeReorderInterval,
   noLimitFPS: false,
   fixedFps: 0,
   /**

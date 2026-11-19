@@ -786,6 +786,8 @@
         ((state.config.spatial && state.config.spatial.numberOfSpatialWorkers) || 1) +
           ((state.config.logic && state.config.logic.numberOfLogicWorkers) || 1) + 3 + (s.numberOfPhysicsWorkers | 0),
       ),
+      // E-322: Box2D's awake bodies back in body id order every this many steps (0: never).
+      awakeReorderInterval: s.awakeReorderInterval,
       maxBodies: maxBodies,
       entityCount: entityCount,
       subSteps: s.subStepCount,
@@ -1030,6 +1032,7 @@
         sleeping: state.sleepingEnabled !== false,
         hitEventThreshold: state.settings.hitEventThreshold,
         publishContactRing: (state.config.physics || {}).publishContactRing !== false,
+        awakeReorderInterval: state.settings.awakeReorderInterval,
       });
     }
   }

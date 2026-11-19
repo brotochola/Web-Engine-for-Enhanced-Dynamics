@@ -3355,6 +3355,8 @@
     });
     world.enableSleeping(sleepingEnabled);
     world.setStepSpin(data.stepSpin !== false);
+    // E-322: Box2D's awake bodies back in body id order every this many steps (0: never; results are the same).
+    world.setAwakeReorderInterval(data.awakeReorderInterval | 0);
     const slots = world.getMaxBodySlots();
     if (maxBodies <= 0 || maxBodies > slots) {
       throw new Error(
@@ -3750,6 +3752,9 @@
     }
     if (data.publishContactRing !== undefined) {
       publishContactRing = data.publishContactRing !== false;
+    }
+    if (data.awakeReorderInterval != null && world) {
+      world.setAwakeReorderInterval(data.awakeReorderInterval | 0);
     }
   }
 
