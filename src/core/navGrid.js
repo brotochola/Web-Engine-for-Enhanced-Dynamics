@@ -143,6 +143,20 @@ import {
   staticFlowfieldFromJSON,
 } from './staticFlowfieldFile.js';
 
+/**
+ * SST-10: a static flowfield's cells in shared memory, copied there once on the page. Every worker's init message then
+ * shares them instead of carrying its own copy: the barrio's fields cost each of its ten init messages about 11 ms to
+ * clone, one after another on the page's thread. The workers only read them.
+ * @param {Int8Array} vectors
+ * @returns {Int8Array}
+ */
+function sharedCells(vectors) {
+  if (typeof SharedArrayBuffer !== 'function' || vectors.buffer instanceof SharedArrayBuffer) return vectors;
+  const shared = new Int8Array(new SharedArrayBuffer(vectors.length));
+  shared.set(vectors);
+  return shared;
+}
+
 export class NavGrid {
   // =========================================================
   // Static state (shared across all instances in a worker)
@@ -411,7 +425,11 @@ export class NavGrid {
         }
       })
     );
-    for (const entry of loaded) if (entry) this._staticFlowfields.set(entry[0], entry[1]);
+    for (const entry of loaded) {
+      if (!entry) continue;
+      entry[1].vectors = sharedCells(entry[1].vectors);
+      this._staticFlowfields.set(entry[0], entry[1]);
+    }
   }
 
   /** @deprecated The old name of loadStaticFlowfields (which reads binary files as well as JSON). */

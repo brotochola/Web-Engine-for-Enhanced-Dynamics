@@ -251,3 +251,25 @@ test('the old name, loadStaticFlowfieldsFromJSON, loads binary files too', async
   }
   assert.deepEqual(cells('f').vectors, Array.from(staticFlowfieldFromJSON(json).vectors));
 });
+
+test('the cells sit in shared memory once, so every worker init message shares them instead of copying (SST-10)', async () => {
+  NavGrid.reset();
+  const json = jsonField(6, 4, 10, 3);
+  const server = serve({ '/f.bin': await encodeStaticFlowfield(staticFlowfieldFromJSON(json)), '/f.json': JSON.stringify(json) });
+  try {
+    await NavGrid.loadStaticFlowfields({ b: '/f.bin', j: '/f.json' }, 60, 40);
+  } finally {
+    server.restore();
+  }
+  const expected = Array.from(staticFlowfieldFromJSON(json).vectors);
+  const sent = NavGrid.serializeStaticFlowfields();
+  for (const name of ['b', 'j']) {
+    assert.ok(sent[name].vectors.buffer instanceof SharedArrayBuffer, name);
+    assert.deepEqual(Array.from(sent[name].vectors), expected, name);
+  }
+  // A structured clone (what postMessage does to the init data) sees the same memory: one copy for every worker.
+  const received = structuredClone(sent);
+  const before = received.b.vectors[0];
+  sent.b.vectors[0] = before === 5 ? 6 : 5;
+  assert.equal(received.b.vectors[0], sent.b.vectors[0]);
+});
