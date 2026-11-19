@@ -243,7 +243,7 @@ test('the final prime publishes the begin events of bodies spawned touching; the
   ]);
 });
 
-test('the physics host\'s final prime asks for the contacts, its loop does not', () => {
+test('the physics host primes once, after the spawns, asking for the contacts (N-318: no loop while logic0 spawns)', () => {
   const asked = [];
   const global = { weedjsPrime: (final) => asked.push(final) };
   const state = { box2dReady: true, box2dAborted: false };
@@ -255,7 +255,7 @@ test('the physics host\'s final prime asks for the contacts, its loop does not',
   primeOnce(false);
   primeOnce();
   assert.deepEqual(asked, [true, false, false]);
-  // The loop and the 'prime' message, where they call it.
-  assert.match(functionSource(hostSource, 'primeLoop'), /primeOnce\(false\);/);
-  assert.match(hostSource, /data\.msg === 'prime'\) \{[^}]*?stopPrimeLoop\(\);\s*primeOnce\(true\);/);
+  // The 'prime' message calls it once; nothing primes while logic0 spawns (that read spawns as they were written).
+  assert.match(hostSource, /data\.msg === 'prime'\) \{[^}]*?primeOnce\(true\);/);
+  assert.doesNotMatch(hostSource, /primeBegin|primeLoop/);
 });
