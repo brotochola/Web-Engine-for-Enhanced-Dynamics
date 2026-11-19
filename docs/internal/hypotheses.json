@@ -23309,17 +23309,18 @@
       "records": [
         "R-1349",
         "R-1361",
-        "R-1445"
+        "R-1445",
+        "R-1482"
       ],
-      "result": "ASUS scoreboard 0895: pixi STEP_MS +29.3 %, kernel +46.0 % (FAIL row)",
-      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "result": "Not a regression (R-1482): on the ASUS the renderer's own work fell 1.426 -> 0.910 ms and frames drawn rose 30 -> 42 fps; the scoreboard judged raw STEP_MS, which holds the queue wait (N-311).",
+      "next": "Nothing for the engine. The scoreboard reading STEP - WAIT (N-311) clears the row.",
       "id": "N-294",
       "kind": "speed",
       "area": "pixi",
-      "status": "open",
+      "status": "answered",
       "date": "2026-11-18",
       "title": "meshFillMovingScene's renderer costs 29 % more than v0.14.0's on the ASUS, though its kernel got 46 % faster",
-      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+      "statusText": "answered on the ASUS 2026-11-18 (job 0898f): the renderer's own work is lower on main; raw STEP_MS holds the queue wait"
     },
     {
       "refs": [],
@@ -38010,6 +38011,15 @@
       "title": "audioSlots occ100x3 is not slower on main: its slow reps are the ones with a contender worker still starting when the 300 ms wait ends (all 3 ready: 71 635 ops/s, v0.14.0 73 907)",
       "verdict": "note",
       "text": "ASUS lab jobs 0898a to 0898e (22:17-22:50), Node 22 only, no browser. audioSlotMicrobench's occ100x3 case (3 worker\nthreads claiming saturated slots) at v0.14.0, E-285's parent, E-285 (9c7100bd, the only change to the slot writers\nsince v0.14.0) and origin/main. Each revision is exported with git archive and runs its own kernel, interleaved.\n\n| Job | v0.14.0 | pre-E-285 | E-285 | main |\n|---|---|---|---|---|\n| 0898a (main last in each round) | 72 207 | 70 001 | 67 011 | 38 078 |\n| 0898b (main in the middle) | 73 259 | | 70 751 | 71 630 |\n| 0898c (0898a's order, then reversed) | 72 885 / 70 326 | 72 866 / 69 189 | 69 414 / 67 369 | 57 981 / 33 560 |\n\nMedians of 6 rounds, ops/s. Main is bimodal; the others never slow.\n\n0898e counts the contender workers ready at \"go\" (a copy of each kernel: each worker adds 1 to a shared word just\nbefore it waits for go). It ran 40 reps per revision:\n\n| Revision | Workers ready at go | Median ops/s | Reps |\n|---|---|---|---|\n| v0.14.0 | 3 | 73 907 | 40 |\n| E-285 | 3 | 69 684 | 40 |\n| main | 3 | 71 635 | 23 |\n| main | 2 | 35 586 | 7 |\n| main | 1 | 41 610 | 5 |\n| main | 0 | 30 607 | 5 |\n\n- Not a regression. Every slow rep of main is one where a worker was still starting when the timer began. With all\n  three ready, main claims at v0.14.0's speed (-3 %, inside the ASUS's kernel noise).\n- Cause: the contended case waits a fixed 300 ms after starting its workers, then times about 17 ms of claims. Main's\n  workers load a bigger module graph (src/util/configDefaults.js +289 lines and utils.js +129 since E-285). On this\n  HDD laptop they sometimes take more than 300 ms to start, so the timed window holds their start-up.\n- E-285 itself: -4 % against its parent, inside the noise.\n- Fix (the measurement tool, not the engine): the contended case should wait until every worker has said it is ready\n  (a shared ready count, as the probe did), not a fixed 300 ms. Not made: no code changes on the main PC tonight (the\n  owner)."
+    },
+    {
+      "id": "R-1482",
+      "date": "2026-11-18",
+      "time": "23:10",
+      "timeFrom": "recorded",
+      "title": "meshFillMoving on the ASUS, STEP - WAIT: the renderer's own work 1.426 -> 0.910 ms (-36 %) and drawn fps 30.0 -> 41.9 from v0.14.0 to main; the scoreboard's +29 % was the queue wait inside the step",
+      "verdict": "note",
+      "text": "ASUS lab job 0898f (22:53-23:10), runPredatorAbab on meshFillMovingScene, v0.14.0 (A) against origin/main (B), each\nits whole revision (--full-rev, the pool worktrees), headless as the scoreboard ran it, 4 pairs, HD 620.\n\n| Pair | v0.14.0 renderer STEP_MS (no wait in its step) | main STEP_MS | main WAIT_MS | main STEP - WAIT |\n|---|---|---|---|---|\n| 1 | 1.456 | 3.844 | 2.863 | 0.867 |\n| 2 | 1.415 | 3.911 | 2.702 | 0.931 |\n| 3 | 1.517 | 3.996 | 3.216 | 0.888 |\n| 4 | 1.424 | 2.684 | 1.901 | 1.018 |\n\n(main's STEP and WAIT per pair are the exact-frame step and wait the runner prints.)\n\n- Verdict NEUTRAL: the renderer's own work fell from 1.426 to 0.910 ms (-36 %). That is under the 6 ms floor, so it\n  is not judged.\n- Frames drawn rose 30.0 -> 41.9 fps, paired +39.6 %, with no pair drawing fewer frames.\n- Entities processed 6 500 on both sides.\n- Not a regression. Main's raw STEP_MS holds the renderer's wait for its queue, which has sat inside the step since\n  E-198 and N-146. The scoreboard judged raw pixi_STEP_MS, so it read that wait as cost; N-311 has the scoreboard\n  judge STEP - WAIT.\n- This agrees with the main PC's reading (the backlog session): main's own work there is about 0.5 ms, as v0.14.0's\n  whole step was."
     }
   ],
   "leads": [
