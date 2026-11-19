@@ -16988,8 +16988,8 @@
     {
       "id": "E-322",
       "title": "Box2D's awake body set is in random spatial order: civilians spawn at uniform random positions and sleep/wake swap-removes scramble it further",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "running",
+      "statusText": "built 2026-11-18 (R-1462); off by default; Predator crowd 2.5 at N = 30 and 120 owed",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -17009,7 +17009,8 @@
         "R-1231",
         "R-1236",
         "R-1238",
-        "R-1240"
+        "R-1240",
+        "R-1462"
       ],
       "rank": 2
     },
@@ -23741,16 +23742,17 @@
     },
     {
       "records": [
-        "R-1452"
+        "R-1452",
+        "R-1461"
       ],
       "refs": [],
       "id": "SST-12",
       "title": "Box2D's start on the critical path: the physics worker answers its block request 1.1 s (Predator) to 1.6 s (the barrio) after loadScene, with the page thread free",
-      "status": "open",
+      "status": "running",
       "kind": "speed",
       "area": "load",
       "date": "2026-11-18",
-      "statusText": "found 2026-11-18 by the atlas items' waterfall (R-1452)"
+      "statusText": "a first part 2026-11-18 (R-1461); the worker's own start (about 1 s in a source build) left"
     },
     {
       "records": [
@@ -37886,6 +37888,34 @@
       "title": "SST-8 timed: the bundle's file mode, Predator by night cold 5 852 -> 3 542 ms (-39 %, 4 of 4), warm and hot a tie; the single-file bundle stays the default",
       "verdict": "kept",
       "text": "**SST-8 timed: the bundle's file mode against the single-file bundle, first frame after loadScene: Predator by night cold\n5 852 -> 3 542 ms (median of 4, -39 %), warm 1 168 -> 1 148 (a tie), hot 1 190 -> 1 195 (a tie); bunnyMark cold 1 309 ->\n735 ms, warm and hot level (about 640 to 690).** 2026-11-18 21:19 to 21:29, the main PC, tests/bench/loadWaterfall.mjs in\nthe bundle agent's worktree (its dist/ built: the single-file prod ESM bundle and dist/files/), --http-cache, visits\ncold, warm and hot (the hot one where V8 can use a script's code cache), one run of each mode alternated, 4 rounds.\n\n| | single cold | files cold | single warm | files warm | single hot | files hot |\n| --- | --- | --- | --- | --- | --- | --- |\n| Predator light3d=1&hour=22 | 8 926, 3 638, 5 775, 5 929 | 3 355, 4 130, 3 730, 3 202 | 1 194, 1 134, 1 178, 1 158 | 1 151, 1 126, 1 144, 1 159 | 1 209, 1 175, 1 165, 1 205 | 1 198, 1 176, 1 200, 1 191 |\n| bunnyMark | 715, 1 598, 1 020, 2 033 | 744, 726, 2 837, 721 | 638, 634, 642, 686 | 679, 643, 660, 647 | 665, 691, 652, 656 | 664, 644, 641, 646 |\n\nCold visits swing on this HDD, but the file mode won 4 of 4 in Predator. Warm and hot do not move on this 8-core CPU: the\ncode cache barely shows here; the ASUS (2 cores, HDD) is where it should. Also seen: Predator by night in the bundle starts\nin about 1.15 s warm against about 2.0 s from source (the source build's hundreds of module fetches). The single-file\nbundle stays the default; switching deploys to the file mode is the owner's call (the agent's report lists what it takes)."
+    },
+    {
+      "id": "R-1461",
+      "date": "2026-11-18",
+      "time": "21:58",
+      "timeFrom": "recorded",
+      "title": "SST-12, a first part: the physics worker's load marks, and the engine block zeroed only below Box2D's old heap break: 440 ms of Predator by night's start gone",
+      "verdict": "kept",
+      "text": "**SST-12, a first part (8f43a111): the physics worker's load marks, and the engine block zeroed only below Box2D's old heap\nbreak: 440 ms of Predator by night's start gone.** The physics host is a classic script, so it keeps its own marks\n('host evaluated', 'block asked', 'module ready', 'block malloc', 'block zeroed', 'ready') and posts them with the engine\nblock's answer and its ready message. The block (the render-queue memory the engine's regions live in, hundreds of MB)\nwas zeroed whole after its malloc, committing every page; memory past the heap's break before the malloc (sbrk(0),\nweedjs_memory_peak_bytes: dlmalloc never trims) was never written, and a WebAssembly memory starts zeroed, so only the\npart below that break is filled now (none in practice). Test: sst12EngineBlock (the premise on the shipped module).\n\nReadings, Predator light3d=1&hour=22, warm visits (agents were working: not a sitting): before, 'block malloc' 1 875 ->\n'block zeroed' 2 315 ms after loadScene; after, 1 025 -> 1 025 and 1 048 -> 1 048; Box2D's block reply 2 317 -> 1 026 /\n1 049 ms; first frame 3 144 -> 1 668 / 1 755 ms. What is left of SST-12: the worker's own start, 'physics made' at 10 to\n17 ms to 'host evaluated' at about 1 040 ms, most likely the glue's synchronous importScripts of its siblings in a source\nbuild (the bundle inlines them); the plan's SST-12 says what to try next.",
+      "commits": [
+        "8f43a111"
+      ]
+    },
+    {
+      "id": "R-1462",
+      "date": "2026-11-18",
+      "time": "21:40",
+      "timeFrom": "recorded",
+      "title": "E-322 built in Box2D: the awake set re-sorted by body id every N steps, bit-identical; harness -4.1 % at N = 30 with churn, -0.8 % without, a 6.5 ms one-step spike",
+      "verdict": "kept-kernel",
+      "text": "**E-322 built in Box2D (an agent; weedjs/e322-reorder 4b6dc5b, 8eac8b1 b2World_ReorderAwakeBodies, 8b2fdcc\nb2World_SetAwakeReorderInterval, 65adb15 the export world_set_awake_reorder_interval, 5be3556 the harness): the awake set\nre-sorted by body id every N steps, bit-identical; in the Node crowd harness -4.1 % of the step at N = 30 with churn,\n-0.8 % without, with a 6.5 ms spike in one step each reorder.** The reorder radix-sorts the awake body sims and states\n(skipped when in order), remaps the contact sims' awake indices, sorts the non-touching contacts and every colour but\noverflow by their lower awake body. The key that wins is the body id, not a spatial one: Morton, Hilbert and the tree's\nleaf order made the collide about 10 % faster and the solve about 6 % slower, because the finalize reads b2Body, shapes,\nfat AABBs and islands by id (R-1238's ceiling won with ids, sims and contacts all spatial at once). The harness pose hash\nequals main's for every interval and key (94cc93ed683b6c0f at 8 000 walkers, 39382e9dcbd17c80 at 38 000); a new unit test\n(AwakeReorderTest); both builds and Box2D's tests pass. What changes: local indices, the order of body move events (WeedJS's\nmoved list), and the wasm (423 922 bytes, the setting off costs one integer test a step).\n\nHarness, 38 000 walkers, 4 workers, id key, the reorder world against an identical twin stepped alternately in one\nprocess (separate runs swung 20 to 40 % with other sessions on the machine):\n\n| setup | N | step | with the reorder's cost | rounds won |\n| --- | --- | --- | --- | --- |\n| churn (100 walkers sleep and wake a step) | 30 | -5.8 % | -4.1 % | 4/4 |\n| | 120 | -2.4 % | -2.0 % | 4/4 |\n| | 600 | +0.1 % | +0.2 % | 1/4 |\n| no churn | 30 | -2.3 % | -0.8 % | 4/4 |\n| | 120 | -1.7 % | -1.3 % | 4/4 |\n\nThe reorder costs 4.5 to 7 ms at 38 000 bodies, all in one step: physics' p99 is what limits capacity, so it stays off by\ndefault until Predator crowd 2.5 is read at N = 30 and 120 (mean and p99); moving its gathers and per-colour sorts onto the\nstep's pool would cut the spike 3 to 4 times. Next: the agent merges it with N-253's Box2D and wires physics.awakeReorderInterval.",
+      "commits": [
+        "4b6dc5b",
+        "8eac8b1",
+        "8b2fdcc",
+        "65adb15",
+        "5be3556"
+      ]
     }
   ],
   "leads": [
