@@ -1535,8 +1535,8 @@
   self.onmessage = function (event) {
     var data = event.data;
     if (!data || !data.msg) return;
-    // A dead module answers nothing that would call into it; a barrier needs no Box2D.
-    if (state.box2dAborted && data.msg !== 'barrier') return;
+    // A dead module answers nothing that would call into it; a barrier needs no Box2D, and a prime answers without it.
+    if (state.box2dAborted && data.msg !== 'barrier' && data.msg !== 'prime') return;
     var t0 = state.collectDetailedStats ? performance.now() : 0;
     try {
       if (data.msg === 'init') {
@@ -1549,6 +1549,11 @@
       } else if (data.msg === 'pause') {
         state.isPaused = true;
         clearSchedulers();
+      } else if (data.msg === 'prime') {
+        // SST-15: the spawned world's bodies made before the start (weedjsPost.js weedjsPrime); paused, between steps.
+        if (state.box2dReady && !state.box2dAborted && typeof global.weedjsPrime === 'function') global.weedjsPrime();
+        loadMark('primed');
+        self.postMessage({ msg: 'primeDone', id: data.id | 0, loadMarks: takeLoadMarks() });
       } else if (data.msg === 'barrier') {
         // Between steps by construction: the reply proves the world is idle.
         self.postMessage({ msg: 'barrierDone', id: data.id | 0 });

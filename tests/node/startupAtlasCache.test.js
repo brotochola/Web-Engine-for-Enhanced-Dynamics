@@ -231,3 +231,37 @@ test('the worker\'s pack job answers, then writes its entry', async () => {
     }
   }));
 });
+
+test('a hit decodes the slot\'s entry while the key hashes the sources (SST-16); a stale entry is decoded and dropped', async () => {
+  const { files, assets } = packScene(7);
+  const storage = new MemCacheStorage();
+  await withMemCanvas(() => withFetch(files, async () => {
+    await (await run(assets, storage)).background;
+    const sourceFetch = globalThis.fetch;
+    const decode = globalThis.createImageBitmap;
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    let decodes = 0;
+    globalThis.fetch = async (url) => {
+      await gate;
+      return sourceFetch(url);
+    };
+    globalThis.createImageBitmap = (...args) => {
+      decodes++;
+      return decode(...args);
+    };
+    try {
+      const hit = run(assets, storage);
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+      assert.ok(decodes > 0, 'the entry is being decoded before any source has answered');
+      release();
+      assert.equal((await hit).result.cache, 'hit');
+      // Another version: the slot's entry is decoded too, then its key does not match, so it is dropped and packed.
+      const stale = await run(assets, storage, { version: '2.0.0' });
+      assert.equal(stale.result.cache, 'miss');
+    } finally {
+      globalThis.fetch = sourceFetch;
+      globalThis.createImageBitmap = decode;
+    }
+  }));
+});

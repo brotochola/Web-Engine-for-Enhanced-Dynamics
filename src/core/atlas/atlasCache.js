@@ -208,6 +208,44 @@ export async function readAtlasCache(storage, origin, slot, key) {
 }
 
 /**
+ * SST-16: the entry an atlas's slot holds, whatever its key, or null. An atlas has one entry (writeAtlasCache drops the
+ * slot's others once it has written its own), so the page can decode it while the key is computed and keep it only when
+ * the keys match. Two entries (a write cut short before its clean-up): no guess.
+ * @param {CacheStorage} storage
+ * @param {string} origin
+ * @param {string} slot
+ * @returns {Promise<{ key: string, hit: { json: object, png: Blob, maps: Uint8ClampedArray | null } } | null>}
+ */
+export async function readAtlasCacheSlot(storage, origin, slot) {
+  const cache = await storage.open(ATLAS_CACHE_NAME);
+  const prefix = `${origin}${ENTRY_PATH}/${slot}/`;
+  const suffix = '/atlas.json';
+  let key = null;
+  for (const request of await cache.keys()) {
+    const url = typeof request === 'string' ? request : request.url;
+    if (!url.startsWith(prefix) || !url.endsWith(suffix)) continue;
+    if (key !== null) return null;
+    key = url.slice(prefix.length, url.length - suffix.length);
+  }
+  if (key === null) return null;
+  const hit = await readAtlasCache(storage, origin, slot, key);
+  return hit ? { key, hit } : null;
+}
+
+/**
+ * SST-16: the slot of a scene's atlas as atlasCacheKey computes it (its resolved assets), or null when the cache leaves
+ * the atlas alone (no source files, a decoded sheet).
+ * @param {object} given the scene's assets
+ * @returns {Promise<string | null>}
+ */
+export async function atlasCacheSlotOf(given) {
+  const assets = resolveAssetUrls(given);
+  const urls = atlasCacheSources(assets);
+  if (urls === null || urls.length === 0) return null;
+  return atlasCacheSlot(assets);
+}
+
+/**
  * Write an entry, then drop the entries of the same slot under other keys.
  * @param {CacheStorage} storage
  * @param {string} origin

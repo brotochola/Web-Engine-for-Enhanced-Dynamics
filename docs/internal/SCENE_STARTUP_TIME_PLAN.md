@@ -418,6 +418,32 @@ In a cold source build the atlas worker evaluates its 22 modules in 1.4 to 1.6 s
 the page took to pack the atlas itself. Starting it when the engine is imported (not at the scene's assets) would overlap
 that with the page's own module loads; the bundle's blob workers fetch nothing, so it matters for source builds only.
 
+### SST-15 — Physics primed before the start
+
+- [x] f3e180ec (R-1503: Predator by night's first physics step 197 -> 56 ms warm, 100 cold; the start about 96 ms later)
+
+The waterfall's longest step after the start read physics at 128 ms or more in every Predator run: its first step made
+the spawned world's bodies (18 248, 91 ms), drained their commands (52 696, 47 ms) and then stepped with every contact
+new (51 ms). Under the owner's rule (everything ready before the start) the scene now sends the physics worker 'prime'
+once the world is spawned and waits for it: the host makes the bodies, joints and commands then. Left: Box2D's first
+step (a collide-only export in the prime) and the body creation's own cost.
+
+### SST-16 — The atlas cache decoded beside its key
+
+- [x] 6753b301 (R-1504: Predator by night's atlas on the page 1 090 -> 1 006 ms warm from source)
+
+The bundle's critical path on a warm visit was the atlas branch: the key hashed every source (113 ms), then the entry
+was read and decoded (145 ms). A slot holds one entry, so its decode now starts beside the key and is kept when the
+keys match.
+
+### SST-17 — The spawns' transforms a new body already reflects
+
+- [x] b463325c (R-1505: Predator by night's physics prime 96 -> 62 ms warm)
+
+A spawn's x and y setters each enqueue a SET_TRANSFORM; physics made the body from those columns and then moved it twice
+to where it was (36 496 commands in Predator's prime). A command claimed before the sync is now skipped for a body that
+sync made: its setter wrote the columns before it claimed the slot.
+
 ### SST-14 — Workers that evaluate the page's engine graph
 
 - [ ] not started (R-1501)

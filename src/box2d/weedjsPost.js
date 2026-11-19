@@ -35,6 +35,7 @@
   self.__weedPhysicsLoadMarks.push('siblings loaded', PHYSICS_TIME_ORIGIN + performance.now());
   const drainBox2dCommandRing = Box2dCommandRing.drainCommandRing;
   const readBox2dCommandRingOverflow = Box2dCommandRing.readCommandRingOverflow;
+  const box2dCommandRingWritePosition = Box2dCommandRing.commandRingWritePosition;
   const publishBox2dContactEvent = Box2dContactRing.publishContactEvent;
   const CONTACT_KIND = Box2dContactRing.BOX2D_CONTACT_KIND;
   const publishContactHit = Box2dContactHitRing.publishContactHit;
@@ -98,6 +99,12 @@
   let bodyDirtyHalves = null;
   let bodyGeneration = null;
   let seenBodyGeneration = null;
+  // SST-17: the bodies made in the current sync (bornEntity, bornCount; an entity's place in the list in bornSlot, valid
+  // when the list holds that entity there) and the command ring's write position when that sync began (bornRingMark).
+  let bornSlot = new Int32Array(0);
+  let bornEntity = new Int32Array(64);
+  let bornCount = 0;
+  let bornRingMark = 0;
   // Bumped in bumpBodyGeneration. publishPose skips per-body Atomics.load when it matches.
   let poseGenEpoch = null;
   let seenPoseGenEpoch = 0;
@@ -1457,6 +1464,7 @@
       // SpawnStorm warned 470 times a second here, and the warning was ~23 % of its physics.
     }
     // body-create-end
+    if (created) noteBorn(i);
     // LIFECYCLE alone = create/destroy above. Extra bits (GEOMETRY / BODY_TYPE /
     // FILTER / …) still need property sync — including the create frame.
     // Spawn swallows markBodyDirty inside withBodyDirtyDeferred, then bumps
@@ -1468,10 +1476,35 @@
     return changes;
   }
 
+  /** SST-17: body i made in this sync. */
+  function noteBorn(i) {
+    if (bornCount === bornEntity.length) {
+      const grown = new Int32Array(bornCount * 2);
+      grown.set(bornEntity);
+      bornEntity = grown;
+    }
+    bornEntity[bornCount] = i;
+    if (i < bornSlot.length) bornSlot[i] = bornCount;
+    bornCount++;
+  }
+
+  /**
+   * SST-17: whether a SET_TRANSFORM at ring position `position` for entity e is one the body already reflects: e's body
+   * was made in this sync, and the command was claimed before the sync began, so its setter had written the columns the
+   * body was made from (it writes them, then claims the slot). Positions wrap as int32: compared by their difference.
+   */
+  function bornPastCommand(e, position) {
+    if (((position - bornRingMark) | 0) >= 0 || e >= bornSlot.length) return false;
+    const k = bornSlot[e];
+    return k < bornCount && bornEntity[k] === e;
+  }
+
   function syncBodies(entityCount) {
     if (!bodyDirtyFlags || !bodyDirtyWords) {
       throw new Error('[weedjs-box2d] body dirty sync buffers required');
     }
+    bornCount = 0;
+    bornRingMark = box2dCommandRingWritePosition(cmdI32);
     let changes = 0;
     let visited = 0;
     // sync-bodies-drain-start
@@ -1810,8 +1843,10 @@
   const cmdHandlers = {
     applyImpulse: applyImpulseToBody,
     applyAngularImpulse: applyAngularImpulseToBody,
-    setTransform(entity, x, y, rotC, rotS) {
+    setTransform(entity, x, y, rotC, rotS, position) {
       if (!hasBody[entity]) return;
+      // SST-17: made in this sync from the columns this command's setter had written (a spawn's position setters).
+      if (bornPastCommand(entity, position)) return;
       let c = rotC;
       let s = rotS;
       if (isFixedRotation(entity)) {
@@ -3673,6 +3708,8 @@
     densePositions.fill(-1);
     denseRuns = 0;
     seenBodyGeneration = new Int32Array(entityCount);
+    bornSlot = new Int32Array(entityCount);
+    bornCount = 0;
     pendingTeleportBits = new Uint8Array(entityCount);
     pendingTeleportList = new Uint32Array(entityCount);
     pendingTeleportCount = 0;
@@ -3728,6 +3765,20 @@
     hostDt = dtSec;
     hostSteps = steps > 1 ? steps | 0 : 1;
     doStep();
+  }
+
+  /**
+   * SST-15: the bodies, joints and commands the scene's spawns left, made now (before the start), so the first step
+   * after it has only its own work: Predator by night made 18 248 bodies (91 ms) and drained 52 696 commands (47 ms) in
+   * it. No step, no time: what the first step would do before stepping, in the same order.
+   * @returns {number} the bodies whose state changed
+   */
+  function weedjsPrime() {
+    if (!world) return 0;
+    const changes = syncBodies(hostEntityCount | 0);
+    drainCommands();
+    syncJoints();
+    return changes;
   }
 
   function weedjsEnableHostMode() {
@@ -3951,6 +4002,7 @@
   globalThis.weedjsRestoreLiquidFun = weedjsRestoreLiquidFun;
   globalThis.weedjsEnableHostMode = weedjsEnableHostMode;
   globalThis.weedjsDoStep = weedjsDoStep;
+  globalThis.weedjsPrime = weedjsPrime;
   // Between steps (the physics host's wake, review N-24): every sync kind.
   globalThis.weedjsServiceQueries = function () {
     serviceQueryAabb();
