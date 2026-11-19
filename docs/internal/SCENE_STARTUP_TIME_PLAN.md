@@ -436,6 +436,14 @@ The bundle's critical path on a warm visit was the atlas branch: the key hashed 
 was read and decoded (145 ms). A slot holds one entry, so its decode now starts beside the key and is kept when the
 keys match.
 
+### SST-17 — The spawns' transforms a new body already reflects
+
+- [x] b463325c (R-1505: Predator by night's physics prime 96 -> 62 ms warm)
+
+A spawn's x and y setters each enqueue a SET_TRANSFORM; physics made the body from those columns and then moved it twice
+to where it was (36 496 commands in Predator's prime). A command claimed before the sync is now skipped for a body that
+sync made: its setter wrote the columns before it claimed the slot.
+
 ### SST-14 — Workers that evaluate the page's engine graph
 
 - [ ] not started (R-1501)
