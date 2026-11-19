@@ -24015,7 +24015,8 @@
     },
     {
       "records": [
-        "R-1517"
+        "R-1517",
+        "R-1533"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24024,7 +24025,7 @@
       "kind": "speed",
       "area": "spatial",
       "date": "2026-11-19",
-      "statusText": "found 2026-11-19 by DX-STARTUP's final matrix (R-1517)",
+      "statusText": "open 2026-11-19 (R-1533): not Liftoff; next a per-frame series of the first two seconds",
       "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames."
     },
     {
@@ -38848,6 +38849,18 @@
       "text": "**N-218's fix (the ASUS session found the cause, R-1489, R-1490: 5d48642f's parent read in every pose write) built and\nrun on the main PC: neutral here.** 4966998a: poseMoved, setPositionFromArgs, set rotation and setRotationCS read\nTransform.parent[i] only while Transform.links[LINK_COUNT] is not 0 (a plain read of the shared count through\nanyChildLinked(); a link made on another worker that frame is seen a frame late, and physics puts the child back from its\nparent anyway). transformParent.test.js proxies the parent column: no read with no link (it failed before the fix), and a\nwrite to a child is still ignored once a link exists. Suites green (3 249, 121).\n\nrunPredatorAbab n218-keyedpack, keyedPackStressScene `n=250000&gbuf=1&churn=0.05`, A bb9e0cc1, B 4966998a, logic owner,\n4 pairs, to 2026-11-19 04:59: NEUTRAL, logic 6.356 -> 6.386 ms (-1.2 % paired, worse 2/4, cv 36 %), the renderer -2.1 %,\npre-render -0.2 %. On this PC logic takes 6.4 ms in that scene against 17 to 23 ms on the ASUS: its 1 MB column likely stays\nin the larger cache here. The ASUS session runs its keyedPack check on 1ad06d1b, bb9e0cc1 and 4966998a.",
       "commits": [
         "4966998a"
+      ]
+    },
+    {
+      "id": "R-1533",
+      "date": "2026-11-19",
+      "time": "05:15",
+      "timeFrom": "recorded",
+      "title": "SST-21 looked at: spatial0's first-second step stays about 100 ms with every wasm function in TurboFan (not the tier), and reads 128 ms from source too; which frame is still open",
+      "verdict": "note",
+      "text": "**SST-21 looked at, not solved: spatial0's long step in the first second is not Liftoff code, and it shows from source\ntoo.** loadWaterfall gained `--js-flags no-liftoff[,flag…]` (ef3bce37). Predator `light3d=1&hour=22`, bundle (built from\nthe working tree), warm, 3 runs, `--t0 prepare`, the longest own step from the start to 5 s after the first draw (median):\ndefault spatial0 120 ms (05:11); with `no-liftoff` (every wasm function compiled by TurboFan at instantiation) 101 ms,\nwhile physics and pre-render went to 128 or more from that compile (05:13): the step stays long with optimized code, so\nit is work, not the tier. runIntegratedWorkerBenchmark from the start (`--warmup-ms 1 --duration-ms 1500`), source,\nheaded (05:15): spatial0 max 128 ms, 2 long frames in 87; the bundle run alike (05:14). The CPU trace of that run covers\nthe load, not those frames, and the result holds no per-frame series, so which frame and what it does are still open.\nNext: a per-frame STEP series for the first two seconds (frameTotals' frames, or a worker log), then the first\nneighbour build before the start (the prime's way) or spread over the first frames.",
+      "commits": [
+        "ef3bce37"
       ]
     }
   ],
