@@ -22080,15 +22080,16 @@
       ],
       "records": [
         "R-1496",
-        "R-1497"
+        "R-1497",
+        "R-1550"
       ],
       "id": "E-514",
       "kind": "speed",
       "area": "pixi",
-      "status": "open",
+      "status": "running",
       "date": "2026-11-17",
       "title": "The indexed path uploads its statics texture whole whenever the queue's statics generation moves (every frame in the barrio, its people's animation frames): upload only the rows whose statics changed",
-      "statusText": "found 2026-11-17 measuring E-513: the barrio's texture uploads 38 KB -> 629 KB a frame on the indexed path",
+      "statusText": "Built 2026-11-19 on perf/e514-statics-diff (12b519fb) at the owner's ask; main PC: uploads halved with the camera still, workers neutral (R-1550); the HD 620's GPU process and drawn frames on the ASUS (0899f3) decide the merge",
       "result": "",
       "next": "WebGL already scatters statics rows into a texture (render/webgl/staticsScatterGl.js, the keyed path's _scatterStaticsGl). Plan: pre-render's indexed kernel compares each row's new statics with what its queue buffer slot held (two frames back, a superset of last frame's changes) and lists the rows that differ; Pixi scatters those rows into its statics texture instead of uploading it whole. The double buffer's catch: Pixi must know its texture holds the statics the list is relative to (a skipped frame, a resume): the frame carries the generation the list starts from, and Pixi uploads whole when its own differs. Measure bytesTexture and gpuProcessTrace in the barrio, and the HD 620's drawn frames (the laptop's CrGpuMain is the target). Also: E-513's snap in C instead of JS (pre-render +4.7 % under the floor)."
     },
@@ -39225,6 +39226,18 @@
       "text": "**`lighting.lightTileSize` renamed `lighting.lightCullingTileSize` (2c3217b9), at the owner's word.** He set it to 128 in the barrio and expected blockier shadows; it is tiled light culling's tile (which lights each pixel loops over), and the picture is the same at any size. The new name says what it is; the config comment, the types and the guide now say it is not a resolution and name the knobs that are (`shadowResolution`, `lampShadowTile`, `shadowSamples`). No alias (the old name never shipped). Suites green (3273 node, 121 demos); nothing measured (a rename).",
       "commits": [
         "2c3217b9"
+      ]
+    },
+    {
+      "id": "R-1550",
+      "date": "2026-11-19",
+      "time": "15:24",
+      "timeFrom": "recorded",
+      "title": "E-514 built: indexed statics go up as the rows that changed; barrio still camera 873 -> 414 KB a frame up, workers neutral (renderer -0.07, pre-render +0.05 ms, under the floor)",
+      "verdict": "mixed",
+      "text": "**E-514 built (12b519fb on `perf/e514-statics-diff`): an indexed frame's statics go up as the rows that changed, not the whole texture; on the main PC the barrio's upload a frame halves with the camera still, and the workers stay where they were.** The owner asked for this item first (2026-11-19).\n\n- **What was built.** Pre-render writes an indexed frame's statics through `gpuPack.c diff_indexed_statics`, which compares every row with both GPU queue buffers' statics (Pixi's copy holds one of the two, or is older) and lists the rows that differ as the keyed batches' updates: a row whose texture alone changed as a texture update (8 bytes), any other as an update (64 bytes). The GPU queue carries the lists and their two bases (header `GPU_HDR_IXUP*`, version 7); Pixi's indexed batch scatters them with the keyed batches' scatter (WebGL draw, WebGPU compute) when its copy is a base. Without a base, past a quarter of the frame's rows, or without a scatter, every row goes up as before. A node test drives pre-render's real pack and Pixi's real batch together: the texture holds every frame's statics bit for bit, taking every frame, every other one, or skipping two.\n- **Before building: how much changes (a probe, the owner's camera, 1258 x 922, 6 275 rows).** Still camera: 210 to 250 rows a frame differ from the frame before (4 %; most frames far fewer, the average carries the 5 % of frames where rows shift); panning at 40 px/s: 2 300 to 3 000 (40 to 47 %; rows shift as entities come and go).\n- **Uploads (glFrameRecorder, barrio hour 13, 5000 people, 1080p, the owner's camera, main 1b77eaa7 against the branch, 2 rounds a side, 15:06 to 15:10).** Still: 873 -> 414 KB a frame (the statics texture's 480 KB texSubImage2D gone; the lists 0.2 KB plus texture updates), 300 -> 320 GL calls, 19 -> 20 draws. Panning: the lists carried 476 KB a frame, as much as the texture; hence the limit of a quarter of the frame's rows (panning goes up whole again).\n- **Workers (runPredatorAbab, the barrio as above, 4 pairs AB BA AB BA, 15:18 to 15:24): NEUTRAL, every worker under the 6 ms floor, none judged.** Own work a frame, pair by pair: the renderer 0.848 -> 0.760, 0.867 -> 0.811, 1.047 -> 0.846, 0.932 -> 0.985 ms (3 of 4 lighter, about -0.07 ms); pre-render 1.575 -> 1.653, 1.552 -> 1.628, 1.587 -> 1.589, 1.594 -> 1.630 ms (4 of 4 heavier, about +0.05 ms: the diff's second base read); presented 60 fps both, load keys within 1 %.\n- **Reading.** On this PC a wash for the workers; what moves is what Chrome's GPU process takes each frame (R-1496: the upload cost the HD 620's CrGpuMain about 10 ms a second). The ASUS measures that (job 0899f3: gpuProcessTrace and drawn frames, A main, B the branch) before the merge.\n- Captures of the barrio with the change on WebGL, WebGPU and panning: every sprite right.",
+      "commits": [
+        "12b519fb"
       ]
     }
   ],
