@@ -24039,7 +24039,8 @@
     {
       "records": [
         "R-1517",
-        "R-1533"
+        "R-1533",
+        "R-1544"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24048,7 +24049,7 @@
       "kind": "speed",
       "area": "spatial",
       "date": "2026-11-19",
-      "statusText": "open 2026-11-19 (R-1533): not Liftoff; next a per-frame series of the first two seconds",
+      "statusText": "found 2026-11-19 (R-1544): the first full neighbour build; next a spatial prime beside physics' (plan in R-1544)",
       "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames."
     },
     {
@@ -39040,6 +39041,18 @@
       "title": "E-322 every 120 steps instead of 30 does not raise Predator's capacity (2.1 against 2.2): the p99 is not the reorder frames alone; the default stays 30",
       "verdict": "note",
       "text": "**E-322's interval 120 instead of 30 does not raise Predator's capacity: crowd 2.1, against 2.2 at 30 in the sitting\nbefore.** The idea: one frame in 30 carries the body reorder, so 20 of a 600-frame window, and p99 (the 6th worst) could be\none of them; at 120 only 5 are. runCapacity predator, 37762540, `awakeReorder=120` (the bench page's knob), to\n2026-11-19 07:37: capacity 2.1 (2.2 failed at physics p99 17.5 ms, 2.5 at 17.87); at 2.1 physics mean 11.32, p95 13.01,\np99 16.63 ms. The tail is not the reorder frames alone; the default stays 30."
+    },
+    {
+      "id": "R-1544",
+      "date": "2026-11-19",
+      "time": "07:49",
+      "timeFrom": "recorded",
+      "title": "SST-21 found: spatial0's first full build of every neighbour list (frames 2 and 3: 10 000 and 6 544 lists, 49 + 37 ms search and 10 + 9 ms publish); plan: a spatial prime beside physics'",
+      "verdict": "note",
+      "text": "**SST-21 found: spatial0's long step after the start is its first full build of every neighbour list, frames 2 and 3,\n10 000 then 6 544 lists at about 5 us each, as in steady state, all at once.** loadWaterfall `--series spatial0` (e103f813,\nthe worker's own step frame by frame from the page), Predator `light3d=1&hour=22`, source, warm, 2 runs, to 2026-11-19\n07:44: frame 4 at 89 ms after the first frame drawn, 113.6 ms, and frame 2 at 83 ms, 119.6 ms, the next 22 to 43 ms.\nPhase times added for one run and taken out again (not committed), to 07:49: frame 1 grid 10.7 ms, neighbours 2.4, nothing\nrebuilt (logic has published no frame yet, so no list is due, E-200); frame 2 grid 1.2, neighbours 48.7 with 10 000\nlists rebuilt, publish 10.4; frame 3 grid 5.1, neighbours 37.1 with 6 544 rebuilt, publish 8.8; frame 4 on, 0.4 to 4.9 ms\nwith 0 to 836 rebuilt.\nPlan (not built): a spatial prime beside physics' (SST-15), so the lists are ready before the start: the scene posts it\nto every spatial worker while physics primes (spatial reads the positions the spawns wrote, not physics' output), each\nbuilds every owned entity's list once and publishes it, and sets its schedule as if it had searched in logic's frame 0.\nThe search's loop is hot (E-200's periods, E-476's spread, the reuse skin): the prime must not add a branch to it; one\nway is to mark every owned list due and run the search twice (its batch takes 10 000), outside the frame loop. Expect the\nfirst frames' 85 + 46 ms to move into the load, behind physics' prime.",
+      "commits": [
+        "e103f813"
+      ]
     }
   ],
   "leads": [
