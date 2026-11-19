@@ -16988,12 +16988,12 @@
     {
       "id": "E-322",
       "title": "Box2D's awake body set is in random spatial order: civilians spawn at uniform random positions and sleep/wake swap-removes scramble it further",
-      "status": "running",
-      "statusText": "built 2026-11-18 (R-1471); off by default; Predator crowd 2.5 at N = 30 and 120 owed",
+      "status": "mixed",
+      "statusText": "mixed 2026-11-18: the mean wins, the tail pays the reorder's step; next, the reorder on the worker pool",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Read (R-1101): every id order is spatially random (predatorScene.js spawns); E-309's ablation: ids numbered in home-cell order cut spatial's frame 8 %. Gain unknown, possibly 5-15 % of physics.",
+      "result": "Mixed 2026-11-18 (R-1471, R-1473): Box2D's awake set re-sorted by body id every N steps; Predator crowd 2.5 physics mean -8.0 % (N 30) and -6.8 % (N 120), p99 17.4 -> 18.6 / 19.1 ms (the reorder's 6.5 ms step); merged off by default (physics.awakeReorderInterval).",
       "next": "Dump the coherence once; a harness ceiling with Morton-order against random spawn order. If it pays: every N steps permute bodySims and bodyStates and remap localIndex and encodedBodySim through a table; sort each non-overflow colour by body index (no dynamic body repeats within a colour: bit-identical solve; event and moved-list order change); try slot order and the tree's DFS-leaf order as keys.",
       "refs": [
         "EXECUTION_PLAN.md#E-322"
@@ -17010,9 +17010,9 @@
         "R-1236",
         "R-1238",
         "R-1240",
-        "R-1471"
-      ],
-      "rank": 2
+        "R-1471",
+        "R-1473"
+      ]
     },
     {
       "id": "E-323",
@@ -38025,6 +38025,23 @@
       "title": "Barrio freeze traced from the start: every shader link on Chrome's GPU main thread waits about 1 s with no traced work, then compiles in 3 to 13 ms; about 30 links in a row make the stall",
       "verdict": "note",
       "text": "ASUS lab job 0896x (16:38-19:07, stopped by hand after round 31 of 48: it had what it was for), freezeProbe v5: a\nChrome trace from before the scene loads to the end of the measurement, with the GPU process's and ANGLE's categories.\nBuenos Aires at night, HD 620, WebGL D3D11, src at main 70ba822b. Arms interleaved: traced (no shader disk cache, traced\nfrom start), nodiskcache (untraced), default (untraced).\n\n- Frozen: traced 2 of 31 (runs 15 and 19), nodiskcache 1 of 31, default 0 of 30 (1 page load failed). The traced arm's\n  29 normal runs lost their traces: about 90 MB did not finish writing within 90 s on the HDD. All 3 freezes recovered\n  by themselves within 60 s.\n- Both frozen start traces show one pattern on CrGpuMain: from some point on (run 15 at +2.1 s, in the browser's own\n  raster flush, which then took 8.1 s; run 19 at +12.9 s, in the page's raster), every shader program link takes about\n  1.0 s, whoever links: Skia's FinishPaintRenderPass, the raster flushes, and WebGL's DoLinkProgram (1001 ms) alike. In\n  each, about 1000 ms pass with no traced work, then ANGLE posts the D3DCompile to the thread pool, which takes 3 to\n  13 ms. About 30 links in a row make the stall (run 15: from +2.1 s to past +42 s).\n- Reading: a timed wait of 1 s, once per link, somewhere under ANGLE (ANGLE, D3D11 or the Intel driver,\n  27.20.100.8682 from 2020-09); nobody works while it holds. Chrome's trace cannot see inside it. Next, 0896y: Windows'\n  recorder (WPR: context-switch stacks, GPU queues) in memory, kept for frozen runs."
+    },
+    {
+      "id": "R-1473",
+      "date": "2026-11-18",
+      "time": "21:58",
+      "timeFrom": "recorded",
+      "title": "E-322 in Predator crowd 2.5: physics -8.0 % at N = 30 and -6.8 % at N = 120 (0 of 4 worse), its p99 18.6 / 19.1 ms against 17.4: mixed, off by default",
+      "verdict": "mixed",
+      "text": "**E-322 in Predator crowd 2.5: physics' mean 12.826 -> 11.526 ms (-8.0 %, 0 of 4 pairs worse) with the awake reorder\nevery 30 steps and 12.166 (-6.8 %, 0 of 4) every 120; its p99 18.6 and 19.1 ms against 17.4 off (medians of 4, a range of\n15 to 24): mixed.** runMultiArm e322-reorder, A = the branch 56eadb9f with `?awakeReorder` off, arms n30 and n120, physics\nowner, 4 rounds, --pool, crowd=2.5&zoom=0.216, 2026-11-18 21:50 to 21:58, SITTING.lock held. The runner calls both arms\nKEPT (product): spatial -0.6 / +1.0 %, the rest under the floor, load keys within 0.3 %. In Predator the step gains far\nmore than the crowd harness showed (-4.1 % with churn there), but each reorder costs one step about 6.5 ms, serial, and\nat N = 30 that is 20 frames in a 10 s window: the p99 reads it. Capacity is judged on p99, so it stays off by default\n(physics.awakeReorderInterval 0); merged into dx/startup (4b8e5e91) with the key, the Predator knob and the guide's line.\nNext: the reorder's gathers and per-colour sorts on the step's worker pool (the agent's estimate: a 3 to 4 times smaller\nspike), then Predator's capacity with it on.",
+      "commits": [
+        "cced5f5",
+        "a2a4d389",
+        "659f0358",
+        "56eadb9f",
+        "4b8e5e91",
+        "e1bae640"
+      ]
     }
   ],
   "leads": [
