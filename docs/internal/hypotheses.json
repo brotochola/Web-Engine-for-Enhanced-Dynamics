@@ -18446,7 +18446,7 @@
       "id": "N-218",
       "title": "Logic got 43 % slower in keyedPackStressScene with ?gbuf=1 between bdcca2e7 and main (2.96 -> 4.24 ms, 4 of 4 pairs), though neither setter commit in that range slows it without gbuf and churn",
       "status": "open",
-      "statusText": "found 2026-11-16 in the keyed pack sittings (kp-e387-gbuf); not reproduced by the setter bisect",
+      "statusText": "fix 4966998a on dx/startup 2026-11-19 (R-1532); the ASUS's keyedPack check decides",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "bug",
@@ -18463,7 +18463,8 @@
         "R-1236",
         "R-1446",
         "R-1459",
-        "R-1488"
+        "R-1488",
+        "R-1532"
       ],
       "rank": 16
     },
@@ -24028,7 +24029,8 @@
     },
     {
       "records": [
-        "R-1520"
+        "R-1520",
+        "R-1531"
       ],
       "refs": [],
       "id": "N-313",
@@ -24037,7 +24039,7 @@
       "kind": "bug",
       "area": "physics",
       "date": "2026-11-19",
-      "statusText": "found 2026-11-19 checking E-322's default (R-1520); the peak holds, it does not grow",
+      "statusText": "measured 2026-11-19 (R-1531); next: gather into the step's arena and copy back",
       "next": "Keep the reorder's gather buffers between reorders (a scratch arena sized by the awake set's capacity, grown when it grows) instead of b2Alloc per pass; check the peak at Predator crowd 2.5 and the harness's pose hash."
     },
     {
@@ -24056,17 +24058,19 @@
     },
     {
       "records": [
-        "R-1525"
+        "R-1525",
+        "R-1530"
       ],
       "refs": [],
       "id": "N-315",
       "title": "A command's export writes sleeping=0 for a dynamic body that stays asleep (b2Body_SetTransform does not wake it), so until the next sleep paint bodies_apply_accelerations treats it as awake and an acceleration applied that frame is lost",
-      "status": "open",
+      "status": "kept",
       "kind": "bug",
       "area": "physics",
       "date": "2026-11-19",
-      "statusText": "found 2026-11-19 by the E-325 agent (R-1525), not fixed",
-      "next": "In export_slot_state, flag the body asleep when b2Body_IsAwake is false (the dropped paint patch, e325-paint-dropped.patch, has the fix); a wasm test: a sleeping body teleported by a command keeps sleeping=1 and an acceleration that frame wakes it or is kept."
+      "statusText": "kept 2026-11-19 (bb9e0cc1 on dx/startup)",
+      "next": "In export_slot_state, flag the body asleep when b2Body_IsAwake is false (the dropped paint patch, e325-paint-dropped.patch, has the fix); a wasm test: a sleeping body teleported by a command keeps sleeping=1 and an acceleration that frame wakes it or is kept.",
+      "result": "Fixed 2026-11-19 (R-1530): export_slot_state flags a body the command left asleep (Box2D a4a4082, WeedJS bb9e0cc1, commandExportSleeping.wasm.test.js)."
     }
   ],
   "records": [
@@ -38807,6 +38811,43 @@
         "a85484c6",
         "80db3998",
         "aef88471"
+      ]
+    },
+    {
+      "id": "R-1530",
+      "date": "2026-11-19",
+      "time": "04:36",
+      "timeFrom": "recorded",
+      "title": "N-315 fixed: a command's export of a body it leaves asleep keeps the sleeping flag, so an acceleration in that frame wakes it",
+      "verdict": "kept-hygiene",
+      "text": "**N-315 fixed: a command's export of a body it leaves asleep keeps its sleeping flag set.** export_slot_state (every\nbody setter: body_set_transform, the velocities, fixed rotation) ran b2ExportBodyState, which clears the flag, and wrote 0\nagain for non-dynamic bodies only; a dynamic body a teleport left asleep read awake until the next sleep paint, and\nprepare_slot_acceleration wakes only a body flagged asleep, so an acceleration given in that frame was dropped. Box2D\na4a4082 sets the flag when b2Body_IsAwake is false (the dropped paint patch's fix, from the E-325 agent). WeedJS bb9e0cc1\n(the module from Box2D main a4a4082) with tests/node/commandExportSleeping.wasm.test.js: a sleeping body teleported keeps\nits flag, and an acceleration in the teleport's frame wakes it and moves it (both failed on the old module). Off the hot\npath (commands only): suites only, green (test:node 3 248, test:demos 121).",
+      "commits": [
+        "a4a4082",
+        "bb9e0cc1"
+      ]
+    },
+    {
+      "id": "R-1531",
+      "date": "2026-11-19",
+      "time": "05:03",
+      "timeFrom": "recorded",
+      "title": "N-313 measured: the reorder grows the heap's break 102 -> 123 MB in the harness with the bytes in use unchanged; spare buffers per array made it worse (128 MB) and were dropped",
+      "verdict": "note",
+      "text": "**N-313 measured in the crowd harness and a first fix dropped: the reorder leaves the bytes in use alone and grows the\nheap's break with buffers it frees and does not reuse; spare buffers kept per array made it worse.** Box2D f86d466 adds\nthe heap's break (sbrk(0), what WeedJS reads as Box2D's memory) and malloc's bytes in use and footprint to the harness's\noutput. Weed mode, 38 000 walkers, order 2, churn 100, idle 20, 960 steps, one round (2026-11-19 05:01): reorder off,\nheap break 102.0 MB, in use 91.7 MB; reorder every 30 steps, break 122.9 MB, in use 91.7 MB, the same pose hash. So the\n+21 MB here (+45 to 70 MB in Predator crowd 2.5, R-1520) is freed memory the heap keeps.\n\nTried (05:03): each array the reorder gathers into a new buffer leaves its old one as a spare of the same size for the next\nreorder. Worse: break 128.4 MB, in use 116.6 MB (the spares hold 25 MB: the contact arrays' capacities are large).\nDropped, not committed. The form left to try: gather into the step's arena (b2StackAlloc; the reorder runs before the\nstep uses it, so its capacity likely holds a segment already) and copy back into each array in a second parallel pass, so\nnothing is allocated or freed per reorder; the copy (about 2 MB of body sims, the contact slices) is the price, to be\nweighed in the harness's reorder times.",
+      "commits": [
+        "f86d466"
+      ]
+    },
+    {
+      "id": "R-1532",
+      "date": "2026-11-19",
+      "time": "04:59",
+      "timeFrom": "recorded",
+      "title": "N-218's fix built (the pose writes read the parent column only while a link exists); neutral on the main PC (logic 6.4 ms there), the ASUS decides",
+      "verdict": "note",
+      "text": "**N-218's fix (the ASUS session found the cause, R-1489, R-1490: 5d48642f's parent read in every pose write) built and\nrun on the main PC: neutral here.** 4966998a: poseMoved, setPositionFromArgs, set rotation and setRotationCS read\nTransform.parent[i] only while Transform.links[LINK_COUNT] is not 0 (a plain read of the shared count through\nanyChildLinked(); a link made on another worker that frame is seen a frame late, and physics puts the child back from its\nparent anyway). transformParent.test.js proxies the parent column: no read with no link (it failed before the fix), and a\nwrite to a child is still ignored once a link exists. Suites green (3 249, 121).\n\nrunPredatorAbab n218-keyedpack, keyedPackStressScene `n=250000&gbuf=1&churn=0.05`, A bb9e0cc1, B 4966998a, logic owner,\n4 pairs, to 2026-11-19 04:59: NEUTRAL, logic 6.356 -> 6.386 ms (-1.2 % paired, worse 2/4, cv 36 %), the renderer -2.1 %,\npre-render -0.2 %. On this PC logic takes 6.4 ms in that scene against 17 to 23 ms on the ASUS: its 1 MB column likely stays\nin the larger cache here. The ASUS session runs its keyedPack check on 1ad06d1b, bb9e0cc1 and 4966998a.",
+      "commits": [
+        "4966998a"
       ]
     }
   ],
