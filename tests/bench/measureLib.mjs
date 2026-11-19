@@ -145,7 +145,23 @@ function avgOf(worker) {
   return worker?.statsSamplesAverage || {};
 }
 
-function extractMetrics(report) {
+/**
+ * N-311: a worker's own work a frame from its sampled averages, HOW_WE_MEASURE's primary: STEP_MS less WAIT_MS (the
+ * frame chain's and the queue's waits inside the step), plus QUERY_WAKE_MS on physics (sync queries answered between
+ * steps). The raw STEP_MS read waits as cost: meshFillMoving's renderer and queryAabb's logic read as regressions
+ * against v0.14.0 that were their waits (R-1472). A revision that publishes no WAIT_MS waited nowhere.
+ */
+function ownWorkMs(avg, withQueryWake = false) {
+  const work = (avg.STEP_MS ?? 0) - (avg.WAIT_MS ?? 0) + (withQueryWake ? avg.QUERY_WAKE_MS ?? 0 : 0);
+  return work > 0 ? work : 0;
+}
+
+/**
+ * The scoreboard's keys from one run's report. Each `<worker>_STEP_MS` is that worker's own work (ownWorkMs), as in
+ * runPredatorAbab; `WAIT_MS` and `<worker>_WAIT_MS` keep the waits; `physics_loadPct` is the raw step's share of the
+ * frame. Exported for its tests.
+ */
+export function extractMetrics(report) {
   const workers = report.workers || [];
   const pick = (pred) => workers.find(pred);
   const physics = avgOf(pick((w) => w.id === 'physics' || w.type === 'physics'));
@@ -166,7 +182,7 @@ function extractMetrics(report) {
   let spatialMax = null;
   for (const w of workers) {
     if (!String(w.id || '').startsWith('spatial')) continue;
-    const step = avgOf(w).STEP_MS ?? 0;
+    const step = ownWorkMs(avgOf(w));
     if (!spatialMax || step > spatialMax.STEP_MS) {
       spatialMax = { id: w.id, STEP_MS: step, NEIGHBOR_MS: avgOf(w).NEIGHBOR_MS ?? 0, NEIGHBORS_REUSED: avgOf(w).NEIGHBORS_REUSED ?? 0 };
     }
@@ -183,13 +199,13 @@ function extractMetrics(report) {
     ENTITIES_PROCESSED: logic0.ENTITIES_PROCESSED ?? 0,
     MARK_ACTIVE: logic0.MARK_ACTIVE ?? 0,
     NEIGHBORS_REUSED: spatialMax?.NEIGHBORS_REUSED ?? 0,
-    physics_STEP_MS: physics.STEP_MS ?? 0,
-    logic0_STEP_MS: logic0.STEP_MS ?? 0,
+    physics_STEP_MS: ownWorkMs(physics, true),
+    logic0_STEP_MS: ownWorkMs(logic0),
     logic0_RAYCAST_MS: logic0.RAYCAST_MS ?? 0,
     logic0_RAYCAST_COUNT: logic0.RAYCAST_COUNT ?? 0,
-    particle_STEP_MS: particle.STEP_MS ?? 0,
+    particle_STEP_MS: ownWorkMs(particle),
     PARTICLE_PHYSICS_MS: particle.PARTICLE_PHYSICS_MS ?? 0,
-    preRender_STEP_MS: preRender.STEP_MS ?? 0,
+    preRender_STEP_MS: ownWorkMs(preRender),
     VISIBILITY_MS: preRender.VISIBILITY_MS ?? 0,
     COLLECT_MS: preRender.COLLECT_MS ?? 0,
     EMIT_MS: preRender.EMIT_MS ?? 0,
@@ -211,7 +227,7 @@ function extractMetrics(report) {
     logic0_WAIT_MS: logic0.WAIT_MS ?? 0,
     RENDER_QUEUE_SIZE: preRender.RENDER_QUEUE_SIZE ?? 0,
     VISIBLE_ENTITIES: preRender.VISIBLE_ENTITIES ?? 0,
-    pixi_STEP_MS: pixi.STEP_MS ?? 0,
+    pixi_STEP_MS: ownWorkMs(pixi),
     // DX-LIGHT3D load keys of the shadow scenes (runPredatorAbab reads them already; the scoreboard skips a key it lacks).
     GPU_CASTERS: pixi.GPU_CASTERS ?? 0,
     GPU_SHADOW_LIGHTS: pixi.GPU_SHADOW_LIGHTS ?? 0,
