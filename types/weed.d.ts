@@ -2179,10 +2179,16 @@ export declare class Scene {
   createNewGame(data?: unknown): void | Promise<void>;
   /**
    * After a save is applied; payload.custom is what onSaveGame returned (null if nothing).
-   * payload.hotReload is true after a hot reload: every entity is back already (serializable
-   * or not), so do not spawn entities here again.
+   * payload.allEntitiesRestored is true after a hot reload or a restart after a GPU loss
+   * (payload.restartReason says which): every entity is back already (serializable or not), so
+   * do not spawn entities here again.
    */
-  onLoadGame(payload: { custom: unknown; hotReload?: boolean; [key: string]: unknown }): void | Promise<void>;
+  onLoadGame(payload: {
+    custom: unknown;
+    allEntitiesRestored?: boolean;
+    restartReason?: 'hotReload' | 'gpuLost';
+    [key: string]: unknown;
+  }): void | Promise<void>;
   /** While a save is built: scene state outside entities (score, flags, level), as JSON data. */
   onSaveGame(): unknown;
   /** Names entities may send each other (sendTo / onMessage). */

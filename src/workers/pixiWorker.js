@@ -1483,17 +1483,15 @@ class PixiRenderer extends AbstractWorker {
     const gl = this.pixiApp.renderer.gl;
     this._framePacer.bindGl(gl);
     if (gl && gl.canvas) {
+      // N-301: the page restarts the scene from a save of the running world once the context is back (the default
+      // prevented, so the browser may restore it); this worker's GPU side is not rebuilt in place.
       gl.canvas.addEventListener(
         'webglcontextlost',
         (e) => {
           e.preventDefault();
           this._framePacer.reset();
-          this.reportError(
-            'WebGL Context Lost',
-            new Error(
-              'The GPU context was lost. This usually happens due to GPU driver crashes or excessive resource usage.'
-            )
-          );
+          console.warn('[WeedJS] the WebGL context was lost (a driver reset, a GPU switch, too many contexts)');
+          self.postMessage({ msg: 'gpuLost', backend: 'webgl' });
         },
         false
       );
@@ -1502,7 +1500,7 @@ class PixiRenderer extends AbstractWorker {
         'webglcontextrestored',
         () => {
           this._framePacer.reset();
-          this.reportLog('WebGL context restored');
+          self.postMessage({ msg: 'gpuRestored', backend: 'webgl' });
         },
         false
       );
@@ -8836,10 +8834,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
       });
       device.lost.then((info) => {
-        if (info && info.reason === 'destroyed') return;
-        const reason = info?.reason || 'unknown';
-        const message = info?.message || 'GPU device was lost';
-        this.reportError('WebGPU device lost', new Error(`${reason}: ${message}`));
+        if (info && info.reason === 'destroyed' && !this._gpuLossTest) return;
+        // N-301: the page restarts the scene from a save of the running world, and its renderer asks for a new device.
+        console.warn(`[WeedJS] the WebGPU device was lost (${info?.reason || 'unknown'}: ${info?.message || ''})`);
+        self.postMessage({ msg: 'gpuLost', backend: 'webgpu' });
       });
       this._bindWebGpuSwapchain();
       // DX-IGPUWARN: the adapter's GPU, for scene.gpu (a throwaway WebGL context's name where the adapter's is unclear).

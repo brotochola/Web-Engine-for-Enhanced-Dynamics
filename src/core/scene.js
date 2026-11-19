@@ -2155,6 +2155,10 @@ class Scene {
       this._takeWorkerLoadMarks(e.currentTarget.name, e.data.marks);
     } else if (e.data.msg === 'gpuInfo') {
       this._takeGpuInfo(e.data);
+    } else if (e.data.msg === 'gpuLost') {
+      this.game?._onGpuLost?.(this, e.data.backend);
+    } else if (e.data.msg === 'gpuRestored') {
+      this.game?._onGpuRestored?.(this);
     } else if (e.data.msg === 'error') {
       const { title, message, stack } = e.data;
       const workerName = e.currentTarget.name;
