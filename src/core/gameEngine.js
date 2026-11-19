@@ -522,7 +522,12 @@ class GameEngine {
    */
   async _captureGpuLossSave(scene) {
     const m = await import('./save/saveGame.js');
-    const payload = await m.captureSavePayload(scene, { allEntities: true, instanceFields: true, staysPaused: true });
+    const payload = await m.captureSavePayload(scene, {
+      allEntities: true,
+      instanceFields: true,
+      staysPaused: true,
+      decalsAsPng: false,
+    });
     const coded = m.decodeSaveUncompressed(m.encodeSaveUncompressed(payload));
     loadMark('save coded');
     return coded;
