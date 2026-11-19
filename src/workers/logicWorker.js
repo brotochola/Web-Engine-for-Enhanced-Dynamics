@@ -16,6 +16,7 @@ import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { drainMessages } from '../util/messageRing.js';
 import { clearStaticHookTables, createStaticHookTables, definesHook, resolveStaticHooks } from '../core/entityHooks.js';
 import { Joint } from '../core/joint.js';
+import { FSM } from '../core/fsm.js';
 import { Mouse } from '../core/mouse.js';
 import {
   Transform,
@@ -339,7 +340,7 @@ class LogicWorker extends AbstractWorker {
     // - decimatedTypes: tickInterval > 1 → countdown
     this.nonDecimatedTypes = []; // Array of {EntityClass, activeList} for tickInterval === 1
     this.decimatedTypes = [];    // Array of {EntityClass, activeList, tickInterval} for tickInterval > 1
-    this.tickAllTypes = [];      // static tickAll, no tick() override
+    this.tickAllTypes = [];      // static tickAll, no tick() override (or FSMs and neither: FSM.tickAll, E-526)
     // E-527: the tickAll types with tickInterval > 1 (logic.staggeredUpdates): tickAll gets one bucket a frame.
     this.tickAllBucketTypes = [];
     // DX-DIRSPRITE: the types with a DirectionalSprite, resolved after the ticks (_resolveDirections).
@@ -710,7 +711,12 @@ class LogicWorker extends AbstractWorker {
         // Only classify if this type has entities (poolSize > 0)
         if (poolSize > 0) {
           const needsTick = GameObject.typeNeedsLogicTick(EntityClass);
-          const hasTickAll = GameObject.typeHasTickAll(EntityClass);
+          // E-526: a type with FSM components and neither tick() nor tickAll ticks as a tickAll type, its tickAll
+          // FSM.tickAll (its FSMs, components order, the owner made on its first tick).
+          const fsmTickAll = !needsTick && GameObject.typeRunsFsmTickAll(EntityClass);
+          const hasTickAll = fsmTickAll || GameObject.typeHasTickAll(EntityClass);
+          // The class whose static tickAll runs; it is given the entity class too (FSM.tickAll's fourth argument).
+          const ticker = fsmTickAll ? FSM : EntityClass;
           // E-528: a type without tick() that lists CameraInOutListener hears onScreenEnter / onScreenExit from a pass
           // of its own after the ticks (_runScreenTypes): a static form with no instance, a method with the instance
           // made at the first change. A tickAll type keeps its tickAll, and a type with neither has no tick visit. A
@@ -728,6 +734,7 @@ class LogicWorker extends AbstractWorker {
               // of the bucket from this worker's first row, and that row, as E-218 keeps one of the list.
               this.tickAllBucketTypes.push({
                 EntityClass,
+                ticker,
                 activeList: EntityClass._activeList,
                 tickInterval,
                 startIndex,
@@ -745,6 +752,7 @@ class LogicWorker extends AbstractWorker {
             } else {
               this.tickAllTypes.push({
                 EntityClass,
+                ticker,
                 activeList: EntityClass._activeList,
                 startIndex,
                 entityType,
@@ -1713,7 +1721,7 @@ class LogicWorker extends AbstractWorker {
       }
       if (n > 0) {
         try {
-          typeInfo.EntityClass.tickAll(viewed ? typeInfo.view : scratch, n, dtRatio);
+          typeInfo.ticker.tickAll(viewed ? typeInfo.view : scratch, n, dtRatio, typeInfo.EntityClass);
         } catch (error) {
           reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
         }
@@ -1842,7 +1850,7 @@ class LogicWorker extends AbstractWorker {
       }
       if (n > 0) {
         try {
-          typeInfo.EntityClass.tickAll(list, n, dtRatio);
+          typeInfo.ticker.tickAll(list, n, dtRatio, typeInfo.EntityClass);
         } catch (error) {
           reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
         }

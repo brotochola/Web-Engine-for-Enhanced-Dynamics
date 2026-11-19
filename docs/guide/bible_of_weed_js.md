@@ -198,7 +198,7 @@ async preload() {
   - `this.getAllNeighborIds()`
   - Lists are built only for classes whose code reads them (and, in a scene with walls, for lights, whose walls come from theirs). The first read of a class turns its lists on: that read and the next frame or two see none. A class that reads only now and then still gets its lists every frame from then on.
 
-Lifecycle hooks: `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` each frame, or `static tickAll(list, count, dtRatio)` for the whole type (see Workers), and the hooks below. `isCollidingWith(other)` needs at least one entity type in the scene with `CollisionListener` (see Collision Filtering).
+Lifecycle hooks: `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` each frame, or `static tickAll(list, count, dtRatio)` for the whole type (see Workers), or neither for a type whose FSMs are all it runs (see State machines), and the hooks below. `isCollidingWith(other)` needs at least one entity type in the scene with `CollisionListener` (see Collision Filtering).
 
 Each hook has two forms. The method runs on the entity's instance (`this`). The static form takes the entity's index first, runs with the class as `this`, and needs no instance. A type whose hooks are static, with no `tick()` (or with `tickAll`), makes no instance for them in the logic workers: a callback is a lookup by entity type, and each worker skips the instance it would make for every entity a hook reaches. The static form wins over a method of the same name, and a subclass inherits it as it inherits a method. Spawn still makes the instance it returns, on the thread that sets the entity up.
 
@@ -235,6 +235,54 @@ class Leaf extends GameObject {
   }
   static onScreenExit(i) {
     this.despawn(i); // `this` is the class: Leaf.despawn(i)
+  }
+}
+```
+
+### State machines (`FSM`)
+
+An `FSM` is a component: its columns hold each entity's state, its time in that state and the state it asked to go to. Its states are classes of statics (`FSMState`): `onEnter(owner, i, fromState)`, `onExit(owner, i, toState)` and `onUpdate(owner, i, dt, timeInState)`, with `owner` the entity, `i` its index, `timeInState` in whole milliseconds and `this` the state class (`this.fsm` its FSM). A state asks for another with `this.fsm.changeState(i, this.fsm.states.NAME)`; the change happens at the start of that entity's next tick, which calls the old state's `onExit`, then the new one's `onEnter`, then its `onUpdate`. A spawn puts each FSM in its `initial` state and calls that state's `onEnter`.
+
+A type that lists FSMs and has no `tick()` (and no `static tickAll`) needs nothing more: the logic workers tick its FSMs each frame through `FSM.tickAll`, entity by entity, and an entity's FSMs in its components order. A type with more to do runs them itself, from `tick()` with `this.guardFSM.tick(dtRatio, this)`, or from its `static tickAll` with `FSM.tickAll(list, count, dtRatio, this)` (`GuardFSM.tickAll(…)` ticks that FSM alone). The calls are the same either way. Without a `tick()`, the type ticks as a `tickAll` type does (see Performance Notes): after the types with `tick()`, at its `tickInterval` with `logic.staggeredUpdates` (time in state counts the interval's frames), and its screen hooks run after the ticks.
+
+```javascript
+const { GameObject, FSM, FSMState, SpriteRenderer } = WEED;
+
+// A guard rests 2 s, walks right for 3 s, and again.
+class Resting extends FSMState {
+  static onUpdate(owner, i, dt, timeInState) {
+    if (timeInState > 2000) this.fsm.changeState(i, this.fsm.states.WALKING);
+  }
+}
+
+class Walking extends FSMState {
+  static onUpdate(owner, i, dt, timeInState) {
+    owner.x += 2 * dt;
+    if (timeInState > 3000) this.fsm.changeState(i, this.fsm.states.RESTING);
+  }
+}
+
+class GuardFSM extends FSM {
+  static states = { RESTING: Resting, WALKING: Walking };
+  static initial = this.states.RESTING;
+}
+
+// No tick(): the logic workers run GuardFSM for every live Guard.
+class Guard extends GameObject {
+  static components = [SpriteRenderer, GuardFSM];
+  onSpawned() {
+    this.setSprite('guard');
+  }
+}
+
+// More to do each frame: its tickAll runs the FSMs, then a loop of its own.
+class CountedGuard extends Guard {
+  static walking = 0; // this logic worker's share of them (a static is per thread, as a plain field is)
+  static tickAll(list, count, dtRatio) {
+    FSM.tickAll(list, count, dtRatio, this);
+    let walking = 0;
+    for (let k = 0; k < count; k++) if (GuardFSM.isInState(list[k], GuardFSM.states.WALKING)) walking++;
+    this.walking = walking;
   }
 }
 ```
@@ -2234,7 +2282,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
   }
   ```
 - Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
-- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. A sprite whose statics you write that way (alpha, tint, scale, anchor, sprite, animation, tiles) needs `SpriteRenderer.renderDirty[i] = 1` and `SpriteRenderer.keyedDirty[i] = 1`, what `markDirty()` sets: without them, frames that reuse the last queue draw the old values. Positions need nothing. If both `tick` and `tickAll` exist, instance `tick` wins. A `tickAll` type that lists `CameraInOutListener` keeps `tickAll`: its `onScreenEnter` / `onScreenExit` run after the ticks, with no instance in their static form. `tickInterval` works as for `tick()`: with `static tickInterval = 4` and `logic.staggeredUpdates` on, each frame's `list` holds the quarter of the entities `tick()` would tick on that frame, so each one comes once in 4 frames. `dtRatio` is the frame's, as `tick()` gets it: scale by the interval what accumulates between calls.
+- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. A sprite whose statics you write that way (alpha, tint, scale, anchor, sprite, animation, tiles) needs `SpriteRenderer.renderDirty[i] = 1` and `SpriteRenderer.keyedDirty[i] = 1`, what `markDirty()` sets: without them, frames that reuse the last queue draw the old values. Positions need nothing. If both `tick` and `tickAll` exist, instance `tick` wins. A `tickAll` type that lists `CameraInOutListener` keeps `tickAll`: its `onScreenEnter` / `onScreenExit` run after the ticks, with no instance in their static form. `tickInterval` works as for `tick()`: with `static tickInterval = 4` and `logic.staggeredUpdates` on, each frame's `list` holds the quarter of the entities `tick()` would tick on that frame, so each one comes once in 4 frames. `dtRatio` is the frame's, as `tick()` gets it: scale by the interval what accumulates between calls. A type with FSM components and neither `tick()` nor `tickAll` ticks this way, its `tickAll` being `FSM.tickAll` (see State machines).
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Entity pools (`static entities`) and the joint pool are finite too. A spawn into a full pool returns `null` (a joint returns `-1`); the first one warns once per scene, from whichever thread hit it, and the rest are counted in `getPoolStats(Type).dropped`.

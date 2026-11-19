@@ -1577,9 +1577,17 @@ export declare class GameObject {
    * With tickInterval N > 1 (logic.staggeredUpdates on), each frame's list holds
    * the entities tick() would tick on that frame, each one once in N frames.
    * dtRatio is the frame's, as tick() gets it, not N frames' worth.
+   * A type with FSM components and neither tick() nor tickAll has its FSMs run
+   * this way, by {@link FSM.tickAll}; a tickAll of its own can call that too.
    */
   static tickAll?(list: ArrayLike<number>, count: number, dtRatio: number): void;
   static typeHasTickAll(EntityClass?: typeof GameObject): boolean;
+  /**
+   * True when the logic workers run this type's FSMs through {@link FSM.tickAll}:
+   * it lists FSM components, has neither tick() nor a static tickAll, and its
+   * tickInterval is not 0.
+   */
+  static typeRunsFsmTickAll(EntityClass?: typeof GameObject): boolean;
   /** Save this class's active entities (or an ancestor's flag). See docs/guide/SAVE_GAME.md. */
   static serializable?: boolean;
   /** Optional per-entity filter on a serializable class: false leaves that entity out of a save. */
@@ -2366,6 +2374,17 @@ export declare class FSM extends Component {
   tick(dt: number, owner: GameObject): void;
   changeState(StateClass: typeof FSMState): void;
   forceChangeState(StateClass: typeof FSMState): void;
+
+  /**
+   * Tick the FSMs of `count` listed entities of EntityClass, as each one's tick(dt, owner)
+   * would: the pending transition (onExit, onEnter), the time in state, the state's onUpdate,
+   * entity by entity in the list's order. On FSM itself, every FSM component of EntityClass
+   * (components order) for each entity before the next; on an FSM subclass, that FSM alone.
+   * The owner is the entity's instance, made on its first tick. The logic workers call it for a
+   * type with FSM components and neither tick() nor tickAll; a type's own static tickAll can
+   * call it: `FSM.tickAll(list, count, dtRatio, this)`.
+   */
+  static tickAll(list: ArrayLike<number>, count: number, dt: number, EntityClass: typeof GameObject): void;
 
   static initializeArrays(buffer: SharedArrayBuffer, count: number, byteOffset?: number): void;
   static changeState(i: number, StateClass: typeof FSMState): void;

@@ -10,14 +10,126 @@
 //
 //   class Enemy extends GameObject {
 //     static components = [EnemyBehaviourFSM, RigidBody, Collider];
-//     tick(dt) { this.enemyBehaviourFSM.tick(dt, this); }
 //   }
+//
+// A type with FSM components and no tick() (nor a static tickAll) has its FSMs run by the logic workers through
+// FSM.tickAll (E-526). A type with more to do each frame calls them from its tick()
+// (this.enemyBehaviourFSM.tick(dt, this)) or from its static tickAll (FSM.tickAll(list, count, dtRatio, this)).
 
 import { Component } from './component.js';
 import { FSMState } from './fsmState.js';
+import { reportWorkerError } from '../util/errorReport.js';
 
 // Every FSM class whose states are linked in this realm: a hot swap reads their states' hooks again (_refreshStateHooks).
 const linkedFsms = [];
+
+// E-526: FSM.tickAll's lists of FSM classes. By entity class, its FSM components in its components order; by FSM
+// subclass, itself alone (SomeFSM.tickAll runs that one). Made on the first call.
+const fsmsByEntityClass = new WeakMap();
+const fsmAlone = new WeakMap();
+const NO_FSMS = [];
+
+/** EntityClass's FSM components, in its components order (the list a logic worker registered it with). */
+function fsmsOf(EntityClass) {
+  let fsms = fsmsByEntityClass.get(EntityClass);
+  if (fsms !== undefined) return fsms;
+  if (!Object.prototype.hasOwnProperty.call(EntityClass, '_componentList')) return NO_FSMS; // not registered here yet
+  fsms = EntityClass._componentList.filter((C) => C.isFSM === true);
+  fsmsByEntityClass.set(EntityClass, fsms);
+  return fsms;
+}
+
+function fsmAloneOf(FSMClass) {
+  let fsms = fsmAlone.get(FSMClass);
+  if (fsms === undefined) {
+    fsms = [FSMClass];
+    fsmAlone.set(FSMClass, fsms);
+  }
+  return fsms;
+}
+
+/**
+ * A state's throw in FSM.tickAll: on a logic worker, reported with the entity, and the tick goes on at the next entity
+ * (as the tick() loops do); elsewhere (tests, tools) it is thrown.
+ */
+function fsmEntityThrew(error, EntityClass, entityIndex) {
+  if (typeof self === 'undefined' || !self.logicWorker) throw error;
+  reportWorkerError(error, 'FSM.tickAll', EntityClass.name, entityIndex);
+}
+
+/**
+ * FSM.tickAll for one FSM class: FSM#tick's steps for each listed entity, the arrays read once. A copy of tickFsms'
+ * loop with the FSM hoisted (the common case: one FSM per type), so neither loop tests how many there are.
+ */
+function tickOneFsm(F, list, count, dt, EntityClass) {
+  const state = F.state;
+  const time = F.time;
+  const nextState = F.nextState;
+  const stateArray = F._stateArray;
+  const onUpdates = F._onUpdates;
+  const instances = EntityClass.instances;
+  const startIndex = EntityClass.startIndex;
+  // FSM#tick's dt × ms per tick (16.67 × the type's tickInterval), the same double, once.
+  const dtMs = dt * (16.67 * (EntityClass.tickInterval || 1));
+  let k = 0;
+  for (;;) {
+    try {
+      for (; k < count; k++) {
+        const i = list[k];
+        const owner = instances[i - startIndex] ?? EntityClass._instanceOf(EntityClass, i);
+        if (owner === null || owner === undefined) continue;
+        const pending = nextState[i];
+        if (pending >= 0) F._executeTransition(i, pending, owner);
+        const s = state[i];
+        const CurrentState = stateArray[s];
+        if (CurrentState) {
+          time[i] += dtMs;
+          onUpdates[s].call(CurrentState, owner, i, dt, time[i] | 0);
+        }
+      }
+      return;
+    } catch (error) {
+      fsmEntityThrew(error, EntityClass, list[k]);
+      k++;
+    }
+  }
+}
+
+/**
+ * FSM.tickAll for several FSM classes: for each listed entity, each FSM in turn (components order), as a tick() that
+ * calls them one after the other. A throw skips the rest of that entity's FSMs, as it skipped the rest of its tick().
+ */
+function tickFsms(fsms, list, count, dt, EntityClass) {
+  const fsmCount = fsms.length;
+  const instances = EntityClass.instances;
+  const startIndex = EntityClass.startIndex;
+  const dtMs = dt * (16.67 * (EntityClass.tickInterval || 1));
+  let k = 0;
+  for (;;) {
+    try {
+      for (; k < count; k++) {
+        const i = list[k];
+        const owner = instances[i - startIndex] ?? EntityClass._instanceOf(EntityClass, i);
+        if (owner === null || owner === undefined) continue;
+        for (let f = 0; f < fsmCount; f++) {
+          const F = fsms[f];
+          const pending = F.nextState[i];
+          if (pending >= 0) F._executeTransition(i, pending, owner);
+          const s = F.state[i];
+          const CurrentState = F._stateArray[s];
+          if (CurrentState) {
+            F.time[i] += dtMs;
+            F._onUpdates[s].call(CurrentState, owner, i, dt, F.time[i] | 0);
+          }
+        }
+      }
+      return;
+    } catch (error) {
+      fsmEntityThrew(error, EntityClass, list[k]);
+      k++;
+    }
+  }
+}
 
 /**
  * A state's hooks, stored by its number where tick and transitions read them (E-146, E-301). onExit and onEnter are
@@ -208,6 +320,30 @@ export class FSM extends Component {
       // crossing this call (a different onUpdate per state, never inlined) was a heap number per tick (E-105).
       FSMClass._onUpdates[currentStateIndex].call(CurrentState, owner, i, dt, FSMClass.time[i] | 0);
     }
+  }
+
+  /**
+   * E-526: tick the FSMs of `count` entities of EntityClass, as each one's FSM#tick(dt, owner) would: the pending
+   * transition (onExit, onEnter), the time in state, the state's onUpdate(owner, i, dt, timeInState), entity by entity
+   * in the list's order. On FSM itself it ticks every FSM component of EntityClass, in its components order, for each
+   * entity before the next; on an FSM subclass (WalkFSM.tickAll) that FSM alone. The owner is the entity's instance,
+   * made on its first tick. A logic worker calls FSM.tickAll for a type with FSM components and neither a tick() nor a
+   * static tickAll; a type's own tickAll can call it:
+   *   static tickAll(list, count, dtRatio) { FSM.tickAll(list, count, dtRatio, this); ... }
+   * @param {ArrayLike<number>} list entity indices
+   * @param {number} count how many of `list` to tick
+   * @param {number} dt the frame's dtRatio
+   * @param {Function} EntityClass the entities' class (`this` in its static tickAll)
+   */
+  static tickAll(list, count, dt, EntityClass) {
+    if (typeof EntityClass !== 'function') {
+      throw new TypeError(
+        "FSM.tickAll(list, count, dtRatio, EntityClass): pass the entities' class (this, in a static tickAll)",
+      );
+    }
+    const fsms = this === FSM ? fsmsOf(EntityClass) : fsmAloneOf(this);
+    if (fsms.length === 1) tickOneFsm(fsms[0], list, count, dt, EntityClass);
+    else if (fsms.length > 1) tickFsms(fsms, list, count, dt, EntityClass);
   }
 
   /**
