@@ -142,6 +142,8 @@ const umdConfig = {
         new webpack.DefinePlugin({
             __WEED_BUILD_INPUTS__: JSON.stringify(process.env.WEED_BUILD_INPUTS || ''),
         }),
+        // One file: a dynamic import (the debug overlay, the save code) is inlined, never a chunk of its own.
+        new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 }),
         new webpack.BannerPlugin({
             banner: 'WeedJS by Facundo Saiegh — https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics',
             // After Terser (comments: false would strip an earlier banner).

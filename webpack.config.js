@@ -166,6 +166,8 @@ const mainConfig = {
         ...(shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : []),
         authorBanner,
         buildInputsDefine,
+        // One file: a dynamic import (the debug overlay, the save code) is inlined, never a chunk of its own.
+        new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 }),
     ],
     resolve: {
         extensions: ['.js'],
