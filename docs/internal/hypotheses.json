@@ -16716,8 +16716,8 @@
     {
       "id": "E-313",
       "title": "Box2D's circle contacts reach b2Shape and four body-sim lines to collide: b2CollideTask 24 % of the physics threads, b2CircleManifold 0.1 % (Predator crowd 2.5)",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "parked",
+      "statusText": "parked 2026-11-19 with E-323 (R-1522): the body sims' hot-first layout, about 2 % of physics; reopen when the collide's share grows",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -16736,19 +16736,19 @@
         "R-1110",
         "R-1218",
         "R-1231",
-        "R-1236"
-      ],
-      "rank": 3
+        "R-1236",
+        "R-1522"
+      ]
     },
     {
       "id": "E-314",
       "title": "Box2D's prefetch is a no-op in wasm (b2Prefetch emits nothing): the finalize's chain sim -> body -> shape -> fatAABB -> node is 4-6 dependent misses an iteration",
-      "status": "running",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "superseded",
+      "statusText": "superseded by E-322 2026-11-19 (R-1521, read, not run)",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Verified 2026-11-14 (R-1100): __builtin_prefetch compiles to nothing in wasm, so Box2D's own prefetch loops (the pair-set probes in broad_phase.c) are dead code. Box2D's hot loops are memory-bound: finalize 2.1, collide 2.0, solver 1.7 refills an instruction (R-1034, R-1041). Read (R-1101): the finalize's chain is 4-6 dependent misses inside a ~400-instruction iteration. Estimate physics STEP -3 to -7 %, more once the refit drops its fences.",
+      "result": "Superseded by E-322 2026-11-19 (R-1521): with the awake set in body id order the finalize's sim, body, shape and fat AABB reads climb; only the island and E-324's tree leaf stay random. Step 1 had read +1.75 % in the harness before E-322 (R-1109).",
       "next": "Early loads in batches of 16 with a tight first loop: the finalize in 2 stages, each 8 bodies ahead; collide the AABB tests and body-sim loads of 16 contacts; the solver the 8 body states of wide constraint i+2; the pair-set probes as real loads. Node harness A/B per loop (results unchanged; it can lose where the data already hits).",
       "refs": [
         "EXECUTION_PLAN.md#E-314"
@@ -16763,9 +16763,9 @@
         "R-1101",
         "R-1106",
         "R-1109",
-        "R-1236"
-      ],
-      "rank": 4
+        "R-1236",
+        "R-1521"
+      ]
     },
     {
       "id": "E-315",
@@ -17013,7 +17013,8 @@
         "R-1471",
         "R-1473",
         "R-1509",
-        "R-1520"
+        "R-1520",
+        "R-1521"
       ]
     },
     {
@@ -17036,14 +17037,15 @@
       ],
       "records": [
         "R-1101",
-        "R-1231"
+        "R-1231",
+        "R-1522"
       ]
     },
     {
       "id": "E-324",
       "title": "Box2D marks moved tree nodes with an atomic OR per moved leaf in the finalize, then refits ~80 000 nodes serially and scans them again the next step",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "running",
+      "statusText": "screened 2026-11-19 (R-1523): -1.4 % in the harness, bit-identical; rides the physics batch's Predator sitting with E-325 and E-327",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -17059,7 +17061,8 @@
       ],
       "records": [
         "R-1101",
-        "R-1236"
+        "R-1236",
+        "R-1523"
       ],
       "rank": 8
     },
@@ -23670,10 +23673,10 @@
     {
       "id": "N-301",
       "title": "After a lost WebGL context or a lost WebGPU device the game stays black: webglcontextlost is prevented and reported, webglcontextrestored only resets the pacer and logs, device.lost only reports; nothing rebuilds the engine's GPU resources",
-      "status": "open",
-      "statusText": "found 2026-11-18 reading pixiWorker.js against Phaser's history (R-1422); not reproduced",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (c598112b, on fix/n301-context)",
       "date": "2026-11-18",
-      "result": "",
+      "result": "Fixed 2026-11-19 (R-1524, c598112b): on a GPU loss the engine saves the world in memory as a hot reload does and loads the same scene from it; WebGL and WebGPU both come back in Predator. payload.allEntitiesRestored replaces payload.hotReload.",
       "next": "Reproduce with WEBGL_lose_context (loseContext, then restoreContext) and device.destroy() on WebGPU; list what Pixi 8 restores on its own and what the engine's raw resources lose. Then rebuild only the Pixi worker's GPU side (the simulation lives in shared memory and does not notice) and mark every key changed; the frame after the restore byte-identical to one before. Plan in REVIEW_PLAN.md#N-301.",
       "area": "pixi",
       "kind": "bug",
@@ -23689,7 +23692,8 @@
         "black screen after context loss"
       ],
       "records": [
-        "R-1422"
+        "R-1422",
+        "R-1524"
       ]
     },
     {
@@ -24026,6 +24030,18 @@
       "date": "2026-11-19",
       "statusText": "found 2026-11-19 checking E-322's default (R-1520); the peak holds, it does not grow",
       "next": "Keep the reorder's gather buffers between reorders (a scratch arena sized by the awake set's capacity, grown when it grows) instead of b2Alloc per pass; check the peak at Predator crowd 2.5 and the harness's pose hash."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-314",
+      "title": "Saving and loading a crowd scene is slow: Predator's 17 500 entities take 3.7 to 5.5 s to save (captureSavePayload) and 3.8 to 8.6 s to load back, which is most of a restart after a GPU loss (N-301) and of a hot reload",
+      "status": "open",
+      "kind": "bug",
+      "area": "save",
+      "date": "2026-11-19",
+      "statusText": "found 2026-11-19 by gpuLossProbe (R-1524)",
+      "next": "Time the save's parts (pauseAndSettle, instance fields, the decals' PNG tiles, collectSerializableEntities, the codec) and the load's (destroy, the boot, restoreSave on logic0 with allTypes, the prime) in one Predator run, then fix the largest; the restart's console line gives the two totals."
     }
   ],
   "records": [
@@ -38635,6 +38651,46 @@
       "text": "**E-322 on by default, checked for what the sittings did not show: Box2D's memory peak rises 45 to 70 MB at Predator crowd\n2.5 and holds there (it does not grow over a run); Boids at 85 000 shows no change in memory and none in its frame.** The\nphysics stats of the runs (MEMORY_PEAK_KB, HEAP_USED_KB, statsEnd): Predator crowd 2.5 with the reorder off peaks at\n548 MB of 669 (heap in use 544), with it on at 593 to 619 MB (in use 543 to 555), so the engine's warning at 90 % now\nfires at that crowd (92 %); a 70 s window (2026-11-19 02:38) peaks at 619 MB as the 20 s ones did. The reorder's gathers\ntake new buffers before they free the old ones, and the break keeps the room. Boids at 85 000 (all awake, few contacts,\n02:40): peak 221 MB with the reorder, 219 without, no warning. runPredatorAbab boids-e322, `boids=85000`, B\n`awakeReorder=0` (the bench page's knob, 5f697160), spatial owner, 4 pairs, to 02:56: NEUTRAL, spatial 10.867 -> 10.468\nms with it off (-2.1 %, 1/4 worse), physics +0.9 %, spatial p99 alike. Two Boids capacity searches with the reorder on\n(02:43, 02:49; the second asked ?awakeReorder=0, which Boids did not read then) held 85 000 and 77 000: a search swings\nthat much; 91 000 at 22:44. Filed N-313 for the memory.",
       "commits": [
         "5f697160"
+      ]
+    },
+    {
+      "id": "R-1521",
+      "date": "2026-11-19",
+      "time": "03:06",
+      "timeFrom": "recorded",
+      "title": "E-314 closed on paper: E-322's body-id order made the finalize's chain monotonic streams the prefetcher follows; superseded",
+      "verdict": "superseded",
+      "text": "**E-314 read again now that E-322 is on by default (2026-11-19): closed, superseded by E-322; no build, no run.** A read of Box2D main 2bca804 (b2FinalizeBodiesTask) against what the row assumed.\n\n- **E-314 (early loads in the finalize, since b2Prefetch emits nothing in wasm).** Its premise was a chain of dependent\n  misses an iteration: sim -> body -> shape -> fat AABB -> tree node. E-322 now keeps the awake set in body id order\n  (re-sorted every 30 steps, spread over the workers), so the finalize walks the sims in order, `bodies + sim->bodyId`\n  climbs, a walker's one shape was made right after its body (shape ids climb with body ids) and the fat AABBs follow the\n  shape ids: monotonic streams the hardware prefetcher already follows. What stays random is the island and the tree leaf\n  of a body whose AABB left its fat one, and the leaf is E-324's. Its step 1 already read +1.75 % in the harness before\n  E-322 (R-1109). Closed as superseded by E-322; reopen if the awake order stops being kept."
+    },
+    {
+      "id": "R-1522",
+      "date": "2026-11-19",
+      "time": "03:06",
+      "timeFrom": "recorded",
+      "title": "E-313 parked on paper: what R-1110 left is the body sims' layout, about 2 % of physics, under the bar",
+      "verdict": "note",
+      "text": "**E-313 read again now that E-322 is on by default (2026-11-19): parked with E-323; no build, no run.** A read of Box2D main 2bca804 (b2CollideTask) against what the row assumed.\n\n- **E-313 (circle contacts collide from the body sims).** R-1110 showed that the ~95 % of contacts recycled each step read\n  no b2Shape line, which took the estimate's main part. What is left is the body sims' layout: a recycled contact reads\n  transform and center (bytes 0-24), invMass and invInertia (60-68), maxExtent (72-76) and flags (92-96) of each 96-byte\n  b2BodySim, so both of its lines; hot fields first would save about one line of a contact's six to seven (the contact\n  sim, two fat AABBs, two body sims), roughly 10 % of the collide stage (2.2 ms of 11.4 in the weed-mode harness at\n  38 000 walkers), about 2 % of physics: under the bar, and the struct's order reaches the snapshot and every user of the\n  sim. Parked with E-323 (hot-first b2Shape and b2Body); reopen when the collide's share grows."
+    },
+    {
+      "id": "R-1523",
+      "date": "2026-11-19",
+      "time": "03:18",
+      "timeFrom": "recorded",
+      "title": "E-324 built and screened: the refit flags the ancestors from their children, the finalize only the leaf and the root; same hashes, Box2D's step -1.4 % (5/6) in the harness",
+      "verdict": "screened",
+      "text": "**E-324 built and screened: in a DFS-ordered tree the finalize flags only the moved leaf and the root, and the refit flags\neach ancestor from its children pair as it unions them (no atomic OR per ancestor); same pose hash, Box2D's step -1.4 %\nin the harness.** Box2D branch weedjs/e324-refit (ea13812 on 2c703a1, E-325's export), dynamic_tree.c only: an unordered\ntree (unit tests) still walks the ancestors; the refit reads each internal node's children flags (branchless, a leaf reads\nits own pair) before the union, so the flags and boxes it leaves are the same as before.\nCrowd harness, weed mode (the agent's 0493b75: 38 000 walkers through the glue, order 2, reorder every 30 steps, churn\n100, idle 20, 960 steps), 6 alternating rounds against its own base build of 2c703a1, to 2026-11-19 03:18: b2World_Step\n12.18 -> 12.02 ms (-1.37 %), the whole step -1.30 % (5/6 rounds), solve -2.87 %, collide +0.8 %, pose and export hashes\nidentical. (A first run at 03:08 read -4.1 % against a base folder the E-325 agent rebuilt during the run; not used.)\nUnder the 3 % bar alone: it rides the physics batch's Predator sitting with E-325 and E-327, as a kernel claim (the scene\nmust not get worse)."
+    },
+    {
+      "id": "R-1524",
+      "date": "2026-11-19",
+      "time": "03:34",
+      "timeFrom": "recorded",
+      "title": "N-301 reproduced and fixed: a lost GPU restarts the scene from a save of the running world (both backends back, 7.5 to 14 s at 17 500 entities)",
+      "verdict": "kept-hygiene",
+      "text": "**N-301 reproduced and fixed: a lost GPU no longer ends the game; the scene restarts from a save of the running world.**\ngpuLossProbe (18f01c6d) runs a scene on the bench page and loses its GPU through the Pixi worker's loseGpuForTest\nmessage (WebGL: WEBGL_lose_context, restored 300 ms later; WebGPU: the device destroyed). Before the fix (2026-11-19\n03:20, Predator, headed Chrome, GTX 1650): on WebGL the restored context drew the floor only (Pixi restored its own\ntilemap; every engine sprite, static and light stayed gone) under the fatal error overlay; on WebGPU the last frame stayed\nfrozen under the overlay (Pixi 8 has no device restore).\n\nThe fix (c598112b) takes the road the engine already had instead of rebuilding the Pixi worker's GPU side in place:\nthe worker tells the page ('gpuLost', and 'gpuRestored' on WebGL), the engine saves the world in memory the way a hot\nreload does (captureSavePayload: every entity at its own index, plain instance fields, joints, LiquidFun, decals,\nonSaveGame; the world left paused) and loads the same scene again from that save with the same data, at once on WebGPU\n(the new renderer asks for a new device), on WebGL once the browser restores the context (10 s at most). A second loss\nwithin 10 s of a restart, a restore that never comes, or a failed restart shows the fatal error. payload.hotReload became\npayload.allEntitiesRestored with restartReason ('hotReload' or 'gpuLost'), since two paths set it (the three demos that\nread it, types, SAVE_GAME.md with a new section). tests/node/gpuLossRestart.test.js covers the orchestration.\n\nAfter the fix (03:27 and 03:34): both backends come back, no overlay, sprites and lights drawn, frames advancing; the\nrestart took 7.5 to 14 s at Predator's 17 500 entities (the save 3.7 to 5.5 s, the load 3.8 to 8.6 s), filed as N-314.\nSuites green (test:node 3 226, test:demos 121). The register's plan was a frame byte-identical after the restore; a\nrestart from a save cannot promise that (the sim goes on), and was chosen because it rebuilds everything through the\ntested load path on both backends.",
+      "commits": [
+        "18f01c6d",
+        "c598112b"
       ]
     }
   ],
