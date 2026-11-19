@@ -425,6 +425,16 @@ export const SPATIAL_DEFAULTS = Object.freeze({
   maxEntitiesPerCell: 64,
   numberOfSpatialWorkers: 1,
   rowsPerBlock: 2,
+  /**
+   * E-328: when a spatial worker's frame starts. 'vsync': on the vsync, with every other worker. 'logicDone': once the
+   * logic workers' frame of this vsync has ended (the frame chain's bell), so the neighbour search runs while logic leaves
+   * the cores free; it starts on the vsync when its own step would not fit in the frame after logic's, and after a late
+   * logic at the latest at the frame's end less its step. An array gives one per spatial worker (`['vsync', 'logicDone']`:
+   * the second waits); a worker past its end starts on the vsync. With several spatial workers, a worker's rows read the
+   * other's cells as that worker last wrote them, up to a frame old (the lists are 2 to 16 frames old when logic reads
+   * them anyway).
+   */
+  startOn: 'vsync',
   noLimitFPS: false,
   fixedFps: 0,
   /**
