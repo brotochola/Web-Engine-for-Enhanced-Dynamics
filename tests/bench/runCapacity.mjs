@@ -39,6 +39,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { MAX_ENTITIES_U32 } from '../../src/util/entityIdWidth.js';
+import * as frameTotals from '../../src/util/frameTotals.js';
+
+// N-320: "≥127.9" at the histogram's ceiling; an A/B side whose src/ predates it prints plain numbers.
+const HIST_CEILING_MS = frameTotals.HIST_CEILING_MS ?? Infinity;
+const formatHistMs = frameTotals.formatHistMs ?? ((ms) => String(ms));
 import { repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
 
@@ -570,7 +575,9 @@ export function formatCapacity(sum) {
     lines.push('| worker | frames | fps | mean work | p50 | p95 | p99 | longest | frames >= 16 ms |');
     lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- |');
     for (const w of a.workers) {
-      lines.push(`| ${w.id} | ${w.frames} | ${w.fps} | ${w.meanMs} | ${w.p50Ms} | ${w.p95Ms} | ${w.p99Ms} | ${w.maxMs} | ${w.longFrames} |`);
+      // A tail at the histogram's ceiling reads "at least" (frameTotals HIST_CEILING_MS).
+      const t = (ms) => (ms >= HIST_CEILING_MS ? formatHistMs(ms) : ms);
+      lines.push(`| ${w.id} | ${w.frames} | ${w.fps} | ${w.meanMs} | ${t(w.p50Ms)} | ${t(w.p95Ms)} | ${t(w.p99Ms)} | ${t(w.maxMs)} | ${w.longFrames} |`);
     }
     const c = a.critical;
     lines.push(`critical path (max over workers): mean ${c.meanMs?.ms} (${c.meanMs?.worker}), p95 ${c.p95Ms?.ms} ` +

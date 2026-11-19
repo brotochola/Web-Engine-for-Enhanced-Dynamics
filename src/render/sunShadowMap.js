@@ -20,6 +20,11 @@ import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexe
 
 /** Height (px) that the map's 8 bits span: 2 px a step. */
 export const SUN_MAP_ZMAX = 512;
+/**
+ * N-317: the most a margin of the sun map reaches past the screen, as a share of the screen's side (sunMapMargins): a low
+ * sun throws a tall frame's ray far, and the map at most 2.25 times the screen's texels. Past it a ray reads lit.
+ */
+export const SUN_MAP_MARGIN_MAX = 0.5;
 /** Below this, a sun ray is too flat to shift by its height (kx, ky are clamped). */
 export const SUN_MAP_MIN_ELEVATION = 0.05;
 
@@ -42,6 +47,33 @@ export function sunMapTerms(towardsSun, out, maxLength = Infinity) {
   out[1] = y * k;
   out[2] = h > 1e-9 ? y / h : 1;
   out[3] = h > 1e-9 ? -x / h : 0;
+  return out;
+}
+
+/**
+ * N-317: how far past the screen the sun's map must reach, in its texels (left, top, right, bottom), so that every pixel on
+ * the screen finds the landing of its sun ray in it. A pixel of height z (px of height) is drawn heightScaleY · z above its
+ * foot, and its ray lands z · (kx, ky) away from that foot on the floor (the floor's y drawn groundScaleY tall), so on the
+ * screen its landing is
+ *   dx = -kx · z,  dy = (heightScaleY - groundScaleY · ky) · z   (world px; the map's texels are screenScale of them)
+ * from the pixel itself: below it when the sun is high (at noon a point lands on its own foot), above it when a low sun
+ * in front of the camera throws long shadows up the screen, to a side by the sun's sideways part. The tallest point there
+ * can be (`tallest`, px of height) sets each margin.
+ * @param {ArrayLike<number>} terms sunMapTerms (kx, ky)
+ * @param {number} tallest the tallest point's height, px of height
+ * @param {number} heightScaleY screen px a px of height rises
+ * @param {number} groundScaleY the floor's y drawn on the screen
+ * @param {number} screenScale the map's texels a world px
+ * @param {Float64Array|number[]} out left, top, right, bottom (texels, not rounded)
+ */
+export function sunMapMargins(terms, tallest, heightScaleY, groundScaleY, screenScale, out) {
+  const z = tallest > 0 ? tallest * screenScale : 0;
+  const dx = -terms[0] * z;
+  const dy = (heightScaleY - groundScaleY * terms[1]) * z;
+  out[0] = dx < 0 ? -dx : 0;
+  out[1] = dy < 0 ? -dy : 0;
+  out[2] = dx > 0 ? dx : 0;
+  out[3] = dy > 0 ? dy : 0;
   return out;
 }
 

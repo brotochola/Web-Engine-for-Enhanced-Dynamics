@@ -45,6 +45,7 @@ struct LightingUniforms {
 // #endif FACES
 // #if SUNMAP
   uSunMapK: vec4<f32>, // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
+  uSunMapRect: vec4<f32>, // N-317: the screen's uv into the map, which reaches past the screen: times xy, plus zw
 // #endif SUNMAP
 // #if SELFSHADOW
   uSelfShadow: vec4<f32>, // a step's length (floor px), steps, bias (px)
@@ -227,8 +228,8 @@ fn sunMapLit(c: vec2<i32>, size: vec2<i32>, above: f32, selfId: f32) -> f32 {
 fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
   let k = uniforms.uSunMapK;
   let land = p.xy - p.z * k.xy;
-  let uv = weedWorldToNorm(vec2<f32>(land.x, land.y * k.z));
-  // N-317: a ray that lands past the map's edge (the screen's) has nothing to read: lit (lightingBasic.frag.glsl says why).
+  let uv = weedWorldToNorm(vec2<f32>(land.x, land.y * k.z)) * uniforms.uSunMapRect.xy + uniforms.uSunMapRect.zw;
+  // N-317: a ray that lands past the map's margins has nothing to read: lit (lightingBasic.frag.glsl says why).
   if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) { return 1.0; }
   let size = vec2<i32>(textureDimensions(uSunMap, 0));
   let c = vec2<i32>(floor(uv * vec2<f32>(size)));

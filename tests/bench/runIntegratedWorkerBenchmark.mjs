@@ -2,6 +2,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as frameTotals from '../../src/util/frameTotals.js';
+
+// N-320: "≥127.9" at the histogram's ceiling; an A/B side whose src/ predates it prints plain numbers.
+const formatHistMs = frameTotals.formatHistMs ?? ((ms) => (typeof ms === 'number' ? ms.toFixed(2) : String(ms)));
 
 import { chromium, firefox } from 'playwright';
 
@@ -33,8 +37,8 @@ function formatWorkerConsoleLine(worker) {
     line += ` | exact ${ex.frames} frames: step ${ex.stepMs.toFixed(3)}` +
       (ex.waitMs > 0 ? ` wait ${ex.waitMs.toFixed(3)}` : '') +
       (ex.extraMs > 0 ? ` query wake ${ex.extraMs.toFixed(3)}` : '') +
-      ` p50 ${ex.p50Ms.toFixed(2)} p95 ${ex.p95Ms.toFixed(2)}` +
-      (ex.p99Ms != null ? ` p99 ${ex.p99Ms.toFixed(2)} max ${ex.maxMs.toFixed(2)}` : '') +
+      ` p50 ${formatHistMs(ex.p50Ms)} p95 ${formatHistMs(ex.p95Ms)}` +
+      (ex.p99Ms != null ? ` p99 ${formatHistMs(ex.p99Ms)} max ${formatHistMs(ex.maxMs)}` : '') +
       (ex.longFrames > 0 ? ` long ${ex.longFrames}` : '');
   }
   if (worker.type === 'preRender' || worker.id === 'preRender' || String(worker.id || '').startsWith('preRender')) {

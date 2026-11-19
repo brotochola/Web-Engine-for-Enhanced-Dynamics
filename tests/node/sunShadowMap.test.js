@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { SUN_MAP_ZMAX, sunMapLanding, sunMapTerms, sunMapVertex } from '../../src/render/sunShadowMap.js';
+import { SUN_MAP_ZMAX, sunMapLanding, sunMapMargins, sunMapTerms, sunMapVertex } from '../../src/render/sunShadowMap.js';
 import { shaderWithFlag } from '../../src/render/faceMap.js';
 import { HEIGHT_PER_ROW_CODES, HEIGHT_PER_ROW_STEPS } from '../../src/render/frameBase.js';
 import { LIGHTING_DEFAULTS } from '../../src/util/configDefaults.js';
@@ -289,4 +289,26 @@ test('E-379: a columns pass draws the rows that cast columns for its light, a la
   const smallBlocks = new Float32Array(4 * 4);
   assert.equal(compactColumnRows(src, rows.length, F, lut, L, 0, small, smallBlocks), 11);
   assert.deepEqual([0, 1, 2, 3].map((i) => small[i * F]), [1, 2, 2, 2]);
+});
+
+// N-317: the map reaches past the screen as far as the tallest point's ray lands from the point as drawn.
+test('the sun map margins: below at noon by the tallest point rise, above for long shadows up the screen, aside', () => {
+  const out = new Float64Array(4);
+  const hs = 0.75;
+  const g = 0.7;
+  const s = 0.5;
+  // Noon: a point lands on its own foot, heightScaleY · z below it as drawn.
+  assert.deepEqual([...sunMapMargins([0, 0], 200, hs, g, s, out)], [0, 0, 0, 200 * hs * s]);
+  // A sun on the camera's side, high: shadows go up, but less than the point rises: still below, less.
+  const high = sunMapMargins([0, 0.5], 200, hs, g, s, out);
+  assert.ok(Math.abs(high[3] - 200 * (hs - g * 0.5) * s) < 1e-9 && high[1] === 0);
+  // A low sun on the camera's side: the shadow runs up the screen past the point: above.
+  const low = sunMapMargins([0, 3], 200, hs, g, s, out);
+  assert.ok(low[3] === 0 && Math.abs(low[1] - 200 * (g * 3 - hs) * s) < 1e-9);
+  // From the left (kx < 0: the sun's direction points left): the landing runs right.
+  const side = sunMapMargins([-1, 0], 100, hs, g, s, out);
+  assert.ok(Math.abs(side[2] - 100 * s) < 1e-9 && side[0] === 0);
+  // Nothing tall, no margin.
+  assert.deepEqual([...sunMapMargins([0.3, -0.4], 0, hs, g, s, out)], [0, 0, 0, 0]);
+  assert.ok(SUN_MAP_ZMAX >= 512, 'the tallest height a margin takes is the map cap');
 });
