@@ -576,6 +576,8 @@ class PixiRenderer extends AbstractWorker {
     // initialize reports (null: none).
     this._rendererBackend = '';
     this._useWebGpu = false;
+    // N-301: true while loseGpuForTest's destroy() of the WebGPU device stands for a real loss.
+    this._gpuLossTest = false;
     this._engineShaders = {};
     this._bootError = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
@@ -7352,6 +7354,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
     if (msg === 'liquidFunCleared') return;
+    if (msg === 'loseGpuForTest') {
+      this._loseGpuForTest(data.restoreAfterMs);
+      return;
+    }
     debugWorkerLog(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
 
     if (msg === 'setLayerContent') {
@@ -7361,6 +7367,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } else {
       debugWorkerLog(`PIXI WORKER: Unhandled message type: ${msg}`);
     }
+  }
+
+  /**
+   * N-301's test hook: lose the GPU as a driver reset would. WebGL: WEBGL_lose_context, restored after restoreAfterMs.
+   * WebGPU: the device destroyed (its lost promise then says 'destroyed', which _gpuLossTest makes count as a loss).
+   * @param {number} restoreAfterMs
+   */
+  _loseGpuForTest(restoreAfterMs) {
+    if (this._useWebGpu) {
+      const device = this.pixiApp?.renderer?.gpu?.device;
+      if (!device) return;
+      this._gpuLossTest = true;
+      device.destroy();
+      return;
+    }
+    const gl = this.pixiApp?.renderer?.gl;
+    const lose = gl && gl.getExtension('WEBGL_lose_context');
+    if (!lose) return;
+    lose.loseContext();
+    setTimeout(() => lose.restoreContext(), Math.max(0, restoreAfterMs | 0));
   }
 
   /**
