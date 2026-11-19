@@ -391,8 +391,9 @@ flowfields have), and hand the workers what they read. Checked by the same tile 
 
 ### SST-12 — Box2D's start off the critical path
 
-- [ ] in progress: 8f43a111 (the physics worker's load marks; the engine block zeroed only below Box2D's old heap break:
-  440 ms -> 0 of Predator by night's start, R-1470); 4f2cd68f (marks in weedjsPost.js); the siblings' load read, R-1500
+- [x] 8f43a111 (the physics worker's load marks; the engine block zeroed only below Box2D's old heap break:
+  440 ms -> 0 of Predator by night's start, R-1470); 4f2cd68f (marks in weedjsPost.js); the siblings' load read, R-1500;
+  415404eb (box2dWorkerEntry.js fetches them at once: Predator by night's block 1 069 -> 677 ms warm, R-1514)
 
 With the page thread free (SST-4, SST-5), the physics worker's answer to the engine block request became the critical
 path (1.1 s in Predator, 1.6 s in the barrio after loadScene). Its marks (2026-11-18): the host's scripts evaluated
@@ -412,7 +413,8 @@ siblings at once, then runs them in order from blob URLs as the bundle does (poo
 
 ### SST-13 — The atlas worker started earlier
 
-- [ ] not started
+- [x] dropped 2026-11-19 by reading the start (R-1511): ES modules are all fetched before any runs, so the engine's code
+  first runs right before loadScene; an atlas worker started then would start about 10 ms sooner. SST-14 and the bundle are what shorten its modules.
 
 In a cold source build the atlas worker evaluates its 22 modules in 1.4 to 1.6 s before it starts (R-1452), longer than
 the page took to pack the atlas itself. Starting it when the engine is imported (not at the scene's assets) would overlap
@@ -426,7 +428,7 @@ The waterfall's longest step after the start read physics at 128 ms or more in e
 the spawned world's bodies (18 248, 91 ms), drained their commands (52 696, 47 ms) and then stepped with every contact
 new (51 ms). Under the owner's rule (everything ready before the start) the scene now sends the physics worker 'prime'
 once the world is spawned and waits for it: the host makes the bodies, joints and commands then. Left: Box2D's first
-step (a collide-only export in the prime) and the body creation's own cost.
+step (done: 2b47e8e3, collide_world in the final prime, the first step 59 -> 18 ms warm, R-1516) and the body creation's own cost.
 
 ### SST-16 — The atlas cache decoded beside its key
 
@@ -444,9 +446,30 @@ A spawn's x and y setters each enqueue a SET_TRANSFORM; physics made the body fr
 to where it was (36 496 commands in Predator's prime). A command claimed before the sync is now skipped for a body that
 sync made: its setter wrote the columns before it claimed the slot.
 
+### SST-18 — The physics prime beside the spawns
+
+- [x] 9d0144cc (R-1507: Predator by night's prime after the spawns 63 -> 4 ms warm)
+
+logic0 spawns the flushed world for 114 ms and the prime then made the bodies for 63 more. The scene now sends
+'primeBegin' after create(), and physics makes the bodies of the spawns done so far every millisecond until the final
+prime, as it does beside logic's spawns during play.
+
+### SST-19 — The atlas uploaded before the renderer's init
+
+- [x] 908ff6be (R-1508): the page posts the atlas's pictures as soon as the atlas is in, and the renderer makes their sources and
+  uploads them while the page builds the init data (Predator by night: atlas uploaded 1 104 ms, the init 1 147).
+
+### SST-20 — logic0 spawning the world alone
+
+- [ ] first cut 09e6c553 (R-1515): no SET_TRANSFORM from a setter inside its entity's spawn (36 496 fewer at Predator's start)
+
+logic0 sets up every x/y spawn the page flushes, 114 to 144 ms of Predator by night's start: _spawnAt's per-component
+resets, the game's onSpawned, first-use instances. Left: the setup split by owner over the logic workers.
+
 ### SST-14 — Workers that evaluate the page's engine graph
 
-- [ ] not started (R-1501)
+- [ ] first step 072915a0 (R-1513: the debug overlay loads when shown, 17 modules and 251 KB off each worker); Scene.init's
+  page-only imports left
 
 In a source build each worker's boot loads the scene's module first, and its entity scripts `import WEED from
 '/src/index.js'`: every worker evaluates scene.js (121 KB) and what Scene.init uses (sceneSharedBuffers, gpuPackClient,

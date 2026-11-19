@@ -368,8 +368,12 @@ export function relinkRestoredChild(i, hadParent) {
 function poseMoved(e) {
   const i = e.index;
   staticSceneryChangedAt(i);
-  if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
-  else if (Transform.parent[i] < entityIdNone) childPoseWritten(i);
+  if (isCommandRingBound() && e._hasBox2dBody()) {
+    // SST-20: in its spawn on this worker (its config keys, onSpawned) the entity is not active yet and its body is made
+    // after it, from the columns this setter wrote (the spawn publishes its lifecycle last): a SET_TRANSFORM now would
+    // move a body that is not there (Predator by night: two a spawned body, 36 496 at its start).
+    if (!isSpawningHere(i)) enqueuePoseOf(i);
+  } else if (Transform.parent[i] < entityIdNone) childPoseWritten(i);
 }
 
 /** A set x or set y wrote child i's column: its pose put back from its parent, and the warning. */

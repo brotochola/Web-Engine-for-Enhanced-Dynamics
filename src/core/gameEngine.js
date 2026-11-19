@@ -81,12 +81,24 @@ class GameEngine {
     // Debug UI (created if debug: true). Distinct from Scene.config.debug object.
     this.debugEnabled = config.debug ?? ENGINE_DEFAULTS.debug;
     this.debugUI = null;
+    /** SST-14: the debug overlay's load (debug: true), until it resolves into debugUI; null when off or destroyed. */
+    this._debugUILoad = null;
 
     if (this.debugEnabled) {
-      this.debugUI = new DebugUI({
+      const load = DebugUI.load({
         updateInterval: config.debugUpdateInterval ?? DEBUG_DEFAULTS.updateInterval,
         defaultOpen: config.debugDefaultOpen ?? DEBUG_DEFAULTS.defaultOpen,
-      });
+      })
+        .then((overlay) => {
+          // Destroyed meanwhile: nothing to show it in.
+          if (this._debugUILoad !== load) {
+            overlay.destroy();
+            return;
+          }
+          this.debugUI = overlay;
+        })
+        .catch((error) => console.warn('[GameEngine] the debug UI did not load:', error));
+      this._debugUILoad = load;
       // Opt-in (hotReload: true), for pages served by npm run dev: reload on a file
       // change, keeping the running scene's state. Other servers would 404 the endpoint.
       if (config.hotReload === true) HotReload.start(this);
@@ -436,7 +448,8 @@ class GameEngine {
       await this.currentScene.init();
       if (!this._presenting) this.currentScene.setPresenting(false);
 
-      // Attach debug UI to new scene
+      // Attach debug UI to new scene (its module is usually in by now: it loads from the engine's start)
+      if (this._debugUILoad) await this._debugUILoad;
       if (this.debugUI) {
         this.debugUI.attach(this, this.currentScene);
       }
@@ -571,6 +584,7 @@ class GameEngine {
     }
 
     // Destroy debug UI
+    this._debugUILoad = null;
     if (this.debugUI) {
       this.debugUI.destroy();
       this.debugUI = null;

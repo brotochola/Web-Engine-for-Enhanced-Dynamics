@@ -31,6 +31,10 @@ const ASSET_WORKER_CHUNKS = new Set(['workers/atlasWorker', 'workers/tilemapWork
 
 // Check if we should obfuscate
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
+// The build's input hash (scripts/buildBundle.js sets it): the atlas cache's key names the bundle's code by it.
+const buildInputsDefine = new webpack.DefinePlugin({
+    __WEED_BUILD_INPUTS__: JSON.stringify(process.env.WEED_BUILD_INPUTS || ''),
+});
 // N-250: webpack-obfuscator's import alone took about 46 s of every build; load it only for an obfuscated one.
 // Required, not awaited at the top: webpack-cli 5 require()s a .js config, and Node 22 refuses to require() an
 // ES module with a top-level await (ERR_REQUIRE_ASYNC_MODULE), so no bundle built at all.
@@ -161,6 +165,9 @@ const mainConfig = {
     plugins: [
         ...(shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : []),
         authorBanner,
+        buildInputsDefine,
+        // One file: a dynamic import (the debug overlay, the save code) is inlined, never a chunk of its own.
+        new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 }),
     ],
     resolve: {
         extensions: ['.js'],
@@ -214,6 +221,7 @@ const workersConfig = {
     plugins: [
         ...(shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : []),
         authorBanner,
+        buildInputsDefine,
     ],
     resolve: {
         extensions: ['.js'],

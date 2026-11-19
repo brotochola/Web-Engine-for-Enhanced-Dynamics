@@ -357,6 +357,7 @@ function createPhysicsApi(Module) {
   const destroyJoint = wrap("destroy_joint", null, ["number"]);
   const getJointCount = wrap("get_joint_count", "number", []);
   const stepWorld = wrap("step_world", null, ["number", "number", "number"]);
+  const collideWorld = wrap("collide_world", null, ["number"]);
   const getStateByteOffset = wrap("get_state_byte_offset", "number", []);
   const getSleepingByteOffset = wrap("get_sleeping_byte_offset", "number", []);
   const getMetaByteOffset = wrap("get_meta_byte_offset", "number", []);
@@ -1538,6 +1539,15 @@ function createPhysicsApi(Module) {
 
     step(dt, subSteps = 2) {
       stepWorld(this.worldId, dt, subSteps);
+    }
+
+    /**
+     * SST-15's prime: a step's pair update, narrow phase and sensors with no solver and no time (wasm_wrapper.c
+     * collide_world), so the next step finds the contacts of the bodies made so far. Its contact and sensor events are
+     * in the event buffers as after a step; poses, velocities, moved bodies and the sleep paint are left as they were.
+     */
+    collide() {
+      collideWorld(this.worldId);
     }
 
     getSharedBuffer() {

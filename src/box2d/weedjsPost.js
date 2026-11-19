@@ -10,10 +10,11 @@
   // SST-12: this worker's first load marks, on the clock every thread shares (see physicsHostImpl.js, which posts
   // them): the realm's creation, this file's start (after the glue was fetched and run) and its siblings loaded.
   const PHYSICS_TIME_ORIGIN = performance.timeOrigin;
-  self.__weedPhysicsLoadMarks = [
-    'worker origin', PHYSICS_TIME_ORIGIN,
-    'post evaluated', PHYSICS_TIME_ORIGIN + performance.now(),
-  ];
+  // A source build's entry (box2dWorkerEntry.js) left its own marks: they go after the origin.
+  self.__weedPhysicsLoadMarks = ['worker origin', PHYSICS_TIME_ORIGIN].concat(
+    self.__weedPhysicsLoadMarks || [],
+    ['post evaluated', PHYSICS_TIME_ORIGIN + performance.now()],
+  );
   importScripts(
     'box2dConstantsImpl.js',
     'physicsConfigImpl.js',
@@ -3771,13 +3772,23 @@
    * SST-15: the bodies, joints and commands the scene's spawns left, made now (before the start), so the first step
    * after it has only its own work: Predator by night made 18 248 bodies (91 ms) and drained 52 696 commands (47 ms) in
    * it. No step, no time: what the first step would do before stepping, in the same order.
+   * The final prime (final true, not SST-18's loop) also runs the step's pair update and narrow phase with no solver and
+   * no time (world.collide): in the first step every contact was new (Predator by night's first step 46 ms warm, 87 ms
+   * cold; later ones 10-15). The begin-touch events of bodies spawned touching go out now, once; moved bodies and
+   * teleports stay for the first step's publish (afterStep).
+   * @param {boolean} [final] the last prime before the start
    * @returns {number} the bodies whose state changed
    */
-  function weedjsPrime() {
+  function weedjsPrime(final) {
     if (!world) return 0;
     const changes = syncBodies(hostEntityCount | 0);
     drainCommands();
     syncJoints();
+    if (final === true) {
+      world.collide();
+      publishContactRingFromWasm();
+      publishHitsFromWasm();
+    }
     return changes;
   }
 

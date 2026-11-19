@@ -80,6 +80,7 @@ import { createSceneSharedBuffers, sceneEntitySlots, teardownSceneSharedState } 
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
 import { bootSceneWorkers, createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
+import { loadSceneFiles } from '../util/sceneFiles.js';
 import {
   bindFrameClock,
   publishFrame,
@@ -188,7 +189,7 @@ class Scene {
   /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
   static LOAD_STEPS = Object.freeze([
     'audio', 'scripts', 'buffers', 'adobe', 'atlas', 'tilemaps',
-    'flowfields', 'shaders', 'sounds', 'workers', 'world',
+    'flowfields', 'files', 'shaders', 'sounds', 'workers', 'world',
   ]);
 
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -244,6 +245,11 @@ class Scene {
     this._assetLoads = null;
     this.audioUrls = this.constructor.audios || [];
     this.loadedAudioNames = [];
+    /**
+     * N-312: the scene's own files (`static assets = { files }`) by name, as each entry reads it (an ArrayBuffer, a
+     * string or parsed JSON), fetched with the other assets: filled before preload().
+     */
+    this.files = {};
 
     this.state = {
       pause: false,
@@ -1294,6 +1300,8 @@ class Scene {
     // Static / always-on world setup (runs for new game AND save load).
     await this.create(this.data);
     loadMark('create');
+    // SST-18: physics makes the bodies of the world's spawns while logic0 spawns them; _primePhysics ends it.
+    this.workers?.physics?.postMessage({ msg: 'primeBegin' });
 
     // LIFECYCLE PHASE 2b: new game vs save restore
     // Restore awaits logic0 restoreSaveComplete so entities are in the scene
@@ -1309,6 +1317,7 @@ class Scene {
       await this._flushCreateSpawns();
     } else {
       await this.createNewGame(this.data);
+      loadMark('new game');
       await this._flushCreateSpawns();
     }
     this._loadStep('world');
@@ -1715,6 +1724,25 @@ class Scene {
    *   demand (the inspector, the download)
    * @param {object} [compiledAdobeAssets]
    */
+  /**
+   * SST-19: the atlas's pictures transferred to the renderer now ('atlasBitmaps'), before the init data is built: it
+   * makes their sources and uploads them while the page and the other workers go on. The atlas keeps null in their
+   * place (the init carries no picture; loadSpritesheets takes the early ones).
+   * @param {{ imageBitmap?: ImageBitmap | null, mapsBitmap?: ImageBitmap | null }} atlas
+   */
+  _postAtlasEarly(atlas) {
+    const renderer = this.workers?.renderer;
+    if (!renderer || !atlas?.imageBitmap) return;
+    const imageBitmap = atlas.imageBitmap;
+    const mapsBitmap = atlas.mapsBitmap || null;
+    renderer.postMessage(
+      { msg: 'atlasBitmaps', sheets: { bigAtlas: { imageBitmap, mapsBitmap } } },
+      mapsBitmap ? [imageBitmap, mapsBitmap] : [imageBitmap],
+    );
+    atlas.imageBitmap = null;
+    atlas.mapsBitmap = null;
+  }
+
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
     const { json, imageBitmap, mapsBitmap = null, decals = null, inspect = null } = atlas;
     // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
@@ -1989,6 +2017,9 @@ class Scene {
       }
     })();
 
+    // SST-19: the atlas's pictures to the renderer as soon as it is in, so it uploads them while the rest loads.
+    atlasPromise.then((atlas) => this._postAtlasEarly(atlas), () => {});
+
     const flowfieldsPromise = imageUrls?.flowfields
       ? NavGrid.loadStaticFlowfields(
         imageUrls.flowfields,
@@ -1996,6 +2027,10 @@ class Scene {
         this.config.worldHeight
       )
       : Promise.resolve();
+
+    const filesPromise = loadSceneFiles(imageUrls?.files).then((files) => {
+      this.files = files;
+    });
 
     const audioPromise = audioReady.then(() => this.preloadAudios(
       audioManifest !== null && audioManifest !== undefined ? audioManifest : this.audioUrls
@@ -2008,6 +2043,7 @@ class Scene {
       this._loadShaderSources(imageUrls).then(step('shaders')),
       audioPromise.then(step('sounds')),
       adobe,
+      filesPromise.then(step('files')),
     ]).then(([atlas, , , , audioNames, preparedAdobeAssets]) => ({ atlas, audioNames, preparedAdobeAssets }));
     // preloadAssets awaits it: an error before then is reported there, not as an unhandled rejection.
     loads.catch(() => {});

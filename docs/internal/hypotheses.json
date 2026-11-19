@@ -16988,12 +16988,12 @@
     {
       "id": "E-322",
       "title": "Box2D's awake body set is in random spatial order: civilians spawn at uniform random positions and sleep/wake swap-removes scramble it further",
-      "status": "mixed",
-      "statusText": "mixed 2026-11-18: the mean wins, the tail pays the reorder's step; next, the reorder on the worker pool",
+      "status": "kept",
+      "statusText": "kept 2026-11-19, on by default (56cba5af), merged into dx/startup (44b3038f)",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Mixed 2026-11-18 (R-1471, R-1473): Box2D's awake set re-sorted by body id every N steps; Predator crowd 2.5 physics mean -8.0 % (N 30) and -6.8 % (N 120), p99 17.4 -> 18.6 / 19.1 ms (the reorder's 6.5 ms step); merged off by default (physics.awakeReorderInterval).",
+      "result": "Kept 2026-11-19 (R-1471, R-1473, R-1509): Box2D's awake set back in body id order every 30 steps, the bodies in one step and the contacts a slice per step after it, on the physics workers; Predator crowd 2.5 physics -11.9 %, p95 and p99 lower; physics.awakeReorderInterval 30 by default.",
       "next": "Dump the coherence once; a harness ceiling with Morton-order against random spawn order. If it pays: every N steps permute bodySims and bodyStates and remap localIndex and encodedBodySim through a table; sort each non-overflow colour by body index (no dynamic body repeats within a colour: bit-identical solve; event and moved-list order change); try slot order and the tree's DFS-leaf order as keys.",
       "refs": [
         "EXECUTION_PLAN.md#E-322"
@@ -17011,7 +17011,8 @@
         "R-1238",
         "R-1240",
         "R-1471",
-        "R-1473"
+        "R-1473",
+        "R-1509"
       ]
     },
     {
@@ -21150,7 +21151,8 @@
         "R-1451",
         "R-1452",
         "R-1458",
-        "R-1506"
+        "R-1506",
+        "R-1508"
       ],
       "rank": 19
     },
@@ -21306,7 +21308,8 @@
       ],
       "records": [
         "R-1251",
-        "R-1452"
+        "R-1452",
+        "R-1510"
       ]
     },
     {
@@ -23827,29 +23830,34 @@
       "records": [
         "R-1452",
         "R-1470",
-        "R-1500"
+        "R-1500",
+        "R-1508",
+        "R-1514"
       ],
       "refs": [],
       "id": "SST-12",
       "title": "Box2D's start on the critical path: the physics worker answers its block request 1.1 s (Predator) to 1.6 s (the barrio) after loadScene, with the page thread free",
-      "status": "running",
+      "status": "kept",
       "kind": "speed",
       "area": "load",
       "date": "2026-11-18",
-      "statusText": "a first part 2026-11-18 (R-1470); the siblings' load read (R-1500): about 100 ms in the barrio only while the atlas and the workers' scripts end with it"
+      "statusText": "kept 2026-11-19 (415404eb, R-1514)",
+      "result": "Kept 2026-11-18/19 (R-1470, R-1500, R-1514): the engine block zeroed only below Box2D's old break, and a source build's physics scripts fetched at once by box2dWorkerEntry.js; physics no longer the last branch of a start."
     },
     {
       "records": [
-        "R-1452"
+        "R-1452",
+        "R-1511"
       ],
       "refs": [],
       "id": "SST-13",
       "title": "The atlas worker started at the engine's import, not at the scene's assets: in a cold source build its 22 modules take 1.4 to 1.6 s before it starts",
-      "status": "open",
+      "status": "dropped",
       "kind": "speed",
       "area": "load",
       "date": "2026-11-18",
-      "statusText": "found 2026-11-18 by the atlas items' waterfall (R-1452)"
+      "statusText": "dropped 2026-11-19 by reading the start (R-1511)",
+      "result": "Dropped 2026-11-19 (R-1511): ES modules are all fetched before any is evaluated, so the engine's import starts nothing earlier than loadScene's asset loads (7 to 9 ms after it)."
     },
     {
       "records": [
@@ -23868,7 +23876,9 @@
     },
     {
       "records": [
-        "R-1501"
+        "R-1501",
+        "R-1508",
+        "R-1513"
       ],
       "refs": [],
       "id": "SST-14",
@@ -23877,27 +23887,31 @@
       "kind": "speed",
       "area": "load",
       "date": "2026-11-18",
-      "statusText": "found 2026-11-18 reading SST-12's waterfalls (R-1501)",
+      "statusText": "the debug overlay off the workers' graph 2026-11-19 (072915a0, R-1513); Scene.init's page-only imports left",
       "next": "Load DebugUI's panels, canvas renderers and tools when the UI opens (page-only, never needed by the first frames); time logic's boot scripts phase with loadWaterfall; then see whether Scene.init's page-only imports can be skipped in workers without delaying the page."
     },
     {
       "records": [
-        "R-1502"
+        "R-1502",
+        "R-1508",
+        "R-1512"
       ],
       "refs": [],
       "id": "N-312",
       "title": "The barrio demo's preload fetches its floor, traffic and scene file only after the workers are ready (about 200 ms on a warm visit), then loadBarrio spawns its things for 440 ms",
-      "status": "open",
+      "status": "kept",
       "kind": "speed",
       "area": "demo",
       "date": "2026-11-18",
-      "statusText": "found 2026-11-18 with load marks in the preload (R-1502); a demo change or an engine API, the owner's call",
-      "next": "Start the three fetches when buenosAiresScene.js loads and await them in preload (demo only), or let a scene list its own files in its assets (an engine API, ask the owner); then read loadBarrio's 440 ms."
+      "statusText": "kept 2026-11-19 (b6a1d645): the owner chose the engine API",
+      "next": "Start the three fetches when buenosAiresScene.js loads and await them in preload (demo only), or let a scene list its own files in its assets (an engine API, ask the owner); then read loadBarrio's 440 ms.",
+      "result": "Kept 2026-11-19 (R-1508, R-1512): a scene's own files (static assets.files) fetched with its other assets as scene.files; the barrio uses it."
     },
     {
       "records": [
         "R-1503",
-        "R-1506"
+        "R-1506",
+        "R-1516"
       ],
       "refs": [],
       "id": "SST-15",
@@ -23906,8 +23920,8 @@
       "kind": "speed",
       "area": "load",
       "date": "2026-11-18",
-      "statusText": "kept 2026-11-18 (f3e180ec, R-1503): the prime before the start",
-      "result": "Kept 2026-11-18 (R-1503): the scene primes physics before the start; the first step 197 -> 56 ms warm (100 cold), the start about 96 ms later.",
+      "statusText": "kept 2026-11-19: the collide in the final prime too (2b47e8e3, R-1516)",
+      "result": "Kept 2026-11-18/19 (R-1503, R-1506, R-1516): physics primed before the start, bodies, joints, commands and the first pairs and contacts; Predator by night's first physics step after the start 197 -> 18 ms warm.",
       "next": "Box2D's first step (every new proxy's pairs and contacts) in the prime too: a collide-only export; then the body creation's own cost (about 5 us a body and 3 commands each)."
     },
     {
@@ -23928,7 +23942,8 @@
     {
       "records": [
         "R-1505",
-        "R-1506"
+        "R-1506",
+        "R-1515"
       ],
       "refs": [],
       "id": "SST-17",
@@ -23939,6 +23954,48 @@
       "date": "2026-11-18",
       "statusText": "kept 2026-11-18 (b463325c, R-1505): commands claimed before the sync skipped for the bodies it made",
       "result": "Kept 2026-11-18 (R-1505): the physics prime 96 -> 62 ms warm; spawns during play skip the same commands."
+    },
+    {
+      "records": [
+        "R-1507"
+      ],
+      "refs": [],
+      "id": "SST-18",
+      "title": "The physics prime waited for logic0 to spawn the whole world (114 ms in Predator by night) and only then made the bodies (63 ms), one after the other, with physics idle meanwhile",
+      "status": "kept",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-18",
+      "statusText": "kept 2026-11-18 (9d0144cc, R-1507): the prime loops while logic0 spawns",
+      "result": "Kept 2026-11-18 (R-1507): the prime after the spawns 63 -> 4 ms warm (71 -> 3 cold)."
+    },
+    {
+      "records": [
+        "R-1508"
+      ],
+      "refs": [],
+      "id": "SST-19",
+      "title": "The renderer uploaded the atlas only after its init carried the pictures (Predator by night in the bundle: textures uploaded 62 to 73 ms after the init), while it sat idle as the page built the init data",
+      "status": "kept",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-19",
+      "statusText": "kept 2026-11-19 (908ff6be, R-1508): the pictures posted as soon as the atlas is in",
+      "result": "Kept 2026-11-19 (R-1508): the atlas uploaded before the renderer's init; with SST-12 and SST-14 Predator by night's warm source start about 1 665 -> 1 589 ms."
+    },
+    {
+      "records": [
+        "R-1515"
+      ],
+      "refs": [],
+      "id": "SST-20",
+      "title": "logic0 spawns the whole flushed world alone at the start (114 to 144 ms in Predator by night): _spawnAt's per-component resets, the game's onSpawned, first-use instances, and two SET_TRANSFORMs a body that physics then dropped",
+      "status": "open",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-19",
+      "statusText": "first cut 2026-11-19 (09e6c553, R-1515): no SET_TRANSFORM inside a spawn; the split by owner left",
+      "next": "Split the start's spawn setup by owner over the logic workers (each sets up the entities it ticks, as a pinned spawn already is), so the world phase runs on three cores; then read _spawnAt's per-component resets."
     }
   ],
   "records": [
@@ -38372,6 +38429,133 @@
       "title": "Barrio freeze on the old Intel driver, --use-angle=d3d11on12 under the freezing conditions: 0 of 10 against default D3D11's 4 of 10; the D3D11 driver never even makes Chrome's cache file",
       "verdict": "note",
       "text": "ASUS lab job 0898i (00:09-00:36, stopped by hand after round 10 of 15), on the old Intel driver 27.20.100.8682, under\nthe freezing conditions (Chrome's Intel cache fresh, the recorder and tracerpt as load). WebGL with default flags (ANGLE\nD3D11) against --use-angle=d3d11on12, interleaved. Buenos Aires at night, HD 620, src at main 70ba822b.\n\n| ANGLE backend | Frozen |\n|---|---|\n| D3D11 (default) | 4 of 10 |\n| d3d11on12 | 0 of 10 (two runs at 33 and 38 fps, not frozen) |\n\n- 4 against 0 of 10 is about 1 in 23 by chance.\n- Under d3d11on12 the Intel D3D11 driver never even created Chrome's cache file (\"absent\" after every run): page and\n  compositor both go through the D3D12 driver, which has no such lock. On the old driver this flag avoided the freeze;\n  WebGPU only made it rarer (2 of 15, R-1484), as its compositor still used ANGLE D3D11.\n- Moot since Intel's 31.0.101.2145 fixes the lock itself (R-1485)."
+    },
+    {
+      "id": "R-1507",
+      "date": "2026-11-18",
+      "time": "23:55",
+      "timeFrom": "recorded",
+      "title": "SST-18: the physics prime runs while logic0 spawns: Predator by night's prime after the spawns 63 -> 4 ms warm (71 -> 3 cold)",
+      "verdict": "kept",
+      "text": "**SST-18: Predator by night's physics prime now runs while logic0 spawns the world: after the spawns it takes 4 ms\nwarm (63 before) and 3 cold (71), so the start comes about 60 ms sooner.** A new mark ('new game', 7699f172, between\ncreateNewGame and the spawn flush) split the world phase, loadWaterfall source, 2 runs, 2026-11-18 23:53: createNewGame\non the page 26 ms, logic0 spawning the flushed world 114 ms, then the prime 63 ms, one after the other, with physics\nidle while logic0 spawned. 9d0144cc: after create() the scene sends the physics worker 'primeBegin', and the host runs\nweedjsPrime every millisecond (a timer, paused, no step) until the final 'prime' (or 'start'): it makes the bodies of\nthe spawns done so far, as it does during play, where physics syncs beside logic's spawns (a body is made once its\nspawn has set its lifecycle bit). SST-17's skip stays exact across the passes (each sync takes its own ring mark).\nloadWaterfall source, 2 runs, 23:55: `world` -> `physics primed` 4 ms warm, 3 cold (63 and 71 before); logic0's spawning\n118 ms warm (114: physics on another core); physics' longest own step after the start 59 ms (56).",
+      "commits": [
+        "7699f172",
+        "9d0144cc"
+      ]
+    },
+    {
+      "id": "R-1508",
+      "date": "2026-11-19",
+      "time": "01:06",
+      "timeFrom": "recorded",
+      "title": "N-312, SST-12's entry, SST-14 and SST-19 on a source start: Predator by night's warm first frame about 1 665 -> 1 589 ms, the physics block 1 069 -> 677 ms (the barrio's 1 305 -> 827)",
+      "verdict": "kept",
+      "text": "**N-312, SST-12's second part, SST-14 and SST-19 timed together on a source start: Predator by night's warm first frame\nabout 1 665 -> 1 589 ms, its physics block 1 069 -> 677 ms; the barrio's physics block 1 305 -> 827 ms, its first frame\nlevel (its preload is loadBarrio's spawning now, not its files).** loadWaterfall source, 2 runs, cold and warm, dx/startup\n44b3038f (with E-322's merge) against the waterfalls of the same evening (Predator wf at 23:55 after SST-18, the barrio\nat 22:56 after SST-10's flowfields), 2026-11-19 01:06, the main PC:\n\n| warm, ms after loadScene | Predator before | after | the barrio before | after |\n|---|---|---|---|---|\n| physics: scripts in, block answered | 1 048, 1 069 | 572, 677 | about 1 733, 1 305 | ~, 827 |\n| the scene's files (N-312) | - | - | - | 737 |\n| atlas on the page, assets | 915, 1 096 | 984, 994 | 1 232, 1 337 | 1 279, 1 295 |\n| renderer: atlas uploaded, init, textures done, ready | -, 1 205, 1 355, 1 429 | 1 104, 1 147, 1 268, 1 340 | | |\n| logic0 modules, boot scripts | 730, 1 152 | 776, 1 154 | | |\n| workers ready, world, start | 1 429, 1 621, 1 625 | 1 341, 1 544, 1 550 | 1 608, 2 535, 2 536 | 1 669, 2 539, 2 545 |\n| first frame (2 runs) | 1 730, 1 600 | 1 621, 1 556 | 2 637, 2 684 | 2 701, 2 654 |\n\nSST-12's entry (415404eb) loads the physics scripts in about 480 ms instead of about 1 000, so physics is no longer the\nlast branch in either scene: the atlas is. SST-19 (908ff6be) uploads the atlas before the renderer's init. SST-14\n(072915a0) takes 17 modules and 251 KB off every worker's scene module; logic0's boot scripts ended at the same time\n(two runs on a start where the other branches end together: no reading of it alone). N-312 (b6a1d645) has the barrio's\nfiles in at 737 ms, beside the atlas; the barrio's preload went from 663 to 586 ms, the rest of it loadBarrio's spawning\n(about 440 ms), and its workers came in about 60 ms later this sitting, so its first frame did not move.",
+      "commits": [
+        "b6a1d645",
+        "072915a0",
+        "415404eb",
+        "908ff6be"
+      ]
+    },
+    {
+      "id": "R-1509",
+      "date": "2026-11-19",
+      "time": "00:58",
+      "timeFrom": "recorded",
+      "title": "E-322 spread over steps on the workers, on by default (30): Predator crowd 2.5 physics -11.9 % (0 of 4 worse), p95 and p99 lower, LiquidFun NEUTRAL, capacity 2.4 held",
+      "verdict": "kept",
+      "text": "**E-322 spread over steps on Box2D's workers, on by default: Predator crowd 2.5 physics 13.09 -> 11.73 ms (-11.9 %, 0 of 4\npairs worse), its p95 and p99 lower; LiquidFun's stress and body couple NEUTRAL; Predator's capacity holds crowd 2.4, and at\n2.5 physics' p99 reads 17.0 ms (22.5 without).** The agent's Box2D branch weedjs/e322-pool (2285ac2, dcd01ac, b05a874,\n58c917f, 409f34c, now Box2D's main): every pass of the reorder on b2ParallelFor gathering into new buffers (5.5 -> 3.1 ms,\nbandwidth-bound), then spread: the step at the interval reorders the bodies (a counting sort of the ids, the sims and states,\nthe contacts' remap) and each next step sorts the contact arrays that fit in 16 384 (4 slices at this crowd). Harness\n(38 000 walkers, 4 workers, churn 100, 4 rounds, 2026-11-19 00:15 to 00:23): the reordering step 5.71 -> 1.31 ms, the slice\nsteps 0.39 to 0.60, the step mean -4.74 % against its twin (serial -4.49 %), p99 -1.15 ms against its twin (serial +0.80);\npose hashes equal. WeedJS opt/e322-pool (255a7f51, d6ec6e20 an E-305 test that read uninitialized memory, df34bea0 the\nmodule, e25c9a9b docs), 56cba5af the default 30 (Predator and the LiquidFun scenes leave it to the engine unless\n?awakeReorder= is given), merged 44b3038f. Sittings, the main PC on AC, 2026-11-19:\n- runPredatorAbab e322pool-on, one build, `crowd=2.5&zoom=0.216`, B `awakeReorder=30`, physics owner, 4 pairs, to 00:43:\n  physics own work 13.086 -> 11.732 ms (-11.9 %, 0/4); p95 16.5, 14.9, 15.9, 19.1 -> 13.2, 13.8, 16.5, 15.2 ms; p99 22.4,\n  19.3, 19.0, 23.9 -> 14.3, 19.4, 25.6, 17.0; frames over 16.7 ms 37, 16, 30, 84 -> 3, 11, 40, 19 a window. KEPT.\n- LiquidFun gates, main against opt/e322-pool (the module, the reorder off), `--full-rev --early`: liquidFunStress\n  `water=1.5` physics 7.002 -> 6.842 ms (-1.9 %, NEUTRAL, to 00:48); the body couple 6.230 -> 6.116 (-1.4 %, NEUTRAL, to\n  00:53). With the reorder on they were not run: their awake sets hold 3 and 103 bodies.\n- runCapacity predator, opt/e322-pool, `awakeReorder=30`, to 00:58: crowd 2.4 (38 400) in 2 runs, physics p99 14.9 and\n  13.3 ms there; 2.5 FAIL at physics p99 17.0 (it failed at 22.5 without the reorder, R-1475).",
+      "commits": [
+        "409f34c",
+        "df34bea0",
+        "56cba5af",
+        "44b3038f"
+      ]
+    },
+    {
+      "id": "R-1510",
+      "date": "2026-11-19",
+      "time": "00:37",
+      "timeFrom": "recorded",
+      "title": "The atlas cache keys a bundle's atlas by its build's input hash, not only by the engine's version (the owner kept atlasCache on)",
+      "verdict": "kept-hygiene",
+      "text": "**The atlas cache keys a bundle's atlas by its build: the hash of the sources it was built from (the one dist/.build-inputs\nholds), which buildBundle.js hands webpack's DefinePlugin as __WEED_BUILD_INPUTS__.** The owner kept atlasCache on by\ndefault (2026-11-19) with this change: the bundle's key named its code by the engine's version only, and a local bundle\nbuilt from changed atlas code under the same version would have loaded an older atlas from the cache (source builds hash\nthe atlas modules' text and were never exposed). d055f527: atlasCache.js reads the constant (null in a source build);\nboth webpack configs define it; tests/node/atlasCacheBuildKey.test.js evaluates the module under two builds of one version\nand finds two keys. Checked in the bundles at the next dist (the hash in the minified bundle). Not timed: the key's text\ngrows by 16 characters.",
+      "commits": [
+        "d055f527"
+      ]
+    },
+    {
+      "id": "R-1511",
+      "date": "2026-11-19",
+      "time": "00:55",
+      "timeFrom": "recorded",
+      "title": "SST-13 dropped by reading the start: the engine's code first runs right before loadScene, so an earlier atlas worker would start about 10 ms sooner",
+      "verdict": "dropped",
+      "text": "**SST-13 dropped by reading the start: an atlas worker started when the engine is imported would start about 10 ms\nsooner, not the hundreds the plan hoped for.** ES modules are fetched and parsed, the whole graph, before any of them is\nevaluated, so the engine's code (gameEngine.js, assetWorkerClient.js) first runs at the end of the page's module load,\nright before the page calls loadScene; the scene starts its asset loads, the atlas worker among them, 7 to 9 ms after\nloadScene (`assets started`, every waterfall of 2026-11-18). The 674 ms (warm) to 1.6 s (cold) the atlas worker spends\non its 22 modules is their share of the source start's request queue (about 2 000 requests, R-1500) and of the cores the\nother workers evaluate on, which an earlier start by a few milliseconds does not change. What shortens it is less to load\nin the workers beside it (SST-14) and the bundle, whose blob workers fetch nothing. Not timed: no measurement could\nchange the verdict."
+    },
+    {
+      "id": "R-1512",
+      "date": "2026-11-19",
+      "time": "01:06",
+      "timeFrom": "recorded",
+      "title": "N-312 kept: static assets.files, the barrio's files fetched with the engine's assets (in at 737 ms); its preload 663 -> 586 ms, the rest of it loadBarrio",
+      "verdict": "kept",
+      "text": "**N-312, SST-12's second part, SST-14 and SST-19 timed together on a source start: Predator by night's warm first frame\nabout 1 665 -> 1 589 ms, its physics block 1 069 -> 677 ms; the barrio's physics block 1 305 -> 827 ms, its first frame\nlevel (its preload is loadBarrio's spawning now, not its files).** loadWaterfall source, 2 runs, cold and warm, dx/startup\n44b3038f (with E-322's merge) against the waterfalls of the same evening (Predator wf at 23:55 after SST-18, the barrio\nat 22:56 after SST-10's flowfields), 2026-11-19 01:06, the main PC:\n\n| warm, ms after loadScene | Predator before | after | the barrio before | after |\n|---|---|---|---|---|\n| physics: scripts in, block answered | 1 048, 1 069 | 572, 677 | about 1 733, 1 305 | ~, 827 |\n| the scene's files (N-312) | - | - | - | 737 |\n| atlas on the page, assets | 915, 1 096 | 984, 994 | 1 232, 1 337 | 1 279, 1 295 |\n| renderer: atlas uploaded, init, textures done, ready | -, 1 205, 1 355, 1 429 | 1 104, 1 147, 1 268, 1 340 | | |\n| logic0 modules, boot scripts | 730, 1 152 | 776, 1 154 | | |\n| workers ready, world, start | 1 429, 1 621, 1 625 | 1 341, 1 544, 1 550 | 1 608, 2 535, 2 536 | 1 669, 2 539, 2 545 |\n| first frame (2 runs) | 1 730, 1 600 | 1 621, 1 556 | 2 637, 2 684 | 2 701, 2 654 |\n\nSST-12's entry (415404eb) loads the physics scripts in about 480 ms instead of about 1 000, so physics is no longer the\nlast branch in either scene: the atlas is. SST-19 (908ff6be) uploads the atlas before the renderer's init. SST-14\n(072915a0) takes 17 modules and 251 KB off every worker's scene module; logic0's boot scripts ended at the same time\n(two runs on a start where the other branches end together: no reading of it alone). N-312 (b6a1d645) has the barrio's\nfiles in at 737 ms, beside the atlas; the barrio's preload went from 663 to 586 ms, the rest of it loadBarrio's spawning\n(about 440 ms), and its workers came in about 60 ms later this sitting, so its first frame did not move.",
+      "commits": [
+        "b6a1d645"
+      ]
+    },
+    {
+      "id": "R-1513",
+      "date": "2026-11-19",
+      "time": "01:06",
+      "timeFrom": "recorded",
+      "title": "SST-14 first step kept: the debug overlay loads when shown, 17 modules and 251 KB off every worker's scene module in a source build",
+      "verdict": "kept-hygiene",
+      "text": "**N-312, SST-12's second part, SST-14 and SST-19 timed together on a source start: Predator by night's warm first frame\nabout 1 665 -> 1 589 ms, its physics block 1 069 -> 677 ms; the barrio's physics block 1 305 -> 827 ms, its first frame\nlevel (its preload is loadBarrio's spawning now, not its files).** loadWaterfall source, 2 runs, cold and warm, dx/startup\n44b3038f (with E-322's merge) against the waterfalls of the same evening (Predator wf at 23:55 after SST-18, the barrio\nat 22:56 after SST-10's flowfields), 2026-11-19 01:06, the main PC:\n\n| warm, ms after loadScene | Predator before | after | the barrio before | after |\n|---|---|---|---|---|\n| physics: scripts in, block answered | 1 048, 1 069 | 572, 677 | about 1 733, 1 305 | ~, 827 |\n| the scene's files (N-312) | - | - | - | 737 |\n| atlas on the page, assets | 915, 1 096 | 984, 994 | 1 232, 1 337 | 1 279, 1 295 |\n| renderer: atlas uploaded, init, textures done, ready | -, 1 205, 1 355, 1 429 | 1 104, 1 147, 1 268, 1 340 | | |\n| logic0 modules, boot scripts | 730, 1 152 | 776, 1 154 | | |\n| workers ready, world, start | 1 429, 1 621, 1 625 | 1 341, 1 544, 1 550 | 1 608, 2 535, 2 536 | 1 669, 2 539, 2 545 |\n| first frame (2 runs) | 1 730, 1 600 | 1 621, 1 556 | 2 637, 2 684 | 2 701, 2 654 |\n\nSST-12's entry (415404eb) loads the physics scripts in about 480 ms instead of about 1 000, so physics is no longer the\nlast branch in either scene: the atlas is. SST-19 (908ff6be) uploads the atlas before the renderer's init. SST-14\n(072915a0) takes 17 modules and 251 KB off every worker's scene module; logic0's boot scripts ended at the same time\n(two runs on a start where the other branches end together: no reading of it alone). N-312 (b6a1d645) has the barrio's\nfiles in at 737 ms, beside the atlas; the barrio's preload went from 663 to 586 ms, the rest of it loadBarrio's spawning\n(about 440 ms), and its workers came in about 60 ms later this sitting, so its first frame did not move.",
+      "commits": [
+        "072915a0"
+      ]
+    },
+    {
+      "id": "R-1514",
+      "date": "2026-11-19",
+      "time": "01:06",
+      "timeFrom": "recorded",
+      "title": "SST-12's second part kept: the physics worker's entry fetches its scripts at once (480 instead of about 1 000 ms), its block 1 069 -> 677 ms in Predator",
+      "verdict": "kept",
+      "text": "**N-312, SST-12's second part, SST-14 and SST-19 timed together on a source start: Predator by night's warm first frame\nabout 1 665 -> 1 589 ms, its physics block 1 069 -> 677 ms; the barrio's physics block 1 305 -> 827 ms, its first frame\nlevel (its preload is loadBarrio's spawning now, not its files).** loadWaterfall source, 2 runs, cold and warm, dx/startup\n44b3038f (with E-322's merge) against the waterfalls of the same evening (Predator wf at 23:55 after SST-18, the barrio\nat 22:56 after SST-10's flowfields), 2026-11-19 01:06, the main PC:\n\n| warm, ms after loadScene | Predator before | after | the barrio before | after |\n|---|---|---|---|---|\n| physics: scripts in, block answered | 1 048, 1 069 | 572, 677 | about 1 733, 1 305 | ~, 827 |\n| the scene's files (N-312) | - | - | - | 737 |\n| atlas on the page, assets | 915, 1 096 | 984, 994 | 1 232, 1 337 | 1 279, 1 295 |\n| renderer: atlas uploaded, init, textures done, ready | -, 1 205, 1 355, 1 429 | 1 104, 1 147, 1 268, 1 340 | | |\n| logic0 modules, boot scripts | 730, 1 152 | 776, 1 154 | | |\n| workers ready, world, start | 1 429, 1 621, 1 625 | 1 341, 1 544, 1 550 | 1 608, 2 535, 2 536 | 1 669, 2 539, 2 545 |\n| first frame (2 runs) | 1 730, 1 600 | 1 621, 1 556 | 2 637, 2 684 | 2 701, 2 654 |\n\nSST-12's entry (415404eb) loads the physics scripts in about 480 ms instead of about 1 000, so physics is no longer the\nlast branch in either scene: the atlas is. SST-19 (908ff6be) uploads the atlas before the renderer's init. SST-14\n(072915a0) takes 17 modules and 251 KB off every worker's scene module; logic0's boot scripts ended at the same time\n(two runs on a start where the other branches end together: no reading of it alone). N-312 (b6a1d645) has the barrio's\nfiles in at 737 ms, beside the atlas; the barrio's preload went from 663 to 586 ms, the rest of it loadBarrio's spawning\n(about 440 ms), and its workers came in about 60 ms later this sitting, so its first frame did not move.",
+      "commits": [
+        "415404eb"
+      ]
+    },
+    {
+      "id": "R-1515",
+      "date": "2026-11-19",
+      "time": "01:13",
+      "timeFrom": "recorded",
+      "title": "SST-20: logic0's start spawning profiled (143.7 ms: _spawnAt 129 incl., onSpawned ~38, instances 17); a setter inside its spawn sends no SET_TRANSFORM (36 496 fewer)",
+      "verdict": "kept-hygiene",
+      "text": "**SST-20: logic0 spends 114 to 144 ms of a Predator start spawning the world the page flushed; a CPU profile of it, and the\nfirst cut: a position setter inside its entity's spawn sends no SET_TRANSFORM (36 496 commands fewer).** CPU trace of\nlogic0 (runIntegratedWorkerBenchmark --trace-cpu, source, 2026-11-19 01:09), the samples under _drainSpawnCommandRing\n(143.7 ms that run): _spawnAt 128.7 inclusive (32.6 self: the per-component resets of ~25 000 spawns), the demo's onSpawned\nabout 38 (civilian 22.6 with person, mySoldier 15.2), first-use instances (_instanceOf, _makeInstance) 17, the command\nring's enqueue 6.9 and the SET_TRANSFORMs of the x and y setters about 5 (poseMoved 6.0 inclusive), the visitor\n_visitSpawnCommand 11.5 self. During a spawn the entity is inactive and its body generation has not moved; the spawn\npublishes its lifecycle after onSpawned, and physics then makes the body from the columns. 09e6c553: poseMoved skips the\ncommand while the entity is in its spawn on this worker (isSpawningHere), so SST-17's physics-side skip has nothing left to\ndrop. A probe counting the prime's commands (2026-11-19 01:13, not kept): SET_TRANSFORM 0 (36 496 before), SET_FIXED_ROTATION\n16 200 (kept: its handler also zeroes the angular velocity and the rotation columns). The spawn phase read 127 ms in that\nprobe sitting (114 to 118 in the earlier ones): the cut is about 10 ms of logic0's own work, under this measure's noise.\nWhat would take most of the phase: the spawn setup split by owner over the logic workers (logic0 drains every x/y spawn\nof the page today; onSpawned's per-instance state lives on the worker that ticks the entity, so each owner would set up\nits own), a change to the spawn ring's single consumer.",
+      "commits": [
+        "09e6c553"
+      ]
+    },
+    {
+      "id": "R-1516",
+      "date": "2026-11-19",
+      "time": "01:43",
+      "timeFrom": "recorded",
+      "title": "SST-15's last part: the final prime runs Box2D's pairs and narrow phase (collide_world), Predator by night's first physics step after the start 59 -> 18 ms warm (96 -> 27 cold)",
+      "verdict": "kept",
+      "text": "**SST-15's last part: the final prime runs Box2D's pair update and narrow phase (no solve, no time), so the first physics\nstep after the start is a normal one: Predator by night's longest physics step in the first seconds 59 -> 18 ms warm,\n96 -> 27 cold; the start about 30 to 40 ms later.** The agent's Box2D branch weedjs/prime-collide (2bca804, now Box2D's\nmain): collide_world(worldPacked) clears the event counts, calls b2World_Step(world, 0, 1) (its pairs, contacts and\nsensors; b2Solve needs a positive step) and exports the contact and sensor events, without step_world's sleep paint,\naccelerations, LiquidFun step, moved bodies or joints. WeedJS opt/prime-collide (b9fd5545, ccb73435, merged 2b47e8e3):\nPhysicsWorld.collide(), weedjsPrime(final) collides in the final prime only (not SST-18's loop) and publishes the contact\nand hit rings; tests/node/primeCollide.wasm.test.js (5 tests on the real module). Not bit-identical: the contacts the\ncollide makes recycle in the first step (their poses have not moved), and a recycled manifold's separation rounds\ndifferently from a fresh one (positions within one float ulp after a step; with recycling off in a throwaway build, 8 seeds\nmatched bit for bit for 30 steps). A body spawned inside a sensor now gets its begin at the prime. loadWaterfall source,\n2 runs, cold and warm, dx/startup 02084b52 against opt/prime-collide, 2026-11-19 01:35 to 01:36: physics' longest own step\n59 -> 18 ms warm, 96 -> 27 cold; `world` -> `physics primed` 2 -> 31 ms warm (39 cold); first frame warm 1 512, 1 592 ->\n1 594, 1 554 ms. LiquidFun gates, `--full-rev --early --pool`, to 01:43: the stress `water=1.5` physics 6.678 -> 6.593 ms\n(-1.3 %, NEUTRAL); the body couple under the 6 ms floor (5.90 -> 6.28 ms over 2 pairs, not judged; the change runs once,\nbefore the start).",
+      "commits": [
+        "2bca804",
+        "b9fd5545",
+        "ccb73435",
+        "2b47e8e3"
+      ]
     }
   ],
   "leads": [

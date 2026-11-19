@@ -544,10 +544,11 @@ export type SceneConfig = Record<string, unknown> & {
      */
     wasmMemoryMB?: number;
     /**
-     * Every this many physics steps (0 = never, the default), at the start of the step, Box2D puts its awake bodies
-     * back in body id order and its contacts in body order, which sleeping and waking scramble. Results are the same
-     * bit for bit; the step reads memory in order. One reorder costs about 6.5 ms at 38 000 awake bodies, inside
-     * that step. A whole number; anything below 1 is 0.
+     * Every this many physics steps (30 by default; 0 = never), at the start of the step, Box2D puts its awake bodies
+     * back in body id order, and in the next few steps its contacts in body order, which sleeping and waking scramble.
+     * Results are the same bit for bit; the step reads memory in order. The reorder runs on the physics workers: at
+     * 38 000 awake bodies about 1.3 ms in its first step and 0.5 ms in each of the next four. A whole number;
+     * anything below 1 is 0.
      */
     awakeReorderInterval?: number;
     /** @deprecated one-release alias of maxFixturePoolSize */
@@ -1084,7 +1085,23 @@ export interface SceneAssetsManifest {
    */
   flowfields?: Record<string, string>;
   shaders?: Record<string, string>;
+  /**
+   * N-312: the scene's own files (a level, a map, a binary table it reads itself), fetched with the other assets and
+   * handed over as `scene.files` before preload(): name → URL (its bytes, an ArrayBuffer), or
+   * `{ url, as: 'arrayBuffer' | 'text' | 'json', decompress: 'gzip' }` (gunzipped when the body is gzip). A file that
+   * does not load stops the scene's load with its URL.
+   */
+  files?: Record<string, string | SceneFileAsset>;
   [key: string]: unknown;
+}
+
+/** N-312: one of a scene's own files (SceneAssetsManifest.files). */
+export interface SceneFileAsset {
+  url: string;
+  /** How the body is handed over: its bytes (default), its text or its parsed JSON. */
+  as?: 'arrayBuffer' | 'text' | 'json';
+  /** 'gzip': gunzipped when the body is gzip (a server that sent it with Content-Encoding decoded it already). */
+  decompress?: 'gzip';
 }
 
 /** Single value or `{ min, max }` range (engine `randomRange`). */
@@ -2090,6 +2107,8 @@ export declare class Scene {
   sceneScriptUrl: string | null;
   config: SceneConfig;
   imageUrls: SceneAssetsManifest;
+  /** N-312: the scene's own files (static assets.files) by name, as each entry reads it; filled before preload(). */
+  files: Record<string, ArrayBuffer | string | unknown>;
   audioUrls: string[];
   loadedAudioNames: string[];
   seed: number;

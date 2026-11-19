@@ -932,6 +932,12 @@ class PixiRenderer extends AbstractWorker {
     /** This frame's glows' rect on the canvas (x0, y0, x1, y1; px), _glowScreenBounds. */
     this._glowLayerBounds = new Float64Array(4);
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
+    /**
+     * SST-19: the atlas sheets' pictures the page posted before the init ('atlasBitmaps'), by sheet name:
+     * { imageBitmap, mapsBitmap, source, mapsSource }, the sources made and uploaded once the renderer is booted;
+     * loadSpritesheets takes them. Empty after it.
+     */
+    this._earlyAtlas = {};
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
     // DX-SHADOW3D (F7): lighting.lampShadows 'map': a shadow map a lamp (lampShadowMap.js), tiles in an atlas.
@@ -7015,20 +7021,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       try {
         // console.log(`  Loading spritesheet "${name}"...`);
 
-        // Validate data
-        if (!data.imageBitmap || !data.json) {
+        // SST-19: the pictures the page posted before the init, uploaded already (or made here if not yet).
+        const early = this._earlyAtlas[name] || null;
+        if ((!data.imageBitmap && !early) || !data.json) {
           throw new Error(`Missing imageBitmap or json for ${name}`);
         }
-
-        // PixiJS 8: Create ImageSource from ImageBitmap.
-        // Default alphaMode is premultiply-alpha-on-upload (PMA on GPU). Do not
-        // re-premultiply in InstancedSpriteBatch fragment — that darkens soft alpha.
-        const source = new PIXI.ImageSource({
-          resource: data.imageBitmap,
-          autoGenerateMipmaps: this.autoGenerateMipmaps,
-          scaleMode: this.atlasScaleMode,
-        });
-        if (source.style) source.style.scaleMode = this.atlasScaleMode;
+        const source = early !== null
+          ? (early.source ?? (early.source = this._atlasSourceOf(early.imageBitmap)))
+          : this._atlasSourceOf(data.imageBitmap);
         const jsonData = data.json;
 
         // Manually create textures for each frame. SST-7 step 4: one frame rectangle and one options object for all of
@@ -7100,13 +7100,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           setTwinFormat(jsonData.meta?.mapsFormat);
           // E-496: a twin page without frame windows is a bake's from before them, laid out as the atlas.
           this._mapsAtlasLayout = jsonData.meta?.maps === true && !Object.values(jsonData.frames).some((f) => f && f.maps);
-          if (data.mapsBitmap) {
-            this.atlasMapsSource = new PIXI.ImageSource({
-              resource: data.mapsBitmap,
-              autoGenerateMipmaps: false,
-              scaleMode: 'nearest',
-              alphaMode: 'no-premultiply-alpha',
-            });
+          const mapsBitmap = data.mapsBitmap || early?.mapsBitmap || null;
+          if (mapsBitmap) {
+            this.atlasMapsSource = early?.mapsSource ?? this._atlasMapsSourceOf(mapsBitmap);
           }
 
           const textureKeys = Object.keys(frameTextures);
@@ -7223,6 +7219,65 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * made and uploaded on the GPU here, through Pixi's texture system as a first draw would (initSource: the GL texture or
    * the GPUTexture, and the image's upload), instead of in the first frame that draws each. Each source once.
    */
+  /**
+   * The atlas's Pixi source over its picture. PixiJS 8's default alphaMode premultiplies on upload (PMA on the GPU):
+   * InstancedSpriteBatch's fragment does not premultiply again (that darkens soft alpha).
+   * @param {ImageBitmap} bitmap
+   */
+  _atlasSourceOf(bitmap) {
+    const source = new PIXI.ImageSource({
+      resource: bitmap,
+      autoGenerateMipmaps: this.autoGenerateMipmaps,
+      scaleMode: this.atlasScaleMode,
+    });
+    if (source.style) source.style.scaleMode = this.atlasScaleMode;
+    return source;
+  }
+
+  /**
+   * DX-MAPS: the twin page's source (heights and normals at the atlas's rectangles): data, nearest, no mipmaps, no
+   * premultiplied alpha. The G-buffer pass samples it with the colour's UV.
+   * @param {ImageBitmap} bitmap
+   */
+  _atlasMapsSourceOf(bitmap) {
+    return new PIXI.ImageSource({
+      resource: bitmap,
+      autoGenerateMipmaps: false,
+      scaleMode: 'nearest',
+      alphaMode: 'no-premultiply-alpha',
+    });
+  }
+
+  /**
+   * SST-19: the atlas sheets' pictures the page posted as soon as its atlas was in ('atlasBitmaps'), before it built the
+   * init data: kept now, made Pixi sources and uploaded once the renderer is booted. loadSpritesheets takes them.
+   * @param {Record<string, { imageBitmap: ImageBitmap, mapsBitmap: ImageBitmap | null }>} sheets
+   */
+  _takeEarlyAtlas(sheets) {
+    for (const name in sheets) {
+      const sheet = sheets[name];
+      if (!sheet?.imageBitmap) continue;
+      this._earlyAtlas[name] = { imageBitmap: sheet.imageBitmap, mapsBitmap: sheet.mapsBitmap || null, source: null, mapsSource: null };
+    }
+    const booted = this._bootPromise ?? Promise.resolve();
+    booted.then(() => this._uploadEarlyAtlas(), () => {});
+  }
+
+  /** SST-19: the early atlas sheets' sources made and put on the GPU (the init's _uploadAssetTextures finds them there). */
+  _uploadEarlyAtlas() {
+    const textures = this.pixiApp?.renderer?.texture;
+    for (const name in this._earlyAtlas) {
+      const early = this._earlyAtlas[name];
+      if (early.source === null) early.source = this._atlasSourceOf(early.imageBitmap);
+      if (early.mapsBitmap && early.mapsSource === null) early.mapsSource = this._atlasMapsSourceOf(early.mapsBitmap);
+      if (textures && typeof textures.initSource === 'function') {
+        textures.initSource(early.source);
+        if (early.mapsSource) textures.initSource(early.mapsSource);
+      }
+    }
+    loadMark('atlas uploaded');
+  }
+
   _uploadAssetTextures() {
     const textures = this.pixiApp?.renderer?.texture;
     if (!textures || typeof textures.initSource !== 'function') return;
@@ -7278,6 +7333,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   handleCustomMessage(data) {
     const { msg } = data;
+    if (msg === 'atlasBitmaps') {
+      this._takeEarlyAtlas(data.sheets);
+      return;
+    }
     if (msg === 'box2dReady' && data.channelOffsets) {
       bindBox2dHotFields(data);
       if (data.commandSab) {
@@ -8689,6 +8748,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const atlasScaleMode = rendererConfig.atlasScaleMode;
     this.atlasScaleMode =
       atlasScaleMode === 'nearest' || atlasScaleMode === 'linear' ? atlasScaleMode : RENDERER_DEFAULTS.atlasScaleMode;
+    // At boot too: the atlas's source may be made before the init (SST-19).
+    this.autoGenerateMipmaps =
+      rendererConfig.autoGenerateMipmaps !== undefined
+        ? !!rendererConfig.autoGenerateMipmaps
+        : RENDERER_DEFAULTS.autoGenerateMipmaps;
 
     const shadersFetched = this._fetchEngineShaders().then(() => loadMark('shaders fetched'));
     await Promise.all([shadersFetched, this._initPixiApp(config, backend)]);
@@ -9156,11 +9220,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     this._lightGlowAdd = lightGlow !== 'sorted';
 
-    this.autoGenerateMipmaps =
-      rendererConfig.autoGenerateMipmaps !== undefined
-        ? !!rendererConfig.autoGenerateMipmaps
-        : RENDERER_DEFAULTS.autoGenerateMipmaps;
-    // atlasScaleMode and N-271's pixel snap: read at boot, before any program was made.
+    // autoGenerateMipmaps, atlasScaleMode and N-271's pixel snap: read at boot, before any program or atlas source was made.
 
     this.decorationFadeStartZoom =
       preCfg.startFadingDecorationsAtZoom !== undefined
@@ -9230,6 +9290,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Load spritesheets (synchronous now - manually parsed)
     this.loadSpritesheets(data.spritesheets, data.bigAtlasProxySheets);
+    this._earlyAtlas = {};
     this.reportLog('finished loading spritesheets');
     loadMark('spritesheets');
 

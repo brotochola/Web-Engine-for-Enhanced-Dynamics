@@ -29,15 +29,17 @@ function functionSource(source, name) {
   throw new Error(`${name} has no end`);
 }
 
-test('physics.awakeReorderInterval defaults to 0 and takes whole steps of 1 or more', () => {
-  assert.equal(PHYSICS_SIM_DEFAULTS.awakeReorderInterval, 0);
-  assert.equal(PHYSICS_DEFAULTS.awakeReorderInterval, 0);
-  assert.equal(validatePhysicsConfig(null, {}).awakeReorderInterval, 0);
+test('physics.awakeReorderInterval defaults to 30 and takes whole steps of 1 or more', () => {
+  assert.equal(PHYSICS_SIM_DEFAULTS.awakeReorderInterval, 30);
+  assert.equal(PHYSICS_DEFAULTS.awakeReorderInterval, 30);
+  assert.equal(validatePhysicsConfig(null, {}).awakeReorderInterval, 30);
   assert.equal(validatePhysicsConfig(null, { awakeReorderInterval: 30 }).awakeReorderInterval, 30);
   assert.equal(validatePhysicsConfig(null, { awakeReorderInterval: 120.9 }).awakeReorderInterval, 120);
-  for (const bad of [0, 0.5, -30, NaN, Infinity, '30', null]) {
+  for (const bad of [0, 0.5, -30, NaN, Infinity, '30']) {
     assert.equal(validatePhysicsConfig(null, { awakeReorderInterval: bad }).awakeReorderInterval, 0, String(bad));
   }
+  // null is left unset: the default.
+  assert.equal(validatePhysicsConfig(null, { awakeReorderInterval: null }).awakeReorderInterval, 30);
   const set = validatePhysicsConfig(null, { awakeReorderInterval: 30 });
   assert.equal(validatePhysicsConfig(set, { subStepCount: 2 }).awakeReorderInterval, 30, 'an update without the key keeps it');
   assert.equal(validatePhysicsConfig(set, { awakeReorderInterval: 0 }).awakeReorderInterval, 0, 'and 0 turns it off');
