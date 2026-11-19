@@ -5202,6 +5202,9 @@ so spatial1 can wait on chain[2] (notified, >= 1 ms) and run from about 7 to 14.
 worker could do the same. At crowd 2.5 the machine is nearly idle from about 11 to 16.7 ms. **Plan:** E-310's sitting (crowd
 2.5, spatialWorkers=2) with spatial1 gated on the bell, judged on spatial and logic; a fallback start time if logic is late.
 Rows at the ownership boundary see the other worker's cells a frame older; particles a frame later. Owner: spatial.
+**Result (R-1474, R-1476, mixed):** built as spatial.startOn ('logicDone', or one per worker); Predator crowd 2.5 with two
+workers: spatial's own work -17.4 % (0 of 4 worse), its tail unchanged; with E-476's spread -24.3 % and p99 16.1 -> 6.9 ms.
+Boids' capacity falls 91 000 -> 70 000 with it (logic is long there), so it stays off by default.
 ### E-329 The gather tests the range before the dedup mark
 
 **Premise (R-1100, R-1102):** Read (R-1102): Predator's cell radius 2 (about 21 cells of 128 px against a ~153 px circle); a

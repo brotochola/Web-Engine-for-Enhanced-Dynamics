@@ -299,12 +299,14 @@ again, and A must match a fresh load (state, image). Measured on menu → scene 
 
 ### SST-10 — What the waterfall shows is left
 
-- [ ] in progress: 5ad53c8d (the decal textures' pixels no longer go to every worker), R-1457
+- [ ] in progress: 5ad53c8d (the decal textures' pixels no longer go to every worker), R-1457; dd8f11e8 (the static
+  flowfields' cells in shared memory, one copy for every worker: the barrio's init messages 205 -> 53 ms, R-1479)
 
 The smaller repeats, each only if SST-0 shows it:
 - circle patterns computed once, not by every spatial worker;
 - the sprite and Adobe registries and the static flowfields handed over ready instead of rebuilt in
-  every worker;
+  every worker (the flowfields: done; spritesheetMetadata still goes to every worker, 7.8 ms to clone in the barrio,
+  and spatial, physics and particle code read the registry too, so it is not simply left out);
 - logic's per-class setup done while physics boots, not after `box2dReady`;
 - per-pool fills and allocations;
 - Pixi's tilemap pages built during boot instead of at `preload()`'s `setLayerContent`, when a scene
@@ -390,7 +392,7 @@ flowfields have), and hand the workers what they read. Checked by the same tile 
 ### SST-12 — Box2D's start off the critical path
 
 - [ ] in progress: 8f43a111 (the physics worker's load marks; the engine block zeroed only below Box2D's old heap break:
-  440 ms -> 0 of Predator by night's start, R-1470)
+  440 ms -> 0 of Predator by night's start, R-1470); 4f2cd68f (marks in weedjsPost.js); the siblings' load read, R-1500
 
 With the page thread free (SST-4, SST-5), the physics worker's answer to the engine block request became the critical
 path (1.1 s in Predator, 1.6 s in the barrio after loadScene). Its marks (2026-11-18): the host's scripts evaluated
@@ -401,6 +403,13 @@ about 1.15 s warm from the bundle against about 2.0 s from source). Next: fetch 
 them in order (as SST-3 does for game scripts), and check where the rest of the second goes with marks inside the glue
 (weed_pre.js and weed_post.js, a Box2D rebuild).
 
+**Read 2026-11-18 (R-1500):** the 16 siblings take 760 to 880 ms of Predator by night's source start and 1 335 ms of the
+barrio's, 10 to 175 ms a request among the ~2 000 a source start makes. But physics now ends with the atlas branch and
+the workers' scripts (warm Predator: block 1 040, atlas 1 090, logic's boot scripts 1 076 ms), so loading the siblings
+at once would take about 100 ms off the barrio, where physics still ends last, and nothing off Predator. It waits for
+SST-13 and SST-14 to bring the other two down: an entry script that fetches the glue, weedjsPost.js, the host and the
+siblings at once, then runs them in order from blob URLs as the bundle does (pool threads load the glue directly).
+
 ### SST-13 — The atlas worker started earlier
 
 - [ ] not started
@@ -408,3 +417,15 @@ them in order (as SST-3 does for game scripts), and check where the rest of the 
 In a cold source build the atlas worker evaluates its 22 modules in 1.4 to 1.6 s before it starts (R-1452), longer than
 the page took to pack the atlas itself. Starting it when the engine is imported (not at the scene's assets) would overlap
 that with the page's own module loads; the bundle's blob workers fetch nothing, so it matters for source builds only.
+
+### SST-14 — Workers that evaluate the page's engine graph
+
+- [ ] not started (R-1501)
+
+In a source build each worker's boot loads the scene's module first, and its entity scripts `import WEED from
+'/src/index.js'`: every worker evaluates scene.js (121 KB) and what Scene.init uses (sceneSharedBuffers, gpuPackClient,
+the queue and visibility memories), gameEngine.js, saveGame and DebugUI with its panels, canvas renderers and tools,
+93 modules and 983 KB in Predator on top of logic's own 171 (2.2 MB). Logic's boot scripts take about 330 ms after its
+modules (warm Predator by night), ending with the atlas and physics. First: DebugUI's panels and renderers (about 19
+modules, 260 KB) loaded when the UI opens (page-only, never needed by the first frames). Then whether Scene.init's
+page-only imports can be skipped in workers without delaying the page's own start.
