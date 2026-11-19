@@ -255,13 +255,15 @@ const VARIANTS = {
 /**
  * Contention: `threads` worker_threads (the 3 logic workers) call _writeSlot
  * on one saturated SAB at once. Returns total calls per second.
+ * go[0] starts them; go[1] counts the contenders past their warm-up, and the timer starts when all of them are
+ * (N-293: a fixed 300 ms wait timed the start-up of workers not ready yet on a slow disk, R-1481).
  */
 async function contended(variant, maxSlots, threads, callsPerThread) {
   const { Worker } = await import('node:worker_threads');
   const sab = new SharedArrayBuffer((SoundManager.HEADER_SIZE + maxSlots * SoundManager.SLOT_SIZE) * 4);
   const i32 = new Int32Array(sab);
   for (let s = 0; s < maxSlots; s++) i32[SoundManager.HEADER_SIZE + s * SoundManager.SLOT_SIZE] = SoundManager.STATE_PLAYING;
-  const go = new Int32Array(new SharedArrayBuffer(4));
+  const go = new Int32Array(new SharedArrayBuffer(8));
   const workers = [];
   const done = [];
   for (let t = 0; t < threads; t++) {
@@ -274,7 +276,11 @@ async function contended(variant, maxSlots, threads, callsPerThread) {
       w.once('error', rej);
     }));
   }
-  await new Promise((r) => setTimeout(r, 300));
+  const readyBy = performance.now() + 60000;
+  while (Atomics.load(go, 1) < threads) {
+    if (performance.now() > readyBy) throw new Error(`audioSlotMicrobench: ${Atomics.load(go, 1)} of ${threads} contenders ready after 60 s`);
+    await new Promise((r) => setTimeout(r, 1));
+  }
   const t0 = performance.now();
   Atomics.store(go, 0, 1);
   Atomics.notify(go, 0);
@@ -290,6 +296,7 @@ async function contenderMain(data) {
   SoundManager.initializeSlotSAB({ sab: data.sab, maxSlots: data.maxSlots });
   const go = new Int32Array(data.go);
   for (let i = 0; i < 200; i++) SoundManager._writeSlot(7, 0.5, 1, 0, false);
+  Atomics.add(go, 1, 1);
   Atomics.wait(go, 0, 0);
   for (let i = 0; i < data.calls; i++) SoundManager._writeSlot(7, 0.5, 1, 0, false);
   parentPort.postMessage('done');

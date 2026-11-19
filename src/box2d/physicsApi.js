@@ -19,6 +19,7 @@ function createPhysicsApi(Module) {
     "number",
   ]);
   const worldSetStepSpin = wrap("world_set_step_spin", null, ["number", "number"]);
+  const worldSetAwakeReorderInterval = wrap("world_set_awake_reorder_interval", null, ["number", "number"]);
   const bindGameBuffers = wrap("bind_game_buffers", "number", ["number", "number"]);
   const createBodyBox = wrap("create_body_box", "number", [
     "number",
@@ -977,6 +978,14 @@ function createPhysicsApi(Module) {
     /** E-298: Box2D's pool threads spin through a step (true) or sleep between its phases (false). */
     setStepSpin(enable) {
       worldSetStepSpin(this.worldId, enable ? 1 : 0);
+    }
+
+    /**
+     * E-322: every `steps` steps (0: never), at the start of the step, Box2D puts the awake bodies back in body id
+     * order and each constraint color's contacts in body order. Results are bit for bit the same.
+     */
+    setAwakeReorderInterval(steps) {
+      worldSetAwakeReorderInterval(this.worldId, steps | 0);
     }
 
     /**

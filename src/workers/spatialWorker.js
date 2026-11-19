@@ -57,6 +57,8 @@ import { SPATIAL_MAX_CELL_RADIUS } from '../util/spatialPublishMemory.js';
 import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRangeImport, _boundsResult as _boundsResultImport, _cellRangeResult as _cellRangeResultImport, SHAPE_CIRCLE as SHAPE_CIRCLEImport, SHAPE_BOX as SHAPE_BOXImport } from '../util/colliderUtils.js';
 import { readMovedBodiesHeader, copyMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { tickBucketPhase } from '../util/logicOwner.js';
+import { addWaitMs } from '../util/waitMeter.js';
+import { HEADER_BYTES, LOGIC_SLOT0, MAX_LOGIC, SLOT_BYTES, TIME_ORIGIN } from '../util/frameClock.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -128,6 +130,26 @@ const COUNT_UNWRITTEN = 0xffff;
 // E-136. The pose generation moves by 2, so it is always even: a row marked with this was cleared and
 // is published again.
 const POSE_GEN_NONE = 1;
+// E-328 (spatial.startOn 'logicDone'): a frame waits for logic's frame of this vsync, ending its wait at the latest this
+// long before the next vsync less this worker's own step, and waiting at most this share of the frame.
+const LOGIC_WAIT_MARGIN_MS = 1;
+const LOGIC_WAIT_MAX_SHARE = 0.75;
+// A shorter budget is no wait: the frame starts on the vsync.
+const LOGIC_WAIT_MIN_MS = 1;
+// Waits that run out in a row before the waits go off, and the frames they stay off.
+const LOGIC_WAIT_MISSES = 4;
+const LOGIC_WAIT_OFF_FRAMES = 120;
+// A logic step that began this long before this vsync's estimated start is still this vsync's (the workers' animation
+// frames fire within about 0.2 ms of each other).
+const LOGIC_WAIT_SLACK_MS = 1;
+const FRAME_MS_60 = 1000 / 60;
+// E-476 (spatial.neighborRefreshSpread): which of its period's P / T ticks a typed slot's list comes before.
+const REFRESH_SPREAD_NONE = 0; // the first: a class refreshes on T frames of every P
+const REFRESH_SPREAD_ID_BLOCKS = 1; // tick k for the k-th of P / T contiguous blocks of the class's slots
+const REFRESH_SPREADS = Object.freeze({
+  none: REFRESH_SPREAD_NONE,
+  idBlocks: REFRESH_SPREAD_ID_BLOCKS,
+});
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -237,6 +259,13 @@ class SpatialWorker extends AbstractWorker {
     this._logicFrameSlot = -1;
     /** E-200: logic's frame at this worker's last search (-1: none yet). */
     this._lastLogicFrame = -1;
+    /** E-476: spatial.neighborRefreshSpread (REFRESH_SPREAD_*). */
+    this._neighborRefreshSpread = REFRESH_SPREAD_NONE;
+    /**
+     * E-476: the frames a list the stagger skips may stand: neighborReuseMaxFrames, or with a spread that plus the
+     * longest refresh period, so a list past the reuse cap waits for its own refresh frame (_setupScheduleReuseCap).
+     */
+    this._scheduleReuseCap = 0;
     /** Per-entity expanded candidate lists: [count, id0, ...] stride = 1+maxNeighbors */
     this._neighborCandidateData = null;
     /** Dense copy of each list's count: the stagger skip reads this, not the head of a 1+maxNeighbors row. */
@@ -331,6 +360,21 @@ class SpatialWorker extends AbstractWorker {
     this._mvJoinNext = new Int32Array(0);
     this._mvJoinId = new Int32Array(0);
     this._mvCellScratch = new Int32Array(0);
+
+    // E-328 (spatial.startOn): the frame starts when logic's frame of this vsync has ended, not on the vsync.
+    /** This worker's frames wait for logic's ('logicDone'; _setupStartOn). */
+    this._startOnLogicDone = false;
+    /** The logic workers whose frames it waits for. */
+    this._logicWorkers = 0;
+    /** Moving averages, NaN until the first sample: the vsync period, and this worker's own step (its wait left out). */
+    this._logicWaitPeriodMs = NaN;
+    this._logicWaitOwnMs = NaN;
+    /** This frame's start (performance.now(); NaN before the first frame) and its wait for logic, ms. */
+    this._logicWaitLastStart = NaN;
+    this._logicWaitMs = -0;
+    /** Waits that ran out in a row, and the frame number from which the waits are on again. */
+    this._logicWaitMisses = 0;
+    this._logicWaitOffUntil = 0;
   }
 
   /**
@@ -412,6 +456,14 @@ class SpatialWorker extends AbstractWorker {
     const tickInterval = Number(spatialCfg.neighborTickInterval);
     this._neighborTickInterval = tickInterval > 1 ? tickInterval | 0 : 1;
     this._gatherCellOrder = spatialCfg.gatherCellOrder !== false;
+    this._setupStartOn();
+    const spread = spatialCfg.neighborRefreshSpread ?? SPATIAL_DEFAULTS.neighborRefreshSpread;
+    if (!Object.hasOwn(REFRESH_SPREADS, spread) && this.workerId === 0) {
+      console.warn(
+        `WeedJS: spatial.neighborRefreshSpread ${JSON.stringify(spread)} is not 'none' or 'idBlocks'; the lists are not spread.`,
+      );
+    }
+    this._neighborRefreshSpread = Object.hasOwn(REFRESH_SPREADS, spread) ? REFRESH_SPREADS[spread] : REFRESH_SPREAD_NONE;
     if (this._neighborTickInterval > 1) {
       const nextTick = new Uint8Array(this.globalEntityCount);
       const interval = this._neighborTickInterval;
@@ -423,6 +475,7 @@ class SpatialWorker extends AbstractWorker {
     } else {
       this._entityNeighborNextTick = null;
     }
+    this._setupScheduleReuseCap();
     // E-76: the publish (and, below, E-78's gather) in WASM on the spatial publish memory, the worker's only search.
     if (!data.spatialPublishMemory || !data.gridMetadata?.candByte || !data.gridMetadata?.patternByte) {
       throw new Error('spatial worker without the spatial publish memory and its gather regions (createSpatialPublishMemory)');
@@ -515,6 +568,139 @@ class SpatialWorker extends AbstractWorker {
     // Clamp to max supported radius
     const clampedRadius = cellRadius > this._maxCellRadius ? this._maxCellRadius : cellRadius;
     return this._circlePatterns[clampedRadius] || this._circlePatterns[0];
+  }
+
+  /**
+   * E-328: spatial.startOn, 'vsync' (the default) or 'logicDone', or an array of them, one per spatial worker (a worker
+   * past its end starts on the vsync). 'logicDone' needs logic workers and frames on the vsync: a worker or a logic paced
+   * by a timer (noLimitFPS, fixedFps) has no vsync to share, and starts when its timer fires.
+   */
+  _setupStartOn() {
+    const startOn = this.config?.spatial?.startOn;
+    const mine = Array.isArray(startOn) ? startOn[this.workerId] : startOn;
+    if (mine !== undefined && mine !== 'vsync' && mine !== 'logicDone') {
+      console.warn(
+        `WeedJS: spatial.startOn ${JSON.stringify(mine)} is not 'vsync' or 'logicDone'; spatial worker ${this.workerId} starts on the vsync.`,
+      );
+    }
+    const logic = this.config?.logic || {};
+    this._logicWorkers = Math.max(0, logic.numberOfLogicWorkers | 0);
+    const timed = this.noLimitFPS || this.fixedFps > 0 || logic.noLimitFPS === true || Number(logic.fixedFps) > 0;
+    this._startOnLogicDone = mine === 'logicDone' && this._logicWorkers > 0 && !timed;
+    this._logicWaitMisses = 0;
+    this._logicWaitOffUntil = 0;
+  }
+
+  /** E-328: the wait for logic's frame (spatial.startOn 'logicDone'), inside the step, so it counts in WAIT_MS. */
+  beforeUpdate() {
+    if (this._startOnLogicDone) this._waitForLogicFrame();
+  }
+
+  /**
+   * E-328 (spatial.startOn 'logicDone'). Every worker wakes on the vsync, and logic's frame (about 7 ms at Predator crowd
+   * 2.5) runs on the cores this one shares with it: two spatial workers beside it cut spatial 32 % and cost logic 8 %
+   * (R-1035). The rows this frame publishes are read TYPED_NEIGHBOR_LEAD logic frames later and Box2D rewrites Transform
+   * only at its finalize, so the search loses nothing by starting once logic's frame of this vsync has ended, when the
+   * cores are free (from about 7 to 16.7 ms at crowd 2.5). It sleeps on the frame chain's bell ([2]), which each logic
+   * worker rings at its frame's end (and at each sync query it posts), until the chain's count of logic frames done
+   * ([0]) has risen by the logic workers that had not finished this vsync's frame when this frame began (the frame
+   * clock's stamps: a frame kept off the cores may begin after logic's). The wait ends at the latest at the frame's end
+   * less this worker's own step and LOGIC_WAIT_MARGIN_MS (at most LOGIC_WAIT_MAX_SHARE of the frame); then the frame
+   * starts anyway. On Windows a wait of a millisecond or more that nobody ends sleeps to the timer period (about 15 ms),
+   * so the deadline is a ceiling when logic rings nothing at all, and a late logic's ring is what usually ends the wait:
+   * LOGIC_WAIT_MISSES frames in a row that start past the deadline turn the waits off for LOGIC_WAIT_OFF_FRAMES frames.
+   * A frame whose own step does not fit after logic (a budget under LOGIC_WAIT_MIN_MS) starts on the vsync. Lockstep
+   * frames do not wait.
+   */
+  _waitForLogicFrame() {
+    const now = performance.now();
+    // The vsync period: the gap between two frames over the vsyncs it spans (a frame that ran past a vsync skipped one).
+    const est = this._logicWaitPeriodMs === this._logicWaitPeriodMs ? this._logicWaitPeriodMs : FRAME_MS_60;
+    const last = this._logicWaitLastStart;
+    this._logicWaitLastStart = now;
+    if (last === last) {
+      const gap = now - last;
+      if (gap > 0 && gap < 100) {
+        const vsyncs = Math.round(gap / est);
+        this._logicWaitPeriodMs = est * 0.9 + (gap / (vsyncs > 1 ? vsyncs : 1)) * 0.1;
+      }
+      // The last frame's own step: its step less its wait.
+      const own = this.stepTimeThisFrame - this._logicWaitMs;
+      if (own > 0 && own < 100) {
+        this._logicWaitOwnMs = this._logicWaitOwnMs === this._logicWaitOwnMs ? this._logicWaitOwnMs * 0.9 + own * 0.1 : own;
+      }
+    }
+    this._logicWaitMs = 0;
+    const chain = this._frameChain;
+    if (chain === null || this._injectedDeltaTime > 0 || this.frameNumber < this._logicWaitOffUntil) return;
+    const period = this._logicWaitPeriodMs === this._logicWaitPeriodMs ? this._logicWaitPeriodMs : FRAME_MS_60;
+    const own = this._logicWaitOwnMs === this._logicWaitOwnMs ? this._logicWaitOwnMs : 0;
+    const fit = period - own - LOGIC_WAIT_MARGIN_MS;
+    const cap = period * LOGIC_WAIT_MAX_SHARE;
+    const budget = fit < cap ? fit : cap;
+    if (!(budget >= LOGIC_WAIT_MIN_MS)) return;
+    // The stamps before the count: a logic worker stamps its step after it adds to the count, so each one found done
+    // is in the count read after.
+    const done = this._logicFramesDoneThisVsync(TIME_ORIGIN + now, period);
+    // The bell before the count: a ring after the bell's read ends the wait at once.
+    let bell = Atomics.load(chain, 2);
+    let cur = Atomics.load(chain, 0);
+    const target = cur + this._logicWorkers - done;
+    if (cur >= target) {
+      this._logicWaitMisses = 0;
+      return;
+    }
+    const end = now + budget;
+    while (cur < target) {
+      const left = end - performance.now();
+      if (!(left > 0)) break;
+      Atomics.wait(chain, 2, bell, left);
+      bell = Atomics.load(chain, 2);
+      cur = Atomics.load(chain, 0);
+    }
+    const after = performance.now();
+    const waited = after - now;
+    this._logicWaitMs = waited;
+    addWaitMs(waited);
+    // A miss is a start past the deadline, whether logic's ring or the timeout ended the wait (Windows may end a timed
+    // wait only at its timer period, so a logic later than the budget is usually waited for in full).
+    if (after <= end) {
+      this._logicWaitMisses = 0;
+    } else if (++this._logicWaitMisses >= LOGIC_WAIT_MISSES) {
+      this._logicWaitMisses = 0;
+      this._logicWaitOffUntil = this.frameNumber + LOGIC_WAIT_OFF_FRAMES;
+    }
+  }
+
+  /**
+   * E-328: the logic workers whose last finished step began at this vsync, from the frame clock's stamps. The vsync is
+   * placed a whole number of periods after the latest logic step's start (logic's frames start on the vsync), so a frame
+   * that began late still finds logic's frame of this vsync done. A stamp being written is a step ending now: done.
+   * Logic workers past the clock's slots (MAX_LOGIC) are never found done.
+   * @param {number} nowAbs this frame's start, absolute ms (TIME_ORIGIN + performance.now())
+   * @param {number} period the vsync period, ms
+   */
+  _logicFramesDoneThisVsync(nowAbs, period) {
+    const clock = this._frameClock;
+    if (clock === null) return 0;
+    const f64 = clock.f64;
+    const i32 = clock.i32;
+    const n = this._logicWorkers < MAX_LOGIC ? this._logicWorkers : MAX_LOGIC;
+    let latest = 0;
+    for (let i = 0; i < n; i++) {
+      const at = HEADER_BYTES + (LOGIC_SLOT0 + i) * SLOT_BYTES;
+      if ((Atomics.load(i32, (at >> 2) + 5) & 1) !== 0) continue;
+      const start = f64[at >> 3];
+      if (start > latest) latest = start;
+    }
+    if (!(latest > 0)) return 0;
+    const vsync = latest + Math.floor((nowAbs + LOGIC_WAIT_SLACK_MS - latest) / period) * period;
+    let done = 0;
+    for (let i = 0; i < n; i++) {
+      const at = HEADER_BYTES + (LOGIC_SLOT0 + i) * SLOT_BYTES;
+      if ((Atomics.load(i32, (at >> 2) + 5) & 1) !== 0 || f64[at >> 3] >= vsync - LOGIC_WAIT_SLACK_MS) done++;
+    }
+    return done;
   }
 
   /**
@@ -1738,6 +1924,7 @@ class SpatialWorker extends AbstractWorker {
    */
   _setupTypedNeighborStagger(data) {
     const n = this.globalEntityCount;
+    const spread = this._neighborRefreshSpread;
     this._typedNeighborClass = new Uint8Array(n);
     this._typedNeighborOffset = new Uint16Array(n);
     this._typedNeighborPeriods = new Int32Array(1);
@@ -1760,16 +1947,43 @@ class SpatialWorker extends AbstractWorker {
       if (period > 0xffff || end <= start) continue;
       const c = periods.length;
       periods.push(period);
+      // E-476: a period holds period / T of a slot's ticks, and its list may come before any of them (as fresh at its
+      // tick). Before the first for every slot ('none'), the class's whole refresh lands on T frames of every period:
+      // spatial at Predator crowd 2.5 ran 3 to 4 ms on some frames and 28 to 46 ms on others, a 32-frame cycle (R-1226).
+      // 'idBlocks' gives the k-th of period / T contiguous blocks of the class's slots its k-th tick, so each frame of the
+      // period refreshes one phase of one block, every T-th slot of it (as dense in memory as before).
+      const ticks = period / T;
+      const span = end - start;
       for (let i = start; i < end; i++) {
         this._typedNeighborClass[i] = c;
+        const k = spread === REFRESH_SPREAD_ID_BLOCKS ? Math.floor(((i - start) * ticks) / span) : 0;
         // Logic ticks slot i on the frames f with f % T === its phase; its list comes on f - LEAD.
-        this._typedNeighborOffset[i] = (((tickBucketPhase(i, T) - TYPED_NEIGHBOR_LEAD) % period) + period) % period;
+        this._typedNeighborOffset[i] = (((tickBucketPhase(i, T) + k * T - TYPED_NEIGHBOR_LEAD) % period) + period) % period;
       }
     }
     if (periods.length === 1) return;
     this._typedNeighborPeriods = Int32Array.from(periods);
     this._typedNeighborNow = new Int32Array(periods.length);
     this._logicFrameSlot = slot;
+  }
+
+  /**
+   * E-476. The stagger keeps a list it skips (its slot's refresh frame has not come) while the list is under
+   * neighborReuseMaxFrames; skin reuse keeps a list on its refresh frame on the same condition. A list that skin reuse
+   * keeps (its entity did not move: a guard, a lamp) therefore reaches the cap between two refresh frames, and is rebuilt
+   * on the frame it does, not on one its schedule picked: lists built on the same frame (every list at the scene's start)
+   * stay on one cycle of cap + 1 frames for good, whatever the stagger spreads (on the Predator-like kernel world, cap
+   * 30: 1 600 more rebuilds, a frame at 1.9 times the median, every 31 frames). With a spread, a skipped list stands up to
+   * a period past the cap instead, so it is rebuilt on its own refresh frame, the first after the cap: no list goes longer
+   * than the cap plus a period without a refresh, and the rebuilds stay spread. Without one, the cap as before.
+   */
+  _setupScheduleReuseCap() {
+    const cap = this._maxReuseFrames;
+    let longest = this._neighborTickInterval;
+    const periods = this._typedNeighborPeriods;
+    for (let c = 1; c < periods.length; c++) if (periods[c] > longest) longest = periods[c];
+    const spread = this._neighborRefreshSpread !== REFRESH_SPREAD_NONE && cap > 0;
+    this._scheduleReuseCap = spread ? Math.min(0xffff, cap + longest) : cap;
   }
 
   /**
@@ -1797,7 +2011,7 @@ class SpatialWorker extends AbstractWorker {
     const skinFrac = this._neighborReuseSkin;
     const tickInterval = this._neighborTickInterval;
     const nextTick = this._entityNeighborNextTick;
-    const maxReuseFrames = this._maxReuseFrames;
+    const scheduleReuseCap = this._scheduleReuseCap;
     const framesSinceBuild = this._entityFramesSinceBuild;
     const candCountOf = this._candidateCountOf;
     const neighborData = Grid.neighborData;
@@ -1910,7 +2124,7 @@ class SpatialWorker extends AbstractWorker {
       if (
         scheduleSkipRebuild &&
         candCountOf[entityA] > 0 &&
-        framesSinceBuild[entityA] < maxReuseFrames
+        framesSinceBuild[entityA] < scheduleReuseCap
       ) {
         this.neighborsReusedThisFrame++;
         framesSinceBuild[entityA]++;

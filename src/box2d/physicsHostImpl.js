@@ -19,6 +19,19 @@
   var MAX_POLYGON_VERTICES = 8;
   // This realm's time origin, read once (N-158: each read of performance.timeOrigin makes a heap number in Chrome).
   var TIME_ORIGIN = typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0;
+  // SST-0 / SST-12: this worker's load marks, on the clock every thread shares (a classic script cannot import
+  // src/util/loadMarks.js): posted with the engine block's answer and with the ready message.
+  // weedjsPost.js starts the list (the worker's origin, its own start, its siblings loaded).
+  var loadMarks = (global.__weedPhysicsLoadMarks || []).concat('host evaluated', TIME_ORIGIN + performance.now());
+  global.__weedPhysicsLoadMarks = null;
+  function loadMark(name) {
+    loadMarks.push(name, TIME_ORIGIN + performance.now());
+  }
+  function takeLoadMarks() {
+    var out = loadMarks;
+    loadMarks = [];
+    return out;
+  }
 
   // Defaults and the validator: physicsConfigImpl.js, loaded by weedjsPost.js (N-15).
   var PhysicsConfig = global.WeedPhysicsConfig;
@@ -588,7 +601,8 @@
   };
 
   function reportReady() {
-    self.postMessage({ msg: 'workerReady', worker: 'PhysicsHost' });
+    loadMark('ready');
+    self.postMessage({ msg: 'workerReady', worker: 'PhysicsHost', loadMarks: takeLoadMarks() });
   }
 
   // bm6-memory-start
@@ -786,6 +800,8 @@
         ((state.config.spatial && state.config.spatial.numberOfSpatialWorkers) || 1) +
           ((state.config.logic && state.config.logic.numberOfLogicWorkers) || 1) + 3 + (s.numberOfPhysicsWorkers | 0),
       ),
+      // E-322: Box2D's awake bodies back in body id order every this many steps (0: never).
+      awakeReorderInterval: s.awakeReorderInterval,
       maxBodies: maxBodies,
       entityCount: entityCount,
       subSteps: s.subStepCount,
@@ -1030,6 +1046,7 @@
         sleeping: state.sleepingEnabled !== false,
         hitEventThreshold: state.settings.hitEventThreshold,
         publishContactRing: (state.config.physics || {}).publishContactRing !== false,
+        awakeReorderInterval: state.settings.awakeReorderInterval,
       });
     }
   }
@@ -1474,9 +1491,16 @@
     var whenReady = typeof global.weedjsWhenModuleReady === 'function'
       ? global.weedjsWhenModuleReady
       : function (cb) { cb(); };
+    loadMark('block asked');
     whenReady(function () {
+      loadMark('module ready');
       var memory = typeof Module !== 'undefined' ? Module.wasmMemory : null;
       var raw = 0;
+      // SST-12: the heap's break before the block (sbrk(0); dlmalloc never trims, so it only rises). Memory past it was
+      // never written, and a WebAssembly memory starts zeroed, so only the part of the block below it needs zeroing.
+      var freshFrom = typeof Module !== 'undefined' && typeof Module._weedjs_memory_peak_bytes === 'function'
+        ? Module._weedjs_memory_peak_bytes() >>> 0
+        : 0;
       if (memory && bytes > 0 && !state.engineBlockRaw && typeof Module._malloc === 'function') {
         try {
           raw = Module._malloc(bytes + 64);
@@ -1485,13 +1509,17 @@
         }
       }
       if (!raw) {
-        self.postMessage({ msg: 'engineBlock', memory: null, byte: 0, bytes: 0 });
+        self.postMessage({ msg: 'engineBlock', memory: null, byte: 0, bytes: 0, loadMarks: takeLoadMarks() });
         return;
       }
       var byte = (raw + 63) & ~63;
-      new Uint8Array(memory.buffer, byte, bytes).fill(0);
+      loadMark('block malloc');
+      // 440 ms of a Predator start went to zeroing a block that was already zero (the fill also committed every page).
+      var dirtyEnd = freshFrom > 0 ? Math.min(byte + bytes, freshFrom) : byte + bytes;
+      if (dirtyEnd > byte) new Uint8Array(memory.buffer, byte, dirtyEnd - byte).fill(0);
+      loadMark('block zeroed');
       state.engineBlockRaw = raw;
-      self.postMessage({ msg: 'engineBlock', memory: memory, byte: byte, bytes: bytes });
+      self.postMessage({ msg: 'engineBlock', memory: memory, byte: byte, bytes: bytes, loadMarks: takeLoadMarks() });
     });
   }
 

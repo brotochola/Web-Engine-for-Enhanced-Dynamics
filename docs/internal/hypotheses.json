@@ -16988,12 +16988,12 @@
     {
       "id": "E-322",
       "title": "Box2D's awake body set is in random spatial order: civilians spawn at uniform random positions and sleep/wake swap-removes scramble it further",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "mixed",
+      "statusText": "mixed 2026-11-18: the mean wins, the tail pays the reorder's step; next, the reorder on the worker pool",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Read (R-1101): every id order is spatially random (predatorScene.js spawns); E-309's ablation: ids numbered in home-cell order cut spatial's frame 8 %. Gain unknown, possibly 5-15 % of physics.",
+      "result": "Mixed 2026-11-18 (R-1471, R-1473): Box2D's awake set re-sorted by body id every N steps; Predator crowd 2.5 physics mean -8.0 % (N 30) and -6.8 % (N 120), p99 17.4 -> 18.6 / 19.1 ms (the reorder's 6.5 ms step); merged off by default (physics.awakeReorderInterval).",
       "next": "Dump the coherence once; a harness ceiling with Morton-order against random spawn order. If it pays: every N steps permute bodySims and bodyStates and remap localIndex and encodedBodySim through a table; sort each non-overflow colour by body index (no dynamic body repeats within a colour: bit-identical solve; event and moved-list order change); try slot order and the tree's DFS-leaf order as keys.",
       "refs": [
         "EXECUTION_PLAN.md#E-322"
@@ -17009,9 +17009,10 @@
         "R-1231",
         "R-1236",
         "R-1238",
-        "R-1240"
-      ],
-      "rank": 2
+        "R-1240",
+        "R-1471",
+        "R-1473"
+      ]
     },
     {
       "id": "E-323",
@@ -17135,12 +17136,12 @@
     {
       "id": "E-328",
       "title": "A second spatial worker that starts on logic's frame-end bell: R-1035's two workers cut spatial 32 % but cost logic 8 % on shared cores",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "mixed",
+      "statusText": "mixed 2026-11-18: merged off by default (spatial.startOn 'vsync')",
       "date": "2026-11-15",
       "area": "spatial",
       "kind": "speed",
-      "result": "Read (R-1104): rows are read two logic frames later and Box2D rewrites Transform only at its finalize, so spatial1 can wait on chain[2] (notified, >= 1 ms) and run from about 7 to 14.3 ms, when cores are free; the particle worker could do the same. At crowd 2.5 the machine is nearly idle from about 11 to 16.7 ms.",
+      "result": "Mixed 2026-11-18 (R-1474, R-1476): spatial.startOn 'logicDone' cuts Predator's spatial own work 17 % (two workers, crowd 2.5) but Boids' capacity falls 91 000 -> 70 000; merged, 'vsync' by default, the guide says when to try it.",
       "next": "E-310's sitting (crowd 2.5, spatialWorkers=2) with spatial1 gated on the bell, judged on spatial and logic; a fallback start time if logic is late. Rows at the ownership boundary see the other worker's cells a frame older; particles a frame later.",
       "refs": [
         "EXECUTION_PLAN.md#E-328"
@@ -17151,9 +17152,10 @@
       ],
       "records": [
         "R-1104",
-        "R-1236"
-      ],
-      "rank": 18
+        "R-1236",
+        "R-1474",
+        "R-1476"
+      ]
     },
     {
       "id": "E-329",
@@ -20148,13 +20150,13 @@
     },
     {
       "id": "E-476",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-16",
       "area": "spatial",
       "kind": "speed",
       "title": "Spatial's long frames are periodic: E-200's typed refresh gives each class only T phases (tickBucketPhase(i, T)) inside a refresh period P = ceil(neighborTickInterval / T) x T, so a class's whole refresh lands on T frames of every P (civilians T 4, P 16: 4 frames heavy, 12 light); at Predator crowd 2.5 by night spatial runs 3 to 4 ms on some frames and 28 to 46 ms on others in a 32-frame cycle (lag-32 autocorrelation 0.68), p99 37.9 ms",
-      "statusText": "found 2026-11-16 from every frame's slots over 10 s (runFramePhase's samples.json, 9ebebff7), after frameTotals showed spatial's tail (R-1219)",
-      "result": "2026-11-16 (R-1242): the spread halves slow frames, raises spatial's mean 12.6 % (two bursts: -40 % and +5.9 %), does not raise capacity; on replay spatial's own work is unchanged (R-1239), so the rise comes from running beside logic and physics. Two sittings 2026-11-16 (R-1233): spreading the refresh halves spatial's long frames but raises its mean: interleaved +7.7 % (4/4 worse), by contiguous blocks +11.5 % (4/4 worse); not merged (branch opt/e476-spread). Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 600 frames: spatial0 p50 8.7, p90 16.2, p99 37.9, max 47.0 ms; autocorrelation 0.68 at lag 32 (0.45 / 0.44 at 31 / 33); per 32-frame row about 15, 8, 3-4, 7-9, 13-15, then 28-46 ms on frames 20-22, then 3-5. Physics has no period (lag-1 0.27; its tail is contention, R-1223), pre-render and logic none either.",
+      "statusText": "kept 2026-11-18, on by default (ebd086bf), merged into dx/startup (f0826638)",
+      "result": "Kept 2026-11-18 (R-1474, R-1475): a typed class's neighbour refresh spread over its period by id blocks, and kept lists rebuilt on their own refresh frame; Predator crowd 2.5 spatial p99 16.1 -> 8.7 ms, capacity crowd 1.6 -> 2.4; spatial.neighborRefreshSpread 'idBlocks' by default.",
       "next": "Find what slows spatial when its work is spread: a replay with a second thread reading the published rows (cross-core lines); the spread with E-319's spin off (cores freed); WPR counters at TotalIssues 100 000. Then a spread that keeps the mean, judged by capacity (several searches a side: one search moves ~10 %).",
       "refs": [],
       "aliases": [
@@ -20168,9 +20170,10 @@
         "R-1237",
         "R-1239",
         "R-1240",
-        "R-1242"
-      ],
-      "rank": 10
+        "R-1242",
+        "R-1474",
+        "R-1475"
+      ]
     },
     {
       "id": "N-239",
@@ -21375,7 +21378,7 @@
       "id": "SST-10",
       "title": "The start-up leftovers the waterfall shows: circle patterns per spatial worker, registries and flowfields rebuilt in every worker, logic's class setup after box2dReady, pool fills, tilemap pages at preload",
       "status": "running",
-      "statusText": "a first part 2026-11-18 (R-1457)",
+      "statusText": "a first part 2026-11-18 (R-1457); the flowfields shared (R-1479)",
       "date": "2026-11-17",
       "result": "",
       "next": "Each only if SST-0 shows it.",
@@ -21389,7 +21392,8 @@
       ],
       "records": [
         "R-1251",
-        "R-1457"
+        "R-1457",
+        "R-1479"
       ]
     },
     {
@@ -23267,7 +23271,8 @@
         "R-1361",
         "R-1445",
         "R-1453",
-        "R-1458"
+        "R-1458",
+        "R-1472"
       ],
       "result": "Fixed 2026-11-18 (7a4cdafe, R-1453): bisected to E-504 (d9bf2261); painting a just-uploaded picture into the cache's target slowed its later uploads for good; renderer 40.3 -> 12.7 ms, the barrio's cached floor kept.",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23289,7 +23294,8 @@
         "R-1349",
         "R-1361",
         "R-1445",
-        "R-1481"
+        "R-1481",
+        "R-1478"
       ],
       "result": "Not a regression (R-1481): the kernel's contended case times worker start-up when main's workers, loading a bigger module graph, take over its fixed 300 ms to start; with all 3 ready main claims at v0.14.0's speed (-3 %). The harness should wait for a ready count.",
       "next": "Make audioSlotMicrobench's contended case wait until all its workers report ready (a shared ready count) instead of a fixed 300 ms (tests/bench only), then read the scoreboard row again.",
@@ -23310,7 +23316,8 @@
         "R-1349",
         "R-1361",
         "R-1445",
-        "R-1482"
+        "R-1482",
+        "R-1472"
       ],
       "result": "Not a regression (R-1482): on the ASUS the renderer's own work fell 1.426 -> 0.910 ms and frames drawn rose 30 -> 42 fps; the scoreboard judged raw STEP_MS, which holds the queue wait (N-311).",
       "next": "Nothing for the engine. The scoreboard reading STEP - WAIT (N-311) clears the row.",
@@ -23320,7 +23327,7 @@
       "status": "answered",
       "date": "2026-11-18",
       "title": "meshFillMovingScene's renderer costs 29 % more than v0.14.0's on the ASUS, though its kernel got 46 % faster",
-      "statusText": "answered on the ASUS 2026-11-18 (job 0898f): the renderer's own work is lower on main; raw STEP_MS holds the queue wait"
+      "statusText": "answered 2026-11-18: the scoreboard read the renderer's queue wait in its raw STEP_MS (R-1472 on the main PC, N-311 fixed the scoreboard); on the ASUS the renderer's own work is lower on main (job 0898f, R-1482)"
     },
     {
       "refs": [],
@@ -23330,17 +23337,19 @@
       "records": [
         "R-1349",
         "R-1361",
-        "R-1445"
+        "R-1445",
+        "R-1472",
+        "R-1483"
       ],
-      "result": "ASUS scoreboard 0895: logic0 STEP_MS +21.6 % (FAIL row), load OK",
-      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "result": "Not a regression (R-1483): logic's own work 0.068 -> 0.063 ms on the ASUS; the scoreboard judged raw STEP_MS, which holds the wait (N-311). The row does about 0.07 ms of work a frame, far under any floor.",
+      "next": "Nothing for the engine. N-311 (the scoreboard reads STEP - WAIT) clears the row; raising its load knob would let it judge QueryAABB at all.",
       "id": "N-295",
       "kind": "speed",
       "area": "logic",
-      "status": "open",
+      "status": "answered",
       "date": "2026-11-18",
       "title": "queryAabbStressScene's logic costs 22 % more than v0.14.0's on the ASUS",
-      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+      "statusText": "answered on the ASUS 2026-11-18 (job 0898g): logic's own work is the same; raw STEP_MS holds the wait"
     },
     {
       "refs": [],
@@ -23812,16 +23821,18 @@
     },
     {
       "records": [
-        "R-1452"
+        "R-1452",
+        "R-1470",
+        "R-1500"
       ],
       "refs": [],
       "id": "SST-12",
       "title": "Box2D's start on the critical path: the physics worker answers its block request 1.1 s (Predator) to 1.6 s (the barrio) after loadScene, with the page thread free",
-      "status": "open",
+      "status": "running",
       "kind": "speed",
       "area": "load",
       "date": "2026-11-18",
-      "statusText": "found 2026-11-18 by the atlas items' waterfall (R-1452)"
+      "statusText": "a first part 2026-11-18 (R-1470); the siblings' load read (R-1500): about 100 ms in the barrio only while the atlas and the workers' scripts end with it"
     },
     {
       "records": [
@@ -23835,6 +23846,49 @@
       "area": "load",
       "date": "2026-11-18",
       "statusText": "found 2026-11-18 by the atlas items' waterfall (R-1452)"
+    },
+    {
+      "records": [
+        "R-1472",
+        "R-1477"
+      ],
+      "refs": [],
+      "id": "N-311",
+      "title": "runScoreboard judges a row's worker by its raw STEP_MS, waits included, where HOW_WE_MEASURE's primary is STEP_MS - WAIT_MS: meshFillMoving and queryAabb read as regressions against v0.14.0 that were the frame chain's waits",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-18",
+      "statusText": "fixed 2026-11-18 (aaa64eb4), on dx/startup",
+      "result": "Fixed 2026-11-18 (R-1477): measureLib's per-worker keys are each worker's own work; tests/node/scoreboardOwnWork.test.js."
+    },
+    {
+      "records": [
+        "R-1501"
+      ],
+      "refs": [],
+      "id": "SST-14",
+      "title": "In a source build every worker evaluates the scene's module and through /src/index.js the page's engine graph: 77 to 93 modules, 1.0 to 1.1 MB on top of its own 165 to 220 (scene.js and its buffers, GameEngine, DebugUI's panels), about 330 ms of each worker's start",
+      "status": "open",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-18",
+      "statusText": "found 2026-11-18 reading SST-12's waterfalls (R-1501)",
+      "next": "Load DebugUI's panels, canvas renderers and tools when the UI opens (page-only, never needed by the first frames); time logic's boot scripts phase with loadWaterfall; then see whether Scene.init's page-only imports can be skipped in workers without delaying the page."
+    },
+    {
+      "records": [
+        "R-1502"
+      ],
+      "refs": [],
+      "id": "N-312",
+      "title": "The barrio demo's preload fetches its floor, traffic and scene file only after the workers are ready (about 200 ms on a warm visit), then loadBarrio spawns its things for 440 ms",
+      "status": "open",
+      "kind": "speed",
+      "area": "demo",
+      "date": "2026-11-18",
+      "statusText": "found 2026-11-18 with load marks in the preload (R-1502); a demo change or an engine API, the owner's call",
+      "next": "Start the three fetches when buenosAiresScene.js loads and await them in preload (demo only), or let a scene list its own files in its assets (an engine API, ask the owner); then read loadBarrio's 440 ms."
     }
   ],
   "records": [
@@ -38020,6 +38074,178 @@
       "title": "meshFillMoving on the ASUS, STEP - WAIT: the renderer's own work 1.426 -> 0.910 ms (-36 %) and drawn fps 30.0 -> 41.9 from v0.14.0 to main; the scoreboard's +29 % was the queue wait inside the step",
       "verdict": "note",
       "text": "ASUS lab job 0898f (22:53-23:10), runPredatorAbab on meshFillMovingScene, v0.14.0 (A) against origin/main (B), each\nits whole revision (--full-rev, the pool worktrees), headless as the scoreboard ran it, 4 pairs, HD 620.\n\n| Pair | v0.14.0 renderer STEP_MS (no wait in its step) | main STEP_MS | main WAIT_MS | main STEP - WAIT |\n|---|---|---|---|---|\n| 1 | 1.456 | 3.844 | 2.863 | 0.867 |\n| 2 | 1.415 | 3.911 | 2.702 | 0.931 |\n| 3 | 1.517 | 3.996 | 3.216 | 0.888 |\n| 4 | 1.424 | 2.684 | 1.901 | 1.018 |\n\n(main's STEP and WAIT per pair are the exact-frame step and wait the runner prints.)\n\n- Verdict NEUTRAL: the renderer's own work fell from 1.426 to 0.910 ms (-36 %). That is under the 6 ms floor, so it\n  is not judged.\n- Frames drawn rose 30.0 -> 41.9 fps, paired +39.6 %, with no pair drawing fewer frames.\n- Entities processed 6 500 on both sides.\n- Not a regression. Main's raw STEP_MS holds the renderer's wait for its queue, which has sat inside the step since\n  E-198 and N-146. The scoreboard judged raw pixi_STEP_MS, so it read that wait as cost; N-311 has the scoreboard\n  judge STEP - WAIT.\n- This agrees with the main PC's reading (the backlog session): main's own work there is about 0.5 ms, as v0.14.0's\n  whole step was."
+    },
+    {
+      "id": "R-1470",
+      "date": "2026-11-18",
+      "time": "21:58",
+      "timeFrom": "recorded",
+      "title": "SST-12, a first part: the physics worker's load marks, and the engine block zeroed only below Box2D's old heap break: 440 ms of Predator by night's start gone",
+      "verdict": "kept",
+      "text": "**SST-12, a first part (8f43a111): the physics worker's load marks, and the engine block zeroed only below Box2D's old heap\nbreak: 440 ms of Predator by night's start gone.** The physics host is a classic script, so it keeps its own marks\n('host evaluated', 'block asked', 'module ready', 'block malloc', 'block zeroed', 'ready') and posts them with the engine\nblock's answer and its ready message. The block (the render-queue memory the engine's regions live in, hundreds of MB)\nwas zeroed whole after its malloc, committing every page; memory past the heap's break before the malloc (sbrk(0),\nweedjs_memory_peak_bytes: dlmalloc never trims) was never written, and a WebAssembly memory starts zeroed, so only the\npart below that break is filled now (none in practice). Test: sst12EngineBlock (the premise on the shipped module).\n\nReadings, Predator light3d=1&hour=22, warm visits (agents were working: not a sitting): before, 'block malloc' 1 875 ->\n'block zeroed' 2 315 ms after loadScene; after, 1 025 -> 1 025 and 1 048 -> 1 048; Box2D's block reply 2 317 -> 1 026 /\n1 049 ms; first frame 3 144 -> 1 668 / 1 755 ms. What is left of SST-12: the worker's own start, 'physics made' at 10 to\n17 ms to 'host evaluated' at about 1 040 ms, most likely the glue's synchronous importScripts of its siblings in a source\nbuild (the bundle inlines them); the plan's SST-12 says what to try next.",
+      "commits": [
+        "8f43a111"
+      ]
+    },
+    {
+      "id": "R-1471",
+      "date": "2026-11-18",
+      "time": "21:40",
+      "timeFrom": "recorded",
+      "title": "E-322 built in Box2D: the awake set re-sorted by body id every N steps, bit-identical; harness -4.1 % at N = 30 with churn, -0.8 % without, a 6.5 ms one-step spike",
+      "verdict": "kept-kernel",
+      "text": "**E-322 built in Box2D (an agent; weedjs/e322-reorder 4b6dc5b, 8eac8b1 b2World_ReorderAwakeBodies, 8b2fdcc\nb2World_SetAwakeReorderInterval, 65adb15 the export world_set_awake_reorder_interval, 5be3556 the harness): the awake set\nre-sorted by body id every N steps, bit-identical; in the Node crowd harness -4.1 % of the step at N = 30 with churn,\n-0.8 % without, with a 6.5 ms spike in one step each reorder.** The reorder radix-sorts the awake body sims and states\n(skipped when in order), remaps the contact sims' awake indices, sorts the non-touching contacts and every colour but\noverflow by their lower awake body. The key that wins is the body id, not a spatial one: Morton, Hilbert and the tree's\nleaf order made the collide about 10 % faster and the solve about 6 % slower, because the finalize reads b2Body, shapes,\nfat AABBs and islands by id (R-1238's ceiling won with ids, sims and contacts all spatial at once). The harness pose hash\nequals main's for every interval and key (94cc93ed683b6c0f at 8 000 walkers, 39382e9dcbd17c80 at 38 000); a new unit test\n(AwakeReorderTest); both builds and Box2D's tests pass. What changes: local indices, the order of body move events (WeedJS's\nmoved list), and the wasm (423 922 bytes, the setting off costs one integer test a step).\n\nHarness, 38 000 walkers, 4 workers, id key, the reorder world against an identical twin stepped alternately in one\nprocess (separate runs swung 20 to 40 % with other sessions on the machine):\n\n| setup | N | step | with the reorder's cost | rounds won |\n| --- | --- | --- | --- | --- |\n| churn (100 walkers sleep and wake a step) | 30 | -5.8 % | -4.1 % | 4/4 |\n| | 120 | -2.4 % | -2.0 % | 4/4 |\n| | 600 | +0.1 % | +0.2 % | 1/4 |\n| no churn | 30 | -2.3 % | -0.8 % | 4/4 |\n| | 120 | -1.7 % | -1.3 % | 4/4 |\n\nThe reorder costs 4.5 to 7 ms at 38 000 bodies, all in one step: physics' p99 is what limits capacity, so it stays off by\ndefault until Predator crowd 2.5 is read at N = 30 and 120 (mean and p99); moving its gathers and per-colour sorts onto the\nstep's pool would cut the spike 3 to 4 times. Next: the agent merges it with N-253's Box2D and wires physics.awakeReorderInterval.",
+      "commits": [
+        "4b6dc5b",
+        "8eac8b1",
+        "8b2fdcc",
+        "65adb15",
+        "5be3556"
+      ]
+    },
+    {
+      "id": "R-1472",
+      "date": "2026-11-18",
+      "time": "22:05",
+      "timeFrom": "recorded",
+      "title": "N-294 and N-295 answered: meshFillMoving's renderer and queryAabb's logic read worse against v0.14.0 by their waits, not their work (own work about 0.5 ms, as before)",
+      "verdict": "answered",
+      "text": "**N-294 and N-295 answered: the scoreboard's \"regressions\" in meshFillMoving and queryAabb are waits, not work.** On the\nmain PC (dx/startup 09b5a9d4, headless, 6 s + 6 s, 2 runs) meshFillMovingScene's renderer reads STEP_MS 5.582 and 5.448 ms\nwith WAIT_MS 4.995 and 4.930: its own work is about 0.5 ms (p50 0.49), as v0.14.0's whole step was (1.030). The renderer\nnow waits for its queue inside the step (E-198's waits, N-146), and the scoreboard rows judge the raw pixi_STEP_MS /\nlogic0_STEP_MS, waits included, where HOW_WE_MEASURE's primary is STEP_MS - WAIT_MS; queryAabb's logic0 0.187 -> 0.378 ms\nhas the same shape (its wait about 0.15 ms of a 0.18 ms step). Filed N-311 for the scoreboard."
+    },
+    {
+      "id": "R-1473",
+      "date": "2026-11-18",
+      "time": "21:58",
+      "timeFrom": "recorded",
+      "title": "E-322 in Predator crowd 2.5: physics -8.0 % at N = 30 and -6.8 % at N = 120 (0 of 4 worse), its p99 18.6 / 19.1 ms against 17.4: mixed, off by default",
+      "verdict": "mixed",
+      "text": "**E-322 in Predator crowd 2.5: physics' mean 12.826 -> 11.526 ms (-8.0 %, 0 of 4 pairs worse) with the awake reorder\nevery 30 steps and 12.166 (-6.8 %, 0 of 4) every 120; its p99 18.6 and 19.1 ms against 17.4 off (medians of 4, a range of\n15 to 24): mixed.** runMultiArm e322-reorder, A = the branch 56eadb9f with `?awakeReorder` off, arms n30 and n120, physics\nowner, 4 rounds, --pool, crowd=2.5&zoom=0.216, 2026-11-18 21:50 to 21:58, SITTING.lock held. The runner calls both arms\nKEPT (product): spatial -0.6 / +1.0 %, the rest under the floor, load keys within 0.3 %. In Predator the step gains far\nmore than the crowd harness showed (-4.1 % with churn there), but each reorder costs one step about 6.5 ms, serial, and\nat N = 30 that is 20 frames in a 10 s window: the p99 reads it. Capacity is judged on p99, so it stays off by default\n(physics.awakeReorderInterval 0); merged into dx/startup (4b8e5e91) with the key, the Predator knob and the guide's line.\nNext: the reorder's gathers and per-colour sorts on the step's worker pool (the agent's estimate: a 3 to 4 times smaller\nspike), then Predator's capacity with it on.",
+      "commits": [
+        "cced5f5",
+        "a2a4d389",
+        "659f0358",
+        "56eadb9f",
+        "4b8e5e91",
+        "e1bae640"
+      ]
+    },
+    {
+      "id": "R-1474",
+      "date": "2026-11-18",
+      "time": "22:31",
+      "timeFrom": "recorded",
+      "title": "E-328 and E-476 in Predator crowd 2.5 with two spatial workers: together spatial -24.3 % (0 of 4 worse) and its p99 16.1 -> 6.9 ms, long frames 5 to 14 a window -> 0; E-476 alone p99 8.7, E-328 alone the mean only",
+      "verdict": "kept",
+      "text": "**E-328 and E-476 in Predator crowd 2.5 with two spatial workers: together, spatial's own work 6.51 -> 4.95 ms (-24.3 %,\n0 of 4 pairs worse) and its p99 16.1 -> 6.9 ms, frames over the budget 5 to 14 a window -> 0; each alone gives half.**\nrunMultiArm e328-e476, A = opt/spatial-tail f2cbdc9c (+ the bench page's knobs, 46015f0c) with both keys at their\ndefaults, arms by query on the same build, `--full-rev --pool`, spatial owner, 4 rounds, 10 s + 10 s,\n`crowd=2.5&zoom=0.216&spatialWorkers=2`, 2026-11-18 22:12 to 22:31, the main PC on AC, SITTING.lock held.\n\n| arm | spatial mean (paired) | spatial0 p95 / p99 (median of 4) | long frames a window | other workers |\n|---|---|---|---|---|\n| A (vsync, none) | 6.511 ms | 11.97 / 16.13 | 14, 5, 9, 7 | |\n| `spatialStartOn=logicDone` (E-328) | 5.454 (-17.4 %, 0/4) | 10.25 / 17.69 | 8, 14, 18, 19 | preRender -7.8 %, logic -0.7, physics +0.3 |\n| `spatialRefreshSpread=idBlocks` (E-476) | 5.837 (-7.6 %, 0/4) | 8.00 / 8.71 | 1, 0, 0, 0 | logic +3.3 % (3/4, cv 8 %): REGRESSION by the rules |\n| both | 4.945 (-24.3 %, 0/4) | 6.26 / 6.92 | 0, 0, 0, 0 | preRender -9.8 %, logic +0.6, physics -0.2 |\n\nspatial1 reads the same (A p99 16.50, both 7.06). E-328 alone moves spatial's frame after logic's, off the cores logic\nand pre-render use (its own work cheaper, pre-render's too) but leaves the periodic rebuilds; E-476 alone removes the\nrebuilds (the long frames) but not the contention. Logic's +3.3 % in the idBlocks arm does not show with both keys on\n(logic0 5.58 against 5.79 ms) and the change cannot add work to logic's frame (the same lists, refreshed on other\nframes): read as noise at its cv, to be checked by the capacity runs. Physics' p99 and long frames swing 2 to 75 a\nwindow on every arm alike.",
+      "commits": [
+        "227e0cc4",
+        "47113afc",
+        "f2cbdc9c",
+        "46015f0c"
+      ]
+    },
+    {
+      "id": "R-1475",
+      "date": "2026-11-18",
+      "time": "22:44",
+      "timeFrom": "recorded",
+      "title": "E-476's capacity: Predator crowd 1.6 -> 2.4 (25 600 -> 38 400), physics now its limit; with E-328 too, the knob's maximum 2.5; on by default",
+      "verdict": "kept",
+      "text": "**E-476's capacity: Predator holds crowd 2.4 (38 400 civilians and soldiers) with the refresh spread, against 1.6\n(25 600) without; with E-328 as well, 2.5, the knob's maximum. Predator's limit moves from spatial0's p99 to physics'.**\nrunCapacity, the main PC on AC, one search after another, 2026-11-18 22:31 to 22:44, SITTING.lock held, the scene's\ndefault of one spatial worker, p99 <= 16.7 ms on every worker at >= 59 fps presented and drawn:\n\n| side | capacity | the runs (crowd) |\n|---|---|---|\n| e25a8a70 (base) | 1.6, 25 600 | 1.5 pass, 2.5 FAIL (spatial0 p99 32.4), 1.95 FAIL (25.7), 1.7 FAIL (17.6), 1.6 pass, 1.65 FAIL (18.1), 1.6 pass |\n| opt/spatial-tail, `spatialRefreshSpread=idBlocks` | 2.4, 38 400 | 1.5 pass, 2.5 FAIL (physics p99 22.5), 1.95, 2.2, 2.35, 2.4, 2.4 pass |\n| the same, with `spatialStartOn=logicDone` too | >= 2.5, 40 000 (the knob's max) | 1.5, 2.5, 2.5 pass (physics p99 15.6) |\n\nA grep over tests/results ran by mistake from 22:33 to 22:35, on the base's 1.95 and 1.7 runs: both failed by a wide\nmargin (spatial0 p99 25.7 and 17.6 ms) and its edge 1.6 passed twice after, so the base's capacity stands. Boids\nspreads already (its tickInterval 30 is its period), so E-476 leaves it as it was. Kept, and on by default since\nebd086bf (spatial.neighborRefreshSpread 'idBlocks'); merged into dx/startup (f0826638). The tests that documented the old\nplacement (E-200's typed stagger) ask for 'none', and the JS reference search reads the worker's schedule cap.",
+      "commits": [
+        "ebd086bf",
+        "f0826638"
+      ]
+    },
+    {
+      "id": "R-1476",
+      "date": "2026-11-18",
+      "time": "22:53",
+      "timeFrom": "recorded",
+      "title": "E-328's capacity in Boids: 91 000 -> 70 000 boids (-23 %) with spatial on logic's frame end; Predator gains (spatial -17 %): off by default",
+      "verdict": "mixed",
+      "text": "**E-328's capacity in Boids: 70 000 boids with spatial starting on logic's frame end, against 91 000 on the vsync\n(-23 %). Off by default; Predator gains from it (spatial's own work -17 %, R-1474), Boids loses.** runCapacity,\n`--start 85000 --growth 1.1`, the main PC on AC, 2026-11-18 22:44 to 22:53, SITTING.lock held:\n\n| side | capacity | the runs (boids) |\n|---|---|---|\n| e25a8a70 (base) | 91 000 | 85 000 pass, 94 000 pass, 103 000 FAIL (spatial0 p99 23.5), 98 000 FAIL (spatial1 37.5), 94 000 FAIL (44.4), 89 000, 91 000, 91 000 pass |\n| opt/spatial-tail, `spatialStartOn=logicDone` | 70 000 | 85 000 FAIL (spatial1 p99 24.4), 77 000 FAIL (18.6), 70 000 pass, 73 000 FAIL (spatial0 19.0), 70 000 pass |\n\nIn Boids logic's frame is long next to spatial's, so a spatial frame that waits for it has less of the vsync left and\nits tail passes the budget sooner; in Predator logic ends at about 7 ms and spatial's frame moves off the cores logic and\npre-render use. Predator's capacity with both keys reached the knob's maximum (2.5, R-1475), so E-328's own share there\nis not read. spatial.startOn stays 'vsync' by default; the guide (SPATIAL_HASHING.md) says when 'logicDone' helps and\nto measure the scene.",
+      "commits": [
+        "227e0cc4",
+        "47113afc",
+        "f0826638"
+      ]
+    },
+    {
+      "id": "R-1477",
+      "date": "2026-11-18",
+      "time": "23:00",
+      "timeFrom": "recorded",
+      "title": "N-311 fixed: the scoreboard's worker rows judge STEP_MS less WAIT_MS (plus QUERY_WAKE_MS on physics), as every sitting does",
+      "verdict": "kept-hygiene",
+      "text": "**N-311 fixed: the scoreboard's worker rows judge each worker's own work, STEP_MS less WAIT_MS (plus QUERY_WAKE_MS on\nphysics), from the sampled averages on both sides, as HOW_WE_MEASURE's primary and runPredatorAbab do.** aaa64eb4:\nmeasureLib's extractMetrics (exported for its test) computes `<worker>_STEP_MS` that way and picks the busiest spatial\nworker by its own work; WAIT_MS, the per-worker waits and physics_loadPct (the raw step's share) stay. A revision that\npublishes no WAIT_MS reads its whole step, which is what it worked. tests/node/scoreboardOwnWork.test.js reads\nmeshFillMoving's renderer of R-1472 (STEP 5.582, WAIT 4.995) as 0.587 ms. The keys keep their names: runPredatorAbab's\n`<kind>_STEP_MS` is the own work already. Not re-run in a scoreboard sitting; the next one reads N-294's and N-295's\nrows with it.",
+      "commits": [
+        "aaa64eb4"
+      ]
+    },
+    {
+      "id": "R-1478",
+      "date": "2026-11-18",
+      "time": "23:03",
+      "timeFrom": "recorded",
+      "title": "N-293's microbench: the contended case starts its timer when every contender is ready, not after a fixed 300 ms (the ASUS's finding, R-1481)",
+      "verdict": "kept-hygiene",
+      "text": "**N-293's microbench fixed: audioSlotMicrobench's contended case starts its timer when its contenders are past their\nwarm-up, not after a fixed 300 ms.** The ASUS session found it (R-1481): on its disk main's workers, with a larger module\ngraph, were sometimes not ready after 300 ms, so the timed window held their start-up (30 to 42 k ops/s with 0 to 2\nready, 71 635 with all 3, v0.14.0 73 907). ce7b158e: each contender adds to a ready count after its 200 warm-up calls,\nand the main thread polls it every millisecond until all are ready (a 60 s deadline throws). On the main PC the case reads\n158 151 calls/s with every contender ready (one run, 2026-11-18 23:03). A tools fix: the kernel itself was not a\nregression.",
+      "commits": [
+        "ce7b158e"
+      ]
+    },
+    {
+      "id": "R-1479",
+      "date": "2026-11-18",
+      "time": "23:05",
+      "timeFrom": "recorded",
+      "title": "SST-10, the flowfields: static flowfields in shared memory; the barrio's init messages 205 -> 53 ms, its warm first frame about 2.83 -> 2.66 s",
+      "verdict": "kept",
+      "text": "**SST-10, the flowfields: the barrio's page sent its ten workers' init messages in 205 ms, now 53 ms; its first frame\non a warm visit about 2.83 -> 2.66 s.** A probe (timing each init postMessage, and a structured clone of each key of the\ninit data) read about 20 ms per worker's message (the renderer's 38 ms), most of it `staticFlowfields`, whose Int8Array\ncells each message copied (23 ms for one clone; spritesheetMetadata 7.8 ms, the rest under 2 ms). dd8f11e8:\nNavGrid.loadStaticFlowfields copies a field's cells into a SharedArrayBuffer once on the page, so every init message\nshares them (the workers only read them, and register any Int8Array as it comes); one copy in memory instead of ten.\nloadWaterfall on Buenos Aires `hour=22`, source, 2 runs, cold and warm, 2026-11-18 23:05: `init data` to `init sent`\n53 ms warm (205 before, the probe sitting at 22:00), 62 cold (196); first frame warm 2 637 and 2 684 ms (2 879 and 2 770\nbefore). Predator by night has no static flowfield. spritesheetMetadata goes to every worker too, but spatial, physics\nand particle code read the registry as well (particleEmitter, collider), so it is left as is.",
+      "commits": [
+        "dd8f11e8"
+      ]
+    },
+    {
+      "id": "R-1500",
+      "date": "2026-11-18",
+      "time": "22:05",
+      "timeFrom": "recorded",
+      "title": "SST-12's second part, read: the physics worker's 16 siblings take 760 to 1 335 ms of a source start, but in Predator it ends with the atlas and the workers' scripts; the parallel load waits",
+      "verdict": "note",
+      "text": "**SST-12's second part, read: the physics worker spends 760 to 880 ms (Predator by night) and 1 335 ms (the barrio) of\na source build's start on its 16 sibling scripts, one synchronous importScripts after another; but in Predator it now\nends with the atlas and the workers' scripts, so a parallel load would gain there only once those come down too.**\n4f2cd68f marks weedjsPost.js's start and its siblings loaded (with the worker's origin). loadWaterfall, source, Predator\n`light3d=1&hour=22` 3 runs and the barrio `hour=22` 2 runs, cold and warm, 2026-11-18 21:35 to 22:05:\n\n| ms after loadScene (warm, median) | Predator | the barrio |\n|---|---|---|\n| physics: worker origin, weedjsPost started, siblings loaded | 44, 241, 1 003 | 61, 398, 1 733 |\n| the engine block answered (`box2d block`) | 1 040 | 1 819 (1 296 in a later sitting) |\n| the atlas branch done | 1 090 | 1 626 (1 210) |\n| logic0's boot scripts done | 1 076 | 1 901 |\n\nOne mark per sibling (a probe, not kept): 10 to 175 ms each, not in proportion to size (the 31 KB command ring 110 to\n175 ms, a 6 KB file 7 to 46), the latency of a request among the ~2 000 a source start makes (435 different files:\nevery worker fetches its own 160 to 220 modules, the shared ones 7 times a visit; the bench server answers in 1.3 ms at\nthe median). Serving the scripts cacheable (an experiment, max-age, not kept) cut the siblings to 508 ms and the atlas\nworker's modules 674 -> 485 ms, but logic's modules stayed at about 700 ms and the first frame did not move (warm 1.76\nagainst 1.60 s, noisy): the floor of a source start is the workers' own module and script evaluation (SST-14), with the\natlas (SST-13) and physics just under it. So the parallel sibling load (fetch them at once in an entry script, then run\nthem in order from blob URLs, as the bundle does) waits: it would take about 100 ms off the barrio's warm start, where\nphysics still ends last, and nothing off Predator's.",
+      "commits": [
+        "4f2cd68f",
+        "e1c31489"
+      ]
+    },
+    {
+      "id": "R-1501",
+      "date": "2026-11-18",
+      "time": "22:20",
+      "timeFrom": "recorded",
+      "title": "SST-14 filed: every worker of a source build evaluates the page's engine graph through the scene module (93 modules, 983 KB in Predator)",
+      "verdict": "note",
+      "text": "**SST-14 filed: in a source build every worker evaluates the scene's module, and through it `/src/index.js`'s page graph,\non top of its own: 93 modules and 983 KB in Predator (77 and 1.1 MB in the barrio).** A static import graph\n(scratch tool, 2026-11-18): logicWorker.js pulls 171 modules (2.2 MB), spatialWorker.js 165, pixiWorker.js 220 (3.7 MB);\nthe worker's boot loads the scene module first (collectWorkerScriptsToLoad), whose entity scripts `import WEED from\n'/src/index.js'`, which adds scene.js (121 KB) and what Scene.init uses (sceneSharedBuffers 71 KB, gpuPackClient 43,\nthe queue and visibility memories), gameEngine.js and sceneWorkerBootstrap.js, saveGame, and DebugUI with its panels,\ncanvas renderers and tools (about 19 modules, 260 KB). Logic's `boot scripts` phase takes about 330 ms after its modules\nin Predator by night warm (735 -> 1 076 ms), ending with the atlas and physics (SST-12, R-1500). DebugUI is page-only and\nnever needed by the first frames: its panels and renderers could load when the UI opens. Scene.init's buffers are needed\non the page before the first frame, so they would have to be imported early there and only skipped in workers. The\nbundle evaluates its workers from one blob each, so this is a source build's cost: the developer reloading a scene."
+    },
+    {
+      "id": "R-1502",
+      "date": "2026-11-18",
+      "time": "22:10",
+      "timeFrom": "recorded",
+      "title": "N-312 filed: the barrio's preload fetches its files after the workers are ready (200 ms), then loadBarrio takes 440 ms",
+      "verdict": "note",
+      "text": "**N-312 filed (demo): the barrio's preload fetches its floor, its traffic and its scene file only once the workers are\nready, then spends 440 ms in loadBarrio.** Load marks in BuenosAiresScene.preload (a probe, not kept), loadWaterfall\n`hour=22`, source, 2 runs, warm, 2026-11-18 22:10: workers ready 1 743 ms after loadScene, the three files fetched\n1 944, floor and traffic filled 1 956, loadBarrio done 2 395 (its things spawned), cars 2 402, people 2 409, preload 2 409;\ncreate and createNewGame then 2 410 -> 2 701. The fetches (about 200 ms) could start when the scene's module loads and be\nawaited in preload, off the engine's load; or the engine could fetch a scene's own files with its assets (an API choice\nfor the owner). loadBarrio's 440 ms is the next thing to read there."
+    },
+    {
+      "id": "R-1483",
+      "date": "2026-11-18",
+      "time": "23:30",
+      "timeFrom": "recorded",
+      "title": "queryAabb on the ASUS, STEP - WAIT: logic's own work 0.068 -> 0.063 ms from v0.14.0 to main; the scoreboard's +22 % was the wait inside the step",
+      "verdict": "note",
+      "text": "ASUS lab job 0898g (23:12-23:30), runPredatorAbab on queryAabbStressScene, v0.14.0 (A) against origin/main (B), each\nits whole revision (--full-rev, the pool worktrees), headless as the scoreboard ran it, 4 pairs, HD 620, owner logic.\n\n| Pair | v0.14.0 logic step / wait / own (ms) | main logic step / wait / own (ms) |\n|---|---|---|\n| 1 | 0.369 / 0.301 / 0.068 | 0.577 / 0.514 / 0.063 |\n| 2 | 0.334 / 0.269 / 0.065 | 0.382 / 0.319 / 0.063 |\n| 3 | 0.357 / 0.290 / 0.067 | 0.446 / 0.385 / 0.061 |\n| 4 | 0.368 / 0.298 / 0.070 | 0.540 / 0.475 / 0.065 |\n\n(The runner's exact-frame step and wait.)\n\n- Verdict NEUTRAL (below floor): logic's own work 0.068 -> 0.063 ms. BODY_COUNT 201 on both sides.\n- Not a regression. The scoreboard's +21.6 % on raw logic0_STEP_MS is the wait inside the step, as in N-294 (R-1482).\n  The scoreboard reading STEP - WAIT (N-311) clears this row too.\n- The row is far under any floor: about 0.07 ms of work a frame. Its load knob would have to rise a lot before it\n  could judge QueryAABB's cost."
     }
   ],
   "leads": [

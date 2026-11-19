@@ -25,6 +25,11 @@
  * code; V8 makes a script's code cache on its second load and uses it from the third, so time code caching with
  * --visits cold,warm,hot.
  *
+ * --root <dir> serves another tree (its src/, demos and bench page) instead of this one; --t0 prepare times every
+ * visit from the bench page's prepare call (its module imports, then loadScene) instead of the loadScene mark, so a
+ * revision from before the load marks (SST-0) compares with one that has them: a waterfall of the old side has only its
+ * first frame and the workers' longest steps.
+ *
  * --visits: `cold` is a fresh browser context (empty HTTP and code caches); `warm` is a second load of the same page in
  * that context (its caches filled by the cold visit). Each run makes the visits in that order. Medians over runs are
  * printed for the milestones. From Git Bash set MSYS_NO_PATHCONV=1 (the scene path) and give --output a Windows path.
@@ -68,6 +73,7 @@ export const MILESTONES = [
   'assets',
   'init sent',
   'workers',
+  'layers content',
   'preload',
   'create',
   'world',
@@ -98,8 +104,9 @@ function at(list, name) {
  */
 export function waterfall(marks) {
   const main = pairs(marks.main || []);
-  const t0 = at(main, 'loadScene');
-  if (t0 === undefined) throw new Error('no loadScene mark: is this engine older than SST-0?');
+  // --t0 prepare (or an engine without load marks): from the bench page's prepare call, the same clock.
+  const t0 = marks.t0From === 'prepare' ? marks.prepareAt : at(main, 'loadScene') ?? marks.prepareAt;
+  if (!Number.isFinite(t0)) throw new Error('no loadScene mark and no prepare time');
   const workers = {};
   for (const [name, flat] of Object.entries(marks.workers || {})) workers[name] = pairs(flat);
   const rel = (t) => (t === undefined ? undefined : t - t0);
@@ -157,8 +164,8 @@ const fmt = (x) => (Number.isFinite(x) ? x.toFixed(0).padStart(6) : '     -');
 /** In the page: the load marks once the renderer has counted its first frame, else null. */
 function readMarks() {
   const s = window.game && window.game.currentScene;
-  const lm = s && s._loadMarks;
-  if (!lm || !window.__weedFirstFrameAt) return null;
+  const lm = (s && s._loadMarks) || { main: [], workers: {} };
+  if (!s || !window.__weedFirstFrameAt) return null;
   return {
     main: lm.main.slice(),
     workers: JSON.parse(JSON.stringify(lm.workers)),
@@ -223,6 +230,7 @@ async function visitOnce(page, url, opts) {
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 60000 });
   await page.evaluate(watchFirstFrame, RENDERER_FRAMES_F64);
+  const prepareAt = await page.evaluate(() => performance.timeOrigin + performance.now());
   await page.evaluate(
     (o) => window.__WEED_BENCHMARK__.prepare(o),
     {
@@ -249,6 +257,8 @@ async function visitOnce(page, url, opts) {
     await sleep(100);
     marks = await page.evaluate(readMarks);
   }
+  marks.prepareAt = prepareAt;
+  marks.t0From = opts.t0From;
   await sleep(opts.settleMs);
   const steps = await page.evaluate(readLongestSteps);
   return { marks, steps };
@@ -267,6 +277,9 @@ async function main() {
     settleMs: Number(args['settle-ms'] ?? 5000),
     canvasWidth: cw,
     canvasHeight: ch,
+    // --t0 prepare: time every side from the bench page's prepare call (its module imports, then loadScene), so a
+    // revision without load marks compares with one that has them.
+    t0From: args.t0 === 'prepare' ? 'prepare' : 'loadScene',
   };
   const runs = Number(args.runs ?? 3);
   const visits = String(args.visits || 'cold').split(',');
@@ -281,7 +294,9 @@ async function main() {
   if (typeof args.query === 'string' && args.query) qs.push(args.query.replace(/^\?/, ''));
   // --http-cache: the server revalidates with ETags like a static host, so the warm visits keep scripts, wasm and
   // their compiled code; without it every .js is no-store and every warm visit downloads and compiles it again.
-  const server = await createStaticBenchmarkServer(repoRoot, 0, { httpCache: Boolean(args['http-cache']) });
+  // --root: serve another tree (its src/, demos and bench page), e.g. a revision from before the load marks.
+  const serveRoot = args.root ? path.resolve(String(args.root)) : repoRoot;
+  const server = await createStaticBenchmarkServer(serveRoot, 0, { httpCache: Boolean(args['http-cache']) });
   const url = `${server.baseUrl ?? `http://127.0.0.1:${server.port}`}/tests/bench/integratedWorkerBenchmark.html${qs.length ? `?${qs.join('&')}` : ''}`;
   const browser = await chromium.launch({
     channel: 'chrome',
@@ -329,6 +344,10 @@ async function main() {
       if (vals.every((v) => v === undefined)) continue;
       console.log(`  ${fmt(median(vals))}  ${name}`);
     }
+    // The page's other marks (a scene's own, a phase not in MILESTONES yet), in time order.
+    const others = [...new Set(rs.flatMap((x) => x.waterfall.main.map((m) => m.name)))].filter((n) => !MILESTONES.includes(n));
+    const otherRows = others.map((name) => [name, median(rs.map((x) => x.waterfall.main.find((m) => m.name === name)?.ms))]);
+    for (const [name, ms] of otherRows.sort((a, b) => a[1] - b[1])) console.log(`  ${fmt(ms)}  ${name} (other)`);
     console.log(`  ${fmt(median(rs.map((x) => x.navToT0)))}  (loadScene after navigation)`);
     for (const name of Object.keys(last.workers).sort()) {
       console.log(`${name}:`);

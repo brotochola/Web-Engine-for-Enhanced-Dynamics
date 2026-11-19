@@ -853,6 +853,10 @@ export async function reserveBox2dBlock(scene) {
   scene.workers.physics = worker;
   loadMark('physics made');
   scene.box2dBlock = box2dBlockParts(await requestBox2dBlock(worker, plan.bytes), plan);
+  if (worker.__weedLoadMarks) {
+    scene._takeWorkerLoadMarks?.('physics', worker.__weedLoadMarks);
+    worker.__weedLoadMarks = null;
+  }
   return scene.box2dBlock;
 }
 

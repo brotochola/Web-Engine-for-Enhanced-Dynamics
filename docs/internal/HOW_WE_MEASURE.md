@@ -498,7 +498,9 @@ hypothesis that points at the old one (E-123 to E-128 did), and leave the old re
 The feature catalog is [`tests/bench/engineFeatureCatalog.mjs`](../../tests/bench/engineFeatureCatalog.mjs)
 (described in [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)). To claim "this tree is faster than a
 revision" for the engine, `pnpm bench:scoreboard --vs <rev>`: every row kept or a tie within its detection
-limit, none worse or failed. Run it per milestone, not per change.
+limit, none worse or failed. Run it per milestone, not per change. Its rows judge each worker's own work, as
+every sitting does: `<worker>_STEP_MS` there is STEP_MS less WAIT_MS (plus QUERY_WAKE_MS on physics), from the
+sampled averages on both sides (N-311: the raw step read the frame chain's waits as regressions, R-1472).
 
 **Milestone checks** go with the scoreboard, never with a single change:
 
