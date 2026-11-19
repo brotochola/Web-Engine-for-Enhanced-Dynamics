@@ -67,8 +67,8 @@ test('the physics worker is created with its size in its name, on the src and th
     else delete globalThis.window;
   }
   assert.deepEqual(created, [
-    { url: '/src/box2d/box2dWasm.js?v=1', options: { name: 'physics pages=1024 mb=64' } },
+    { url: '/src/box2d/box2dWorkerEntry.js?v=1', options: { name: 'physics pages=1024 mb=64' } },
     { url: 'blob:weed/box2d', options: { name: 'physics pages=2048 mb=128' } },
-    { url: '/src/box2d/box2dWasm.js', options: { name: 'physics pages=768 mb=16' } },
+    { url: '/src/box2d/box2dWorkerEntry.js', options: { name: 'physics pages=768 mb=16' } },
   ]);
 });
