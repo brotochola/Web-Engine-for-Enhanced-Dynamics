@@ -16086,7 +16086,8 @@
         "R-1314",
         "R-1324",
         "R-1335",
-        "R-1494"
+        "R-1494",
+        "R-1495"
       ]
     },
     {
@@ -22356,7 +22357,8 @@
         "R-1404",
         "R-1411",
         "R-1413",
-        "R-1494"
+        "R-1494",
+        "R-1495"
       ]
     },
     {
@@ -39101,6 +39103,15 @@
       "title": "The barrio at night on the HD 620, end of the barrio pass (69d1a10f) against main 8c310e43, new Intel driver: logic -58 %, spatial -63 %, physics -75 %, pre-render -50 %, but drawn 35.2 -> 32.2 fps (GPU-bound; the scene's load changed too)",
       "verdict": "note",
       "text": "ASUS lab job 0899b (11:20-11:45): Buenos Aires at night (hour=22, dayMinutes=0) on the HD 620. 69d1a10f (end of the\nbarrio pass: R-1307's hyp side, 35.9 drawn fps on the old Intel driver) against main 8c310e43 (0.14.46, brought over as a\nbundle). Both sides ran on Intel 31.0.101.2145, headed, 4 pairs, whole revisions, the pool worktrees, owner renderer.\n\n| Worker | 69d1a10f | 8c310e43 | Paired | Pairs worse |\n|---|---|---|---|---|\n| logic | 10.738 ms | 4.254 ms | -58.2 % | 0 of 4 |\n| spatial | 23.624 ms | 7.971 ms | -63.5 % | 0 of 4 |\n| physics | 28.299 ms | 6.573 ms | -74.7 % | 0 of 4 |\n| preRender | 17.214 ms | 7.359 ms | -50.1 % | 0 of 4 |\n| renderer | 7.032 ms | 6.942 ms | +1.1 % | 2 of 4 |\n| drawn | 35.2 fps | 32.2 fps | -8.9 % | 4 of 4 fewer |\n| presented | 58.6 fps | 59.7 fps | (reported) | |\n\nVerdict FAIL (load). The barrio itself changed between the two revisions:\n\n| Load key | 69d1a10f | 8c310e43 | Change |\n|---|---|---|---|\n| BODY_COUNT | 20 094 | 17 094 | -14.9 % |\n| VISIBLE_ENTITIES | 386 | 290 | -24.8 % |\n| GPU_CASTERS | 354 | 278 | -21.5 % |\n| GPU_SHADOW_LIGHTS | 15.1 | 16.0 | +5.8 % |\n\n- **CPU:** every CPU worker fell far more than the 15 % fewer bodies. Logic -58 %, spatial -63 %, physics -75 %,\n  pre-render -50 %: the engine's gain since the barrio pass, on a 2-core laptop. The CPU now has room to spare.\n- **GPU:** the HD 620 draws 8.9 % fewer frames with fewer visible entities and casters. The light pass costs more per\n  frame since 69d1a10f (DX-ONELIGHT's one light system, normal shading, the lamps' halos, the cars' maps), so the\n  barrio is GPU-bound on this iGPU.\n- R-1307 was read on the old driver. The new driver moved no row broadly (R-1487), so the GPU-side cost growth is the\n  scene's."
+    },
+    {
+      "id": "R-1495",
+      "date": "2026-11-19",
+      "time": "11:58",
+      "timeFrom": "recorded",
+      "title": "The barrio's GPU passes on the HD 620, 69d1a10f against 8c310e43: GPU time a frame unchanged (15.6 -> 15.7 ms; lamps' map +0.74 ms, full-res statics +0.53, stage draw -1.03), so R-1494's drawn-frame loss is not GPU time (sync calls a lead)",
+      "verdict": "note",
+      "text": "ASUS lab job 0899c (11:50-11:58): glFrameRecorder --gpu-passes (GPU time per pass, timer queries, 0 disjoint) of\nBuenos Aires at night (hour=22, dayMinutes=0, camera still, 20 s warm-up, 3 s recorded) at 69d1a10f and 8c310e43. HD\n620, Intel 31.0.101.2145. One recording each, to see where R-1494's 8.9 % fewer drawn frames come from.\n\n| Pass (program's uniforms) | 69d1a10f | 8c310e43 |\n|---|---|---|\n| Total GPU a frame | 15.606 ms | 15.743 ms |\n| Stage draw (uTextures) | 9.007 ms, 23 320 inst | 7.979 ms, 20 498 inst |\n| Light pass (uLightData, uShadowMap, ...) | 2.543 ms | 2.295 ms |\n| Lamps' map 4096x512 (uLampTiles) | 1.337 ms, 274 inst | 2.073 ms, 225 inst |\n| Full-res statics/G-buffer 1920x1080 (uMapsLut) | 1.013 ms, 12 815 inst | 1.546 ms, 18 272 inst |\n| Half-res maps 960x540 | 1.273 ms | 1.277 ms |\n| Small 960x540 | 0.433 ms | 0.385 ms |\n| New: 4096x256 (uPoseTable, uLampTiles) | none | 0.181 ms |\n\n- **GPU time a frame is unchanged** (+0.9 %): the stage draw is cheaper (-1.03 ms, fewer instances), the lamps'\n  map +0.74 ms (+55 %), and the full-res statics pass +0.53 ms (+53 %, 43 % more instances).\n- **R-1494's drawn-frame loss (35.2 -> 32.2 fps) is not GPU time.** About 15.7 ms of GPU a frame allows more than the\n  frames drawn. A lead: CPU-GPU sync in the frame. 8c310e43's frame shows fenceSync, getSyncParameter and deleteSync\n  calls. The renderer's frame pacing is another candidate.\n- Single recordings: the per-pass numbers are one sitting's. The lamps' map and the statics pass growth are worth a\n  look in the render work (the HD 620 is not the yardstick: owner, 2026-11-18)."
     }
   ],
   "leads": [
