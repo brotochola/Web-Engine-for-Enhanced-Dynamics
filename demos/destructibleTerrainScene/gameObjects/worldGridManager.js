@@ -600,7 +600,10 @@ export class WorldGridManager extends GameObject {
     const vy = picked.dynamic && RigidBody.vy ? RigidBody.vy[idx] : 0;
     const cx = Transform.x[idx];
     const cy = Transform.y[idx];
-    const vr = Collider.visualRange ? Collider.visualRange[idx] : 80;
+    // The blast reaches 80 px past the rock's corners (its half diagonal).
+    const halfW = Collider.width[idx] * 0.5;
+    const halfH = Collider.height[idx] * 0.5;
+    const blastRadius = Math.sqrt(halfW * halfW + halfH * halfH) + 80;
 
     const world = [];
     ColliderFixture.forEach(idx, (fi) => {
@@ -618,7 +621,7 @@ export class WorldGridManager extends GameObject {
     Box2d.explode({
       x: cx,
       y: cy,
-      radius: Math.max(vr, 48),
+      radius: Math.max(blastRadius, 48),
       impulsePerLength: EXPLODE_IMPULSE,
     });
   }

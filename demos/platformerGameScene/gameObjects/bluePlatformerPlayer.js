@@ -67,7 +67,6 @@ export class BluePlatformerPlayer extends GameObject {
     this.rigidBody.linearDamping = 0.001;
 
     this.collider.radius = 30;
-    this.collider.visualRange = 120;
     this.lightEmitter.shadowRange = 120;
     this.setFixedRotation(1);
     this.platformerCharacterComponent.isItStandingOnPlatform = -1

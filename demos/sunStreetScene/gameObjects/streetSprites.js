@@ -44,7 +44,6 @@ export class StreetHouse extends GameObject {
     this.collider.width = 176;
     this.collider.height = 180;
     this.collider.offsetY = -90;
-    this.collider.visualRange = 120;
     this.setSprite(config.texture);
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1;
@@ -62,7 +61,6 @@ export class StreetTree extends GameObject {
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 10;
-    this.collider.visualRange = 120;
     this.setSprite(config.texture);
     this.setScale(config.scale);
     this.spriteRenderer.anchorX = 0.5;
@@ -103,7 +101,6 @@ export class StreetWalker extends GameObject {
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 8;
-    this.collider.visualRange = 60;
     this.from = config.from;
     this.to = config.to;
     this.direction = config.direction;

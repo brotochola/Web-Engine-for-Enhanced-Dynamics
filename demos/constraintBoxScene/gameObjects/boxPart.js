@@ -30,7 +30,6 @@ export class BoxPart extends GameObject {
         this.collider.radius = radius;
         this.collider.isTrigger = 0;
         this.collider.friction = 11// spawnConfig.friction ?? 0.4;
-        this.collider.visualRange = radius * 3;
         // Same-box siblings share a negative groupIndex (set by ConstraintBox); default 0
         if (spawnConfig.collisionGroupIndex !== undefined) {
             this.collider.collisionGroupIndex = spawnConfig.collisionGroupIndex;

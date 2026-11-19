@@ -74,7 +74,6 @@ export class Car extends GameObject {
         this.collider.radius = 0;
         this.collider.isTrigger = 0;
         this.collider.friction = 0.3;
-        this.collider.visualRange = halfDiag + 200;
 
         this.rigidBody.static = 0;
         // Box2D sets terminal speed with driveForce; yaw settle without per-frame torque damp

@@ -32,6 +32,5 @@ export class CityTree extends GameObject {
 
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = radius;
-    this.collider.visualRange = radius * 10;
   }
 }

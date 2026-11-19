@@ -50,7 +50,6 @@ class WaterBall extends GameObject {
     // into a smooth continuous surface.
     const colliderRadius = 20;
     this.collider.radius = colliderRadius;
-    this.collider.visualRange = colliderRadius * 6;
 
     RigidBody.mass[this.index] *= 0.1;
     RigidBody.invMass[this.index] = 1 / (RigidBody.mass[this.index] || 1);

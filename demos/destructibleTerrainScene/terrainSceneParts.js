@@ -24,7 +24,6 @@ export function spawnTerrainWalls(width, height) {
     width: width + t * 2,
     height: t,
     tint: 0x2d2d2d,
-    visualRange: t,
   });
   Floor.spawn({
     x: width * 0.5,
@@ -32,7 +31,6 @@ export function spawnTerrainWalls(width, height) {
     width: width + t * 2,
     height: t,
     tint: 0x2d2d2d,
-    visualRange: t,
   });
   Floor.spawn({
     x: -t * 0.5 + 8,
@@ -40,7 +38,6 @@ export function spawnTerrainWalls(width, height) {
     width: t,
     height,
     tint: 0x2d2d2d,
-    visualRange: t,
   });
   Floor.spawn({
     x: width + t * 0.5 - 8,
@@ -48,7 +45,6 @@ export function spawnTerrainWalls(width, height) {
     width: t,
     height,
     tint: 0x2d2d2d,
-    visualRange: t,
   });
 }
 

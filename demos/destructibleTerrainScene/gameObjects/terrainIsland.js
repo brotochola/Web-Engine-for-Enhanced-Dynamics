@@ -86,17 +86,10 @@ export class TerrainIsland extends GameObject {
     this.setTileWorld(128);
     this.meshRenderer.visualOutset = 2;
     this.setLayer('terrain');
-    this._refreshVisualRange();
     if (!spawnConfig.isStatic) {
       this.bakeWorldTileToLocal();
       this.setAwake(true);
     }
-  }
-
-  _refreshVisualRange() {
-    const hw = (this.collider.width || 0) * 0.5;
-    const hh = (this.collider.height || 0) * 0.5;
-    this.collider.visualRange = Math.sqrt(hw * hw + hh * hh) + 80;
   }
 
   /**
@@ -109,7 +102,6 @@ export class TerrainIsland extends GameObject {
     if (!local || !local.length) return false;
     if (!applyPolysFlat(this.collider, local, x - this.x, y - this.y)) return false;
     if (MeshRenderer.renderDirty) MeshRenderer.renderDirty[this.index] = 1;
-    this._refreshVisualRange();
     return true;
   }
 
@@ -181,7 +173,6 @@ export class TerrainIsland extends GameObject {
       return;
     }
     if (MeshRenderer.renderDirty) MeshRenderer.renderDirty[idx] = 1;
-    this._refreshVisualRange();
     if (resting) {
       this.setVelocity(0, 0);
       this.angularVelocity = 0;

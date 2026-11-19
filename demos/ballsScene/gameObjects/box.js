@@ -25,9 +25,6 @@ class Box extends GameObject {
   onSpawned(spawnConfig = {}) {
     // Configure RigidBody physics properties (same for all boxes)
     this.rigidBody.linearDamping = 0.001; // Low damping - let boxes settle naturally
-    // Get config from instance
-    const config = this.config || {};
-    const cellSize = config.spatial?.cellSize || 80;
 
     // Set the texture for this sprite
     this.setSprite('box');
@@ -54,10 +51,6 @@ class Box extends GameObject {
     this.collider.width = boxWidth;
     this.collider.height = boxHeight;
     this.collider.radius = 0; // Not used for boxes, but clear it
-
-    // Set visual range for spatial queries (half-diagonal + margin)
-    const halfDiagonal = Math.sqrt(boxWidth * boxWidth + boxHeight * boxHeight) / 2;
-    this.collider.visualRange = halfDiagonal + cellSize;
 
     // Scale sprite to match collision size
     this.spriteRenderer.scaleX = scaleX;
