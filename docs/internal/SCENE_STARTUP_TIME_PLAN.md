@@ -223,7 +223,7 @@ end of `loadScene`): it delays `loadScene`'s promise, so a loading screen that w
 
 ### SST-5 — The atlas: its layout apart from its pixels, off the main thread
 
-- [ ] not started
+- [x] 50097fd1 (step 4), 4cb18456 (steps 1-2), 129ad91e (the twin page), merged 49a206db: R-1452 (mixed: the page thread freed; a cold source build pays the atlas worker's module load, SST-13); step 3, the GPU composition, left (decals and the cache need the CPU atlas)
 
 1. **Layout first.** The layout (rectangles, trims, bases, texels, proxy sheets: the JSON) is all the
    main thread and the workers need to configure. The pixels are needed only by the renderer, which
@@ -243,7 +243,7 @@ on Buenos Aires.
 
 ### SST-6 — The atlas cached automatically (an automatic bake)
 
-- [ ] not started
+- [x] 7f4ca602: R-1452 (Predator by night warm 3 246 -> 2 005 ms); on by default (`assets.atlasCache`), the owner may say otherwise
 
 - **Key:** a hash of the inputs: each source's URL with its bytes' hash (or its validators), the atlas
   options, the atlas format's version.
@@ -273,7 +273,7 @@ on both backends.
 
 ### SST-8 — The workers' code: parsed once, cached between visits
 
-- [ ] not started
+- [x] 223612be, 041381c3, 4f63a9ba (`buildBundle.js --files`): R-1460 (Predator by night cold 5 852 -> 3 542 ms, warm and hot a tie); the single-file bundle stays the default
 
 - **Source builds:** every worker imports the whole `src/` tree by itself: hundreds of requests times 7
   or 8 workers.
@@ -299,7 +299,7 @@ again, and A must match a fresh load (state, image). Measured on menu → scene 
 
 ### SST-10 — What the waterfall shows is left
 
-- [ ] not started
+- [ ] in progress: 5ad53c8d (the decal textures' pixels no longer go to every worker), R-1457
 
 The smaller repeats, each only if SST-0 shows it:
 - circle patterns computed once, not by every spatial worker;
@@ -380,8 +380,31 @@ What it says for the order:
 
 ### SST-11 — The tilemap off the critical path
 
-- [ ] not started
+- [x] cdf471fa: R-1452 (Predator by night tilemaps 1 463 -> 218 ms)
 
 Predator's tilemap (`demos/map_n_flowfield/tilemap2.json`, 15.7 MB) is fetched and parsed on the page in about 1.7 s,
 as long as its atlas. Parse it off the main thread (a worker, or a binary format the bake writes beside the JSON, as the
 flowfields have), and hand the workers what they read. Checked by the same tile data (a hash) and SST-0 on Predator.
+
+
+### SST-12 — Box2D's start off the critical path
+
+- [ ] in progress: 8f43a111 (the physics worker's load marks; the engine block zeroed only below Box2D's old heap break:
+  440 ms -> 0 of Predator by night's start, R-1461)
+
+With the page thread free (SST-4, SST-5), the physics worker's answer to the engine block request became the critical
+path (1.1 s in Predator, 1.6 s in the barrio after loadScene). Its marks (2026-11-18): the host's scripts evaluated
+about 1.0 s after the worker is made, the module ready 5 to 10 ms later, then the block's zeroing (440 ms, now gone).
+What is left is the worker's start itself: in a source build the glue loads its siblings (weedjsPost.js and the 17
+files it pulls) with synchronous importScripts, one after another; the bundle inlines them (Predator by night starts in
+about 1.15 s warm from the bundle against about 2.0 s from source). Next: fetch the siblings in parallel and evaluate
+them in order (as SST-3 does for game scripts), and check where the rest of the second goes with marks inside the glue
+(weed_pre.js and weed_post.js, a Box2D rebuild).
+
+### SST-13 — The atlas worker started earlier
+
+- [ ] not started
+
+In a cold source build the atlas worker evaluates its 22 modules in 1.4 to 1.6 s before it starts (R-1452), longer than
+the page took to pack the atlas itself. Starting it when the engine is imported (not at the scene's assets) would overlap
+that with the page's own module loads; the bundle's blob workers fetch nothing, so it matters for source builds only.
