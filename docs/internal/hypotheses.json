@@ -11689,7 +11689,8 @@
       ],
       "records": [
         "R-1252",
-        "R-1498"
+        "R-1498",
+        "R-1587"
       ]
     },
     {
@@ -39353,6 +39354,15 @@
       "title": "Predator's restart after a GPU loss on the ASUS: back 4 of 4 (WebGL, WebGPU), 7.9 to 8.5 s; restoreSave 2.6-2.8 s leads (the Box2D block's 1.6-2.1 s is the probe's source mode)",
       "verdict": "note",
       "text": "ASUS lab job 0899j (17:25-17:31): Predator's restart after a GPU loss on the low-end machine (i7-7500U 2C/4T, HDD,\nHD 620 on Intel 31.0.101.2145). gpuLossProbe at main b190651d, WebGL and WebGPU, 2 rounds each, warm-up 15 s, headed.\n\n- **The game comes back on the Intel GPU, 4 of 4.** On both backends there is no overlay, the canvas is lit (909 954\n  to 914 411 of 921 600 px) and it changes 99.1 to 99.6 % over the next second. 17 330 to 17 535 entities.\n- **The restart takes 7.9 to 8.5 s** (WebGL 8 446 and 7 919, WebGPU 8 489 and 8 545): 2.3 times the main PC's 3.6 s\n  (R-1528).\n  - Building the save: 0.6 to 0.9 s (instance fields 120 to 181 ms, decals 63 to 126 ms, the save built 393 to 523 ms).\n  - Loading it back: 7.0 to 7.5 s.\n- **Where the load goes, the largest marks (ms, 4 runs):**\n  - restore applied (logic0's restoreSave): 2 625 to 2 835. The main PC's was 1.7 s.\n  - box2d block (reserveBox2dBlock: the physics worker started, Box2D's memory reserved): 1 564 to 2 096. The main\n    PC's was 454.\n  - ready logic0: 654 to 769.\n  - atlas pixels: 390 to 656.\n  - tilemaps built: 70 to 721.\n- **For N-314, the restore leads.** The Box2D block's 1.6 to 2.1 s is gpuLossProbe's source mode (it loads ?src=1): in DX-STARTUP's matrix on this machine (R-1583) the same block takes about 2.5 s from source and 0.25 to 0.36 s from the bundle, warm and cold, so a game restarts in about 1.5 s less than these numbers. Keeping the physics worker across a restart would buy little in a bundle. The restore's 2.7 s is the item N-314 already names.\n- WebGPU's save is ready 845 to 864 ms after the restart begins, WebGL's at 0 ms: on WebGPU the save is built after\n  the loss is seen.\n- **Round 2 WebGL logged that Predator's Flash pool was full** (32 slots) after the restart. Once, not looked into."
+    },
+    {
+      "id": "R-1587",
+      "date": "2026-11-19",
+      "time": "18:02",
+      "timeFrom": "recorded",
+      "title": "The ASUS's CPU picture: Predator holds crowd 0.2 (3 200); the machine saturates only from crowd 0.35, no thread spins; physics's p99 breaks while its mean holds 4-6 ms; the CPU runs at 63-92 % of base under load",
+      "verdict": "note",
+      "text": "ASUS lab jobs 0899k, 0899l2, 0899l3 and 0899m (17:31-18:02): how much CPU the engine uses on the 2-core laptop, and\nPredator's capacity again. i7-7500U 2C/4T, HD 620 on Intel 31.0.101.2145, on AC with the battery reading 0 %. Main\nb190651d, headed, --src.\n\n**R-1498 read Predator's capacity too low and its CPU wrong.**\n- **Capacity:** runCapacity, start 0.25, floor 0.1 (R-1498 had none under 0.25). Predator holds crowd 0.2 (3 200\n  civilians and soldiers) in 2 of 2 runs.\n  - crowd 0.25: passed once and failed once (drawn 57.5 fps).\n  - crowd 0.3: physics p99 19 ms. crowd 0.35: 88 ms. crowd 0.5: at the 128 ms ceiling.\n  - R-1498's 0.25 failure (physics p99 19.6 ms) is the same edge.\n- **CPU use** (kcpu.mjs, every chrome.exe process's CPU and the machine's idle time, 10 s inside the window, the\n  capacity runner's setup):\n\n  | scene | machine busy (of 4 000 ms/s) | Chrome's renderer process | GPU process |\n  |---|---|---|---|\n  | Predator crowd 0.25 | 2 356, 2 666 | 1 461, 1 544 | 437, 590 |\n  | Predator crowd 0.3 | 2 556 to 3 264 (3 runs) | 1 503 to 1 719 | 553 to 668 |\n  | Predator crowd 0.35 | 3 555 to 3 738 (3 runs) | 1 783 to 1 836 | 633 to 679 |\n  | barrio hour 22, 2 000 people | 3 012, 3 046 | 2 040, 2 131 | 483, 537 |\n  | boids 28 000 | 2 711, 3 100 | 2 267, 2 592 | 281, 333 |\n\n  - The machine saturates only from Predator's crowd 0.35. R-1498's \"about 96 ms of CPU a 16.7 ms frame\" added the\n    workers' step - wait, which is wall time: the workers' summed own time is 1.2 to 1.7 s a second.\n  - threadCpuProbe (Playwright's Chromium, 1280x800) found no thread over 800 ms/s in any of 6 scenes: nothing spins.\n- **Predator's workers at crowd 0.3 and 0.35 kept 60 Hz in 8 of 9 runs**, with physics 3.6 to 5.7 ms own a step. In\n  one (0899l2, 0.3) physics fell to 16.4 ms at 40 Hz and logic0 to 11.3 ms; not seen again in 6 runs.\n  - So physics's p99 breaks while its mean holds. The edge is tail steps, not every step growing.\n- **The CPU runs under its base clock under load.** freqlog.mjs (WMI ProcessorInformation, every 5 s) during the\n  capacity search read 63 to 92 % of 2.7 GHz while a run was going, and 106 to 120 % (turbo) between runs. A 15 W part\n  whose GPU is busy too, maybe capped further by the dead battery: this laptop is a worst case.\n- Next: Box2D's thread count against the tail, by capacity (job 0899n). R-1275 saw 2 threads take Predator's bad\n  tails away at crowd 0.5, though it judged by the mean."
     }
   ],
   "leads": [
