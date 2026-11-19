@@ -21149,7 +21149,8 @@
         "R-1447",
         "R-1451",
         "R-1452",
-        "R-1458"
+        "R-1458",
+        "R-1506"
       ],
       "rank": 19
     },
@@ -23892,7 +23893,8 @@
     },
     {
       "records": [
-        "R-1503"
+        "R-1503",
+        "R-1506"
       ],
       "refs": [],
       "id": "SST-15",
@@ -23907,7 +23909,8 @@
     },
     {
       "records": [
-        "R-1504"
+        "R-1504",
+        "R-1506"
       ],
       "refs": [],
       "id": "SST-16",
@@ -23921,7 +23924,8 @@
     },
     {
       "records": [
-        "R-1505"
+        "R-1505",
+        "R-1506"
       ],
       "refs": [],
       "id": "SST-17",
@@ -38324,6 +38328,19 @@
       "text": "**SST-17: Predator by night's physics prime 96 -> 62 ms warm (103 -> 70 cold): the 36 496 SET_TRANSFORM commands its\nspawns left, two per body, no longer move bodies made in the same sync.** A probe counting the prime's commands by op\n(2026-11-18 23:32, not kept): SET_TRANSFORM 36 496 and SET_FIXED_ROTATION 16 200 for 18 248 bodies. A spawn's x and y\nsetters each write the column and enqueue the pose; physics then makes the body from the columns and drained both\ncommands after it, each moving the body's broadphase proxy, waking it and marking it teleported. A first fix that compared\na command's pose with the body's creation pose was wrong (the x setter's command carries the old y: applied, it moved the\nbody, and the y setter's matching command was then skipped) and was not committed. b463325c: the setter writes the columns\nbefore it claims its ring slot (a CAS on the write position), so a command claimed before the sync began is one the body\nmade in that sync already reflects; the sync reads the ring's write position first (commandRingWritePosition), the drain\nhands each SET_TRANSFORM its position, and a command below that mark for a body made in this sync is skipped (int32\npositions compared by difference). Spawns during play skip the same commands. tests/node/commandRingPositions.test.js.\nloadWaterfall source, 2 runs, 2026-11-18 23:38: `world` -> `physics primed` 62 ms warm and 70 cold (96 and 103 before);\nphysics' longest own step after the start 57 ms warm (56); first frame warm 1 636 and 1 597 ms (1 681 and 1 666). The\nfixed-rotation commands stay: their handler also zeroes the angular velocity and the rotation columns.",
       "commits": [
         "b463325c"
+      ]
+    },
+    {
+      "id": "R-1506",
+      "date": "2026-11-18",
+      "time": "23:51",
+      "timeFrom": "recorded",
+      "title": "SST-15, SST-16 and SST-17 in the bundle: Predator by night's warm first frame 883 -> 919 ms, its first physics step after the start >= 128 -> 63 ms",
+      "verdict": "kept",
+      "text": "**SST-15, SST-16 and SST-17 together in the bundle: Predator by night's warm start reaches its first frame about 36 ms\nlater (median 883 -> 919 ms), and its first physics step after the start takes 63 ms instead of 128 or more (about\n197).** loadWaterfall `--bundle` (the prod ESM bundle), `light3d=1&hour=22`, 3 runs, cold and warm: main 15c651ba at\n23:18 against main 2b2019a5 (the bundles of 39d707aa) at 23:51, 2026-11-18, the main PC.\n\n| warm, median ms after loadScene | before | after |\n|---|---|---|\n| atlas cache key, decoded | 142, 321 | 174, 295 |\n| atlas on the page, assets | 400, 405 | 372, 377 |\n| init sent, workers ready | 457, 646 | 422, 625 |\n| world, physics primed, start | 840, -, 840 | 821, 884, 885 |\n| first frame (3 runs) | 883, 907, 875 | 886, 919, 930 |\n| physics' longest own step in the first 2 s after it | >= 128 | 63 |\n\nIn the bundle the atlas decode beside the key (SST-16) gains 28 ms: the key's hashing ran 32 ms longer beside the\ndecode in the same worker. The prime costs 63 ms before the start (SST-17 took a third off it). Cold visits read the\nsame way (first frame 1 770 to 1 822 against 1 730 to 1 770 ms). What is left before the start: the renderer's 200 ms\nafter its init (the atlas upload, first-use programs, pipelines), the scene's world (preload, create, createNewGame and\nits spawns, 196 ms) and the prime (body creation); after it, Box2D's first step with every contact new.",
+      "commits": [
+        "39d707aa",
+        "2b2019a5"
       ]
     }
   ],
