@@ -22081,7 +22081,8 @@
       ],
       "records": [
         "R-1496",
-        "R-1497"
+        "R-1497",
+        "R-1581"
       ],
       "id": "E-514",
       "kind": "speed",
@@ -39258,6 +39259,15 @@
       "title": "The ASUS scoreboard of main e7581de9 against v0.14.0: no regression the change can reach; kernel verdicts swing ±20 % between ASUS scoreboards",
       "verdict": "note",
       "text": "ASUS lab job 0899f2 (14:46-16:07): the scoreboard of main e7581de9 (0.14.74: E-526 layer 0's FSM.tickAll,\nDX-LIGHTKNOBS, N-317) against v0.14.0, on the ASUS (i7-7500U 2C/4T, HD 620 on Intel 31.0.101.2145), --full-rev\n--skip-node --skip-lockstep, read against 0898z (R-1492, main 8c310e43, same machine and driver).\n\n- **No regression the change can explain.** Between 8c310e43 and e7581de9, src/ changed only in fsm.js, gameObject.js,\n  logicWorker.js, the light pass (shaders, lightTiles.js, faceMap.js, configDefaults.js) and pixiWorker.js.\n- **Verdicts that flipped, all on rows that diff cannot reach:**\n  - liquidfun KEPT -> TIE (physics -15.0 -> -15.4 %, the kernel -12.9 -> +15.3 %).\n  - liquidfunCouple KEPT -> TIE (physics -7.8 -> +11.8 %; the row ran 12 times, retried; src/box2d is unchanged).\n  - decorations TIE -> WORSE (kernel -3.6 -> -7.6 %, logic0 -0.3 -> -3.2 %, which is cheaper).\n  - decalBlit KEPT -> TIE (pixi -4.1 -> -2.6 %).\n  - painterRadix KEPT -> TIE (kernel +19.8 -> +2.6 %), decorationCollect KEPT -> TIE (+18.6 -> -4.6 %).\n  - tweenPool WORSE -> KEPT (-23.5 -> +25.2 %; R-1493 had dismissed the lead), gpuQueuePack TIE -> KEPT, and\n    decorationCollectYSort WORSE -> KEPT (-4.4 -> +18.9 %).\n- **The ASUS's kernels swing ±20 % between scoreboards** with two runs a side: audioSlots +84 -> +5 %, swayBuckets\n  -1.6 -> -16 %, meshFillMoving +15 -> +43 %. A kernel verdict there needs the interleaved check (kab.mjs, R-1493)\n  before it means anything.\n- **Scene rows held their sign:** box2d -20 -> -27 %, bullets -16 -> -11 %, ray/rayVsBox2d/box2dRayJs logic -15 to -29 %,\n  spatial's max -65 -> -55 %, meshFillMoving's renderer -26 -> -20 %. Many stress rows FAIL as before: under 6 ms\n  baselines or loads that do not match on this machine (DX-SCORELOAD)."
+    },
+    {
+      "id": "R-1581",
+      "date": "2026-11-19",
+      "time": "16:29",
+      "timeFrom": "recorded",
+      "title": "E-514 on the HD 620: the statics upload's GPU-process time 17.8 -> 4.6 ms/s with a still camera, the renderer -6 to -8.5 %, drawn frames +2.2 % at hour 13 and level at night; pre-render +13 % at night, a lead",
+      "verdict": "note",
+      "text": "ASUS lab job 0899f3 (16:07-16:29): E-514 (indexed statics, only the changed rows go up; perf/e514-statics-diff\n12b519fb) against main 1b77eaa7 on the HD 620 (Intel 31.0.101.2145, 2C/4T), both --src, headed. The barrio, time\nfrozen, 2000 people, the default still camera.\n\n**(1) Chrome's GPU process, gpuProcessTrace --decoder, warm-up 20 s, trace 3 s, A B A B (medians of 2):**\n\n| hour 13 | CrGpuMain ms/s | glTexSubImage2DRobustANGLE self ms/s (calls/s) | presents/s |\n|---|---|---|---|\n| main, still | 761 (748, 775) | 17.8 (79.5) | 41.0 |\n| E-514, still | 723 (757, 688) | 4.6 (46) | 39.5 |\n| main, pan=40 | 408 | 11.7 (68.5) | 30.5 |\n| E-514, pan=40 | 397 | 11.1 (69) | 31.5 |\n\n**(2) Drawn frames in a 10 s window, 4 rounds alternated (renderer frames, own ms = step - wait, medians):**\n\n| still camera | drawn main / E-514 | renderer own ms | pre-render own ms | spatial0 own ms |\n|---|---|---|---|---|\n| hour 13 | 407 / 416 (E-514 ahead in 4 of 4) | 6.93 / 6.34 (4 of 4 lower) | 13.98 / 13.22 | 29.1 / 25.6 |\n| hour 22 | 330 / 329 | 7.25 / 6.82 (4 of 4 lower) | 8.64 / 9.76 (4 of 4 higher) | 8.6 / 12.4 |\n\n- **The statics upload is mostly gone on the HD 620 with a still camera.** The upload's GPU-process time fell\n  17.8 -> 4.6 ms/s (-74 %) and its calls 80 -> 46/s. Panning falls back to whole uploads, as designed: unchanged.\n- **The renderer's own work is 6 to 8.5 % lower in every pair**, both hours. Drawn frames rose 2.2 % at hour 13,\n  4 of 4. At hour 22 they tie: about 33 fps there, on the vsync quantization R-1497 found.\n- **CrGpuMain overall -5 %, from one pair of two:** not decided.\n- **A lead to check, not a verdict:** pre-render read 13 % higher with E-514 at hour 22, in every pair. On this 2-core\n  machine spatial0, which E-514 cannot reach, read 44 % higher on the same side, so it may be core contention. Time\n  pre-render's diff at night in a kernel or on the main PC: if the night changes rows every frame (lights), the\n  compare is pure overhead there."
     }
   ],
   "leads": [
