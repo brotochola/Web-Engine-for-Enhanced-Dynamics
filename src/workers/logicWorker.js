@@ -338,6 +338,9 @@ class LogicWorker extends AbstractWorker {
     this.tickAllBucketTypes = [];
     // DX-DIRSPRITE: the types with a DirectionalSprite, resolved after the ticks (_resolveDirections).
     this.directionalTypes = [];
+    // E-528: the types without tick() that list CameraInOutListener; their screen hooks run after the ticks
+    // (_runScreenTypes), a tickAll type's too.
+    this.screenTypes = [];
 
     // ========================================
     // SPAWN/DESPAWN LIST UPDATE QUEUES
@@ -624,13 +627,13 @@ class LogicWorker extends AbstractWorker {
 
         GameObject._assignComponentClassMap(EntityClass);
         const components = GameObject._collectComponents(EntityClass);
-        let needsScreenCallbacks = false;
+        let hasCameraListener = false;
         let needsCollisionCallbacks = false;
         let needsJointBreakCallbacks = false;
         let hasRigidBody = false;
         let hasDirectional = false;
         for (const ComponentClass of components) {
-          if (ComponentClass === CameraInOutListener) needsScreenCallbacks = true;
+          if (ComponentClass === CameraInOutListener) hasCameraListener = true;
           if (ComponentClass === CollisionListener) needsCollisionCallbacks = true;
           if (ComponentClass === JointBreakListener) needsJointBreakCallbacks = true;
           if (ComponentClass === RigidBody) hasRigidBody = true;
@@ -690,7 +693,15 @@ class LogicWorker extends AbstractWorker {
         if (poolSize > 0) {
           const needsTick = GameObject.typeNeedsLogicTick(EntityClass);
           const hasTickAll = GameObject.typeHasTickAll(EntityClass);
-          if (hasTickAll && !needsTick && !needsScreenCallbacks) {
+          // E-528: a type without tick() that lists CameraInOutListener hears onScreenEnter / onScreenExit from a pass
+          // of its own after the ticks (_runScreenTypes): a static form with no instance, a method with the instance
+          // made at the first change. A tickAll type keeps its tickAll, and a type with neither has no tick visit. A
+          // type with tick() checks each entity after its tick, as before.
+          const needsScreenCallbacks = hasCameraListener && needsTick;
+          if (hasCameraListener && !needsTick) {
+            this.screenTypes.push({ activeList: EntityClass._activeList, entityType, countsVisits: !hasTickAll });
+          }
+          if (hasTickAll && !needsTick) {
             const rawInterval = EntityClass.tickInterval;
             const tickInterval = rawInterval == null ? 1 : (rawInterval | 0);
             if (tickInterval > 1 && GameObject.nextTick) {
@@ -725,13 +736,13 @@ class LogicWorker extends AbstractWorker {
                 viewFrom: 0,
               });
             }
-          } else if (!needsTick && !needsScreenCallbacks) {
+          } else if (!needsTick) {
             // Tickless: stay on active lists for queries/spatial/physics/render.
           } else {
             const rawInterval = EntityClass.tickInterval;
             const tickInterval = rawInterval == null ? 1 : (rawInterval | 0);
 
-            if (needsTick && tickInterval > 1 && GameObject.nextTick) {
+            if (tickInterval > 1 && GameObject.nextTick) {
               // E-349: the bucket fields _tickIntervalBucket and _rebuildTickBuckets keep are declared here, so the
               // literal keeps one map; added on the first frame, they gave it a second and the bucket loop compiled
               // twice. A stamp count of -1 makes the first frame rebuild; an interval of 0 makes it allocate.
@@ -1562,6 +1573,7 @@ class LogicWorker extends AbstractWorker {
     if (this.tickAllBucketTypes.length > 0) {
       activeCount += this._runTickAllBucketTypes(frameNum, tickDtRatio, transformActive, rbAx, rbAy, rbAa);
     }
+    if (this.screenTypes.length > 0) activeCount += this._runScreenTypes(transformActive);
     if (this.directionalTypes.length > 0) this._resolveDirections(frameNum);
     // E-140: the entities the paths above processed, counted once rather than written on `this` per entity.
     this.entitiesProcessedThisFrame += activeCount;
@@ -1820,6 +1832,71 @@ class LogicWorker extends AbstractWorker {
       packed += n;
     }
     return packed;
+  }
+
+  /**
+   * E-528: onScreenEnter / onScreenExit for the types without tick() that list CameraInOutListener, a tickAll type
+   * among them, after the ticks: this worker's share of each one's active list, split as the tick loops split it (a
+   * pinned entity on its worker, the rest by block). A static form runs with no instance; a method makes the instance
+   * at the entity's first change. A throw is reported and the pass goes on at the next entity.
+   * @param {Uint8Array} transformActive
+   * @returns {number} the entities visited of the types without tickAll (tickAll's are counted where it ran)
+   */
+  _runScreenTypes(transformActive) {
+    const types = this.screenTypes;
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const forced = GameObject.forceProcessOnLogicWorker;
+    const typeHasForced = GameObject.entityTypeHasForcedLogicWorker;
+    let counted = 0;
+    for (let t = 0; t < types.length; t++) {
+      const info = types[t];
+      const list = info.activeList;
+      const count = Math.min(list[0], list.length - 1);
+      let visited = 0;
+      if (totalWorkers > 1 && forced && typeHasForced && typeHasForced[info.entityType]) {
+        let idx = 0;
+        for (;;) {
+          try {
+            for (; idx < count; idx++) {
+              const e = list[1 + idx];
+              if (logicWorkerThatShouldTick(idx, e, totalWorkers, forced) !== myIndex || transformActive[e] === 0) continue;
+              this.checkScreenVisibility(e, null);
+              visited++;
+            }
+            break;
+          } catch (error) {
+            this._entityThrew(error, list[1 + idx], 'onScreenEnter / onScreenExit');
+            idx++;
+          }
+        }
+      } else {
+        let from = 0;
+        let to = count;
+        if (totalWorkers > 1) {
+          const range = logicBlockRange(count, myIndex, totalWorkers);
+          from = range.start;
+          to = range.end;
+        }
+        let idx = from;
+        for (;;) {
+          try {
+            for (; idx < to; idx++) {
+              const e = list[1 + idx];
+              if (transformActive[e] === 0) continue;
+              this.checkScreenVisibility(e, null);
+              visited++;
+            }
+            break;
+          } catch (error) {
+            this._entityThrew(error, list[1 + idx], 'onScreenEnter / onScreenExit');
+            idx++;
+          }
+        }
+      }
+      if (info.countsVisits) counted += visited;
+    }
+    return counted;
   }
 
   /**
@@ -2909,7 +2986,7 @@ class LogicWorker extends AbstractWorker {
    * Check screen visibility changes and trigger lifecycle methods
    * Detects when entities enter or exit the screen and calls onScreenEnter/onScreenExit
    * @param {number} entityIndex - The entity's index
-   * @param {GameObject} obj - The entity instance
+   * @param {GameObject|null} obj - The entity instance; null from the screen pass, which makes it for a method
    */
   checkScreenVisibility(entityIndex, obj) {
     const currentlyVisible = Camera.isOnScreen(
@@ -2921,8 +2998,12 @@ class LogicWorker extends AbstractWorker {
       // E-528: the type's static form, with no instance, else the instance's method.
       const type = Transform.entityType[entityIndex];
       const onScreen = (currentlyVisible === 1 ? this.staticHooks.onScreenEnter : this.staticHooks.onScreenExit)[type];
-      if (onScreen !== null) onScreen.call(this._entityClassByType[type], entityIndex);
-      else noteScreenVisibility(currentlyVisible, wasVisible, obj);
+      if (onScreen !== null) {
+        onScreen.call(this._entityClassByType[type], entityIndex);
+      } else {
+        const target = obj !== null ? obj : this.gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
+        if (target !== null) noteScreenVisibility(currentlyVisible, wasVisible, target);
+      }
     }
     this.previousScreenVisibility[entityIndex] = currentlyVisible;
   }

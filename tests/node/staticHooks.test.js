@@ -5,6 +5,8 @@ import { loadWorker, quietly } from '../bench/workerHarness.mjs';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Transform } from '../../src/components/transform.js';
+import { CameraInOutListener } from '../../src/components/cameraInOutListener.js';
+import { Camera } from '../../src/core/camera.js';
 import { CollisionListener } from '../../src/components/collisionListener.js';
 import { JointBreakListener } from '../../src/components/jointBreakListener.js';
 import { DirectionalSprite } from '../../src/components/directionalSprite.js';
@@ -41,6 +43,7 @@ async function setup(classes) {
   lw.config = scene.config;
   lw.globalEntityCount = n;
   lw.gameObjects = new Array(n).fill(null);
+  lw.previousScreenVisibility = new Uint8Array(n); // as initialize() sizes it: every entity off screen
   lw.totalLogicWorkers = 1;
   lw.workerIndex = 0;
   lw.nonDecimatedTypes = [];
@@ -48,6 +51,11 @@ async function setup(classes) {
   lw.tickAllTypes = [];
   lw.tickAllBucketTypes = [];
   lw.directionalTypes = [];
+  lw.screenTypes = [];
+  lw._drainSpawnCommandRing = () => {};
+  lw.processListUpdates = () => {};
+  lw._latchDisplayPose = () => {};
+  lw.sendListUpdatesToLogic0 = () => {};
   lw.registeredClasses = classes.map((C, t) => {
     globalThis.self[C.name] = C;
     C._activeList = new (EntityIdArray())(1 + PER_TYPE);
@@ -326,4 +334,108 @@ test('hot swap: a static hook added is a shape change; one moved from a method t
   patchClass(Old, moved);
   assert.equal(Object.prototype.hasOwnProperty.call(Old, 'onCollisionEnter'), false, 'the dropped static is gone');
   assert.equal(typeof Old.prototype.onCollisionEnter, 'function');
+});
+
+class Sheep extends GameObject {
+  static components = [CameraInOutListener];
+  static tickAll(list, count) {
+    heard.push(['tickAll', Array.from(list.subarray(0, count))]);
+  }
+  static onScreenEnter(i) {
+    heard.push(['onScreenEnter', this, i]);
+  }
+  static onScreenExit(i) {
+    heard.push(['onScreenExit', this, i]);
+  }
+}
+
+class Lamp extends GameObject {
+  static components = [CameraInOutListener];
+  onScreenEnter() {
+    heard.push(['lamp enters', this.index]);
+  }
+}
+
+/** Every slot of every pool listed and active; the camera a 200 x 200 view of the world's corner. */
+function listAll(classes) {
+  for (let t = 0; t < classes.length; t++) {
+    const list = classes[t]._activeList;
+    list[0] = PER_TYPE;
+    for (let k = 0; k < PER_TYPE; k++) {
+      list[1 + k] = t * PER_TYPE + k;
+      Transform.active[t * PER_TYPE + k] = 1;
+    }
+  }
+  Camera._data = new Float32Array([1, 0, 0]);
+  Camera._canvasWidth = 200;
+  Camera._canvasHeight = 200;
+}
+
+test('a tickAll type with static screen hooks stays on tickAll and hears them with no instance; a method makes one only at a change', { concurrency: false }, async () => {
+  const saved = [Camera._data, Camera._canvasWidth, Camera._canvasHeight];
+  try {
+    const lw = await setup([Sheep, Lamp]);
+    assert.equal(lw.tickAllTypes.length, 1, 'Sheep is a tickAll type');
+    assert.equal(lw.tickAllTypes[0].EntityClass, Sheep);
+    assert.equal(lw.nonDecimatedTypes.length + lw.decimatedTypes.length, 0, 'no per-entity tick loop');
+    assert.equal(lw.screenTypes.length, 2, 'both hear their screen hooks from the screen pass');
+    listAll([Sheep, Lamp]);
+    for (let i = 0; i < 2 * PER_TYPE; i++) {
+      Transform.x[i] = i % 2 === 0 ? 100 : 5000; // even ones in view
+      Transform.y[i] = 80;
+    }
+    lw.frameNumber = 1;
+    lw.update(16.67, 1, false);
+    const sheepIn = [0, 2, 4, 6];
+    assert.deepEqual(heard, [
+      ['tickAll', [0, 1, 2, 3, 4, 5, 6, 7]],
+      ...sheepIn.map((i) => ['onScreenEnter', Sheep, i]),
+      ...[8, 10, 12, 14].map((i) => ['lamp enters', i]),
+    ]);
+    assert.ok(Sheep.instances.every((o) => o === null), 'no Sheep instance');
+    assert.deepEqual(lw.gameObjects.map((o, i) => (o !== null ? i : -1)).filter((i) => i >= 0), [8, 10, 12, 14],
+      'a Lamp instance only for the ones whose screen state changed');
+
+    heard = [];
+    Transform.x[2] = 5000;
+    lw.frameNumber = 2;
+    lw.update(16.67, 1, false);
+    assert.deepEqual(heard, [['tickAll', [0, 1, 2, 3, 4, 5, 6, 7]], ['onScreenExit', Sheep, 2]]);
+    assert.ok(Sheep.instances.every((o) => o === null));
+  } finally {
+    [Camera._data, Camera._canvasWidth, Camera._canvasHeight] = saved;
+    Transform.active.fill(0);
+  }
+});
+
+class Walker extends GameObject {
+  static components = [CameraInOutListener];
+  tick() {
+    heard.push(['tick', this.index]);
+  }
+  static onScreenEnter(i) {
+    heard.push(['onScreenEnter', this, i]);
+  }
+}
+
+test('a type with tick() checks each entity after its tick, and its static screen hook runs there', { concurrency: false }, async () => {
+  const saved = [Camera._data, Camera._canvasWidth, Camera._canvasHeight];
+  try {
+    const lw = await setup([Walker]);
+    assert.equal(lw.nonDecimatedTypes.length, 1);
+    assert.equal(lw.nonDecimatedTypes[0].needsScreenCallbacks, true);
+    assert.equal(lw.screenTypes.length, 0, 'not the screen pass');
+    listAll([Walker]);
+    for (let i = 0; i < PER_TYPE; i++) {
+      Transform.x[i] = i < 2 ? 100 : 5000;
+      Transform.y[i] = 80;
+    }
+    lw.frameNumber = 1;
+    lw.update(16.67, 1, false);
+    assert.deepEqual(heard.slice(0, 4), [['tick', 0], ['onScreenEnter', Walker, 0], ['tick', 1], ['onScreenEnter', Walker, 1]]);
+    assert.equal(heard.length, 2 + PER_TYPE);
+  } finally {
+    [Camera._data, Camera._canvasWidth, Camera._canvasHeight] = saved;
+    Transform.active.fill(0);
+  }
 });
