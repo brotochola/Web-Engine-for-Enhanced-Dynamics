@@ -21,6 +21,8 @@
  * the publish is timed (performance.now around weedjsPublishPose; the report gives the mean per publish and its ops/s).
  * `--moving f`: f of the bodies (every 1/f-th of the dense list) move every frame (x and y change).
  * `--turning k`: k bodies, spread over the dense list, turn every frame (rotC and rotS change); the others keep theirs.
+ * `--stamps`: Box2D's rotation stamps (E-327) bound as the physics worker binds them, and each turning body's block of 64
+ * slots stamped with the epoch before the publish, as Box2D's export stamps it; a revision without stamps ignores them.
  * `--readers r`: r worker threads read every published buffer whole, as pre-render and Pixi do, and the next frame
  * waits until all of them read it, so the buffer the publish writes was last read on other cores (their lines shared).
  * `--frames f` (default 1500) measured frames, after `--warm w` (default 1500) frames that are not timed.
@@ -172,7 +174,7 @@ export function loadPost(variant, postFile = path.join(box2dDir, 'weedjsPost.js'
   return globalThis.weedjsPublishPose;
 }
 
-function setup(n, seed, churn = 0, holes = 0, shared = false, runs = 0, occupancy = 0.58, respawn = false) {
+function setup(n, seed, churn = 0, holes = 0, shared = false, runs = 0, occupancy = 0.58, respawn = false, stamps = false) {
   const rng = mulberry32(seed);
   const list = new Int32Array(n);
   // --shared: every column on a SharedArrayBuffer, as the worker's are (Box2D's memory, the pose buffers).
@@ -236,7 +238,14 @@ function setup(n, seed, churn = 0, holes = 0, shared = false, runs = 0, occupanc
     rotS: f32(n),
   });
   const poseBuffers = [mk(), mk()];
+  // --stamps: Box2D's rotation stamps, a word per 64 slots (0: never stamped), and their epoch word (1 to start).
+  const rotationStamps = stamps ? new Int32Array(new SharedArrayBuffer(((n + 63) >> 6) * 4)) : null;
+  const rotationEpoch = stamps ? new Int32Array(new SharedArrayBuffer(4)) : null;
+  if (rotationEpoch) rotationEpoch[0] = 1;
   globalThis.weedjsBindPoseBench({
+    rotationStamps,
+    rotationEpoch,
+    rotationBlockShift: 6,
     poseSync,
     poseBuffers,
     denseList: list,
@@ -280,6 +289,8 @@ function setup(n, seed, churn = 0, holes = 0, shared = false, runs = 0, occupanc
     poseBuffers,
     poseSync,
     epoch,
+    rotationStamps,
+    rotationEpoch,
   };
 }
 
@@ -309,7 +320,7 @@ a[1 + (workerData.index | 0)] = sum === sum ? 1 : 2;
  * is timed; with readers the next frame waits until every reader read the buffer just published.
  */
 async function runFrames(k, { moving, turning, readers, warm, frames, respawn }) {
-  const { n, list, count, views, poseBuffers, poseSync, epoch } = k;
+  const { n, list, count, views, poseBuffers, poseSync, epoch, rotationStamps, rotationEpoch } = k;
   const movers = [];
   if (moving > 0) {
     const stride = Math.max(1, Math.round(1 / moving));
@@ -354,6 +365,7 @@ async function runFrames(k, { moving, turning, readers, warm, frames, respawn })
       const angle = f * 0.01 + t;
       views.rotC[i] = Math.cos(angle);
       views.rotS[i] = Math.sin(angle);
+      if (rotationStamps) rotationStamps[i >> 6] = rotationEpoch[0];
     }
     if (respawn) Atomics.add(epoch, 0, 1);
     const t0 = performance.now();
@@ -406,11 +418,11 @@ async function main() {
   const readers = Number(args.readers ?? 0);
   if (moving > 0 || turning > 0 || readers > 0) {
     if (readers > 0 && !shared) throw new Error('--readers needs --shared (the readers see the columns through SharedArrayBuffers)');
-    const k = setup(n, seed, churn, holes, shared, runs, occupancy, respawn);
+    const k = setup(n, seed, churn, holes, shared, runs, occupancy, respawn, Boolean(args.stamps));
     const warm = Number(args.warm ?? 1500);
     const frames = Number(args.frames ?? 1500);
     const result = await runFrames(k, { moving, turning, readers, warm, frames, respawn });
-    const label = `publish ${post ? path.basename(path.dirname(post)) + '/' : ''}${variant}${respawn ? ' respawn' : ''} n ${n}${runs ? ` runs ${runs} occupancy ${occupancy}` : ''} moving ${result.movers} turning ${result.turners} readers ${readers}`;
+    const label = `publish ${post ? path.basename(path.dirname(post)) + '/' : ''}${variant}${respawn ? ' respawn' : ''} n ${n}${runs ? ` runs ${runs} occupancy ${occupancy}` : ''} moving ${result.movers} turning ${result.turners} readers ${readers}${args.stamps ? ' stamps' : ''}`;
     const report = { feature: 'publish-pose-frames', variant, post: post ?? null, functions: ['publishPose'], n, seed, runs, occupancy, respawn, moving, turning, readers, warm, frames, ...result };
     if (args.output) writeReport(String(args.output), report);
     else console.log(`checksum ${result.checksum} ${label} mean ${result.meanUs.toFixed(1)} us median ${result.medianUs.toFixed(1)} p90 ${result.p90Us.toFixed(1)} ${result.opsPerSec.toFixed(0)} ops/s`);
