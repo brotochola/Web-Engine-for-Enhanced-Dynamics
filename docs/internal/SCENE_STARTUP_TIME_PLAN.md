@@ -428,6 +428,14 @@ new (51 ms). Under the owner's rule (everything ready before the start) the scen
 once the world is spawned and waits for it: the host makes the bodies, joints and commands then. Left: Box2D's first
 step (a collide-only export in the prime) and the body creation's own cost.
 
+### SST-16 — The atlas cache decoded beside its key
+
+- [x] 6753b301 (R-1504: Predator by night's atlas on the page 1 090 -> 1 006 ms warm from source)
+
+The bundle's critical path on a warm visit was the atlas branch: the key hashed every source (113 ms), then the entry
+was read and decoded (145 ms). A slot holds one entry, so its decode now starts beside the key and is kept when the
+keys match.
+
 ### SST-14 — Workers that evaluate the page's engine graph
 
 - [ ] not started (R-1501)

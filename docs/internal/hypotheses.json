@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-18",
+  "updated": "2026-11-19",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -23898,6 +23898,20 @@
       "statusText": "kept 2026-11-18 (f3e180ec, R-1503): the prime before the start",
       "result": "Kept 2026-11-18 (R-1503): the scene primes physics before the start; the first step 197 -> 56 ms warm (100 cold), the start about 96 ms later.",
       "next": "Box2D's first step (every new proxy's pairs and contacts) in the prime too: a collide-only export; then the body creation's own cost (about 5 us a body and 3 commands each)."
+    },
+    {
+      "records": [
+        "R-1504"
+      ],
+      "refs": [],
+      "id": "SST-16",
+      "title": "A warm start computed the atlas cache's key (hashing every source, 113 ms in the bundle) before reading and decoding its entry (145 ms): the bundle's critical path",
+      "status": "kept",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-19",
+      "statusText": "kept 2026-11-19 (6753b301, R-1504): the slot's entry decoded beside the key",
+      "result": "Kept 2026-11-19 (R-1504): the slot's one entry read and decoded while the key hashes, kept when the keys match; Predator by night's atlas on the page 1 090 -> 1 006 ms warm from source."
     }
   ],
   "records": [
@@ -38212,6 +38226,18 @@
       "text": "**SST-15: Predator by night's first physics step after the start took 197 ms, 138 of them making the spawned world's\nbodies and draining its commands; with the prime before the start it takes 56 ms warm (100 cold), and the start comes\nabout 96 ms later.** The load waterfall's \"longest own step after the start\" read physics at >= 128 ms (its histogram's\ntop) in every Predator run, source and bundle. A probe (each of the first six steps' phases, posted as load marks, not\nkept), loadWaterfall `light3d=1&hour=22`, source, 2026-11-18 23:45: step 1 = syncBodies 90.8 ms (18 248 bodies made),\ndrainCommands 47.5 ms (52 696 commands), Box2D's step 51.4 ms (every contact new), after 5.5; steps 2 and 3 15 and 18 ms.\nf3e180ec: the scene, once its world is spawned (after createNewGame and the spawn flush), sends the physics worker\n'prime' and waits for 'primeDone' (10 s at most, then the first step does it as before); the host runs weedjsPrime\n(weedjsPost.js: syncBodies, drainCommands, syncJoints, what the first step does before stepping, in that order; no step,\nno time) and answers with its marks, also after a Box2D abort. The same probe on top, 2 runs, cold and warm,\n2026-11-18 23:55: step 1 sync 0, drain 0, Box2D 45.8 ms warm (86.8 cold) + 8 to 11 after; physics' longest own step in\nthe first seconds 56 ms warm (>= 128 before), 100 cold; `world` -> `physics primed` 96 ms warm; first frame warm 1 708\nand 1 735 ms (1 583 to 1 607 before). tests/node/physicsPrime.test.js. Next: Box2D's first step itself (pairs and\ncontacts of every new proxy: a collide-only export run in the prime), and the body creation's cost (5 us a body, about\n3 commands each).",
       "commits": [
         "f3e180ec"
+      ]
+    },
+    {
+      "id": "R-1504",
+      "date": "2026-11-19",
+      "time": "00:10",
+      "timeFrom": "recorded",
+      "title": "SST-16: the atlas cache entry decoded beside its key: Predator by night's atlas 84 ms sooner on a warm source start (1 090 -> 1 006 ms)",
+      "verdict": "kept",
+      "text": "**SST-16: the atlas cache's entry decoded while its key is computed: Predator by night's atlas reaches the page 84 ms\nsooner on a warm source start (1 090 -> 1 006 ms), the decode ending at 895 instead of 987.** The bundle's waterfall\n(2026-11-18 23:30, main 15c651ba, 3 runs warm, first frame about 880 ms) showed the atlas branch as its critical path:\nthe key hashed every source (113 ms after the worker's modules) and only then was the entry read and its PNG decoded\n(145 ms). An atlas's slot holds one entry (writeAtlasCache drops the others), so 6753b301 reads the slot's entry and\nstarts its decode at once, beside the key's hashing, and keeps it only when its key is the key computed (another key:\nits bitmaps closed, packed as before; a cache that fails to read: no cache, as before). readAtlasCacheSlot and\natlasCacheSlotOf in atlasCache.js; a test holds the sources' fetches and sees the decode start first, and a stale\nentry decoded then dropped. loadWaterfall source, 2 runs, 2026-11-19 00:10: atlas worker modules 641, key 806, decoded\n895, bitmaps 971, page `atlas` 1 006 (674, 796, 987, 1 066, 1 090 before); assets now wait for the engine block (1 025),\n1 062 against 1 097. The bundle's number comes with the next dist.",
+      "commits": [
+        "6753b301"
       ]
     }
   ],
