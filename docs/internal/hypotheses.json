@@ -16821,7 +16821,8 @@
         "R-1108",
         "R-1208",
         "R-1535",
-        "R-1539"
+        "R-1539",
+        "R-1542"
       ]
     },
     {
@@ -17016,7 +17017,8 @@
         "R-1473",
         "R-1509",
         "R-1520",
-        "R-1521"
+        "R-1521",
+        "R-1542"
       ]
     },
     {
@@ -17066,7 +17068,8 @@
         "R-1236",
         "R-1523",
         "R-1527",
-        "R-1539"
+        "R-1539",
+        "R-1542"
       ]
     },
     {
@@ -17092,7 +17095,8 @@
         "R-1236",
         "R-1525",
         "R-1527",
-        "R-1539"
+        "R-1539",
+        "R-1542"
       ]
     },
     {
@@ -17143,7 +17147,8 @@
         "R-1257",
         "R-1526",
         "R-1527",
-        "R-1539"
+        "R-1539",
+        "R-1542"
       ]
     },
     {
@@ -39016,6 +39021,15 @@
         "a4722f6c",
         "72be4823"
       ]
+    },
+    {
+      "id": "R-1542",
+      "date": "2026-11-19",
+      "time": "07:33",
+      "timeFrom": "recorded",
+      "title": "Predator's capacity before and after the night's physics, back to back: crowd 2.1 -> 2.2 (33 600 -> 35 200, +4.8 %), physics still the limiter by its p99",
+      "verdict": "note",
+      "text": "**Predator's capacity, before and after the night's physics, back to back: crowd 2.1 -> 2.2 (33 600 -> 35 200 people and\nsoldiers, +4.8 %); physics is still the limiter, by its p99.** runCapacity predator (headed, --src, warm-up 9 s, window\n10 s, a run passes when every worker's p99 stays under 16.7 ms and fps >= 59), each revision whole in the pool worktree:\n- 37762540 (dx/startup: main 8c310e43 with E-526 layer 0), to 2026-11-19 07:29: capacity 2.2 (2.2 passed twice; 2.25\n  failed at physics p99 16.75 ms, 2.35 at 21.69, 2.5 at 20.25); at 2.2 physics mean 11.97, p95 13.58, p99 14.73 ms.\n- 99afd415 (main before the physics batch, E-316 and E-528), to 07:33: capacity 2.1 (2.2 failed at physics p99 18.88,\n  2.5 at 19.38); at 2.1 physics mean 12.03, p99 15.75 ms.\nBoth read below last night's 2.4 (R-1509, 00:58) for the older code: this machine runs slower after a night of sittings,\nwhich is why the two were run back to back. The p99 that decides is set by the frames that carry E-322's body reorder\n(one in 30), so a search moves a step either way between runs."
     }
   ],
   "leads": [
