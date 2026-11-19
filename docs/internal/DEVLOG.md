@@ -6,6 +6,22 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 19 November 2026 (afternoon) — Sending Only What Changed
+
+Every sprite the renderer draws in a painter-sorted frame reads its statics (scale, anchor, tint, which frame of the
+atlas) from a texture by its row. Whenever any of them changed, the whole texture went up again. In the barrio that is
+every frame, because 5000 people step through their walk cycles: 480 KB a frame from the renderer to Chrome's GPU
+process, to say that a few hundred people moved a foot.
+
+**Pre-render now says which rows changed.** It already writes every row each frame; now it also compares each one with
+what the renderer may hold. That is one of the two buffers pre-render alternates, depending on whether the renderer took
+the last frame or skipped it, so a row is listed when it differs from either. A row whose frame alone changed goes as 8
+bytes, the rest as 64, and the renderer writes them into its texture with the same scatter the keyed batches already used,
+on WebGL and WebGPU. With the camera still, the barrio's uploads went from 873 to 414 KB a frame. On the laptop with the
+Intel HD 620, Chrome's GPU process spends 74 % less time on that texture, and the barrio draws 2 % more frames. A panning
+camera shifts the rows as people come and go, so there everything goes up as before: past a quarter of the rows, a list
+costs what the texture does.
+
 ## Thursday 19 November 2026 (midday) — How Soft a Shadow Is, the Developer's Call
 
 Every pixel of the light reads the sun's shadow map and each lamp's in five texels, its own and the four around it in a
