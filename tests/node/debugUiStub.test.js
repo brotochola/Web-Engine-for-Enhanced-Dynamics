@@ -9,6 +9,8 @@ import { DebugUI as DebugUIStub } from '../../src/core/debug/stubs/debugUi.js';
 test('the production DebugUI stub has every static of the real one, and its load gives an overlay that does nothing', async () => {
   const statics = (cls) => Object.getOwnPropertyNames(cls).filter((k) => !['length', 'name', 'prototype'].includes(k)).sort();
   assert.deepEqual(statics(DebugUIStub), statics(DebugUI));
+  // Run against a bundle (scripts/runNodeTestsOnBundle.mjs) both imports are the bundle's one DebugUI: no stub to load.
+  if (DebugUIStub === DebugUI) return;
   const overlay = await DebugUIStub.load({ updateInterval: 250 });
   for (const m of ['attach', 'detach', 'destroy', 'toggle', 'show', 'hide', 'registerScenes']) {
     assert.equal(typeof overlay[m], 'function', m);
