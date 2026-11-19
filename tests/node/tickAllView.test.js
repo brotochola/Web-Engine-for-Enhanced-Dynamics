@@ -27,6 +27,7 @@ async function setup() {
   for (const i of [1, 2, 3, 5, 6]) Transform.active[i] = 1;
   w.tickAllTypes = [{
     EntityClass: Flock,
+    ticker: Flock, // the class whose tickAll runs (E-526: FSM for a type whose FSMs it runs)
     activeList,
     startIndex: 0,
     entityType: 0,

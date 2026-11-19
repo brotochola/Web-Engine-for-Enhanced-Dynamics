@@ -45,7 +45,7 @@ function matchingParen(src, at) {
 
 /**
  * C3: `static tickInterval > 1` needs `logic.staggeredUpdates`; without it the type ticks every frame (its tick(),
- * or its static tickAll: E-527).
+ * its static tickAll: E-527, or its FSMs through FSM.tickAll: E-526).
  * C4: an empty `tick() {}` still has the logic workers call it on every entity of the type, every frame.
  * @param {{ class: Function, count: number }[]} registered
  * @param {Function} BaseClass GameObject
@@ -57,7 +57,7 @@ export function warnEntityClassMistakes(registered, BaseClass, config) {
     const C = r.class;
     if (!(r.count > 0)) continue;
     const ticks = BaseClass.typeNeedsLogicTick(C);
-    if (!ticks && !BaseClass.typeHasTickAll(C)) continue;
+    if (!ticks && !BaseClass.typeHasTickAll(C) && !BaseClass.typeRunsFsmTickAll(C)) continue;
     const name = C.name;
     const interval = C.tickInterval | 0;
     if (interval > 1 && !staggered) {

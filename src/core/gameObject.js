@@ -736,6 +736,21 @@ export class GameObject {
   }
 
   /**
+   * E-526: whether the logic workers run this type's FSMs through FSM.tickAll: it lists FSM components, has neither a
+   * tick() of its own nor a static tickAll, and its tickInterval is not 0. It then ticks as a tickAll type does.
+   */
+  static typeRunsFsmTickAll(EntityClass) {
+    const Type = EntityClass || this;
+    if ((Type.tickInterval | 0) === 0) return false;
+    if (Type.prototype.tick !== GameObject.prototype.tick || typeof Type.tickAll === 'function') return false;
+    const components = collectComponents(Type, GameObject, Transform);
+    for (let c = 0; c < components.length; c++) {
+      if (components[c].isFSM === true) return true;
+    }
+    return false;
+  }
+
+  /**
    * After initializeArrays: Int16 per entity. Worker index that must run this
    * entity’s logic. FORCE_PROCESS_ON_LOGIC_WORKER_NONE (−1) means do not force:
    * use stride activeListSlot % logicWorkerCount. Not the LogicWorker instance.
