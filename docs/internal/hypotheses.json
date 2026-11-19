@@ -23491,7 +23491,8 @@
         "R-1462",
         "R-1480",
         "R-1484",
-        "R-1485"
+        "R-1485",
+        "R-1486"
       ],
       "result": "Cause (R-1461, R-1480): the Intel D3D11 driver 27.20.100.8682's lock on Chrome's shader cache file broke, and every later compile waited 1 s. Intel's 31.0.101.2145 fixes it: 0 of 36 under the conditions that froze 10 of 23 (R-1485). The engine needs no change; the ASUS runs 31.0.101.2145 since 2026-11-19.",
       "next": "Nothing for the engine. If the freeze is reported on another Intel Gen9 machine, the answer is a current Intel driver (31.0.101.2145 or later). The ASUS keeps the driver's shader cache (the owner's yes to denying it was for the old driver; asked again).",
@@ -38362,6 +38363,15 @@
       "title": "Barrio freeze fixed by Intel's driver 31.0.101.2145 on the HD 620: 0 of 36 frozen under the freezing conditions (fresh cache 0 of 12 against 10 of 23 on 27.20.100.8682); the new driver's cache is reused, not appended",
       "verdict": "note",
       "text": "The owner approved a current Intel driver on the ASUS (2026-11-19). Intel's generic 31.0.101.2145 (gfx_win_101.2145.exe,\nSHA512 as Intel publishes it) would not install over ASUS's customized 27.20.100.8682. That driver matches on the 4-part\nsubsystem ID, which Windows ranks above Intel's generic one, and the installer stops with \"2ID DCH driver on 4ID legacy\ndriver\". So the ASUS packages were exported to C:\\weedlab\\drivers\\backup (oem29.inf 27.20.100.8682, oem94.inf\n26.20.100.7325, oem59.inf hdbusext) and deleted with pnputil, then Intel's installed (00:46-00:52, an elevated task).\nRollback: pnputil /add-driver C:\\weedlab\\drivers\\backup\\oem29\\igdlh64.inf /install. Both GPUs read OK. Intel's\ninstaller asks for a restart, not done yet: the ASUS has no auto-logon, and the lab's runner needs the session.\n\n- The installer cleared LocalLow\\Intel\\ShaderCache. Under the new driver Chrome's cache file is 9f99e478...\n  (0898j). Explorer and DWM now keep theirs in C:\\ProgramData\\Intel\\ShaderCache.\n- Job 0898k (00:58-01:34) ran 0897d's design on the new driver: Chrome's cache keep / fresh / none before each run,\n  the recorder as load plus the tracerpt loop, 12 rounds, Buenos Aires at night, HD 620, src at main 70ba822b.\n\n| Chrome's Intel cache | Old driver 27.20.100.8682 (R-1462, R-1480) | New driver 31.0.101.2145 |\n|---|---|---|\n| keep | 0 of 12 | 0 of 12 |\n| fresh | 10 of 23 | 0 of 12 |\n| none | 0 of 23 | 0 of 12 |\n\n- No freeze in 36 runs, all at 58 to 60 fps. Fresh 0 of 12 against 10 of 23: under 1 in 150 by chance (Fisher's exact,\n  one-sided). The new driver fixes N-298.\n- Its cache works: Chrome's file stays near 275 to 297 KB from run to run, where the old driver appended the whole\n  set every run (about 200 KB) up to 224 MB.\n- The owner's earlier yes to denying Chrome the Intel cache on the lab was given for the old driver, whose cache did\n  nothing but freeze. Not applied: on the new driver the cache is reused and does not freeze. Asked again.\n- From now on ASUS HD 620 numbers are on Intel 31.0.101.2145, with the driver's shader cache in use."
+    },
+    {
+      "id": "R-1486",
+      "date": "2026-11-19",
+      "time": "00:36",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze on the old Intel driver, --use-angle=d3d11on12 under the freezing conditions: 0 of 10 against default D3D11's 4 of 10; the D3D11 driver never even makes Chrome's cache file",
+      "verdict": "note",
+      "text": "ASUS lab job 0898i (00:09-00:36, stopped by hand after round 10 of 15), on the old Intel driver 27.20.100.8682, under\nthe freezing conditions (Chrome's Intel cache fresh, the recorder and tracerpt as load). WebGL with default flags (ANGLE\nD3D11) against --use-angle=d3d11on12, interleaved. Buenos Aires at night, HD 620, src at main 70ba822b.\n\n| ANGLE backend | Frozen |\n|---|---|\n| D3D11 (default) | 4 of 10 |\n| d3d11on12 | 0 of 10 (two runs at 33 and 38 fps, not frozen) |\n\n- 4 against 0 of 10 is about 1 in 23 by chance.\n- Under d3d11on12 the Intel D3D11 driver never even created Chrome's cache file (\"absent\" after every run): page and\n  compositor both go through the D3D12 driver, which has no such lock. On the old driver this flag avoided the freeze;\n  WebGPU only made it rarer (2 of 15, R-1484), as its compositor still used ANGLE D3D11.\n- Moot since Intel's 31.0.101.2145 fixes the lock itself (R-1485)."
     }
   ],
   "leads": [
