@@ -315,6 +315,9 @@
       const wasmOff = (new URLSearchParams(location.search).get('wasmOff') || '').split(',').filter(Boolean);
       // ?physicsMemoryMB=N runs the scene with that physics.wasmMemoryMB (BOX2D_MEMORY_PLAN BM-10).
       const physicsMemoryMB = Number(new URLSearchParams(location.search).get('physicsMemoryMB')) || 0;
+      // ?physicsSpin=0|1 forces physics.stepSpin off or on (E-426); without it, the engine's 'auto'.
+      const physicsSpinKey = new URLSearchParams(location.search).get('physicsSpin');
+      const physicsSpin = physicsSpinKey === '0' ? false : physicsSpinKey === '1' ? true : null;
       // ?opaquePass=0 never draws E-448's opaque pass and ?opaquePass=1 draws it on every GPU (debug.opaquePass), to time
       // a GPU with and without it (E-502); without the key the GPU's class decides ('auto').
       const opaquePassKey = new URLSearchParams(location.search).get('opaquePass');
@@ -341,8 +344,14 @@
         ...(wasmOff.length
           ? { wasm: { ...(SceneClass.config.wasm || {}), ...Object.fromEntries(wasmOff.map((name) => [name, false])) } }
           : {}),
-        ...(physicsMemoryMB > 0
-          ? { physics: { ...(SceneClass.config.physics || {}), wasmMemoryMB: physicsMemoryMB } }
+        ...(physicsMemoryMB > 0 || physicsSpin !== null
+          ? {
+              physics: {
+                ...(SceneClass.config.physics || {}),
+                ...(physicsMemoryMB > 0 ? { wasmMemoryMB: physicsMemoryMB } : {}),
+                ...(physicsSpin !== null ? { stepSpin: physicsSpin } : {}),
+              },
+            }
           : {}),
         ...(spatialStartOn || spatialRefreshSpread
           ? {

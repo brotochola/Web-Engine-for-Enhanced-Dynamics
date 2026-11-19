@@ -551,6 +551,12 @@ export type SceneConfig = Record<string, unknown> & {
      * anything below 1 is 0.
      */
     awakeReorderInterval?: number;
+    /**
+     * Whether Box2D's pool threads spin through a step instead of sleeping between its phases (E-298, E-426): 'auto'
+     * (the default) spins where every engine thread has a logical CPU of its own; true or false forces it. A spinner
+     * saves the ~1.5 ms a wake takes on Windows and holds its CPU meanwhile.
+     */
+    stepSpin?: 'auto' | boolean;
     /** @deprecated one-release alias of maxFixturePoolSize */
     maxFixtures?: number;
   };

@@ -811,12 +811,15 @@
       maximumLinearSpeed: s.maximumLinearSpeed,
       numberOfPhysicsWorkers: s.numberOfPhysicsWorkers,
       // E-298: the pool spins through a step only where each engine thread has a logical CPU: the spatial and logic
-      // workers, the renderer, particle and pre-render workers, and Box2D's threads (this one and its pool).
-      stepSpin: PhysicsConfig.stepSpinPays(
-        (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) | 0,
-        ((state.config.spatial && state.config.spatial.numberOfSpatialWorkers) || 1) +
-          ((state.config.logic && state.config.logic.numberOfLogicWorkers) || 1) + 3 + (s.numberOfPhysicsWorkers | 0),
-      ),
+      // workers, the renderer, particle and pre-render workers, and Box2D's threads (this one and its pool). E-426:
+      // physics.stepSpin true or false forces it.
+      stepSpin: s.stepSpin === true || s.stepSpin === false
+        ? s.stepSpin
+        : PhysicsConfig.stepSpinPays(
+          (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) | 0,
+          ((state.config.spatial && state.config.spatial.numberOfSpatialWorkers) || 1) +
+            ((state.config.logic && state.config.logic.numberOfLogicWorkers) || 1) + 3 + (s.numberOfPhysicsWorkers | 0),
+        ),
       // E-322: Box2D's awake bodies back in body id order every this many steps (0: never).
       awakeReorderInterval: s.awakeReorderInterval,
       maxBodies: maxBodies,

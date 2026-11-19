@@ -24,6 +24,8 @@
     commandRingCapacity: 4096,
     sleeping: true,
     hitEventThreshold: 0,
+    // E-426: whether Box2D's pool threads spin through a step: 'auto' (E-298's rule, stepSpinPays), true or false.
+    stepSpin: 'auto',
     // E-322: every this many steps Box2D puts the awake bodies back in body id order (0: never). Predator crowd 2.5:
     // physics -11.9 % at 30, its p95 and p99 lower too (the reorder spread over steps on the workers).
     awakeReorderInterval: 30,
@@ -96,6 +98,16 @@
   }
 
   /**
+   * E-426: physics.stepSpin as the host takes it: true or false forces the pool's spin on or off; anything else is
+   * 'auto' (stepSpinPays decides from the logical CPUs and the engine's threads).
+   * @param {unknown} v
+   * @returns {'auto' | boolean}
+   */
+  function stepSpinSetting(v) {
+    return v === true || v === false ? v : 'auto';
+  }
+
+  /**
    * E-322: physics.awakeReorderInterval as Box2D takes it, a whole number of steps, 0 (never) or more. Sleeping,
    * waking and contacts starting to touch scramble the order of Box2D's awake bodies and of its contacts; every
    * this many steps, at the start of the step, Box2D puts the bodies back in body id order, and in the next few steps
@@ -142,6 +154,7 @@
         0,
         num(pick(n.hitEventThreshold, base.hitEventThreshold, d.hitEventThreshold), d.hitEventThreshold),
       ),
+      stepSpin: stepSpinSetting(pick(n.stepSpin, base.stepSpin, d.stepSpin)),
       awakeReorderInterval: awakeReorderSteps(
         pick(n.awakeReorderInterval, base.awakeReorderInterval, d.awakeReorderInterval),
       ),
@@ -179,6 +192,7 @@
     PHYSICS_SIM_DEFAULTS: PHYSICS_SIM_DEFAULTS,
     physicsWorkerCount: physicsWorkerCount,
     stepSpinPays: stepSpinPays,
+    stepSpinSetting: stepSpinSetting,
     validatePhysicsConfig: validatePhysicsConfig,
   });
 })(typeof globalThis !== 'undefined' ? globalThis : self);
