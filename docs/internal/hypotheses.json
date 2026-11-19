@@ -23476,17 +23476,18 @@
         "R-1435",
         "R-1436",
         "R-1461",
-        "R-1462"
+        "R-1462",
+        "R-1480"
       ],
-      "result": "",
-      "next": "Find the feature that sets it off. 32 runs per arm on the HD 620, each run's Chrome log kept (CHROME_LOG_FILE plus --dumpio); the log's ProduceSkia or \"GPU state invalid\" lines mark a frozen run. Arms: the barrio by day (hour=12); at night with its lamps off; with shadows off; with the G-buffer off. Then a smaller scene with the suspect alone. Also try WebGPU on the HD 620, and the Radeon iGPU here when this PC is free.",
+      "result": "Cause found 2026-11-18 (R-1461, R-1462, R-1480): the Intel D3D11 driver (27.20.100.8682) takes a file lock on Chrome's shader cache file (LocalLow/Intel/ShaderCache) in its worker threads; when the lock breaks, every later shader compile waits its 1 s timeout and the GPU main thread waits for it, about 30 compiles in a row. With no cache file allowed, 0 freezes of 23 against 10 of 23 with a fresh one.",
+      "next": "Decide with the owner: the ASUS lab denies Chrome's Intel cache file for its benches (the driver never reuses it: it grows 200 KB a run); try a current Intel driver on the HD 620 with a fresh cache; whether the engine should shorten the freeze (fewer programs at start) or prefer WebGPU on Intel Gen9; whether to report it to Intel or Chromium.",
       "id": "N-298",
       "kind": "bug",
       "area": "render",
       "status": "open",
       "date": "2026-11-18",
       "title": "Buenos Aires at night freezes in about 1 start in 10 on the Intel HD 620. After WebGL init the page's rAF falls to 1 to 3 fps, the renderer draws nothing, the machine idles, and there is no page error or context loss: a hang in Chrome's GPU process. It does not happen on the MX110, and it happens with the prod bundle too",
-      "statusText": "found on the ASUS 2026-11-18 (jobs 0896m to 0896q): the \"renderer stall\" of 2026-11-17 caught with Chrome's own log"
+      "statusText": "cause found on the ASUS 2026-11-18 (jobs 0896y to 0897e): the Intel driver's shader cache lock, not the engine"
     },
     {
       "id": "E-524",
@@ -37990,6 +37991,15 @@
       "title": "Barrio freeze vs the Intel driver's shader cache for Chrome: fresh file 3 of 12, real file 0 of 12, no cache file 0 of 12 (recorder as load); size and a previous Chrome are not the cause",
       "verdict": "note",
       "text": "ASUS lab job 0897d (21:11-21:48), freezeProbe v7: the Intel driver's shader cache for Chrome set before each run,\nthe recorder running as load (started and cancelled, nothing kept), a tracerpt loop added as more load from round 7.\nArms interleaved, 12 rounds, Buenos Aires at night, HD 620, WebGL D3D11, src at main 70ba822b. Each run waits until\nthe last run's Chrome has exited.\n\n| Chrome's Intel cache | Frozen |\n|---|---|\n| keep (the real 221 MB file) | 0 of 12 |\n| fresh (the real file parked; the driver writes a new one, about 195 KB) | 3 of 12 |\n| none (the real file parked, file creation denied in the folder; the driver makes no file) | 0 of 12 |\n\n- A fresh, tiny file froze (36 KB written when frozen): the file's size is not the cause.\n- A previous Chrome still exiting is not the cause either: 0897b froze with the last Chrome gone 76 ms before.\n- 3 against 0 of 12 is about 1 in 10 by chance; 0897e runs fresh against none for 30 rounds to settle it.\n- How: the folder cannot be renamed (explorer.exe keeps its own cache file there open), so only Chrome's two files\n  (8f3daeab..., ec95df26...) are parked, and none adds a deny ACE for Everyone on creating files. The cache was copied\n  to C:\\weedlab\\intel-shadercache-backup first; an earlier version of the probe overwrote the parked real file, which\n  came back from that copy. The real files are back in place."
+    },
+    {
+      "id": "R-1480",
+      "date": "2026-11-18",
+      "time": "22:17",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze settled: Chrome's Intel shader cache fresh froze 10 of 23, no cache file 0 of 23 (p < 0.001); the driver's file lock breaks after about 38 KB and every later compile waits its 1 s timeout",
+      "verdict": "note",
+      "text": "ASUS lab job 0897e (21:48-22:17, stopped by hand after round 11 of 30: settled), freezeProbe v7: Chrome's Intel shader\ncache fresh (the real file parked, the driver writes a new one) against none (no file may be created: the driver has\nno cache for Chrome), the recorder running as load plus the tracerpt loop. Buenos Aires at night, HD 620, WebGL D3D11,\nsrc at main 70ba822b. Each run waits until the last run's Chrome has exited.\n\n| Chrome's Intel cache | 0897e | with 0897d |\n|---|---|---|\n| fresh | 7 of 11 frozen | 10 of 23 |\n| none | 0 of 11 | 0 of 23 |\n| keep (0897d only) | | 0 of 12 |\n\n- 10 of 23 against 0 of 23 comes by chance less than once in 2 000 (Fisher's exact, one-sided). No cache file, no\n  freeze: the freeze is the Intel driver's lock on Chrome's shader cache file.\n- In every frozen run the fresh file stopped at 35 to 39 KB; in normal runs it reached about 195 KB. The driver writes\n  the first shaders, then its lock breaks and nothing more is written: every later compile waits the lock's 1 s timeout\n  and skips the cache. The freeze ends when the scene has no more shaders to compile.\n- The driver never reuses Chrome's cache: the real file grows about 200 KB every run (221.3 -> 223.6 MB over 0897d's\n  12 keep runs). Denying the file costs Chrome nothing it was getting.\n- The real file is back in place (223 607 862 bytes), the deny ACE removed; the copy in C:\\weedlab\\intel-shadercache-backup\n  stays.\n- What the engine can do is limited: fewer distinct programs at start shortens a freeze; WebGPU on the HD 620 never\n  froze (0 of 64, R-1365). A newer Intel driver than 27.20.100.8682 may fix the lock; untried."
     }
   ],
   "leads": [
