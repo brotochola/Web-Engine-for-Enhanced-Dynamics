@@ -21808,7 +21808,8 @@
         "R-1318",
         "R-1321",
         "R-1341",
-        "R-1428"
+        "R-1428",
+        "R-1584"
       ]
     },
     {
@@ -23516,7 +23517,9 @@
         "step floor rows",
         "scoreboard calibration"
       ],
-      "records": [],
+      "records": [
+        "R-1585"
+      ],
       "result": "",
       "next": "A `query` per catalog row (engineFeatureCatalog.mjs) and a calibration pass in runScoreboard that raises it until the baseline's primary worker passes the floor on the machine at hand. Load knobs for the scenes that have none: stationarySpatialScene (spatial) and queryAabbStressScene (queryAabb, N-295). The ASUS's values from job 0896e are a start: ray casts=12288, bullets=65000, spawn storm=6000.",
       "id": "DX-SCORELOAD",
@@ -39321,6 +39324,24 @@
       "title": "DX-STARTUP's matrix on the ASUS: Predator and the barrio start 28 to 59 % sooner (barrio bundle cold 12.0 -> 6.0 s), bunnyMark level; 2 to 3.3x the main PC's times",
       "verdict": "note",
       "text": "ASUS lab job 0899i (16:43-17:19): DX-STARTUP's final matrix on the low-end machine (i7-7500U 2C/4T, HDD, HD 620 on\nIntel 31.0.101.2145, on AC), set up as R-1517. loadWaterfall on main b190651d (the engine of 1b77eaa7, its own dist)\nagainst the base 1351a40b (served with --root, its own src and dist), both from the bench page's prepare (--t0\nprepare), headed, the default backend, 3 runs, cold (a fresh context, the OS file cache warm) and warm, settle 5 s.\nSides alternated per scene. First draw after prepare, medians of 3 in ms; the main PC's change from R-1517 in brackets:\n\n| scene | build | cold base | cold main | warm base | warm main |\n|---|---|---|---|---|---|\n| Predator `light3d=1&hour=22` | source | 11 333 | 7 687 (-32 %) [-23 %] | 9 941 (2 runs) | 6 033 (-39 %) [-53 %] |\n| Predator `light3d=1&hour=22` | bundle | 7 355 | 4 943 (-33 %) [-43 %] | 7 245 | 2 981 (-59 %) [-71 %] |\n| Buenos Aires `hour=22` | source | 12 187 | 8 780 (-28 %) [-9 %] | 11 186 | 6 762 (-40 %) [-33 %] |\n| Buenos Aires `hour=22` | bundle | 11 956 | 6 048 (-49 %) [-22 %] | 6 941 | 4 063 (-41 %) [-45 %] |\n| bunnyMark | source | 3 574 | 3 698 | 3 910 | 3 935 |\n| bunnyMark | bundle | 1 521 | 1 527 | 1 915 | 1 732 |\n\n- **The startup work holds on the slow machine.** Every Predator and barrio start is 28 to 59 % sooner. The barrio's\n  cold start gains more here than on the main PC: 6.0 s instead of 12.0 s from the bundle. bunnyMark is level, as on\n  the main PC.\n- **The ASUS takes 2 to 3.3 times the main PC's time:** Predator from the bundle warm 2 981 ms against 913, the barrio\n  4 063 against 1 893.\n- **The first cold run of each side reads the HDD:** the barrio from source on main 19.8 s, then 8.5 and 8.8 s; the\n  median leaves it out.\n- **A hang on the base side:** Predator from source at 1351a40b, run 2's warm visit, never finished. The driver's\n  15-minute timeout killed it, so the base's warm figure is the median of 2 runs (9 535 and 10 347). Base only, once.\n- **The longest own step is unreadable here:** nearly every worker on both sides reads 128 ms or more, frameTotals'\n  histogram ceiling. Rerun after the ceiling is raised, if the first seconds' steps matter on low-end."
+    },
+    {
+      "id": "R-1584",
+      "date": "2026-11-19",
+      "time": "17:25",
+      "timeFrom": "recorded",
+      "title": "bunnyMark on the HD 620 is pixel-bound (30 000: 15.6 ms GPU, 1.46 ms under a 1 px scissor) and blending is not the cost (blend off 15.75 ms against 15.70)",
+      "verdict": "note",
+      "text": "ASUS lab jobs 0899g2 (16:29-16:31) and 0899i5 (17:22-17:25): where the HD 620's time goes in bunnyMark, for E-502's\nopen question (which part of a sprite pixel the HD 620 pays). Intel 31.0.101.2145, glFrameRecorder, main e7581de9\n(0899g2) and b190651d (0899i5), --src.\n\n- **One instanced draw, and its pixels are the cost.** GPU time is 9.2 ms a frame at 15 000 bunnies and 15.6 ms at\n  30 000. Under a 1 px scissor at 30 000 it is 1.46 ms, so about 90 % of the draw is pixel work and 10 % vertices and\n  setup. The bunny is 26x37 px: about 29 Mpx a frame at 30 000, near 2 Gpx/s.\n- **Blending is not that cost.** With the batch's main state set to blendMode 'none' in the lab tree, the draw takes\n  15.75 ms against 15.70 ms with blend (2 rounds alternated, 30 000).\n  - So a cutout mode (blend off for frames whose alpha is only 0 or 255) would not buy frames on this GPU.\n  - Drawn frames read 371 against 389 and the renderer's own work 3.6 against 4.4 ms. Two rounds, unexplained.\n  - Not verified directly: Pixi sets the state once, before the recorded window, so the recording shows no\n    gl.disable(BLEND).\n  - The first attempt (0899i2) set state.blend = false before the line that sets the blend mode. Pixi's blendMode\n    setter turns blending back on, so that run measured blend on both sides.\n- **The ASUS has one DDR4-2133 module** (single channel). On these numbers framebuffer bandwidth is not the limit\n  either. What is left is the pixel rate of a 15 W part whose GPU clock shares its power with a busy CPU. Not measured:\n  the GPU clock during the run.\n- **For E-502:** the HD 620 pays per pixel drawn, not for blending. Of the parts its next names (vertex texture\n  fetch, discard with depth writes, depth traffic), the opaque pass's extra cost is then likely its depth traffic or\n  its extra pass over the same pixels. On this GPU, fewer pixels (a render scale) is the lever."
+    },
+    {
+      "id": "R-1585",
+      "date": "2026-11-19",
+      "time": "17:22",
+      "timeFrom": "recorded",
+      "title": "rayVsBox2d on the ASUS: ?singleCasts does not load its scenes (box2d-single only); the row's baseline logic0 is about 5 ms and the scene needs a ?casts knob",
+      "verdict": "note",
+      "text": "ASUS lab jobs 0899g (16:31-16:34) and 0899i4 (17:19-17:22), DX-SCORELOAD: a load ladder for the rayVsBox2d row on the\nASUS. Headless as the scoreboard's stress rows, --src, detailed stats off. 0899g ran a full v0.14.0 tree. 0899i4 ran\nmain b190651d's scenes over v0.14.0's src/, as the scoreboard's baseline does.\n\n- **`?singleCasts` does not load these scenes.** It sets the single sync casts of the box2d-single scenes only\n  (rayStressDriver.js). RayVsBox2dWeedBusyScene, the row's scene, read logic0 4.6 to 5.2 ms at every value from 8 to\n  4 096. RayVsBox2dBoxBusyScene read logic0 about 6.2 ms (its own work 0.2 ms: it waits on physics) from 1 536 to\n  12 288.\n- **The row needs a casts knob.** On the ASUS its baseline primary, logic0 at v0.14.0, is about 5 ms, under the 6 ms\n  floor, and the scene reads no knob that changes it. rayStressScene has `?casts=N` (casts per logic tick); the same\n  knob in rayVsBox2dStressScene, passed to RayStressDriver.spawn({ casts }), would let the calibration raise it.\n- **DX-SCORELOAD's knob list:** stationarySpatialScene (spatial), queryAabbStressScene (queryAabb) and now\n  rayVsBox2dStressScene (casts).\n- 0899g's tree had no ?singleCasts at all. The scoreboard runs v0.14.0's src/ under the current scenes, so a ladder\n  must too."
     }
   ],
   "leads": [
