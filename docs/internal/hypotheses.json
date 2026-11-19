@@ -11632,7 +11632,8 @@
         "R-1271",
         "R-1275",
         "R-1278",
-        "R-1314"
+        "R-1314",
+        "R-1588"
       ]
     },
     {
@@ -11690,7 +11691,8 @@
       "records": [
         "R-1252",
         "R-1498",
-        "R-1587"
+        "R-1587",
+        "R-1588"
       ]
     },
     {
@@ -39363,6 +39365,15 @@
       "title": "The ASUS's CPU picture: Predator holds crowd 0.2 (3 200); the machine saturates only from crowd 0.35, no thread spins; physics's p99 breaks while its mean holds 4-6 ms; the CPU runs at 63-92 % of base under load",
       "verdict": "note",
       "text": "ASUS lab jobs 0899k, 0899l2, 0899l3 and 0899m (17:31-18:02): how much CPU the engine uses on the 2-core laptop, and\nPredator's capacity again. i7-7500U 2C/4T, HD 620 on Intel 31.0.101.2145, on AC with the battery reading 0 %. Main\nb190651d, headed, --src.\n\n**R-1498 read Predator's capacity too low and its CPU wrong.**\n- **Capacity:** runCapacity, start 0.25, floor 0.1 (R-1498 had none under 0.25). Predator holds crowd 0.2 (3 200\n  civilians and soldiers) in 2 of 2 runs.\n  - crowd 0.25: passed once and failed once (drawn 57.5 fps).\n  - crowd 0.3: physics p99 19 ms. crowd 0.35: 88 ms. crowd 0.5: at the 128 ms ceiling.\n  - R-1498's 0.25 failure (physics p99 19.6 ms) is the same edge.\n- **CPU use** (kcpu.mjs, every chrome.exe process's CPU and the machine's idle time, 10 s inside the window, the\n  capacity runner's setup):\n\n  | scene | machine busy (of 4 000 ms/s) | Chrome's renderer process | GPU process |\n  |---|---|---|---|\n  | Predator crowd 0.25 | 2 356, 2 666 | 1 461, 1 544 | 437, 590 |\n  | Predator crowd 0.3 | 2 556 to 3 264 (3 runs) | 1 503 to 1 719 | 553 to 668 |\n  | Predator crowd 0.35 | 3 555 to 3 738 (3 runs) | 1 783 to 1 836 | 633 to 679 |\n  | barrio hour 22, 2 000 people | 3 012, 3 046 | 2 040, 2 131 | 483, 537 |\n  | boids 28 000 | 2 711, 3 100 | 2 267, 2 592 | 281, 333 |\n\n  - The machine saturates only from Predator's crowd 0.35. R-1498's \"about 96 ms of CPU a 16.7 ms frame\" added the\n    workers' step - wait, which is wall time: the workers' summed own time is 1.2 to 1.7 s a second.\n  - threadCpuProbe (Playwright's Chromium, 1280x800) found no thread over 800 ms/s in any of 6 scenes: nothing spins.\n- **Predator's workers at crowd 0.3 and 0.35 kept 60 Hz in 8 of 9 runs**, with physics 3.6 to 5.7 ms own a step. In\n  one (0899l2, 0.3) physics fell to 16.4 ms at 40 Hz and logic0 to 11.3 ms; not seen again in 6 runs.\n  - So physics's p99 breaks while its mean holds. The edge is tail steps, not every step growing.\n- **The CPU runs under its base clock under load.** freqlog.mjs (WMI ProcessorInformation, every 5 s) during the\n  capacity search read 63 to 92 % of 2.7 GHz while a run was going, and 106 to 120 % (turbo) between runs. A 15 W part\n  whose GPU is busy too, maybe capped further by the dead battery: this laptop is a worst case.\n- Next: Box2D's thread count against the tail, by capacity (job 0899n). R-1275 saw 2 threads take Predator's bad\n  tails away at crowd 0.5, though it judged by the mean."
+    },
+    {
+      "id": "R-1588",
+      "date": "2026-11-19",
+      "time": "18:20",
+      "timeFrom": "recorded",
+      "title": "Box2D's thread count does not raise Predator's capacity on the ASUS (2: crowd 0.15, 3 and 4: 0.2); drawn frames set the edge at 0.25, every worker's p99 under 11.5 ms",
+      "verdict": "note",
+      "text": "ASUS lab job 0899n (18:05-18:20): Predator's capacity with Box2D on 2, 3 and 4 threads. runCapacity at main b190651d,\n`?physicsWorkers=n` (Predator's default 4, the engine's too), start 0.25, floor 0.1, headed, --src. i7-7500U 2C/4T,\nHD 620.\n\n| Box2D threads | capacity | crowd 0.25 | crowd 0.2 |\n|---|---|---|---|\n| 2 | 0.15 (2 400) | FAIL, drawn 57.37 fps | FAIL, drawn 58.39 fps |\n| 3 | 0.2 (3 200) | FAIL, drawn 57.59 fps | PASS twice |\n| 4 | 0.2 (3 200) | FAIL, drawn 55.87 fps | PASS twice |\n\n- **The thread count does not raise Predator's capacity on the 2-core laptop.** 3 and 4 tie at crowd 0.2, and 2 is a\n  step lower. That step is one run at 58.4 fps against the 59 bar, so possibly noise.\n- **At the edge the drawn frames set the limit, not physics.** Every crowd-0.25 run failed on drawn fps (55.9 to\n  57.6), while every worker's p99 stayed between 7.8 and 11.5 ms. Physics's p99 breaks only from crowd 0.3 (R-1587).\n- **For DX-ELASTIC and DX-AUTOQUALITY:** no case here for fewer Box2D threads on 4 logical CPUs. The engine's fixed\n  default of 4 is fine at the capacity edge. R-1275's \"2 threads take the bad tails away\" was at crowd 0.5, past this\n  laptop's capacity.\n- The next limit to read is the HD 620's frame time at crowd 0.25 in daylight."
     }
   ],
   "leads": [
