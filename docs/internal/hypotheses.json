@@ -16087,7 +16087,8 @@
         "R-1324",
         "R-1335",
         "R-1494",
-        "R-1495"
+        "R-1495",
+        "R-1496"
       ]
     },
     {
@@ -22076,7 +22077,9 @@
       "aliases": [
         "indexed statics partial upload"
       ],
-      "records": [],
+      "records": [
+        "R-1496"
+      ],
       "id": "E-514",
       "kind": "speed",
       "area": "pixi",
@@ -39112,6 +39115,15 @@
       "title": "The barrio's GPU passes on the HD 620, 69d1a10f against 8c310e43: GPU time a frame unchanged (15.6 -> 15.7 ms; lamps' map +0.74 ms, full-res statics +0.53, stage draw -1.03), so R-1494's drawn-frame loss is not GPU time (sync calls a lead)",
       "verdict": "note",
       "text": "ASUS lab job 0899c (11:50-11:58): glFrameRecorder --gpu-passes (GPU time per pass, timer queries, 0 disjoint) of\nBuenos Aires at night (hour=22, dayMinutes=0, camera still, 20 s warm-up, 3 s recorded) at 69d1a10f and 8c310e43. HD\n620, Intel 31.0.101.2145. One recording each, to see where R-1494's 8.9 % fewer drawn frames come from.\n\n| Pass (program's uniforms) | 69d1a10f | 8c310e43 |\n|---|---|---|\n| Total GPU a frame | 15.606 ms | 15.743 ms |\n| Stage draw (uTextures) | 9.007 ms, 23 320 inst | 7.979 ms, 20 498 inst |\n| Light pass (uLightData, uShadowMap, ...) | 2.543 ms | 2.295 ms |\n| Lamps' map 4096x512 (uLampTiles) | 1.337 ms, 274 inst | 2.073 ms, 225 inst |\n| Full-res statics/G-buffer 1920x1080 (uMapsLut) | 1.013 ms, 12 815 inst | 1.546 ms, 18 272 inst |\n| Half-res maps 960x540 | 1.273 ms | 1.277 ms |\n| Small 960x540 | 0.433 ms | 0.385 ms |\n| New: 4096x256 (uPoseTable, uLampTiles) | none | 0.181 ms |\n\n- **GPU time a frame is unchanged** (+0.9 %): the stage draw is cheaper (-1.03 ms, fewer instances), the lamps'\n  map +0.74 ms (+55 %), and the full-res statics pass +0.53 ms (+53 %, 43 % more instances).\n- **R-1494's drawn-frame loss (35.2 -> 32.2 fps) is not GPU time.** About 15.7 ms of GPU a frame allows more than the\n  frames drawn. A lead: CPU-GPU sync in the frame. 8c310e43's frame shows fenceSync, getSyncParameter and deleteSync\n  calls. The renderer's frame pacing is another candidate.\n- Single recordings: the per-pass numbers are one sitting's. The lamps' map and the statics pass growth are worth a\n  look in the render work (the HD 620 is not the yardstick: owner, 2026-11-18)."
+    },
+    {
+      "id": "R-1496",
+      "date": "2026-11-19",
+      "time": "12:20",
+      "timeFrom": "recorded",
+      "title": "The barrio's drawn-frame loss on the HD 620 is not Chrome's GPU process (lighter at 8c310e43: 731-746 against 778-781 ms/s; E-514's statics upload +10 ms/s); pre-render waits more (0.2-0.6 -> 1.0-6.2 ms a frame) and makes fewer frames: the frame chain is the lead",
+      "verdict": "note",
+      "text": "ASUS lab job 0899d (12:05-12:20): gpuProcessTrace --decoder (Chrome's GPU process threads, self time by event,\nper-command slices) of Buenos Aires at night on the HD 620, 69d1a10f against 8c310e43. Headed, A B A B, 3 s traces\nafter 20 s warm-up, Intel 31.0.101.2145. The question was where R-1494's drawn-frame loss comes from, since GPU time\na frame is unchanged (R-1495).\n\n| CrGpuMain, ms a second | 69d1a10f r1 / r2 | 8c310e43 r1 / r2 |\n|---|---|---|\n| In slices | 778.5 / 781.4 | 745.9 / 730.5 |\n| glDrawElementsInstancedANGLE self | 257.1 / 276.2 | 168.4 / 177.7 |\n| glTexSubImage2DRobustANGLE | 7.4 / 8.1 (102/s) | 18.3 / 18.1 (160/s) |\n| glClientWaitSync | none / 4.7 (264/s) | 7.9 / 7.7 (568/s) |\n| Presents (DXGISwapChainImageBacking::Present) | 28 / 29 a second | 35 / 34 a second |\n\n- **The GPU process is lighter at 8c310e43, not heavier.** The instanced draws cost a third less (fewer instances).\n  E-514's statics-texture upload (3072x12 RGBA32UI, every other frame) adds about 10 ms a second. glClientWaitSync\n  calls doubled, but total under 8 ms a second.\n- **Under tracing the order flips:** 8c310e43 presents more frames (34 to 35 a second, against 28 to 29). The tracing\n  overhead lands on 69d1a10f's heavier draw stream. So CrGpuMain is not what holds 8c310e43's drawn frames down either.\n- **The lead is in R-1494's own pairs: pre-render waits.** Its exact-frame wait rose from 0.56 / 0.26 / 0.16 / 0.32 ms\n  (69d1a10f) to 2.42 / 0.97 / 4.75 / 6.23 ms (8c310e43). Its frames in the window fell from 345 / 340 / 341 / 335 to\n  323 / 326 / 323 / 318, while its own work halved. Pre-render produces fewer frames because it waits more. That points\n  to the frame chain between pre-render and the renderer (the bell, or a buffer returned late), not the GPU.\n- **Next:** a worker timeline (devtools.timeline) of pre-render and the renderer at 8c310e43, to see what pre-render\n  waits for."
     }
   ],
   "leads": [
