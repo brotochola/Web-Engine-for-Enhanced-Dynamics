@@ -18465,7 +18465,8 @@
         "R-1459",
         "R-1488",
         "R-1489",
-        "R-1490"
+        "R-1490",
+        "R-1491"
       ],
       "rank": 16
     },
@@ -38809,6 +38810,15 @@
       "title": "N-218's cause confirmed on the ASUS: 5d48642f alone, logic's own work 17.1 -> 22.8 ms (+33 %, 8 runs each); its read of Transform.parent in every pose write, at 250 000 entities",
       "verdict": "note",
       "text": "ASUS lab job 0898t (07:27-07:41): the three revisions around 0898s's steps, 8 runs each, round-robin,\nkeyedPackStressScene n=250000 gbuf=1 churn=0.05, logic's own work (exact-frame step minus wait), src/ only. HD 620 on\nIntel 31.0.101.2145.\n\n| Revision | Median (ms) | Runs (ms) |\n|---|---|---|\n| 1ad06d1b (before) | 17.12 | 17.1 18.5 11.0 18.8 16.7 17.5 16.6 16.4 |\n| 5d48642f (GameObject: transform.parent, a child's pose writes ignored) | 22.83 | 19.4 20.2 21.1 23.6 22.8 23.2 23.5 20.0 |\n| 82240fc8 (logic0's orphan drain) | 23.12 | 24.7 20.5 23.1 25.4 20.8 19.8 20.4 24.0 |\n\n- **N-218's cause is 5d48642f alone: +5.7 ms, +33 %.** 1ad06d1b's runs top out at 18.8 ms and 5d48642f's start at\n  19.4. 82240fc8 adds nothing (+0.3 ms); 0898s's second step was noise.\n- **The mechanism:** 5d48642f reads Transform.parent[i] in every pose write, for entities without a parent too:\n  poseMoved for body-less movers, setPositionFromArgs, set rotation, setRotationCS. keyedPack moves tens of thousands\n  of sprites a frame. At 250 000 entities that column (1 MB) misses the 4 MB L3 with the others; at 150 000 it does\n  not show.\n- **Fix idea (engine code, not made here):** test a scalar first, so a scene with no links never reads the column: the\n  link count 5d48642f already imports (LINK_COUNT), or a module flag set when the first link is made. Then rerun this\n  row (or kp-e387-gbuf on the main PC) against 1ad06d1b's level."
+    },
+    {
+      "id": "R-1491",
+      "date": "2026-11-19",
+      "time": "08:25",
+      "timeFrom": "recorded",
+      "title": "N-218's fix (4966998a, the parent read only while links exist) on the ASUS: setterMicrobench 11.09 -> 7.60 ms a frame at 250 000 walkers (-31 %), 6.94 -> 4.71 at 150 000; the browser scene cannot judge it on 2 cores",
+      "verdict": "note",
+      "text": "The main PC session's fix for N-218 is weed-par-quick fix/n218-parent-guard, commit 4966998a. The pose writes read\nTransform.parent[i] only while Transform.links[LINK_COUNT] !== 0. It was checked on the ASUS (jobs 0898u to 0898x,\n07:53-08:25). bb9e0cc1 (its parent, dx/startup with the regression) and 4966998a came as src/ archives from the main PC.\n\n**The browser scene cannot judge it on this laptop.** keyedPack n=250000 gbuf=1 churn=0.05, logic's own work:\n\n| Job | 1ad06d1b | bb9e0cc1 | 4966998a |\n|---|---|---|---|\n| 0898u (8 runs) | 18.7 ms | 9.4 to 30.9, bimodal | 13.1 to 29.9, bimodal |\n| 0898w (4 runs) | | 21.8 to 30.5 | 12.6 to 16.0 |\n\n0898w's other workers show why: logic ran fast exactly when pre-render ran slow (44 to 46 ms against 31 to 42). On 2\ncores with 4 threads the two trade the same core run to run. The scene's logic time there measures who won the core,\nnot logic's cost. With detailed stats on (0898v), logic read 200 to 250 ms a frame at this n.\n\n**setterMicrobench in Node decides it** (0898x): GameObject's per-frame setters on real columns, body-less walkers,\nthe poseMoved path 5d48642f slowed. Tree asus-lab's kernel with each src, 5 rounds, round-robin, moving case, median\nms a frame over n walkers:\n\n| src | n = 250 000 | n = 150 000 |\n|---|---|---|\n| 1ad06d1b (before 5d48642f) | 7.05 (runs 136 to 154 frames/s) | 4.25 (226 to 247) |\n| 5d48642f | 10.77 (+53 %; 88 to 99) | 6.72 (+58 %; 141 to 156) |\n| bb9e0cc1 | 11.09 (86 to 97) | 6.94 (140 to 147) |\n| 4966998a (fix) | 7.60 (128 to 134) | 4.71 (208 to 224) |\n\n- **The fix works.** It is -31 % against its parent at 250 000 and -32 % at 150 000, recovering about 90 % of\n  5d48642f's cost, with no overlapping runs.\n- **What it leaves:** +8 % (250 000) and +11 % (150 000) over 1ad06d1b. The no-write case (\"same\") is also lower on\n  bb9e0cc1 (169.6 against 183.8 frames/s at 250 000), so other changes since 1ad06d1b add a little; that is not this\n  fix's.\n- **In the kernel the regression shows at 150 000 too.** The scene hid it there because logic did not bound the frame."
     }
   ],
   "leads": [
