@@ -18445,12 +18445,12 @@
     {
       "id": "N-218",
       "title": "Logic got 43 % slower in keyedPackStressScene with ?gbuf=1 between bdcca2e7 and main (2.96 -> 4.24 ms, 4 of 4 pairs), though neither setter commit in that range slows it without gbuf and churn",
-      "status": "open",
-      "statusText": "fix 4966998a on dx/startup 2026-11-19 (R-1532); the ASUS's keyedPack check decides",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (4966998a on dx/startup)",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "bug",
-      "result": "kp-e387-gbuf (n=250000 churn=0.05 gbuf=1, bdcca2e7 against a43899ed, 04:12 to 04:17): logic raw STEP 3.018 -> 4.086, 2.908 -> 3.997, 2.920 -> 4.418, 2.996 -> 4.386 ms; Pixi +2.0 %, pre-render +0.7 %. The setter bisect (n=300000 moving=0.5 churn=0, no gbuf, 04:21 to 04:33): N-215 alone 5.476 -> 5.214, N-170 alone 5.287 -> 5.241. Only gameObject.js changed in logic's code between the two revisions.",
+      "result": "Fixed 2026-11-19 (R-1534, R-1491): the pose writes test the link count before Transform.parent[i]; the poseMoved kernel 11.09 -> 7.60 ms a frame at 250 000 entities on the ASUS (1ad06d1b, before DX-PARENT: 7.05).",
       "next": "Bisect the configuration (gbuf=1 alone, churn=0.05 alone: the tint setter every frame for 12 500 churners) and the revisions (f2ef124e, 3cd0d1fc) with logic as owner over 6 ms; a logic CPU pass of both sides; check whether lighting's emissive path adds logic work.",
       "refs": [],
       "aliases": [
@@ -18464,9 +18464,9 @@
         "R-1446",
         "R-1459",
         "R-1488",
-        "R-1532"
-      ],
-      "rank": 16
+        "R-1532",
+        "R-1534"
+      ]
     },
     {
       "id": "E-408",
@@ -38861,6 +38861,18 @@
       "text": "**SST-21 looked at, not solved: spatial0's long step in the first second is not Liftoff code, and it shows from source\ntoo.** loadWaterfall gained `--js-flags no-liftoff[,flag…]` (ef3bce37). Predator `light3d=1&hour=22`, bundle (built from\nthe working tree), warm, 3 runs, `--t0 prepare`, the longest own step from the start to 5 s after the first draw (median):\ndefault spatial0 120 ms (05:11); with `no-liftoff` (every wasm function compiled by TurboFan at instantiation) 101 ms,\nwhile physics and pre-render went to 128 or more from that compile (05:13): the step stays long with optimized code, so\nit is work, not the tier. runIntegratedWorkerBenchmark from the start (`--warmup-ms 1 --duration-ms 1500`), source,\nheaded (05:15): spatial0 max 128 ms, 2 long frames in 87; the bundle run alike (05:14). The CPU trace of that run covers\nthe load, not those frames, and the result holds no per-frame series, so which frame and what it does are still open.\nNext: a per-frame STEP series for the first two seconds (frameTotals' frames, or a worker log), then the first\nneighbour build before the start (the prime's way) or spread over the first frames.",
       "commits": [
         "ef3bce37"
+      ]
+    },
+    {
+      "id": "R-1534",
+      "date": "2026-11-19",
+      "time": "05:25",
+      "timeFrom": "recorded",
+      "title": "N-218 fixed: the pose writes read the parent column only while a link exists; the ASUS's setterMicrobench -31 % at 250 000 entities (-32 % at 150 000), about 90 % of 5d48642f's cost back",
+      "verdict": "kept-kernel",
+      "text": "**N-218 fixed: the pose writes read the parent column only while some entity has a parent; the ASUS's kernel recovers\nabout 90 % of the regression (-31 % at 250 000 entities).** The ASUS session found the cause (R-1489, R-1490: 5d48642f,\nDX-PARENT, reads Transform.parent[i] in poseMoved, setPositionFromArgs, set rotation and setRotationCS, for entities with no\nparent too; at 250 000 entities that 1 MB column misses the cache) and checked the fix 4966998a (R-1491): its\nsetterMicrobench in Node (the poseMoved path, body-less walkers), each src, 5 rounds round-robin, the moving case, median\nms a frame: 1ad06d1b (before DX-PARENT) 7.05 at n=250 000 and 4.25 at 150 000; 5d48642f 10.77 and 6.72; bb9e0cc1 (the fix's\nparent) 11.09 and 6.94; 4966998a 7.60 and 4.71: the fix -31 % and -32 % against its parent, runs not overlapping\n(128-134 against 86-97 frames a second at 250 000). The +8 to 11 % left against 1ad06d1b shows in the no-write case too\n(other changes since). The browser scene cannot judge it on the ASUS (logic and pre-render trade one physical core run to\nrun) and reads neutral on the main PC, where logic is 6.4 ms in that scene (R-1532). Kept as a kernel claim; on\ndx/startup (4966998a).",
+      "commits": [
+        "4966998a"
       ]
     }
   ],
