@@ -327,6 +327,9 @@ class Scene {
 
     this._stepSeq = 0;
     this._stepWaiters = new Map();
+    /** SST-15: the physics prime the start waits for ({ id, resolve }), and its sequence. */
+    this._primeWaiter = null;
+    this._primeSeq = 0;
 
     // create()/createNewGame() spawns: see _flushCreateSpawns.
     this._spawnBatchOpen = true;
@@ -1310,6 +1313,9 @@ class Scene {
     }
     this._loadStep('world');
     this._spawnBatchOpen = false;
+    // SST-15: physics makes the spawned bodies now, not in its first step after the start.
+    await this._primePhysics();
+    loadMark('physics primed');
 
     // create() may have set the sun; the workers' first frame comes before the main loop's first publish.
     Sun.publish();
@@ -1324,6 +1330,43 @@ class Scene {
     }
     loadMark('start');
     this._takeMainLoadMarks();
+  }
+
+  /**
+   * SST-15: ask the physics worker to make the bodies, joints and commands the world's spawns left, and wait for it, so
+   * its first step after the start has only its own work (Predator by night: 196 ms, 138 of them making 18 248 bodies
+   * and draining 52 696 commands). A worker that does not answer in timeoutMs leaves the work to its first step.
+   * @param {number} [timeoutMs=10000]
+   * @returns {Promise<void>}
+   */
+  _primePhysics(timeoutMs = 10000) {
+    const worker = this.workers?.physics;
+    if (!worker) return Promise.resolve();
+    const id = ++this._primeSeq;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (this._primeWaiter?.id !== id) return;
+        console.warn('[Scene] the physics worker did not answer its prime; its first step makes the bodies');
+        this._primeWaiter = null;
+        resolve();
+      }, timeoutMs);
+      this._primeWaiter = {
+        id,
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      };
+      worker.postMessage({ msg: 'prime', id });
+    });
+  }
+
+  /** SST-15: the physics worker's answer to _primePhysics. */
+  _takePrimeDone(id) {
+    const waiter = this._primeWaiter;
+    if (!waiter || waiter.id !== id) return;
+    this._primeWaiter = null;
+    waiter.resolve();
   }
 
   /** SST-0: the page's load marks so far onto the scene (more come at the end of loadScene). */
@@ -2176,6 +2219,9 @@ class Scene {
       }
     } else if (e.data.msg === 'layerContentReady') {
       Layer.resolveLayerContentReady(e.data.layerId, e.data.requestId);
+    } else if (e.data.msg === 'primeDone') {
+      this._takeWorkerLoadMarks(e.currentTarget.name, e.data.loadMarks);
+      this._takePrimeDone(e.data.id);
     } else if (e.data.msg === 'barrierDone') {
       const b = this._barrier;
       if (b && b.id === e.data.id && --b.left === 0) {

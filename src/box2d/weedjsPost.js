@@ -3730,6 +3730,20 @@
     doStep();
   }
 
+  /**
+   * SST-15: the bodies, joints and commands the scene's spawns left, made now (before the start), so the first step
+   * after it has only its own work: Predator by night made 18 248 bodies (91 ms) and drained 52 696 commands (47 ms) in
+   * it. No step, no time: what the first step would do before stepping, in the same order.
+   * @returns {number} the bodies whose state changed
+   */
+  function weedjsPrime() {
+    if (!world) return 0;
+    const changes = syncBodies(hostEntityCount | 0);
+    drainCommands();
+    syncJoints();
+    return changes;
+  }
+
   function weedjsEnableHostMode() {
     hostMode = true;
   }
@@ -3951,6 +3965,7 @@
   globalThis.weedjsRestoreLiquidFun = weedjsRestoreLiquidFun;
   globalThis.weedjsEnableHostMode = weedjsEnableHostMode;
   globalThis.weedjsDoStep = weedjsDoStep;
+  globalThis.weedjsPrime = weedjsPrime;
   // Between steps (the physics host's wake, review N-24): every sync kind.
   globalThis.weedjsServiceQueries = function () {
     serviceQueryAabb();
