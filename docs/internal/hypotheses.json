@@ -24138,11 +24138,12 @@
     },
     {
       "records": [
-        "R-1547"
+        "R-1547",
+        "R-1549"
       ],
       "refs": [],
       "id": "DX-LIGHTKNOBS",
-      "title": "Two light knobs for the developer: lighting.shadowSamples (the shadow maps' taps a light pixel averages, 1 to 9 of the 3 x 3 texels, default 5) and lighting.lightTileSize (the light pass's screen tiles in px, 4 to 256, default 16)",
+      "title": "Two light knobs for the developer: lighting.shadowSamples (the shadow maps' taps a light pixel averages, 1 to 9 of the 3 x 3 texels, default 5) and lighting.lightCullingTileSize (tiled light culling: the light pass's screen tiles in px, 4 to 256, default 16)",
       "status": "kept",
       "statusText": "Asked for by the owner on 2026-11-19 after seeing 5 taps against 1 (\"es un knob\"); built and measured on dx/light-knobs (73ae2ba3, 8587a28c, 413183e1), merged to main 2026-11-19 (f0006e2e, bundles f0531fb1), not pushed",
       "date": "2026-11-19",
@@ -24152,6 +24153,7 @@
       "kind": "dx",
       "aliases": [
         "shadow samples",
+        "light culling tile size",
         "light tile size",
         "soft shadow taps"
       ]
@@ -39213,6 +39215,16 @@
       "text": "**N-317 found and fixed (3b188e53): vertical bands of shade on the roofs near the screen's bottom, from the sun map read past its edge.** The owner saw them in the barrio moving the camera with W: as the houses came to the bottom edge, their roofs took vertical bands of shading.\n\n- **Cause.** The sun's map holds the screen alone (the shadows' layer's size). A roof pixel near the bottom lands its sun ray (its floor point minus its height times k) below the screen, off the map; the read clamped to the map's last row, so that row's shade ran up the roof in columns.\n- **Evidence (the barrio, cam 13763.8, 4819.2, zoom 1.47, 13 h, 800 people; captures 13:56 to 14:08).** At the owner's camera the bottom house's roof has a dark vertical band on WebGL and on WebGPU; with the camera 120 px further down the same roof is clean. A probe that took an off-map landing as lit removed the band (14:03), and so does the fix on both backends (14:06, 14:08 the WebGPU before).\n- **Fix.** `sunVisibility` returns lit for a landing point outside the map, in GLSL and WGSL, before any tap (a node test checks both). It reads nothing it could not know; what it still cannot do is shade a surface near the edge whose ray lands off the screen with the shade that is really there (the casters past the edge are not in the map): that needs the map to reach past the screen (next).\n- **Verdict.** Kept as a bug fix (hygiene: one branch in the light pass, nothing measured). Suite green (3273).",
       "commits": [
         "3b188e53"
+      ]
+    },
+    {
+      "id": "R-1549",
+      "date": "2026-11-19",
+      "title": "lighting.lightTileSize renamed lighting.lightCullingTileSize: the owner read it as a resolution; it is tiled light culling's tile",
+      "verdict": "kept",
+      "text": "**`lighting.lightTileSize` renamed `lighting.lightCullingTileSize` (2c3217b9), at the owner's word.** He set it to 128 in the barrio and expected blockier shadows; it is tiled light culling's tile (which lights each pixel loops over), and the picture is the same at any size. The new name says what it is; the config comment, the types and the guide now say it is not a resolution and name the knobs that are (`shadowResolution`, `lampShadowTile`, `shadowSamples`). No alias (the old name never shipped). Suites green (3273 node, 121 demos); nothing measured (a rename).",
+      "commits": [
+        "2c3217b9"
       ]
     }
   ],
