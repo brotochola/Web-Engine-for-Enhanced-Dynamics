@@ -73,6 +73,7 @@ export const MILESTONES = [
   'assets',
   'init sent',
   'workers',
+  'layers content',
   'preload',
   'create',
   'world',
@@ -343,6 +344,10 @@ async function main() {
       if (vals.every((v) => v === undefined)) continue;
       console.log(`  ${fmt(median(vals))}  ${name}`);
     }
+    // The page's other marks (a scene's own, a phase not in MILESTONES yet), in time order.
+    const others = [...new Set(rs.flatMap((x) => x.waterfall.main.map((m) => m.name)))].filter((n) => !MILESTONES.includes(n));
+    const otherRows = others.map((name) => [name, median(rs.map((x) => x.waterfall.main.find((m) => m.name === name)?.ms))]);
+    for (const [name, ms] of otherRows.sort((a, b) => a[1] - b[1])) console.log(`  ${fmt(ms)}  ${name} (other)`);
     console.log(`  ${fmt(median(rs.map((x) => x.navToT0)))}  (loadScene after navigation)`);
     for (const name of Object.keys(last.workers).sort()) {
       console.log(`${name}:`);
