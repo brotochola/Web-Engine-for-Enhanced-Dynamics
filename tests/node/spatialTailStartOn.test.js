@@ -49,15 +49,14 @@ async function logicEnds(chain) {
 
 /**
  * A spatial worker at a frame's start, waiting on logic: `logic` logic workers whose last steps began `ago` ms before
- * now (each its own), a vsync period `period` and an own step `own` (ms).
+ * now (each its own; stampLogic again just before the frame when a thread is started in between), a vsync period
+ * `period` and an own step `own` (ms).
  */
 function spatialAt(w, { logic = 2, ago = [], period = 40, own = 2 } = {}) {
   const chain = new Int32Array(new SharedArrayBuffer(16));
-  const clock = bindFrameClock(createFrameClockBuffer());
-  const now = wallMs();
-  for (let i = 0; i < ago.length; i++) stampStep(clock, frameClockSlot('logic', i), now - ago[i], now - ago[i] + 0.5);
   w._frameChain = chain;
-  w._frameClock = clock;
+  w._frameClock = bindFrameClock(createFrameClockBuffer());
+  stampLogic(w, ago);
   w._startOnLogicDone = true;
   w._logicWorkers = logic;
   w._logicWaitPeriodMs = period;
@@ -68,6 +67,12 @@ function spatialAt(w, { logic = 2, ago = [], period = 40, own = 2 } = {}) {
   w._injectedDeltaTime = 0;
   w.frameNumber = 10;
   return chain;
+}
+
+/** The logic workers' last finished steps, begun `ago` ms before now (each its own) and 0.5 ms long. */
+function stampLogic(w, ago) {
+  const now = wallMs();
+  for (let i = 0; i < ago.length; i++) stampStep(w._frameClock, frameClockSlot('logic', i), now - ago[i], now - ago[i] + 0.5);
 }
 
 test('a logicDone frame sleeps on the bell until every logic worker has ended its frame, and counts the wait', async () => {
@@ -112,6 +117,7 @@ test('logic workers already done with this vsync\'s frame are not waited for, ev
   for (let attempt = 0; attempt < 4; attempt++) {
     chain = spatialAt(w, { ago: [1, 40] });
     const ends = await logicEnds(chain);
+    stampLogic(w, [1, 40]); // the thread took tens of ms to start
     resetWaitMeter();
     ends.endIn(3);
     w.beforeUpdate();
