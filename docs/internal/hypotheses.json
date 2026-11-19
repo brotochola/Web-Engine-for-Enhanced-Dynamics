@@ -16090,7 +16090,8 @@
         "R-1494",
         "R-1495",
         "R-1496",
-        "R-1497"
+        "R-1497",
+        "R-1582"
       ]
     },
     {
@@ -22084,7 +22085,8 @@
         "R-1497",
         "R-1581",
         "R-1550",
-        "R-1551"
+        "R-1551",
+        "R-1582"
       ],
       "id": "E-514",
       "kind": "speed",
@@ -39292,6 +39294,15 @@
       "commits": [
         "12b519fb"
       ]
+    },
+    {
+      "id": "R-1582",
+      "date": "2026-11-19",
+      "time": "16:43",
+      "timeFrom": "recorded",
+      "title": "The barrio's A/A on the HD 620 at hour 22: drawn frames +3.8 % and the renderer +2.9 % between identical sides (4 rounds); pre-render and spatial0 swing 30 % run to run",
+      "verdict": "note",
+      "text": "ASUS lab job 0899i3 (16:38-16:43): an A/A of the barrio on the HD 620, the same tree on both sides (main b190651d),\nhour 22, time frozen, 2000 people, still camera, 4 rounds alternated, as kdrawn ran E-514 (R-1581). Medians of 4,\nand the 4 runs of each side:\n\n| | A | A2 | A2 vs A |\n|---|---|---|---|\n| drawn frames in 10 s | 316 [314 315 341 316] | 328 [328 340 310 314] | +3.8 % |\n| renderer own ms | 7.25 | 7.46 | +2.9 % |\n| pre-render own ms | 10.26 (8.7 to 10.8) | 10.30 (8.5 to 14.0) | +0.4 % |\n| logic0 own ms | 4.70 | 4.75 | +1.1 % |\n| physics own ms | 7.69 | 7.84 | +1.9 % |\n| spatial0 own ms | 12.7 (8.6 to 13.7) | 14.4 (9.7 to 28.5) | +14 % |\n\n- **Detection limit of this scene on the ASUS, 4 rounds:** drawn frames about 4 %, renderer about 3 %. Pre-render and\n  spatial0 move 30 % and more from run to run: they trade 2 cores with the other workers. Single runs of drawn frames\n  span 310 to 341.\n- **For R-1581:** E-514's renderer -6 % and -8.5 % (4 of 4 pairs) clear this limit. Drawn frames +2.2 % at hour 13 is\n  under it, though E-514 led in 4 of 4 pairs. Pre-render +13 % at night sits inside pre-render's run-to-run spread\n  here; on the main PC the diff costs 0.07 ms at night."
     }
   ],
   "leads": [
