@@ -23908,7 +23908,8 @@
     {
       "records": [
         "R-1503",
-        "R-1506"
+        "R-1506",
+        "R-1516"
       ],
       "refs": [],
       "id": "SST-15",
@@ -23917,8 +23918,8 @@
       "kind": "speed",
       "area": "load",
       "date": "2026-11-18",
-      "statusText": "kept 2026-11-18 (f3e180ec, R-1503): the prime before the start",
-      "result": "Kept 2026-11-18 (R-1503): the scene primes physics before the start; the first step 197 -> 56 ms warm (100 cold), the start about 96 ms later.",
+      "statusText": "kept 2026-11-19: the collide in the final prime too (2b47e8e3, R-1516)",
+      "result": "Kept 2026-11-18/19 (R-1503, R-1506, R-1516): physics primed before the start, bodies, joints, commands and the first pairs and contacts; Predator by night's first physics step after the start 197 -> 18 ms warm.",
       "next": "Box2D's first step (every new proxy's pairs and contacts) in the prime too: a collide-only export; then the body creation's own cost (about 5 us a body and 3 commands each)."
     },
     {
@@ -38519,6 +38520,21 @@
       "text": "**SST-20: logic0 spends 114 to 144 ms of a Predator start spawning the world the page flushed; a CPU profile of it, and the\nfirst cut: a position setter inside its entity's spawn sends no SET_TRANSFORM (36 496 commands fewer).** CPU trace of\nlogic0 (runIntegratedWorkerBenchmark --trace-cpu, source, 2026-11-19 01:09), the samples under _drainSpawnCommandRing\n(143.7 ms that run): _spawnAt 128.7 inclusive (32.6 self: the per-component resets of ~25 000 spawns), the demo's onSpawned\nabout 38 (civilian 22.6 with person, mySoldier 15.2), first-use instances (_instanceOf, _makeInstance) 17, the command\nring's enqueue 6.9 and the SET_TRANSFORMs of the x and y setters about 5 (poseMoved 6.0 inclusive), the visitor\n_visitSpawnCommand 11.5 self. During a spawn the entity is inactive and its body generation has not moved; the spawn\npublishes its lifecycle after onSpawned, and physics then makes the body from the columns. 09e6c553: poseMoved skips the\ncommand while the entity is in its spawn on this worker (isSpawningHere), so SST-17's physics-side skip has nothing left to\ndrop. A probe counting the prime's commands (2026-11-19 01:13, not kept): SET_TRANSFORM 0 (36 496 before), SET_FIXED_ROTATION\n16 200 (kept: its handler also zeroes the angular velocity and the rotation columns). The spawn phase read 127 ms in that\nprobe sitting (114 to 118 in the earlier ones): the cut is about 10 ms of logic0's own work, under this measure's noise.\nWhat would take most of the phase: the spawn setup split by owner over the logic workers (logic0 drains every x/y spawn\nof the page today; onSpawned's per-instance state lives on the worker that ticks the entity, so each owner would set up\nits own), a change to the spawn ring's single consumer.",
       "commits": [
         "09e6c553"
+      ]
+    },
+    {
+      "id": "R-1516",
+      "date": "2026-11-19",
+      "time": "01:43",
+      "timeFrom": "recorded",
+      "title": "SST-15's last part: the final prime runs Box2D's pairs and narrow phase (collide_world), Predator by night's first physics step after the start 59 -> 18 ms warm (96 -> 27 cold)",
+      "verdict": "kept",
+      "text": "**SST-15's last part: the final prime runs Box2D's pair update and narrow phase (no solve, no time), so the first physics\nstep after the start is a normal one: Predator by night's longest physics step in the first seconds 59 -> 18 ms warm,\n96 -> 27 cold; the start about 30 to 40 ms later.** The agent's Box2D branch weedjs/prime-collide (2bca804, now Box2D's\nmain): collide_world(worldPacked) clears the event counts, calls b2World_Step(world, 0, 1) (its pairs, contacts and\nsensors; b2Solve needs a positive step) and exports the contact and sensor events, without step_world's sleep paint,\naccelerations, LiquidFun step, moved bodies or joints. WeedJS opt/prime-collide (b9fd5545, ccb73435, merged 2b47e8e3):\nPhysicsWorld.collide(), weedjsPrime(final) collides in the final prime only (not SST-18's loop) and publishes the contact\nand hit rings; tests/node/primeCollide.wasm.test.js (5 tests on the real module). Not bit-identical: the contacts the\ncollide makes recycle in the first step (their poses have not moved), and a recycled manifold's separation rounds\ndifferently from a fresh one (positions within one float ulp after a step; with recycling off in a throwaway build, 8 seeds\nmatched bit for bit for 30 steps). A body spawned inside a sensor now gets its begin at the prime. loadWaterfall source,\n2 runs, cold and warm, dx/startup 02084b52 against opt/prime-collide, 2026-11-19 01:35 to 01:36: physics' longest own step\n59 -> 18 ms warm, 96 -> 27 cold; `world` -> `physics primed` 2 -> 31 ms warm (39 cold); first frame warm 1 512, 1 592 ->\n1 594, 1 554 ms. LiquidFun gates, `--full-rev --early --pool`, to 01:43: the stress `water=1.5` physics 6.678 -> 6.593 ms\n(-1.3 %, NEUTRAL); the body couple under the 6 ms floor (5.90 -> 6.28 ms over 2 pairs, not judged; the change runs once,\nbefore the start).",
+      "commits": [
+        "2bca804",
+        "b9fd5545",
+        "ccb73435",
+        "2b47e8e3"
       ]
     }
   ],

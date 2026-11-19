@@ -428,7 +428,7 @@ The waterfall's longest step after the start read physics at 128 ms or more in e
 the spawned world's bodies (18 248, 91 ms), drained their commands (52 696, 47 ms) and then stepped with every contact
 new (51 ms). Under the owner's rule (everything ready before the start) the scene now sends the physics worker 'prime'
 once the world is spawned and waits for it: the host makes the bodies, joints and commands then. Left: Box2D's first
-step (a collide-only export in the prime) and the body creation's own cost.
+step (done: 2b47e8e3, collide_world in the final prime, the first step 59 -> 18 ms warm, R-1516) and the body creation's own cost.
 
 ### SST-16 — The atlas cache decoded beside its key
 
