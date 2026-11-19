@@ -24140,7 +24140,8 @@
     {
       "records": [
         "R-1547",
-        "R-1549"
+        "R-1549",
+        "R-1499"
       ],
       "refs": [],
       "id": "DX-LIGHTKNOBS",
@@ -39236,6 +39237,15 @@
       "commits": [
         "2c3217b9"
       ]
+    },
+    {
+      "id": "R-1499",
+      "date": "2026-11-19",
+      "time": "14:46",
+      "timeFrom": "recorded",
+      "title": "DX-LIGHTKNOBS on the HD 620: the light pass costs 11-12.5 ms an execution at Predator zoom 0.3 whatever shadowSamples (1/5/9) or tile size (8/16/32); the knobs do not buy frames on a weak GPU",
+      "verdict": "note",
+      "text": "ASUS lab job 0899f1 (14:27-14:46): DX-LIGHTKNOBS on the HD 620, for the guide. Predator ?light3d=1&zoom=0.3 at main\ne7581de9 (branch pcmain20), glFrameRecorder --gpu-passes (20 s warm-up, 3 s recorded), Intel 31.0.101.2145, 2 rounds.\nConfigurations: hour 22 with shadowSamples 1/5/9 at lightTileSize 16 and tiles 8/32 at samples 5; hour 17 with samples\n1/5/9.\n\nThe recorder's per-pass figure is ms a recorded frame, and the light pass ran in only 30 to 90 % of the recorded frames.\nAcross runs it read 0.66 to 10.5 ms a frame, mostly from how often it ran. Its time per execution (ms a frame / runs\na frame):\n\n| Hour | shadowSamples | lightTileSize | ms per light pass (r1 / r2) |\n|---|---|---|---|\n| 22 | 1 | 16 | 12.58 / 12.20 |\n| 22 | 5 | 16 | 12.22 / 11.11 |\n| 22 | 9 | 16 | 12.55 / 11.29 |\n| 22 | 5 | 8 | 11.36 / 12.42 |\n| 22 | 5 | 32 | (r1 lighting in 10 % of frames, skipped) / 13.67 |\n| 17 | 1 | 16 | 11.91 / 11.71 |\n| 17 | 5 | 16 | 11.40 / 10.85 |\n| 17 | 9 | 16 | 12.51 / 11.64 |\n\n- **On the HD 620 neither knob moves the light pass.** It costs about 11 to 12.5 ms an execution at Predator zoom 0.3,\n  for 1, 5 or 9 shadow taps and tiles of 8, 16 or 32 px. The GTX 1650 read the same shape: 0.95 / 1.03 / 1.10 ms\n  (R-1547).\n- **For the guide:** on a weak GPU these knobs are not the way to buy frames. The pass's cost is elsewhere, likely\n  full-screen fill at 1920x1080. Fewer pixels (a lower lighting resolution) would be the lever to measure next.\n- **The recorder's per-frame figures mix a pass's cost with how often it runs.** Divide by the \"x\" frequency before\n  comparing configurations."
     }
   ],
   "leads": [
