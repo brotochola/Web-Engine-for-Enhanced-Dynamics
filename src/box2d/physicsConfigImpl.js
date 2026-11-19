@@ -24,8 +24,9 @@
     commandRingCapacity: 4096,
     sleeping: true,
     hitEventThreshold: 0,
-    // E-322: every this many steps Box2D puts the awake bodies back in body id order (0: never).
-    awakeReorderInterval: 0,
+    // E-322: every this many steps Box2D puts the awake bodies back in body id order (0: never). Predator crowd 2.5:
+    // physics -11.9 % at 30, its p95 and p99 lower too (the reorder spread over steps on the workers).
+    awakeReorderInterval: 30,
     liquidFun: Object.freeze({
       enabled: false, // scene sets true to auto-create the system at physics init
       radius: 10, // particle radius, world px
@@ -97,8 +98,9 @@
   /**
    * E-322: physics.awakeReorderInterval as Box2D takes it, a whole number of steps, 0 (never) or more. Sleeping,
    * waking and contacts starting to touch scramble the order of Box2D's awake bodies and of its contacts; every
-   * this many steps, at the start of the step, Box2D puts the bodies back in body id order and the contacts in body
-   * order, which changes no result. One reorder takes about 6.5 ms at 38 000 awake bodies, inside that step.
+   * this many steps, at the start of the step, Box2D puts the bodies back in body id order, and in the next few steps
+   * the contacts in body order, which changes no result. The reorder runs on the physics workers: at 38 000 awake
+   * bodies about 1.3 ms in its first step and 0.5 ms in each of the next four.
    * Anything that is not a finite number of 1 or more is 0.
    */
   function awakeReorderSteps(v) {
