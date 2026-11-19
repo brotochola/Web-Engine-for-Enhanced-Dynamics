@@ -15,6 +15,7 @@ import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { resetWarnOnce } from '../../src/util/dxWarn.js';
 import { collectComponents } from '../../src/util/utils.js';
+import { createStaticHookTables } from '../../src/core/entityHooks.js';
 
 const DEG = Math.PI / 180;
 const N = 8;
@@ -323,6 +324,9 @@ test('the logic worker resolves after the ticks and tells the entity once per ch
     gameObjects: [0, 1, 2].map((i) => ({ directionalSprite: { get direction() { return ['right', 'down', 'left', 'up'][DirectionalSprite.directionIndex[i]]; } }, onDirectionChanged: (d) => heard.push([i, d]) })),
     _directionChanged: logic._directionChanged,
     _entityThrew: () => assert.fail('threw'),
+    // E-528: no type has a static onDirectionChanged.
+    staticHooks: createStaticHookTables(256),
+    _entityClassByType: [],
   };
   logic._resolveDirections.call(fake);
   assert.deepEqual(heard, [[0, 'down'], [1, 'down'], [2, 'down']], 'the first direction drawn is heard too');

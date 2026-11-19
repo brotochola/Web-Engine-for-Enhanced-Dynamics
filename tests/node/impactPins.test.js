@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { Transform } from '../../src/components/transform.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { IMPACT_FLOATS, bindImpactRing, impactRingBytes, publishImpacts } from '../../src/util/impactRing.js';
 
@@ -15,6 +16,8 @@ const MAX_IMPACTS = 64;
 /** The real logic worker bound to a fresh impact ring, as its init binds it, and the ring's writer side. */
 async function ringWorker() {
   const worker = await loadWorker('logicWorker.js', 'logicWorker');
+  // E-528: an impact reads its target's entity type (a static onGotShot); every target here is type 0, with none.
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(16)), 16);
   const buffer = new SharedArrayBuffer(impactRingBytes(MAX_IMPACTS));
   const ring = bindImpactRing(buffer, MAX_IMPACTS);
   worker._impactRing = bindImpactRing(buffer, MAX_IMPACTS);

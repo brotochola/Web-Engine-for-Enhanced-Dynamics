@@ -154,7 +154,8 @@ import {
   resolveSpritePipeline,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
-import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
+import { warnMissingListenerTags } from '../util/listenerTags.js';
+import { definesHook } from './entityHooks.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
 import { fetchAssetJson } from '../util/fetchAsset.js';
@@ -618,8 +619,8 @@ class Scene {
     warnEntityClassMistakes(this.registeredClasses, GameObject, this.config);
     const messageNames = this.constructor.messages || [];
     for (const r of this.registeredClasses) {
-      const onMessage = definesBelow(r.class, GameObject, 'onMessage');
-      if (onMessage || definesBelow(r.class, GameObject, 'onAnimationEnd')) this._anyMessageListener = true;
+      const onMessage = definesHook(r.class, GameObject, 'onMessage');
+      if (onMessage || definesHook(r.class, GameObject, 'onAnimationEnd')) this._anyMessageListener = true;
       if (onMessage && messageNames.length === 0) {
         console.warn(
           `WeedJS: ${r.class.name} defines onMessage but ${this.constructor.name} declares no static messages, ` +

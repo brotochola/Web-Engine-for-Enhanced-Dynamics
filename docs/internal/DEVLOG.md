@@ -6,6 +6,45 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 19 November 2026 (before dawn) — A Game That Survives Its GPU, and Lighter Physics and Logic
+
+A driver that resets, a laptop that switches GPUs, a phone that sends the tab away: the page loses its GPU. Until tonight
+a WeedJS game ended there. On WebGL the browser gave the context back and Pixi rebuilt its own pieces, so the floor came
+back and every sprite, light and static stayed gone; on WebGPU the last frame froze. Both under a red error.
+
+**Back from a save.** The simulation never lived on the GPU, so the game does not have to die with it. The renderer now
+tells the page, the engine saves the running world in memory the way a hot reload does (every entity at its own index, the
+plain fields of their instances, joints, water, decals, what the scene keeps itself) and loads the same scene again from
+that save. On WebGPU at once, on WebGL when the browser hands the context back. A probe loses the GPU on purpose and
+watches the game come back on both backends. The first restarts took 8 to 14 seconds for Predator's 17 500 entities;
+the decals were being encoded as PNG for a save that never leaves memory, and the save made a round trip through the file
+format it never needed. Without both, Predator is back in 3.6 seconds, most of it the ordinary load.
+
+**The second contact point.** Predator's people are circles, and a circle touches with one point. Box2D's wide solver
+works on four or eight contacts at once and still computed a second point for every one of them, with zero masses, in
+every stage. It now skips that point when no contact in the group has one. Nothing changes in the results, bit for bit;
+Box2D's step is 8 % cheaper in the crowd harness and Predator's physics, the worker that limits its crowd, is 6 % lighter
+at its biggest crowd. The change had waited since Saturday on a branch built in a cloud machine.
+
+**Physics, three smaller ones.** Box2D now writes each moved body's slot as its finalize finishes the body, instead of a
+serial walk after the step; publishPose copies a block of rotations only when Box2D stamped it, so Predator's people,
+who never turn, stop rewriting the lines pre-render and Pixi just read; and the tree's moved flags are worked out by the
+refit from the children instead of an atomic per ancestor. Each won where it could be measured alone (the export 0.35 to
+0.08 ms a step, a publish up to 38 % cheaper), and together in Predator physics read 3 % lower and pre-render 9 % lower,
+with no scene worse.
+
+**A third slower at a quarter million.** The ASUS found why logic grew a third slower at 250 000 entities: since entities
+can have parents, every position write read the parent column, a megabyte that fell out of the cache, for entities with no
+parent too. It is read now only while some entity has a parent, and the write is back within 8 % of what it cost before.
+
+**Hooks without instances.** Every entity hook (a collision, a shot, a message, a spawn, the screen) can now be a static
+function of the class that gets the entity's index, and one table in the engine drives how each is called, its types and
+the guide. A type that only uses those never needs an object per entity, and the dispatch no longer makes instances it
+did not need: Predator's logic step is 12 % lighter at its biggest crowd.
+
+**Also.** A tickAll type with a tickInterval now gets a share of its entities each frame, as a tick() type does. A body
+asleep that a command teleports stays marked asleep, so a push given in the same frame wakes it instead of being lost.
+
 ## Thursday 19 November 2026 (small hours) — A Start Without the Stumble
 
 The bundle's load waterfall, the start a player gets, showed one thing the source builds had hidden under their slower

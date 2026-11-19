@@ -246,6 +246,40 @@ test('with no link physics reads one word and walks nothing; an entity without a
   assert.equal(car.transform.parent, null);
 });
 
+test("with no link logic's pose writes never read the parent column (N-218: at 250 000 entities it missed the cache)", () => {
+  world();
+  const sign = Sign.spawn({ x: 2, y: 2 });
+  const light = Light.spawn({ x: 3, y: 3 });
+  const column = Transform.parent;
+  let reads = 0;
+  Transform.parent = new Proxy(column, {
+    get(target, key) {
+      if (typeof key === 'string' && key !== 'length' && Number.isInteger(+key)) reads++;
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  try {
+    sign.x = 5;
+    sign.y = 6;
+    sign.setPosition(7, 8);
+    sign.rotation = 0.5;
+    sign.setRotationCS(0, 1);
+    assert.equal(reads, 0, 'no link: no parent read');
+    assert.equal(Transform.x[sign.index], 7);
+    assert.equal(Transform.rotS[sign.index], 1);
+  } finally {
+    Transform.parent = column;
+  }
+  // A link anywhere and the writes check again: a write to the child is ignored.
+  const car = Car.spawn({ x: 0, y: 0, width: 40, height: 20 });
+  captureWarnings(() => {
+    light.transform.parent = car;
+    light.setPosition(100, 100);
+  });
+  assert.notEqual(Transform.x[light.index], 100, "the child's write is still ignored once a link exists");
+});
+
 test('a child follows its rotated parent in the same frame', () => {
   const { physics } = world();
   const car = Car.spawn({ x: 100, y: 50, width: 40, height: 20 });

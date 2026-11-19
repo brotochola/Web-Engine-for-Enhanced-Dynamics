@@ -50,6 +50,26 @@ test('C3: tickInterval without staggeredUpdates is named; with it, silent', () =
     static config = { ...WORLD };
   }
   assert.deepEqual(warningsOf(() => new Field({})), []);
+  // E-527: a static tickAll honours tickInterval too, so it needs staggeredUpdates as well.
+  class Swarm extends GameObject {
+    static tickInterval = 3;
+    static tickAll(list, count) {
+      for (let k = 0; k < count; k++) Swarm.seen = list[k];
+    }
+  }
+  class Nest extends Scene {
+    static entities = [[Swarm, 8]];
+    static config = { ...WORLD };
+  }
+  assert.deepEqual(warningsOf(() => new Nest({})), [
+    "WeedJS: Swarm has static tickInterval = 3, but the scene's logic.staggeredUpdates is off, so it ticks every frame. " +
+      "Set logic: { staggeredUpdates: true } in the scene's config.",
+  ]);
+  class StaggeredNest extends Scene {
+    static entities = [[Swarm, 8]];
+    static config = { ...WORLD, logic: { staggeredUpdates: true } };
+  }
+  assert.deepEqual(warningsOf(() => new StaggeredNest({})), []);
 });
 
 test('C4: an empty tick is named, with the class that wrote it; a tick that works or none is silent', () => {

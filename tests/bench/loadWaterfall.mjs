@@ -19,6 +19,7 @@
  *   node tests/bench/loadWaterfall.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
  *     [--query "light3d=1&hour=22"] [--runs 3] [--visits cold,warm] [--settle-ms 5000] [--bundle] [--headless]
  *     [--weed-bundle files/weed.prod.bundle.esm.min.js] [--http-cache] [--canvas 1920x1080] [--output report.json]
+ *     [--js-flags no-liftoff]
  *
  * --weed-bundle names the dist ESM bundle (implies --bundle; files/… is the file mode, buildBundle.js --files).
  * --http-cache serves like a static host (ETag, 304), so a later visit can reuse scripts, wasm and their compiled
@@ -308,6 +309,12 @@ async function main() {
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
       ...(headed ? benchWindowArgs() : ['--enable-unsafe-swiftshader']),
+      // --js-flags no-liftoff[,flag…]: V8 flags for the page and its workers, named without their dashes (the argument
+      // parser reads a value starting with -- as the next option). SST-21: no-liftoff compiles every wasm function with
+      // TurboFan at instantiation, to tell a first frame run in Liftoff from one doing more work.
+      ...(typeof args['js-flags'] === 'string'
+        ? [`--js-flags=${args['js-flags'].split(',').map((f) => `--${f.replace(/^-+/, '')}`).join(' ')}`]
+        : []),
     ],
   });
   const results = [];

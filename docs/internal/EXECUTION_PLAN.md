@@ -5108,6 +5108,8 @@ to -30 %, physics STEP -2 to -4 %. **Plan:** Prepare sets a per-constraint flag 
 fields go to the struct's tail, each point-2 block under that branch; store writes points[1] only when pointCount > 1. Node
 harness A/B and a 600-step pose hash against main (identical but for signed zeros); the no-SIMD build gets it through the
 scalar b2FloatW code; LiquidFun gates. Owner: physics.
+**Result (R-1535, kept):** origin's solver-skip-second-point fetched and its E-316 commit alone put on Box2D main (2f3d4db): the
+harness -8.0 to -8.4 % (6/6, 4/4), bit-identical; Predator crowd 2.5 physics -5.9 % (4/4), ballsHeavy -4.6 %, LiquidFun neutral.
 ### E-317 Spatial's neighbour rows: touch the next rows' heads ahead, then pack them
 
 **Premise (R-1100, R-1104):** Verified (R-1100): predatorScene.js sets maxNeighbors 1024, two rows per 4 KB page. E-307
