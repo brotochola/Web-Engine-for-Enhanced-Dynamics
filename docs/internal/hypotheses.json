@@ -24144,10 +24144,10 @@
       "id": "DX-LIGHTKNOBS",
       "title": "Two light knobs for the developer: lighting.shadowSamples (the shadow maps' taps a light pixel averages, 1 to 9 of the 3 x 3 texels, default 5) and lighting.lightTileSize (the light pass's screen tiles in px, 4 to 256, default 16)",
       "status": "kept",
-      "statusText": "Asked for by the owner on 2026-11-19 after seeing 5 taps against 1 (\"es un knob\"); built and measured on dx/light-knobs (73ae2ba3, 8587a28c, 413183e1), not merged yet",
+      "statusText": "Asked for by the owner on 2026-11-19 after seeing 5 taps against 1 (\"es un knob\"); built and measured on dx/light-knobs (73ae2ba3, 8587a28c, 413183e1), merged to main 2026-11-19 (f0006e2e, bundles f0531fb1), not pushed",
       "date": "2026-11-19",
       "result": "GTX 1650, Predator light3d: the light pass 0.95 / 1.03 / 1.10 ms with 1 / 5 / 9 samples (afternoon); tiles of 8 / 16 / 32 px alike on the GPU",
-      "next": "Merge to main with the next bundles.",
+      "next": "Done.",
       "area": "render",
       "kind": "dx",
       "aliases": [
