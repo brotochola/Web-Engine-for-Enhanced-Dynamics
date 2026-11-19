@@ -23936,6 +23936,20 @@
       "date": "2026-11-18",
       "statusText": "kept 2026-11-18 (b463325c, R-1505): commands claimed before the sync skipped for the bodies it made",
       "result": "Kept 2026-11-18 (R-1505): the physics prime 96 -> 62 ms warm; spawns during play skip the same commands."
+    },
+    {
+      "records": [
+        "R-1507"
+      ],
+      "refs": [],
+      "id": "SST-18",
+      "title": "The physics prime waited for logic0 to spawn the whole world (114 ms in Predator by night) and only then made the bodies (63 ms), one after the other, with physics idle meanwhile",
+      "status": "kept",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-18",
+      "statusText": "kept 2026-11-18 (9d0144cc, R-1507): the prime loops while logic0 spawns",
+      "result": "Kept 2026-11-18 (R-1507): the prime after the spawns 63 -> 4 ms warm (71 -> 3 cold)."
     }
   ],
   "records": [
@@ -38341,6 +38355,19 @@
       "commits": [
         "39d707aa",
         "2b2019a5"
+      ]
+    },
+    {
+      "id": "R-1507",
+      "date": "2026-11-18",
+      "time": "23:55",
+      "timeFrom": "recorded",
+      "title": "SST-18: the physics prime runs while logic0 spawns: Predator by night's prime after the spawns 63 -> 4 ms warm (71 -> 3 cold)",
+      "verdict": "kept",
+      "text": "**SST-18: Predator by night's physics prime now runs while logic0 spawns the world: after the spawns it takes 4 ms\nwarm (63 before) and 3 cold (71), so the start comes about 60 ms sooner.** A new mark ('new game', 7699f172, between\ncreateNewGame and the spawn flush) split the world phase, loadWaterfall source, 2 runs, 2026-11-18 23:53: createNewGame\non the page 26 ms, logic0 spawning the flushed world 114 ms, then the prime 63 ms, one after the other, with physics\nidle while logic0 spawned. 9d0144cc: after create() the scene sends the physics worker 'primeBegin', and the host runs\nweedjsPrime every millisecond (a timer, paused, no step) until the final 'prime' (or 'start'): it makes the bodies of\nthe spawns done so far, as it does during play, where physics syncs beside logic's spawns (a body is made once its\nspawn has set its lifecycle bit). SST-17's skip stays exact across the passes (each sync takes its own ring mark).\nloadWaterfall source, 2 runs, 23:55: `world` -> `physics primed` 4 ms warm, 3 cold (63 and 71 before); logic0's spawning\n118 ms warm (114: physics on another core); physics' longest own step after the start 59 ms (56).",
+      "commits": [
+        "7699f172",
+        "9d0144cc"
       ]
     }
   ],

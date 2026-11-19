@@ -444,6 +444,14 @@ A spawn's x and y setters each enqueue a SET_TRANSFORM; physics made the body fr
 to where it was (36 496 commands in Predator's prime). A command claimed before the sync is now skipped for a body that
 sync made: its setter wrote the columns before it claimed the slot.
 
+### SST-18 — The physics prime beside the spawns
+
+- [x] 9d0144cc (R-1507: Predator by night's prime after the spawns 63 -> 4 ms warm)
+
+logic0 spawns the flushed world for 114 ms and the prime then made the bodies for 63 more. The scene now sends
+'primeBegin' after create(), and physics makes the bodies of the spawns done so far every millisecond until the final
+prime, as it does beside logic's spawns during play.
+
 ### SST-14 — Workers that evaluate the page's engine graph
 
 - [ ] not started (R-1501)
