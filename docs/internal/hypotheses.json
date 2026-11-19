@@ -24084,7 +24084,8 @@
         "R-1533",
         "R-1544",
         "R-1545",
-        "R-1558"
+        "R-1558",
+        "R-1590"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24207,7 +24208,8 @@
     },
     {
       "records": [
-        "R-1554"
+        "R-1554",
+        "R-1590"
       ],
       "refs": [],
       "id": "N-318",
@@ -39558,6 +39560,15 @@
       "commits": [
         "bedaeaac"
       ]
+    },
+    {
+      "id": "R-1590",
+      "date": "2026-11-19",
+      "time": "19:37",
+      "timeFrom": "recorded",
+      "title": "The ASUS scoreboard after the evening's merges: lockstep passes again (N-318); SST-21 builds unread neighbour lists in two stress scenes (spatial 0.1 -> 0.76-0.89 ms, rayVsBox2d's logic0 +15 %)",
+      "verdict": "note",
+      "text": "ASUS lab job 0899p (18:30-19:37): the scoreboard of local main 4bf02ffd (the evening's merges: N-318, N-317's\nmargin, SST-21 option b, N-320, rayVsBox2d's ?casts; same src as a8b5afd2) against v0.14.0, on the ASUS (i7-7500U\n2C/4T, HD 620 on Intel 31.0.101.2145), --full-rev --skip-node, the lockstep gate on. Read against 0899f2 (e7581de9,\nR-1580).\n\n- **The lockstep gate passes again:** balls, liquidfun, lfstress and particles replay. N-318's fix holds on the ASUS.\n- **SST-21 adds spatial work in the two stress scenes whose entities set a visualRange:**\n\n  | row | spatialMax_STEP_MS: v0.14.0 / e7581de9 / 4bf02ffd | NEIGHBORS_REUSED at 4bf02ffd | primary |\n  |---|---|---|---|\n  | spatial (stationarySpatialScene, visualRange 170) | 0.418 / 0.196 / 0.760 ms | 4 210 (was 0) | spatialMax: -54.5 % -> +81.6 % against v0.14.0 |\n  | rayVsBox2d (ray entities 64, balls radius x 3) | 0.083 / 0.108 / 0.885 ms | 2 480 (was 0) | logic0 3.98 -> 4.58 ms: -22.0 % -> -8.2 % against v0.14.0 |\n\n  - Since SST-21, any visualRange gives an entity its neighbour list. These scenes set one, so spatial now builds\n    lists they never read. E-176's run-time reader had skipped them.\n  - In stationarySpatialScene that is the row's purpose, but it costs 82 % more than v0.14.0 did.\n  - In rayVsBox2d, logic0 rose 15 % beside it, likely sharing the 2 cores with spatial.\n  - The engine's default visualRange is 0, so a game pays only where it sets one.\n  - Both rows FAIL on the 6 ms floor anyway.\n- **Other flips, all inside the ASUS's kernel swing (R-1580):**\n  - liquidfun TIE -> KEPT, tilemap TIE -> KEPT (kernel +22.6 %), decalBlit TIE -> KEPT (pixi -3.6 %).\n  - decorations WORSE -> TIE.\n  - liquidfunCouple TIE -> WORSE: its Node kernel 3.50 -> 3.77 ms, physics +1.1 %. LiquidFun's code did not change.\n  - tweenPool, gpuQueuePack, decorationCollectYSort, attachedWalls KEPT -> TIE. decorationCollect, decalPremultiply\n    TIE -> KEPT.\n- Scene rows otherwise held: box2d -26 %, bullets -17 %, ray -21 %, box2dRayJs -26 %, meshFillMoving's renderer -27 %."
     }
   ],
   "leads": [
