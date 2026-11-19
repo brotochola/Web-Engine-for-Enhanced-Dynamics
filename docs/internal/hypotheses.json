@@ -24307,6 +24307,26 @@
         "load gate zero baseline",
         "NEIGHBORS_REUSED load matches"
       ]
+    },
+    {
+      "records": [
+        "R-1563"
+      ],
+      "refs": [],
+      "id": "N-323",
+      "title": "Still lists without a refresh schedule were all rebuilt on one frame every neighborReuseMaxFrames + 1: stationarySpatialScene one frame in 20 at 8-16 ms on the ASUS against 0.23-0.29 ms",
+      "status": "kept",
+      "kind": "bug",
+      "area": "spatial speed",
+      "date": "2026-11-19",
+      "statusText": "Found by the ASUS (R-1594), fixed 2026-11-19 (546c5afc)",
+      "result": "A first build starts at the age of its block of ids; stationarySpatial30k spatial p95 16.7-19.5 -> 3.0-4.1 ms, max 19.8-28.4 -> 3.9-5.1, mean level",
+      "next": "Done. A game whose entities spawn over time builds its lists on different frames anyway; the prime and still crowds were the case.",
+      "aliases": [
+        "reuse cap spike",
+        "stationary spatial tail",
+        "lists rebuilt together"
+      ]
     }
   ],
   "records": [
@@ -39652,6 +39672,18 @@
       "title": "stationarySpatialScene on the ASUS at main: spatial's typical frame cheaper than v0.14.0 (p50 0.23 vs 0.37 ms) but one in 20 takes 8-16 ms (p95 ~8, p99 9-12); v0.14.0 is flat",
       "verdict": "note",
       "text": "ASUS lab job 0899s (20:08-20:10): R-1590's spatial row (stationarySpatialScene, 9 000 bodies, visualRange 170) on the\nASUS, a steady cost or a tail? Headless as the scoreboard runs it, --src, detailed stats off, 3 runs a side\nalternated. Main 7ffea480 (pool-a) against the same scenes over v0.14.0's src (pool-b). Each spatial worker's\nexact-frame step, 600 frames:\n\n| | step (mean) | p50 | p95 | p99 | max | STEP_MS |\n|---|---|---|---|---|---|---|\n| main, spatial0 | 0.86 / 0.86 / 0.76 | 0.23 to 0.26 | 7.6 to 8.1 | 9.3 to 11.6 | 10.8 to 15.4 | 0.25 / 0.25 / 0.95 |\n| main, spatial1 | 0.85 / 0.84 / 0.76 | 0.22 to 0.29 | 7.6 to 8.1 | 9.0 to 11.4 | 11.9 to 16.0 | 0.23 / 0.24 / 0.27 |\n| v0.14.0 src, spatial0 | 0.39 / 0.39 / 0.39 | 0.35 to 0.38 | 0.57 | - | - | 0.38 to 0.39 |\n| v0.14.0 src, spatial1 | 0.39 / 0.40 / 0.40 | 0.37 to 0.38 | 0.53 to 0.57 | - | - | 0.38 to 0.40 |\n\n- **It is a tail.** On main a typical frame of each spatial worker is cheaper than v0.14.0's (p50 0.23 against\n  0.37 ms). But about one frame in 20 takes 8 to 16 ms, so the mean over every frame reads 0.76 to 0.86 ms against\n  0.39. v0.14.0 is flat: p95 0.57 ms.\n- **The bodies do not move**, so the spike looks periodic, a rebuild on a schedule rather than one forced by motion.\n  It may be the Verlet skin's full re-search (NEIGHBORS_REUSED about 4 210 of 9 000 in R-1590) or a refresh interval.\n- **STEP_MS, the row's primary, mostly misses the tail** (0.23 to 0.27 in five of six readings, once 0.95). R-1590's\n  0.76 came from that.\n- **Why it matters on low-end:** capacity judges every worker's p99 against 16.7 ms. A periodic 8 to 16 ms spatial\n  step uses most of a frame on this laptop at 9 000 bodies. Spreading that rebuild over frames would flatten it.\n  Whether it costs more than v0.14.0's flat 0.39 ms on average depends on the main PC's numbers (R-1590 follow-up:\n  main 15 % faster there in STEP_MS)."
+    },
+    {
+      "id": "R-1563",
+      "date": "2026-11-19",
+      "time": "20:33",
+      "timeFrom": "recorded",
+      "title": "N-323 found and fixed: still lists start at an age set by their block of ids; stationarySpatial30k's spatial p95 16.7-19.5 -> 3.0-4.1 ms, mean level",
+      "verdict": "kept-hygiene",
+      "text": "**N-323 found and fixed (546c5afc): still lists all rebuilt on one frame every neighborReuseMaxFrames + 1.** The ASUS\n(R-1594) saw stationarySpatialScene's spatial workers at p50 0.23 to 0.29 ms but one frame in about 20 at 8 to 16 ms on\nmain, where v0.14.0 ran flat at 0.39. A list skin reuse keeps (its entity still) is rebuilt when it reaches the cap\n(15); lists built on one frame (every list at the start, which SST-21's prime builds before the first frame) reach it\ntogether and stay on one cycle for good. v0.14.0's scene ticked its entities with a tickInterval, so E-476's schedule\nspread them; db5553fe dropped those ticks. Any game with still entities with a visualRange and no schedule\n(neighborTickInterval 1, the default) had the same cycle.\n\n- **The fix.** Without a schedule, a list's first build starts at age k, the k-th of cap contiguous blocks of ids.\n  A schedule (interval > 1, E-200, E-476) already rebuilds a capped list on its own refresh frame and is left as is.\n- **id % cap first (rejected):** the tail went, but the mean rose about 50 % (stationarySpatial30k: p50 1.1-1.4 ->\n  3.1-4.1 ms), since each frame's lists then lie all over the world and gather cold. Blocks keep them together.\n- **Blocks (kept, hygiene and tail):** stationarySpatial30k, runPredatorAbab against main 6e997c13, 4 pairs, owner\n  spatial (20:28 to 20:33; under the floor): spatial0/1 p95 16.7-19.5 -> 3.0-4.1 ms, p99 17.9-21.9 -> 3.3-4.5, max\n  19.8-28.4 -> 3.9-5.1; STEP_MS 2.452 -> 2.374; exact-frame mean 2.44 -> 2.54 (level).\n- **Test:** spatialReuseCapSpread (4000 still entities, cap 15): a cycle's rebuilds go from 15 frames of 0 and one of\n  3326 to about 222 a frame, each list once a cycle.",
+      "commits": [
+        "546c5afc"
+      ]
     }
   ],
   "leads": [

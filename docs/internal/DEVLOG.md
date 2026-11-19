@@ -19,6 +19,14 @@ its visualRange. In waterAndBoxes the spatial worker went from 2.6 to 0.4 ms a f
 0.25 ms. The scenes that exist to load the spatial worker keep theirs. On the way, the scoreboard had let this through as
 "load matches", because a count going from zero to thousands was never checked. Now it is.
 
+The laptop then caught what the averages hid. In a scene of 9000 entities standing still, spatial took a quarter of a
+millisecond on most frames and 8 to 16 ms on one frame in twenty. A list whose entity has not moved is kept, up to an
+age cap of 15 frames. Every list was built on the same frame, before the game started, so every list hit the cap on
+the same frame and was rebuilt there, forever. Now a list's first age depends on its block of ids, so each frame
+rebuilds one block. Spreading by every fifteenth id instead also killed the spike but made the average frame 50 %
+dearer: the lists rebuilt together then lay all over the world. In blocks they stay together, and the worst frame
+went from 20–28 ms to 4–5 ms with the average unchanged.
+
 ## Thursday 19 November 2026 (evening) — A Pass That Drew People to Throw Them Away
 
 With pixel depth on, every sprite layer is drawn twice: an opaque pass that writes each solid pixel's depth, then an edge
