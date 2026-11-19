@@ -17883,7 +17883,8 @@
         "R-1101",
         "R-1106",
         "R-1107",
-        "R-1208"
+        "R-1208",
+        "R-1538"
       ]
     },
     {
@@ -38951,6 +38952,15 @@
         "95aafcee",
         "ceff7d5e"
       ]
+    },
+    {
+      "id": "R-1538",
+      "date": "2026-11-19",
+      "time": "06:50",
+      "timeFrom": "recorded",
+      "title": "E-357 screened on the main PC: wasm pmin/pmax in the wide solver -1.35 % in the harness (4/6), noise; stays parked",
+      "verdict": "tie",
+      "text": "**E-357 screened on the main PC: the wide solver's min and max as wasm pmin/pmax read -1.35 % in the harness, 4 of 6\nrounds: noise; stays parked.** Origin's solver-skip-second-point held it (61ff6f1, its bit-for-bit check against\nEmscripten's _mm_min_ps/_mm_max_ps, and eb42d5e); both cherry-picked onto Box2D main 2f3d4db (with E-316) in a scratch\nworktree. Crowd harness, weed mode (38 000 walkers, order 2, churn 100, idle 20, reorder every 30 steps, 960 steps), 6\nrounds against main's build, to 2026-11-19 06:50: b2World_Step 12.37 -> 12.21 ms (-1.35 %, 4/6), solve -1.5 %, collide\n+0.8 %, pose and export hashes identical. The cloud screen had it +4 % (R-1109's sitting). Not kept; the branch is still on\norigin."
     }
   ],
   "leads": [
