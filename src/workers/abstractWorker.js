@@ -643,7 +643,6 @@ export class AbstractWorker {
       data.buffers?.entityTypeHasForcedLogicWorker,
       data.buffers?.entityTypeForcedLogicWorkerCount,
       data.gridMetadata?.neighborByte | 0,
-      data.buffers?.neighborReaders,
       data.buffers?.typeListVersions,
     );
 

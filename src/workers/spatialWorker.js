@@ -235,7 +235,7 @@ class SpatialWorker extends AbstractWorker {
     this._neighborReuseSkin = 0;
     /**
      * Raycasted lighting: lights take neighbour lists (its occluder gather reads them). In basic lighting nothing reads
-     * a light's list, so a light takes one only when its class reads its neighbours (N-153).
+     * a light's list, so a light takes one only when its entity has a visualRange (N-153).
      */
     this._raycastLights = false;
     /** Full candidate rebuild every N frames (1 = every frame). */
@@ -1996,10 +1996,9 @@ class SpatialWorker extends AbstractWorker {
   _findNeighbors() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
-    // E-176: lists only for types whose code reads them, and with walls (lighting.walls) for active lights that cast
-    // shadows (pre-render gathers their occluders from them; N-153: nothing reads a light's list in basic lighting).
-    const readers = Grid.neighborReaders;
-    const entityType = Transform.entityType;
+    // SST-21: a list for every entity with a visualRange (that is what it is for: its code reads its neighbours), and
+    // with walls (lighting.walls) for an active light that casts shadows (pre-render gathers its occluders from it;
+    // N-153: nothing reads a light's list in basic lighting).
     const lightActive = this._raycastLights ? LightEmitter.active || null : null; // null: no light takes a list
     const lightCasts = lightActive !== null ? LightEmitter.castShadows : null;
     const lightRadius = lightActive !== null ? LightEmitter.radius : null;
@@ -2076,22 +2075,19 @@ class SpatialWorker extends AbstractWorker {
 
       let myVisualRange = visualRange[entityA];
       // DX-LIGHTAPI: a light searches its own reach (shadowRange, or its radius) past its offset from the entity, so
-      // no Collider.visualRange has to cover it. Not when its class reads its neighbours: the row is that code's list
+      // no Collider.visualRange has to cover it. Not when its entity has a visualRange: the row is its code's list
       // too, and the light's reach would widen what it sees (a hero with a flashlight would find enemies 1500 px off).
       // Such a light finds its occluders within the entity's visualRange, as every light did before.
       const isLight = lightActive !== null && lightActive[entityA] !== 0 && lightCasts[entityA] !== 0;
-      if (isLight && readers !== null && readers[entityType[entityA]] === 0) {
+      if (isLight && myVisualRange <= 0) {
         const sr = lightShadowRange[entityA];
         const ox = lightOffsetX[entityA];
         const oy = lightOffsetY[entityA];
         const reach = (sr > 0 ? sr : lightRadius[entityA]) + Math.sqrt(ox * ox + oy * oy);
         // A float32, as the column the reuse signature keeps (a double would never match it).
-        if (reach > myVisualRange) myVisualRange = Math.fround(reach);
+        if (reach > 0) myVisualRange = Math.fround(reach);
       }
-      if (
-        myVisualRange <= 0 ||
-        (readers !== null && readers[entityType[entityA]] === 0 && !isLight)
-      ) {
+      if (myVisualRange <= 0) {
         // A row this worker cleared stays clear: only its publish writes it. Its own write each frame
         // dirtied a cache line per entity (130 bytes a row at maxNeighbors 64). With other spatial
         // workers, one of them may have published the row before this one took the entity over.

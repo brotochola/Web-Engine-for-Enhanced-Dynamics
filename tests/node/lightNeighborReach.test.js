@@ -1,14 +1,13 @@
 // DX-LIGHTAPI A4 and its review: in a scene with walls (lighting.walls) a light that casts searches its own reach (shadowRange, or
 // its radius, past its offset), so no Collider.visualRange has to cover it. That row is also the entity's neighbour
-// list, which its class may read: a class that reads its neighbours keeps the list its visualRange gives, as if it
-// carried no light, and only a light no code reads widens. On real spatial workers (spatialWorkerMicrobench's
+// list: an entity with a visualRange reads its neighbours (SST-21), so it keeps the list its visualRange gives, as if it
+// carried no light, and only a light on an entity without one widens. On real spatial workers (spatialWorkerMicrobench's
 // setupSpatialKernel), every list rebuilt each frame.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Collider } from '../../src/components/collider.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
-import { Transform } from '../../src/components/transform.js';
 import { Grid } from '../../src/core/grid.js';
 import { setupSpatialKernel } from '../bench/spatialWorkerMicrobench.mjs';
 
@@ -23,7 +22,7 @@ function row(k, L) {
   return out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-test('a casting light widens its row only when its class does not read its neighbours', async () => {
+test('a casting light widens its row only when its entity has no visualRange', async () => {
   const k = await setupSpatialKernel({
     n: N,
     workers: 1,
@@ -41,9 +40,6 @@ test('a casting light widens its row only when its class does not read its neigh
   LightEmitter.shadowRange.fill(0);
   LightEmitter.offsetX.fill(0);
   LightEmitter.offsetY.fill(0);
-  const type = Transform.entityType[L];
-  const readers = new Uint8Array(256).fill(1);
-  Grid.neighborReaders = readers;
 
   // No light: the list its visualRange gives.
   const plain = row(k, L);
@@ -51,18 +47,18 @@ test('a casting light widens its row only when its class does not read its neigh
 
   LightEmitter.active[L] = 1;
   LightEmitter.radius[L] = 600;
-  // Its class reads its neighbours: the same list.
-  readers[type] = 1;
-  assert.deepEqual(row(k, L), plain, 'a reading class keeps the list its visualRange gives');
+  // Its entity has a visualRange: the same list.
+  assert.deepEqual(row(k, L), plain, 'an entity with a visualRange keeps the list it gives');
 
-  // Its class reads none: the light's reach.
-  readers[type] = 0;
+  // No visualRange: the light's reach.
+  Collider.visualRange[L] = 0;
   const lit = row(k, L);
   assert.ok(lit.length > plain.length * 4, `the light's reach (${lit.length} against ${plain.length})`);
   for (const id of plain) assert.ok(lit.includes(id), 'what was in range still is');
 
-  // A light that casts nothing takes no row for itself, and with a reading class keeps its visualRange list.
+  // A light that casts nothing takes no row for itself, and with a visualRange keeps the list it gives.
   LightEmitter.castShadows[L] = 0;
-  readers[type] = 1;
+  assert.deepEqual(row(k, L), [], 'no visualRange and nothing cast: no list');
+  Collider.visualRange[L] = 100;
   assert.deepEqual(row(k, L), plain);
 });
