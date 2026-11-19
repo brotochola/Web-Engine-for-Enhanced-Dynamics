@@ -16820,7 +16820,8 @@
         "R-1106",
         "R-1108",
         "R-1208",
-        "R-1535"
+        "R-1535",
+        "R-1539"
       ]
     },
     {
@@ -17064,7 +17065,8 @@
         "R-1101",
         "R-1236",
         "R-1523",
-        "R-1527"
+        "R-1527",
+        "R-1539"
       ]
     },
     {
@@ -17089,7 +17091,8 @@
         "R-1101",
         "R-1236",
         "R-1525",
-        "R-1527"
+        "R-1527",
+        "R-1539"
       ]
     },
     {
@@ -17139,7 +17142,8 @@
         "R-1236",
         "R-1257",
         "R-1526",
-        "R-1527"
+        "R-1527",
+        "R-1539"
       ]
     },
     {
@@ -23614,7 +23618,8 @@
       "area": "logic",
       "kind": "dx",
       "records": [
-        "R-1537"
+        "R-1537",
+        "R-1539"
       ]
     },
     {
@@ -24082,6 +24087,20 @@
       "statusText": "kept 2026-11-19 (bb9e0cc1 on dx/startup)",
       "next": "In export_slot_state, flag the body asleep when b2Body_IsAwake is false (the dropped paint patch, e325-paint-dropped.patch, has the fix); a wasm test: a sleeping body teleported by a command keeps sleeping=1 and an acceleration that frame wakes it or is kept.",
       "result": "Fixed 2026-11-19 (R-1530): export_slot_state flags a body the command left asleep (Box2D a4a4082, WeedJS bb9e0cc1, commandExportSleeping.wasm.test.js)."
+    },
+    {
+      "records": [
+        "R-1539"
+      ],
+      "refs": [],
+      "id": "N-316",
+      "title": "Logic +4.8 % at Predator crowd 2.5 between 99afd415 and 8cb24ab6 (the night of 18-19 November before E-528), pre-render +2 %: a change of that night, cause unknown; E-528 wins it back",
+      "status": "open",
+      "kind": "bug",
+      "area": "logic",
+      "date": "2026-11-19",
+      "statusText": "found 2026-11-19 by the night's total (R-1539)",
+      "next": "Bisect on a quiet machine, logic owner, crowd=2.5, 4 pairs a step: 99afd415 against aef88471 (N-301, N-314, the physics batch E-325/E-327/E-324, E-527), then inside the half that moves; suspects: E-527's tickAll classification, E-325's moved list, E-327's stamps, N-218's link-count read in the pose writes."
     }
   ],
   "records": [
@@ -38961,6 +38980,15 @@
       "title": "E-357 screened on the main PC: wasm pmin/pmax in the wide solver -1.35 % in the harness (4/6), noise; stays parked",
       "verdict": "tie",
       "text": "**E-357 screened on the main PC: the wide solver's min and max as wasm pmin/pmax read -1.35 % in the harness, 4 of 6\nrounds: noise; stays parked.** Origin's solver-skip-second-point held it (61ff6f1, its bit-for-bit check against\nEmscripten's _mm_min_ps/_mm_max_ps, and eb42d5e); both cherry-picked onto Box2D main 2f3d4db (with E-316) in a scratch\nworktree. Crowd harness, weed mode (38 000 walkers, order 2, churn 100, idle 20, reorder every 30 steps, 960 steps), 6\nrounds against main's build, to 2026-11-19 06:50: b2World_Step 12.37 -> 12.21 ms (-1.35 %, 4/6), solve -1.5 %, collide\n+0.8 %, pose and export hashes identical. The cloud screen had it +4 % (R-1109's sitting). Not kept; the branch is still on\norigin."
+    },
+    {
+      "id": "R-1539",
+      "date": "2026-11-19",
+      "time": "07:01",
+      "timeFrom": "recorded",
+      "title": "The night's total at Predator crowd 2.5 in one sitting: physics -5.7 % (4/4), the others level; a +4.8 % logic regression inside the night (N-316) that E-528 compensates",
+      "verdict": "note",
+      "text": "**The night's total at Predator crowd 2.5, one sitting: physics -5.7 % (4/4), the other workers level; and a logic\nregression found inside the night that E-528 (static hooks) compensates.** runPredatorAbab night-total, A 99afd415 (main\nbefore the physics batch), B 8c310e43 (main with the batch E-325/E-327/E-324, E-316, E-528, N-218's fix, E-527, N-301,\nN-314, N-315), `crowd=2.5&zoom=0.216`, physics owner, 4 pairs, to 2026-11-19 06:55: KEPT, physics 14.526 -> 13.944 ms\n(-5.7 %, worse 1/4; -5.5 % against the other workers, 4/4), logic +1.1 % (2/4), spatial -0.2 %, pre-render -0.7 %.\n\nThe pieces' own sittings add to more than that (the batch -3.0 %, E-316 -5.9 % on physics; E-528 -12.4 % on logic), and\nthe logic side does not add up at all: E-528's A side (8cb24ab6) read logic 8.1 ms against 7.2 to 7.4 elsewhere. A check,\nlogic-check1, A 99afd415, B 8cb24ab6 (everything of the night but E-528), logic owner, 4 pairs, to 07:01: REGRESSION,\nlogic 7.176 -> 7.523 ms (+4.8 %, worse 3/4; +4.5 % against the others), pre-render +2.0 % (+4.1 % against the others),\nphysics -3.5 % (4/4). So something of the night, between 99afd415 and 8cb24ab6, costs logic about 5 % at that crowd, and\nE-528 wins it back (its -12.4 % is that and more, with some drift). Filed as N-316. A first split (99afd415 against\naef88471, E-527's merge, 07:06) was disturbed: an agent's test suite ran during it (cv 14 to 22 % on every worker), not\nused."
     }
   ],
   "leads": [
