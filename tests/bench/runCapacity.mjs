@@ -39,7 +39,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { MAX_ENTITIES_U32 } from '../../src/util/entityIdWidth.js';
-import { HIST_CEILING_MS, formatHistMs } from '../../src/util/frameTotals.js';
+import * as frameTotals from '../../src/util/frameTotals.js';
+
+// N-320: "≥127.9" at the histogram's ceiling; an A/B side whose src/ predates it prints plain numbers.
+const HIST_CEILING_MS = frameTotals.HIST_CEILING_MS ?? Infinity;
+const formatHistMs = frameTotals.formatHistMs ?? ((ms) => String(ms));
 import { repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
 

@@ -2,7 +2,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { formatHistMs } from '../../src/util/frameTotals.js';
+import * as frameTotals from '../../src/util/frameTotals.js';
+
+// N-320: "≥127.9" at the histogram's ceiling; an A/B side whose src/ predates it prints plain numbers.
+const formatHistMs = frameTotals.formatHistMs ?? ((ms) => (typeof ms === 'number' ? ms.toFixed(2) : String(ms)));
 
 import { chromium, firefox } from 'playwright';
 
