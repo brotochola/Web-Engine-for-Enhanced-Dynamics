@@ -143,6 +143,13 @@ const LOGIC_WAIT_OFF_FRAMES = 120;
 // frames fire within about 0.2 ms of each other).
 const LOGIC_WAIT_SLACK_MS = 1;
 const FRAME_MS_60 = 1000 / 60;
+// E-476 (spatial.neighborRefreshSpread): which of its period's P / T ticks a typed slot's list comes before.
+const REFRESH_SPREAD_NONE = 0; // the first: a class refreshes on T frames of every P
+const REFRESH_SPREAD_ID_BLOCKS = 1; // tick k for the k-th of P / T contiguous blocks of the class's slots
+const REFRESH_SPREADS = Object.freeze({
+  none: REFRESH_SPREAD_NONE,
+  idBlocks: REFRESH_SPREAD_ID_BLOCKS,
+});
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -252,6 +259,13 @@ class SpatialWorker extends AbstractWorker {
     this._logicFrameSlot = -1;
     /** E-200: logic's frame at this worker's last search (-1: none yet). */
     this._lastLogicFrame = -1;
+    /** E-476: spatial.neighborRefreshSpread (REFRESH_SPREAD_*). */
+    this._neighborRefreshSpread = REFRESH_SPREAD_NONE;
+    /**
+     * E-476: the frames a list the stagger skips may stand: neighborReuseMaxFrames, or with a spread that plus the
+     * longest refresh period, so a list past the reuse cap waits for its own refresh frame (_setupScheduleReuseCap).
+     */
+    this._scheduleReuseCap = 0;
     /** Per-entity expanded candidate lists: [count, id0, ...] stride = 1+maxNeighbors */
     this._neighborCandidateData = null;
     /** Dense copy of each list's count: the stagger skip reads this, not the head of a 1+maxNeighbors row. */
@@ -443,6 +457,13 @@ class SpatialWorker extends AbstractWorker {
     this._neighborTickInterval = tickInterval > 1 ? tickInterval | 0 : 1;
     this._gatherCellOrder = spatialCfg.gatherCellOrder !== false;
     this._setupStartOn();
+    const spread = spatialCfg.neighborRefreshSpread;
+    if (spread !== undefined && !Object.hasOwn(REFRESH_SPREADS, spread) && this.workerId === 0) {
+      console.warn(
+        `WeedJS: spatial.neighborRefreshSpread ${JSON.stringify(spread)} is not 'none' or 'idBlocks'; the lists are not spread.`,
+      );
+    }
+    this._neighborRefreshSpread = Object.hasOwn(REFRESH_SPREADS, spread) ? REFRESH_SPREADS[spread] : REFRESH_SPREAD_NONE;
     if (this._neighborTickInterval > 1) {
       const nextTick = new Uint8Array(this.globalEntityCount);
       const interval = this._neighborTickInterval;
@@ -454,6 +475,7 @@ class SpatialWorker extends AbstractWorker {
     } else {
       this._entityNeighborNextTick = null;
     }
+    this._setupScheduleReuseCap();
     // E-76: the publish (and, below, E-78's gather) in WASM on the spatial publish memory, the worker's only search.
     if (!data.spatialPublishMemory || !data.gridMetadata?.candByte || !data.gridMetadata?.patternByte) {
       throw new Error('spatial worker without the spatial publish memory and its gather regions (createSpatialPublishMemory)');
@@ -1902,6 +1924,7 @@ class SpatialWorker extends AbstractWorker {
    */
   _setupTypedNeighborStagger(data) {
     const n = this.globalEntityCount;
+    const spread = this._neighborRefreshSpread;
     this._typedNeighborClass = new Uint8Array(n);
     this._typedNeighborOffset = new Uint16Array(n);
     this._typedNeighborPeriods = new Int32Array(1);
@@ -1924,16 +1947,43 @@ class SpatialWorker extends AbstractWorker {
       if (period > 0xffff || end <= start) continue;
       const c = periods.length;
       periods.push(period);
+      // E-476: a period holds period / T of a slot's ticks, and its list may come before any of them (as fresh at its
+      // tick). Before the first for every slot ('none'), the class's whole refresh lands on T frames of every period:
+      // spatial at Predator crowd 2.5 ran 3 to 4 ms on some frames and 28 to 46 ms on others, a 32-frame cycle (R-1226).
+      // 'idBlocks' gives the k-th of period / T contiguous blocks of the class's slots its k-th tick, so each frame of the
+      // period refreshes one phase of one block, every T-th slot of it (as dense in memory as before).
+      const ticks = period / T;
+      const span = end - start;
       for (let i = start; i < end; i++) {
         this._typedNeighborClass[i] = c;
+        const k = spread === REFRESH_SPREAD_ID_BLOCKS ? Math.floor(((i - start) * ticks) / span) : 0;
         // Logic ticks slot i on the frames f with f % T === its phase; its list comes on f - LEAD.
-        this._typedNeighborOffset[i] = (((tickBucketPhase(i, T) - TYPED_NEIGHBOR_LEAD) % period) + period) % period;
+        this._typedNeighborOffset[i] = (((tickBucketPhase(i, T) + k * T - TYPED_NEIGHBOR_LEAD) % period) + period) % period;
       }
     }
     if (periods.length === 1) return;
     this._typedNeighborPeriods = Int32Array.from(periods);
     this._typedNeighborNow = new Int32Array(periods.length);
     this._logicFrameSlot = slot;
+  }
+
+  /**
+   * E-476. The stagger keeps a list it skips (its slot's refresh frame has not come) while the list is under
+   * neighborReuseMaxFrames; skin reuse keeps a list on its refresh frame on the same condition. A list that skin reuse
+   * keeps (its entity did not move: a guard, a lamp) therefore reaches the cap between two refresh frames, and is rebuilt
+   * on the frame it does, not on one its schedule picked: lists built on the same frame (every list at the scene's start)
+   * stay on one cycle of cap + 1 frames for good, whatever the stagger spreads (on the Predator-like kernel world, cap
+   * 30: 1 600 more rebuilds, a frame at 1.9 times the median, every 31 frames). With a spread, a skipped list stands up to
+   * a period past the cap instead, so it is rebuilt on its own refresh frame, the first after the cap: no list goes longer
+   * than the cap plus a period without a refresh, and the rebuilds stay spread. Without one, the cap as before.
+   */
+  _setupScheduleReuseCap() {
+    const cap = this._maxReuseFrames;
+    let longest = this._neighborTickInterval;
+    const periods = this._typedNeighborPeriods;
+    for (let c = 1; c < periods.length; c++) if (periods[c] > longest) longest = periods[c];
+    const spread = this._neighborRefreshSpread !== REFRESH_SPREAD_NONE && cap > 0;
+    this._scheduleReuseCap = spread ? Math.min(0xffff, cap + longest) : cap;
   }
 
   /**
@@ -1961,7 +2011,7 @@ class SpatialWorker extends AbstractWorker {
     const skinFrac = this._neighborReuseSkin;
     const tickInterval = this._neighborTickInterval;
     const nextTick = this._entityNeighborNextTick;
-    const maxReuseFrames = this._maxReuseFrames;
+    const scheduleReuseCap = this._scheduleReuseCap;
     const framesSinceBuild = this._entityFramesSinceBuild;
     const candCountOf = this._candidateCountOf;
     const neighborData = Grid.neighborData;
@@ -2074,7 +2124,7 @@ class SpatialWorker extends AbstractWorker {
       if (
         scheduleSkipRebuild &&
         candCountOf[entityA] > 0 &&
-        framesSinceBuild[entityA] < maxReuseFrames
+        framesSinceBuild[entityA] < scheduleReuseCap
       ) {
         this.neighborsReusedThisFrame++;
         framesSinceBuild[entityA]++;
