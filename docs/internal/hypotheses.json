@@ -24155,6 +24155,26 @@
         "light tile size",
         "soft shadow taps"
       ]
+    },
+    {
+      "records": [
+        "R-1548"
+      ],
+      "refs": [],
+      "id": "N-317",
+      "title": "Vertical bands of shade on the roofs near the screen's bottom: their sun ray lands past the sun map (which holds the screen alone) and the read clamped to the map's last row, stretching its shade up the roof",
+      "status": "kept",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-19",
+      "statusText": "Reported by the owner on 2026-11-19 in the barrio (moving with W); fixed the same day (3b188e53 on fix/n317-sun-map-edge): an off-map landing is lit",
+      "result": "The band on the bottom house's roof gone on WebGL and WebGPU at the owner's camera (R-1548)",
+      "next": "The full fix: a sun map that reaches past the screen (below it most, by the tallest caster's height over the sun's slope), with its casters drawn there, so a surface near the edge gets the shade that is really there instead of none; weigh the bigger map on the GPU.",
+      "aliases": [
+        "roof bands",
+        "sun map edge",
+        "vertical shading bands"
+      ]
     }
   ],
   "records": [
@@ -39181,6 +39201,18 @@
         "73ae2ba3",
         "8587a28c",
         "413183e1"
+      ]
+    },
+    {
+      "id": "R-1548",
+      "date": "2026-11-19",
+      "time": "14:08",
+      "timeFrom": "recorded",
+      "title": "N-317 fixed: a sun ray landing past the sun map's edge read the clamped edge row, banding the roofs near the screen's bottom; now lit, WebGL and WebGPU checked",
+      "verdict": "kept",
+      "text": "**N-317 found and fixed (3b188e53): vertical bands of shade on the roofs near the screen's bottom, from the sun map read past its edge.** The owner saw them in the barrio moving the camera with W: as the houses came to the bottom edge, their roofs took vertical bands of shading.\n\n- **Cause.** The sun's map holds the screen alone (the shadows' layer's size). A roof pixel near the bottom lands its sun ray (its floor point minus its height times k) below the screen, off the map; the read clamped to the map's last row, so that row's shade ran up the roof in columns.\n- **Evidence (the barrio, cam 13763.8, 4819.2, zoom 1.47, 13 h, 800 people; captures 13:56 to 14:08).** At the owner's camera the bottom house's roof has a dark vertical band on WebGL and on WebGPU; with the camera 120 px further down the same roof is clean. A probe that took an off-map landing as lit removed the band (14:03), and so does the fix on both backends (14:06, 14:08 the WebGPU before).\n- **Fix.** `sunVisibility` returns lit for a landing point outside the map, in GLSL and WGSL, before any tap (a node test checks both). It reads nothing it could not know; what it still cannot do is shade a surface near the edge whose ray lands off the screen with the shade that is really there (the casters past the edge are not in the map): that needs the map to reach past the screen (next).\n- **Verdict.** Kept as a bug fix (hygiene: one branch in the light pass, nothing measured). Suite green (3273).",
+      "commits": [
+        "3b188e53"
       ]
     }
   ],
