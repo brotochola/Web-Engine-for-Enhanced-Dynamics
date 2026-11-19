@@ -323,6 +323,8 @@ class LogicWorker extends AbstractWorker {
     this.nonDecimatedTypes = []; // Array of {EntityClass, activeList} for tickInterval === 1
     this.decimatedTypes = [];    // Array of {EntityClass, activeList, tickInterval} for tickInterval > 1
     this.tickAllTypes = [];      // static tickAll, no tick() override
+    // E-527: the tickAll types with tickInterval > 1 (logic.staggeredUpdates): tickAll gets one bucket a frame.
+    this.tickAllBucketTypes = [];
     // DX-DIRSPRITE: the types with a DirectionalSprite, resolved after the ticks (_resolveDirections).
     this.directionalTypes = [];
 
@@ -648,16 +650,40 @@ class LogicWorker extends AbstractWorker {
           const needsTick = GameObject.typeNeedsLogicTick(EntityClass);
           const hasTickAll = GameObject.typeHasTickAll(EntityClass);
           if (hasTickAll && !needsTick && !needsScreenCallbacks) {
-            this.tickAllTypes.push({
-              EntityClass,
-              activeList: EntityClass._activeList,
-              startIndex,
-              entityType,
-              hasRigidBody,
-              // E-218: a view of the active list from this worker's first row, and that row.
-              view: EntityClass._activeList.subarray(1),
-              viewFrom: 0,
-            });
+            const rawInterval = EntityClass.tickInterval;
+            const tickInterval = rawInterval == null ? 1 : (rawInterval | 0);
+            if (tickInterval > 1 && GameObject.nextTick) {
+              // E-527: tickAll every N frames, through the buckets tick() ticks from (_rebuildTickBuckets): each frame,
+              // the entities tick() would tick on it. The bucket fields are declared here (E-349); per phase, a view
+              // of the bucket from this worker's first row, and that row, as E-218 keeps one of the list.
+              this.tickAllBucketTypes.push({
+                EntityClass,
+                activeList: EntityClass._activeList,
+                tickInterval,
+                startIndex,
+                entityType,
+                hasRigidBody,
+                _buckets: [],
+                _bucketCounts: new Int32Array(0),
+                _bucketInterval: 0,
+                _bucketCap: 0,
+                _bucketStampCount: -1,
+                _bucketStampVer: -1,
+                _bucketViews: [],
+                _bucketViewFrom: new Int32Array(0),
+              });
+            } else {
+              this.tickAllTypes.push({
+                EntityClass,
+                activeList: EntityClass._activeList,
+                startIndex,
+                entityType,
+                hasRigidBody,
+                // E-218: a view of the active list from this worker's first row, and that row.
+                view: EntityClass._activeList.subarray(1),
+                viewFrom: 0,
+              });
+            }
           } else if (!needsTick && !needsScreenCallbacks) {
             // Tickless: stay on active lists for queries/spatial/physics/render.
           } else {
@@ -1492,6 +1518,9 @@ class LogicWorker extends AbstractWorker {
     }
 
     activeCount += this._runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa);
+    if (this.tickAllBucketTypes.length > 0) {
+      activeCount += this._runTickAllBucketTypes(frameNum, tickDtRatio, transformActive, rbAx, rbAy, rbAa);
+    }
     if (this.directionalTypes.length > 0) this._resolveDirections(frameNum);
     // E-140: the entities the paths above processed, counted once rather than written on `this` per entity.
     this.entitiesProcessedThisFrame += activeCount;
@@ -1614,6 +1643,135 @@ class LogicWorker extends AbstractWorker {
       if (n > 0) {
         try {
           typeInfo.EntityClass.tickAll(viewed ? typeInfo.view : scratch, n, dtRatio);
+        } catch (error) {
+          reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
+        }
+      }
+      packed += n;
+    }
+    return packed;
+  }
+
+  /**
+   * E-527: the tickAll types with tickInterval > 1. Each frame a type's tickAll gets the entities tick() would tick on
+   * it: the frame's bucket (_rebuildTickBuckets), split among the workers as _tickIntervalBucket splits it; for a type
+   * with entities pinned to a worker, the list's own split (the forced loop) and each entity's phase. It gets the frame's
+   * dtRatio, as tick() does. Accelerations are reset only for the entities ticked this frame: the others keep their last
+   * steering, as off-tick tick() entities do. A copy of _runTickAllTypes' loops, so that one stays as it was (E-218); its
+   * views are of the bucket, one per phase.
+   */
+  _runTickAllBucketTypes(frameNum, dtRatio, transformActive, rbAx, rbAy, rbAa) {
+    const types = this.tickAllBucketTypes;
+    const typeCount = types.length;
+    let packed = 0;
+
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const scratch = this._tickAllScratch;
+    const forceProcessOnLogicWorker = GameObject.forceProcessOnLogicWorker;
+    const entityTypeHasForcedLogicWorker = GameObject.entityTypeHasForcedLogicWorker;
+    const versions = GameObject.typeListVersions;
+
+    for (let t = 0; t < typeCount; t++) {
+      const typeInfo = types[t];
+      const activeList = typeInfo.activeList;
+      const count = Math.min(activeList[0], activeList.length - 1);
+      const interval = typeInfo.tickInterval;
+      const phase = frameNum % interval;
+      const hasRigidBody = typeInfo.hasRigidBody;
+      const typeForced = !!(
+        entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
+      );
+      let list = scratch;
+      let n = 0;
+      if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
+        for (let idx = 0; idx < count; idx++) {
+          const entityIndex = activeList[1 + idx];
+          if (tickBucketPhase(entityIndex, interval) !== phase) continue;
+          if (
+            logicWorkerThatShouldTick(
+              idx,
+              entityIndex,
+              totalWorkers,
+              forceProcessOnLogicWorker,
+            ) !== myIndex
+          ) {
+            continue;
+          }
+          if (transformActive[entityIndex] === 0) continue;
+          if (hasRigidBody) {
+            rbAx[entityIndex] = 0;
+            rbAy[entityIndex] = 0;
+            rbAa[entityIndex] = 0;
+          }
+          scratch[n++] = entityIndex;
+        }
+      } else {
+        // Rebuilt when the type's own list changed (E-180), as _tickIntervalBucket rebuilds.
+        const ver =
+          versions !== null
+            ? Atomics.load(versions, typeInfo.entityType)
+            : this.queryVersionData
+              ? Atomics.load(this.queryVersionData, 0)
+              : 0;
+        if (typeInfo._bucketStampCount !== count || typeInfo._bucketStampVer !== ver) {
+          const previous = typeInfo._buckets;
+          this._rebuildTickBuckets(typeInfo, activeList, count, interval);
+          typeInfo._bucketStampCount = count;
+          typeInfo._bucketStampVer = ver;
+          if (typeInfo._buckets !== previous) {
+            // New buckets: each phase's view is its bucket, from row 0.
+            typeInfo._bucketViews = typeInfo._buckets.slice();
+            typeInfo._bucketViewFrom = new Int32Array(interval);
+          }
+        }
+        const bucket = typeInfo._buckets[phase];
+        const nAll = typeInfo._bucketCounts[phase];
+        let from = 0;
+        let to = nAll;
+        if (totalWorkers > 1) {
+          const range = logicBlockRange(nAll, myIndex, totalWorkers);
+          from = range.start;
+          to = range.end;
+        }
+        if (hasRigidBody) {
+          for (let k = from; k < to; k++) {
+            const entityIndex = bucket[k];
+            if (transformActive[entityIndex] === 0) continue;
+            rbAx[entityIndex] = 0;
+            rbAy[entityIndex] = 0;
+            rbAa[entityIndex] = 0;
+            scratch[n++] = entityIndex;
+          }
+        } else {
+          // E-218's view, of the bucket: when every entity of this worker's share is active, no copy.
+          let viewed = true;
+          for (let k = from; k < to; k++) {
+            if (transformActive[bucket[k]] === 0) {
+              viewed = false;
+              break;
+            }
+          }
+          if (viewed) {
+            n = to - from;
+            const viewFrom = typeInfo._bucketViewFrom;
+            if (viewFrom[phase] !== from) {
+              typeInfo._bucketViews[phase] = bucket.subarray(from);
+              viewFrom[phase] = from;
+            }
+            list = typeInfo._bucketViews[phase];
+          } else {
+            for (let k = from; k < to; k++) {
+              const entityIndex = bucket[k];
+              if (transformActive[entityIndex] === 0) continue;
+              scratch[n++] = entityIndex;
+            }
+          }
+        }
+      }
+      if (n > 0) {
+        try {
+          typeInfo.EntityClass.tickAll(list, n, dtRatio);
         } catch (error) {
           reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
         }

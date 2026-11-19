@@ -1566,7 +1566,7 @@ export declare class GameObject {
   static scriptUrl?: string | null;
   /**
    * 0 = logic workers never visit this type (unless CameraInOutListener).
-   * 1 = every frame. >1 = every N frames when logic.staggeredUpdates is on.
+   * 1 = every frame. >1 = every N frames when logic.staggeredUpdates is on (tick() and tickAll alike).
    */
   static tickInterval: number;
   /** False if the type has no tick override or tickInterval is 0. */
@@ -1574,6 +1574,9 @@ export declare class GameObject {
   /**
    * Optional SoA batch. If defined and tick() is not overridden, the logic
    * worker calls this once with packed entity indices instead of obj.tick.
+   * With tickInterval N > 1 (logic.staggeredUpdates on), each frame's list holds
+   * the entities tick() would tick on that frame, each one once in N frames.
+   * dtRatio is the frame's, as tick() gets it, not N frames' worth.
    */
   static tickAll?(list: ArrayLike<number>, count: number, dtRatio: number): void;
   static typeHasTickAll(EntityClass?: typeof GameObject): boolean;
