@@ -23303,7 +23303,8 @@
         "R-1458",
         "R-1472",
         "R-1492",
-        "R-1546"
+        "R-1546",
+        "R-1493"
       ],
       "result": "Fixed 2026-11-18 (7a4cdafe, R-1453): bisected to E-504 (d9bf2261); painting a just-uploaded picture into the cache's target slowed its later uploads for good; renderer 40.3 -> 12.7 ms, the barrio's cached floor kept.",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23328,7 +23329,8 @@
         "R-1481",
         "R-1478",
         "R-1492",
-        "R-1546"
+        "R-1546",
+        "R-1493"
       ],
       "result": "Not a regression (R-1481): the kernel's contended case times worker start-up when main's workers, loading a bigger module graph, take over its fixed 300 ms to start; with all 3 ready main claims at v0.14.0's speed (-3 %). The harness should wait for a ready count.",
       "next": "Make audioSlotMicrobench's contended case wait until all its workers report ready (a shared ready count) instead of a fixed 300 ms (tests/bench only), then read the scoreboard row again.",
@@ -23352,7 +23354,8 @@
         "R-1482",
         "R-1472",
         "R-1492",
-        "R-1546"
+        "R-1546",
+        "R-1493"
       ],
       "result": "Not a regression (R-1482): on the ASUS the renderer's own work fell 1.426 -> 0.910 ms and frames drawn rose 30 -> 42 fps; the scoreboard judged raw STEP_MS, which holds the queue wait (N-311).",
       "next": "Nothing for the engine. The scoreboard reading STEP - WAIT (N-311) clears the row.",
@@ -23376,7 +23379,8 @@
         "R-1472",
         "R-1483",
         "R-1492",
-        "R-1546"
+        "R-1546",
+        "R-1493"
       ],
       "result": "Not a regression (R-1483): logic's own work 0.068 -> 0.063 ms on the ASUS; the scoreboard judged raw STEP_MS, which holds the wait (N-311). The row does about 0.07 ms of work a frame, far under any floor.",
       "next": "Nothing for the engine. N-311 (the scoreboard reads STEP - WAIT) clears the row; raising its load knob would let it judge QueryAABB at all.",
@@ -39090,6 +39094,15 @@
       "title": "tweenPool's kernel, the ASUS scoreboard's lead (R-1492), checked on the main PC: a tie (about +3 % for main), its code unchanged since 57044bd1",
       "verdict": "tie",
       "text": "**tweenPool's kernel, the lead of the ASUS's scoreboard (R-1492: -23.5 % from 57044bd1 to 8c310e43), checked on the main\nPC: a tie.** The kernel's code (src/core/tween.js, spriteRenderer.js, component.js) did not change between 57044bd1 and\nmain (only entityIdWidth's MAX_ENTITIES_U32, and a spatial gather stamp, which it does not run). tweenPoolMicrobench from\n57044bd1's sources (git archive) and from main, 4 rounds alternated, 2026-11-19 to 08:13: tween65535 medians 745, 749,\n756, 849 against 792, 762, 754, 783 ops/s (about +2.7 % for main), tween65535Scattered 725, 733, 734, 813 against 747,\n709, 786, 761 (about +2.9 %). The ASUS reading was its kernels' sitting-to-sitting swing; nothing to bisect."
+    },
+    {
+      "id": "R-1493",
+      "date": "2026-11-19",
+      "time": "11:14",
+      "timeFrom": "recorded",
+      "title": "R-1492's tweenPool lead dismissed: interleaved on the ASUS, its kernel reads v0.14.0 609.3, 57044bd1 604.2, 8c310e43 605.6 ops/s; the scoreboard's -23.5 % was one-shot noise",
+      "verdict": "note",
+      "text": "ASUS lab job 0899a (11:0x-11:14) checked R-1492's lead, Node only: tweenPoolMicrobench (cases.tick.opsPerSec) at\nv0.14.0, 57044bd1 and 8c310e43 (branch pcmain19). Each revision ran its own kernel (git archive of package.json, src and\ntests/bench), 6 rounds interleaved, with a new lab driver, kab.mjs.\n\n| Revision | Median ops/s | Runs |\n|---|---|---|\n| v0.14.0 | 609.3 | 592 608 614 612 609 607 |\n| 57044bd1 | 604.2 (-0.8 %) | 604 597 603 593 607 611 |\n| 8c310e43 | 605.6 (-0.6 %) | 609 593 612 606 605 566 |\n\n- No regression. 0898z's -23.5 % was that sitting's one-shot kernel noise. No tween file or kernel changed between\n  57044bd1 and 8c310e43 either.\n- A single scoreboard kernel row on this laptop is not evidence by itself. Check a WORSE kernel row interleaved like\n  this before calling it."
     }
   ],
   "leads": [
