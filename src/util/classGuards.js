@@ -44,7 +44,8 @@ function matchingParen(src, at) {
 }
 
 /**
- * C3: `static tickInterval > 1` needs `logic.staggeredUpdates`; without it the type ticks every frame.
+ * C3: `static tickInterval > 1` needs `logic.staggeredUpdates`; without it the type ticks every frame (its tick(),
+ * or its static tickAll: E-527).
  * C4: an empty `tick() {}` still has the logic workers call it on every entity of the type, every frame.
  * @param {{ class: Function, count: number }[]} registered
  * @param {Function} BaseClass GameObject
@@ -54,7 +55,9 @@ export function warnEntityClassMistakes(registered, BaseClass, config) {
   const staggered = config?.logic?.staggeredUpdates === true;
   for (const r of registered) {
     const C = r.class;
-    if (!(r.count > 0) || !BaseClass.typeNeedsLogicTick(C)) continue;
+    if (!(r.count > 0)) continue;
+    const ticks = BaseClass.typeNeedsLogicTick(C);
+    if (!ticks && !BaseClass.typeHasTickAll(C)) continue;
     const name = C.name;
     const interval = C.tickInterval | 0;
     if (interval > 1 && !staggered) {
@@ -65,7 +68,7 @@ export function warnEntityClassMistakes(registered, BaseClass, config) {
           'every frame. Set logic: { staggeredUpdates: true } in the scene\'s config.',
       );
     }
-    if (isEmptyMethod(C.prototype.tick)) {
+    if (ticks && isEmptyMethod(C.prototype.tick)) {
       const owner = definer(C, BaseClass, 'tick');
       const where = owner && owner !== C ? ` (from ${owner.name})` : '';
       warnOnce(
