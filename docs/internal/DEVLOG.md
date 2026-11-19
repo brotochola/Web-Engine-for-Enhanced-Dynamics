@@ -6,6 +6,19 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 19 November 2026 (night) — Lists Nobody Read
+
+This morning a visualRange started to mean one thing: this entity's code reads its neighbours, so it gets a list from
+the first frame. The other half of that promise was the demos. Many of them had set a visualRange years of commits ago,
+for reasons long gone, on entities that never look at anyone: 20 000 water drops, 10 000 boxes, 10 000 bugs, a city's
+trees. Each now paid for a list every frame.
+
+So I went through every demo and stress scene. Where nobody reads the neighbours, the visualRange is gone. The others
+still see exactly what they saw, because whether an entity shows up in someone's list depends on its own size, not on
+its visualRange. In waterAndBoxes the spatial worker went from 2.6 to 0.4 ms a frame, and in orientedBox from 5.5 to
+0.25 ms. The scenes that exist to load the spatial worker keep theirs. On the way, the scoreboard had let this through as
+"load matches", because a count going from zero to thousands was never checked. Now it is.
+
 ## Thursday 19 November 2026 (evening) — A Pass That Drew People to Throw Them Away
 
 With pixel depth on, every sprite layer is drawn twice: an opaque pass that writes each solid pixel's depth, then an edge
@@ -17,7 +30,8 @@ spent on 5000 people producing nothing.
 texel has an alpha between 1 and 127. Sampled nearest and without mipmaps, a frame without such texels has pixels that are
 either the opaque pass's or empty, as long as the sprite is drawn at full alpha. So the edge pass's vertex shader now sends
 those instances off screen before a single pixel is rasterized. The barrio's edge pass went from 0.55 to 0.06–0.09 ms on
-the GTX 1650. A sprite faded below full alpha still goes through, since its half-transparent texels can fall under the
+the GTX 1650. On the laptop's Intel HD 620, where pixels are the whole cost, it went from 2.4 to 0.8 ms and the frames
+drawn rose 7 %. A sprite faded below full alpha still goes through, since its half-transparent texels can fall under the
 opaque cut. A linear atlas gets nothing from this (filtering softens every edge), and neither does WebGPU yet, where one
 vertex entry serves both passes. In Predator's light3d mode the people cost about 1.6 ms in their two passes, and a probe
 with a one-pixel scissor said 95 % of it is filling pixels: that one needs the depth from the vertex, so the GPU can

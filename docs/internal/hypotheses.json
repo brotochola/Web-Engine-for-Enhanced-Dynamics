@@ -16045,7 +16045,7 @@
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "Barrio (nearest atlas, 13 h): the sprite layer's edge pass 0.545/0.568 -> 0.060/0.092 ms (GTX 1650, 2 rounds against main). Linear atlases and WebGPU unchanged.",
+      "result": "First step kept 2026-11-19 (c72d9a04, nearest atlases, WebGL): the barrio’s edge pass 0.545/0.568 -> 0.060/0.092 ms on the GTX 1650 (R-1559); on the HD 620 2.40/2.28 -> 0.82/0.78 ms, the frame’s draws -10 %, drawn frames 418 -> 448 (+7.2 %, 4 of 4; R-1591). Linear atlases and WebGPU unchanged.",
       "next": "WebGPU: the same cull needs an edge vertex entry of its own (one entry serves both passes there). Predator light3d (linear atlas): its people are about 95 % fill in both passes (1-px scissor probe, R-1559); the lever is the upright frames’ depth from the vertex (early-z) with the opaque pass drawn front to back, the fragment depth kept for frames with height maps. gpuPassBench color/colorDepth, glFrameRecorder --gpu-draws.",
       "refs": [
         "EXECUTION_PLAN.md#E-378"
@@ -24087,7 +24087,8 @@
         "R-1544",
         "R-1545",
         "R-1558",
-        "R-1590"
+        "R-1590",
+        "R-1561"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24097,7 +24098,7 @@
       "area": "spatial",
       "date": "2026-11-19",
       "statusText": "Kept 2026-11-19 (option b, the owner's call); merged f3e7420a",
-      "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames.",
+      "next": "Done: demos and the non-spatial stress scenes give no visualRange where they read no neighbours (R-1561). The first draw with N-318 and SST-21 together still wants one startup sitting.",
       "result": "Predator by night: spatial0's longest step in the first 5 s 64 -> 12 ms cold, 76 -> 10 warm, none over 20 ms; first draw +150 to +200 ms (3 runs); crowd 2.5 steady state neutral"
     },
     {
@@ -24284,6 +24285,25 @@
       "aliases": [
         "bundle smoke black canvas",
         "test:bundle flaky"
+      ]
+    },
+    {
+      "records": [
+        "R-1562"
+      ],
+      "refs": [],
+      "id": "N-322",
+      "title": "The load gate skipped every key whose base median was 0, so SST-21's neighbour lists (NEIGHBORS_REUSED 0 -> 4210) passed the scoreboard's spatial row as \"load matches\"",
+      "status": "kept",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-19",
+      "statusText": "Found by the ASUS's guard (R-1590), fixed 2026-11-19 (207ac7f3, merged 9003489e)",
+      "result": "A key the base counts as 0 and the other side as 1 or more is a drift; a key the base does not publish stays unjudged",
+      "next": "Done.",
+      "aliases": [
+        "load gate zero baseline",
+        "NEIGHBORS_REUSED load matches"
       ]
     }
   ],
@@ -39589,6 +39609,29 @@
       "title": "rayVsBox2d's ?casts on the ASUS: logic0 at v0.14.0 5.2 ms at 3 072 casts to 17.9 at 12 288, linear; casts=6144 puts the baseline at about 9 ms",
       "verdict": "note",
       "text": "ASUS lab job 0899q (19:42-19:44), DX-SCORELOAD: the rayVsBox2d row's new `?casts` knob (b396cc9f) on the ASUS. The\nladder is run as the scoreboard's baseline is: main a8b5afd2's scenes over v0.14.0's src/, headless, --src, detailed\nstats off. RayVsBox2dWeedBusyScene, 2 800 bodies.\n\n| casts a tick | logic0 own ms at v0.14.0 |\n|---|---|\n| 3 072 (the default) | 5.17 |\n| 4 608 | 7.10 |\n| 6 144 | 9.09 |\n| 9 216 | 13.54 |\n| 12 288 | 17.88 |\n\n- **The knob loads logic0 in a straight line:** about 1.45 ms per 1 000 casts here. Every other worker stays flat.\n- **For the ASUS, `casts=6144` puts the row's baseline at about 9 ms,** over the 6 ms floor with room for a 3 % keep;\n  4 608 clears the floor by 1 ms. A machine that already passes at the default keeps it."
+    },
+    {
+      "id": "R-1561",
+      "date": "2026-11-19",
+      "time": "19:57",
+      "timeFrom": "recorded",
+      "title": "SST-21's leftover: demos and stress scenes whose entities read no neighbours give no visualRange; waterAndBoxes spatial 2.56 -> 0.41 ms, orientedBox 5.48 -> 0.25",
+      "verdict": "kept",
+      "text": "**SST-21's leftover done: demos and stress scenes whose entities read no neighbours give no visualRange (80e91c41,\n09148e5b; merged 9003489e).** Since SST-21 a visualRange builds a neighbour list, so they paid lists nobody read.\n\n- **Demos (80e91c41).** badPiggies, balls (boxes, floors), bichos (10 000 bugs), burningBoxes, carScene (car, parts),\n  constraintBox, destructibleTerrain (ship, islands, floors), littleCity (1300 trees), orientedBox (10 000 boxes),\n  platformer, proceduralTree, sunStreet, waterAndBoxes (20 000 drops), weldBreak, zenithal. A list holds every entity\n  near its owner by the others' bounds, so readers see the same; outside the lists the engine reads a visualRange only\n  as the cull pad of a sprite without bounds and the debug view's, and none of these is such a sprite.\n  destructibleTerrain's blast took its radius from an island's visualRange: it takes the island's half diagonal + 80, as\n  the visualRange was. Predator, the barrio, littleCity's people and cars, carScene's walkers, mamushka, planet and\n  constraintsTest read neighbours and keep theirs.\n- **Stress scenes (09148e5b).** ray (RayStressEntity, busy balls), compute, A* and steady combat drop theirs (the ASUS's\n  guard, R-1590: rayVsBox2d spatialMax 0.108 -> 0.885 ms, logic0 +15 % on its 2 cores). The spatial rows (stationary*,\n  compoundFixtureSpatial, movedBodies*, queryChurn) keep theirs: the lists are their load. The light and capture scenes\n  keep theirs: it is how far a light looks for walls.\n- **Measured** (runPredatorAbab against main 971772c7, --full-rev, owner spatial, 4 pairs each, 19:35 to 19:46; under\n  the 6 ms floor, so not judged, but every pair agrees): waterAndBoxes (4000 drops) spatial 2.560 -> 0.413 ms;\n  orientedBox (1044 bodies) 5.476 -> 0.253 ms. Every other worker under its floor and unmoved past noise.\n- **The spatial row's lists are not dearer than v0.14.0's.** The ASUS read stationarySpatialScene's spatialMax 0.760 ms\n  against v0.14.0's 0.418, both building lists (R-1590). Here: stationarySpatial30k, v0.14.0 against main 9003489e,\n  --full-rev, owner spatial, 4 pairs (19:52 to 19:57): spatial 2.894 -> 2.445 ms, main 15 % faster (under the floor;\n  the sitting's \"FAIL (load)\" is ENTITIES_PROCESSED 30000 -> 15200, v0.14.0's scene still ticking its entities, db5553fe).\n  The ASUS's gap is its own (2 cores shared with logic and physics, or one worker's tail in spatialMax).",
+      "commits": [
+        "80e91c41",
+        "09148e5b"
+      ]
+    },
+    {
+      "id": "R-1562",
+      "date": "2026-11-19",
+      "title": "N-322 filed and fixed: the load gate counts a key that goes from 0 to 1 or more as a load change",
+      "verdict": "kept",
+      "text": "**N-322 filed and fixed (207ac7f3): the load gate skipped every key whose base median was 0.** The ASUS's guard\n(R-1590) saw SST-21's lists turn NEIGHBORS_REUSED 0 -> 4210 in the stationary spatial row and the row still read \"load\nmatches\". workloadOk (measureLib.mjs, the scoreboard's, runHygieneSceneAb's and runProductConfirm's gate) now counts a\nkey the base reads as 0 and the other side as 1 or more as a drift; a key the base does not publish (an older revision)\nstays unjudged. Test: workloadCountsAlways.",
+      "commits": [
+        "207ac7f3"
+      ]
     }
   ],
   "leads": [
