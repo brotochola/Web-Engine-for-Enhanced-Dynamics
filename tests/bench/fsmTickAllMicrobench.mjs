@@ -4,7 +4,7 @@
  * createGameObjectInstances classified.
  *
  *   node tests/bench/fsmTickAllMicrobench.mjs [--case tick,tickAll] [--entities 30000] [--frames 100] [--rounds 7]
- *     [--hooks none|predator|all] [--check] [--output path]
+ *     [--hooks none|predator|all] [--states lockstep|spread] [--check] [--output path]
  *
  * The workload is fsmTickMicrobench's Predator shape: three FSM classes with Predator's state counts (3, 9 and 5: 17
  * state classes), two owner types (civilians, two thirds of the entities, and soldiers), each with an animation FSM and
@@ -12,6 +12,10 @@
  * owner.index, so the owner is read) and leaves for another state after a time of its own (200 to 1100 ms), so an FSM
  * changes state every few of its owner's ticks; --hooks says which states define onEnter / onExit (fsmTickMicrobench's
  * meaning; predator by default).
+ * --states says where each round starts: lockstep (the default) puts every entity in its FSMs' initial states at time
+ * 0, so all the entities of a type change state on the same frames and are in the same state on every frame; spread
+ * puts each entity's FSMs in a state and a time in it drawn from its index (every state of the cycle, each FSM drawn
+ * apart), so a frame finds a type's entities in every state, as a game's are.
  *
  * Cases, each in a process of its own (FSM classes, states and owners made in one process share their call sites'
  * feedback, as a scene with one such path would not):
@@ -119,11 +123,16 @@ const HOOKS = {
   all: { enter: () => true, exit: () => true },
 };
 
+/** How long state s of an FSM stays (ms). */
+function stayOf(s, salt) {
+  return 200 + ((s * 137 + salt * 59) % 900);
+}
+
 /** Per state: how long it stays (ms) and the state it goes to (index in its FSM). */
 function makeStates(n, salt, hooks) {
   const states = {};
   for (let s = 0; s < n; s++) {
-    const stay = 200 + ((s * 137 + salt * 59) % 900);
+    const stay = stayOf(s, salt);
     const next = (s + 1 + (salt % 2)) % n;
     states[`S${s}`] = makeState(s, stay, next, hooks.enter(salt, s), hooks.exit(salt, s));
   }
@@ -144,6 +153,32 @@ function makeFsms(hooks) {
     static initial = this.states.S0;
   }
   return { CivilianBehaviorFSM, PersonAnimationFSM, SoldierBehaviorFSM };
+}
+
+/** Each FSM's salt in makeStates (its stays). */
+const SALTS = [1, 2, 3];
+
+/** A 32-bit mix of an integer (the spread's draw). */
+function mix(x) {
+  let h = Math.imul(x ^ 0x9e3779b9, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** --states spread: each entity's FSMs in a state drawn from its index, at a time in it under that state's stay. */
+function spreadStates(fsmList, n) {
+  for (let f = 0; f < fsmList.length; f++) {
+    const F = fsmList[f];
+    const stateCount = F._stateArray.length;
+    for (let i = 0; i < n; i++) {
+      const h = mix(i * 3 + f);
+      const s = h % stateCount;
+      F.state[i] = s;
+      F.time[i] = (h >>> 8) % stayOf(s, SALTS[f]);
+      F.nextState[i] = -1;
+    }
+  }
 }
 
 /** The owner types: with a tick() that runs their FSMs, or with none (the engine runs them). */
@@ -189,11 +224,13 @@ function checksum(fsmList, n) {
 }
 
 /** One case in this process: the median frame over `rounds` runs of `frames` frames, and the checksum of a round. */
-export async function runCase(name, { entities = 30000, frames = 100, rounds = 7, hooks = 'predator', check = false } = {}) {
+export async function runCase(name, { entities = 30000, frames = 100, rounds = 7, hooks = 'predator', states = 'lockstep', check = false } = {}) {
   const c = CASES[name];
   if (!c) throw new Error(`unknown case ${name}; cases: ${Object.keys(CASES).join(', ')}`);
   const hookSpec = HOOKS[hooks];
   if (!hookSpec) throw new Error(`unknown --hooks ${hooks} (${Object.keys(HOOKS).join(', ')})`);
+  if (states !== 'lockstep' && states !== 'spread') throw new Error(`unknown --states ${states} (lockstep, spread)`);
+  const spread = states === 'spread';
   const staggered = c.intervals[0] > 1 || c.intervals[1] > 1;
   const civilians = Math.round((entities * 2) / 3);
   const soldiers = entities - civilians;
@@ -201,7 +238,7 @@ export async function runCase(name, { entities = 30000, frames = 100, rounds = 7
   RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(entities)), entities);
   sums = new Int32Array(entities);
   const fsms = makeFsms(hookSpec);
-  const fsmList = [fsms.CivilianBehaviorFSM, fsms.PersonAnimationFSM, fsms.SoldierBehaviorFSM];
+  const fsmList = [fsms.CivilianBehaviorFSM, fsms.PersonAnimationFSM, fsms.SoldierBehaviorFSM]; // SALTS' order
   for (const F of fsmList) F.initializeArrays(new SharedArrayBuffer(F.getBufferSize(entities)), entities);
   scene.config.logic = { staggeredUpdates: staggered };
   // What logic.staggeredUpdates binds (the countdown buffer): the logic worker decimates a type only with it.
@@ -247,17 +284,21 @@ export async function runCase(name, { entities = 30000, frames = 100, rounds = 7
   const setListed = (n) => {
     for (const p of pools) p.C._activeList[0] = Math.min(n, p.size);
   };
-  // Each round starts from the FSMs' initial states, time 0, nothing pending, and the same frame numbers.
+  // Each round starts from the same FSM states (--states), nothing pending, and the same frame numbers.
   const reset = () => {
-    for (const F of fsmList) {
-      F.state.fill(F.initial.stateIndex);
-      F.time.fill(0);
-      F.nextState.fill(-1);
+    if (spread) spreadStates(fsmList, entities);
+    else {
+      for (const F of fsmList) {
+        F.state.fill(F.initial.stateIndex);
+        F.time.fill(0);
+        F.nextState.fill(-1);
+      }
     }
     sums.fill(0);
     updates = 0;
     frameNumber = 1000;
   };
+  if (spread) spreadStates(fsmList, entities);
   if (!check) {
     setListed(WARM_ENTITIES);
     await quietly(() => warmNormalCompile(frame, 3000));
@@ -275,7 +316,7 @@ export async function runCase(name, { entities = 30000, frames = 100, rounds = 7
   const sum = checksum(fsmList, entities);
   const updateCount = updates;
   if (updateCount === 0) throw new Error(`${name}: no onUpdate ran`);
-  const row = { case: name, ...c, entities, frames, rounds, hooks, checksum: sum, updates: updateCount };
+  const row = { case: name, ...c, entities, frames, rounds, hooks, states, checksum: sum, updates: updateCount };
   if (check) return row;
   const runs = [];
   for (let r = 0; r < rounds; r++) {
@@ -294,13 +335,13 @@ export async function runCase(name, { entities = 30000, frames = 100, rounds = 7
 }
 
 /** Every case (or the listed ones), each in a child process; the child's other output passes through. */
-export function runAll({ entities = 30000, frames = 100, rounds = 7, hooks = 'predator', check = false, cases = Object.keys(CASES) } = {}) {
+export function runAll({ entities = 30000, frames = 100, rounds = 7, hooks = 'predator', states = 'lockstep', check = false, cases = Object.keys(CASES) } = {}) {
   const file = fileURLToPath(import.meta.url);
   const rows = [];
   for (const name of cases) {
     const args = [
       ...process.execArgv, file, '--case', name, '--entities', String(entities), '--frames', String(frames),
-      '--rounds', String(rounds), '--hooks', hooks, '--child',
+      '--rounds', String(rounds), '--hooks', hooks, '--states', states, '--child',
     ];
     if (check) args.push('--check');
     const child = spawnSync(process.execPath, args, { encoding: 'utf8', maxBuffer: 1 << 30, stdio: ['ignore', 'pipe', 'inherit'] });
@@ -313,7 +354,7 @@ export function runAll({ entities = 30000, frames = 100, rounds = 7, hooks = 'pr
     if (!row) throw new Error(`case ${name} printed no result`);
     rows.push(row);
   }
-  return { kernel: 'fsmTickAll', entities, frames, rounds, hooks, rows };
+  return { kernel: 'fsmTickAll', entities, frames, rounds, hooks, states, rows };
 }
 
 if (isCli(import.meta.url)) {
@@ -323,6 +364,7 @@ if (isCli(import.meta.url)) {
     frames: args.frames ?? 100,
     rounds: args.rounds ?? 7,
     hooks: args.hooks ? String(args.hooks) : 'predator',
+    states: args.states ? String(args.states) : 'lockstep',
     check: Boolean(args.check),
   };
   if (args.child) {
@@ -331,7 +373,7 @@ if (isCli(import.meta.url)) {
   } else {
     const cases = args.case ? String(args.case).split(',') : undefined;
     const res = runAll({ ...opts, cases });
-    console.log(`${res.entities} entities, hooks ${res.hooks}, ${res.frames} frames a round, median of ${res.rounds} rounds`);
+    console.log(`${res.entities} entities, hooks ${res.hooks}, states ${res.states}, ${res.frames} frames a round, median of ${res.rounds} rounds`);
     for (const r of res.rows) {
       const timing = opts.check
         ? ''
