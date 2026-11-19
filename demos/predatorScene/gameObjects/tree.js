@@ -55,7 +55,8 @@ export class Tree extends GameObject {
     this.collider.radius = 12 * scale;
     this.spriteRenderer.anchorY = 0.95;
     this.spriteRenderer.anchorX = 0.45;
-    this.collider.visualRange = this.collider.radius * 10;
+    // Reads no neighbours: no visualRange (a visualRange gives an entity its neighbour list, SST-21).
+    this.collider.visualRange = 0;
   }
 
   /**
@@ -73,7 +74,8 @@ export class Tree extends GameObject {
     this.collider.radius = 12 * scale;
     this.spriteRenderer.anchorY = FARM_TREES.anchorY;
     this.spriteRenderer.anchorX = FARM_TREES.anchorX;
-    this.collider.visualRange = this.collider.radius * 10;
+    // Reads no neighbours: no visualRange (a visualRange gives an entity its neighbour list, SST-21).
+    this.collider.visualRange = 0;
   }
 
 }

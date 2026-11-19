@@ -26,7 +26,8 @@ export class Barrel extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 10;
     this.rigidBody.linearDamping = 10;
-    this.collider.visualRange = 50;
+    // Reads no neighbours: no visualRange (a visualRange gives an entity its neighbour list, SST-21).
+    this.collider.visualRange = 0;
     this.setFixedRotation(1);
     this.setSprite('barrel' + Math.floor(rng() * 3 + 1));
     this.setScale(1);
