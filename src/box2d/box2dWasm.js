@@ -37,7 +37,7 @@ var ENVIRONMENT_IS_PTHREAD = ENVIRONMENT_IS_WORKER && globalThis.name == "em-pth
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: D:/xampp/htdocs/box2d-export/wasm/../weedjs/weed_pre.js
+// include: D:/xampp/htdocs/box2d-e324/wasm/../weedjs/weed_pre.js
 // Prepended to box2dWasm.js via --pre-js when building for WeedJS (wasm/CMakeLists.txt).
 // Sizes Box2D's memory for the scene. The engine creates the physics worker with the name
 // 'physics pages=N' (physics.wasmMemoryMB x 16); without one, 8192 pages (512 MB).
@@ -64,7 +64,7 @@ if (!ENVIRONMENT_IS_PTHREAD) {
   }
 }
 
-// end include: D:/xampp/htdocs/box2d-export/wasm/../weedjs/weed_pre.js
+// end include: D:/xampp/htdocs/box2d-e324/wasm/../weedjs/weed_pre.js
 var programArgs = [];
 
 var thisProgram = "./this.program";
@@ -1779,7 +1779,7 @@ if ((!(ENVIRONMENT_IS_PTHREAD))) {
 }
 
 // end include: postamble.js
-// include: D:/xampp/htdocs/box2d-export/wasm/../weedjs/weed_post.js
+// include: D:/xampp/htdocs/box2d-e324/wasm/../weedjs/weed_post.js
 // Appended to box2dWasm.js via --post-js when building for WeedJS.
 // Worker entry is box2dWasm.js; Emscripten pthreads spawn _scriptName (this file).
 // Pthread pool workers (name "em-pthread") must NOT run app glue.
