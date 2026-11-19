@@ -5,7 +5,7 @@ import { debugWorkerLog } from '../../util/debugLog.js';
 import { loadMark } from '../../util/loadMarks.js';
 import { buildBigAtlas } from './atlasBuild.js';
 import { readAtlasPixels } from './atlasFrames.js';
-import { atlasCacheHere, atlasCacheKey, readAtlasCache, writeAtlasCache } from './atlasCache.js';
+import { atlasCacheHere, atlasCacheKey, atlasCacheSlotOf, readAtlasCacheSlot, writeAtlasCache } from './atlasCache.js';
 import { packedBitmaps } from './packedBitmaps.js';
 
 /** A 2D canvas's PNG, its pixels as they are now (both encoders copy the bitmap when called, then encode in parallel). */
@@ -35,6 +35,16 @@ async function fromEntry(hit, decals, makeCanvas) {
   return { json: hit.json, imageBitmap, mapsBitmap, mapsTexels: hit.maps, decals: read.decals, cache: 'hit' };
 }
 
+/** A decoded entry that turned out not to be the atlas asked for: its bitmaps let go. */
+function dropDecoded(decoded) {
+  decoded
+    .then((r) => {
+      r.imageBitmap?.close?.();
+      r.mapsBitmap?.close?.();
+    })
+    .catch(() => {});
+}
+
 /**
  * Load a scene's packed atlas from the atlas cache, or pack it.
  * @param {{
@@ -56,15 +66,24 @@ export async function packAtlas({ assets, options, builtins, cache, makeCanvas, 
   let entry = null;
   if (env) {
     try {
+      // SST-16: the slot's one entry read and decoded while the key hashes the sources (113 and 145 ms of a warm start,
+      // one after the other before), kept only when its key is the key computed.
+      const slot = await atlasCacheSlotOf(assets);
+      const guess = slot === null
+        ? null
+        : readAtlasCacheSlot(env.storage, env.origin, slot)
+          .then((found) => (found ? { key: found.key, decoded: fromEntry(found.hit, options.decals === true, makeCanvas) } : null))
+          // A cache that fails to read is no cache, as before: the error goes to the catch below, after the key.
+          .catch((error) => ({ error }));
       entry = await atlasCacheKey({ assets, options, builtins, bundle: cache.bundle === true, ...cacheKeyOptions });
-      if (entry) {
-        const hit = await readAtlasCache(env.storage, env.origin, entry.slot, entry.key);
-        if (hit) {
-          loadMark('atlas cache hit');
-          return { result: await fromEntry(hit, options.decals === true, makeCanvas), background: null };
-        }
-        loadMark('atlas cache miss');
+      const found = guess ? await guess : null;
+      if (found?.error) throw found.error;
+      if (entry && found && found.key === entry.key && slot === entry.slot) {
+        loadMark('atlas cache hit');
+        return { result: await found.decoded, background: null };
       }
+      if (found) dropDecoded(found.decoded);
+      if (entry) loadMark('atlas cache miss');
     } catch (error) {
       // The cache is a shortcut: a source it could not read, a cache the browser refuses, and the atlas is packed.
       debugWorkerLog(`[atlas cache] not used: ${error?.message ?? error}`);
