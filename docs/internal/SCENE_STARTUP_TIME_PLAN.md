@@ -390,7 +390,7 @@ flowfields have), and hand the workers what they read. Checked by the same tile 
 ### SST-12 — Box2D's start off the critical path
 
 - [ ] in progress: 8f43a111 (the physics worker's load marks; the engine block zeroed only below Box2D's old heap break:
-  440 ms -> 0 of Predator by night's start, R-1461)
+  440 ms -> 0 of Predator by night's start, R-1470)
 
 With the page thread free (SST-4, SST-5), the physics worker's answer to the engine block request became the critical
 path (1.1 s in Predator, 1.6 s in the barrio after loadScene). Its marks (2026-11-18): the host's scripts evaluated

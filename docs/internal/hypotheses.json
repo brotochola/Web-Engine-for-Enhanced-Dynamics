@@ -16989,7 +16989,7 @@
       "id": "E-322",
       "title": "Box2D's awake body set is in random spatial order: civilians spawn at uniform random positions and sleep/wake swap-removes scramble it further",
       "status": "running",
-      "statusText": "built 2026-11-18 (R-1462); off by default; Predator crowd 2.5 at N = 30 and 120 owed",
+      "statusText": "built 2026-11-18 (R-1471); off by default; Predator crowd 2.5 at N = 30 and 120 owed",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -17010,7 +17010,7 @@
         "R-1236",
         "R-1238",
         "R-1240",
-        "R-1462"
+        "R-1471"
       ],
       "rank": 2
     },
@@ -23269,7 +23269,7 @@
         "R-1445",
         "R-1453",
         "R-1458",
-        "R-1463"
+        "R-1472"
       ],
       "result": "Fixed 2026-11-18 (7a4cdafe, R-1453): bisected to E-504 (d9bf2261); painting a just-uploaded picture into the cache's target slowed its later uploads for good; renderer 40.3 -> 12.7 ms, the barrio's cached floor kept.",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23311,7 +23311,7 @@
         "R-1349",
         "R-1361",
         "R-1445",
-        "R-1463"
+        "R-1472"
       ],
       "result": "ASUS scoreboard 0895: pixi STEP_MS +29.3 %, kernel +46.0 % (FAIL row)",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23321,7 +23321,7 @@
       "status": "answered",
       "date": "2026-11-18",
       "title": "meshFillMovingScene's renderer costs 29 % more than v0.14.0's on the ASUS, though its kernel got 46 % faster",
-      "statusText": "answered 2026-11-18 (R-1463): waits counted in the scoreboard's raw STEP_MS (N-311)"
+      "statusText": "answered 2026-11-18 (R-1472): waits counted in the scoreboard's raw STEP_MS (N-311)"
     },
     {
       "refs": [],
@@ -23332,7 +23332,7 @@
         "R-1349",
         "R-1361",
         "R-1445",
-        "R-1463"
+        "R-1472"
       ],
       "result": "ASUS scoreboard 0895: logic0 STEP_MS +21.6 % (FAIL row), load OK",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23342,7 +23342,7 @@
       "status": "answered",
       "date": "2026-11-18",
       "title": "queryAabbStressScene's logic costs 22 % more than v0.14.0's on the ASUS",
-      "statusText": "answered 2026-11-18 (R-1463): waits counted in the scoreboard's raw STEP_MS (N-311)"
+      "statusText": "answered 2026-11-18 (R-1472): waits counted in the scoreboard's raw STEP_MS (N-311)"
     },
     {
       "refs": [],
@@ -23746,7 +23746,7 @@
     {
       "records": [
         "R-1452",
-        "R-1461"
+        "R-1470"
       ],
       "refs": [],
       "id": "SST-12",
@@ -23755,7 +23755,7 @@
       "kind": "speed",
       "area": "load",
       "date": "2026-11-18",
-      "statusText": "a first part 2026-11-18 (R-1461); the worker's own start (about 1 s in a source build) left"
+      "statusText": "a first part 2026-11-18 (R-1470); the worker's own start (about 1 s in a source build) left"
     },
     {
       "records": [
@@ -23772,7 +23772,7 @@
     },
     {
       "records": [
-        "R-1463"
+        "R-1472"
       ],
       "refs": [],
       "id": "N-311",
@@ -23781,7 +23781,7 @@
       "kind": "bug",
       "area": "tools",
       "date": "2026-11-18",
-      "statusText": "found 2026-11-18 reading N-294 and N-295 (R-1463)"
+      "statusText": "found 2026-11-18 reading N-294 and N-295 (R-1472)"
     }
   ],
   "records": [
@@ -37906,7 +37906,7 @@
       "text": "**SST-8 timed: the bundle's file mode against the single-file bundle, first frame after loadScene: Predator by night cold\n5 852 -> 3 542 ms (median of 4, -39 %), warm 1 168 -> 1 148 (a tie), hot 1 190 -> 1 195 (a tie); bunnyMark cold 1 309 ->\n735 ms, warm and hot level (about 640 to 690).** 2026-11-18 21:19 to 21:29, the main PC, tests/bench/loadWaterfall.mjs in\nthe bundle agent's worktree (its dist/ built: the single-file prod ESM bundle and dist/files/), --http-cache, visits\ncold, warm and hot (the hot one where V8 can use a script's code cache), one run of each mode alternated, 4 rounds.\n\n| | single cold | files cold | single warm | files warm | single hot | files hot |\n| --- | --- | --- | --- | --- | --- | --- |\n| Predator light3d=1&hour=22 | 8 926, 3 638, 5 775, 5 929 | 3 355, 4 130, 3 730, 3 202 | 1 194, 1 134, 1 178, 1 158 | 1 151, 1 126, 1 144, 1 159 | 1 209, 1 175, 1 165, 1 205 | 1 198, 1 176, 1 200, 1 191 |\n| bunnyMark | 715, 1 598, 1 020, 2 033 | 744, 726, 2 837, 721 | 638, 634, 642, 686 | 679, 643, 660, 647 | 665, 691, 652, 656 | 664, 644, 641, 646 |\n\nCold visits swing on this HDD, but the file mode won 4 of 4 in Predator. Warm and hot do not move on this 8-core CPU: the\ncode cache barely shows here; the ASUS (2 cores, HDD) is where it should. Also seen: Predator by night in the bundle starts\nin about 1.15 s warm against about 2.0 s from source (the source build's hundreds of module fetches). The single-file\nbundle stays the default; switching deploys to the file mode is the owner's call (the agent's report lists what it takes)."
     },
     {
-      "id": "R-1461",
+      "id": "R-1470",
       "date": "2026-11-18",
       "time": "21:58",
       "timeFrom": "recorded",
@@ -37918,7 +37918,7 @@
       ]
     },
     {
-      "id": "R-1462",
+      "id": "R-1471",
       "date": "2026-11-18",
       "time": "21:40",
       "timeFrom": "recorded",
@@ -37934,7 +37934,7 @@
       ]
     },
     {
-      "id": "R-1463",
+      "id": "R-1472",
       "date": "2026-11-18",
       "time": "22:05",
       "timeFrom": "recorded",
