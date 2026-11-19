@@ -108,6 +108,8 @@ function main() {
 
   // 4. commit and tag
   step('stage the release', 'git', ['add', 'package.json', 'package-lock.json', 'src/version.js', 'dist', TEMPLATE_PACKAGE]);
+  // The pre-commit hook bumps the patch on every commit; the release commit carries the release version as is.
+  process.env.WEED_RELEASE = '1';
   step('commit', 'git', ['commit', '-m', `release v${version}`]);
   step('tag', 'git', ['tag', '-a', `v${version}`, '-m', `release v${version}`]);
 

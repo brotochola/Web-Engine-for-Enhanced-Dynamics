@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-18",
+  "updated": "2026-11-19",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -23489,10 +23489,11 @@
         "R-1436",
         "R-1461",
         "R-1462",
-        "R-1480"
+        "R-1480",
+        "R-1484"
       ],
       "result": "Cause found 2026-11-18 (R-1461, R-1462, R-1480): the Intel D3D11 driver (27.20.100.8682) takes a file lock on Chrome's shader cache file (LocalLow/Intel/ShaderCache) in its worker threads; when the lock breaks, every later shader compile waits its 1 s timeout and the GPU main thread waits for it, about 30 compiles in a row. With no cache file allowed, 0 freezes of 23 against 10 of 23 with a fresh one.",
-      "next": "Decide with the owner: the ASUS lab denies Chrome's Intel cache file for its benches (the driver never reuses it: it grows 200 KB a run); try a current Intel driver on the HD 620 with a fresh cache; whether the engine should shorten the freeze (fewer programs at start) or prefer WebGPU on Intel Gen9; whether to report it to Intel or Chromium.",
+      "next": "Decide with the owner: the ASUS lab denies Chrome's Intel cache file for its benches (the driver never reuses it: it grows 200 KB a run); try a current Intel driver on the HD 620 with a fresh cache; whether the engine should shorten the freeze (fewer programs at start) or prefer WebGPU on Intel Gen9 (rarer, not cured: 2 of 15 against WebGL 8 of 15 under load, R-1484); whether to report it to Intel or Chromium.",
       "id": "N-298",
       "kind": "bug",
       "area": "render",
@@ -38369,6 +38370,15 @@
         "7699f172",
         "9d0144cc"
       ]
+    },
+    {
+      "id": "R-1484",
+      "date": "2026-11-19",
+      "time": "00:03",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze, WebGL against WebGPU under the freezing conditions (fresh Intel cache, recorder and tracerpt as load): WebGL 8 of 15, WebGPU 2 of 15; the compositor still compiles through ANGLE D3D11",
+      "verdict": "note",
+      "text": "ASUS lab job 0898h (23:08-00:03), freezeProbe v7, the freezing conditions of 0897d/e: Chrome's Intel shader cache\nfresh before each run, the recorder running as load plus the tracerpt loop. WebGL (the control, with the probe's WebGL\ncontext) against WebGPU (backend=webgpu, no probe context), interleaved, 15 rounds, Buenos Aires at night, HD 620, src\nat main 70ba822b.\n\n| Backend | Frozen |\n|---|---|\n| WebGL (ANGLE D3D11) | 8 of 15 |\n| WebGPU (Dawn) | 2 of 15 (rAF 6.8 and 0.1 fps; three more runs read 36 to 48 fps) |\n\n- WebGPU is not immune. It freezes less: 2 of 15 against 8 of 15, about 1 in 30 by chance (Fisher's exact,\n  one-sided).\n- With WebGPU the Intel D3D11 driver still wrote about 35 KB into Chrome's cache file each run: the browser's own\n  compositor (Skia through ANGLE D3D11) still compiles its shaders there, and those few compiles can hit the broken\n  lock. R-1365's WebGPU 0 of 64 was under normal conditions, where WebGL froze 3 to 9 %.\n- So preferring WebGPU on Intel Gen9 would make the freeze rarer, not end it. No cache file ends it (0 of 23, R-1480).\n- Chrome's cache file is back in place, 60 files in the folder. It now holds 224 289 619 bytes, up from 223 607 862\n  after 0897e: the N-294 and N-295 scene runs (0898f, 0898g) used it as it was and appended their shaders."
     }
   ],
   "leads": [
