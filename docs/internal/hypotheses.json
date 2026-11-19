@@ -23883,6 +23883,21 @@
       "date": "2026-11-18",
       "statusText": "found 2026-11-18 with load marks in the preload (R-1502); a demo change or an engine API, the owner's call",
       "next": "Start the three fetches when buenosAiresScene.js loads and await them in preload (demo only), or let a scene list its own files in its assets (an engine API, ask the owner); then read loadBarrio's 440 ms."
+    },
+    {
+      "records": [
+        "R-1503"
+      ],
+      "refs": [],
+      "id": "SST-15",
+      "title": "Physics made the spawned world's bodies and drained their commands in its first step after the start: Predator by night's first step 197 ms (18 248 bodies 91 ms, 52 696 commands 47 ms, Box2D's first step 51 ms), a dozen frames dropped as the game begins",
+      "status": "kept",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-18",
+      "statusText": "kept 2026-11-18 (f3e180ec, R-1503): the prime before the start",
+      "result": "Kept 2026-11-18 (R-1503): the scene primes physics before the start; the first step 197 -> 56 ms warm (100 cold), the start about 96 ms later.",
+      "next": "Box2D's first step (every new proxy's pairs and contacts) in the prime too: a collide-only export; then the body creation's own cost (about 5 us a body and 3 commands each)."
     }
   ],
   "records": [
@@ -38186,6 +38201,18 @@
       "title": "N-312 filed: the barrio's preload fetches its files after the workers are ready (200 ms), then loadBarrio takes 440 ms",
       "verdict": "note",
       "text": "**N-312 filed (demo): the barrio's preload fetches its floor, its traffic and its scene file only once the workers are\nready, then spends 440 ms in loadBarrio.** Load marks in BuenosAiresScene.preload (a probe, not kept), loadWaterfall\n`hour=22`, source, 2 runs, warm, 2026-11-18 22:10: workers ready 1 743 ms after loadScene, the three files fetched\n1 944, floor and traffic filled 1 956, loadBarrio done 2 395 (its things spawned), cars 2 402, people 2 409, preload 2 409;\ncreate and createNewGame then 2 410 -> 2 701. The fetches (about 200 ms) could start when the scene's module loads and be\nawaited in preload, off the engine's load; or the engine could fetch a scene's own files with its assets (an API choice\nfor the owner). loadBarrio's 440 ms is the next thing to read there."
+    },
+    {
+      "id": "R-1503",
+      "date": "2026-11-18",
+      "time": "23:55",
+      "timeFrom": "recorded",
+      "title": "SST-15: physics primed before the start: Predator by night's first physics step 197 -> 56 ms warm (100 cold), the start about 96 ms later",
+      "verdict": "kept",
+      "text": "**SST-15: Predator by night's first physics step after the start took 197 ms, 138 of them making the spawned world's\nbodies and draining its commands; with the prime before the start it takes 56 ms warm (100 cold), and the start comes\nabout 96 ms later.** The load waterfall's \"longest own step after the start\" read physics at >= 128 ms (its histogram's\ntop) in every Predator run, source and bundle. A probe (each of the first six steps' phases, posted as load marks, not\nkept), loadWaterfall `light3d=1&hour=22`, source, 2026-11-18 23:45: step 1 = syncBodies 90.8 ms (18 248 bodies made),\ndrainCommands 47.5 ms (52 696 commands), Box2D's step 51.4 ms (every contact new), after 5.5; steps 2 and 3 15 and 18 ms.\nf3e180ec: the scene, once its world is spawned (after createNewGame and the spawn flush), sends the physics worker\n'prime' and waits for 'primeDone' (10 s at most, then the first step does it as before); the host runs weedjsPrime\n(weedjsPost.js: syncBodies, drainCommands, syncJoints, what the first step does before stepping, in that order; no step,\nno time) and answers with its marks, also after a Box2D abort. The same probe on top, 2 runs, cold and warm,\n2026-11-18 23:55: step 1 sync 0, drain 0, Box2D 45.8 ms warm (86.8 cold) + 8 to 11 after; physics' longest own step in\nthe first seconds 56 ms warm (>= 128 before), 100 cold; `world` -> `physics primed` 96 ms warm; first frame warm 1 708\nand 1 735 ms (1 583 to 1 607 before). tests/node/physicsPrime.test.js. Next: Box2D's first step itself (pairs and\ncontacts of every new proxy: a collide-only export run in the prime), and the body creation's cost (5 us a body, about\n3 commands each).",
+      "commits": [
+        "f3e180ec"
+      ]
     }
   ],
   "leads": [
