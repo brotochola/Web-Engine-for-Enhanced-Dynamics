@@ -466,6 +466,11 @@ prime, as it does beside logic's spawns during play.
 logic0 sets up every x/y spawn the page flushes, 114 to 144 ms of Predator by night's start: _spawnAt's per-component
 resets, the game's onSpawned, first-use instances. Left: the setup split by owner over the logic workers.
 
+### SST-21 — spatial0's first frames after the start
+
+- [ ] found by the final matrix (R-1517): its longest step in the first second 73 to 123 ms in Predator by night's bundle
+  (42 to 52 from source), not E-476's spread. Next: which frame, and its lists built before the start or spread.
+
 ### SST-14 — Workers that evaluate the page's engine graph
 
 - [ ] first step 072915a0 (R-1513: the debug overlay loads when shown, 17 modules and 251 KB off each worker); Scene.init's
@@ -478,3 +483,21 @@ the queue and visibility memories), gameEngine.js, saveGame and DebugUI with its
 modules (warm Predator by night), ending with the atlas and physics. First: DebugUI's panels and renderers (about 19
 modules, 260 KB) loaded when the UI opens (page-only, never needed by the first frames). Then whether Scene.init's
 page-only imports can be skipped in workers without delaying the page's own start.
+
+## 7. The final matrix (2026-11-19, R-1517)
+
+Main 958f3560 against the base 1351a40b on the main PC, both timed from the bench page's prepare, medians of 3 runs (ms):
+
+| scene | build | cold base | cold main | warm base | warm main |
+|---|---|---|---|---|---|
+| Predator `light3d=1&hour=22` | source | 3 474 | 2 671 (-23 %) | 3 469 | 1 645 (-53 %) |
+| Predator `light3d=1&hour=22` | bundle | 3 285 | 1 858 (-43 %) | 3 105 | 913 (-71 %) |
+| Buenos Aires `hour=22` | source | 3 987 | 3 635 (-9 %) | 3 853 | 2 576 (-33 %) |
+| Buenos Aires `hour=22` | bundle | 3 669 | 2 845 (-22 %) | 3 458 | 1 893 (-45 %) |
+| bunnyMark | source | 1 379 | 1 485 | 1 254 | 1 251 |
+| bunnyMark | bundle | 801 | 788 | 710 | 720 |
+
+The longest step in the first second after the start went from 128 ms or more (physics and the renderer) to about 60 to
+105 ms (the renderer's first-use work and spatial0's first neighbour builds: SST-21). Left for later: SST-9, SST-10's
+rest, SST-14's rest, SST-20's split, SST-21. WebGL and WebGPU apart and the ASUS were not run (the main PC first).
+

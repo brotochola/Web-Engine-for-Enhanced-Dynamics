@@ -21127,10 +21127,10 @@
     {
       "id": "DX-STARTUP",
       "title": "Scene start up time: every scene starts sooner, with everything ready before the first frame (audio included), by doing the start-up work in parallel, earlier and once",
-      "status": "open",
-      "statusText": "Owner-approved plan (2026-11-17), not started: \"hacé un plan para esto y llamale scene start up time, y agregalo al backlog, lo hacemos otro día\"",
+      "status": "kept",
+      "statusText": "campaign done 2026-11-19 (R-1517); leftovers in their own rows",
       "date": "2026-11-17",
-      "result": "",
+      "result": "Kept 2026-11-19 (R-1517): the campaign's total on the main PC, from the bench page's prepare: Predator by night warm 3 469 -> 1 645 ms from source and 3 105 -> 913 from the bundle, the barrio 3 853 -> 2 576 and 3 458 -> 1 893; leftovers SST-9, SST-10's rest, SST-14's rest, SST-20's split, SST-21.",
       "next": "SST-0 first (the load waterfall), then the items in the plan's order. The light protocol (owner, 2026-11-17): the suites on every commit, one quick first-frame number per item, the full matrix once at the end. Estimate: about 9 to 10 h in a row for everything but SST-9, 4 to 5 h with agents in parallel, SST-9 another 3 to 5 h. The owner's rule: nothing loads, decodes or compiles after the start; starting with sounds still loading was rejected.",
       "area": "load",
       "kind": "dx",
@@ -21152,9 +21152,9 @@
         "R-1452",
         "R-1458",
         "R-1506",
-        "R-1508"
-      ],
-      "rank": 19
+        "R-1508",
+        "R-1517"
+      ]
     },
     {
       "id": "SST-0",
@@ -23878,7 +23878,8 @@
       "records": [
         "R-1501",
         "R-1508",
-        "R-1513"
+        "R-1513",
+        "R-1518"
       ],
       "refs": [],
       "id": "SST-14",
@@ -23996,6 +23997,20 @@
       "date": "2026-11-19",
       "statusText": "first cut 2026-11-19 (09e6c553, R-1515): no SET_TRANSFORM inside a spawn; the split by owner left",
       "next": "Split the start's spawn setup by owner over the logic workers (each sets up the entities it ticks, as a pinned spawn already is), so the world phase runs on three cores; then read _spawnAt's per-component resets."
+    },
+    {
+      "records": [
+        "R-1517"
+      ],
+      "refs": [],
+      "id": "SST-21",
+      "title": "spatial0's longest step in the first second after the start reads 73 to 123 ms in Predator by night's bundle (38 in the base's window, 42 to 52 from source): the first frames' neighbour builds, not E-476's spread",
+      "status": "open",
+      "kind": "speed",
+      "area": "spatial",
+      "date": "2026-11-19",
+      "statusText": "found 2026-11-19 by DX-STARTUP's final matrix (R-1517)",
+      "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames."
     }
   ],
   "records": [
@@ -38555,6 +38570,32 @@
         "b9fd5545",
         "ccb73435",
         "2b47e8e3"
+      ]
+    },
+    {
+      "id": "R-1517",
+      "date": "2026-11-19",
+      "time": "02:11",
+      "timeFrom": "recorded",
+      "title": "DX-STARTUP's final matrix: warm starts 33 to 71 % sooner (Predator bundle 3 105 -> 913 ms), cold 9 to 43 %, bunnyMark level; the first second's longest step >= 128 -> about 60 to 105 ms",
+      "verdict": "kept",
+      "text": "**DX-STARTUP's final matrix on the main PC: a warm start 33 to 71 % sooner in Predator by night and the barrio, a cold one\n9 to 43 %; bunnyMark level; the longest step in the first second after the start 128 or more (physics, the renderer) down\nto about 60 to 105 ms (now the renderer's and spatial0's).** loadWaterfall on main 958f3560 against the base 1351a40b (the\nweed-bisect worktree, its own dist), both timed from the bench page's prepare (`--t0 prepare`), 3 runs, cold (a fresh\ncontext) and warm, the engine's default backend, 2026-11-19 02:02 to 02:11, the main PC on AC, SITTING.lock held. Medians\nof 3 in ms (the first cold run of each pair reads the HDD on both sides; the median leaves it out):\n\n| scene | build | cold base | cold main | warm base | warm main |\n|---|---|---|---|---|---|\n| Predator `light3d=1&hour=22` | source | 3 474 | 2 671 (-23 %) | 3 469 | 1 645 (-53 %) |\n| Predator `light3d=1&hour=22` | bundle | 3 285 | 1 858 (-43 %) | 3 105 | 913 (-71 %) |\n| Buenos Aires `hour=22` | source | 3 987 | 3 635 (-9 %) | 3 853 | 2 576 (-33 %) |\n| Buenos Aires `hour=22` | bundle | 3 669 | 2 845 (-22 %) | 3 458 | 1 893 (-45 %) |\n| bunnyMark | source | 1 379 | 1 485 | 1 254 | 1 251 |\n| bunnyMark | bundle | 801 | 788 | 710 | 720 |\n\nThe longest own step from the start to a second after the first frame, Predator (cold, warm): base physics >= 128, >= 128,\nrenderer >= 126, >= 128, spatial0 38, 38 (bundle); main physics 25, 17, renderer 61, 63, spatial0 105, 73 (bundle) and 52,\n42 (source). spatial0's grew in the bundle; not E-476's spread (106 ms with `spatialRefreshSpread=none` against 123 with\nit, 3 warm runs each, 02:13), and the base's window may start later (it has no start mark): filed as SST-21. Cold here is\na fresh browser context with the OS file cache warm; WebGL and WebGPU apart, and the ASUS, were not run (the owner:\nthe main PC first). Not in the sum: the bench page's own module load before prepare.",
+      "commits": [
+        "958f3560"
+      ]
+    },
+    {
+      "id": "R-1518",
+      "date": "2026-11-19",
+      "time": "02:02",
+      "timeFrom": "recorded",
+      "title": "SST-14's split broke the prod bundles (DebugUI.load missing in the stub), caught by test:bundle and fixed before the dist",
+      "verdict": "kept-hygiene",
+      "text": "**SST-14's split broke the production bundles until fixed before their dist: 'DebugUI.load is not a function' at the\nengine's start.** The prod bundles alias debugUi.js to a stub (webpack.config.js debugStubAliases) that had no static\nload. test:bundle's browser smoke caught it on all four prod bundles (2026-11-19 01:52) after the merge 210adbb9; 95595210\ngives the stub DebugUI.load (an overlay that does nothing) and tests/node/debugUiStub.test.js keeps the stub's statics\nthose of the real DebugUI (against a bundle both imports are its one DebugUI, d3e01475). The bundles rebuilt from\nd3e01475 passed test:bundle (all 8) and test:node:bundle (332 of 332 on each, 02:02), committed at 0.14.14 (958f3560).",
+      "commits": [
+        "95595210",
+        "d3e01475",
+        "958f3560"
       ]
     }
   ],
