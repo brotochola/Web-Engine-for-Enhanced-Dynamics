@@ -116,7 +116,9 @@ class SpatialJsMethods {
     const skinFrac = this._neighborReuseSkin;
     const tickInterval = this._neighborTickInterval;
     const nextTick = this._entityNeighborNextTick;
-    const maxReuseFrames = this._maxReuseFrames;
+    // E-476: a list the schedule skips stands up to the worker's schedule cap (the reuse cap plus a refresh period
+    // with spatial.neighborRefreshSpread on, else the reuse cap), as in SpatialWorker._findNeighbors.
+    const maxReuseFrames = this._scheduleReuseCap;
     const framesSinceBuild = this._entityFramesSinceBuild;
     const candStride = 1 + maxNeighbors;
     const candData = this._neighborCandidateData;

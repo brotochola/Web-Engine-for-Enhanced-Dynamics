@@ -457,8 +457,8 @@ class SpatialWorker extends AbstractWorker {
     this._neighborTickInterval = tickInterval > 1 ? tickInterval | 0 : 1;
     this._gatherCellOrder = spatialCfg.gatherCellOrder !== false;
     this._setupStartOn();
-    const spread = spatialCfg.neighborRefreshSpread;
-    if (spread !== undefined && !Object.hasOwn(REFRESH_SPREADS, spread) && this.workerId === 0) {
+    const spread = spatialCfg.neighborRefreshSpread ?? SPATIAL_DEFAULTS.neighborRefreshSpread;
+    if (!Object.hasOwn(REFRESH_SPREADS, spread) && this.workerId === 0) {
       console.warn(
         `WeedJS: spatial.neighborRefreshSpread ${JSON.stringify(spread)} is not 'none' or 'idBlocks'; the lists are not spread.`,
       );

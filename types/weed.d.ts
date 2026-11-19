@@ -522,10 +522,10 @@ export type SceneConfig = Record<string, unknown> & {
     startOn?: SpatialStartOn | SpatialStartOn[];
     /**
      * E-476: which of its ticks a class's list comes before, with neighborTickInterval > 1 and logic.staggeredUpdates
-     * (every P frames, P the smallest multiple of the class's tickInterval T not under neighborTickInterval). 'none'
-     * (default): the first of the period, so the class's refresh lands on T frames of every P. 'idBlocks': spread over
-     * the period by contiguous blocks of the class's slots, and a list kept past neighborReuseMaxFrames rebuilt on its own
-     * refresh frame (up to a period past the cap), not on the frame it reaches the cap.
+     * (every P frames, P the smallest multiple of the class's tickInterval T not under neighborTickInterval). 'idBlocks'
+     * (default): spread over the period by contiguous blocks of the class's slots, and a list kept past
+     * neighborReuseMaxFrames rebuilt on its own refresh frame (up to a period past the cap), not on the frame it reaches
+     * the cap. 'none': the first of the period, so the class's refresh lands on T frames of every P.
      */
     neighborRefreshSpread?: 'none' | 'idBlocks';
   };

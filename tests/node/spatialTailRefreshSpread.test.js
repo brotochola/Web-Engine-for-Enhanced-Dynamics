@@ -6,8 +6,8 @@ import { SPATIAL_DEFAULTS } from '../../src/util/configDefaults.js';
 import { setupSpatialKernel } from '../bench/spatialWorkerMicrobench.mjs';
 
 // E-476 (spatial.neighborRefreshSpread): a typed class's list may come before any of the P / T ticks a refresh period
-// holds. 'none' (the default) takes the first for every slot, so Predator's civilians (T 4, P 16) refresh on 4 frames
-// of 16; 'idBlocks' spreads the class over the period by blocks of its slots, and rebuilds a list that skin reuse kept
+// holds. 'none' takes the first for every slot, so Predator's civilians (T 4, P 16) refresh on 4 frames of 16;
+// 'idBlocks' (the default) spreads the class over the period by blocks of its slots, and rebuilds a list that skin reuse kept
 // past neighborReuseMaxFrames on its own refresh frame, not on the frame it reaches the cap. Either way each list still
 // comes TYPED_NEIGHBOR_LEAD logic frames before a tick of its slot. With no skin every refresh is a rebuild, which resets
 // the slot's frames-since-build to 0; a slot whose list was empty is searched every frame by design, so only slots that
@@ -82,9 +82,17 @@ const stats = (a) => {
   return { mean, min: Math.min(...a), max: Math.max(...a), zeros: a.filter((v) => v === 0).length };
 };
 
-test("neighborRefreshSpread defaults to 'none': a class's refresh lands on T frames of every period", async () => {
-  assert.equal(SPATIAL_DEFAULTS.neighborRefreshSpread, 'none');
+test("neighborRefreshSpread defaults to 'idBlocks'; unset, the worker spreads too", async () => {
+  assert.equal(SPATIAL_DEFAULTS.neighborRefreshSpread, 'idBlocks');
   const k = await kernel(undefined);
+  const at = rebuildFrames(k, 100);
+  assertOnTickEves(k, at);
+  const s = stats(civilianRefreshes(k, at, 20, 84));
+  assert.equal(s.zeros, 0, `every frame refreshes some civilians (${JSON.stringify(s)})`);
+});
+
+test("'none': a class's refresh lands on T frames of every period", async () => {
+  const k = await kernel('none');
   const at = rebuildFrames(k, 100);
   assertOnTickEves(k, at);
   const s = stats(civilianRefreshes(k, at, 20, 84)); // four periods of 16

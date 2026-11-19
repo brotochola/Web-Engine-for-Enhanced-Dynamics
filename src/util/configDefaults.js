@@ -453,14 +453,14 @@ export const SPATIAL_DEFAULTS = Object.freeze({
   /**
    * E-476: with neighborTickInterval > 1 and logic.staggeredUpdates, a class whose logic ticks every T frames gets its
    * list before one of its ticks, every P frames (P the smallest multiple of T not under neighborTickInterval); a period
-   * holds P / T of a slot's ticks. 'none': before the first, so the class's whole refresh lands on T frames of every P
-   * (Predator's civilians: 4 heavy frames of 16). 'idBlocks': the k-th of P / T contiguous blocks of the class's slots
-   * before its k-th tick, so every frame refreshes about 1/P of the class; and a list kept past neighborReuseMaxFrames
-   * (an entity that did not move) is rebuilt on its own refresh frame, not on the frame it reaches the cap (lists built
-   * together reach it together), so it may stand up to a refresh period past the cap. Lists are as fresh at their tick
-   * either way.
+   * holds P / T of a slot's ticks. 'idBlocks' (default): the k-th of P / T contiguous blocks of the class's slots before
+   * its k-th tick, so every frame refreshes about 1/P of the class; and a list kept past neighborReuseMaxFrames (an entity
+   * that did not move) is rebuilt on its own refresh frame, not on the frame it reaches the cap (lists built together
+   * reach it together), so it may stand up to a refresh period past the cap. 'none': before the first, so the class's
+   * whole refresh lands on T frames of every P (Predator's civilians: 4 heavy frames of 16, its spatial p99 16 ms against
+   * 7 spread, and its capacity crowd 1.6 against 2.4). Lists are as fresh at their tick either way.
    */
-  neighborRefreshSpread: 'none',
+  neighborRefreshSpread: 'idBlocks',
   /**
    * The WASM candidate gather walks each frame's rebuild batch in home-cell order: the same
    * neighbours, with the cells each entity walks still in cache (E-81: +21.7 % on a frame that
