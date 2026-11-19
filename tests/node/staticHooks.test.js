@@ -111,6 +111,7 @@ test('a type with only static hooks gets each one with its index first and its c
   const lw = await setup([Coin]);
   Transform.active.fill(1, 0, PER_TYPE);
   assert.equal(lw.collisionStayByType[0], 2, 'the stay walk calls the static form');
+  assert.equal(lw.collisionListenerByType[0], 1 | 2 | 4 | 8, 'the listener flag, with its static enter, exit and hit');
 
   begin(0, 1);
   lw.processCollisionCallbacks();
@@ -239,6 +240,7 @@ class Plain extends GameObject {
 
 test('the static form wins over a method of the same name; a method-only type next to it keeps its instance path', { concurrency: false }, async () => {
   const lw = await setup([Both, Plain]);
+  assert.deepEqual(Array.from(lw.collisionListenerByType), [1 | 2, 1], 'Both: a static enter; Plain: its methods');
   Transform.active.fill(1, 0, 2 * PER_TYPE);
   begin(0, 1);
   begin(2, PER_TYPE);

@@ -5,9 +5,10 @@
  *   static onCollisionEnter(entityIndex, otherIndex)  the static form: the entity's index first, `this` the class
  *
  * The static form needs no instance: a type whose hooks are all static (and that has no tick(), or ticks through
- * static tickAll) never makes one in a logic worker's dispatch. A static is inherited down the extends chain as a
- * method is, and it wins over a method of the same name. A logic worker resolves each type's static forms once, when it
- * registers the type (`createStaticHookTables`, `resolveStaticHooks`): dispatch reads an array by entity type.
+ * static tickAll) never makes one in a logic worker's dispatch or despawn. Spawn still makes the instance it returns,
+ * on the thread that sets the entity up. A static is inherited down the extends chain as a method is, and it wins over
+ * a method of the same name. A logic worker resolves each type's static forms once, when it registers the type
+ * (`createStaticHookTables`, `resolveStaticHooks`): dispatch reads an array by entity type.
  *
  * The table drives the dispatch tables, the listener tag warnings, the hot swap's shape check, the hook declarations
  * in types/weed.d.ts and the guide's hook list (`node scripts/syncEntityHooks.mjs` writes those two; a node test fails

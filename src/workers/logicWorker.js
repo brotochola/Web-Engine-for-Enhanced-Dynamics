@@ -136,6 +136,12 @@ function pairHash(minE, maxE, shift) {
 const STAY_NONE = 0;
 const STAY_METHOD = 1;
 const STAY_STATIC = 2;
+// E-528: collisionListenerByType per type: bit 0, the type lists CollisionListener; the others, which of its enter,
+// exit and hit hooks are static forms. The flag a contact event already loads tells the dispatch which form to call.
+const COLLISION_LISTENS = 1;
+const ENTER_STATIC = 2;
+const EXIT_STATIC = 4;
+const HIT_STATIC = 8;
 
 /** Stale pairs owned by another logic worker are dropped at least this often. */
 const FOREIGN_SWEEP_FRAMES = 30;
@@ -539,12 +545,24 @@ class LogicWorker extends AbstractWorker {
         const EntityClass = classes[entityType];
         if (EntityClass === undefined) continue;
         resolveStaticHooks(this.staticHooks, EntityClass, entityType, GameObject);
-        if (this.collisionListenerByType !== null && this.collisionListenerByType[entityType] === 1) {
+        if (this.collisionListenerByType !== null && (this.collisionListenerByType[entityType] & COLLISION_LISTENS) !== 0) {
+          this.collisionListenerByType[entityType] = this._collisionFlagOf(entityType);
           this.collisionStayByType[entityType] = this._stayFlagOf(EntityClass, entityType);
         }
       }
     }
     return result;
+  }
+
+  /** E-528: a listening type's collision flag: COLLISION_LISTENS, and a bit for each of its static enter, exit, hit. */
+  _collisionFlagOf(entityType) {
+    const hooks = this.staticHooks;
+    return (
+      COLLISION_LISTENS |
+      (hooks.onCollisionEnter[entityType] !== null ? ENTER_STATIC : 0) |
+      (hooks.onCollisionExit[entityType] !== null ? EXIT_STATIC : 0) |
+      (hooks.onCollisionHit[entityType] !== null ? HIT_STATIC : 0)
+    );
   }
 
   /** E-528: which onCollisionStay the stay walk calls for a type: its static form (resolved first), its method, none. */
@@ -652,7 +670,7 @@ class LogicWorker extends AbstractWorker {
         }
 
         if (needsCollisionCallbacks) {
-          this.collisionListenerByType[entityType] = 1;
+          this.collisionListenerByType[entityType] = this._collisionFlagOf(entityType);
           this.collisionStayByType[entityType] = this._stayFlagOf(EntityClass, entityType);
         }
         if (needsJointBreakCallbacks) {
@@ -783,7 +801,7 @@ class LogicWorker extends AbstractWorker {
     }
 
     // Scene-level kill switches: skip drain paths when no type opts in
-    this.anyTypeNeedsCollisions = this.collisionListenerByType.includes(1);
+    this.anyTypeNeedsCollisions = this.collisionListenerByType.some((flags) => (flags & COLLISION_LISTENS) !== 0);
     this.anyTypeNeedsJointBreaks = this.jointBreakListenerByType.includes(1);
     this._tickAllScratch = new (EntityIdArray())(this.globalEntityCount || 1);
   }
@@ -2304,27 +2322,30 @@ class LogicWorker extends AbstractWorker {
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
     const gameObjects = this.gameObjects;
-    const aListens = runA && collisionFlags[entityType[a]];
-    const bListens = runB && collisionFlags[entityType[b]];
-    // A throw is caught per call so the ring drain still advances its cursor. E-528: a type's static form, with no
-    // instance, else the instance's method.
-    const staticHit = this.staticHooks.onCollisionHit;
-    if (aListens) {
+    const aFlags = runA ? collisionFlags[entityType[a]] : 0;
+    const bFlags = runB ? collisionFlags[entityType[b]] : 0;
+    // A throw is caught per call so the ring drain still advances its cursor. E-528: a type's static form (its flag
+    // says so), with no instance, else the instance's method.
+    if (aFlags !== 0) {
       try {
-        const typeA = entityType[a];
-        const hitA = staticHit[typeA];
-        if (hitA !== null) hitA.call(this._entityClassByType[typeA], a, b, px, py, nx, ny, speed);
-        else (gameObjects[a] ?? this._makeInstance(a))?.onCollisionHit(b, px, py, nx, ny, speed);
+        if ((aFlags & HIT_STATIC) !== 0) {
+          const type = entityType[a];
+          this.staticHooks.onCollisionHit[type].call(this._entityClassByType[type], a, b, px, py, nx, ny, speed);
+        } else {
+          (gameObjects[a] ?? this._makeInstance(a))?.onCollisionHit(b, px, py, nx, ny, speed);
+        }
       } catch (error) {
         this._entityThrew(error, a, 'onCollisionHit');
       }
     }
-    if (bListens) {
+    if (bFlags !== 0) {
       try {
-        const typeB = entityType[b];
-        const hitB = staticHit[typeB];
-        if (hitB !== null) hitB.call(this._entityClassByType[typeB], b, a, px, py, -nx, -ny, speed);
-        else (gameObjects[b] ?? this._makeInstance(b))?.onCollisionHit(a, px, py, -nx, -ny, speed);
+        if ((bFlags & HIT_STATIC) !== 0) {
+          const type = entityType[b];
+          this.staticHooks.onCollisionHit[type].call(this._entityClassByType[type], b, a, px, py, -nx, -ny, speed);
+        } else {
+          (gameObjects[b] ?? this._makeInstance(b))?.onCollisionHit(a, px, py, -nx, -ny, speed);
+        }
       } catch (error) {
         this._entityThrew(error, b, 'onCollisionHit');
       }
@@ -2776,26 +2797,29 @@ class LogicWorker extends AbstractWorker {
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
     const gameObjects = this.gameObjects;
-    const aListens = (sides & 1) !== 0 && collisionFlags[entityType[minE]];
-    const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
-    // E-528: a type's static form, with no instance, else the instance's method.
-    const staticExit = this.staticHooks.onCollisionExit;
-    if (aListens) {
+    const aFlags = (sides & 1) !== 0 ? collisionFlags[entityType[minE]] : 0;
+    const bFlags = (sides & 2) !== 0 ? collisionFlags[entityType[maxE]] : 0;
+    // E-528: a type's static form (its flag says so), with no instance, else the instance's method.
+    if (aFlags !== 0) {
       try {
-        const typeA = entityType[minE];
-        const exitA = staticExit[typeA];
-        if (exitA !== null) exitA.call(this._entityClassByType[typeA], minE, maxE);
-        else (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionExit(maxE);
+        if ((aFlags & EXIT_STATIC) !== 0) {
+          const type = entityType[minE];
+          this.staticHooks.onCollisionExit[type].call(this._entityClassByType[type], minE, maxE);
+        } else {
+          (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionExit(maxE);
+        }
       } catch (error) {
         this._entityThrew(error, minE, 'onCollisionExit');
       }
     }
-    if (bListens) {
+    if (bFlags !== 0) {
       try {
-        const typeB = entityType[maxE];
-        const exitB = staticExit[typeB];
-        if (exitB !== null) exitB.call(this._entityClassByType[typeB], maxE, minE);
-        else (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionExit(minE);
+        if ((bFlags & EXIT_STATIC) !== 0) {
+          const type = entityType[maxE];
+          this.staticHooks.onCollisionExit[type].call(this._entityClassByType[type], maxE, minE);
+        } else {
+          (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionExit(minE);
+        }
       } catch (error) {
         this._entityThrew(error, maxE, 'onCollisionExit');
       }
@@ -2851,27 +2875,30 @@ class LogicWorker extends AbstractWorker {
     const collisionFlags = this.collisionListenerByType;
     const gameObjects = this.gameObjects;
     const sideA = rawA === minE ? 1 : 2;
-    const aListens = (sides & sideA) !== 0 && collisionFlags[entityType[rawA]];
-    const bListens = (sides & (3 ^ sideA)) !== 0 && collisionFlags[entityType[rawB]];
-    if (!aListens && !bListens) return;
-    // E-528: a type's static form, with no instance, else the instance's method.
-    const staticEnter = this.staticHooks.onCollisionEnter;
-    if (aListens) {
+    const aFlags = (sides & sideA) !== 0 ? collisionFlags[entityType[rawA]] : 0;
+    const bFlags = (sides & (3 ^ sideA)) !== 0 ? collisionFlags[entityType[rawB]] : 0;
+    if (aFlags === 0 && bFlags === 0) return;
+    // E-528: a type's static form (its flag says so), with no instance, else the instance's method.
+    if (aFlags !== 0) {
       try {
-        const typeA = entityType[rawA];
-        const enterA = staticEnter[typeA];
-        if (enterA !== null) enterA.call(this._entityClassByType[typeA], rawA, rawB);
-        else (gameObjects[rawA] ?? this._makeInstance(rawA))?.onCollisionEnter(rawB);
+        if ((aFlags & ENTER_STATIC) !== 0) {
+          const type = entityType[rawA];
+          this.staticHooks.onCollisionEnter[type].call(this._entityClassByType[type], rawA, rawB);
+        } else {
+          (gameObjects[rawA] ?? this._makeInstance(rawA))?.onCollisionEnter(rawB);
+        }
       } catch (error) {
         this._entityThrew(error, rawA, 'onCollisionEnter');
       }
     }
-    if (bListens) {
+    if (bFlags !== 0) {
       try {
-        const typeB = entityType[rawB];
-        const enterB = staticEnter[typeB];
-        if (enterB !== null) enterB.call(this._entityClassByType[typeB], rawB, rawA);
-        else (gameObjects[rawB] ?? this._makeInstance(rawB))?.onCollisionEnter(rawA);
+        if ((bFlags & ENTER_STATIC) !== 0) {
+          const type = entityType[rawB];
+          this.staticHooks.onCollisionEnter[type].call(this._entityClassByType[type], rawB, rawA);
+        } else {
+          (gameObjects[rawB] ?? this._makeInstance(rawB))?.onCollisionEnter(rawA);
+        }
       } catch (error) {
         this._entityThrew(error, rawB, 'onCollisionEnter');
       }
