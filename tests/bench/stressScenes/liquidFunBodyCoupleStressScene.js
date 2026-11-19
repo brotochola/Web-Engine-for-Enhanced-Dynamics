@@ -6,6 +6,10 @@ import WEED from '/src/index.js';
 
 const { LiquidFun, LIQUIDFUN_FLAGS } = WEED;
 
+// E-322: ?awakeReorder=<n> puts Box2D's awake bodies back in body id order every n steps (0, the default: never), so
+// the LiquidFun gates can time a Box2D build with the reorder on.
+const AWAKE_REORDER = Math.max(0, Math.trunc(Number(WEED.params?.get('awakeReorder')) || 0));
+
 export class LiquidFunBodyCoupleStressScene extends WEED.Scene {
   static config = {
     worldWidth: 6000,
@@ -24,6 +28,7 @@ export class LiquidFunBodyCoupleStressScene extends WEED.Scene {
       noLimitFPS: false,
       gravity: { x: 0, y: 980 },
       sleeping: true,
+      awakeReorderInterval: AWAKE_REORDER,
       liquidFun: { enabled: true, radius: 8, maxCount: 12000, subSteps: 1, strictContactCheck: false },
     },
     renderer: { backend: 'webgl', noLimitFPS: false, maxVisibleRenderables: 20000 },
