@@ -16820,7 +16820,9 @@
         "R-1106",
         "R-1108",
         "R-1208",
-        "R-1535"
+        "R-1535",
+        "R-1539",
+        "R-1542"
       ]
     },
     {
@@ -17015,7 +17017,9 @@
         "R-1473",
         "R-1509",
         "R-1520",
-        "R-1521"
+        "R-1521",
+        "R-1542",
+        "R-1543"
       ]
     },
     {
@@ -17064,7 +17068,9 @@
         "R-1101",
         "R-1236",
         "R-1523",
-        "R-1527"
+        "R-1527",
+        "R-1539",
+        "R-1542"
       ]
     },
     {
@@ -17089,7 +17095,9 @@
         "R-1101",
         "R-1236",
         "R-1525",
-        "R-1527"
+        "R-1527",
+        "R-1539",
+        "R-1542"
       ]
     },
     {
@@ -17139,7 +17147,9 @@
         "R-1236",
         "R-1257",
         "R-1526",
-        "R-1527"
+        "R-1527",
+        "R-1539",
+        "R-1542"
       ]
     },
     {
@@ -17883,7 +17893,8 @@
         "R-1101",
         "R-1106",
         "R-1107",
-        "R-1208"
+        "R-1208",
+        "R-1538"
       ]
     },
     {
@@ -23570,10 +23581,10 @@
     {
       "id": "E-526",
       "title": "FSMs under static tickAll with no per-entity tick(): the engine builds the tickAll of a type that has FSM components and no tick, groups the entities by state in one pass and runs each state over its ids (a state class may override static updateAll(ids, n, dt)); a logic worker should end freer in Predator",
-      "status": "open",
-      "statusText": "proposed 2026-11-18 by the owner, architecture agreed the same day (E-527 decimation and E-528 instance-free hooks come first); not measured, nothing built. Owner: the entity classes keep no instance properties, so a state needs no instance",
+      "status": "running",
+      "statusText": "layer 0 kept 2026-11-19 (72be4823); layer 1 waits on the owner (order by state)",
       "date": "2026-11-18",
-      "result": "",
+      "result": "Layer 0 kept 2026-11-19 (R-1541): FSM.tickAll for types with FSM components and no tick(); kernel -27.2 % (interval 1), -33.8 % (intervals 4 and 6); no demo on the path yet. Layer 1 (by state) is the owner's call: it changes the order.",
       "next": "After E-527 (tickAll with tickInterval) and E-528 (static hooks by entityType). Layer 0: FSM.tickAll(list, n, dt, EntityClass); the engine wires it for a type with FSM components, no tick() and no tickAll (components order; a type that wants its own code writes static tickAll and calls FSM.tickAll in it); states keep onUpdate(owner, i, dt, ms) with the owner taken from EntityClass.instances[i] (made on demand), so no state is rewritten. Layer 1: tickAll counting-sorts the ids by state in one pass and calls State.updateAll(ids, n, dt) per state; the default updateAll loops over that state's own onUpdate (a monomorphic call TurboFan may inline, where fsm.tick reads a megamorphic _onUpdates[...] a call, E-146, E-253); pending transitions run in a pass before it and are the only place onExit and onEnter ask for an instance. Layer 2 (optional): a state overrides static updateAll(ids, n, dt) against the component arrays (Transform.x[i], no owner). To decide with the owner: the order changes (by state, then by id, not by id), so Predator's states must not read what another state writes in the same frame; several FSMs on one entity run in components order; time in state uses the type's constant ms per tick (16.67 x tickInterval). Kernel first (batch against per-entity tick), then Predator logic STEP_MS − WAIT_MS; E-253 puts the dispatch at 7 to 9 % of a logic worker, so a bigger win must come from the states' own cost (E-292). Related: E-218, E-281.",
       "area": "logic",
       "kind": "speed",
@@ -23590,7 +23601,8 @@
       ],
       "records": [
         "R-1529",
-        "R-1537"
+        "R-1537",
+        "R-1541"
       ]
     },
     {
@@ -23613,7 +23625,9 @@
       "area": "logic",
       "kind": "dx",
       "records": [
-        "R-1537"
+        "R-1537",
+        "R-1539",
+        "R-1540"
       ]
     },
     {
@@ -24081,6 +24095,22 @@
       "statusText": "kept 2026-11-19 (bb9e0cc1 on dx/startup)",
       "next": "In export_slot_state, flag the body asleep when b2Body_IsAwake is false (the dropped paint patch, e325-paint-dropped.patch, has the fix); a wasm test: a sleeping body teleported by a command keeps sleeping=1 and an acceleration that frame wakes it or is kept.",
       "result": "Fixed 2026-11-19 (R-1530): export_slot_state flags a body the command left asleep (Box2D a4a4082, WeedJS bb9e0cc1, commandExportSleeping.wasm.test.js)."
+    },
+    {
+      "records": [
+        "R-1539",
+        "R-1540"
+      ],
+      "refs": [],
+      "id": "N-316",
+      "title": "Logic +4.8 % at Predator crowd 2.5 between 99afd415 and 8cb24ab6 (the night of 18-19 November before E-528), pre-render +2 %: a change of that night, cause unknown; E-528 wins it back",
+      "status": "answered",
+      "kind": "bug",
+      "area": "logic",
+      "date": "2026-11-19",
+      "statusText": "answered 2026-11-19 (R-1540): not reproduced",
+      "next": "Bisect on a quiet machine, logic owner, crowd=2.5, 4 pairs a step: 99afd415 against aef88471 (N-301, N-314, the physics batch E-325/E-327/E-324, E-527), then inside the half that moves; suspects: E-527's tickAll classification, E-325's moved list, E-327's stamps, N-218's link-count read in the pose writes.",
+      "result": "Not reproduced 2026-11-19 (R-1540): three quiet sittings (07:12, 07:16, 07:21) read logic level or lower; the regression was a disturbed sitting."
     }
   ],
   "records": [
@@ -38951,6 +38981,65 @@
         "95aafcee",
         "ceff7d5e"
       ]
+    },
+    {
+      "id": "R-1538",
+      "date": "2026-11-19",
+      "time": "06:50",
+      "timeFrom": "recorded",
+      "title": "E-357 screened on the main PC: wasm pmin/pmax in the wide solver -1.35 % in the harness (4/6), noise; stays parked",
+      "verdict": "tie",
+      "text": "**E-357 screened on the main PC: the wide solver's min and max as wasm pmin/pmax read -1.35 % in the harness, 4 of 6\nrounds: noise; stays parked.** Origin's solver-skip-second-point held it (61ff6f1, its bit-for-bit check against\nEmscripten's _mm_min_ps/_mm_max_ps, and eb42d5e); both cherry-picked onto Box2D main 2f3d4db (with E-316) in a scratch\nworktree. Crowd harness, weed mode (38 000 walkers, order 2, churn 100, idle 20, reorder every 30 steps, 960 steps), 6\nrounds against main's build, to 2026-11-19 06:50: b2World_Step 12.37 -> 12.21 ms (-1.35 %, 4/6), solve -1.5 %, collide\n+0.8 %, pose and export hashes identical. The cloud screen had it +4 % (R-1109's sitting). Not kept; the branch is still on\norigin."
+    },
+    {
+      "id": "R-1539",
+      "date": "2026-11-19",
+      "time": "07:01",
+      "timeFrom": "recorded",
+      "title": "The night's total at Predator crowd 2.5 in one sitting: physics -5.7 % (4/4), the others level; a +4.8 % logic regression inside the night (N-316) that E-528 compensates",
+      "verdict": "note",
+      "text": "**The night's total at Predator crowd 2.5, one sitting: physics -5.7 % (4/4), the other workers level; and a logic\nregression found inside the night that E-528 (static hooks) compensates.** runPredatorAbab night-total, A 99afd415 (main\nbefore the physics batch), B 8c310e43 (main with the batch E-325/E-327/E-324, E-316, E-528, N-218's fix, E-527, N-301,\nN-314, N-315), `crowd=2.5&zoom=0.216`, physics owner, 4 pairs, to 2026-11-19 06:55: KEPT, physics 14.526 -> 13.944 ms\n(-5.7 %, worse 1/4; -5.5 % against the other workers, 4/4), logic +1.1 % (2/4), spatial -0.2 %, pre-render -0.7 %.\n\nThe pieces' own sittings add to more than that (the batch -3.0 %, E-316 -5.9 % on physics; E-528 -12.4 % on logic), and\nthe logic side does not add up at all: E-528's A side (8cb24ab6) read logic 8.1 ms against 7.2 to 7.4 elsewhere. A check,\nlogic-check1, A 99afd415, B 8cb24ab6 (everything of the night but E-528), logic owner, 4 pairs, to 07:01: REGRESSION,\nlogic 7.176 -> 7.523 ms (+4.8 %, worse 3/4; +4.5 % against the others), pre-render +2.0 % (+4.1 % against the others),\nphysics -3.5 % (4/4). So something of the night, between 99afd415 and 8cb24ab6, costs logic about 5 % at that crowd, and\nE-528 wins it back (its -12.4 % is that and more, with some drift). Filed as N-316. A first split (99afd415 against\naef88471, E-527's merge, 07:06) was disturbed: an agent's test suite ran during it (cv 14 to 22 % on every worker), not\nused."
+    },
+    {
+      "id": "R-1540",
+      "date": "2026-11-19",
+      "time": "07:21",
+      "timeFrom": "recorded",
+      "title": "N-316 not reproduced: on a quiet machine 99afd415 -> 8cb24ab6 reads logic -8.2 % (the +4.8 % sitting had an agent's heap sample in it); Predator's logic moves about 8 % between sittings of the same code",
+      "verdict": "answered",
+      "text": "**N-316 not reproduced: the logic regression came from a disturbed sitting; logic at Predator crowd 2.5 moves about +-8 %\nbetween sittings of the same code, physics does not.** Quiet re-runs (no agent running, SITTING.lock held, the main PC on\nAC), runPredatorAbab `crowd=2.5&zoom=0.216`, logic owner, 4 pairs each:\n- 99afd415 against aef88471 (N-301, N-314, the physics batch, E-527), to 07:12: NEUTRAL, logic -2.6 % (worse 1/4).\n- aef88471 against 4966998a (N-315, N-218's fix), to 07:16: logic -5.2 % (worse 1/4), physics -3.0 %.\n- 99afd415 against 8cb24ab6, the pair that read +4.8 % at 07:01, again at 07:21: logic 7.638 -> 6.998 ms (-8.2 %, worse\n  1/4), physics -4.5 % (4/4), spatial +1.4 %, pre-render -0.9 %.\nThe 07:01 sitting (R-1539) had an agent's 10 s heap sample at its start, and the split at 07:06 an agent's test suite.\nClosed. What it leaves: Predator's logic is an emergent load (who is alive, who shoots), so its STEP_MS differs by up to\nabout 8 % between sittings of the same revisions (7.2 to 8.1 ms for 99afd415 and 8cb24ab6 tonight), while physics agreed\nin every sitting (-3.5 to -5.9 % for E-316 and the batch). A logic claim there needs its own load key fit (CLAUDE.md:\nemergent scenes); E-528's -12.4 % (R-1537) is read with that caution, its kernel and the gate's \"not worse\" stand."
+    },
+    {
+      "id": "R-1541",
+      "date": "2026-11-19",
+      "time": "06:46",
+      "timeFrom": "recorded",
+      "title": "E-526 layer 0 built: a type with FSM components and no tick() runs its FSMs through FSM.tickAll (they never ran before); the FSM kernel -27 % (interval 1) and -34 % (Predator's intervals); layer 1 waits on the owner",
+      "verdict": "kept-kernel",
+      "text": "**E-526 layer 0 built (an agent, 2026-11-19): a type with FSM components and no tick() runs its FSMs through\nFSM.tickAll; before, those FSMs never ran.** d8e39fba: fsmTickAllMicrobench (a type's FSMs through its tick() or through\nFSM.tickAll, in a real logic worker). a4722f6c: static FSM.tickAll(list, count, dt, EntityClass) in src/core/fsm.js makes\nFSM#tick's calls for each listed entity (the pending transition, onExit then onEnter; time in state dt x 16.67 x\ntickInterval; onUpdate(owner, i, dt, timeInState | 0) with the owner made on first use); on FSM itself every FSM\ncomponent in components order, entity by entity, on a subclass that FSM alone; two copied loops (one FSM with its arrays\nhoisted, several FSMs). GameObject.typeRunsFsmTickAll(C) (FSM components, no own tick(), no static tickAll, tickInterval\nnot 0); createGameObjectInstances files such a type as a tickAll type (a ticker field: FSM or the class), so it gets\nE-218's view and E-527's buckets; guard C3 names it; types; the guide's new \"State machines (FSM)\" section, whose example\nruns in a harness logic worker. tests/node/fsmTickAll.test.js: the same calls as tick() over 16 frames (arguments, this,\nowner, order, transitions), interval 4 buckets, own tickAll left alone, a throw reported and the next entity ticked.\n\nKernel (Node 22, 30 000 entities of two types with Predator's three FSMs and 17 states, 8 ABAB pairs of 300 frames x 7\nrounds, TurboFan; kernelTierAudit: OSR only in setup), to 06:46: interval 1 1.880 -> 1.403 ms a frame (-27.2 %, 8/8),\nPredator's intervals 4 and 6 under staggeredUpdates 0.705 -> 0.412 (-33.8 %, 8/8), checksums equal. No demo type takes\nthe path (Predator's Person.tick does more than forward to its FSMs), so no scene sitting: nothing a demo runs changed\nbut one property load per tickAll type per frame. Merged into dx/startup 72be4823; suites green (3 265, 121).\n\nDifferences from a tick() that forwards to the FSMs: the type runs after all tick() types; its screen hooks after the\nticks; accelerations reset for the whole list before tickAll. Layer 1 (ids grouped by state, State.updateAll) is not built:\nit changes the order (by state, then by id), runs every transition before any update, runs FSM A for all entities before\nFSM B, and fixes the groups at the frame's start (a forceChangeState on another entity mid-frame would run its old state\nonce more): the owner's call.",
+      "commits": [
+        "d8e39fba",
+        "a4722f6c",
+        "72be4823"
+      ]
+    },
+    {
+      "id": "R-1542",
+      "date": "2026-11-19",
+      "time": "07:33",
+      "timeFrom": "recorded",
+      "title": "Predator's capacity before and after the night's physics, back to back: crowd 2.1 -> 2.2 (33 600 -> 35 200, +4.8 %), physics still the limiter by its p99",
+      "verdict": "note",
+      "text": "**Predator's capacity, before and after the night's physics, back to back: crowd 2.1 -> 2.2 (33 600 -> 35 200 people and\nsoldiers, +4.8 %); physics is still the limiter, by its p99.** runCapacity predator (headed, --src, warm-up 9 s, window\n10 s, a run passes when every worker's p99 stays under 16.7 ms and fps >= 59), each revision whole in the pool worktree:\n- 37762540 (dx/startup: main 8c310e43 with E-526 layer 0), to 2026-11-19 07:29: capacity 2.2 (2.2 passed twice; 2.25\n  failed at physics p99 16.75 ms, 2.35 at 21.69, 2.5 at 20.25); at 2.2 physics mean 11.97, p95 13.58, p99 14.73 ms.\n- 99afd415 (main before the physics batch, E-316 and E-528), to 07:33: capacity 2.1 (2.2 failed at physics p99 18.88,\n  2.5 at 19.38); at 2.1 physics mean 12.03, p99 15.75 ms.\nBoth read below last night's 2.4 (R-1509, 00:58) for the older code: this machine runs slower after a night of sittings,\nwhich is why the two were run back to back. The p99 that decides is set by the frames that carry E-322's body reorder\n(one in 30), so a search moves a step either way between runs."
+    },
+    {
+      "id": "R-1543",
+      "date": "2026-11-19",
+      "time": "07:37",
+      "timeFrom": "recorded",
+      "title": "E-322 every 120 steps instead of 30 does not raise Predator's capacity (2.1 against 2.2): the p99 is not the reorder frames alone; the default stays 30",
+      "verdict": "note",
+      "text": "**E-322's interval 120 instead of 30 does not raise Predator's capacity: crowd 2.1, against 2.2 at 30 in the sitting\nbefore.** The idea: one frame in 30 carries the body reorder, so 20 of a 600-frame window, and p99 (the 6th worst) could be\none of them; at 120 only 5 are. runCapacity predator, 37762540, `awakeReorder=120` (the bench page's knob), to\n2026-11-19 07:37: capacity 2.1 (2.2 failed at physics p99 17.5 ms, 2.5 at 17.87); at 2.1 physics mean 11.32, p95 13.01,\np99 16.63 ms. The tail is not the reorder frames alone; the default stays 30."
     }
   ],
   "leads": [

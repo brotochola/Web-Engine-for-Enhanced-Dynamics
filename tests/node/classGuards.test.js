@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { GameObject } from '../../src/core/gameObject.js';
+import { FSM } from '../../src/core/fsm.js';
+import { FSMState } from '../../src/core/fsmState.js';
 import { Scene } from '../../src/core/scene.js';
 import { resetWarnOnce } from '../../src/util/dxWarn.js';
 import { isEmptyMethod } from '../../src/util/classGuards.js';
@@ -70,6 +72,24 @@ test('C3: tickInterval without staggeredUpdates is named; with it, silent', () =
     static config = { ...WORLD, logic: { staggeredUpdates: true } };
   }
   assert.deepEqual(warningsOf(() => new StaggeredNest({})), []);
+  // E-526: a type with FSMs and no tick() ticks them through FSM.tickAll, at its tickInterval too.
+  class GrazeState extends FSMState {}
+  class GrazeFSM extends FSM {
+    static states = { GRAZE: GrazeState };
+    static initial = this.states.GRAZE;
+  }
+  class Sheep extends GameObject {
+    static components = [GrazeFSM];
+    static tickInterval = 5;
+  }
+  class Meadow extends Scene {
+    static entities = [[Sheep, 8]];
+    static config = { ...WORLD };
+  }
+  assert.deepEqual(warningsOf(() => new Meadow({})), [
+    "WeedJS: Sheep has static tickInterval = 5, but the scene's logic.staggeredUpdates is off, so it ticks every frame. " +
+      "Set logic: { staggeredUpdates: true } in the scene's config.",
+  ]);
 });
 
 test('C4: an empty tick is named, with the class that wrote it; a tick that works or none is silent', () => {
