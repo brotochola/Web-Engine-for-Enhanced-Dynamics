@@ -459,6 +459,13 @@ prime, as it does beside logic's spawns during play.
 - [x] 908ff6be (R-1508): the page posts the atlas's pictures as soon as the atlas is in, and the renderer makes their sources and
   uploads them while the page builds the init data (Predator by night: atlas uploaded 1 104 ms, the init 1 147).
 
+### SST-20 — logic0 spawning the world alone
+
+- [ ] first cut 09e6c553 (R-1515): no SET_TRANSFORM from a setter inside its entity's spawn (36 496 fewer at Predator's start)
+
+logic0 sets up every x/y spawn the page flushes, 114 to 144 ms of Predator by night's start: _spawnAt's per-component
+resets, the game's onSpawned, first-use instances. Left: the setup split by owner over the logic workers.
+
 ### SST-14 — Workers that evaluate the page's engine graph
 
 - [ ] first step 072915a0 (R-1513: the debug overlay loads when shown, 17 modules and 251 KB off each worker); Scene.init's

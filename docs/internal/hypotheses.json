@@ -23939,7 +23939,8 @@
     {
       "records": [
         "R-1505",
-        "R-1506"
+        "R-1506",
+        "R-1515"
       ],
       "refs": [],
       "id": "SST-17",
@@ -23978,6 +23979,20 @@
       "date": "2026-11-19",
       "statusText": "kept 2026-11-19 (908ff6be, R-1508): the pictures posted as soon as the atlas is in",
       "result": "Kept 2026-11-19 (R-1508): the atlas uploaded before the renderer's init; with SST-12 and SST-14 Predator by night's warm source start about 1 665 -> 1 589 ms."
+    },
+    {
+      "records": [
+        "R-1515"
+      ],
+      "refs": [],
+      "id": "SST-20",
+      "title": "logic0 spawns the whole flushed world alone at the start (114 to 144 ms in Predator by night): _spawnAt's per-component resets, the game's onSpawned, first-use instances, and two SET_TRANSFORMs a body that physics then dropped",
+      "status": "open",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-19",
+      "statusText": "first cut 2026-11-19 (09e6c553, R-1515): no SET_TRANSFORM inside a spawn; the split by owner left",
+      "next": "Split the start's spawn setup by owner over the logic workers (each sets up the entities it ticks, as a pinned spawn already is), so the world phase runs on three cores; then read _spawnAt's per-component resets."
     }
   ],
   "records": [
@@ -38492,6 +38507,18 @@
       "text": "**N-312, SST-12's second part, SST-14 and SST-19 timed together on a source start: Predator by night's warm first frame\nabout 1 665 -> 1 589 ms, its physics block 1 069 -> 677 ms; the barrio's physics block 1 305 -> 827 ms, its first frame\nlevel (its preload is loadBarrio's spawning now, not its files).** loadWaterfall source, 2 runs, cold and warm, dx/startup\n44b3038f (with E-322's merge) against the waterfalls of the same evening (Predator wf at 23:55 after SST-18, the barrio\nat 22:56 after SST-10's flowfields), 2026-11-19 01:06, the main PC:\n\n| warm, ms after loadScene | Predator before | after | the barrio before | after |\n|---|---|---|---|---|\n| physics: scripts in, block answered | 1 048, 1 069 | 572, 677 | about 1 733, 1 305 | ~, 827 |\n| the scene's files (N-312) | - | - | - | 737 |\n| atlas on the page, assets | 915, 1 096 | 984, 994 | 1 232, 1 337 | 1 279, 1 295 |\n| renderer: atlas uploaded, init, textures done, ready | -, 1 205, 1 355, 1 429 | 1 104, 1 147, 1 268, 1 340 | | |\n| logic0 modules, boot scripts | 730, 1 152 | 776, 1 154 | | |\n| workers ready, world, start | 1 429, 1 621, 1 625 | 1 341, 1 544, 1 550 | 1 608, 2 535, 2 536 | 1 669, 2 539, 2 545 |\n| first frame (2 runs) | 1 730, 1 600 | 1 621, 1 556 | 2 637, 2 684 | 2 701, 2 654 |\n\nSST-12's entry (415404eb) loads the physics scripts in about 480 ms instead of about 1 000, so physics is no longer the\nlast branch in either scene: the atlas is. SST-19 (908ff6be) uploads the atlas before the renderer's init. SST-14\n(072915a0) takes 17 modules and 251 KB off every worker's scene module; logic0's boot scripts ended at the same time\n(two runs on a start where the other branches end together: no reading of it alone). N-312 (b6a1d645) has the barrio's\nfiles in at 737 ms, beside the atlas; the barrio's preload went from 663 to 586 ms, the rest of it loadBarrio's spawning\n(about 440 ms), and its workers came in about 60 ms later this sitting, so its first frame did not move.",
       "commits": [
         "415404eb"
+      ]
+    },
+    {
+      "id": "R-1515",
+      "date": "2026-11-19",
+      "time": "01:13",
+      "timeFrom": "recorded",
+      "title": "SST-20: logic0's start spawning profiled (143.7 ms: _spawnAt 129 incl., onSpawned ~38, instances 17); a setter inside its spawn sends no SET_TRANSFORM (36 496 fewer)",
+      "verdict": "kept-hygiene",
+      "text": "**SST-20: logic0 spends 114 to 144 ms of a Predator start spawning the world the page flushed; a CPU profile of it, and the\nfirst cut: a position setter inside its entity's spawn sends no SET_TRANSFORM (36 496 commands fewer).** CPU trace of\nlogic0 (runIntegratedWorkerBenchmark --trace-cpu, source, 2026-11-19 01:09), the samples under _drainSpawnCommandRing\n(143.7 ms that run): _spawnAt 128.7 inclusive (32.6 self: the per-component resets of ~25 000 spawns), the demo's onSpawned\nabout 38 (civilian 22.6 with person, mySoldier 15.2), first-use instances (_instanceOf, _makeInstance) 17, the command\nring's enqueue 6.9 and the SET_TRANSFORMs of the x and y setters about 5 (poseMoved 6.0 inclusive), the visitor\n_visitSpawnCommand 11.5 self. During a spawn the entity is inactive and its body generation has not moved; the spawn\npublishes its lifecycle after onSpawned, and physics then makes the body from the columns. 09e6c553: poseMoved skips the\ncommand while the entity is in its spawn on this worker (isSpawningHere), so SST-17's physics-side skip has nothing left to\ndrop. A probe counting the prime's commands (2026-11-19 01:13, not kept): SET_TRANSFORM 0 (36 496 before), SET_FIXED_ROTATION\n16 200 (kept: its handler also zeroes the angular velocity and the rotation columns). The spawn phase read 127 ms in that\nprobe sitting (114 to 118 in the earlier ones): the cut is about 10 ms of logic0's own work, under this measure's noise.\nWhat would take most of the phase: the spawn setup split by owner over the logic workers (logic0 drains every x/y spawn\nof the page today; onSpawned's per-instance state lives on the worker that ticks the entity, so each owner would set up\nits own), a change to the spawn ring's single consumer.",
+      "commits": [
+        "09e6c553"
       ]
     }
   ],
