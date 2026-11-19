@@ -1956,12 +1956,22 @@ class SpatialWorker extends AbstractWorker {
   }
 
   _storeNeighborReuseSignature(entityId, myX, myY, myHalfExtent, myVisualRange) {
+    // N-323: a list's first build starts at an age set by its block of ids (the k-th of `cap` contiguous blocks, age k).
+    // Lists built on one frame (every list at the start, which the prime builds before the first frame) otherwise all
+    // reach the cap on one frame and are rebuilt together for good when skin reuse keeps them: stationarySpatialScene's
+    // 9000 every 16 frames, 8 to 16 ms on the ASUS against 0.23 to 0.29 ms on the other frames (R-1594). Blocks, not
+    // id % cap: each frame then rebuilds ids close in memory (and, spawned together, often in space), where every
+    // cap-th id cost each frame's lists about twice as much to gather (stationarySpatial30k). Starting older only brings
+    // a rebuild sooner. Only without a schedule (neighborTickInterval 1, the default): a schedule rebuilds a list that
+    // reached the cap on its own refresh frame, which the stagger and E-476's blocks spread already.
+    const cap = this._maxReuseFrames;
+    const first = this._entityNeighborNextTick === null && this._entityReuseInitialized[entityId] !== 1;
     this._entityReuseInitialized[entityId] = 1;
     this._entityLastX[entityId] = myX;
     this._entityLastY[entityId] = myY;
     this._entityLastHalfExtent[entityId] = myHalfExtent;
     this._entityLastVisualRange[entityId] = myVisualRange;
-    this._entityFramesSinceBuild[entityId] = 0;
+    this._entityFramesSinceBuild[entityId] = first && cap > 1 ? Math.floor((entityId * cap) / this.globalEntityCount) : 0;
   }
 
   /**
