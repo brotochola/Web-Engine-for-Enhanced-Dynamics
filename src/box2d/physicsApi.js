@@ -1565,6 +1565,8 @@ function createPhysicsApi(Module) {
           stateBaseIndex + getStateChannelOffset(channel),
         );
       }
+      // E-327: the rotation stamps publishPose reads (0 from a module without them: every rotation copied).
+      const stamps = typeof Module._get_rotation_stamp_count === "function";
 
       return {
         sab: Module.HEAPF32.buffer,
@@ -1572,6 +1574,10 @@ function createPhysicsApi(Module) {
         bodyCapacity: getBodyCapacity(),
         channelOffsets,
         sleepingByteOffset: getSleepingByteOffset(),
+        rotationStampsByteOffset: stamps ? Module._get_rotation_stamps_byte_offset() : 0,
+        rotationStampCount: stamps ? Module._get_rotation_stamp_count() : 0,
+        rotationEpochByteOffset: stamps ? Module._get_rotation_epoch_byte_offset() : 0,
+        rotationBlockShift: stamps ? Module._get_rotation_block_shift() : 6,
         metaBaseIndex: metaByteOffset >> 2,
         metaStride: getMetaFloatStride(),
         stateByteOffset,
