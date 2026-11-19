@@ -23476,7 +23476,9 @@
       "records": [
         "R-1363",
         "R-1364",
-        "R-1365"
+        "R-1365",
+        "R-1435",
+        "R-1436"
       ],
       "result": "",
       "next": "Find the feature that sets it off. 32 runs per arm on the HD 620, each run's Chrome log kept (CHROME_LOG_FILE plus --dumpio); the log's ProduceSkia or \"GPU state invalid\" lines mark a frozen run. Arms: the barrio by day (hour=12); at night with its lamps off; with shadows off; with the G-buffer off. Then a smaller scene with the suspect alone. Also try WebGPU on the HD 620, and the Radeon iGPU here when this PC is free.",
@@ -23782,6 +23784,70 @@
       "area": "tools",
       "date": "2026-11-18",
       "statusText": "found 2026-11-18 reading N-294 and N-295 (R-1472)"
+    },
+    {
+      "id": "E-526",
+      "title": "FSMs under static tickAll with no per-entity tick(): the engine builds the tickAll of a type that has FSM components and no tick, groups the entities by state in one pass and runs each state over its ids (a state class may override static updateAll(ids, n, dt)); a logic worker should end freer in Predator",
+      "status": "open",
+      "statusText": "proposed 2026-11-18 by the owner, architecture agreed the same day (E-527 decimation and E-528 instance-free hooks come first); not measured, nothing built. Owner: the entity classes keep no instance properties, so a state needs no instance",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "After E-527 (tickAll with tickInterval) and E-528 (static hooks by entityType). Layer 0: FSM.tickAll(list, n, dt, EntityClass); the engine wires it for a type with FSM components, no tick() and no tickAll (components order; a type that wants its own code writes static tickAll and calls FSM.tickAll in it); states keep onUpdate(owner, i, dt, ms) with the owner taken from EntityClass.instances[i] (made on demand), so no state is rewritten. Layer 1: tickAll counting-sorts the ids by state in one pass and calls State.updateAll(ids, n, dt) per state; the default updateAll loops over that state's own onUpdate (a monomorphic call TurboFan may inline, where fsm.tick reads a megamorphic _onUpdates[...] a call, E-146, E-253); pending transitions run in a pass before it and are the only place onExit and onEnter ask for an instance. Layer 2 (optional): a state overrides static updateAll(ids, n, dt) against the component arrays (Transform.x[i], no owner). To decide with the owner: the order changes (by state, then by id, not by id), so Predator's states must not read what another state writes in the same frame; several FSMs on one entity run in components order; time in state uses the type's constant ms per tick (16.67 x tickInterval). Kernel first (batch against per-entity tick), then Predator logic STEP_MS − WAIT_MS; E-253 puts the dispatch at 7 to 9 % of a logic worker, so a bigger win must come from the states' own cost (E-292). Related: E-218, E-281.",
+      "area": "logic",
+      "kind": "speed",
+      "refs": [
+        "EXECUTION_PLAN.md#E-526"
+      ],
+      "aliases": [
+        "fsm tickAll",
+        "fsm without tick",
+        "state machine batch tick",
+        "fsm batch",
+        "updateAll",
+        "group by state"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-528",
+      "title": "Every entity hook has a static form with no instance, resolved once per entityType: static onCollisionEnter(i, other), onCollisionStay, onCollisionExit, onCollisionHit, onGotShot(i, damage, …), onSpawned(i, cfg), onDespawned(i), onScreenEnter(i), onScreenExit(i), onMessage, onAnimationEnd, onJointBreak; the worker keeps a handlers[entityType] table (function or null) and a type with only static hooks never makes an instance",
+      "status": "open",
+      "statusText": "proposed 2026-11-18 by the owner, design agreed the same day (the owner: the entity classes keep no instance properties, so the static form loses nothing); not measured, nothing built. Rejected for now: one shared cursor instance rebound per call (a nested callback overwrites it, component getters keep their own index)",
+      "next": "One table of hooks in the engine (name, argument shape, who dispatches it) that drives the dispatch, weed.d.ts, the guide and the tests, so a hook is not added by hand in four places. The static form wins over the instance method of the same name (a static is inherited down the extends chain like a prototype method); the worker resolves handlers[entityType] when it registers a type, and dispatch is an array load where it is now gameObjects[a] ?? _makeInstance(a). typeNeedsLogicTick and needsScreenCallbacks also read the static hooks, so a type with static onScreenEnter can stay on tickAll. Batch forms for the events that come many a frame (onSpawnedAll(ids, n), onScreenEnterAll) are the owner's open question; collisions and shots stay one call each. Measure: a collision stress scene (logic STEP_MS) and the memory of a type that never makes an instance. Second step of E-526.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-526"
+      ],
+      "aliases": [
+        "static hooks",
+        "instance-free callbacks",
+        "static onCollisionStart",
+        "no instances"
+      ],
+      "date": "2026-11-18",
+      "result": "",
+      "area": "logic",
+      "kind": "dx",
+      "records": []
+    },
+    {
+      "id": "E-527",
+      "title": "tickAll with tickInterval: a type with a static tickAll and tickInterval above 1 gets only the entities of the frame's bucket, in a copied loop of its own, and the same scaled dt that tick() gets; interval 1 keeps the zero-copy view of E-218 unchanged",
+      "status": "open",
+      "statusText": "proposed 2026-11-18 by the owner, design agreed; not measured, nothing built. Today _runTickAllTypes ignores tickInterval (only the tick() path has the buckets)",
+      "next": "Read how the tick() path scales dt and builds its buckets (_tickIntervalBucket, _rebuildTickBuckets in logicWorker.js), then add the bucketed loop for tickInterval above 1 as its own copy of the loop (no loop-invariant branch in the interval 1 loop, CLAUDE.md hot loops). A node test through workerHarness: a type with tickAll and tickInterval 4 sees each entity once in 4 frames, with dt x 4. Interval 1 must stay bit-identical and keep its view (E-218): kernel or Predator gate only if its loop changes. First step of E-526 (FSMs under tickAll).",
+      "refs": [
+        "EXECUTION_PLAN.md#E-526"
+      ],
+      "aliases": [
+        "tickAll decimation",
+        "tickAll tickInterval",
+        "staggered tickAll"
+      ],
+      "date": "2026-11-18",
+      "result": "",
+      "area": "logic",
+      "kind": "speed",
+      "records": []
     }
   ],
   "records": [
@@ -37941,6 +38007,24 @@
       "title": "N-294 and N-295 answered: meshFillMoving's renderer and queryAabb's logic read worse against v0.14.0 by their waits, not their work (own work about 0.5 ms, as before)",
       "verdict": "answered",
       "text": "**N-294 and N-295 answered: the scoreboard's \"regressions\" in meshFillMoving and queryAabb are waits, not work.** On the\nmain PC (dx/startup 09b5a9d4, headless, 6 s + 6 s, 2 runs) meshFillMovingScene's renderer reads STEP_MS 5.582 and 5.448 ms\nwith WAIT_MS 4.995 and 4.930: its own work is about 0.5 ms (p50 0.49), as v0.14.0's whole step was (1.030). The renderer\nnow waits for its queue inside the step (E-198's waits, N-146), and the scoreboard rows judge the raw pixi_STEP_MS /\nlogic0_STEP_MS, waits included, where HOW_WE_MEASURE's primary is STEP_MS - WAIT_MS; queryAabb's logic0 0.187 -> 0.378 ms\nhas the same shape (its wait about 0.15 ms of a 0.18 ms step). Filed N-311 for the scoreboard."
+    },
+    {
+      "id": "R-1435",
+      "date": "2026-11-18",
+      "time": "16:38",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze on the HD 620 under Windows' counters: for 15 to 18 s from the scene's start nobody works (GPU 3D engine 0 %, GPU process about 10 % of a core, no paging), then it goes on by itself",
+      "verdict": "note",
+      "text": "ASUS lab job 0896w (15:30-16:38), freezeProbe v4: Windows counters (typeperf, 1 s) from before the scene loads, and a\n5 s Chrome trace once a freeze is found. Buenos Aires at night (hour=22, dayMinutes=0), HD 620, WebGL D3D11, src at\nmain 70ba822b, 48 interleaved rounds.\n\n- Frozen: default flags 1 of 48, --disable-gpu-shader-disk-cache 2 of 48 (plus 1 run lost: its 54 MB trace did not\n  finish writing in 60 s on the HDD). All three recovered by themselves within 60 s.\n- The counters of the three frozen runs agree: from the scene's start, for about 15 to 18 s, the GPU's 3D engine sits\n  at 0 %, Chrome's GPU process uses about 10 % of a core and the page about 5 %, nothing pages, about 1.6 GB stay free.\n  Meanwhile the GPU's shared memory climbs slowly, about 450 to 650 MB. Then a burst of paging and disk, and the run\n  goes on normally (3D engine about 98 %).\n- Reading: nobody works during the stall, neither CPU nor GPU; uploads still go in, but slowly. The trace taken after\n  detection (5 s) came too late to show the start."
+    },
+    {
+      "id": "R-1436",
+      "date": "2026-11-18",
+      "time": "19:07",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze traced from the start: every shader link on Chrome's GPU main thread waits about 1 s with no traced work, then compiles in 3 to 13 ms; about 30 links in a row make the stall",
+      "verdict": "note",
+      "text": "ASUS lab job 0896x (16:38-19:07, stopped by hand after round 31 of 48: it had what it was for), freezeProbe v5: a\nChrome trace from before the scene loads to the end of the measurement, with the GPU process's and ANGLE's categories.\nBuenos Aires at night, HD 620, WebGL D3D11, src at main 70ba822b. Arms interleaved: traced (no shader disk cache, traced\nfrom start), nodiskcache (untraced), default (untraced).\n\n- Frozen: traced 2 of 31 (runs 15 and 19), nodiskcache 1 of 31, default 0 of 30 (1 page load failed). The traced arm's\n  29 normal runs lost their traces: about 90 MB did not finish writing within 90 s on the HDD. All 3 freezes recovered\n  by themselves within 60 s.\n- Both frozen start traces show one pattern on CrGpuMain: from some point on (run 15 at +2.1 s, in the browser's own\n  raster flush, which then took 8.1 s; run 19 at +12.9 s, in the page's raster), every shader program link takes about\n  1.0 s, whoever links: Skia's FinishPaintRenderPass, the raster flushes, and WebGL's DoLinkProgram (1001 ms) alike. In\n  each, about 1000 ms pass with no traced work, then ANGLE posts the D3DCompile to the thread pool, which takes 3 to\n  13 ms. About 30 links in a row make the stall (run 15: from +2.1 s to past +42 s).\n- Reading: a timed wait of 1 s, once per link, somewhere under ANGLE (ANGLE, D3D11 or the Intel driver,\n  27.20.100.8682 from 2020-09); nobody works while it holds. Chrome's trace cannot see inside it. Next, 0896y: Windows'\n  recorder (WPR: context-switch stacks, GPU queues) in memory, kept for frozen runs."
     }
   ],
   "leads": [

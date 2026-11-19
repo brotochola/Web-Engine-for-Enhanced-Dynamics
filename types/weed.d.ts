@@ -521,6 +521,13 @@ export type SceneConfig = Record<string, unknown> & {
      * running out stops physics with an error that names this key.
      */
     wasmMemoryMB?: number;
+    /**
+     * Every this many physics steps (0 = never, the default), at the start of the step, Box2D puts its awake bodies
+     * back in body id order and its contacts in body order, which sleeping and waking scramble. Results are the same
+     * bit for bit; the step reads memory in order. One reorder costs about 6.5 ms at 38 000 awake bodies, inside
+     * that step. A whole number; anything below 1 is 0.
+     */
+    awakeReorderInterval?: number;
     /** @deprecated one-release alias of maxFixturePoolSize */
     maxFixtures?: number;
   };

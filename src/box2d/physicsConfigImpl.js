@@ -24,6 +24,8 @@
     commandRingCapacity: 4096,
     sleeping: true,
     hitEventThreshold: 0,
+    // E-322: every this many steps Box2D puts the awake bodies back in body id order (0: never).
+    awakeReorderInterval: 0,
     liquidFun: Object.freeze({
       enabled: false, // scene sets true to auto-create the system at physics init
       radius: 10, // particle radius, world px
@@ -93,6 +95,17 @@
   }
 
   /**
+   * E-322: physics.awakeReorderInterval as Box2D takes it, a whole number of steps, 0 (never) or more. Sleeping,
+   * waking and contacts starting to touch scramble the order of Box2D's awake bodies and of its contacts; every
+   * this many steps, at the start of the step, Box2D puts the bodies back in body id order and the contacts in body
+   * order, which changes no result. One reorder takes about 6.5 ms at 38 000 awake bodies, inside that step.
+   * Anything that is not a finite number of 1 or more is 0.
+   */
+  function awakeReorderSteps(v) {
+    return typeof v === 'number' && v >= 1 && v <= 0x7fffffff ? Math.floor(v) : 0;
+  }
+
+  /**
    * Merge `next` over `current` (or the defaults) and clamp each value to what
    * Box2D accepts. A key missing from both falls back to the default.
    */
@@ -126,6 +139,9 @@
       hitEventThreshold: Math.max(
         0,
         num(pick(n.hitEventThreshold, base.hitEventThreshold, d.hitEventThreshold), d.hitEventThreshold),
+      ),
+      awakeReorderInterval: awakeReorderSteps(
+        pick(n.awakeReorderInterval, base.awakeReorderInterval, d.awakeReorderInterval),
       ),
       liquidFun: mergeLiquidFunConfig(base.liquidFun, n.liquidFun),
     };

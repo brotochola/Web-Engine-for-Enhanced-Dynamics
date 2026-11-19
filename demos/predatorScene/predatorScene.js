@@ -204,6 +204,8 @@ export class PredatorScene extends WEED.Scene {
       commandRingCapacity: 65536,
       // E-319: `?physicsWorkers=<n>` (1 to 4) sets Box2D's thread count, to weigh 3 against 4 at crowd 2.5.
       numberOfPhysicsWorkers: Math.min(4, Math.max(1, Math.trunc(predatorNumberParam('physicsWorkers', 4)))),
+      // E-322: `?awakeReorder=<n>` puts Box2D's awake bodies back in body id order every n steps (0, the default: never).
+      awakeReorderInterval: Math.max(0, Math.trunc(predatorNumberParam('awakeReorder', 0))),
       noLimitFPS: predatorNoLimitFPS,
       // A crowd past 1.5 (scaling runs) needs more than Box2D's default memory for its bodies.
       ...(predatorCrowd() > 1.5 ? { wasmMemoryMB: 256 } : {}),

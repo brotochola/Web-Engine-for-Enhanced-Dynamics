@@ -5401,6 +5401,20 @@ t0, speed and count in the row's statics. Owner: render.
 not exact (about 6e-5 rad); the shaders and packs change. It belongs under E-193's "fewer bytes a row" and is not listed
 there. **Plan:** The owner's call on the error; a pack kernel variant and a visual check. Owner: pixi.
 
+### E-526 FSMs under tickAll, with tickAll decimation (E-527) and instance-free hooks (E-528)
+
+**Premise (owner, 2026-11-18):** a type with an FSM needs `tick()`, so it never takes the `tickAll` path and the logic
+worker calls `fsm.tick` once per entity (E-253: 7 to 9 % of a logic worker in Predator). The owner's hypothesis: FSMs under
+`tickAll` leave Predator's logic workers freer. Entity classes keep no instance properties, so nothing needs the instance.
+**Plan, in this order:** (1) E-527: `tickAll` honours `tickInterval` (bucketed copy of the loop, same scaled dt as `tick()`;
+interval 1 untouched). (2) E-528: a static form of every hook (`onCollisionEnter(i, other)`, `onGotShot(i, …)`, `onSpawned(i, cfg)`,
+`onScreenEnter(i)` …) resolved once into `handlers[entityType]`; a type with only static hooks makes no instance; one hook
+table drives dispatch, `weed.d.ts`, the guide and the tests. (3) E-526: `FSM.tickAll` wired by the engine for a type with FSM
+components and no `tick()`; layer 0 keeps every `onUpdate(owner, i, dt, ms)`, layer 1 groups the ids by state and runs
+`State.updateAll(ids, n, dt)` per state, layer 2 lets a state write `updateAll` against the component arrays. Open with the
+owner: the order changes (by state, then by id); batch forms (`onSpawnedAll`) for hooks that fire many a frame. Judged by the
+logic workers' `STEP_MS − WAIT_MS` in Predator after a kernel. Owner: logic.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
