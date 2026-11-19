@@ -432,6 +432,16 @@ export const SPATIAL_DEFAULTS = Object.freeze({
   maxEntitiesPerCell: 64,
   numberOfSpatialWorkers: 1,
   rowsPerBlock: 2,
+  /**
+   * E-328: when a spatial worker's frame starts. 'vsync': on the vsync, with every other worker. 'logicDone': once the
+   * logic workers' frame of this vsync has ended (the frame chain's bell), so the neighbour search runs while logic leaves
+   * the cores free; it starts on the vsync when its own step would not fit in the frame after logic's, and after a late
+   * logic at the latest at the frame's end less its step. An array gives one per spatial worker (`['vsync', 'logicDone']`:
+   * the second waits); a worker past its end starts on the vsync. With several spatial workers, a worker's rows read the
+   * other's cells as that worker last wrote them, up to a frame old (the lists are 2 to 16 frames old when logic reads
+   * them anyway).
+   */
+  startOn: 'vsync',
   noLimitFPS: false,
   fixedFps: 0,
   /**
@@ -447,6 +457,17 @@ export const SPATIAL_DEFAULTS = Object.freeze({
    * 1 = every frame (off). >1 amortizes cell-walk like logic tickInterval.
    */
   neighborTickInterval: 1,
+  /**
+   * E-476: with neighborTickInterval > 1 and logic.staggeredUpdates, a class whose logic ticks every T frames gets its
+   * list before one of its ticks, every P frames (P the smallest multiple of T not under neighborTickInterval); a period
+   * holds P / T of a slot's ticks. 'idBlocks' (default): the k-th of P / T contiguous blocks of the class's slots before
+   * its k-th tick, so every frame refreshes about 1/P of the class; and a list kept past neighborReuseMaxFrames (an entity
+   * that did not move) is rebuilt on its own refresh frame, not on the frame it reaches the cap (lists built together
+   * reach it together), so it may stand up to a refresh period past the cap. 'none': before the first, so the class's
+   * whole refresh lands on T frames of every P (Predator's civilians: 4 heavy frames of 16, its spatial p99 16 ms against
+   * 7 spread, and its capacity crowd 1.6 against 2.4). Lists are as fresh at their tick either way.
+   */
+  neighborRefreshSpread: 'idBlocks',
   /**
    * The WASM candidate gather walks each frame's rebuild batch in home-cell order: the same
    * neighbours, with the cells each entity walks still in cache (E-81: +21.7 % on a frame that

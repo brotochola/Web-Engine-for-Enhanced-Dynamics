@@ -69,7 +69,9 @@ test('each class of a mixed scene gets its lists on its own tick eves, every mul
     n: 3000,
     workers: 1, // one owner: a row that changes owner starts from that worker's counts
     types: 'predator',
-    spatial: { neighborReuseSkin: 0, neighborReuseMaxFrames: 90, neighborTickInterval: 15 },
+    // E-200's placement, the first tick of the period ('idBlocks', the default, spreads a class over its period's
+    // ticks: spatialTailRefreshSpread.test.js).
+    spatial: { neighborReuseSkin: 0, neighborReuseMaxFrames: 90, neighborTickInterval: 15, neighborRefreshSpread: 'none' },
   });
   const at = rebuildFrames(k, 120);
   assertOnTickEves(k, at);

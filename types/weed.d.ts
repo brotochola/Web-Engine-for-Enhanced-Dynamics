@@ -460,6 +460,9 @@ export interface SceneRendererConfig extends Record<string, unknown> {
   pixelDepth?: boolean;
 }
 
+/** E-328: when a spatial worker's frame starts (`config.spatial.startOn`). */
+export type SpatialStartOn = 'vsync' | 'logicDone';
+
 /** Merged runtime scene config (static defaults + `Scene.config` + nested worker blocks). */
 export type SceneConfig = Record<string, unknown> & {
   /**
@@ -507,6 +510,25 @@ export type SceneConfig = Record<string, unknown> & {
   lighting?: SceneLightingConfig;
   /** The renderer: the backend, the painter and pixel depth ({@link SceneRendererConfig}). */
   renderer?: SceneRendererConfig;
+  /** The spatial grid and its neighbour lists (the rest of the keys are in SPATIAL_DEFAULTS, src/util/configDefaults.js). */
+  spatial?: Record<string, unknown> & {
+    /**
+     * E-328: when a spatial worker's frame starts. 'vsync' (default): on the vsync, with every other worker. 'logicDone':
+     * once the logic workers' frame of this vsync has ended, so the neighbour search runs while logic leaves the cores
+     * free; on the vsync when its own step would not fit in the frame after logic's. An array gives one per spatial
+     * worker (`['vsync', 'logicDone']`: the second waits); a worker past its end starts on the vsync. With several
+     * spatial workers a worker reads the other's cells as that one last wrote them, up to a frame old.
+     */
+    startOn?: SpatialStartOn | SpatialStartOn[];
+    /**
+     * E-476: which of its ticks a class's list comes before, with neighborTickInterval > 1 and logic.staggeredUpdates
+     * (every P frames, P the smallest multiple of the class's tickInterval T not under neighborTickInterval). 'idBlocks'
+     * (default): spread over the period by contiguous blocks of the class's slots, and a list kept past
+     * neighborReuseMaxFrames rebuilt on its own refresh frame (up to a period past the cap), not on the frame it reaches
+     * the cap. 'none': the first of the period, so the class's refresh lands on T frames of every P.
+     */
+    neighborRefreshSpread?: 'none' | 'idBlocks';
+  };
   physics?: Record<string, unknown> & {
     /**
      * Default true. false = do not create the Box2D WASM worker;
