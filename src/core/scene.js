@@ -1294,6 +1294,8 @@ class Scene {
     // Static / always-on world setup (runs for new game AND save load).
     await this.create(this.data);
     loadMark('create');
+    // SST-18: physics makes the bodies of the world's spawns while logic0 spawns them; _primePhysics ends it.
+    this.workers?.physics?.postMessage({ msg: 'primeBegin' });
 
     // LIFECYCLE PHASE 2b: new game vs save restore
     // Restore awaits logic0 restoreSaveComplete so entities are in the scene

@@ -17,6 +17,19 @@
   weedjsEnableHostMode();
 
   var MAX_POLYGON_VERTICES = 8;
+  // SST-18: the prime's loop while the world spawns (primeBegin to prime), its timer, 0 when it is not running.
+  var primeLoopTimer = 0;
+  function primeOnce() {
+    if (state.box2dReady && !state.box2dAborted && typeof global.weedjsPrime === 'function') global.weedjsPrime();
+  }
+  function primeLoop() {
+    primeOnce();
+    primeLoopTimer = setTimeout(primeLoop, 1);
+  }
+  function stopPrimeLoop() {
+    if (primeLoopTimer) clearTimeout(primeLoopTimer);
+    primeLoopTimer = 0;
+  }
   // This realm's time origin, read once (N-158: each read of performance.timeOrigin makes a heap number in Chrome).
   var TIME_ORIGIN = typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0;
   // SST-0 / SST-12: this worker's load marks, on the clock every thread shares (a classic script cannot import
@@ -1545,13 +1558,19 @@
       } else if (data.msg === 'reserveEngineBlock') {
         reserveEngineBlock(data.bytes | 0);
       } else if (data.msg === 'start') {
+        stopPrimeLoop();
         startGameLoop();
       } else if (data.msg === 'pause') {
         state.isPaused = true;
         clearSchedulers();
+      } else if (data.msg === 'primeBegin') {
+        // SST-18: while logic0 spawns the world, the bodies of the spawns done so far, every millisecond. Paused: no
+        // step runs meanwhile; a spawn's body is made once the spawn has set its lifecycle bit, as during play.
+        if (!primeLoopTimer && state.isPaused) primeLoopTimer = setTimeout(primeLoop, 0);
       } else if (data.msg === 'prime') {
         // SST-15: the spawned world's bodies made before the start (weedjsPost.js weedjsPrime); paused, between steps.
-        if (state.box2dReady && !state.box2dAborted && typeof global.weedjsPrime === 'function') global.weedjsPrime();
+        stopPrimeLoop();
+        primeOnce();
         loadMark('primed');
         self.postMessage({ msg: 'primeDone', id: data.id | 0, loadMarks: takeLoadMarks() });
       } else if (data.msg === 'barrier') {
