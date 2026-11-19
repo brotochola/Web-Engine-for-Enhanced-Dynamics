@@ -16041,12 +16041,12 @@
       "id": "E-378",
       "title": "The pixel depth (DX-DEPTH) costs the colour pass +30 % on WebGL and +90 % on WebGPU: every fragment writes its depth, also a sprite without maps whose depth is its foot's",
       "status": "open",
-      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "statusText": "Proposed 2026-11-15 on dx/light3d; first step kept 2026-11-19 (c72d9a04: the edge pass's cull, nearest atlases, WebGL)",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "",
-      "next": "Split the opaque pass: maps-less sprites' depth from the vertices (early depth test), the others' from the fragment; why WebGPU pays three times more. gpuPassBench color/colorDepth, depthSortCheck. DX-FACEDEPTH (DX_BARRIOS_DESIGN.md) takes it: map-less sprites' depth from the vertex, as the faces' plane depth.",
+      "result": "Barrio (nearest atlas, 13 h): the sprite layer's edge pass 0.545/0.568 -> 0.060/0.092 ms (GTX 1650, 2 rounds against main). Linear atlases and WebGPU unchanged.",
+      "next": "WebGPU: the same cull needs an edge vertex entry of its own (one entry serves both passes there). Predator light3d (linear atlas): its people are about 95 % fill in both passes (1-px scissor probe, R-1559); the lever is the upright frames’ depth from the vertex (early-z) with the opaque pass drawn front to back, the fragment depth kept for frames with height maps. gpuPassBench color/colorDepth, glFrameRecorder --gpu-draws.",
       "refs": [
         "EXECUTION_PLAN.md#E-378"
       ],
@@ -16056,7 +16056,8 @@
       ],
       "records": [
         "R-1129",
-        "R-1174"
+        "R-1174",
+        "R-1559"
       ]
     },
     {
@@ -24260,6 +24261,25 @@
       "aliases": [
         "histogram ceiling",
         "p99 128 ms"
+      ]
+    },
+    {
+      "records": [
+        "R-1560"
+      ],
+      "refs": [],
+      "id": "N-321",
+      "title": "The bundle smoke read one bundle's canvas all-black at random: it captured once, right at the renderer's first frame counted, which can still be empty",
+      "status": "kept",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-19",
+      "statusText": "Fixed 2026-11-19 (bedaeaac)",
+      "result": "The capture tries again every 250 ms for up to 5 s; two runs green",
+      "next": "Done.",
+      "aliases": [
+        "bundle smoke black canvas",
+        "test:bundle flaky"
       ]
     }
   ],
@@ -39515,6 +39535,28 @@
         "963002df",
         "910c12f4",
         "72dfc3af"
+      ]
+    },
+    {
+      "id": "R-1559",
+      "date": "2026-11-19",
+      "time": "19:06",
+      "timeFrom": "recorded",
+      "title": "E-378's first step kept: with a nearest atlas the edge pass leaves the plain full-alpha instances out in the vertex; the barrio's edge pass 0.55 -> 0.06-0.09 ms",
+      "verdict": "kept",
+      "text": "**E-378, first step: with a nearest atlas the edge pass no longer rasterizes the people.** In the barrio (owner camera,\n13 h, 5000 people, GTX 1650, glFrameRecorder --gpu-draws, 3 s recorded after 15 s) the edge pass of the sprite layer fell\n0.545 / 0.568 ms -> 0.060 / 0.092 ms (main 1f2ec8ef against the branch, 2 rounds each); every draw of the frame summed\n3.405 / 3.544 -> 2.163 / 2.776 ms (the other draws move with the GPU's clocks in this scene, so the edge pass's -0.5 ms\nis the number).\n\nThe edge pass (DX-DEPTH's soft edges, blended) drew every instance again only to discard each pixel of a plain frame\n(H-EDGE: no texel of alpha 1 to 127, no glow): with a nearest atlas and no mipmaps such a frame's texels are 0 or 128/255\nand up, so at a tint alpha of 1 each pixel is the opaque pass's or nothing. The edge program's vertex now sends those\ninstances off screen (WebGL, the rows, plain and indexed programs). Under a full tint alpha a texel of 128 to 254 falls\nunder 0.5 and is the edge pass's, so those instances stay (the first draft culled from 0.5 up; caught before the commit).\n\nPictures at 13 h and 21 h (people, cars, lamps' glows) match main's by eye; the walkers move, so no pixel diff. A linear\natlas (Predator's default) gets nothing: its filtering makes soft texels on every plain frame's edge. WebGPU gets nothing\nyet: one vertex entry serves both passes there, so the cull needs an edge entry of its own. The bigger step left for\nPredator light3d at 22 h: its people's two draws cost 0.977 + 0.633 ms and 0.049 + 0.038 ms under a 1-px scissor\n(glFrameRecorder --probe-scissor), so about 95 % is fill; the lever there is the upright frames' depth from the vertex\n(early-z, the opaque pass front to back), not this cull.",
+      "commits": [
+        "c72d9a04"
+      ]
+    },
+    {
+      "id": "R-1560",
+      "date": "2026-11-19",
+      "title": "N-321 fixed: the bundle smoke tries its canvas capture again for up to 5 s before calling a bundle black",
+      "verdict": "kept",
+      "text": "**N-321 fixed: the bundle smoke read one bundle's canvas all-black at random.** After E-378's merge, `npm run test:bundle`\nfailed twice in four runs on a different bundle each time (prod.bundle.min.js once; prod.bundle.esm.min.js and its\ncompressed twin once), with a run between them clean. The page's `ready` is the renderer's first frame counted, which\ncan still be an empty one, and the smoke captured the canvas once. It now captures again every 250 ms for up to 5 s\nbefore calling a bundle black: two runs passed, one bundle on its second capture. A canvas that stays black still fails.",
+      "commits": [
+        "bedaeaac"
       ]
     }
   ],

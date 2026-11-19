@@ -6,6 +6,23 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 19 November 2026 (evening) — A Pass That Drew People to Throw Them Away
+
+With pixel depth on, every sprite layer is drawn twice: an opaque pass that writes each solid pixel's depth, then an edge
+pass, blended, for the soft pixels around a sprite's outline. The edge pass took every instance again and rasterized the
+whole quad, only to discard each pixel the opaque pass had already drawn. In the barrio that was 0.55 ms of the GPU frame
+spent on 5000 people producing nothing.
+
+**With a nearest atlas, most frames have no soft pixels at all.** The atlas already knows, frame by frame, whether any
+texel has an alpha between 1 and 127. Sampled nearest and without mipmaps, a frame without such texels has pixels that are
+either the opaque pass's or empty, as long as the sprite is drawn at full alpha. So the edge pass's vertex shader now sends
+those instances off screen before a single pixel is rasterized. The barrio's edge pass went from 0.55 to 0.06–0.09 ms on
+the GTX 1650. A sprite faded below full alpha still goes through, since its half-transparent texels can fall under the
+opaque cut. A linear atlas gets nothing from this (filtering softens every edge), and neither does WebGPU yet, where one
+vertex entry serves both passes. In Predator's light3d mode the people cost about 1.6 ms in their two passes, and a probe
+with a one-pixel scissor said 95 % of it is filling pixels: that one needs the depth from the vertex, so the GPU can
+reject hidden pixels before shading them.
+
 ## Thursday 19 November 2026 (afternoon) — Sending Only What Changed
 
 Every sprite the renderer draws in a painter-sorted frame reads its statics (scale, anchor, tint, which frame of the
