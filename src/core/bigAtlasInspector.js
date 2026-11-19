@@ -2,7 +2,7 @@
 
 /**
  * BigAtlasInspector - Shows the generated atlas with frame overlays
- * Usage: BigAtlasInspector.show(scene.bigAtlasCanvas, scene.bigAtlasJson)
+ * Usage: BigAtlasInspector.show(await scene.bigAtlasInspect(), scene.bigAtlasJson)
  */
 class BigAtlasInspector {
   static panel = null;

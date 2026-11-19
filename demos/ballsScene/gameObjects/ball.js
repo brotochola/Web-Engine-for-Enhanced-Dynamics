@@ -12,6 +12,9 @@ class Ball extends GameObject {
   // Define components this entity uses
   static components = [RigidBody, Collider, SpriteRenderer];
 
+  // Declared here so onSpawned's write does not reshape the object (the engine's field-shape rule).
+  myColor = 0;
+
   /**
    * LIFECYCLE: Called when ball is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn

@@ -25,6 +25,8 @@ import {
   toAbsoluteScriptUrl,
 } from '../util/sceneScript.js';
 import { isTypingTarget } from '../util/typingTarget.js';
+import { loadMark } from '../util/loadMarks.js';
+import { compileEngineWasm } from '../util/sceneWorkerBootstrap.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
@@ -336,6 +338,10 @@ class GameEngine {
     }
 
     this.state = GameEngine.states.TRANSITIONING;
+    // SST-0: the load waterfall starts here.
+    loadMark('loadScene');
+    // SST-2: engine.wasm compiled on the page while the scene module loads (once a page; the workers get the module).
+    compileEngineWasm();
 
     try {
       // Before the import: a scene module may read WEED.params at its top level.
@@ -347,6 +353,7 @@ class GameEngine {
       if (typeof source === 'string') {
         sceneScriptUrl = toAbsoluteScriptUrl(source, origin);
         const ns = await nativeImport(sceneScriptUrl);
+        loadMark('scene module');
         SceneClass = pickSceneClass(ns, options.export, Scene);
       } else if (typeof source === 'function') {
         SceneClass = source;
@@ -436,6 +443,8 @@ class GameEngine {
 
       // Add cooldown period before allowing next transition
       await new Promise((resolve) => setTimeout(resolve, this.transitionCooldown));
+      loadMark('loadScene end');
+      this.currentScene._takeMainLoadMarks?.();
 
       // Scene loaded successfully
       this.state = GameEngine.states.READY;

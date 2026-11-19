@@ -303,6 +303,8 @@ export const ASSETS_DEFAULTS = Object.freeze({
   atlasPadding: 2,
   /** Bin-pack heuristic: best-short-side | best-long-side | best-area */
   heuristic: 'best-short-side',
+  /** SST-6: a packed atlas kept in Cache Storage by a hash of its inputs, loaded from there next time; false packs each load */
+  atlasCache: true,
 });
 
 // ============================================================================
@@ -316,7 +318,7 @@ export const SCENE_DEFAULTS = Object.freeze({
   seed: 1,
   /**
    * 'auto' = Uint16 entity ids while the scene's pools hold at most 65535 entities, Uint32 past that (the
-   * engine decides when the scene is built). 16 or 32 forces one: 16 = max 65535, 32 = Uint32 lists (max 500000).
+   * engine decides when the scene is built). 16 or 32 forces one: 16 = max 65535, 32 = Uint32 lists (max 1048575).
    */
   entityIdWidth: 'auto',
   /**

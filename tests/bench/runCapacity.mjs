@@ -38,6 +38,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { MAX_ENTITIES_U32 } from '../../src/util/entityIdWidth.js';
 import { repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
 
@@ -90,12 +91,10 @@ export const CAPACITY_SCENES = Object.freeze({
     path: '/demos/boidsScene/boidsScene.js',
     exportName: 'BoidsScene',
     knob: 'boids',
-    // The pool's 65 000 is the most the scene holds: with physics on, the physics host refuses a scene of more than
-    // 65 535 entities (Box2D's MAX_BODIES, physicsHostImpl.js), and every boid is a body. 65 000 held 60 fps with every
-    // p99 under 12.4 ms on 2026-11-16, so this scene reads as capped (a guard for spatial and logic, three runs) until
-    // that limit moves.
+    // N-253: physics scenes take up to 1 048 575 entities (Box2D's tables sized from the scene), and `?boids=` past
+    // 65 000 grows the scene's pool and Box2D's memory; 65 000 held 60 fps with every p99 under 12.4 ms on 2026-11-16.
     min: 5000,
-    max: 65000,
+    max: 400000,
     start: 40000,
     step: 1000,
     query: '',
@@ -109,10 +108,11 @@ export const CAPACITY_SCENES = Object.freeze({
     path: '/demos/bunnyMarkScene/bunnyMarkScene.js',
     exportName: 'BunnyMarkScene',
     knob: 'bunnies',
-    // The engine's ceiling is 500 000 entities (32-bit ids, src/util/entityIdWidth.js), and the spawner is one of them.
+    // The engine's ceiling is 1 048 575 entities (32-bit ids, src/util/entityIdWidth.js MAX_ENTITIES_U32; 500 000 until
+    // DX-ENT1M), and the spawner is one of them. 499 999 held (R-1240), so the search starts at 500 000.
     min: 10000,
-    max: 499999,
-    start: 250000,
+    max: MAX_ENTITIES_U32 - 1,
+    start: 500000,
     step: 5000,
     query: '',
     entities: (n) => n,
@@ -125,9 +125,9 @@ export const CAPACITY_SCENES = Object.freeze({
     path: '/tests/bench/stressScenes/keyedPackStressScene.js',
     exportName: 'KeyedPackStressScene',
     knob: 'n',
-    // The scene's cap, 499 998 (the engine's 500 000 less two entities a mix can add).
+    // The scene's cap, 1 048 573 (the engine's 1 048 575 less two entities a mix can add: DX-ENT1M).
     min: 10000,
-    max: 499998,
+    max: 1048573,
     start: 150000,
     step: 5000,
     query: '',
@@ -595,7 +595,7 @@ export function resolveCapacityScene(args) {
       exportName: String(args['scene-export'] || path.basename(p, '.js')),
       knob: String(args.knob),
       min: 1,
-      max: 500000,
+      max: MAX_ENTITIES_U32,
       start: undefined,
       step: 0,
       query: '',

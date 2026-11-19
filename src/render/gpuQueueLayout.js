@@ -405,3 +405,58 @@ export function fillQueueIndices(typeArr, count, includeType, excludeType, outId
   }
   return n;
 }
+
+/** The light glows' row type in the render queue (the glow split's filter). */
+const GLOW_ROW_TYPE = 3;
+/** Particle rows, which the split counts among the entity rows. */
+const PARTICLE_ROW_TYPE = 1;
+
+/**
+ * E-456: the glow split in one pass over the queue. Writes the entity list (every row but the light glows), the glow
+ * list (the glows) and counts the particle rows of the entity list: out[0], out[1], out[2]. It replaces two filtered
+ * fillQueueIndices calls and a counting loop, three reads of every row a frame (12.7 % of Pixi in keyedPackStressScene
+ * with the G-buffer on). The lists and counts are the ones those three wrote.
+ */
+export function splitGlowQueueIndices(typeArr, count, idxE, idxG, out) {
+  // Lists of different lengths cap the two filters differently: the three passes keep that exact.
+  if (!typeArr || !idxG || idxG.length !== idxE.length) return splitGlowThreePasses(typeArr, count, idxE, idxG, out);
+  const cap = idxE.length;
+  const nSrc = count | 0;
+  const limit = nSrc < cap ? nSrc : cap;
+  let ne = 0;
+  let ng = 0;
+  let np = 0;
+  for (let i = 0; i < limit; i++) {
+    const t = typeArr[i];
+    if (t === GLOW_ROW_TYPE) {
+      idxG[ng++] = i;
+    } else {
+      idxE[ne++] = i;
+      if (t === PARTICLE_ROW_TYPE) np++;
+    }
+  }
+  // After the loop, not before: a builtin call between the list's first use and the loop made TurboFan re-check its
+  // map and decode its data pointer at every store (E-456's d8 read).
+  _identityRows.delete(idxE);
+  _identityRows.delete(idxG);
+  out[0] = ne;
+  out[1] = ng;
+  out[2] = np;
+  return ne;
+}
+
+/** The glow split as it was (two filtered fills and the particle count), for lists of different lengths. */
+function splitGlowThreePasses(typeArr, count, idxE, idxG, out) {
+  const ne = fillQueueIndices(typeArr, count, -1, GLOW_ROW_TYPE, idxE);
+  const ng = idxG ? fillQueueIndices(typeArr, count, GLOW_ROW_TYPE, -1, idxG) : 0;
+  let np = 0;
+  if (typeArr) {
+    for (let k = 0; k < ne; k++) {
+      if (typeArr[idxE[k]] === PARTICLE_ROW_TYPE) np++;
+    }
+  }
+  out[0] = ne;
+  out[1] = ng;
+  out[2] = np;
+  return ne;
+}

@@ -12954,12 +12954,12 @@
     {
       "id": "N-167",
       "title": "Demos start with warnings: the Box2D command ring overflows in 9 of them, and pools run out in Constraint Boxes, Blastforge and Predator",
-      "status": "open",
-      "statusText": "found 2026-11-13 in the same run; owner: the demos come configured so they start without warnings; backlog",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-18 but for Predator's pools (kept) and the baked built-ins (SST-5)",
       "date": "2026-11-13",
       "area": "demos",
       "kind": "bug",
-      "result": "Box2dCommandRing full (capacity 4096), commands dropped in the first seconds: Boids 281 526, Predator 48 584, Ants 27 104, Little City 23 659, Balls 13 912, Gear Chain 5 906, Water & Boxes 3 916, Oriented Boxes 1 112, Constraint Boxes 912. Constraint Boxes: joint pool full (physics.maxJoints 4096). Blastforge: Prop pool full (220 slots). Predator: Flash pool full (32 slots) and ParticleEmitter.emit pool exhausted (particle.maxParticles). Gear Chain: Ball's field myColor first written after onSpawned. Oriented Boxes with physics.commandRingCapacity 65536 started without its warning (a check in the scratch clone, nothing committed).",
+      "result": "Kept 2026-11-18 (R-1449): no ring overflow in any demo; Blastforge, Gear Chain, Constraint Boxes clean; Predator's pool warnings stay (its pools fill by design); the baked atlases' missing built-ins go with SST-5.",
       "next": "Per demo: physics.commandRingCapacity, physics.maxJoints, the pool counts and particle.maxParticles sized to what the scene does (or its spawns spread over frames), and myColor declared in Ball's constructor; a run of every demo that fails on any warning keeps it that way. An engine question first: whether a full ring should keep dropping commands after one warning (what they carried is lost) or grow or wait.",
       "refs": [
         "REVIEW_PLAN.md#N-167"
@@ -12974,7 +12974,8 @@
         "maxParticles"
       ],
       "records": [
-        "R-1049"
+        "R-1049",
+        "R-1449"
       ]
     },
     {
@@ -14049,8 +14050,8 @@
     {
       "id": "E-263",
       "title": "FL4's head is outside the Smi range: every pop and push of a wide pool or a 32-bit entity id gets heap numbers back from its Atomics (E-87 fixed only the 16-bit stack)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from reading atomicFreeList.js against E-87, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept 2026-11-18 (R-1458): every head a Smi; Node a tie, gates neutral; Chrome heap pass not run",
       "date": "2026-11-13",
       "area": "core",
       "kind": "speed",
@@ -14067,7 +14068,10 @@
         "heap number Atomics",
         "free list head"
       ],
-      "records": []
+      "records": [
+        "R-1454",
+        "R-1458"
+      ]
     },
     {
       "id": "E-264",
@@ -16821,12 +16825,12 @@
     {
       "id": "E-317",
       "title": "Spatial's neighbour rows are 2 050 bytes apart (Predator maxNeighbors 1024): at crowd 2.5 the rows and cand regions are 118 MB each, and each entity's row head costs a TLB walk plus a DRAM read-for-ownership, exposed once per entity",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "rejected",
+      "statusText": "rejected 2026-11-18",
       "date": "2026-11-15",
       "area": "spatial",
       "kind": "speed",
-      "result": "Verified (R-1100): predatorScene.js sets maxNeighbors 1024, two rows per 4 KB page. E-307 found the publish's cost is writing these rows; gather_batch + publish_batch are 69 % of spatial at crowd 2.5 and the largest refills in Chrome (19.3 + 4.9 % of all, R-1100; E-295). The candidate loop fills the reorder buffer before the next entity's row head is asked for (R-1104); wasm has no prefetch instruction. Estimate spatial -5 to -15 %.",
+      "result": "Rejected 2026-11-18 (R-1448): volatile early loads of entity n+D's row heads; publish 4 to 8 % slower at D = 4, 8, 16 (0 of 9 pairs), the whole spatial frame a tie; a wasm load holds the reorder buffer as E-314 found. Branch opt/e317-row-heads kept, not merged.",
       "next": "Load entity n+8's row and cand heads into an unused local in the publish (and the gather) so the misses overlap: spatialPublishWasmMicrobench --n 57600 with and without (same rows). Then the structural one, E-15's packed rows (prefix-sum offsets, one region per worker: 2.5-3.6x in its kernel at 17 500 entities), or a smaller maxNeighbors where the scene allows it.",
       "refs": [
         "EXECUTION_PLAN.md#E-317"
@@ -16842,9 +16846,9 @@
         "R-1104",
         "R-1219",
         "R-1231",
-        "R-1236"
-      ],
-      "rank": 9
+        "R-1236",
+        "R-1448"
+      ]
     },
     {
       "id": "E-318",
@@ -18447,7 +18451,9 @@
         "R-1176",
         "R-1189",
         "R-1203",
-        "R-1236"
+        "R-1236",
+        "R-1446",
+        "R-1459"
       ],
       "rank": 16
     },
@@ -19321,30 +19327,31 @@
     {
       "id": "E-449",
       "title": "waterAndBoxesScene's drops draw the 200 px light gradient at scale 10 (2 000 px across against a visual range of 120): 4 000 of them cost the water's density target (480 x 270) 7.8 ms of GPU a frame",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws over the demos and stress scenes (GTX 1650, 1920 x 1080)",
+      "status": "kept",
+      "statusText": "kept 2026-11-18",
       "date": "2026-11-16",
       "area": "demos",
       "kind": "speed",
-      "result": "waterAndBoxesScene: fbo 480 x 270 [uTexLut,uTexture] one draw, 4 000 instances, 7.799 ms of 7.897 a frame. waterBall.js: setSprite('_lightGradient') (LIGHT_GRADIENT_TEXTURE_RADIUS: 200 px across), setScale(collider.radius * 0.5) with radius 20, visualRange radius * 6; the layer at resolution 0.25 with additive blending, then the metaball threshold.",
+      "result": "Kept 2026-11-18 (f0f42470): `_lightGlow` at 0.16 of the scale; the density draw 7.849 -> 1.316 ms (the GPU idling down to 600 MHz; about 0.44 ms at equal clock, -94 %), the same water by eye.",
       "next": "Scale each drop's gradient to the radius the threshold (0.8) keeps (about the visual range), retuning the threshold if the look moves; the recorder before and after. A demo change: the engine's density path is fine at a sane scale.",
       "refs": [],
       "aliases": [
         "water drops oversized"
       ],
       "records": [
-        "R-1195"
+        "R-1195",
+        "R-1441"
       ]
     },
     {
       "id": "E-450",
       "title": "platformerGameScene's bloom layer blurs with a 2D stack blur at full resolution, nested loops over (2R + 1)^2 taps a pixel: 11.0 ms of GPU a frame for one draw",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws over the demos and stress scenes (GTX 1650, 1920 x 1080)",
+      "status": "kept",
+      "statusText": "kept 2026-11-18",
       "date": "2026-11-16",
       "area": "demos",
       "kind": "speed",
-      "result": "platformerGameScene: fbo#7 one draw, one instance, the bloom layer's shader [uTexture]: 11.006 ms of 11.412 a frame. demos/shaders/bloom.frag: two nested loops over ±STACKBLUR_MAX_R; BLOOM_RESOLUTION 1; uBlurSize 12.",
+      "result": "Kept 2026-11-18 (2d91a4f6): 81 bilinear fetches instead of 289; 11.320 -> 5.222 ms (about 4.3 at equal clock, -62 %), pictures equal within 1/255. A separable blur needs DX-LAYERPASSES.",
       "next": "A separable blur (two passes of 2R + 1 taps, or a downsampled chain), or the layer at resolution 0.5 or 0.25 (a bloom is smooth); the recorder before and after. A demo change; an engine helper for two-pass layer shaders would let games do it without writing it. From three.js (R-1427): separable, taps merged in pairs into bilinear fetches (#34479), half resolution; about 0.3 to 0.6 ms (an estimate).",
       "refs": [],
       "aliases": [
@@ -19352,7 +19359,8 @@
       ],
       "records": [
         "R-1195",
-        "R-1427"
+        "R-1427",
+        "R-1442"
       ]
     },
     {
@@ -19535,17 +19543,19 @@
         "gbuf words generation",
         "per-entity word column"
       ],
-      "records": []
+      "records": [
+        "R-1446"
+      ]
     },
     {
       "id": "E-456",
       "title": "Where Pixi packs (Predator, light3dCompare) and lighting draws glows, packSpriteLayer splits the glow rows every frame with two filtered passes over every row plus a third counting particles, even when the frame has no glow row: 12.7 % of Pixi in keyedPackStressScene gbuf=1 (fillQueueIndices, about 1.4 ms a frame at 250 000 rows). E-216's skip for frames without glow rows reaches only pre-render's collector",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from the cpu pass of keyedPackStressScene (Pixi packing, N-223) with gbuf=0 and gbuf=1",
+      "status": "kept",
+      "statusText": "kept 2026-11-18",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "keyedPackStressScene n=250000 churn=0.05, Pixi packing, 2026-11-16 09:33 to 09:34: with gbuf=1 Pixi's fillQueueIndices (gpuQueueLayout.js) 674 ms in an 8 s window (12.7 %), none with gbuf=0. pixiWorker.js: splitGlow = _lightGlowAdd && typeArr && idxE && (painter || lightingEnabled), with no look at the frame's glow rows; packSpriteLayer then runs fillQueueIndices(excl 3), fillQueueIndices(incl 3) and a loop counting particle rows over the entity list. Pre-render knows its glow rows (E-216, R-0904). d8 machine code (R-1222): packSpriteLayer's 920-byte budget holds one fillQueueIndices, so the entity fill (250 000 rows) is a real call at about 33 instructions a row (the limit and type reloaded from stack slots, outIdx's map re-checked and its pointer decoded every stored row because _identityRows.delete(outIdx) sits between .length and the loop, no unrolling) and the particle count about 17 an element. glowSplitMicrobench at 250 000 rows, ms a frame (no glow rows / 24 glow rows): shipped Node 1.036 / 0.873, d8 0.736 / 0.750; one fused pass for both lists and the count Node 0.305 / 0.347, d8 0.268 / 0.413 (-64 to -71 %); _identityRows.delete moved after each loop alone d8 -13 % / -27 %, bit-identical; the identity copy floor 0.124 / 0.216. Sweep (R-1229): in keyedPack gbuf=1 indexByteFor's copy into the kernel scratch (gpuPackClient.js:213) is 11.5 ms/s more, and packSpriteLayer spends 784 of its 920-byte budget, leaving fillQueueIndices, orderSpriteIndices and _uploadSplit out of line.",
+      "result": "Kept 2026-11-18 (R-1444, R-1459): the glow split in one pass; kernel -29 to -45 %; keyedPack gbuf=1 renderer 5.852 -> 5.356 ms, logic 3.249 -> 3.074 (under the floor), nothing worse.",
       "next": "Pre-render writes the frame's glow-row count into the queue (it counts them for E-216) and Pixi takes the dense path when it is 0; when there are glow rows, one pass fills the entity list, the glow list and the particle count together. Pixi's CPU per function before and after (keyedPack gbuf=1, Predator ?light3d=1).",
       "refs": [],
       "aliases": [
@@ -19555,7 +19565,10 @@
       "records": [
         "R-1203",
         "R-1222",
-        "R-1229"
+        "R-1229",
+        "R-1444",
+        "R-1446",
+        "R-1459"
       ]
     },
     {
@@ -20649,18 +20662,21 @@
     {
       "id": "N-250",
       "title": "The bundle build imports webpack-obfuscator even with OBFUSCATE off: about 46 s of every build",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-469 agent (opt/terser-closures) while building the bundles",
+      "status": "kept-hygiene",
+      "statusText": "kept 2026-11-18",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "speed",
-      "result": "Measured by the E-469 agent (a build with the import and without it).",
+      "result": "Kept (hygiene) 2026-11-18 (4793523e): the import moved behind OBFUSCATE; 0.6 s a webpack run with a warm disk cache (566 / 615 ms), E-469's 46 s likely a cold HDD.",
       "next": "Import it only when OBFUSCATE is on (a dynamic import in the webpack config); build time before and after.",
       "refs": [],
       "aliases": [
         "obfuscator import cost"
       ],
-      "records": []
+      "records": [
+        "R-1440",
+        "R-1456"
+      ]
     },
     {
       "id": "N-251",
@@ -20718,8 +20734,8 @@
     {
       "id": "N-253",
       "title": "A scene with physics cannot boot more than 65 535 entities: physicsHostImpl bootWorld throws when the total entity count passes Box2D MAX_BODIES (65 535), counting every entity, not bodies, so 32-bit entity ids do not lift it",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the capacity agent (boids at 130 000 with ?ids=32)",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1458)",
       "date": "2026-11-16",
       "area": "physics",
       "kind": "bug",
@@ -20730,7 +20746,9 @@
         "physics 65535 entity cap"
       ],
       "records": [
-        "R-1240"
+        "R-1240",
+        "R-1455",
+        "R-1458"
       ]
     },
     {
@@ -20772,12 +20790,12 @@
     {
       "id": "E-494",
       "title": "After E-475, the programs the engine makes the first time a pass draws still block the second frame for about 620 ms at Predator crowd 2.5 by night (glowMask-rows 203 ms, gbuf-rows 85, lamp-map 72, glow-rows 55, lamp-map-volumes 49, mesh-uv-6 34)",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-475 agent",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1451): made at init where the config says the pass runs",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "Made in InstancedSpriteBatch._makeAux, _lampMapProgram, _volumeLampMesh, _ensureMeshUvBatch and the statics scatter's first call.",
+      "result": "Kept 2026-11-18 (228bb256, R-1451): the first-use programs made and linked at init; the renderer's longest step in the 5 s after the first frame 109 -> 36 ms in Predator by night.",
       "next": "Make them at init when the config says the pass will run, so _linkProgramsAhead links them with the rest; stop linking the 10 programs made at init that are never bound. programLinkProbe before and after. R-1423: how Phaser 4 and three.js keep frames from waiting on programs that are not ready.",
       "refs": [],
       "aliases": [
@@ -20785,7 +20803,8 @@
       ],
       "records": [
         "R-1241",
-        "R-1423"
+        "R-1423",
+        "R-1451"
       ]
     },
     {
@@ -21083,8 +21102,8 @@
     {
       "id": "DX-ENT1M",
       "title": "Entities up to about a million (1 048 575, as DX-DECO1M did for decorations): the 32-bit id width's ceiling is 500 000 today, and bunnyMark already holds 499 999 bunnies at 60 fps (E-448), so the cap, not the engine's speed, sets its capacity",
-      "status": "open",
-      "statusText": "asked by the owner on 2026-11-17 after E-448: \"que el máximo de entidades sea hasta un millón, como tenemos con las decorations; y medir bunnymark\"",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1458)",
       "date": "2026-11-17",
       "area": "engine",
       "kind": "feature",
@@ -21096,8 +21115,10 @@
         "entity cap 1M",
         "bunnymark 1M"
       ],
-      "records": [],
-      "rank": 1
+      "records": [
+        "R-1454",
+        "R-1458"
+      ]
     },
     {
       "id": "DX-STARTUP",
@@ -21121,17 +21142,21 @@
         "time to first frame"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1447",
+        "R-1451",
+        "R-1452",
+        "R-1458"
       ],
       "rank": 19
     },
     {
       "id": "SST-0",
       "title": "The load waterfall: every start-up phase of the main thread and of each worker on one clock, the first drawn frame and the longest frame of the first 5 s; one quick waterfall of each of three scenes to order the items",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-18",
       "date": "2026-11-17",
-      "result": "",
+      "result": "Built 2026-11-18 (36098a8e, b4af7157): load marks on every thread and tests/bench/loadWaterfall.mjs; first waterfalls in SCENE_STARTUP_TIME_PLAN section 6.",
       "next": "Marks per phase (Scene.init steps, preloadAssets branches, the atlas inside, each worker from module load to ready), a runner with a table and the critical path of the load; extend isolationLoadTime.mjs; add a \"Load time\" section to HOW_WE_MEASURE. The full matrix waits for the end of the campaign.",
       "area": "load",
       "kind": "tools",
@@ -21143,14 +21168,15 @@
         "first drawn frame"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1447"
       ]
     },
     {
       "id": "SST-1",
       "title": "Workers start before the assets: a 'boot' message right after new Worker (game scripts, engine.wasm, Pixi's GPU device, init and program links), then 'init' only configures the buffers and the atlas",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1451), measured together with the Pixi items",
       "date": "2026-11-17",
       "result": "",
       "next": "Create the workers at the top of Scene.init; boot carries what depends on neither assets nor buffers; the workers' own start overlaps the asset load (SST-0 shows their bars move under the atlas's).",
@@ -21164,14 +21190,15 @@
         "two-phase worker start"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1451"
       ]
     },
     {
       "id": "SST-2",
       "title": "engine.wasm compiled once on the main thread (compileStreaming) and posted to the workers as a WebAssembly.Module, instead of fetched and compiled by each worker after 'init'; independent kernel binds in parallel",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1451), measured together with the Pixi items",
       "date": "2026-11-17",
       "result": "",
       "next": "compileWasmKernel takes a posted module; Promise.all over the binds that do not depend on each other (pre-render 9 in a row, particle 6, Pixi 5). R-0640 judged a posted module on step times, never on load time.",
@@ -21185,14 +21212,15 @@
         "compileStreaming"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1451"
       ]
     },
     {
       "id": "SST-3",
       "title": "Game scripts in the bundle fetched once and in parallel by the main thread and posted to the workers, instead of a serial fetch walk plus a second fetch of every file in every worker",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "running",
+      "statusText": "built 2026-11-18 (3ce60f3f); bundle only, not timed yet",
       "date": "2026-11-17",
       "result": "",
       "next": "The workers evaluate from the posted texts in today's dependency order (a test on a graph with a shared dependency); source builds keep import().",
@@ -21206,14 +21234,16 @@
         "expandBlobEntityScripts"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1451",
+        "R-1456"
       ]
     },
     {
       "id": "SST-4",
       "title": "Scene.init starts every asset fetch and decode, the audio worklet, the workers and engine.wasm at once and awaits each where it is used; everything is still ready before the start, audio included",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1451), measured together with the Pixi items",
       "date": "2026-11-17",
       "result": "",
       "next": "List each step's real inputs first (reserveBox2dBlock and the entity count); check what transitionCooldown's 100 ms delays.",
@@ -21226,14 +21256,15 @@
         "serial Scene.init"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1451"
       ]
     },
     {
       "id": "SST-5",
       "title": "The atlas: its layout (JSON) apart from its pixels, built off the main thread (per-sheet work over a few workers), its pixels composed on the GPU; the baked path stops drawing the whole atlas into a 2D canvas",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "mixed",
+      "statusText": "merged 2026-11-18 (R-1452): frees the page thread; a cold source build pays its worker's module load; judge in the bundle",
       "date": "2026-11-17",
       "result": "",
       "next": "Configure waits on the layout only; the renderer waits on the pixels before ready. The same atlas (pixel and JSON hashes), atlasTrim.test.js, decals the same.",
@@ -21247,14 +21278,16 @@
         "atlas layout apart from pixels"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1451",
+        "R-1452"
       ]
     },
     {
       "id": "SST-6",
       "title": "The atlas cached automatically by a hash of its inputs (sources, options, format version) in Cache Storage or OPFS: a hit loads like a baked atlas, a miss writes it after the start",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1452): a warm visit loads the packed atlas from Cache Storage; Predator by night warm 3 246 -> 2 005 ms",
       "date": "2026-11-17",
       "result": "",
       "next": "Exact invalidation tested (a changed byte, option or engine version misses); a config.assets switch; PNG against raw texels; on by default is the owner's decision.",
@@ -21268,14 +21301,15 @@
         "auto-bake"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1452"
       ]
     },
     {
       "id": "SST-7",
       "title": "The GPU ready before the first frame: the atlas, maps page and tilesets uploaded during init, WebGPU pipelines built ahead, E-494's first-use programs, Pixi's one Texture per atlas frame measured",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1451): steps 1 to 4 with E-494",
       "date": "2026-11-17",
       "result": "",
       "next": "Point 2 is E-494, which stays its row. Judged by the first drawn frame and the longest frame of the first 5 s, the image identical on both backends.",
@@ -21289,14 +21323,15 @@
         "WebGPU pipelines ahead"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1451"
       ]
     },
     {
       "id": "SST-8",
       "title": "The workers' code parsed once and cached between visits: blob workers get no code cache and an inlined engine.wasm no wasm cache, and source builds import src/ in every worker; a bundle mode with separate files",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "kept",
+      "statusText": "kept 2026-11-18 (R-1459 R-1460): an opt-in file mode; the deploy default is the owner's",
       "date": "2026-11-17",
       "result": "",
       "next": "Measure cold and warm on the ASUS first; the single-file bundle stays for embeds; a separate-files default is the owner's decision.",
@@ -21310,7 +21345,9 @@
         "blob workers no code cache"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1456",
+        "R-1460"
       ]
     },
     {
@@ -21337,8 +21374,8 @@
     {
       "id": "SST-10",
       "title": "The start-up leftovers the waterfall shows: circle patterns per spatial worker, registries and flowfields rebuilt in every worker, logic's class setup after box2dReady, pool fills, tilemap pages at preload",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "status": "running",
+      "statusText": "a first part 2026-11-18 (R-1457)",
       "date": "2026-11-17",
       "result": "",
       "next": "Each only if SST-0 shows it.",
@@ -21351,7 +21388,8 @@
         "start-up leftovers"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1457"
       ]
     },
     {
@@ -21766,7 +21804,8 @@
         "R-1290",
         "R-1292",
         "R-1293",
-        "R-1294"
+        "R-1294",
+        "R-1453"
       ],
       "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; Intel HD 620: 16.6 -> 21.2 fps drawn (+27.7 %, R-1285). Default since e0b831ff: after 2 changed frames the layer draws on the stage, 2 held frames bring the target back; captures identical (WebGL, WebGPU).",
       "next": "A moving camera's cost against main on the HD 620 (by construction main's draw after two frames). A world-space tile cache, so a camera that pans re-paints only the strip that comes into view.",
@@ -22886,10 +22925,10 @@
     {
       "id": "E-518",
       "title": "Pre-render picks the lamps that stamp shadows by whether their light's radius touches the view, not their shadows' reach: a car's headlight 900 px off the screen takes one of maxShadowCastingLights' slots (16 in the barrio) though its shadows reach 160 px",
-      "status": "open",
-      "statusText": "found 2026-11-18 reading _collectStampLights (preRenderWorker.js) while the barrio's headlights got an elevation (they now cast lamp-map shadows); the slot it takes is a street lamp's that loses its shadows; not measured",
+      "status": "kept-hygiene",
+      "statusText": "kept 2026-11-18",
       "date": "2026-11-18",
-      "result": "",
+      "result": "Kept (fix) 2026-11-18 (79a7ad9f): a light whose shadow disc misses the view takes no shadow slot; test in lightCastShadows; the barrio's picture the same by eye.",
       "next": "Cull and sort the stamp lights by min(radius, shadowRange) against the view (the light itself still lights out to its radius); then the barrio at night with many cars on screen: GPU_SHADOW_LIGHTS, how many street lamps keep their shadows, the lamp atlas's ms; captures, since a far headlight's shadow that did reach the screen must stay.",
       "area": "render",
       "kind": "speed",
@@ -22899,7 +22938,8 @@
         "headlight shadow slots"
       ],
       "records": [
-        "R-1340"
+        "R-1340",
+        "R-1443"
       ]
     },
     {
@@ -23224,17 +23264,20 @@
       ],
       "records": [
         "R-1349",
-        "R-1361"
+        "R-1361",
+        "R-1445",
+        "R-1453",
+        "R-1458"
       ],
-      "result": "ASUS scoreboard 0895: pixi STEP_MS 45.79 -> 99.24 ms (cv 4.0/0.2 %), logic 0.12 -> 0.39 ms; kernel textureUploadMicrobench 535 687 -> 508 758 ops/s (-5.0 %)",
+      "result": "Fixed 2026-11-18 (7a4cdafe, R-1453): bisected to E-504 (d9bf2261); painting a just-uploaded picture into the cache's target slowed its later uploads for good; renderer 40.3 -> 12.7 ms, the barrio's cached floor kept.",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
       "id": "N-292",
       "kind": "speed",
       "area": "pixi",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-18",
       "title": "textureUploadStressScene's renderer costs twice v0.14.0's on the ASUS (45.8 -> 99.2 ms a frame, +117 %, HD 620, headless): the shared picture upload path (sharedTextureUpload.js) got slower somewhere since the release",
-      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+      "statusText": "fixed 2026-11-18"
     },
     {
       "refs": [],
@@ -23244,7 +23287,8 @@
       ],
       "records": [
         "R-1349",
-        "R-1361"
+        "R-1361",
+        "R-1445"
       ],
       "result": "ASUS scoreboard 0895: audioSlotMicrobench occ100x3 23 446 -> 11 070 ops/s (-52.8 %), WORSE",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23263,7 +23307,8 @@
       ],
       "records": [
         "R-1349",
-        "R-1361"
+        "R-1361",
+        "R-1445"
       ],
       "result": "ASUS scoreboard 0895: pixi STEP_MS +29.3 %, kernel +46.0 % (FAIL row)",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23282,7 +23327,8 @@
       ],
       "records": [
         "R-1349",
-        "R-1361"
+        "R-1361",
+        "R-1445"
       ],
       "result": "ASUS scoreboard 0895: logic0 STEP_MS +21.6 % (FAIL row), load OK",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23715,6 +23761,75 @@
         "R-1430",
         "R-1431"
       ]
+    },
+    {
+      "records": [
+        "R-1442"
+      ],
+      "refs": [],
+      "id": "DX-LAYERPASSES",
+      "title": "Layer shaders in two passes (a pass-1 target the second pass samples), so a game's blur or bloom can be separable",
+      "status": "open",
+      "kind": "dx",
+      "area": "render",
+      "date": "2026-11-18",
+      "statusText": "proposed 2026-11-18 by E-450: the platformer's bloom could drop from about 4.3 ms to well under 1 ms with a separable blur, which a one-pass layer shader cannot do; an engine feature, the owner's call"
+    },
+    {
+      "records": [
+        "R-1447",
+        "R-1452"
+      ],
+      "refs": [],
+      "id": "SST-11",
+      "title": "The tilemap off the critical path: Predator's 15.7 MB tilemap JSON fetched and parsed on the page in about 1.7 s, as long as its atlas",
+      "status": "kept",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-18",
+      "statusText": "kept 2026-11-18 (R-1452): the tilemap parsed in a worker; Predator by night tilemaps 1 463 -> 218 ms"
+    },
+    {
+      "records": [
+        "R-1449",
+        "R-1450",
+        "R-1455",
+        "R-1458"
+      ],
+      "refs": [],
+      "id": "N-310",
+      "title": "Box2D's joint table is fixed at 4 096 (MAX_JOINTS in box2d/src/wasm_wrapper.c) while physics.maxJoints accepts any count: joints past it fail at create",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "physics",
+      "date": "2026-11-18",
+      "statusText": "fixed 2026-11-18 with N-253 (R-1455, R-1458)"
+    },
+    {
+      "records": [
+        "R-1452"
+      ],
+      "refs": [],
+      "id": "SST-12",
+      "title": "Box2D's start on the critical path: the physics worker answers its block request 1.1 s (Predator) to 1.6 s (the barrio) after loadScene, with the page thread free",
+      "status": "open",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-18",
+      "statusText": "found 2026-11-18 by the atlas items' waterfall (R-1452)"
+    },
+    {
+      "records": [
+        "R-1452"
+      ],
+      "refs": [],
+      "id": "SST-13",
+      "title": "The atlas worker started at the engine's import, not at the scene's assets: in a cold source build its 22 modules take 1.4 to 1.6 s before it starts",
+      "status": "open",
+      "kind": "speed",
+      "area": "load",
+      "date": "2026-11-18",
+      "statusText": "found 2026-11-18 by the atlas items' waterfall (R-1452)"
     }
   ],
   "records": [
@@ -37578,6 +37693,283 @@
       "title": "Barrio freeze traced from the start: every shader link on Chrome's GPU main thread waits about 1 s with no traced work, then compiles in 3 to 13 ms; about 30 links in a row make the stall",
       "verdict": "note",
       "text": "ASUS lab job 0896x (16:38-19:07, stopped by hand after round 31 of 48: it had what it was for), freezeProbe v5: a\nChrome trace from before the scene loads to the end of the measurement, with the GPU process's and ANGLE's categories.\nBuenos Aires at night, HD 620, WebGL D3D11, src at main 70ba822b. Arms interleaved: traced (no shader disk cache, traced\nfrom start), nodiskcache (untraced), default (untraced).\n\n- Frozen: traced 2 of 31 (runs 15 and 19), nodiskcache 1 of 31, default 0 of 30 (1 page load failed). The traced arm's\n  29 normal runs lost their traces: about 90 MB did not finish writing within 90 s on the HDD. All 3 freezes recovered\n  by themselves within 60 s.\n- Both frozen start traces show one pattern on CrGpuMain: from some point on (run 15 at +2.1 s, in the browser's own\n  raster flush, which then took 8.1 s; run 19 at +12.9 s, in the page's raster), every shader program link takes about\n  1.0 s, whoever links: Skia's FinishPaintRenderPass, the raster flushes, and WebGL's DoLinkProgram (1001 ms) alike. In\n  each, about 1000 ms pass with no traced work, then ANGLE posts the D3DCompile to the thread pool, which takes 3 to\n  13 ms. About 30 links in a row make the stall (run 15: from +2.1 s to past +42 s).\n- Reading: a timed wait of 1 s, once per link, somewhere under ANGLE (ANGLE, D3D11 or the Intel driver,\n  27.20.100.8682 from 2020-09); nobody works while it holds. Chrome's trace cannot see inside it. Next, 0896y: Windows'\n  recorder (WPR: context-switch stacks, GPU queues) in memory, kept for frozen runs."
+    },
+    {
+      "id": "R-1440",
+      "date": "2026-11-18",
+      "time": "16:58",
+      "timeFrom": "recorded",
+      "title": "N-250 kept (hygiene): the bundle build loads webpack-obfuscator only when OBFUSCATE is on",
+      "verdict": "kept-hygiene",
+      "text": "**N-250 kept (hygiene): the bundle build loads webpack-obfuscator only when OBFUSCATE is on (4793523e).** The import moved\nfrom the top of webpack.config.js into a top-level `await import()` behind `shouldObfuscate`; an unobfuscated build never\nused it. Measured here, warm disk cache: the import alone 566 and 615 ms a webpack run (the config without it loads in\n411 ms). E-469's agent read about 46 s on a whole build, most likely with a cold cache on the HDD: the saving is between\nthose, per webpack run of every bundle build. Nothing to time in the product.",
+      "commits": [
+        "4793523e"
+      ]
+    },
+    {
+      "id": "R-1441",
+      "date": "2026-11-18",
+      "time": "17:10",
+      "timeFrom": "recorded",
+      "title": "E-449 kept: Water & Boxes' drops drawn with the compact glow, the density draw 7.849 -> 1.316 ms of GPU",
+      "verdict": "kept",
+      "text": "**E-449 kept: Water & Boxes' drops drawn with the compact glow (f0f42470): the water's density draw 7.849 -> 1.316 ms of GPU.**\n`_lightGradient`'s falloff is visible only in the inner 16 % of its radius (2^(1 - 50 d) under 1/255 past d = 0.18), so\neach drop at scale 10 filled a 2 000 px square of near-transparent texels into the 480 x 270 density target. `_lightGlow`\n(E-498) is the same curve over its whole texture: the drops use it at 0.16 of the scale (a demo change, waterBall.js).\n\nglFrameRecorder --gpu-draws, headed, GTX 1650, 1920 x 1080, 8 s warm-up, 3 s window, main d8aafbbd against the branch:\n- the density draw (fbo 480 x 270): 7.849 ms, 4 000 instances, GPU at 1785 MHz (P0), 52 % busy -> 1.316 ms, 1 639\n  instances (fewer drops' quads reach the view), the GPU idling down to 600 MHz (P5/P8), 26 % busy. At equal clock the\n  draw is about 0.44 ms (-94 %).\n- the frame's draws 7.946 -> 1.812 ms.\nCaptures (compareCaptures, 2.5 s, saved): the same water by eye, colour, edge and foam; the surface lies elsewhere\nbetween runs because the physics is not deterministic (an A/A of the same code differs by 424 179 pixels).",
+      "commits": [
+        "f0f42470"
+      ]
+    },
+    {
+      "id": "R-1442",
+      "date": "2026-11-18",
+      "time": "17:16",
+      "timeFrom": "recorded",
+      "title": "E-450 kept: the platformer's bloom in 9 x 9 bilinear fetches, its draw 11.320 -> 5.222 ms of GPU",
+      "verdict": "kept",
+      "text": "**E-450 kept: the platformer's bloom blur in 9 x 9 bilinear fetches (2d91a4f6): its draw 11.320 -> 5.222 ms of GPU.**\nThe shader's \"separable\" StackBlur nested the row pass inside the column pass: 17 x 17 = 289 fetches a pixel at full\nresolution. Each tap now reads two texels at the point their triangular weights split, so the linear filter returns their\nweighted sum: 81 fetches, the colour exact, the bright extract on each 2 x 2 group's average (bloom.frag and bloom.wgsl, a\ndemo change). The layer cannot drop its resolution (the player and platforms are drawn in it), and the engine has no\ntwo-pass layer shader, which is what a separable blur would need (new row DX-LAYERPASSES).\n\nglFrameRecorder --gpu-draws, headed, GTX 1650, 1920 x 1080: the bloom layer's draw 11.320 ms (1785 MHz, GPU 71 % busy)\n-> 5.222 ms (1455 MHz, 39 % busy); at equal clock about 4.3 ms (-62 %). compareCaptures: 9 244 of 921 600 pixels differ,\nby 1 of 255 at most.",
+      "commits": [
+        "2d91a4f6"
+      ]
+    },
+    {
+      "id": "R-1443",
+      "date": "2026-11-18",
+      "time": "17:20",
+      "timeFrom": "recorded",
+      "title": "E-518 kept (a fix): stamp lights culled by their shadows' reach, min(shadowRange, radius)",
+      "verdict": "kept-hygiene",
+      "text": "**E-518 kept (a fix): stamp lights culled by their shadows' reach, min(shadowRange, radius), not their radius (79a7ad9f).**\nA light's shadows end at that reach in both modes (the stamp's casters, the lamps' tile; the guide says so), so a light\nwhose shadow disc misses the view no longer takes a slot of maxShadowCastingLights: in the barrio a headlight 900 px off\nscreen (radius about 900, shadowRange 160) could leave a street lamp in view without its shadows. Its light is drawn either\nway. Test: lightCastShadows (four lights 1 000 px left of the view with radius 1 200: reach 160 out, 1 100 in, 0 in).\nBarrio at 22 h, compareCaptures with saved PNGs: the same picture by eye in a view with few cars; not timed (it can only\ndrop lights from the stamp).",
+      "commits": [
+        "79a7ad9f"
+      ]
+    },
+    {
+      "id": "R-1444",
+      "date": "2026-11-18",
+      "time": "18:05",
+      "timeFrom": "recorded",
+      "title": "E-456 kernel: the glow split in one pass, -45 % with no glow row and -29 % with 24 (glowSplitMicrobench, 3 rounds)",
+      "verdict": "kept-kernel",
+      "text": "**E-456, the kernel: the glow split in one pass (74dc25dd).** glowSplitMicrobench --rows 250000 --cases shipped, one case a\nprocess, main against the branch alternated, 3 rounds, Node 22, TurboFan normal compile:\n- no glow row (keyedPackStressScene as it is): 0.961 / 0.994 / 1.001 -> 0.539 / 0.532 / 0.538 ms a frame (-45 %, 3 of 3);\n- 24 glow rows: 0.829 / 0.831 / 0.834 -> 0.594 / 0.597 / 0.577 ms a frame (-29 %, 3 of 3).\nThe lists and counts are the three passes' (packSpriteLayer.test.js: five caps on a 5 000-row queue). The scene's word\n(keyedPack gbuf=1, Pixi) waits for the batch's sitting. N-218 (logic 43 % slower with gbuf=1) is contention from Pixi's\nand pre-render's G-buffer work (R-1189, R-1203); this pass is one of its sources, E-455 (the words rewritten every frame)\nthe other.",
+      "commits": [
+        "74dc25dd",
+        "6997a372"
+      ]
+    },
+    {
+      "id": "R-1445",
+      "date": "2026-11-18",
+      "time": "17:44",
+      "timeFrom": "recorded",
+      "title": "N-292 to N-295 on the main PC: textureUpload's renderer 11.4 -> 41.0 ms against v0.14.0 holds (headed too); audioSlots +79 % here",
+      "verdict": "note",
+      "text": "**The ASUS's regressions against v0.14.0 checked on the main PC (runScoreboard --vs v0.14.0 --full-rev --only queryAabb,meshFillMoving,audioSlots,textureUpload, 2026-11-18 17:17 to about 18:20).**\nCaveat: the \"current tree\" side was the main folder, which held another session's uncommitted src/ changes (pre-render,\nthe atlas registry, the lamps' map and shadow shaders; none in these rows' hot code); textureUpload was then rerun alone\nfrom a clean tree (below).\n\n| row | v0.14.0 | main | verdict |\n| --- | --- | --- | --- |\n| textureUpload (N-292) | Pixi 11.358 ms (cv 1.8 %), kernel 503 709 ops/s | Pixi 40.957 ms (cv 0.2 %), kernel 424 898 (-15.6 %) | WORSE, rechecked over 4 ABAB pairs |\n| meshFillMoving (N-294) | Pixi 1.030 ms, kernel 2 461 ops/s | Pixi 4.397 ms (cv 73.8 %), kernel 3 745 (+52.2 %) | FAIL (under the 6 ms floor) |\n| queryAabb (N-295) | logic0 0.187 ms | 0.378 ms; physics 0.100 -> 0.414, pre-render 0.172 -> 0.412 | FAIL (under the floor: every worker's fixed cost in a near-empty scene) |\n| audioSlots (N-293) | 89 159 ops/s | 159 596 (+79.0 %) | KEPT: the ASUS's -52.8 % does not reproduce on the Ryzen |\n\ntextureUpload from the clean branch tree (quick/section2), one run each, 8 s + 8 s: headless 46.4 ms, headless with\n?opaquePass=0 41.4 ms (the opaque pass is not it), headed (the GTX 1650) 40.0 ms: the regression is real on a real GPU.\nCPU pass (profileSceneSweep --pass cpu): Pixi 996 ms/s busy, 99.0 % self in uploadSharedImage (its texSubImage2D of the\n8192 x 8192 r8 picture). That function and the picture's creation are what they were in v0.14.0 for r8 (N-127 changed\nonly float pictures), so the time is the upload waiting on something else: a bisect is next."
+    },
+    {
+      "id": "R-1446",
+      "date": "2026-11-18",
+      "time": "18:06",
+      "timeFrom": "recorded",
+      "title": "N-218 read again: logic's slowdown with gbuf=1 is the other workers' G-buffer traffic; E-456 takes one part, E-455 the rest",
+      "verdict": "note",
+      "text": "**N-218 read again (no new sitting): logic's 43 % with gbuf=1 is contention, not logic's code, so its fix is the G-buffer\ntraffic of the other workers.** R-1189 and R-1203 found the same logic functions 10 to 40 % slower with the words on, no\nnew logic work, while Pixi and pre-render move more memory. The cheap part of that traffic is E-456 (Pixi read the queue\nthree times a frame to split the glows: now one pass, -29 to -45 % in its kernel, 74dc25dd); the rest is E-455 (every\nrow's words rewritten and uploaded each frame). N-218 stays open until a keyedPack gbuf=1 sitting reads logic with both."
+    },
+    {
+      "id": "R-1447",
+      "date": "2026-11-18",
+      "time": "18:20",
+      "timeFrom": "recorded",
+      "title": "SST-0 built: the load waterfall; first waterfalls of Predator by night (3.3 s), the barrio (4.0 s) and bunnyMark (1.6 s)",
+      "verdict": "kept-hygiene",
+      "text": "**SST-0 built: the load waterfall (36098a8e, b4af7157).** `loadMark(name)` (src/util/loadMarks.js) keeps\n(name, performance.timeOrigin + performance.now()) on each thread while a scene loads; workers post theirs with\nworkerReady, the scene keeps them in `_loadMarks`; `tests/bench/loadWaterfall.mjs` loads a scene on the bench page,\ntakes the first frame from the renderer's frameTotals count, and prints each thread's timeline after `loadScene`, the\ncritical path and each worker's longest own step in the 5 s after the first frame. HOW_WE_MEASURE has a \"Load time\"\nsection. Tests: loadWaterfall.test.js; node 3090 + 1 (a stale source assertion fixed in 6997a372), demos 121.\n\nFirst waterfalls (the main PC, source, 2 runs a fresh context; the plan's section 6 has the table): Predator by night\n3.29 to 3.44 s to the first frame (the atlas 1.67 s and the 15.7 MB tilemap 1.71 s on the page, the init data 0.44 s,\nthe renderer's init 0.3 s), the barrio 3.95 to 4.04 s (assets 2.1 to 2.2 s, its own setup 1.1 s), bunnyMark 1.58 s\n(the workers' init 0.94 s, its spawns 0.55 s). The first run after Chrome starts reads this HDD cold: the barrio 21.4 s,\nPredator 8.0 s. New item SST-11 (the tilemap off the critical path).",
+      "commits": [
+        "36098a8e",
+        "b4af7157",
+        "6ac8033b"
+      ]
+    },
+    {
+      "id": "R-1448",
+      "date": "2026-11-18",
+      "time": "18:45",
+      "timeFrom": "recorded",
+      "title": "E-317 rejected in the kernel: early loads of the row heads, publish -4 to -8 % (0 of 9 pairs), the spatial frame a tie",
+      "verdict": "rejected",
+      "text": "**E-317 rejected in the kernel: early loads of the neighbour-row heads make spatial's publish 4 to 8 % slower and the\nwhole spatial frame a tie (branch opt/e317-row-heads, bfb8748f and 6180b5b2, not merged).** An agent built both kernels\n(publish_batch, gather_batch and their _u32 forms) with volatile loads of entity n+D's candidate-row and neighbour-row\nheads (kept by clang, wasm-opt and V8's TurboFan: a movzxwl whose register nothing reads), D selectable per call, D = 0\nthe old loop; checksums equal for every D at n 2 000 and 57 600; tests/node/spatialRowAhead.test.js; node 3091, demos\n121.\n\nTiming, Node 22, Predator crowd 2.5's shape (57 600 entities, 1 worker, 32 a cell, the predator types, cell order,\nmaxNeighbors 1024), 2026-11-18 18:43 to 18:45 (four agents' processes were alive; every comparison alternates in one\nprocess or across processes):\n- publish alone, `--ahead 0,4,8,16 --rounds 9`: 40 ops/s at D = 0; D = 4 -8.0 %, D = 8 -6.8 %, D = 16 -4.2 %, each\n  SLOWER in 0 of 9 pairs.\n- the whole spatial frame (runKernelVariants, ordered@D on both kernels, 4 rounds): D = 4 -2.3 %, D = 8 +0.4 %,\n  D = 16 +0.1 %: ties.\nWhy, as E-314 (R-1109) found in Box2D: a wasm load is not a prefetch; it cannot retire until its line arrives, so it\nholds the reorder buffer instead of overlapping the next entity's work. Left: the agent's other variant (touch the heads\nof a group of entities together every few entities, so their misses run in parallel), or E-15's packed rows, which\nremove the 2 050-byte stride; reopen with one of those.",
+      "commits": [
+        "bfb8748f",
+        "6180b5b2"
+      ]
+    },
+    {
+      "id": "R-1449",
+      "date": "2026-11-18",
+      "time": "19:05",
+      "timeFrom": "recorded",
+      "title": "N-167 mostly done: every demo's command ring holds its spawn burst; Constraint Boxes at 400 boxes; Predator's pools kept (they fill by design)",
+      "verdict": "kept-hygiene",
+      "text": "**N-167 mostly done: the demos' Box2D command rings sized to their spawn bursts, Boids' flock spawned 1 000 a frame,\nBlastforge's Prop pool, Constraint Boxes' joints, Ball and Box declaring myColor (fix/n167-demo-warnings, an agent, then\n293756bc and 41137d9b).** demoWarnings over the 36 demos (Playwright's Chromium, here the AMD iGPU, so every demo also\nprints DX-IGPUWARN's integrated-GPU line, allowed with `--allow \"integrated GPU\"`): no command ring overflows any more.\nRings: Predator, Ants (bichos), Little City 65 536; Balls 32 768; Boids, Gear Chain, Water & Boxes 16 384; Oriented\nBoxes, Constraint Boxes 8 192 (each a power of two at least 20 % over R-1049's peak; Boids' over one frame's burst).\nBlastforge's Prop pool 220 -> 13 500 (spawnProps places 13 409, its seeded loop replayed). Constraint Boxes: 400\nboxes (4 000 joints) instead of 500: Box2D's wasm_wrapper.c holds MAX_JOINTS 4096 whatever physics.maxJoints says, so\nthe last hundred boxes had no joints (N-310); with 400, demoWarnings clean.\n\nLeft, on purpose or elsewhere:\n- Predator fills its flash and particle pools in a fight at 32 and 10 000 and at 128 and 30 000 alike: its pools stay\n  as they were (a larger pool only adds load to the engine's reference scene), so its two pool warnings stay; the owner\n  may decide otherwise.\n- littleCity and Predator: \"animationNameToIndex missing _lightGlow\" (and _lightGradientHalf in Predator): their baked\n  atlases predate those built-ins; handed to SST-5's atlas work (a baked atlas gets the built-ins it lacks at load).",
+      "commits": [
+        "8e3c3233",
+        "00facc9d",
+        "817cb43e",
+        "c3853e0e",
+        "043bcf6b",
+        "293756bc",
+        "41137d9b"
+      ]
+    },
+    {
+      "id": "R-1450",
+      "date": "2026-11-18",
+      "time": "19:06",
+      "timeFrom": "recorded",
+      "title": "N-310 filed: Box2D's joint table fixed at 4 096 whatever physics.maxJoints says",
+      "verdict": "note",
+      "text": "**N-310 filed: Box2D's joint table is fixed at 4 096 (MAX_JOINTS in box2d/src/wasm_wrapper.c, static arrays g_joints and\ng_joint_free_stack) while physics.maxJoints accepts any count:** joints past 4 096 fail at create with \"WASM joint table\nfull\", one warning. Found by N-167 in Constraint Boxes (500 boxes x 10 joints). The fix is in Box2D (the table sized\nfrom maxJoints at bind_game_buffers, or a larger static cap), both builds and the LiquidFun gates; until then the config\nshould refuse or clamp a maxJoints over the wrapper's get_joint_capacity()."
+    },
+    {
+      "id": "R-1451",
+      "date": "2026-11-18",
+      "time": "19:26",
+      "timeFrom": "recorded",
+      "title": "DX-STARTUP boot and Pixi items merged: first frame warm Predator by night 3 545 -> 3 392 ms, the barrio 3 866 -> 3 499, bunnyMark a tie",
+      "verdict": "kept",
+      "text": "**DX-STARTUP, the boot and Pixi items merged (dx/startup d78908f6): first frame after loadScene, warm visits, Predator by\nnight 3 545 -> 3 392 ms (-4 %), the barrio 3 866 -> 3 499 ms (-9.5 %), bunnyMark 1 190 -> 1 180 (a tie); the renderer's\nlongest step after the start 109 -> 36 ms in Predator (E-494).** Two agents built them on startup/boot (b1750d20 SST-2,\n67d5c707 SST-1, d4bee501 SST-4, 3ce60f3f SST-3) and startup/pixi (830a6f4f the first-draw mark, 4450ca64 SST-1's renderer\nside, 228bb256 E-494, 8a21a209 SST-7 step 1, 67bead52 step 3, 3157f110 step 4, 1b57f994 the binds, 2a97cf46); merged\nwith main and the section-2 fixes (f8f5ba86, ac1bd3fa, d78908f6: the renderer's init drops the engine shaders); node\n3122, demos 121.\n\nSitting 2026-11-18 19:12 to 19:26, the main PC, source build, tests/bench/loadWaterfall.mjs, the SST-0 commit c00fa421\n(in D:/xampp/htdocs/weed-bisect) against dx/startup, alternated, 3 rounds, each a fresh context with a cold visit then\na warm one; first frame after loadScene, median of 3, ms:\n\n| scene | cold before | cold after | warm before | warm after |\n| --- | --- | --- | --- | --- |\n| Predator light3d=1&hour=22 | 5 248 | 4 482 | 3 545 | 3 392 |\n| Buenos Aires hour=22 | 6 601 | 6 360 | 3 866 | 3 499 |\n| bunnyMark | 1 280 | 1 451 | 1 190 | 1 180 |\n\nCold visits swing 4 to 16 s on this HDD: read the warm column. What moved (round 3, warm): the asset branches start at\n8 ms instead of 237 (SST-4), the workers are made at 10 ms and booted at once (SST-1), the renderer ready 170 ms after\ninit sent instead of 321 (SST-1: Pixi's device and init under the assets), engine.wasm compiled once in 21 ms (SST-2);\nthe renderer's longest own step in the 5 s after the first frame 109 -> 36 ms and pre-render's 50 -> 25 (E-494's\nfirst-use programs made and linked at init, SST-7's uploads). Why Predator gains only 4 %: its page thread is the\ncritical path, packing the atlas from 8 to 1 409 ms (the maps page alone 797 to 1 409), so the physics worker's block\nreply waits until 1 614 ms, then the install (decal textures read back frame by frame) until 2 338 and the init data until\n2 688: SST-5's work. SST-3 runs only in the bundle: not timed yet.",
+      "commits": [
+        "b1750d20",
+        "67d5c707",
+        "d4bee501",
+        "f8f5ba86",
+        "ac1bd3fa",
+        "d78908f6"
+      ]
+    },
+    {
+      "id": "R-1452",
+      "date": "2026-11-18",
+      "time": "20:02",
+      "timeFrom": "recorded",
+      "title": "DX-STARTUP's atlas items merged: warm first frame Predator by night 3 246 -> 2 005 ms (-38 %, SST-6's cache), the barrio -3 %; a cold source build of the barrio +17 % (the atlas worker's modules)",
+      "verdict": "mixed",
+      "text": "**DX-STARTUP's atlas items merged (dx/startup 49a206db, an agent's startup/atlas: 50097fd1 SST-5 step 4, 94d11dc2,\n5beb3bd8 the stale bakes' built-ins, 4cb18456 SST-5 steps 1-2, 129ad91e the twin page faster, d10a946a, 173fdf66,\n7f4ca602 SST-6, cdf471fa SST-11, 9968b2c4 the bake's --via worker, 29bec7c2): warm first frame Predator by night\n3 246 -> 2 005 ms (-38 %), Predator default 1 741 -> 1 699 (a tie), the barrio 3 422 -> 3 323 (-3 %); a cold source\nbuild of the barrio 6 106 -> 7 150 (+17 %).** node 3149, demos 121.\n\nParity (2026-11-18 19:48, the main PC): scripts/bakeBigAtlas.mjs on Buenos Aires through the page and `--via worker`:\nbigAtlas.json, bigAtlas.png and bigAtlas_maps.png byte-identical (sha256).\n\nSitting 2026-11-18 19:48 to 20:02, tests/bench/loadWaterfall.mjs, dx/startup before the atlas merge (eddc6d75, in\nweed-bisect) against after it, alternated, 3 rounds, a fresh context each, a cold visit (the atlas cache misses) then a\nwarm one (SST-6 hits); first frame after loadScene, median of 3, ms:\n\n| scene | cold before | cold after | warm before | warm after |\n| --- | --- | --- | --- | --- |\n| Predator light3d=1&hour=22 (packs its atlas) | 4 152 | 4 510 | 3 246 | 2 005 |\n| Predator (baked atlas) | 1 931 | 1 947 | 1 741 | 1 699 |\n| Buenos Aires hour=22 | 6 106 | 7 150 | 3 422 | 3 323 |\n\nWhat moved (warm, round 3): Predator by night's atlas ends at 1 228 ms off the page thread (the page's own pack had\nended at 1 409 and its install at 2 338), its tilemaps at 218 ms instead of 1 463 (SST-11), assets at 1 232 instead of\n2 338. What is left on the critical path: Box2D's block reply at 1 145 ms in Predator and 1 593 in the barrio (the\nphysics worker's own start: SST-12, new) and the barrio's own setup (createNewGame, about 930 ms). Why the cold barrio\nlost: in a source build the atlas worker evaluates its 22 modules from a cold HTTP cache in 1.4 to 1.6 s before it starts\n(`atlas worker modules` 1 438 / 1 562 ms), so its atlas ends at 2 856 / 3 106 ms against the page's 1 751; the bundle's\nblob workers fetch nothing (SST-8), and a worker started at the engine's import instead of at the scene's assets would\noverlap it (SST-13, new). SST-5 is kept for what it frees on the page thread and judged again in the bundle.",
+      "commits": [
+        "50097fd1",
+        "4cb18456",
+        "129ad91e",
+        "7f4ca602",
+        "cdf471fa",
+        "49a206db"
+      ]
+    },
+    {
+      "id": "R-1453",
+      "date": "2026-11-18",
+      "time": "20:31",
+      "timeFrom": "recorded",
+      "title": "N-292 fixed: no paint of the worldRect cache in a frame a picture went up; textureUpload's renderer 40.3 -> 12.7 ms, v0.14.0's again",
+      "verdict": "kept-hygiene",
+      "text": "**N-292 fixed (7a4cdafe): textureUploadStressScene's renderer 40.3 -> 12.7 ms (-69 %), back to v0.14.0's 11.4.**\nBisected on the ASUS (job 0897n292, 11 steps, v0.14.0 to origin/main 1351a40b, renderer STEP_MS headless: good 47 to 51\nms, bad 114 to 122): the first bad commit is d9bf2261, E-504's worldRect layers cached by default. On the main PC the same\nscene with the layer's `shader.cache: false` reads 11.6 to 12.6 ms against 39.3 to 40.0 cached, while glFrameRecorder\nshows the same GL work a frame either way (one draw on the stage, one 64 MB texSubImage2D): the CPU waited inside the\nupload. A probe found why: giving the cache up after 30 frames of uploads did nothing (39 ms); giving it up at frame 1,\nbefore any paint, read 17.9 ms; at frame 3, after two paints, 51 ms. Painting a just-uploaded picture into the cache's\ntarget made every later upload of it slow, for good. The fix: a frame with an upload draws the stage mesh and marks the\nview unpainted (the next frame without one paints), and 30 frames in a row with an upload drop the cache for the plain\nmesh (worldRectGivesUp, WORLD_RECT_UPLOADS_GIVE_UP).\n\nSitting 2026-11-18 20:26 to 20:31, headed, GTX 1650, 3 rounds alternated (base eddc6d75, fix, the fix with cache false):\nbase 39.955 / 40.863 / 40.312 ms, fix 12.046 / 12.732 / 13.045, cache false 12.284 / 10.930 / 9.893. Buenos Aires at\n22 h keeps its cached floor (glFrameRecorder --gpu-passes: the same passes, GPU 4.996 -> 4.501 ms a frame). Test:\nworldRectCache. Left: N-294 (meshFillMoving: MESH layers, another path) and N-295 (sub-ms) to read again.",
+      "commits": [
+        "7a4cdafe"
+      ]
+    },
+    {
+      "id": "R-1454",
+      "date": "2026-11-18",
+      "time": "20:05",
+      "timeFrom": "recorded",
+      "title": "DX-ENT1M and E-263 built: 1 048 575 entities at 32-bit ids (the spatial pair stamp was the only 19-bit field), FL4's head always a Smi",
+      "verdict": "note",
+      "text": "**DX-ENT1M and E-263 built (an agent, feat/ent1m: 675a31ff fl4HeadMicrobench, 2a5d7629 the spatial pair stamp 20 id\nbits under 12 frame bits, 90386269 E-263 FL4's head a Smi, 9fcac2ee MAX_ENTITIES_U32 = 1 048 575, a8fdd2f3 runCapacity's\nbunnyMark max); node 3131, demos 121; not timed in Chrome yet.** The only thing narrower than 21 bits was the spatial\nprocessed-pair stamp (19 id bits: A and A + 524 288 in one batch marked their candidates alike, ent1mSpatial.test.js\nfails on the old engine.wasm); FL4 already had 20 index bits (DX-DECO1M), the Cantor pair keys stay exact under 2^42, the\npainter depth distinct to 2^22 rows, Pixi's textures under 2 048 rows. Memory at a million (bunnyMark's config): 728 MB of\nshared memory (about 694 B an entity; 60 MB of it Pixi's glow rows sized to the queue with lighting off, a saving to look\nat). E-263: FL4's head is a 20-bit index + 1 and an 11-bit tag with bit 31 a copy of bit 30 (E-87's form), every head a\nSmi; the ABA window halves from 4 096 to 2 048 operations (harmless for single-popper lists; at 100 k spawns a second a\n15 ms preemption cannot reach it); Node kernel pop/push 34.2 -> 33.6 ns, batch 35.4 -> 35.7 (a tie: Node cannot show\nChrome's heap numbers). Owed: bunnyMark's capacity search past 500 000 and the gates at today's sizes.",
+      "commits": [
+        "675a31ff",
+        "2a5d7629",
+        "90386269",
+        "9fcac2ee",
+        "a8fdd2f3",
+        "603da07d"
+      ]
+    },
+    {
+      "id": "R-1455",
+      "date": "2026-11-18",
+      "time": "20:20",
+      "timeFrom": "recorded",
+      "title": "N-253 and N-310 built: physics scenes to 1 048 575 entities, Box2D's slot and joint tables sized from the scene",
+      "verdict": "note",
+      "text": "**N-253 and N-310 built (an agent; Box2D weedjs/n253-bodies 461d428, a0d5e39, 43af511, 2b81a52; WeedJS 4e997506,\nde931d3f, 630646eb, 486d193a, then 3b60a27f and a61300f4): physics scenes take up to 1 048 575 entities, joints up to\n65 535; not timed yet.** Box2D's slot table and free stack are malloc'd at bind_game_buffers for the scene's count (they\nwere static arrays of 65 535: one slot per entity, since every reader indexes poses, sleep, meta and the moved list by\nentity, 78 bytes a slot); the joint table, its free stack and export buffer are sized from physics.maxJoints (N-310: it\nwas 4 096 whatever the config said); a 32-bit scene's acceleration list goes through a new u32 export\n(bodies_apply_accelerations_u32), a 16-bit one keeps its 2-byte list; a body's create takes its slot in O(1) (it scanned\nthe free stack). Both Box2D builds pass (SIMD box2dWasm.wasm sha1 741488dc, no-SIMD 215544a9). Memory (Node): static data\n1.92 -> 0.36 MB; 65 535 boxes 71.05 -> 70.86 MB; 130 000 boxes 145.3 MB (was refused); a million boxes 1 148 MB.\nphysics.maxJoints is capped at 65 535 in the scene's validation (the Joint lists hold 16-bit indices). Boids takes\n`?boids=` past 65 000 (its pool, Box2D's memory and render cap with it). Tests: n253PhysicsCapacity (9); node 3184,\ndemos 121. Owed: Boids' capacity past 65 000, the physics scenes at today's sizes, the LiquidFun gates.",
+      "commits": [
+        "461d428",
+        "a0d5e39",
+        "43af511",
+        "2b81a52",
+        "4e997506",
+        "de931d3f",
+        "630646eb",
+        "486d193a",
+        "3b60a27f",
+        "a61300f4"
+      ]
+    },
+    {
+      "id": "R-1456",
+      "date": "2026-11-18",
+      "time": "20:25",
+      "timeFrom": "recorded",
+      "title": "SST-8 built: the bundle's file mode (workers, engine.wasm and Box2D as cacheable files beside a 1 MB bundle); N-250's build break fixed",
+      "verdict": "note",
+      "text": "**SST-8 built (an agent, startup/bundle: 223612be WEED.EngineWasmUrl, b9d788dd the measurement tools, 041381c3 the file\nmode, 4f63a9ba the asset workers in the bundle; and 96e8abdf, N-250's top-level await that had broken every make_bundle\non Node 22.16, now createRequire); not timed yet.** `node scripts/buildBundle.js --files` writes dist/files/: the four raw\nbundles (about 1 MB each instead of 3.8 MB) beside a folder per build named by its hash (the workers' files,\nworker_common, engine.wasm, Box2D's glue and wasm), which a host can cache for good; each engine worker starts from a tiny\nblob that importScripts its file; engine.wasm streams with compileStreaming. The single-file bundle stays the default (the\nowner decides deploys). loadWaterfall takes --weed-bundle and --http-cache (a third, \"hot\" visit: V8 uses a script's code\ncache from its third load). Smokes: 8 bundles and the file mode's 4 boot; test:node:bundle 8 x 327; node 3165, demos 121.\nN-251 (the build in a worktree) did not reproduce with the worktree's own node_modules.",
+      "commits": [
+        "96e8abdf",
+        "223612be",
+        "b9d788dd",
+        "041381c3",
+        "4f63a9ba",
+        "3b530df1"
+      ]
+    },
+    {
+      "id": "R-1457",
+      "date": "2026-11-18",
+      "time": "20:45",
+      "timeFrom": "recorded",
+      "title": "SST-10, a first part: the workers' init carries the decal textures' sizes, not their pixels",
+      "verdict": "note",
+      "text": "**SST-10, a first part (5ad53c8d): the workers' init carries each decal texture's size, not its pixels.** Every frame's\nRGBA was structured-cloned into every worker's init (since W26 they live in the decal memory, which the page fills, and\nthe particle worker read only their sizes); Predator's init data took 440 ms on the page (the atlas agent's read).\nTests: decalStampWired, decalStampWasm (their JS references read the tests' own copies). Not timed alone: the next\nwaterfall sitting reads it.",
+      "commits": [
+        "5ad53c8d"
+      ]
+    },
+    {
+      "id": "R-1458",
+      "date": "2026-11-18",
+      "time": "21:12",
+      "timeFrom": "recorded",
+      "title": "Capacity past the old caps: bunnyMark 570 000 bunnies (+14 %, the GPU breaks first), Boids 85 000 (+31 %); the batch's Predator and LiquidFun gates NEUTRAL",
+      "verdict": "kept",
+      "text": "**Capacity past the old caps, and the batch's gates (dx/startup c9fbc2a2 against origin/main 1351a40b): bunnyMark holds\n570 000 bunnies (it was capped at 499 999: +14 %), Boids 85 000 boids (capped at 65 000: +31 %); Predator, the LiquidFun\nstress and the LiquidFun body couple are NEUTRAL.** 2026-11-18 20:45 to 21:12, the main PC, AC power, SITTING.lock\nheld (no agent build or suite during it).\n\n- runCapacity --scene bunnyMark (headed, --src, warm-up 9 s, window 10 s): 570 000 bunnies held in 2 runs; it breaks\n  first at 595 000 on the renderer's drawn frames (55.69 a second < 59): the GPU is the limit now, as DX-ENT1M's note\n  expected (GPU 9.2 ms at 500 000). Before: the engine's 32-bit ceiling, 500 000 entities with the spawner (R-1240).\n- runCapacity --scene boids --start 65000 --growth 1.25: 85 000 boids held in 2 runs; it breaks first at 87 000 on\n  spatial0's p99 (24.5 ms > 16.7). Before: the physics host refused more than 65 535 entities (N-253, R-1240).\n- runPredatorAbab batch-gate, --full-rev --pool, 4 pairs, Predator crowd=2.5&zoom=0.216, 1351a40b against c9fbc2a2 (the\n  whole batch: section 2, DX-STARTUP, DX-ENT1M, E-263, N-253, N-292, SST-10): NEUTRAL, every worker within its noise\n  (spatial 9.484 -> 9.459 ms paired -0.2 %, physics 12.741 -> 12.872 +0.2 %, presented and drawn 60.0 fps).\n- lf-stress (liquidFunStressScene water=1.5, physics owner) and lf-couple (liquidFunBodyCoupleStressScene, physics owner),\n  --full-rev, 4 pairs each: NEUTRAL, the couple under its floor. Box2D's tables sized from the scene (N-253) cost the\n  physics scenes nothing measurable."
+    },
+    {
+      "id": "R-1459",
+      "date": "2026-11-18",
+      "time": "21:19",
+      "timeFrom": "recorded",
+      "title": "E-456 kept: keyedPack gbuf=1's renderer 5.852 -> 5.356 ms (-8.5 %) and logic -5.4 %, under the floor, with the kernel's -29 to -45 %",
+      "verdict": "kept",
+      "text": "**E-456 in its owner scene: keyedPackStressScene n=250000 churn=0.05 gbuf=1, the renderer 5.852 -> 5.356 ms (-8.5 %) and\nlogic 3.249 -> 3.074 ms (-5.4 %), both under the 6 ms floor; pre-render level (+0.0 %).** runPredatorAbab e456-kp,\n79a7ad9f (before) against 6997a372 (E-456 and its test), --full-rev --pool, 4 pairs, renderer owner, 2026-11-18 21:13 to\n21:19, SITTING.lock held: NEUTRAL (below floor). With the kernel's -29 to -45 % (R-1444) and the scene moving the same way\nwith nothing worse, E-456 is kept. Logic's drop is N-218's contention easing (R-1446).",
+      "commits": [
+        "74dc25dd",
+        "6997a372"
+      ]
+    },
+    {
+      "id": "R-1460",
+      "date": "2026-11-18",
+      "time": "21:29",
+      "timeFrom": "recorded",
+      "title": "SST-8 timed: the bundle's file mode, Predator by night cold 5 852 -> 3 542 ms (-39 %, 4 of 4), warm and hot a tie; the single-file bundle stays the default",
+      "verdict": "kept",
+      "text": "**SST-8 timed: the bundle's file mode against the single-file bundle, first frame after loadScene: Predator by night cold\n5 852 -> 3 542 ms (median of 4, -39 %), warm 1 168 -> 1 148 (a tie), hot 1 190 -> 1 195 (a tie); bunnyMark cold 1 309 ->\n735 ms, warm and hot level (about 640 to 690).** 2026-11-18 21:19 to 21:29, the main PC, tests/bench/loadWaterfall.mjs in\nthe bundle agent's worktree (its dist/ built: the single-file prod ESM bundle and dist/files/), --http-cache, visits\ncold, warm and hot (the hot one where V8 can use a script's code cache), one run of each mode alternated, 4 rounds.\n\n| | single cold | files cold | single warm | files warm | single hot | files hot |\n| --- | --- | --- | --- | --- | --- | --- |\n| Predator light3d=1&hour=22 | 8 926, 3 638, 5 775, 5 929 | 3 355, 4 130, 3 730, 3 202 | 1 194, 1 134, 1 178, 1 158 | 1 151, 1 126, 1 144, 1 159 | 1 209, 1 175, 1 165, 1 205 | 1 198, 1 176, 1 200, 1 191 |\n| bunnyMark | 715, 1 598, 1 020, 2 033 | 744, 726, 2 837, 721 | 638, 634, 642, 686 | 679, 643, 660, 647 | 665, 691, 652, 656 | 664, 644, 641, 646 |\n\nCold visits swing on this HDD, but the file mode won 4 of 4 in Predator. Warm and hot do not move on this 8-core CPU: the\ncode cache barely shows here; the ASUS (2 cores, HDD) is where it should. Also seen: Predator by night in the bundle starts\nin about 1.15 s warm against about 2.0 s from source (the source build's hundreds of module fetches). The single-file\nbundle stays the default; switching deploys to the file mode is the owner's call (the agent's report lists what it takes)."
     }
   ],
   "leads": [

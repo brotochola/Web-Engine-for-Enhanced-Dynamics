@@ -39,6 +39,8 @@ export class WaterAndBoxesScene extends WEED.Scene {
 
     physics: {
       subStepCount: 4,
+      // The spawn burst queues about 8 000 commands at once: 16 384 holds them.
+      commandRingCapacity: 16384,
       noLimitFPS: false,
 
       gravity: { x: 0, y: 3600 },

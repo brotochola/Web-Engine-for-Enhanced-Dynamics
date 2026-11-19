@@ -722,6 +722,10 @@ class ParticleWorker extends AbstractWorker {
 
     // console.log(`[PARTICLE WORKER] Max particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}, Entities: ${this.globalEntityCount}`);
 
+    // SST-2: the kernels bind side by side (none needs another's), awaited together at the end of initialize; each
+    // one's result is taken where it lands.
+    const kernelBinds = [];
+
     // Initialize particle arrays
     if (this.maxParticles > 0 && data.buffers.componentData.ParticleComponent) {
       // E-129: slot ids are u32 past 65 535 particles, in every list.
@@ -734,15 +738,19 @@ class ParticleWorker extends AbstractWorker {
       this._activeIndexViews = this.activeParticlesCopies.map((c) => new ParticleSlots(c.buffer, c.byteOffset + slotBytes, this.maxParticles));
       // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
       // wasm.particleIntegrateF32 (default on) takes the kernel's float32 integrate, chosen once here.
-      this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles, {
+      kernelBinds.push(bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles, {
         f32: this.config?.wasm?.particleIntegrateF32 !== false,
-      });
-      this.particlesToStamp = this._wasmIntegrate.stamp;
+      }).then((integrate) => {
+        this._wasmIntegrate = integrate;
+        this.particlesToStamp = integrate.stamp;
+      }));
       // E-80: the active and visible lists built in WASM; wasm.particleListsF32 (default on) takes the
       // kernel's float32 screen test, chosen once here.
-      this._wasmLists = await bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent, {
+      kernelBinds.push(bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent, {
         f32: this.config?.wasm?.particleListsF32 !== false,
-      });
+      }).then((lists) => {
+        this._wasmLists = lists;
+      }));
     }
     // W22: the sway kernel, bound below when the scene laid its regions out (a worker initialized again drops
     // the last one).
@@ -794,14 +802,14 @@ class ParticleWorker extends AbstractWorker {
         this._swayBucketCacheK = this._swayBuckets;
       }
       if (swayLayout) {
-        try {
-          // wasm.decorationSwayF32 (default on) takes the kernel's float32 sway, chosen once here.
-          this._swayWasm = await bindDecorationSway(data.renderQueueMemory, swayLayout, {
-            f32: this.config?.wasm?.decorationSwayF32 !== false,
-          });
-        } catch (err) {
+        // wasm.decorationSwayF32 (default on) takes the kernel's float32 sway, chosen once here.
+        kernelBinds.push(bindDecorationSway(data.renderQueueMemory, swayLayout, {
+          f32: this.config?.wasm?.decorationSwayF32 !== false,
+        }).then((sway) => {
+          this._swayWasm = sway;
+        }, (err) => {
           throw new Error(`[particle] decorationSway.wasm did not load: ${err?.message ?? err}`, { cause: err });
-        }
+        }));
       }
     }
 
@@ -811,11 +819,11 @@ class ParticleWorker extends AbstractWorker {
     BulletPoolImport._wasm = null;
     const bulletLayout = data.renderQueueLayout?.collect?.bullets || null;
     if (bulletLayout && data.renderQueueMemory && this.maxBullets > 0) {
-      try {
-        BulletPoolImport._wasm = await bindBulletTick(data.renderQueueMemory, bulletLayout);
-      } catch (err) {
+      kernelBinds.push(bindBulletTick(data.renderQueueMemory, bulletLayout).then((tick) => {
+        BulletPoolImport._wasm = tick;
+      }, (err) => {
         throw new Error(`[particle] bulletTick.wasm did not load: ${err?.message ?? err}`, { cause: err });
-      }
+      }));
     }
 
     // ========================================
@@ -843,7 +851,6 @@ class ParticleWorker extends AbstractWorker {
           this.decalTextures[textureId] = {
             width: textureData.width,
             height: textureData.height,
-            rgba: new Uint8ClampedArray(textureData.rgba),
             // W26: the texture's copy in the decal memory, -1 without one.
             wasmByte: -1,
           };
@@ -851,11 +858,13 @@ class ParticleWorker extends AbstractWorker {
       }
       // W26: the stamps through decalStamp.wasm, on the decal memory the tiles live in (installDecalMemory).
       if (!data.decals.memory || !data.decals.memoryLayout) throw new Error('decals without the decal memory (installDecalMemory)');
-      this._decalWasm = await bindDecalStamp(data.decals.memory, data.decals.memoryLayout, this.decalsTilesX, this.decalsTilesY);
-      for (const [textureId, placed] of Object.entries(this._decalWasm.textures)) {
-        const texture = this.decalTextures[textureId];
-        if (texture) texture.wasmByte = placed.byte;
-      }
+      kernelBinds.push(bindDecalStamp(data.decals.memory, data.decals.memoryLayout, this.decalsTilesX, this.decalsTilesY).then((stamp) => {
+        this._decalWasm = stamp;
+        for (const [textureId, placed] of Object.entries(stamp.textures)) {
+          const texture = this.decalTextures[textureId];
+          if (texture) texture.wasmByte = placed.byte;
+        }
+      }));
       // console.log('[PARTICLE WORKER] Decals system initialized');
     } else {
       Decal.bindStampApply(null);
@@ -891,13 +900,15 @@ class ParticleWorker extends AbstractWorker {
       if (!data.navigationMemory || !data.navigationLayout || data.navigationMemory.buffer !== data.buffers.navigationData) {
         throw new Error('navigation without its navigation memory (createNavigationMemory)');
       }
-      this._flowWasm = await bindNavFlowfield(data.navigationMemory, data.navigationLayout, {
+      kernelBinds.push(bindNavFlowfield(data.navigationMemory, data.navigationLayout, {
         walkability: NavGrid.getWalkabilityArray(),
         gridWidth: this.gridWidth,
         gridHeight: this.gridHeight,
         maxDistance: this.scratch.maxDistance,
         maxPathLength: navConfig.maxPathLength || 128,
-      });
+      }).then((flow) => {
+        this._flowWasm = flow;
+      }));
 
       const flowfieldQueueCapacity = Math.max(32, this.maxFlowfields * 8);
       const pathQueueCapacity = Math.max(64, this.maxPaths * 8);
@@ -935,6 +946,7 @@ class ParticleWorker extends AbstractWorker {
     this.canvasHeight = this.config.canvasHeight || 600;
     this.cullingRatio = this.config.preRender?.cullingRatio ?? PRE_RENDER_DEFAULTS.cullingRatio;
 
+    await Promise.all(kernelBinds);
     // console.log('[PARTICLE WORKER] ✅ Initialize() completed!');
   }
 

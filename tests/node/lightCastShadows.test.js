@@ -83,6 +83,39 @@ test('the stamp range is shadowRange, or the radius when it is 0, whatever the C
   }
 });
 
+test('E-518: a light off the view casts for the stamp only when its shadows reach the view, not its radius', async () => {
+  bind();
+  LightEmitter.castShadows.fill(1);
+  // All four 1 000 px left of the 800 x 600 view, their radius 1 200 reaching into it.
+  Transform.x.set([-1000, -1000, -1000, 400]);
+  LightEmitter.radius.fill(1200);
+  // 0: a reach of 160 (a headlight): its shadows end 840 px short of the view. 1: a reach of 1 100 reaches it.
+  // 2: shadowRange 0, the radius. 3: in the view.
+  LightEmitter.shadowRange.set([160, 1100, 0, 160]);
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const savedActive = Query.queryActiveEntities;
+  const savedFrame = Query.queryPublishedFrame;
+  Query.queryActiveEntities = () => Uint32Array.from([0, 1, 2, 3]);
+  Query.queryPublishedFrame = () => 1;
+  try {
+    pre._queryLightEmitter = 1;
+    pre._stampLights = Array.from({ length: N }, () => ({
+      id: 0, x: NaN, y: NaN, intensity: NaN, rangeSq: NaN, sqrtI: NaN, distSq: NaN, maxShadows: 0,
+    }));
+    pre._frameCameraZoom = 1;
+    pre._frameCameraX = 0;
+    pre._frameCameraY = 0;
+    pre.canvasWidth = 800;
+    pre.canvasHeight = 600;
+    pre._collectStampLights();
+    const ids = pre._stampLights.slice(0, pre._stampLightCount).map((L) => L.id).sort();
+    assert.deepEqual(ids, [1, 2, 3]);
+  } finally {
+    Query.queryActiveEntities = savedActive;
+    Query.queryPublishedFrame = savedFrame;
+  }
+});
+
 test('Flash.spawn({ castShadows: false }) writes LightEmitter.castShadows 0, and its default casts', async () => {
   const { Flash } = await import('../../src/core/flash.js');
   bind();

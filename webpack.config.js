@@ -1,9 +1,9 @@
 import path from 'path';
 import os from 'os';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import webpack from 'webpack';
 import TerserPlugin from 'terser-webpack-plugin';
-import WebpackObfuscator from 'webpack-obfuscator';
 import { MINIFY_RESERVED_NAMES } from './scripts/minifyReservedNames.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,10 +23,18 @@ const workerEntries = {
     'workers/spatialWorker': './src/workers/spatialWorker.js',
     'workers/particleWorker': './src/workers/particleWorker.js',
     'workers/preRenderWorker': './src/workers/preRenderWorker.js',
+    // The asset workers (src/core/assetWorkerClient.js): short-lived, each one file of its own (see workerCommon).
+    'workers/atlasWorker': './src/workers/atlasWorker.js',
+    'workers/tilemapWorker': './src/workers/tilemapWorker.js',
 };
+const ASSET_WORKER_CHUNKS = new Set(['workers/atlasWorker', 'workers/tilemapWorker']);
 
 // Check if we should obfuscate
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
+// N-250: webpack-obfuscator's import alone took about 46 s of every build; load it only for an obfuscated one.
+// Required, not awaited at the top: webpack-cli 5 require()s a .js config, and Node 22 refuses to require() an
+// ES module with a top-level await (ERR_REQUIRE_ASYNC_MODULE), so no bundle built at all.
+const WebpackObfuscator = shouldObfuscate ? createRequire(import.meta.url)('webpack-obfuscator') : null;
 
 // Production mode: swap debug modules with no-op stubs
 const isProd = process.env.WEED_PROD === 'true';
@@ -192,6 +200,9 @@ const workersConfig = {
                 workerCommon: {
                     name: 'workers/worker_common',
                     test: /[\\/]src[\\/]/,
+                    // The asset workers stay whole: an atlas pack or a tilemap parse should not start by loading
+                    // the scene workers' 600 KB of common code for the few modules it shares with them.
+                    chunks: (chunk) => !ASSET_WORKER_CHUNKS.has(chunk.name),
                     minChunks: 2,
                     priority: 10,
                     reuseExistingChunk: true,

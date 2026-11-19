@@ -169,7 +169,7 @@ class SpatialWorker extends AbstractWorker {
 
     // O(1) duplicate detection for multi-cell entities
     // processedMarker[entityB] = (frameStamp | entityA) encodes both frame and source entity
-    // Top 13 bits = frame counter, low 19 bits = entityA (packSpatialPairStamp). Avoids fill() every frame.
+    // Top 12 bits = frame counter, low 20 bits = entityA (packSpatialPairStamp). Avoids fill() every frame.
     this.processedMarker = null; // Int32Array
     this._processedFrameCounter = 0;
     // E-268: per entity, the frame (mod 254) this worker last kept its row clear; see _findNeighbors.
@@ -387,11 +387,10 @@ class SpatialWorker extends AbstractWorker {
         ? new Float32Array(data.buffers.entityPosData, posByte, this.globalEntityCount * 4)
         : new Float32Array(data.buffers.entityPosData);
     }
-    // Initialize duplicate detection marker for neighbors (entityB)
-    // Uint32Array: upper 16 bits = frame counter, lower 16 bits = entityA
-    // Int32Array, as packSpatialPairStamp is an int32: from stamp frame 4096 its top bit is set,
+    // Initialize duplicate detection marker for neighbors (entityB): 12 frame bits over 20 id bits.
+    // Int32Array, as packSpatialPairStamp is an int32: from stamp frame 2048 its top bit is set,
     // and a Uint32Array element read back as unsigned never equalled it, so the dedup failed for
-    // half of every 8191-frame cycle and candidates in several cells were appended once per cell.
+    // half of every frame cycle and candidates in several cells were appended once per cell.
     this.processedMarker = new Int32Array(this.globalEntityCount);
     this._clearHeld = new Uint8Array(this.globalEntityCount);
 
@@ -428,13 +427,30 @@ class SpatialWorker extends AbstractWorker {
     if (!data.spatialPublishMemory || !data.gridMetadata?.candByte || !data.gridMetadata?.patternByte) {
       throw new Error('spatial worker without the spatial publish memory and its gather regions (createSpatialPublishMemory)');
     }
-    this._wasmPub = await bindSpatialPublish(
-      data.spatialPublishMemory,
-      data.gridMetadata,
-      this.workerId | 0,
-      this.globalEntityCount,
-      Grid.maxNeighbors,
-    );
+    // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius): the gather's table.
+    this._precomputeCirclePatterns();
+
+    // E-78: the candidate gather in WASM, on the publish memory's grid, markers, flags and lists, bound with the
+    // publish (SST-2: neither needs the other). Its marker and flags are the ones the worker reads (the fill on stamp
+    // wrap, _canReuseNeighbors).
+    const [wasmPub, wasmGather] = await Promise.all([
+      bindSpatialPublish(
+        data.spatialPublishMemory,
+        data.gridMetadata,
+        this.workerId | 0,
+        this.globalEntityCount,
+        Grid.maxNeighbors,
+      ),
+      bindSpatialGather(
+        data.spatialPublishMemory,
+        data.gridMetadata,
+        this.workerId | 0,
+        this.globalEntityCount,
+        this._circlePatterns,
+        this._maxCellRadius,
+      ),
+    ]);
+    this._wasmPub = wasmPub;
     this._wasmMeta = data.gridMetadata;
     this._neighborCandidateData = this._wasmPub.cand;
     this._candidateCountOf = new (EntityIdArray())(this.globalEntityCount);
@@ -451,19 +467,7 @@ class SpatialWorker extends AbstractWorker {
     this._rowPoseGen = new Int32Array(this.globalEntityCount).fill(POSE_GEN_NONE);
     this._poseChanged = false;
 
-    // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius)
-    this._precomputeCirclePatterns();
-
-    // E-78: the candidate gather in WASM, on the publish memory's grid, markers, flags and lists.
-    // Its marker and flags are the ones the worker reads (the fill on stamp wrap, _canReuseNeighbors).
-    this._wasmGather = await bindSpatialGather(
-      data.spatialPublishMemory,
-      data.gridMetadata,
-      this.workerId | 0,
-      this.globalEntityCount,
-      this._circlePatterns,
-      this._maxCellRadius,
-    );
+    this._wasmGather = wasmGather;
     this.processedMarker = this._wasmGather.marker;
     this._neighborCandidateTruncated = this._wasmGather.truncated;
 

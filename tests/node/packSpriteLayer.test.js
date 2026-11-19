@@ -97,3 +97,39 @@ test('packSpriteLayer flags fewer than two rows as sorted when it has a painter'
     assert.equal(result.flags & SORTED, want, `${count} rows, painter ${painter}`);
   }
 });
+
+// E-456: the glow split's one pass writes the lists and the particle count the two filtered fills and the counting
+// loop wrote, and lists of different lengths keep each filter's own cap.
+test('splitGlowQueueIndices matches the two filtered fills and the particle count', async () => {
+  const { fillQueueIndices, splitGlowQueueIndices } = await import('../../src/render/gpuQueueLayout.js');
+  let seed = 0x456;
+  const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const rows = 5000;
+  const type = new Uint8Array(rows);
+  for (let i = 0; i < rows; i++) {
+    const r = rnd();
+    type[i] = r < 0.05 ? 3 : r < 0.25 ? 1 : r < 0.3 ? 2 : 0;
+  }
+  const cases = [
+    { count: rows, lenE: rows, lenG: rows },
+    { count: 1234, lenE: rows, lenG: rows },
+    { count: rows, lenE: 3000, lenG: 3000 },
+    { count: rows, lenE: rows, lenG: 700 },
+    { count: rows, lenE: 2000, lenG: rows },
+  ];
+  for (const c of cases) {
+    const refE = new Uint32Array(c.lenE);
+    const refG = new Uint32Array(c.lenG);
+    const ne = fillQueueIndices(type, c.count, -1, 3, refE);
+    const ng = fillQueueIndices(type, c.count, 3, -1, refG);
+    let np = 0;
+    for (let k = 0; k < ne; k++) if (type[refE[k]] === 1) np++;
+    const idxE = new Uint32Array(c.lenE);
+    const idxG = new Uint32Array(c.lenG);
+    const out = new Int32Array(3);
+    assert.equal(splitGlowQueueIndices(type, c.count, idxE, idxG, out), ne, JSON.stringify(c));
+    assert.deepEqual(Array.from(out), [ne, ng, np], JSON.stringify(c));
+    assert.deepEqual(Array.from(idxE.subarray(0, ne)), Array.from(refE.subarray(0, ne)), JSON.stringify(c));
+    assert.deepEqual(Array.from(idxG.subarray(0, ng)), Array.from(refG.subarray(0, ng)), JSON.stringify(c));
+  }
+});

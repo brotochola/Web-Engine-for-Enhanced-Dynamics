@@ -1741,8 +1741,9 @@
 
   let bodyApplyForceCenterFn = null;
   let bodyApplyTorqueFn = null;
-  // W28: bodies_apply_accelerations, applyForcesAndTorque's loop in one call, and the byte offsets it reads
-  // (denseList and the RigidBody columns in Box2D's memory). null: the JS loop.
+  // W28: bodies_apply_accelerations (bodies_apply_accelerations_u32 for a list of 32-bit indices, N-253),
+  // applyForcesAndTorque's loop in one call, and the byte offsets it reads (denseList and the RigidBody columns in
+  // Box2D's memory). null: the JS loop.
   let applyAccelerationsFn = null;
   const accelBytes = new Int32Array(8);
   /** The heap block allocDenseList took (0: none), freed when it takes another. */
@@ -2277,10 +2278,22 @@
     }
   }
 
+  // dense-list-start
+  /**
+   * N-253: the most entities whose indices the dense list holds in 16 bits (a 16-bit id width). A larger scene lists
+   * its bodies in 32 bits, and the batch is bodies_apply_accelerations_u32: a 16-bit scene keeps its 2-byte list.
+   */
+  const DENSE_LIST_U16_MAX_ENTITIES = 65535;
+
   function allocDenseList(entityCount) {
     applyAccelerationsFn = null;
     if (denseListPtr && typeof Module !== 'undefined' && typeof Module._free === 'function') Module._free(denseListPtr);
     denseListPtr = 0;
+    const wide = entityCount > DENSE_LIST_U16_MAX_ENTITIES;
+    const ListType = wide ? Uint32Array : Uint16Array;
+    const batch = typeof Module === 'undefined'
+      ? null
+      : wide ? Module._bodies_apply_accelerations_u32 : Module._bodies_apply_accelerations;
     // The build exports HEAPF32 and HEAP32 on Module, not HEAPU8.
     const heap = typeof Module !== 'undefined' && Module.HEAPF32 ? Module.HEAPF32.buffer : null;
     const v = views;
@@ -2288,23 +2301,23 @@
     if (
       !heap ||
       !(entityCount > 0) ||
-      typeof Module._bodies_apply_accelerations !== 'function' ||
+      typeof batch !== 'function' ||
       typeof Module._malloc !== 'function' ||
       !v ||
       !inHeap(v.ax) || !inHeap(v.ay) || !inHeap(v.angularAccel) || !inHeap(v.mass) ||
       !inHeap(v.inertia) || !inHeap(v.rbStatic) || !inHeap(v.fixedRotation)
     ) {
-      return new Uint16Array(entityCount);
+      return new ListType(entityCount);
     }
     let ptr = 0;
     try {
-      ptr = Module._malloc(entityCount * 2);
+      ptr = Module._malloc(entityCount * ListType.BYTES_PER_ELEMENT);
     } catch (_) {
       ptr = 0;
     }
-    if (!ptr) return new Uint16Array(entityCount);
+    if (!ptr) return new ListType(entityCount);
     denseListPtr = ptr;
-    const list = new Uint16Array(heap, ptr, entityCount);
+    const list = new ListType(heap, ptr, entityCount);
     list.fill(0);
     accelBytes[0] = list.byteOffset;
     accelBytes[1] = v.ax.byteOffset;
@@ -2314,9 +2327,10 @@
     accelBytes[5] = v.inertia ? v.inertia.byteOffset : 0;
     accelBytes[6] = v.rbStatic.byteOffset;
     accelBytes[7] = v.fixedRotation ? v.fixedRotation.byteOffset : 0;
-    applyAccelerationsFn = Module._bodies_apply_accelerations;
+    applyAccelerationsFn = batch;
     return list;
   }
+  // dense-list-end
 
   /** W28: the force pass, one call into Box2D when the columns are there, else applyForcesAndTorque. */
   function applyAccelerations() {
@@ -3347,7 +3361,8 @@
         `bindBuffers: maxBodies ${maxBodies} exceeds max slots ${slots}`,
       );
     }
-    world.bindBuffers(maxBodies);
+    // N-310: Box2D's joint table holds the scene's physics.maxJoints (0 without joints).
+    world.bindBuffers(maxBodies, data.maxJoints | 0);
 
     bodyApplyForceCenterFn = Module.cwrap('body_apply_force_center', null, [
       'number',

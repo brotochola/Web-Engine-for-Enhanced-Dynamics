@@ -195,6 +195,21 @@ export function collectWorkerScriptsToLoad(scene, origin = '') {
   ];
 }
 
+/**
+ * SST-1: the scripts a worker starts at its 'boot', before the shared buffers exist: collectWorkerScriptsToLoad's list,
+ * the SharedResources' script URLs read from the scene's declaration (createSharedBuffers parses it later). The same
+ * list 'init' carries; a script only init names is loaded there.
+ */
+export function bootScriptsToLoad(scene, origin = '') {
+  const regs = scene.sharedResourceRegs || (scene.constructor?.sharedResources || []).map((row) => ({
+    scriptUrl: Array.isArray(row) && typeof row[0] === 'function' ? row[0].scriptUrl || null : null,
+  }));
+  return collectWorkerScriptsToLoad(
+    { sceneScriptUrl: scene.sceneScriptUrl, registeredClasses: scene.registeredClasses, sharedResourceRegs: regs },
+    origin,
+  );
+}
+
 function classDeclarationRe(className) {
   return new RegExp(`(?:export\\s+(?:default\\s+)?class|class)\\s+${className}\\b`);
 }

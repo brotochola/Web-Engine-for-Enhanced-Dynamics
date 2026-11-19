@@ -12,14 +12,25 @@ import {
   readsFrameTime,
   worldRectCacheStale,
   worldRectCacheStep,
+  worldRectGivesUp,
   WORLD_RECT_DIRECT,
   WORLD_RECT_DIRECT_AFTER,
   WORLD_RECT_HOLD_FRAMES,
   WORLD_RECT_PAINT,
   WORLD_RECT_SHOW,
+  WORLD_RECT_UPLOADS_GIVE_UP,
 } from '../../src/render/worldRectCache.js';
 
 const VIEW = [1.5, 120.25, -40, 0, 1280, 760];
+
+test('N-292: a layer gives its cache up after WORLD_RECT_UPLOADS_GIVE_UP frames in a row with an upload, not before', () => {
+  const c = createWorldRectCache();
+  for (let i = 1; i < WORLD_RECT_UPLOADS_GIVE_UP; i++) assert.equal(worldRectGivesUp(c, true), false, `frame ${i}`);
+  // A frame without an upload starts the count again: a picture written now and then keeps its cache.
+  assert.equal(worldRectGivesUp(c, false), false);
+  for (let i = 1; i < WORLD_RECT_UPLOADS_GIVE_UP; i++) assert.equal(worldRectGivesUp(c, true), false, `again ${i}`);
+  assert.equal(worldRectGivesUp(c, true), true);
+});
 
 test('the first frame paints; the same view does not paint again; any change of the view or its contents does', () => {
   const c = createWorldRectCache();

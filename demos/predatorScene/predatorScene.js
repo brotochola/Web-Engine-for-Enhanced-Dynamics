@@ -135,6 +135,8 @@ export class PredatorScene extends WEED.Scene {
 
     particle: {
       noLimitFPS: predatorNoLimitFPS,
+      // Predator fills its pools on purpose (a fight emits more than any cap): a larger pool only adds load to the
+      // engine's reference scene, so the warnings it prints stay (N-167).
       maxParticles: 10000,
       decals: true,
       decalsTileSize: 256,
@@ -198,6 +200,8 @@ export class PredatorScene extends WEED.Scene {
     // Physics configuration
     physics: {
       subStepCount: 0,
+      // The spawn burst queues about 52 700 commands at once (32 bytes each, 2 MB): 65 536 holds it with 24 % to spare.
+      commandRingCapacity: 65536,
       // E-319: `?physicsWorkers=<n>` (1 to 4) sets Box2D's thread count, to weigh 3 against 4 at crowd 2.5.
       numberOfPhysicsWorkers: Math.min(4, Math.max(1, Math.trunc(predatorNumberParam('physicsWorkers', 4)))),
       noLimitFPS: predatorNoLimitFPS,
@@ -258,7 +262,7 @@ export class PredatorScene extends WEED.Scene {
       maxShadowsPerEntity: 3,
       maxLights: 256,
       maxShadowSprites: 30000,
-      maxFlashes: 32,
+      maxFlashes: 32, // full in a fight at 32 and at 128 alike: kept at the reference scene's load (N-167)
       // ?light3d=1: the light pass and the shadow maps at half the canvas (the sun's map is sharper).
       resolution: predatorPositiveParam('lightingRes', LIGHT3D ? 0.5 : 0.25),
       shadowResolution: predatorPositiveParam('shadowRes', LIGHT3D ? 0.5 : 0.25),

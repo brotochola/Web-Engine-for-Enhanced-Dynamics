@@ -6,8 +6,8 @@ Engine-focused notes for the current `src/` architecture.
 
 | Resource | Current Limit |
 |---|---|
-| Entity indices | `config.entityIdWidth` **'auto'** (default): `Uint16` (`0..65534`) while the scene's pools hold at most 65535 entities, `Uint32` past that, ceiling **500000**. `16` or `32` forces one |
-| Total pooled entities | `65535` at 16-bit ids, `500000` at 32. A scene with `physics.enabled` (the default) throws if `totalEntityCount > 65535` |
+| Entity indices | `config.entityIdWidth` **'auto'** (default): `Uint16` (`0..65534`) while the scene's pools hold at most 65535 entities, `Uint32` past that, ceiling **1048575**. `16` or `32` forces one |
+| Total pooled entities | `65535` at 16-bit ids, `1048575` at 32, with physics too (Box2D's tables are sized from the scene: about 1.1 KB of Box2D memory a body, so raise `physics.wasmMemoryMB` with the count) |
 | Particle / decoration / bullet pools | `particle.maxParticles`, `decoration.maxDecorations`, `bullet.maxBullets`, each up to **1048575**. A pool of at most 65535 keeps `Uint16` slot ids (`0..65534`); past that it takes `Uint32` ones, decided per pool from its own maximum, whatever `entityIdWidth` is |
 | QuerySystem component mask width | `64` components |
 | QuerySystem entity-type mask width | `64` entity types |

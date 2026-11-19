@@ -516,6 +516,30 @@ limit, none worse or failed. Run it per milestone, not per change.
 - **Capacity.** The largest load each flagship scene holds at 60 presented frames (planned tool 11): a
   number for the README, never a gate.
 
+## Load time
+
+A change to a scene's start (SCENE_STARTUP_TIME_PLAN.md) runs once, outside every frame, so it is judged on time
+to the first drawn frame, not on `STEP_MS`. The instrument is the load waterfall (SST-0):
+
+```bash
+MSYS_NO_PATHCONV=1 node tests/bench/loadWaterfall.mjs --scene /demos/predatorScene/predatorScene.js \
+  --scene-export PredatorScene --query "light3d=1&hour=22" --runs 3 --visits cold,warm [--bundle]
+```
+
+The engine marks every phase of the start on the page and in each worker (`loadMark` in `src/util/loadMarks.js`, on
+the one clock `performance.timeOrigin + performance.now()`); the runner prints each thread's timeline after the
+page's `loadScene`, the load's critical path (the asset branch the workers' init waited for, the worker the start
+waited for and its longest phase, the renderer's first draw) and each worker's longest own step from the start to
+`--settle-ms` after the first draw. A new phase worth seeing gets its own `loadMark`; none goes in per-frame code.
+
+- **Per change (the owner's light protocol, 2026-11-17):** the suites, then one quick waterfall of the scene the change
+  targets, a few runs a side; the number goes in the commit message and the record. No sitting per change.
+- **Must not get worse:** the longest step in the first seconds (everything ready before the start means no hitch
+  after it), and nothing the scene does once it runs (a change that touches per-frame code follows the rest of this
+  document).
+- **Once, at the end of a campaign:** the full matrix of SCENE_STARTUP_TIME_PLAN section 2 (scenes, source and
+  bundle, cold and warm, WebGL and WebGPU, both machines), both sides from worktrees, for the total.
+
 ## Commands
 
 ```bash

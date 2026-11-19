@@ -17,7 +17,6 @@
   weedjsEnableHostMode();
 
   var MAX_POLYGON_VERTICES = 8;
-  var MAX_BODIES_HINT = 65535;
   // This realm's time origin, read once (N-158: each read of performance.timeOrigin makes a heap number in Chrome).
   var TIME_ORIGIN = typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0;
 
@@ -701,17 +700,42 @@
     });
   }
 
-  function bootWorld() {
-    var entityCount = state.globalEntityCount | 0;
-    var maxBodies = Math.min(entityCount, MAX_BODIES_HINT);
-    if (entityCount > MAX_BODIES_HINT) {
-      throw new Error(
-        'Physics: totalEntityCount ' +
-        entityCount +
-        ' exceeds Box2D MAX_BODIES ' +
-        MAX_BODIES_HINT,
+  // physics-capacity-start
+  // A joint is an index into the Joint component's 16-bit lists (activeIndices, 0xffff for none: bindJointViews).
+  var JOINT_INDEX_LIMIT = 65535;
+
+  /**
+   * N-253, N-310: why Box2D cannot hold the scene, or '' when it can. Box2D keeps a body slot per entity, physics or
+   * not (the pose, sleeping and moved buffers are indexed by entity), so the scene's whole entity count must fit
+   * maxBodySlots (wasm_wrapper.c get_max_body_slots: 1 048 575, the engine's ceiling at 32-bit ids). Its tables are
+   * sized for the scene at bind_game_buffers, joints from physics.maxJoints.
+   */
+  function physicsCapacityError(entityCount, maxBodySlots, maxJoints) {
+    if (entityCount > maxBodySlots) {
+      return (
+        'Physics: the scene has ' + entityCount + ' entities, and Box2D holds ' + maxBodySlots +
+        " at most (a body slot per entity, with a RigidBody or not). Lower the scene's entity pools."
       );
     }
+    if (maxJoints > JOINT_INDEX_LIMIT) {
+      return (
+        'Physics: physics.maxJoints is ' + maxJoints + ', and ' + JOINT_INDEX_LIMIT +
+        " is the most (the Joint pool's lists hold 16-bit indices)."
+      );
+    }
+    return '';
+  }
+  // physics-capacity-end
+
+  function bootWorld() {
+    var entityCount = state.globalEntityCount | 0;
+    var capacityError = physicsCapacityError(
+      entityCount,
+      Module._get_max_body_slots(),
+      state.jointsEnabled ? state.maxJoints | 0 : 0,
+    );
+    if (capacityError) throw new Error(capacityError);
+    var maxBodies = entityCount;
 
     state.commandSab = Box2dCommandRing.createCommandRingSab(
       state.settings.commandRingCapacity,

@@ -11,10 +11,10 @@ function queryNumber(key, fallback) {
 
 /**
  * `?n=`: sprites (default 150 000), all in view: the load of Pixi's keyed pack (one row each, every frame). At most
- * 499 998: the engine's 500 000 entities less the two classes a mix can leave at their floor of one (`?moving=1&churn=0`
+ * 1 048 573: the engine's 1 048 575 entities (DX-ENT1M) less the two classes a mix can leave at their floor of one (`?moving=1&churn=0`
  * spawns n + 2), so a capacity search (tests/bench/runCapacity.mjs) has room past the 400 000 this cap was.
  */
-export const N = Math.min(499998, Math.max(1, Math.floor(queryNumber('n', 150000))));
+export const N = Math.min(1048573, Math.max(1, Math.floor(queryNumber('n', 150000))));
 /** `?moving=`: the share that moves every frame (default 0.25): poses change, statics do not. */
 export const MOVING = Math.min(1, Math.max(0, queryNumber('moving', 0.25)));
 /** `?churn=`: the share whose tint flips every frame (default 0.01): their keys are marked, their statics go up again. */

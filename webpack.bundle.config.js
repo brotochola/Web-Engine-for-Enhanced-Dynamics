@@ -1,6 +1,7 @@
 /**
  * Webpack config for SINGLE FILE bundle
  * Workers are loaded as raw strings and embedded in WEED.WorkerSources
+ * (the file mode, buildBundle.js --files, builds the same entry shape with the workers as files beside it)
  *
  * Note: Obfuscation is NOT applied here. When OBFUSCATE=true, workers are
  * already obfuscated in Step 1 (webpack.config.js). Running the obfuscator
@@ -53,13 +54,22 @@ const debugStubAliases = isProd ? {
         path.resolve(__dirname, 'src/core/debug/stubs/devChecks.js'),
 } : {};
 
+// The file mode (SST-8, buildBundle.js --files) starts its workers from files beside the bundle: webpack
+// finds the bundle's folder at run time (publicPath 'auto': import.meta.url in the ESM bundle, the script
+// element's src in the UMD one), and the bundles go into that folder (dist/files/). The single-file bundle
+// names no file of its own and keeps webpack's defaults.
+const workerFiles = process.env.WEED_BUNDLE_WORKER_FILES === 'true';
+const publicPath = workerFiles ? { publicPath: 'auto' } : {};
+const outDir = process.env.WEED_BUNDLE_OUT_DIR || path.resolve(__dirname, 'dist');
+
 // UMD build (for <script> tags and CommonJS)
 const umdConfig = {
     mode: 'production',
     devtool: false,
     entry: './src/index.bundle.js',
     output: {
-        path: path.resolve(__dirname, 'dist'),
+        path: outDir,
+        ...publicPath,
         filename: bundleFileName(false),
         library: {
             name: 'WEED',
@@ -146,7 +156,8 @@ const esmConfig = {
     devtool: false,
     entry: './src/index.bundle.js',
     output: {
-        path: path.resolve(__dirname, 'dist'),
+        path: outDir,
+        ...publicPath,
         filename: bundleFileName(true),
         library: {
             type: 'module'

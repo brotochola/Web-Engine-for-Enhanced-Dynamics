@@ -191,6 +191,8 @@ export async function setupDecalKernel({ flags = 0 } = {}) {
   const blood = bloodTexture();
   const tileBytes = TOTAL_TILES * TILE_PIXELS * TILE_PIXELS * 4;
   const textures = { [BLOOD]: { width: blood.width, height: blood.height, rgba: blood.rgba.slice().buffer } };
+  // The JS reference reads its own copy of each texture's pixels: the worker gets only their sizes (SST-10).
+  const referenceRgba = { [BLOOD]: new Uint8ClampedArray(blood.rgba.slice().buffer) };
   // The decal memory as the scene makes it (installDecalMemory): the tiles from byte 0, as every worker views
   // them, then the kernel's scratch and the texture.
   const m = createDecalMemory({ totalTiles: TOTAL_TILES, tilePixelSize: TILE_PIXELS, textures });
@@ -258,7 +260,7 @@ export async function setupDecalKernel({ flags = 0 } = {}) {
       p.scaleY = fx.scaleY[k];
       p.alpha = fx.alpha[k];
       p.blendMode = fx.blendMode[k];
-      p.textureRgba = texture.rgba;
+      p.textureRgba = referenceRgba[fx.textureId[k]];
       p.texWidth = texture.width;
       p.texHeight = texture.height;
       stampToTileBuffers(p);

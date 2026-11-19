@@ -168,6 +168,8 @@ export class LittleCityScene extends WEED.Scene {
     },
     physics: {
       subStepCount: 0,
+      // The spawn burst queues about 27 800 commands at once: 65 536 is the power of two with room to spare.
+      commandRingCapacity: 65536,
       noLimitFPS: false,
       maxJoints: 0,
       gravity: { x: 0, y: 0 },

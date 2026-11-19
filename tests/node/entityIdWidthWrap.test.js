@@ -265,7 +265,7 @@ test('joint-style u16 pack aliases entityB 65536 to 0', () => {
   assert.equal(out.b, 65536);
 });
 
-test('validateSceneSharedBufferConfig: past 65535 only with entityIdWidth 32, up to 500000', () => {
+test('validateSceneSharedBufferConfig: past 65535 only with entityIdWidth 32, up to 1 048 575', () => {
   assert.throws(
     () => validateSceneSharedBufferConfig(makeValidationScene(65536, 16)),
     /totalEntityCount must be an integer in \[0, 65535\]/,
@@ -276,12 +276,15 @@ test('validateSceneSharedBufferConfig: past 65535 only with entityIdWidth 32, up
   );
   assert.doesNotThrow(() => validateSceneSharedBufferConfig(makeValidationScene(300000, 32)));
   assert.doesNotThrow(() => validateSceneSharedBufferConfig(makeValidationScene(500000, 32)));
+  // DX-ENT1M: 2^20 - 1, FL4's index and the spatial stamp's id bits (500 000 before).
+  assert.doesNotThrow(() => validateSceneSharedBufferConfig(makeValidationScene(1048575, 32)));
   assert.throws(
-    () => validateSceneSharedBufferConfig(makeValidationScene(500001, 32)),
-    /totalEntityCount must be an integer in \[0, 500000\]/,
+    () => validateSceneSharedBufferConfig(makeValidationScene(1048576, 32)),
+    /totalEntityCount must be an integer in \[0, 1048575\]/,
   );
   assert.equal(maxEntitiesForWidth(16), MAX_ENTITIES_U16);
   assert.equal(maxEntitiesForWidth(32), MAX_ENTITIES_U32);
+  assert.equal(MAX_ENTITIES_U32, 1048575);
 });
 
 test('save codec already stores entityIndex as u32 (70000 survives)', () => {
@@ -374,10 +377,14 @@ test('wide pair helper follows bound width', () => {
   }
 });
 
-test('spatial stamp 16 aliases 1 and 65537; 19-bit stamp does not', () => {
+test('spatial stamp 16 aliases 1 and 65537; the 20-bit stamp does not, nor 1 and 524 289', () => {
   assert.equal(packSpatialPairStamp16(5, 1), packSpatialPairStamp16(5, 65537));
   assert.notEqual(packSpatialPairStamp(5, 1), packSpatialPairStamp(5, 65537));
   assert.equal(packSpatialPairStamp(5, 299999) & 0x7ffff, 299999);
+  // DX-ENT1M: 19 id bits aliased ids 2^19 apart; 20 tell every id up to 1 048 575 apart.
+  assert.notEqual(packSpatialPairStamp(5, 1), packSpatialPairStamp(5, 524289));
+  assert.equal(packSpatialPairStamp(5, 1048575) & 0xfffff, 1048575);
+  assert.equal(packSpatialPairStamp(4095, 1048575), -1, 'the last frame and id: every bit set, an int32');
   assert.notEqual(packSpatialPairStamp(5, 1), packSpatialPairStamp(6, 1));
 
   function visits(pack, entityA, entityB, marker) {

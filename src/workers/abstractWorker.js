@@ -41,6 +41,8 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep, TIME_ORIGIN } from '../util/frameClock.js';
+import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
+import { useEngineWasmModule } from '../util/wasmKernel.js';
 import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
@@ -97,12 +99,16 @@ import { setDevChecks } from '../core/debug/devChecks.js';
 import { delayTo, nextFixedDeadline } from '../util/fixedRate.js';
 import { bindLatencyStamp } from '../util/latencyStamp.js';
 
+// SST-0: the engine's modules are evaluated (this one runs after everything it imports).
+loadMark('modules');
+
 /**
  * AbstractWorker - Base class for all game engine workers
  * Handles common worker functionality like frame timing, FPS tracking, and message handling
  */
 export class AbstractWorker {
   constructor(selfRef) {
+    loadMark('constructed');
     this.self = selfRef;
 
     // Explicit queue preserves ordering without building a promise chain per message.
@@ -116,6 +122,13 @@ export class AbstractWorker {
         this._drainMessageQueue();
       }
     };
+
+    // SST-1: the 'boot' message's work (boot(): what a worker starts before the assets load), null until it came. A
+    // subclass's initialize awaits it before it uses what boot made; init awaits it last, so a failed boot fails it.
+    this._bootPromise = null;
+    // The game scripts boot started (their import or evaluation), and their list: init loads only the ones it adds.
+    this._bootScripts = null;
+    this._bootScriptList = [];
 
     // Frame timing and FPS tracking
     // E-350: the fields that hold fractions start as -0, a double zero (falsy, and equal to 0 in every comparison and
@@ -592,7 +605,8 @@ export class AbstractWorker {
 
     // Register core engine classes globally BEFORE loading scripts
     // This ensures GameObject, Component, etc. are available when entity scripts are evaluated
-    this.registerCoreClasses();
+    // (SST-1: boot did, before the scripts it started: again now, an export named like an engine global would lose it).
+    if (this._bootScripts === null) this.registerCoreClasses();
 
     // Initialize worker-side SoundManager (shared slot SAB + sound ID map)
     SoundManager.importSoundIdMap(data.audio?.soundIdMap || null);
@@ -603,9 +617,7 @@ export class AbstractWorker {
     // Load game-specific scripts dynamically (entity classes + custom components)
     // ALL workers now receive entity classes for consistent component access
     // Uses the unified loadEntityScripts function from utils.js (auto-detects worker context)
-    if (data.scriptsToLoad && data.scriptsToLoad.length > 0) {
-      await loadEntityScripts(data.scriptsToLoad);
-    }
+    await this._loadGameScripts(data.scriptsToLoad);
 
     if (data.sceneClassName && self[data.sceneClassName]) {
       bindSceneGraph(self[data.sceneClassName], self, GameObject, SharedResource);
@@ -1298,6 +1310,47 @@ export class AbstractWorker {
   }
 
   /**
+   * SST-1: the worker's start, from the scene's 'boot' message, sent right after the worker was made and before any
+   * asset loads: { workerName, config, engineWasm, pageOrigin, sceneParams, scriptsToLoad, scriptTexts } (the
+   * renderer's also carries its canvas). This default hands engine.wasm to the kernel loader (SST-2), keeps the config (init's replaces
+   * it) and starts the game scripts, so their import or evaluation runs while the page loads the assets: the engine
+   * names on self first, and the page's params (a scene module may read WEED.params at its top level). A bundle's
+   * worker evaluates them from the texts the page fetched (scriptTexts, SST-3). It does not wait for them: init does
+   * (_loadGameScripts). A subclass that starts more calls super.boot(data) first.
+   * @param {object} data the 'boot' message
+   */
+  async boot(data) {
+    useEngineWasmModule(data.engineWasm);
+    this.config = data.config || {};
+    if (data.pageOrigin) self.__weedPageOrigin = data.pageOrigin;
+    const scripts = data.scriptsToLoad;
+    if (!Array.isArray(scripts) || scripts.length === 0) return;
+    setSceneParams(data.sceneParams);
+    this.registerCoreClasses();
+    this._bootScriptList = scripts.slice();
+    this._bootScripts = loadEntityScripts(this._bootScriptList, null, null, data.scriptTexts || null).then(() => {
+      loadMark('boot scripts');
+    });
+    // Init reports its failure (_loadGameScripts).
+    this._bootScripts.catch(() => {});
+  }
+
+  /**
+   * The game scripts init names: the ones boot started are awaited, the rest (a script only init adds) loaded now.
+   * @param {string[]} [scriptsToLoad]
+   */
+  async _loadGameScripts(scriptsToLoad) {
+    let rest = scriptsToLoad || [];
+    if (this._bootScripts !== null) {
+      await this._bootScripts;
+      const started = new Set(this._bootScriptList);
+      rest = rest.filter((url) => !started.has(url));
+    }
+    if (rest.length > 0) await loadEntityScripts(rest);
+    loadMark('entity scripts');
+  }
+
+  /**
    * Handle incoming messages from Scene
    * @param {MessageEvent} e - Message event
    */
@@ -1305,7 +1358,20 @@ export class AbstractWorker {
     const { msg } = e.data;
 
     switch (msg) {
+      case 'boot':
+        loadMark('boot');
+        this._bootPromise = this.boot(e.data);
+        // A failed boot is reported by the init that waits for it, not as an unhandled rejection before.
+        this._bootPromise.catch(() => {});
+        break;
+
+      case 'engineWasm':
+        // SST-2: the page's compile of engine.wasm, when it ended after this worker's boot.
+        useEngineWasmModule(e.data.engineWasm);
+        break;
+
       case 'init':
+        loadMark('init');
         debugWorkerLog(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
         if (e.data.pageOrigin) {
           self.__weedPageOrigin = e.data.pageOrigin;
@@ -1317,10 +1383,14 @@ export class AbstractWorker {
         this.isPaused = true; // Keep paused until "start" message
         debugWorkerLog(`[${this.constructor.name}] Initializing common buffers...`);
         await this.initializeCommonBuffers(e.data);
+        loadMark('common buffers');
         debugWorkerLog(`[${this.constructor.name}] Common buffers initialized, setting up worker ports...`);
         this.initializeWorkerPorts(e.data.workerPorts); // Initialize direct worker communication
         debugWorkerLog(`[${this.constructor.name}] Worker ports initialized, calling worker-specific initialize()...`);
         await this.initialize(e.data);
+        // SST-1: a boot that failed fails the init (a subclass's initialize may have waited for it already).
+        if (this._bootPromise !== null) await this._bootPromise;
+        loadMark('initialized');
         debugWorkerLog(`[${this.constructor.name}] Worker-specific initialize() completed`);
         // Logic defers reportReady until box2dReady (hot fields bound before onSpawned).
         if (this.shouldReportReadyAfterInit()) {
@@ -1442,7 +1512,9 @@ export class AbstractWorker {
   reportReady() {
     this.reportLog('initialization complete, signaling ready');
     debugWorkerLog(`${this.constructor.name}: Sending workerReady message`);
-    self.postMessage({ msg: 'workerReady', worker: this.constructor.name });
+    loadMark('ready');
+    // SST-0: this worker's load marks go to the page with its ready message.
+    self.postMessage({ msg: 'workerReady', worker: this.constructor.name, loadMarks: takeLoadMarks() });
   }
 
   /**

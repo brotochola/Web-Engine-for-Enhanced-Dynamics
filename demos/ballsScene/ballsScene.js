@@ -67,6 +67,8 @@ export class BallsScene extends Scene {
       numberOfPhysicsWorkers: ballsNumberParam('numberOfPhysicsWorkers', 4),
       subStepCount: 4,
       noLimitFPS: false,
+      // The spawn burst queues about 18 000 commands at once: 32 768 holds them.
+      commandRingCapacity: 32768,
       gravity: { x: 0, y: 1800 },
     },
 

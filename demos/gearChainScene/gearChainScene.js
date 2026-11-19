@@ -79,6 +79,8 @@ export class GearChainScene extends Scene {
 
     physics: {
       subStepCount: 4,
+      // 5 000 balls spawn at once and queue about 10 000 commands: 16 384 holds them.
+      commandRingCapacity: 16384,
       noLimitFPS: false,
       gravity: { x: 0, y: 1600 },
       sleeping: true,

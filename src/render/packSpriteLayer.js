@@ -1,7 +1,9 @@
-import { fillQueueIndices } from './gpuQueueLayout.js';
+import { fillQueueIndices, splitGlowQueueIndices } from './gpuQueueLayout.js';
 import { orderPainterSlotsWasm, radixSortIndicesWasm } from './painterRadixClient.js';
 
 const packResult = { sprite: 0, glow: 0, splitParticles: 0, flags: 0, spriteIndices: null };
+/** The glow split's counts: entity rows, glow rows, particle rows among the entity rows. */
+const splitCounts = new Int32Array(3);
 
 /** The painter's order through its kernel (W10, painterRadixClient.js; a state always carries one). */
 function painterOrder(painter, idxE, n, keysU32) {
@@ -64,11 +66,11 @@ export function packSpriteLayer(spec) {
     if (spec.splitGlow && spec.idxEntity) {
         const idxE = spec.idxEntity;
         const idxG = spec.idxGlow;
-        const ne = fillQueueIndices(typeArr, count, -1, 3, idxE);
-        const ng = idxG ? fillQueueIndices(typeArr, count, 3, -1, idxG) : 0;
-        for (let k = 0; k < ne; k++) {
-            if (typeArr && typeArr[idxE[k]] === 1) splitParticles++;
-        }
+        // E-456: the entity list, the glow list and the particle count in one pass over the queue.
+        splitGlowQueueIndices(typeArr, count, idxE, idxG, splitCounts);
+        const ne = splitCounts[0];
+        const ng = splitCounts[1];
+        splitParticles = splitCounts[2];
         flags |= orderSpriteIndices(opts, painter, keysU32, idxE, ne, false, addSortMs, sortedFlag);
         const spriteN = spec.writeSprites(opts) | 0;
         // The sprites' order (queue rows; null: row k), read by the y-sort proxies (gpuParticleProxies.js).

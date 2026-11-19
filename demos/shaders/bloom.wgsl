@@ -3,6 +3,7 @@
 
 const LUMA = vec3<f32>(0.2126, 0.7152, 0.0722);
 const STACKBLUR_MAX_R: i32 = 8;
+const PAIR_TAPS: i32 = 4; // STACKBLUR_MAX_R / 2: texel pairs each side of the centre
 
 fn texelStep() -> vec2<f32> {
   if (customUniforms.uTexelSize.x > 1e-6 && customUniforms.uTexelSize.y > 1e-6) {
@@ -31,28 +32,38 @@ fn triWeight(i: f32, rad: f32) -> f32 {
   return max(rad + 1.0 - abs(i), 0.0);
 }
 
-fn stackBlurH(uv: vec2<f32>, px: vec2<f32>, rad: f32) -> vec3<f32> {
-  var acc = vec3<f32>(0.0);
-  var wsum = 0.0;
-  for (var i = -STACKBLUR_MAX_R; i <= STACKBLUR_MAX_R; i++) {
-    let fi = f32(i);
-    let w = triWeight(fi, rad);
-    if (w <= 0.0) { continue; }
-    acc += brightAt(uv + vec2<f32>(fi, 0.0) * px) * w;
-    wsum += w;
-  }
-  return acc / max(wsum, 0.001);
+// One of the 9 taps that cover a 17-texel row of the kernel: tap 0 is the centre texel; tap k (1 to 4 each side)
+// reads texels 2k-1 and 2k at once, at the point between them where their weights split, so the texture's linear
+// filter returns their weighted average in one fetch. Returns (weight, offset in texels).
+fn pairTap(k: f32, rad: f32) -> vec2<f32> {
+  let ak = abs(k);
+  if (ak < 0.5) { return vec2<f32>(rad + 1.0, 0.0); }
+  let a = 2.0 * ak - 1.0;
+  let b = 2.0 * ak;
+  let wa = triWeight(a, rad);
+  let wb = triWeight(b, rad);
+  let w = wa + wb;
+  var o = 0.0;
+  if (w > 0.0) { o = (a * wa + b * wb) / w; }
+  return vec2<f32>(w, sign(k) * o);
 }
 
+// The whole 2D triangular kernel ((2 x 8 + 1)^2 = 289 texels) in 9 x 9 = 81 bilinear fetches (E-450: the 289-fetch
+// loop took 11 ms of GPU a frame at 1080p). The colour of each 2 x 2 group is exact; the bright extract then runs on
+// the group's average instead of on each texel, which a blur this wide does not show.
 fn stackBlurHV(uv: vec2<f32>, px: vec2<f32>, rad: f32) -> vec3<f32> {
   var acc = vec3<f32>(0.0);
   var wsum = 0.0;
-  for (var j = -STACKBLUR_MAX_R; j <= STACKBLUR_MAX_R; j++) {
-    let fj = f32(j);
-    let w = triWeight(fj, rad);
-    if (w <= 0.0) { continue; }
-    acc += stackBlurH(uv + vec2<f32>(0.0, fj) * px, px, rad) * w;
-    wsum += w;
+  for (var j = -PAIR_TAPS; j <= PAIR_TAPS; j++) {
+    let ty = pairTap(f32(j), rad);
+    if (ty.x <= 0.0) { continue; }
+    for (var i = -PAIR_TAPS; i <= PAIR_TAPS; i++) {
+      let tx = pairTap(f32(i), rad);
+      if (tx.x <= 0.0) { continue; }
+      let w = tx.x * ty.x;
+      acc += brightAt(uv + vec2<f32>(tx.y, ty.y) * px) * w;
+      wsum += w;
+    }
   }
   return acc / max(wsum, 0.001);
 }

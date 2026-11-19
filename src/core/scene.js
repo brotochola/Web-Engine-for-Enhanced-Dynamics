@@ -42,7 +42,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { SpriteSheetRegistry, addBigAtlasChunks } from './spriteSheetRegistry.js';
-import { fillFrameTexels, sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
+import { sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
@@ -62,6 +62,12 @@ import { Gamepad } from './gamepad.js';
 import Keyboard from './keyboard.js';
 import { Flash } from './flash.js';
 import { BigAtlasInspector } from './bigAtlasInspector.js';
+import { startAssetWorker } from './assetWorkerClient.js';
+import { loadBakedAtlas } from './atlas/bakedAtlas.js';
+import { loadPackedAtlas } from './atlas/packedAtlas.js';
+import { decalTexturesFrom } from './atlas/atlasFrames.js';
+import { loadTilemaps } from './tileMapLoad.js';
+import { buildTextureMetadata } from './atlas/textureMetadata.js';
 import { Camera } from './camera.js';
 import { Time, simClockStepMs } from './timeScale.js';
 import { Tween } from './tween.js';
@@ -72,7 +78,8 @@ import {
 } from '../util/sceneBufferMemory.js';
 import { createSceneSharedBuffers, sceneEntitySlots, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
-import { createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
+import { bootSceneWorkers, createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
+import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import {
   bindFrameClock,
   publishFrame,
@@ -149,7 +156,7 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
-import { fetchAssetJson, fetchAssetRead } from '../util/fetchAsset.js';
+import { fetchAssetJson } from '../util/fetchAsset.js';
 import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
 import { darkLightingText, smallWorldText } from '../util/sceneGuards.js';
 import { checkFirstInstance, setDevChecks } from './debug/devChecks.js';
@@ -168,16 +175,13 @@ const warnedWasmKeys = new Set();
 let warnedIntegratedGpu = false;
 
 /**
- * A file named beside another asset: `name` in the folder of `url` (its query and hash left out). An absolute URL or a
- * root path is itself.
- * @param {string} url
- * @param {string} name
+ * An atlas canvas's decal textures (getImageData of each frame: atlas/atlasFrames.js decalTexturesFrom's reads).
+ * @param {HTMLCanvasElement | OffscreenCanvas} canvas
+ * @param {object} json
  */
-function siblingAssetUrl(url, name) {
-  if (/^([a-z][a-z0-9+.-]*:|\/)/i.test(name)) return name;
-  const s = String(url);
-  const cut = s.split(/[?#]/, 1)[0].lastIndexOf('/');
-  return cut >= 0 ? s.slice(0, cut + 1) + name : name;
+function decalTexturesOfCanvas(canvas, json) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  return decalTexturesFrom(json, (x, y, w, h) => (w > 0 && h > 0 ? ctx.getImageData(x, y, w, h).data : new Uint8ClampedArray(0)));
 }
 
 class Scene {
@@ -225,12 +229,19 @@ class Scene {
     this._loadStepsDone = 0;
     /** loadScene's { onProgress }, set by GameEngine; null when none. */
     this._onProgressOption = null;
+    /**
+     * SST-0: the load waterfall's marks, flat [name, wall ms, …] lists: the page's (`main`) and each worker's by its
+     * name, posted with its ready message (Pixi's again after its first drawn frame). tests/bench/loadWaterfall.mjs.
+     */
+    this._loadMarks = { main: [], workers: {} };
 
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
     this.imageUrls = { ...this.constructor.assets };
     /** The Adobe Animate assets init fetched and compiled (prepareAdobeAnimateAssets), until preloadAssets takes them. */
     this._preparedAdobeAssets = null;
+    /** SST-4: the asset loads init started at its top (_startAssetLoads), until preloadAssets takes them; null else. */
+    this._assetLoads = null;
     this.audioUrls = this.constructor.audios || [];
     this.loadedAudioNames = [];
 
@@ -1182,6 +1193,7 @@ class Scene {
 
   // Initialize everything
   async init() {
+    loadMark('scene init');
     debugWorkerLog(`🎬 Scene ${this.constructor.name}: Initializing...`);
 
     // Check SharedArrayBuffer support: on the page too, a blank canvas says nothing
@@ -1193,21 +1205,38 @@ class Scene {
       throw new Error(isolationError);
     }
 
+    // SST-4: every piece of the start that needs nothing from the rest begins here, side by side, and each is awaited
+    // where it is consumed; all of it before the start, the sounds included. engine.wasm is compiling already
+    // (GameEngine.loadScene, SST-2).
+    // SST-1: the engine workers, each booted at once (sceneWorkerBootstrap.js bootSceneWorkers): their own start
+    // (modules, game scripts, engine.wasm, the renderer's GPU) runs while this thread loads the assets.
+    const workersBooted = bootSceneWorkers(this);
+    // Awaited before the init messages; a failure is reported there.
+    workersBooted.catch(() => {});
+
     // N-73: the Adobe Animate assets are fetched and compiled from here, alongside the audio and the scripts, and
     // awaited before the render queue is sized: its auto size counts each character's largest frame of pieces.
     const adobePrepare = this.prepareAdobeAnimateAssets(this.imageUrls?.AdobeAnimateAnimations || {});
 
     // Initialize AudioWorklet mixer and autoplay gate
     const audioConfig = this.config.audio || {};
-    await SoundManager.initializeAudioWorklet(
+    const audioReady = SoundManager.initializeAudioWorklet(
       audioConfig.maxSlots,
       audioConfig.mixGain,
       audioConfig.masterVolume,
       audioConfig.channels,
       audioConfig.compressor
-    );
-    SoundManager.initializeAutoplayGate();
-    this._loadStep('audio');
+    ).then(() => {
+      SoundManager.initializeAutoplayGate();
+      this._loadStep('audio');
+    });
+    audioReady.catch(() => {});
+
+    // Every asset's fetch and decode (the atlas waits for the Adobe sheets it packs, the sounds for the worklet that
+    // decodes them); installed by preloadAssets once the shared buffers exist, as before. They need neither the
+    // Box2D block nor the buffers, and those need nothing from them: the render queue's size counts the Adobe
+    // assets' pieces (adobePrepare), not the atlas.
+    this._assetLoads = this._startAssetLoads(this.imageUrls, this.audioUrls, adobePrepare, audioReady);
 
     // Load entity scripts dynamically in main thread (like workers do)
 
@@ -1222,8 +1251,10 @@ class Scene {
     this.totalEntityCount = sceneEntitySlots(this.totalEntityCount);
 
     // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
-    // render-queue regions the shared buffers make are laid in it.
+    // render-queue regions the shared buffers make are laid in it. Its size needs the entity count (the classes the
+    // constructor registered, not the scripts above) and the Adobe assets' pieces.
     await reserveBox2dBlock(this);
+    loadMark('box2d block');
 
     this._warnSmallWorld();
 
@@ -1232,8 +1263,9 @@ class Scene {
     this.createSharedBuffers();
     this._loadStep('buffers');
 
-    // Create workers
-
+    // The workers' init: once they are booted, the worklet is up (its buffers go in init) and the assets are loaded.
+    await workersBooted;
+    await audioReady;
     await this.createWorkers();
 
     // Wait for all workers to be ready (workers stay paused until we send 'start')
@@ -1246,16 +1278,19 @@ class Scene {
 
     // Scenery declared in config.layers (cover / tiling / tilemap) before preload().
     await Layer.applyConfiguredContent();
+    loadMark('layers content');
 
     // LIFECYCLE PHASE 1: preload()
     // Scene infrastructure setup (camera, nav grid, dynamic scenery overrides).
     // Messages sent here are processed by workers while they are still paused,
     // so the renderer can build the tilemap and warm up the GPU before the first frame.
     await this.preload(this.data);
+    loadMark('preload');
 
     // LIFECYCLE PHASE 2: create()
     // Static / always-on world setup (runs for new game AND save load).
     await this.create(this.data);
+    loadMark('create');
 
     // LIFECYCLE PHASE 2b: new game vs save restore
     // Restore awaits logic0 restoreSaveComplete so entities are in the scene
@@ -1287,6 +1322,23 @@ class Scene {
       this.startMainLoop();
       this.startAllWorkers();
     }
+    loadMark('start');
+    this._takeMainLoadMarks();
+  }
+
+  /** SST-0: the page's load marks so far onto the scene (more come at the end of loadScene). */
+  _takeMainLoadMarks() {
+    const taken = takeLoadMarks();
+    const main = this._loadMarks.main;
+    for (let i = 0; i < taken.length; i++) main.push(taken[i]);
+  }
+
+  /** SST-0: a worker's load marks (its ready message, or Pixi's after its first drawn frame). */
+  _takeWorkerLoadMarks(workerName, marks) {
+    if (!Array.isArray(marks) || marks.length === 0) return;
+    const byWorker = this._loadMarks.workers;
+    const list = byWorker[workerName] || (byWorker[workerName] = []);
+    for (let i = 0; i < marks.length; i++) list.push(marks[i]);
   }
 
   /**
@@ -1491,6 +1543,7 @@ class Scene {
 
   /** @internal One load step finished: scene hook, then loadScene's onProgress. */
   _loadStep(stage) {
+    loadMark(stage);
     const done = ++this._loadStepsDone;
     const total = Scene.LOAD_STEPS.length;
     try {
@@ -1613,11 +1666,14 @@ class Scene {
 
   /**
    * Install a packed or prebaked bigAtlas onto the scene + registry.
-   * @param {{ json: object, imageBitmap: ImageBitmap, canvas: HTMLCanvasElement }} atlas
+   * @param {{ json: object, imageBitmap: ImageBitmap, mapsBitmap?: ImageBitmap | null,
+   *   decals?: { textures: object, frameNameToId: object } | null, inspect?: () => Promise<HTMLCanvasElement> }} atlas
+   *   decals: its decal textures, read with its pixels (SST-5: atlas/atlasFrames.js); inspect: the atlas as a canvas, on
+   *   demand (the inspector, the download)
    * @param {object} [compiledAdobeAssets]
    */
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
-    const { json, imageBitmap, canvas, mapsBitmap = null } = atlas;
+    const { json, imageBitmap, mapsBitmap = null, decals = null, inspect = null } = atlas;
     // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
     const proxySheets = { ...(json?.meta?.proxySheets || {}) };
     addBigAtlasChunks(json, proxySheets);
@@ -1669,129 +1725,87 @@ class Scene {
     this.finalizeAdobeAnimateAssets(compiledAdobeAssets);
 
     this.bigAtlasProxySheets = proxySheets;
-    this.bigAtlasCanvas = canvas;
+    this.bigAtlasInspect = inspect;
     this.bigAtlasJson = json;
 
-    if (this.config.particle.decals && canvas) {
-      this.decalTextureData = this.extractDecalTextures(canvas, json);
+    if (this.config.particle.decals && decals) {
+      this.decalTextureData = this._useDecalTextures(decals);
     }
 
     if (typeof window !== 'undefined') {
-      window.downloadBigAtlas = () => {
+      // A debug view: the atlas made into a canvas when asked (SST-5: the page keeps none).
+      window.downloadBigAtlas = async () => {
         const link = document.createElement('a');
         const size = json.meta?.size || {};
         link.download = `bigAtlas_${size.w || 0}x${size.h || 0}.png`;
-        link.href = this.bigAtlasCanvas.toDataURL();
+        link.href = (await this.bigAtlasInspect()).toDataURL();
         link.click();
       };
 
-      window.inspectBigAtlas = () => {
-        BigAtlasInspector.show(this.bigAtlasCanvas, this.bigAtlasJson);
+      window.inspectBigAtlas = async () => {
+        BigAtlasInspector.show(await this.bigAtlasInspect(), this.bigAtlasJson);
       };
     }
   }
 
-  /** @returns {HTMLCanvasElement} */
-  _canvasFromImageBitmap(imageBitmap) {
-    const canvas = document.createElement('canvas');
-    canvas.width = imageBitmap.width;
-    canvas.height = imageBitmap.height;
-    canvas.getContext('2d', { willReadFrequently: true }).drawImage(imageBitmap, 0, 0);
-    return canvas;
-  }
-
-  async _loadBakedBigAtlas(bigAtlasAsset) {
-    const jsonPromise = fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON');
-    // DX-MAPS: the twin page the bake wrote beside the atlas, fetched once the JSON names it, while the atlas loads.
-    const mapsPromise = jsonPromise.then((json) => this._loadBakedMapsPage(bigAtlasAsset, json));
-    const [json, pngResponse, mapsBitmap] = await Promise.all([
-      jsonPromise,
-      fetchAssetRead(bigAtlasAsset.png, 'baked bigAtlas PNG', (r) => r.blob()),
-      mapsPromise,
-    ]);
-    const imageBitmap = await createImageBitmap(pngResponse.body);
-    const canvas = this._canvasFromImageBitmap(imageBitmap);
-    // H-EDGE (E-448): a bake from before H-EDGE wrote no frame texels; read them from the atlas's pixels, once.
-    fillFrameTexels(json, () => ({
-      data: canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data,
-      x: 0,
-      y: 0,
-      width: canvas.width,
-      height: canvas.height,
-    }));
-    return { json, imageBitmap, mapsBitmap, canvas };
+  /**
+   * An asset worker's job is done: its load marks filed under its name, and it is let go (it stops once its background
+   * work, the atlas cache's write, is done; marks it posts after go to the same list).
+   * @param {string} name
+   * @param {import('./assetWorkerClient.js').AssetWorker | null} worker
+   */
+  _finishAssetWorker(name, worker) {
+    if (!worker) return;
+    this._takeWorkerLoadMarks(name, worker.takeMarks());
+    worker.release((marks) => this._takeWorkerLoadMarks(name, marks));
   }
 
   /**
-   * DX-MAPS: a baked atlas's twin page (heights and normals at each frame's rectangle), as data: `assets.bigAtlas.maps`,
-   * else the file its JSON names (meta.mapsImage, beside the atlas png). Null when the atlas has no maps.
-   * @returns {Promise<ImageBitmap|null>}
+   * SST-5 step 4: a baked atlas, never drawn into a 2D canvas here. The browser decodes its PNG for the renderer; the
+   * atlas worker reads the decal textures and the texels a bake from before H-EDGE lacks, and draws in the built-ins a
+   * bake from before them lacks (atlas/bakedAtlas.js).
    */
-  async _loadBakedMapsPage(bigAtlasAsset, json) {
-    const named = json?.meta?.mapsImage;
-    const url = typeof bigAtlasAsset.maps === 'string'
-      ? bigAtlasAsset.maps
-      : typeof named === 'string' && named !== '' ? siblingAssetUrl(bigAtlasAsset.png, named) : null;
-    if (url === null) {
-      if (json?.meta?.maps === true) {
-        warnOnce(this.constructor.name, 'baked-maps',
-          `${this.constructor.name}: its baked bigAtlas JSON says a sheet has maps but names no maps page (meta.mapsImage), so ` +
-          `the sprites are lit flat. Bake it again (npm run bake:atlas), or give assets.bigAtlas.maps.`);
-      }
-      return null;
+  async _loadBakedBigAtlas(bigAtlasAsset) {
+    const worker = await startAssetWorker('atlasWorker');
+    try {
+      return await loadBakedAtlas(bigAtlasAsset, {
+        decals: Boolean(this.config.particle.decals),
+        sceneName: this.constructor.name,
+        worker,
+        // The built-ins a stale bake gets: unshaded glows (DX-GLOWRADIUS), placed at the scene's padding.
+        unshadedGlows: unshadedGlowsOf(this.config?.lighting),
+        padding: this.config.assets?.atlasPadding ?? ASSETS_DEFAULTS.atlasPadding,
+      });
+    } finally {
+      this._finishAssetWorker('atlas', worker);
     }
-    const { body } = await fetchAssetRead(url, 'baked bigAtlas maps PNG', (r) => r.blob());
-    // Data, not colour, as the packed page (_packBigAtlasOnMainThread): no premultiplied alpha, no colour space.
-    return createImageBitmap(body, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   }
 
-  async _packBigAtlasOnMainThread(assetsToLoad, options) {
-    // DX-MAPS: the twin page's texels as computed, not read back from its canvas: a 2D canvas keeps premultiplied alpha,
-    // and the twin page holds a normal's second byte in A (about 55 to 61 on standing sprites), so R, the height's high
-    // byte, came back rounded by a few steps (several px of height).
-    // DX-MAPCAMERA: the scene's camera, so a sheet drawn for another one (its artCamera) has its heights scaled to it.
-    // DX-GLOWRADIUS: halos that join the entities are unshaded (the light gradient's frame carries the mark).
-    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, {
-      ...options,
-      keepMapsTexels: true,
-      camera: this.config?.camera ?? null,
-      unshadedGlows: unshadedGlowsOf(this.config?.lighting),
-    });
-    const maps = packed.mapsCanvas;
-    const exact = maps && packed.mapsTexels ? new ImageData(packed.mapsTexels, maps.width, maps.height) : null;
-    const [imageBitmap, mapsBitmap] = await Promise.all([
-      createImageBitmap(packed.canvas),
-      // DX-MAPS: the twin page goes to the renderer as data: no premultiplied alpha, no colour space.
-      exact
-        ? createImageBitmap(exact, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
-        : maps ? createImageBitmap(maps, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null,
-    ]);
-    return { json: packed.json, imageBitmap, mapsBitmap, canvas: packed.canvas };
+  /**
+   * SST-5 steps 1-2: the atlas packed in the atlas worker, off this thread (atlas/packedAtlas.js), its decal textures
+   * read there. DX-MAPS: the twin page goes to the renderer from its texels as computed; DX-MAPCAMERA: the scene's
+   * camera scales the heights of a sheet drawn for another one; DX-GLOWRADIUS: halos that join the entities are unshaded.
+   */
+  async _packBigAtlas(assetsToLoad, options) {
+    const worker = await startAssetWorker('atlasWorker');
+    try {
+      return await loadPackedAtlas(assetsToLoad, {
+        options,
+        camera: this.config?.camera ?? null,
+        unshadedGlows: unshadedGlowsOf(this.config?.lighting),
+        decals: Boolean(this.config.particle.decals),
+        worker,
+      });
+    } finally {
+      this._finishAssetWorker('atlas', worker);
+    }
   }
 
+  /** SST-11: each tilemap's JSON parsed and laid out in a tilemap worker (tileMapLoad.js); TileMap built over it. */
   async _loadTilemapsParallel(tilemaps) {
-    if (!tilemaps) return;
-    const entries = Object.entries(tilemaps);
-    await Promise.all(
-      entries.map(async ([tilemapId, tilemapConfig]) => {
-        try {
-          const tilemapData = await fetchAssetJson(tilemapConfig.json, `tilemap "${tilemapId}" JSON`);
-          const tileset = await fetchAssetRead(tilemapConfig.png, `tilemap "${tilemapId}" tileset`, (r) => r.blob());
-          const tilesetBitmap = await createImageBitmap(tileset.body);
-
-          this.loadedTilemaps[tilemapId] = {
-            data: tilemapData,
-            tilesetBitmap,
-          };
-        } catch (error) {
-          console.error(`❌ Failed to load tilemap "${tilemapId}":`, error);
-        }
-      })
-    );
-
-    if (Object.keys(this.loadedTilemaps).length > 0) {
-      TileMap.initializeFromLoaded(this.loadedTilemaps);
-    }
+    const { loaded, marks } = await loadTilemaps(tilemaps);
+    Object.assign(this.loadedTilemaps, loaded);
+    this._takeWorkerLoadMarks('tilemap', marks);
   }
 
   async _loadShaderSources(imageUrls) {
@@ -1859,7 +1873,38 @@ class Scene {
     });
   }
 
+  /**
+   * Load every asset and install it: the atlas into the sprite registries, the sounds' names. Scene.init started the
+   * loads at its top (SST-4, _startAssetLoads); called on its own, it starts them now.
+   */
   async preloadAssets(imageUrls, spritesheetConfigs = {}, audioManifest = null) {
+    let loads = this._assetLoads;
+    this._assetLoads = null;
+    if (loads === null) {
+      // Prepared in init (N-73), else here.
+      const adobePrepare = this._preparedAdobeAssets
+        ? Promise.resolve(this._preparedAdobeAssets)
+        : this.prepareAdobeAnimateAssets(imageUrls?.AdobeAnimateAnimations || {});
+      loads = this._startAssetLoads(imageUrls, audioManifest, adobePrepare, Promise.resolve());
+    }
+    const { atlas, audioNames, preparedAdobeAssets } = await loads;
+    this._preparedAdobeAssets = null;
+    this._installBigAtlas(atlas, preparedAdobeAssets.compiledAssets);
+    this.loadedAudioNames = audioNames;
+  }
+
+  /**
+   * SST-4: every asset's fetch and decode, started at once and side by side: the atlas (baked, or packed once the Adobe
+   * assets' sheets are in), the tilemaps, the flowfields, the shader sources and the sounds (once the audio worklet,
+   * whose context decodes them, is up). Nothing is installed: preloadAssets does that.
+   * @param {object} imageUrls the scene's assets
+   * @param {Array|object|null} audioManifest the sounds (null: the scene's)
+   * @param {Promise<{ compiledAssets: object, spritesheetConfigs: object }>} adobePrepare prepareAdobeAnimateAssets
+   * @param {Promise<unknown>} audioReady the audio worklet's initialization
+   * @returns {Promise<{ atlas: object, audioNames: string[], preparedAdobeAssets: object }>}
+   */
+  _startAssetLoads(imageUrls, audioManifest, adobePrepare, audioReady) {
+    loadMark('assets started');
     this.loadedTextures = {};
     this.loadedSpritesheets = {};
     this.loadedTilemaps = {};
@@ -1867,11 +1912,10 @@ class Scene {
 
     const textures = imageUrls?.textures || {};
     const sceneSpritesheets = imageUrls?.spritesheets || {};
-    const adobeAnimateAnimations = imageUrls?.AdobeAnimateAnimations || {};
-    // Prepared in init (N-73), else here.
-    const preparedAdobeAssets = this._preparedAdobeAssets || await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
-    this._preparedAdobeAssets = null;
-    this._loadStep('adobe');
+    const adobe = adobePrepare.then((prepared) => {
+      this._loadStep('adobe');
+      return prepared;
+    });
     const step = (stage) => (value) => {
       this._loadStep(stage);
       return value;
@@ -1885,6 +1929,8 @@ class Scene {
           debugWorkerLog('[Scene] Loading prebaked bigAtlas...');
           return await this._loadBakedBigAtlas(bakedBigAtlas);
         }
+        // The pack takes the Adobe assets' sheets too.
+        const preparedAdobeAssets = await adobe;
         const spritesheets = {
           ...sceneSpritesheets,
           ...preparedAdobeAssets.spritesheetConfigs,
@@ -1893,7 +1939,7 @@ class Scene {
           ...textures,
           spritesheets,
         };
-        return await this._packBigAtlasOnMainThread(assetsToLoad, atlasOptions);
+        return await this._packBigAtlas(assetsToLoad, atlasOptions);
       } catch (error) {
         console.error('❌ Failed to generate BigAtlas:', error);
         throw error;
@@ -1908,20 +1954,21 @@ class Scene {
       )
       : Promise.resolve();
 
-    const audioPromise = this.preloadAudios(
+    const audioPromise = audioReady.then(() => this.preloadAudios(
       audioManifest !== null && audioManifest !== undefined ? audioManifest : this.audioUrls
-    );
+    ));
 
-    const [atlasResult, , , , loadedAudioNames] = await Promise.all([
+    const loads = Promise.all([
       atlasPromise.then(step('atlas')),
       this._loadTilemapsParallel(imageUrls?.tilemaps).then(step('tilemaps')),
       flowfieldsPromise.then(step('flowfields')),
       this._loadShaderSources(imageUrls).then(step('shaders')),
       audioPromise.then(step('sounds')),
-    ]);
-
-    this._installBigAtlas(atlasResult, preparedAdobeAssets.compiledAssets);
-    this.loadedAudioNames = loadedAudioNames;
+      adobe,
+    ]).then(([atlas, , , , audioNames, preparedAdobeAssets]) => ({ atlas, audioNames, preparedAdobeAssets }));
+    // preloadAssets awaits it: an error before then is reported there, not as an unhandled rejection.
+    loads.catch(() => {});
+    return loads;
   }
 
   async preloadAudios(audioManifest) {
@@ -1950,151 +1997,29 @@ class Scene {
     return names;
   }
 
+  /**
+   * The decal textures of an atlas drawn into a canvas (every animation's first frame, then every frame: atlas/
+   * atlasFrames.js decalTexturesFrom), installed for stamping. The atlas loaders read them with the atlas's pixels.
+   * @param {HTMLCanvasElement | OffscreenCanvas} atlasCanvas
+   * @param {object} atlasJson
+   */
   extractDecalTextures(atlasCanvas, atlasJson) {
-    const ctx = atlasCanvas.getContext('2d', { willReadFrequently: true });
+    return this._useDecalTextures(decalTexturesOfCanvas(atlasCanvas, atlasJson));
+  }
 
-    const textures = {};
-    const animationNames = Object.keys(atlasJson.animations);
-
-    // First pass: Extract first frame of each animation (for animation-based stamping)
-    // textureId 0 to animationNames.length-1 = animation first frames
-    for (let textureId = 0; textureId < animationNames.length; textureId++) {
-      const animName = animationNames[textureId];
-      const frameList = atlasJson.animations[animName];
-
-      if (!frameList || frameList.length === 0) continue;
-
-      const firstFrameName = frameList[0];
-      const frameData = atlasJson.frames[firstFrameName];
-
-      if (!frameData) continue;
-
-      const frame = frameData.frame;
-      const imageData = ctx.getImageData(frame.x, frame.y, frame.w, frame.h);
-
-      textures[textureId] = {
-        width: frame.w,
-        height: frame.h,
-        rgba: imageData.data.buffer,
-      };
-    }
-
-    // Second pass: Extract ALL individual frames (for frame-specific stamping)
-    // This allows stamping any specific frame like "civil1_hurt_5" (last frame of hurt)
-    // textureIds start after animation count, using negative offsets from frame index
-    const frameNames = Object.keys(atlasJson.frames);
-    const frameNameToId = {};
-
-    // Build frame name → textureId mapping
-    // We store frames with textureIds starting at animationNames.length
-    let frameTextureId = animationNames.length;
-
-    for (const frameName of frameNames) {
-      const frameData = atlasJson.frames[frameName];
-      if (!frameData) continue;
-
-      const frame = frameData.frame;
-      const imageData = ctx.getImageData(frame.x, frame.y, frame.w, frame.h);
-
-      textures[frameTextureId] = {
-        width: frame.w,
-        height: frame.h,
-        rgba: imageData.data.buffer,
-      };
-
-      frameNameToId[frameName] = frameTextureId;
-      frameTextureId++;
-    }
-
-    // Store the frame mapping for lookup by ParticleEmitter
-    this.decalFrameNameToId = frameNameToId;
-    SpriteSheetRegistry.setDecalFrameMapping(frameNameToId);
-
-    return textures;
+  /** Decal textures installed: their frame name → textureId map on the scene and the registry (ParticleEmitter's). */
+  _useDecalTextures(decals) {
+    this.decalFrameNameToId = decals.frameNameToId;
+    SpriteSheetRegistry.setDecalFrameMapping(decals.frameNameToId);
+    return decals.textures;
   }
 
   /**
-   * Build texture metadata for render queue system
-   * Creates lookup tables so particle_worker can compute globalTextureId
-   * and pixi_worker can do O(1) texture lookup
+   * Build texture metadata for render queue system (atlas/textureMetadata.js): the tables particle_worker computes
+   * globalTextureId with and pixi_worker finds a texture with.
    */
   buildTextureMetadata() {
-    const bigAtlas = SpriteSheetRegistry.spritesheets.get('bigAtlas');
-    if (!bigAtlas) {
-      console.warn('[Scene] bigAtlas not found, texture metadata not built');
-      return null;
-    }
-
-    // Build animation frame offsets
-    // animationFrameStart[animIdx] = starting index in flat texture array
-    // animationFrameCount[animIdx] = number of frames
-    const animationFrameStart = [];
-    const animationFrameCount = [];
-    let currentOffset = 0;
-
-    const animCount = bigAtlas.totalAnimations;
-    for (let animIdx = 0; animIdx < animCount; animIdx++) {
-      const animName = bigAtlas.indexToName[animIdx];
-      const animData = bigAtlas.animations[animName];
-      const frameCount = animData ? animData.frameCount : 1;
-
-      animationFrameStart[animIdx] = currentOffset;
-      animationFrameCount[animIdx] = frameCount;
-      currentOffset += frameCount;
-    }
-
-    // Get frame dimension arrays from SpriteSheetRegistry
-    const frameDimensions = SpriteSheetRegistry.buildFrameDimensionArrays();
-
-    // Build proxy sheet mapping: proxyToGlobalAnim[sheetId][localAnimIdx] = globalAnimIdx
-    // This maps (spritesheetId, animationState) → bigAtlas animation index
-    const proxyToGlobalAnim = {};
-    const spritesheetNames = SpriteSheetRegistry.spritesheetNames;
-
-    for (let sheetId = 0; sheetId < spritesheetNames.length; sheetId++) {
-      const sheetName = spritesheetNames[sheetId];
-      if (!sheetName) continue;
-
-      const sheet = SpriteSheetRegistry.spritesheets.get(sheetName);
-      if (!sheet) continue;
-
-      if (sheet.isProxy) {
-        // Proxy sheet - map local animation indices to bigAtlas indices
-        proxyToGlobalAnim[sheetId] = {};
-        for (const [animName, animInfo] of Object.entries(sheet.animations)) {
-          const localIdx = animInfo.index;
-          const prefixedName = animInfo.prefixedName;
-          // Look up the global index in bigAtlas
-          const globalAnimData = bigAtlas.animations[prefixedName];
-          if (globalAnimData) {
-            proxyToGlobalAnim[sheetId][localIdx] = globalAnimData.index;
-          }
-        }
-      } else if (sheetName === 'bigAtlas') {
-        // bigAtlas itself - direct 1:1 mapping
-        proxyToGlobalAnim[sheetId] = {};
-        for (let i = 0; i < animCount; i++) {
-          proxyToGlobalAnim[sheetId][i] = i;
-        }
-      }
-    }
-
-    // Build animation name → index lookup (for direct texture lookups like _lightGradient)
-    const animationNameToIndex = {};
-    for (let animIdx = 0; animIdx < animCount; animIdx++) {
-      const animName = bigAtlas.indexToName[animIdx];
-      animationNameToIndex[animName] = animIdx;
-    }
-
-    return {
-      animationFrameStart,
-      animationFrameCount,
-      proxyToGlobalAnim,
-      animationNameToIndex,
-      totalFrames: currentOffset,
-      frameWidth: frameDimensions?.frameWidth,   // Uint16Array[textureId] → pixel width
-      frameHeight: frameDimensions?.frameHeight, // Uint16Array[textureId] → pixel height
-    };
+    return buildTextureMetadata(SpriteSheetRegistry);
   }
 
   setupWorkerCommunication() {
@@ -2144,7 +2069,11 @@ class Scene {
       }
     } else if (e.data.msg === 'workerReady') {
       debugWorkerLog(`[Scene] 📬 Received 'workerReady' message from ${e.currentTarget.name}`);
+      loadMark(`ready ${e.currentTarget.name}`);
+      this._takeWorkerLoadMarks(e.currentTarget.name, e.data.loadMarks);
       this.handleWorkerReady(e.currentTarget.name);
+    } else if (e.data.msg === 'loadMarks') {
+      this._takeWorkerLoadMarks(e.currentTarget.name, e.data.marks);
     } else if (e.data.msg === 'gpuInfo') {
       this._takeGpuInfo(e.data);
     } else if (e.data.msg === 'error') {
@@ -2992,7 +2921,7 @@ class Scene {
     this.decalTextureData = null;
     this.decalMemory = null;
     this.box2dBlock = null;
-    this.bigAtlasCanvas = null;
+    this.bigAtlasInspect = null;
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;
     this._loadedShaderSources = null;

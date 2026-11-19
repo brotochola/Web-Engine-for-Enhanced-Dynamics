@@ -464,7 +464,7 @@ export interface SceneRendererConfig extends Record<string, unknown> {
 export type SceneConfig = Record<string, unknown> & {
   /**
    * Entity id width. 'auto' (default): 16-bit ids while the scene's pools hold at most 65535 entities, 32-bit
-   * past that, decided when the scene is built. 16 or 32 forces one (32: up to 500000 entities).
+   * past that, decided when the scene is built. 16 or 32 forces one (32: up to 1048575 entities).
    */
   entityIdWidth?: 'auto' | 16 | 32;
   /**
@@ -497,6 +497,11 @@ export type SceneConfig = Record<string, unknown> & {
     maxAtlasWidth?: number;
     /** The atlas's largest height in px (default 4096). */
     maxAtlasHeight?: number;
+    /**
+     * SST-6: a packed atlas is kept in Cache Storage, keyed by a hash of its inputs (every source file's bytes, the options,
+     * the engine), and loaded from it the next time the scene loads (default true). false packs it every load.
+     */
+    atlasCache?: boolean;
   };
   /** Scene lighting; the 3D light mode's keys are typed in {@link SceneLightingConfig}. */
   lighting?: SceneLightingConfig;

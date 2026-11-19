@@ -140,7 +140,8 @@ until SST-0's baseline: the order below is a bet from reading the code.
 
 ### SST-0 — The load waterfall (measurement tool)
 
-- [ ] not started
+- [x] 36098a8e, b4af7157 (`src/util/loadMarks.js`, `tests/bench/loadWaterfall.mjs`, HOW_WE_MEASURE "Load time"); the
+  first waterfalls are in section 6
 
 Marks for every phase on one clock (`performance.timeOrigin + performance.now()` on each thread):
 - main: each `Scene.init` step, each branch of `preloadAssets`, and inside the atlas: fetch and decode,
@@ -156,7 +157,7 @@ items; the full matrix waits for the end (section 2).
 
 ### SST-1 — Workers start before the assets: boot, then configure
 
-- [ ] not started
+- [x] 67d5c707 (the page and the workers), 4450ca64 (the renderer), d78908f6 (merged): R-1451
 
 Split each worker's start in two messages:
 - **'boot'**, sent right after `new Worker`, with what depends on neither assets nor buffers: the
@@ -175,7 +176,7 @@ atlas's), all suites, every demo booting (`test:demos`, the scene smoke).
 
 ### SST-2 — engine.wasm compiled once, on the main thread, and shared
 
-- [ ] not started
+- [x] b1750d20: R-1451
 
 - The main thread starts `WebAssembly.compileStreaming(fetch(engineWasmUrl))` as `loadScene` begins;
   in the bundle it inflates the data URL once.
@@ -190,7 +191,7 @@ in Chrome and Firefox.
 
 ### SST-3 — Game scripts fetched once and in parallel (bundle)
 
-- [ ] not started
+- [x] 3ce60f3f, built; bundle only, not timed yet
 
 - The main thread fetches the scene's script graph once, all files at the same time, and parses each
   file's imports as it arrives.
@@ -204,7 +205,7 @@ dependency, the bundle smokes, SST-0 on the prod bundle.
 
 ### SST-4 — The main thread's start in parallel
 
-- [ ] not started
+- [x] d4bee501: R-1451 (the asset branches start at 8 ms; the page thread stays the critical path, SST-5)
 
 Today `Scene.init` awaits in a row: the audio worklet, the entity scripts, Adobe,
 `reserveBox2dBlock`, the buffers, the workers, then the assets. Start everything that does not depend
@@ -257,7 +258,7 @@ and SST-0 warm against cold.
 
 ### SST-7 — The GPU ready before the first frame
 
-- [ ] not started
+- [x] 8a21a209 (step 1), 228bb256 (step 2, E-494), 67bead52 (step 3, WebGPU), 3157f110 (step 4): R-1451, the renderer's longest step after the start 109 -> 36 ms
 
 1. Upload the atlas, the maps page and the tilesets during init, not at the first draw.
 2. The programs made on first use, built and linked at init: that is **E-494**, which stays the row for
@@ -350,4 +351,37 @@ nothing is skipped.
 
 ## 6. Found while building
 
-(Nothing yet.)
+**The first waterfalls (2026-11-18, the main PC, source build, 2 runs a scene, a fresh context each, ms after
+`loadScene`).** The first run after Chrome starts reads everything from this machine's 5400 rpm disk and is far
+slower (the barrio 21.4 s to its first frame, Predator by night 8.0 s); the runs after it (the OS's file cache warm,
+the browser's caches empty or full) read:
+
+| | Predator `light3d=1&hour=22` | Buenos Aires `hour=22` | bunnyMark |
+| --- | --- | --- | --- |
+| first frame | 3 290 to 3 440 | 3 950 to 4 040 | 1 583 |
+| assets done (the last branch) | 2 330 to 2 460 (atlas 1 669, tilemaps 1 706: the 15.7 MB tilemap JSON) | 2 130 to 2 190 (atlas about 2 180, flowfields 2 280, shaders about 1 480) | 54 |
+| assets to `init sent` (the page builds the init data) | 440 to 460 | 210 to 240 | 5 |
+| the workers' modules evaluated (source) | 1 060 to 2 200 | | about 900 |
+| `init sent` to the last ready (the renderer) | 300 | 460 | 940 |
+| ready to the start (preload, create, createNewGame and its spawns) | 190 | 1 100 (the barrio's own setup) | 550 |
+| longest own step in the 5 s after it | renderer 120, spatial 90, pre-render 43 | pre-render 81, spatial 53 | renderer 61, pre-render 40 |
+
+What it says for the order:
+- **The atlas and the tilemaps are the critical path where a scene has them** (1.7 to 2.2 s on the page's main
+  thread). Predator's baked atlas still costs 1.67 s (fetch, decode, the whole atlas drawn into a 2D canvas, and its
+  frame texels read back: SST-5 step 4). Its tilemap is a separate bar the plan did not name: **SST-11** below.
+- **The workers sit idle from their modules (about 1 s) to their init (2.5 to 2.9 s):** SST-1 and SST-2 can take
+  their 300 to 940 ms of init off the critical path.
+- **The page's init data takes 440 ms in Predator** (texture metadata, the decal memory and decal textures read back
+  per frame, the scripts list): SST-10, or with SST-5 where it is the atlas's readback.
+- **Hitches after the start:** the renderer's 120 ms step in Predator by night is E-494's first-use programs (SST-7).
+- Pixi's 'first draw' mark does not come in bunnyMark (its frames reach the screen without `_submitRender` seeing
+  the worker running, to look at); the runner takes the first frame from the renderer's frameTotals count instead.
+
+### SST-11 — The tilemap off the critical path
+
+- [ ] not started
+
+Predator's tilemap (`demos/map_n_flowfield/tilemap2.json`, 15.7 MB) is fetched and parsed on the page in about 1.7 s,
+as long as its atlas. Parse it off the main thread (a worker, or a binary format the bake writes beside the JSON, as the
+flowfields have), and hand the workers what they read. Checked by the same tile data (a hash) and SST-0 on Predator.
