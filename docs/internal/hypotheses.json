@@ -24126,6 +24126,26 @@
       "statusText": "answered 2026-11-19 (R-1540): not reproduced",
       "next": "Bisect on a quiet machine, logic owner, crowd=2.5, 4 pairs a step: 99afd415 against aef88471 (N-301, N-314, the physics batch E-325/E-327/E-324, E-527), then inside the half that moves; suspects: E-527's tickAll classification, E-325's moved list, E-327's stamps, N-218's link-count read in the pose writes.",
       "result": "Not reproduced 2026-11-19 (R-1540): three quiet sittings (07:12, 07:16, 07:21) read logic level or lower; the regression was a disturbed sitting."
+    },
+    {
+      "records": [
+        "R-1547"
+      ],
+      "refs": [],
+      "id": "DX-LIGHTKNOBS",
+      "title": "Two light knobs for the developer: lighting.shadowSamples (the shadow maps' taps a light pixel averages, 1 to 9 of the 3 x 3 texels, default 5) and lighting.lightTileSize (the light pass's screen tiles in px, 4 to 256, default 16)",
+      "status": "kept",
+      "statusText": "Asked for by the owner on 2026-11-19 after seeing 5 taps against 1 (\"es un knob\"); built and measured on dx/light-knobs (73ae2ba3, 8587a28c, 413183e1), not merged yet",
+      "date": "2026-11-19",
+      "result": "GTX 1650, Predator light3d: the light pass 0.95 / 1.03 / 1.10 ms with 1 / 5 / 9 samples (afternoon); tiles of 8 / 16 / 32 px alike on the GPU",
+      "next": "Merge to main with the next bundles.",
+      "area": "render",
+      "kind": "dx",
+      "aliases": [
+        "shadow samples",
+        "light tile size",
+        "soft shadow taps"
+      ]
     }
   ],
   "records": [
@@ -39103,6 +39123,20 @@
       "title": "R-1492's tweenPool lead dismissed: interleaved on the ASUS, its kernel reads v0.14.0 609.3, 57044bd1 604.2, 8c310e43 605.6 ops/s; the scoreboard's -23.5 % was one-shot noise",
       "verdict": "note",
       "text": "ASUS lab job 0899a (11:0x-11:14) checked R-1492's lead, Node only: tweenPoolMicrobench (cases.tick.opsPerSec) at\nv0.14.0, 57044bd1 and 8c310e43 (branch pcmain19). Each revision ran its own kernel (git archive of package.json, src and\ntests/bench), 6 rounds interleaved, with a new lab driver, kab.mjs.\n\n| Revision | Median ops/s | Runs |\n|---|---|---|\n| v0.14.0 | 609.3 | 592 608 614 612 609 607 |\n| 57044bd1 | 604.2 (-0.8 %) | 604 597 603 593 607 611 |\n| 8c310e43 | 605.6 (-0.6 %) | 609 593 612 606 605 566 |\n\n- No regression. 0898z's -23.5 % was that sitting's one-shot kernel noise. No tween file or kernel changed between\n  57044bd1 and 8c310e43 either.\n- A single scoreboard kernel row on this laptop is not evidence by itself. Check a WORSE kernel row interleaved like\n  this before calling it."
+    },
+    {
+      "id": "R-1547",
+      "date": "2026-11-19",
+      "time": "13:03",
+      "timeFrom": "recorded",
+      "title": "lighting.shadowSamples and lighting.lightTileSize built: the light pass 0.95 / 1.03 / 1.10 ms with 1 / 5 / 9 samples on the GTX 1650, tiles of 8 / 16 / 32 px alike",
+      "verdict": "kept",
+      "text": "**Two light knobs built at the owner's ask (DX-LIGHTKNOBS): `lighting.shadowSamples` (1 to 9, default 5) and `lighting.lightTileSize` (4 to 256 px, default 16), on `dx/light-knobs` (73ae2ba3, 8587a28c; Predator's `?shadowSamples=` and `?lightTileSize=`, 413183e1).** The owner saw the 5-tap and 1-tap shadows side by side and said it is the developer's choice, not his: a knob, any count from 1 to 9, and the tiles' size too.\n\n- **shadowSamples.** The three lookups of the light pass (the sun's map, a lamp's tile, a lamp's tile for a floor point) read their taps from blocks `lightingSource` keeps for the count (`shadowTapsOf`: the most even layout of the 3 × 3 texels, symmetric about the point; 2, 3, 6 and 7 soften more along a row or a diagonal, as the guide says), with the weight written as 1 over it, in GLSL and WGSL. 5 is the old cross in its old order; `pixelArt` still takes 1. A node test checks each count's texels, their mirrors and the weight at every lookup in both languages.\n- **lightTileSize.** `layoutLightTiles` takes the scene's size (still doubled while the texture would pass 4096 rows); the binning test runs 4, 8, 24, 32 and 64 px tiles against every pixel.\n- **Numbers (GTX 1650, Predator `light3d=1&zoom=0.3`, 1080p, the light at half; `glFrameRecorder --gpu-passes`, 2 rounds each, 12:48 to 12:59).** The light pass, afternoon (hour 17): 0.936 / 0.968 ms with 1 sample, 1.036 / 1.032 with 5, 1.110 / 1.096 with 9; night (hour 22): 0.989 / 1.026, 1.141 / 1.100, 1.134 / 1.144. So 1 is 8 to 10 % cheaper than 5 and 9 costs 2 to 7 % more, in a GPU frame of 6.6 to 7.8 ms. Tiles at night: 8 px 1.155 / 1.111 ms, 16 px 1.112 / 1.054, 32 px 1.147 / 1.105: alike within the spread. `binLightTiles` in Node for 200 lamps (r 150 to 400) on that pass: 0.034 / 0.023 / 0.018 ms for 8 / 16 / 32 px; the tiles' texture 308 / 91 / 31 KB.\n- **Checked by eye.** Lockstep captures (crowd 0.3) of every count on WebGL and WebGPU compile and draw without errors; 1 gives the texels' steps, 9 the softest edge, WebGPU's 9 looks like WebGL's. Pixel diffs between page loads do not compare (the scene differs from one load to the next), so \"5 as before\" rests on the node test.\n- **Verdict.** Kept as features; the defaults do not change. Suites green (3272 node, 121 demos).",
+      "commits": [
+        "73ae2ba3",
+        "8587a28c",
+        "413183e1"
+      ]
     }
   ],
   "leads": [
