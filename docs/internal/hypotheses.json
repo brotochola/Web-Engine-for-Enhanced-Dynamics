@@ -23618,8 +23618,8 @@
     {
       "id": "E-526",
       "title": "FSMs under static tickAll with no per-entity tick(): the engine builds the tickAll of a type that has FSM components and no tick, groups the entities by state in one pass and runs each state over its ids (a state class may override static updateAll(ids, n, dt)); a logic worker should end freer in Predator",
-      "status": "running",
-      "statusText": "layer 0 kept 2026-11-19 (72be4823); layer 1 waits on the owner (order by state)",
+      "status": "kept",
+      "statusText": "Layer 0 kept 2026-11-19 (72be4823); layer 1 built and rejected the same day (R-1553, slower where states mix); layer 2 not built",
       "date": "2026-11-18",
       "result": "Layer 0 kept 2026-11-19 (R-1541): FSM.tickAll for types with FSM components and no tick(); kernel -27.2 % (interval 1), -33.8 % (intervals 4 and 6); no demo on the path yet. Layer 1 (by state) is the owner's call: it changes the order.",
       "next": "After E-527 (tickAll with tickInterval) and E-528 (static hooks by entityType). Layer 0: FSM.tickAll(list, n, dt, EntityClass); the engine wires it for a type with FSM components, no tick() and no tickAll (components order; a type that wants its own code writes static tickAll and calls FSM.tickAll in it); states keep onUpdate(owner, i, dt, ms) with the owner taken from EntityClass.instances[i] (made on demand), so no state is rewritten. Layer 1: tickAll counting-sorts the ids by state in one pass and calls State.updateAll(ids, n, dt) per state; the default updateAll loops over that state's own onUpdate (a monomorphic call TurboFan may inline, where fsm.tick reads a megamorphic _onUpdates[...] a call, E-146, E-253); pending transitions run in a pass before it and are the only place onExit and onEnter ask for an instance. Layer 2 (optional): a state overrides static updateAll(ids, n, dt) against the component arrays (Transform.x[i], no owner). To decide with the owner: the order changes (by state, then by id, not by id), so Predator's states must not read what another state writes in the same frame; several FSMs on one entity run in components order; time in state uses the type's constant ms per tick (16.67 x tickInterval). Kernel first (batch against per-entity tick), then Predator logic STEP_MS − WAIT_MS; E-253 puts the dispatch at 7 to 9 % of a logic worker, so a bigger win must come from the states' own cost (E-292). Related: E-218, E-281.",
@@ -23640,7 +23640,8 @@
         "R-1529",
         "R-1537",
         "R-1541",
-        "R-1580"
+        "R-1580",
+        "R-1553"
       ]
     },
     {
@@ -24081,17 +24082,19 @@
         "R-1517",
         "R-1533",
         "R-1544",
-        "R-1545"
+        "R-1545",
+        "R-1558"
       ],
       "refs": [],
       "id": "SST-21",
       "title": "spatial0's longest step in the first second after the start reads 73 to 123 ms in Predator by night's bundle (38 in the base's window, 42 to 52 from source): the first frames' neighbour builds, not E-476's spread",
-      "status": "open",
+      "status": "kept",
       "kind": "speed",
       "area": "spatial",
       "date": "2026-11-19",
-      "statusText": "found 2026-11-19 (R-1544); the prime waits on the owner: how the readers are known before the start (R-1545)",
-      "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames."
+      "statusText": "Kept 2026-11-19 (option b, the owner's call); merged f3e7420a",
+      "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames.",
+      "result": "Predator by night: spatial0's longest step in the first 5 s 64 -> 12 ms cold, 76 -> 10 warm, none over 20 ms; first draw +150 to +200 ms (3 runs); crowd 2.5 steady state neutral"
     },
     {
       "records": [
@@ -24182,7 +24185,8 @@
     {
       "records": [
         "R-1548",
-        "R-1580"
+        "R-1580",
+        "R-1555"
       ],
       "refs": [],
       "id": "N-317",
@@ -24191,13 +24195,71 @@
       "kind": "bug",
       "area": "render",
       "date": "2026-11-19",
-      "statusText": "Reported by the owner on 2026-11-19 in the barrio (moving with W); fixed the same day (3b188e53 on fix/n317-sun-map-edge): an off-map landing is lit",
-      "result": "The band on the bottom house's roof gone on WebGL and WebGPU at the owner's camera (R-1548)",
+      "statusText": "Fixed 2026-11-19: the lit fallback (3b188e53), then the map's margins (6d3dec55); merged f3e7420a",
+      "result": "Margins by the tallest frame and the sun (sunMapMargins), at most half the screen a side; the sun map pass +0.05 to +0.16 ms (GTX 1650, Predator light3d 17 h)",
       "next": "The full fix: a sun map that reaches past the screen (below it most, by the tallest caster's height over the sun's slope), with its casters drawn there, so a surface near the edge gets the shade that is really there instead of none; weigh the bigger map on the GPU.",
       "aliases": [
         "roof bands",
         "sun map edge",
         "vertical shading bands"
+      ]
+    },
+    {
+      "records": [
+        "R-1554"
+      ],
+      "refs": [],
+      "id": "N-318",
+      "title": "A scene's two runs no longer matched (the scoreboard's lockstep gate failed balls and liquidfun): SST-18's prime loop made physics bodies every millisecond from spawns read while logic0 wrote them",
+      "status": "kept",
+      "kind": "bug",
+      "area": "physics",
+      "date": "2026-11-19",
+      "statusText": "Found and fixed 2026-11-19 (bisect to 9d0144cc; fix ac145201, merged f3e7420a)",
+      "result": "The prime runs once after the spawns; the gate's four scenes match exactly again; SST-18's gain given back (Predator by night's prime after the spawns about 4 -> 63 ms warm)",
+      "next": "A deterministic way to prime while the world spawns, if the start wants it back: bodies made only between logic0's spawn batches (a barrier), not on a timer.",
+      "aliases": [
+        "lockstep balls mismatch",
+        "prime loop replay",
+        "nondeterministic prime"
+      ]
+    },
+    {
+      "records": [
+        "R-1557"
+      ],
+      "refs": [],
+      "id": "N-319",
+      "title": "V8 compiles identical new Function sources once and shares their feedback: E-289's compiledNeighborReads and E-170's fieldAccessors likely give every class (component) after the first a shared, megamorphic feedback",
+      "status": "open",
+      "kind": "bug",
+      "area": "logic speed",
+      "date": "2026-11-19",
+      "statusText": "Filed 2026-11-19 from the E-526 agent's probe (R-1557); not measured in the engine",
+      "result": "",
+      "next": "Check with --log-ic and summarizeV8Deopt in Predator whether E-289's and E-170's compiled functions share feedback across classes; if they do, a unique comment a compiled source, then the kernel and Predator logic. SST-21 changed E-289's accessors (the read alone).",
+      "aliases": [
+        "eval cache shared feedback",
+        "new Function feedback sharing"
+      ]
+    },
+    {
+      "records": [
+        "R-1556"
+      ],
+      "refs": [],
+      "id": "N-320",
+      "title": "A worker's tail at the step histogram's ceiling printed as an exact-looking 128 ms (the last bin holds every longer frame)",
+      "status": "kept",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-19",
+      "statusText": "Fixed 2026-11-19 (73865cc1, a3ff2e0d), at the owner's word",
+      "result": "The tail reads HIST_CEILING_MS there and the reports print ≥127.9",
+      "next": "Done.",
+      "aliases": [
+        "histogram ceiling",
+        "p99 128 ms"
       ]
     }
   ],
@@ -39385,6 +39447,75 @@
       "title": "Predator by day on the HD 620: GPU 12-14.6 ms a frame at crowd 0.15 and 0.25; the tilemap's 7 layers 4.3 ms, three full-screen composites 2.4 ms, the entities 2.2 ms",
       "verdict": "note",
       "text": "ASUS lab job 0899o (18:23-18:26): where the HD 620's frame goes in Predator by day at the laptop's capacity edge\n(R-1588: crowd 0.25 drew 55.9 to 57.6 fps with every worker's p99 under 11.5 ms). glFrameRecorder at main 57a0d4ac\n(E-514 in), --src, zoom 0.216, 1920x1080, Intel 31.0.101.2145, 3 s recorded after 15 s.\n\n- **The GPU takes 12 to 14.6 ms a frame and barely moves with the crowd.** By pass: 14.59 ms at crowd 0.25 and\n  14.47 ms at 0.15. The per-draw timer queries read 12.07 ms. Only about 2 ms are left before a missed vsync, so any\n  hitch drops a frame: the drawn 56 to 57.6 fps.\n- **The costliest draws at crowd 0.25 (ms a frame):**\n\n  | what | ms |\n  |---|---|\n  | the tilemap, 7 full-screen [uGid,uTileset] draws (1.59, 0.90, 0.90, 0.28, 0.26, 0.22, 0.17) | 4.3 |\n  | full-screen composites of the low-resolution buffers (prog [uTextures]: 480x270 1.34 and 0.55, 960x540 0.53) | 2.4 |\n  | the entities, one instanced draw of 5 891 | 2.2 |\n  | the 960x540 pass (98 instances) | 1.5 |\n  | the light pass (480x270 tiles) | 0.48 |\n\n- **E-432's next on a weak GPU:** E-432 drew each layer over its chunks with tiles (GTX 1650: 1.10 -> 0.73 ms). Here\n  the same 7 draws cost 4.3 ms, about a third of the frame. Its next, one pass over the tilemap's layers (front to\n  back, stopping at the first opaque texel), would turn up to 7 rasterized and blended layers into one per pixel. On\n  this GPU, pixels drawn are the cost (R-1584).\n- **The three full-screen composites (2.4 ms)** each read a low-resolution buffer and blend it over the 1080p frame.\n  One composite sampling all three would save two full-screen passes, in the spirit of DX-POSTFUSE. Not measured."
+    },
+    {
+      "id": "R-1553",
+      "date": "2026-11-19",
+      "time": "17:23",
+      "timeFrom": "recorded",
+      "title": "E-526 layer 1 (FSM ids grouped by state) built and rejected: +39 to +109 % in the kernel where the states mix, a tie or worse elsewhere",
+      "verdict": "rejected",
+      "text": "**E-526 layer 1 (an FSM's ids grouped by state, State.updateAll) built and measured by an agent, rejected: slower wherever the entities' states mix.** The owner had approved the order change if it was faster (2026-11-19). 9ab1e339 adds `fsmTickAllMicrobench --states spread` (each entity's FSMs in a state of its own): in the kernel R-1541 measured, every entity starts in its initial state at time 0, so a whole type changes state on the same frames and grouping cannot gain (R-1541's layer 0 numbers are of that lockstep regime; with spread states layer 0 still leads tick(), 1.44-1.61 against 1.94-2.01 ms, a rough probe).\n\nSides: a layer 0 (main), b layer 1 as designed (count, counting sort, each state's onUpdate from one shared loop), c b with one loop a state compiled by new Function (monomorphic calls, E-170's way; all 17 reach TurboFan). Node 22, 300 frames x 7 rounds, pairs abc cba abc cba, 17:16 to 17:23, checksums equal; median of the pairs' change, pairs faster:\n\n| config | b | c |\n| --- | --- | --- |\n| spread 30k, tickAll | +109 %, 0/4 | +39 %, 0/4 |\n| spread 30k, staggered | +62 %, 0/4 | +20 %, 1/4 |\n| spread 10k | +16 %, 1/4 | +0.3 %, 2/4 |\n| spread 3k | +4.7 %, 1/4 | +4.1 %, 1/4 |\n| lockstep 30k | +8.5 %, 1/4 | -6.7 %, 3/4 |\n| lockstep 30k, staggered | +25 %, 1/4 | +4.4 %, 2/4 |\n\nThe sitting was noisy (a's own lockstep time 1.52 to 2.76 ms), but the spread losses are far past it. Why: the grouping's two passes (a count with a store-to-load chain, a scatter), and the state-by-state visit scatters the owners' and columns' reads (the prefetch is lost once they outgrow the cache); a shared loop's call stays megamorphic. Layer 2 needs the same grouping: not built. The patches stay in the session's scratchpad. A lead the agent named (E-253's): a compiled switch an FSM with one direct call a state, which keeps the entity order (nothing a developer sees changes) and would serve FSM#tick, Predator's real path.",
+      "commits": [
+        "9ab1e339"
+      ]
+    },
+    {
+      "id": "R-1554",
+      "date": "2026-11-19",
+      "time": "17:08",
+      "timeFrom": "recorded",
+      "title": "N-318 found by bisect and fixed: SST-18's prime loop made a scene's runs differ; the lockstep gate was right, its base needs no move",
+      "verdict": "kept",
+      "text": "**N-318 found and fixed (ac145201): SST-18's prime loop made a scene's two runs differ; the scoreboard's lockstep gate was right.** The gate (runLockstepVisual's default mode) runs each scene twice on the same tree and asks for the same pixels and pose hash; it is not a comparison with v0.14.0, as the session told the owner by mistake (the owner then said to move its base). On main c0a1d75f, 17:00: balls 583 610 of 921 600 px differ, liquidfun 43 843; lfstress and particles match. v0.14.0 matches. A bisect over 2 043 commits (runLockstepVisual --scene balls, 17:00 to 17:08) named 9d0144cc (SST-18: physics primed every millisecond while logic0 spawned the world). With that loop off (scene.js not posting primeBegin) balls and liquidfun match again: it read spawns while logic0 wrote them, with no frame boundary between the two workers there (during play physics reads after logic's frame).\n\nThe fix removes the loop: the prime runs once after the spawns (SST-15's, with the contacts). The gate's four scenes match exactly; suites green (3 276, 121). Cost: SST-18's gain on record, Predator by night's prime after the spawns about 4 -> 63 ms warm (71 cold) on the main PC. The ASUS's R-1583 startup matrix was measured with the loop in.",
+      "commits": [
+        "ac145201"
+      ]
+    },
+    {
+      "id": "R-1555",
+      "date": "2026-11-19",
+      "time": "17:36",
+      "timeFrom": "recorded",
+      "title": "N-317's full fix: the sun map reaches past the screen as far as the tallest frame's ray lands; its pass +0.05 to +0.16 ms in Predator light3d at 17 h, the light pass unchanged",
+      "verdict": "kept",
+      "text": "**N-317's full fix (6d3dec55): the sun map reaches past the screen as far as the tallest frame's ray lands, so a roof near the edge reads its real shade instead of lit.** The owner asked for it, its cost and how the margin is worked out (2026-11-19).\n\n- **The margin.** A pixel of height z (px of height) is drawn heightScaleY * z above its foot; its ray lands z * (kx, ky) from the foot on the floor (drawn groundScaleY tall). On the screen it lands dx = -kx * z, dy = (heightScaleY - groundScaleY * ky) * z from the pixel (times the map's scale, zoom * shadowResolution): below at noon by the point's own rise, above when a low sun in front of the camera throws shadows up the screen, aside by the sun's sideways part. z is the atlas's tallest frame over heightScaleY (at most SUN_MAP_ZMAX, 512); each margin at most half the screen's side (SUN_MAP_MARGIN_MAX). The map is made again only when a margin needs more than it has or has more than twice (a quarter more, 16-texel steps). Its passes draw from the camera moved by the top-left margins; the light pass maps the screen's uv into it (uSunMapRect); its taps step one map texel.\n- **Values.** The barrio at the owner's camera (1258 x 922, zoom 1.47, light at half; tallest frame 252 px -> 291 px of height): 13 h, 119 texels below (238 px of the screen) and 18 right, map 629 x 461 -> 661 x 621; at noon 185 below (370 px). Predator light3d at 17 h (tallest frame 442 px -> capped 512; k 1.88, -0.68): zoom 0.3, 144 left and 96 below (map +67 %); at zoom 1 it would ask 481 and 321, capped to half the screen.\n- **Cost (GTX 1650, 1080p, glFrameRecorder --gpu-passes, 2 rounds against main, 17:28 to 17:36).** The sun map pass in Predator light3d at 17 h (960 x 540 -> 1152 x 668): 0.894 -> 1.058, 0.915 -> 0.960 ms; the light pass unchanged (1.093 / 1.042 -> 1.053 / 1.038); the frames' totals within their spread. The barrio's sun map (960 x 540 -> 992 x 700): 0.302 -> 0.374, 0.365 -> 0.440, 0.341 -> 0.619 ms, read at GPU clocks that wandered 540 to 1140 MHz (the barrio's light load lets the card clock down).\n- **Checked.** WebGL and WebGPU captures of the barrio at 17:30: away from the edge the shadows are where main draws them (static areas within 1 % of px, the rest trees swaying and people). Suites green (3 278, 121).",
+      "commits": [
+        "6d3dec55"
+      ]
+    },
+    {
+      "id": "R-1556",
+      "date": "2026-11-19",
+      "title": "N-320 fixed: the histogram's ceiling reads ≥127.9 in the reports, not an exact-looking 128",
+      "verdict": "kept",
+      "text": "**N-320 fixed (73865cc1): a worker's tail at the step histogram's ceiling printed as an exact-looking 128 ms.** The histogram (frameTotals.js) holds 0 to 128 ms in 1/8 ms bins and its last bin takes every longer frame, so a p99 or a longest frame there read about 128 ms whatever its length: the ASUS read Predator's physics p99 as a fixed 128 ms spike. The window now gives the last bin's lower edge (HIST_CEILING_MS, 127.875) there, and the integrated benchmark and runCapacity print it as \"≥127.9\" (formatHistMs). The ceiling itself did not move; loadWaterfall --series reads the real lengths. The owner's call (2026-11-19). Suites green.",
+      "commits": [
+        "73865cc1",
+        "a3ff2e0d"
+      ]
+    },
+    {
+      "id": "R-1557",
+      "date": "2026-11-19",
+      "title": "N-319 filed: identical new Function sources share their feedback in V8 (the E-526 agent's probe); E-289 and E-170 likely affected",
+      "verdict": "note",
+      "text": "**N-319 filed (a lead, from the E-526 agent's probe, not measured in the engine): V8 compiles identical `new Function` sources once and shares their feedback.** From the second call with the same source V8 returns the same SharedFunctionInfo and feedback vector (a probe with five identical sources from one call site: one separate function, then one shared by the other four; the agent's first compiled-loop variant got 2 TurboFan compiles for 17 loops until each source carried a unique comment). So E-289's compiledNeighborReads (gameObject.js, the same source for every class) likely gives every class after the first one shared feedback, which is what it was compiled to avoid, and E-170's fieldAccessors (component.js) likely shares it between components with the same field name. The fix would be a unique comment a compiled source; check first with the deopt and IC logs (summarizeV8Deopt) in Predator, and note that SST-21 changed E-289's accessors."
+    },
+    {
+      "id": "R-1558",
+      "date": "2026-11-19",
+      "time": "18:15",
+      "timeFrom": "recorded",
+      "title": "SST-21 option b kept: a visualRange gives the list, built before the start; Predator by night's first-seconds spatial0 step 64-76 -> 10-12 ms, crowd 2.5 neutral",
+      "verdict": "kept",
+      "text": "**SST-21 option b kept (an agent built 5ebada05 and 963002df; Predator's props 910c12f4; guide 72dfc3af): an entity with a visualRange gets its neighbour list from the start, and the spatial workers build every list before the game's first frame.** The owner's call (2026-11-19): \"every type with a visualRange reads its neighbours, that is what visualRange is for\".\n\n- **What changed.** E-176's run-time learning is gone (Grid.neighborReaders, markNeighborReader and its marks, the buffer's plumbing): an entity with Collider.visualRange > 0 gets a list, one without gets none (E-176b stays). Scene._primeSpatial runs beside _primePhysics after the world spawns, two rounds to every spatial worker (the grid, then the lists, since a search reads every worker's cells); a round that times out leaves the lists to the frames. Under walls, a casting light widens its row to its own reach only when its entity has no visualRange. Predator's 1 764 trees, 100 barrels and 100 trash bags set a visualRange and read nothing: now 0. Tests: neighborListsFromStart (real spatial workers: every list in range and over 97 % of a brute force, the prime's lists equal a full rebuild, frame 1 rebuilds under a quarter), spatialPrime (the scene's rounds).\n- **Startup (loadWaterfall, Predator light3d=1&hour=22, source, 3 runs, --series spatial0, main c0a1d75f against the branch, 17:45 to 17:47).** spatial0's longest own step from the start to 5 s after the first draw: cold >= 64 -> 12 ms, warm 76 -> 10; frames over 20 ms in the first second: base 52 to 135 ms at frames 2 to 4 in every run, branch none. The first draw: cold 2 603 -> 2 801 ms, warm 1 561 -> 1 711 (medians; spatial primed 43 to 52 ms after physics; 3 runs a side, so part noise).\n- **Steady state (runPredatorAbab, crowd 2.5, owner spatial, c0a1d75f against 910c12f4 --full-rev, 4 pairs, about 18:00 to 18:15): NEUTRAL.** spatial 9.876 -> 10.087 ms (pairs +13.2, +0.1, +5.8, -17.7 %; pairs 1 and 4 moved every worker, the ones it cannot reach too: drift), logic -2.8 %, physics +4.7 % (cv 60 %), pre-render +0.8 %. A crowd-1 sitting before the props' fix put every worker under its floor and drifted in two pairs.\n- **Left.** About 14 demos set a visualRange and read no neighbours (badPiggies, balls, bichos, burningBoxes, constraintBox, destructibleTerrain, orientedBox, platformer, proceduralTree, sunStreet, uChain, waterAndBoxes, weldBreak, zenithal) and now pay a list each; destructibleTerrain reads Collider.visualRange in its own code and balls is the lockstep and scoreboard scene, so each wants its own look (not done). The first draw's cost wants one sitting with N-318 in (the physics prime is longer again, the spatial prime runs beside it).",
+      "commits": [
+        "5ebada05",
+        "963002df",
+        "910c12f4",
+        "72dfc3af"
+      ]
     }
   ],
   "leads": [
