@@ -17,22 +17,13 @@
   weedjsEnableHostMode();
 
   var MAX_POLYGON_VERTICES = 8;
-  // SST-18: the prime's loop while the world spawns (primeBegin to prime), its timer, 0 when it is not running.
-  var primeLoopTimer = 0;
-  // final: the last prime before the start ('prime'), which also finds the world's contacts (weedjsPost.js weedjsPrime);
-  // the loop's primes only make bodies.
+  // SST-15: the prime before the start ('prime'): the spawned world's bodies and, with final, its contacts (weedjsPost.js
+  // weedjsPrime). N-318: once, after the spawns. SST-18 primed every millisecond while logic0 spawned, reading spawns
+  // while they were written, and a scene's two runs no longer matched (the lockstep gate's balls and liquidfun).
   function primeOnce(final) {
     if (state.box2dReady && !state.box2dAborted && typeof global.weedjsPrime === 'function') {
       global.weedjsPrime(final === true);
     }
-  }
-  function primeLoop() {
-    primeOnce(false);
-    primeLoopTimer = setTimeout(primeLoop, 1);
-  }
-  function stopPrimeLoop() {
-    if (primeLoopTimer) clearTimeout(primeLoopTimer);
-    primeLoopTimer = 0;
   }
   // This realm's time origin, read once (N-158: each read of performance.timeOrigin makes a heap number in Chrome).
   var TIME_ORIGIN = typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0;
@@ -1565,19 +1556,13 @@
       } else if (data.msg === 'reserveEngineBlock') {
         reserveEngineBlock(data.bytes | 0);
       } else if (data.msg === 'start') {
-        stopPrimeLoop();
         startGameLoop();
       } else if (data.msg === 'pause') {
         state.isPaused = true;
         clearSchedulers();
-      } else if (data.msg === 'primeBegin') {
-        // SST-18: while logic0 spawns the world, the bodies of the spawns done so far, every millisecond. Paused: no
-        // step runs meanwhile; a spawn's body is made once the spawn has set its lifecycle bit, as during play.
-        if (!primeLoopTimer && state.isPaused) primeLoopTimer = setTimeout(primeLoop, 0);
       } else if (data.msg === 'prime') {
         // SST-15: the spawned world's bodies made before the start (weedjsPost.js weedjsPrime), and their contacts;
         // paused, between steps.
-        stopPrimeLoop();
         primeOnce(true);
         loadMark('primed');
         self.postMessage({ msg: 'primeDone', id: data.id | 0, loadMarks: takeLoadMarks() });
