@@ -23760,7 +23760,8 @@
       "records": [
         "R-1422",
         "R-1524",
-        "R-1528"
+        "R-1528",
+        "R-1586"
       ]
     },
     {
@@ -24104,7 +24105,8 @@
     },
     {
       "records": [
-        "R-1528"
+        "R-1528",
+        "R-1586"
       ],
       "refs": [],
       "id": "N-314",
@@ -39342,6 +39344,15 @@
       "title": "rayVsBox2d on the ASUS: ?singleCasts does not load its scenes (box2d-single only); the row's baseline logic0 is about 5 ms and the scene needs a ?casts knob",
       "verdict": "note",
       "text": "ASUS lab jobs 0899g (16:31-16:34) and 0899i4 (17:19-17:22), DX-SCORELOAD: a load ladder for the rayVsBox2d row on the\nASUS. Headless as the scoreboard's stress rows, --src, detailed stats off. 0899g ran a full v0.14.0 tree. 0899i4 ran\nmain b190651d's scenes over v0.14.0's src/, as the scoreboard's baseline does.\n\n- **`?singleCasts` does not load these scenes.** It sets the single sync casts of the box2d-single scenes only\n  (rayStressDriver.js). RayVsBox2dWeedBusyScene, the row's scene, read logic0 4.6 to 5.2 ms at every value from 8 to\n  4 096. RayVsBox2dBoxBusyScene read logic0 about 6.2 ms (its own work 0.2 ms: it waits on physics) from 1 536 to\n  12 288.\n- **The row needs a casts knob.** On the ASUS its baseline primary, logic0 at v0.14.0, is about 5 ms, under the 6 ms\n  floor, and the scene reads no knob that changes it. rayStressScene has `?casts=N` (casts per logic tick); the same\n  knob in rayVsBox2dStressScene, passed to RayStressDriver.spawn({ casts }), would let the calibration raise it.\n- **DX-SCORELOAD's knob list:** stationarySpatialScene (spatial), queryAabbStressScene (queryAabb) and now\n  rayVsBox2dStressScene (casts).\n- 0899g's tree had no ?singleCasts at all. The scoreboard runs v0.14.0's src/ under the current scenes, so a ladder\n  must too."
+    },
+    {
+      "id": "R-1586",
+      "date": "2026-11-19",
+      "time": "17:31",
+      "timeFrom": "recorded",
+      "title": "Predator's restart after a GPU loss on the ASUS: back 4 of 4 (WebGL, WebGPU), 7.9 to 8.5 s; restoreSave 2.6-2.8 s and the Box2D block 1.6-2.1 s lead",
+      "verdict": "note",
+      "text": "ASUS lab job 0899j (17:25-17:31): Predator's restart after a GPU loss on the low-end machine (i7-7500U 2C/4T, HDD,\nHD 620 on Intel 31.0.101.2145). gpuLossProbe at main b190651d, WebGL and WebGPU, 2 rounds each, warm-up 15 s, headed.\n\n- **The game comes back on the Intel GPU, 4 of 4.** On both backends there is no overlay, the canvas is lit (909 954\n  to 914 411 of 921 600 px) and it changes 99.1 to 99.6 % over the next second. 17 330 to 17 535 entities.\n- **The restart takes 7.9 to 8.5 s** (WebGL 8 446 and 7 919, WebGPU 8 489 and 8 545): 2.3 times the main PC's 3.6 s\n  (R-1528).\n  - Building the save: 0.6 to 0.9 s (instance fields 120 to 181 ms, decals 63 to 126 ms, the save built 393 to 523 ms).\n  - Loading it back: 7.0 to 7.5 s.\n- **Where the load goes, the largest marks (ms, 4 runs):**\n  - restore applied (logic0's restoreSave): 2 625 to 2 835. The main PC's was 1.7 s.\n  - box2d block (reserveBox2dBlock: the physics worker started, Box2D's memory reserved): 1 564 to 2 096. The main\n    PC's was 454.\n  - ready logic0: 654 to 769.\n  - atlas pixels: 390 to 656.\n  - tilemaps built: 70 to 721.\n- **For N-314:** on the slow machine the Box2D block is the second-largest part of a restart, after the restore. Both\n  are on logic0's or physics's start, not the GPU. A restart that kept the physics worker and its Box2D instance, or\n  only its compiled module, would save up to about 2 s here; not tried. The restore's 2.7 s is the item N-314 already\n  names.\n- WebGPU's save is ready 845 to 864 ms after the restart begins, WebGL's at 0 ms: on WebGPU the save is built after\n  the loss is seen.\n- **Round 2 WebGL logged that Predator's Flash pool was full** (32 slots) after the restart. Once, not looked into."
     }
   ],
   "leads": [
