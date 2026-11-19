@@ -23,10 +23,10 @@ export const ENTITY_HOOKS = Object.freeze([
     name: 'onSpawned',
     params: [['spawnConfig', 'any']],
     gate: null,
-    runs: 'on the thread that sets the spawn up, after the spawn config keys',
+    runs: 'on the thread that sets the spawn up',
     summary:
-      'Each spawn from the pool. The spawn config keys were applied first, so it may override them; the config is the ' +
-      'object Type.spawn was given ({} when none).',
+      'Each spawn from the pool, after its spawn config keys (it may override them). The config is the object ' +
+      'Type.spawn was given ({} when none), typed any so a subclass declares the keys it reads.',
     presenceReadOnce: false,
   },
   {

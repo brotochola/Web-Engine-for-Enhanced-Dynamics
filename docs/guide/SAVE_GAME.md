@@ -193,7 +193,7 @@ What applies at once: method bodies (`tick`, callbacks, helpers, the scene's `up
 The page reloads with the scene's state when the change cannot go into the running game:
 
 - an asset, a shader, the page itself, an engine file, or a script the scene does not import;
-- a change to what the engine built from a class: `static components`, `ARRAY_SCHEMA`, the scene's `entities` (pools), `config`, `assets` or `messages`, `tickInterval`, `forceProcessOnLogicWorker`, adding or removing a hook (`tick`, `onCollisionEnter`, `onMessage`, `onAnimationEnd`, …), or a changed export that is not a class (other modules keep its old value).
+- a change to what the engine built from a class: `static components`, `ARRAY_SCHEMA`, the scene's `entities` (pools), `config`, `assets` or `messages`, `tickInterval`, `forceProcessOnLogicWorker`, adding or removing a hook (`tick`, `onCollisionEnter`, `onMessage`, `onAnimationEnd`, …, as a method or as a static: moving one from a form to the other swaps in place), or a changed export that is not a class (other modules keep its old value).
 
 The console says why: `[WeedJS] hot reload: Wall: onMessage() was added; reloading the page with the scene's state`. The engine saves the running scene to a reserved slot, reloads the page, and the next `loadScene` of the same scene restores it once (with the same `data`), then deletes the slot. That reload keeps the whole scene, not only what a player's save keeps:
 

@@ -198,16 +198,46 @@ async preload() {
   - `this.getAllNeighborIds()`
   - Lists are built only for classes whose code reads them (and, in a scene with walls, for lights, whose walls come from theirs). The first read of a class turns its lists on: that read and the next frame or two see none. A class that reads only now and then still gets its lists every frame from then on.
 
-Lifecycle hooks:
+Lifecycle hooks: `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` each frame, or `static tickAll(list, count, dtRatio)` for the whole type (see Workers), and the hooks below. `isCollidingWith(other)` needs at least one entity type in the scene with `CollisionListener` (see Collision Filtering).
 
-- `onSpawned(spawnConfig)` each spawn (`spawnConfig` keys applied first; hook may override)
-- `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` update
-- `onCollisionEnter/Stay/Exit(otherIndex)` -- requires `CollisionListener` component
-- `onCollisionHit(...)` -- requires `CollisionListener` (opt-in via `Collider.enableHitEvents`)
-- `onJointBreak(jointIndex, entityA, entityB)` -- requires `JointBreakListener`
-- `isCollidingWith(other)` -- requires at least one entity type in the scene to have `CollisionListener` (see Collision Filtering)
-- `onScreenEnter/Exit()` -- requires `CameraInOutListener` component
-- `onDespawned()` before returning to pool
+Each hook has two forms. The method runs on the entity's instance (`this`). The static form takes the entity's index first, runs with the class as `this`, and needs no instance. A type whose hooks are static, with no `tick()` (or with `tickAll`), makes no instance for them in the logic workers: a callback is a lookup by entity type, and each worker skips the instance it would make for every entity a hook reaches. The static form wins over a method of the same name, and a subclass inherits it as it inherits a method. Spawn still makes the instance it returns, on the thread that sets the entity up.
+
+<!-- BEGIN entity hooks: scripts/syncEntityHooks.mjs writes this table from src/core/entityHooks.js -->
+| Method | Static form (no instance) | Needs | When |
+|---|---|---|---|
+| `onSpawned(spawnConfig)` | `static onSpawned(entityIndex, spawnConfig)` |  | Each spawn from the pool, after its spawn config keys (it may override them). The config is the object Type.spawn was given ({} when none), typed any so a subclass declares the keys it reads. Runs on the thread that sets the spawn up. |
+| `onDespawned()` | `static onDespawned(entityIndex)` |  | Before the entity returns to the pool. Runs on the thread that despawns the entity. |
+| `onCollisionEnter(otherIndex)` | `static onCollisionEnter(entityIndex, otherIndex)` | `CollisionListener` | The first frame this entity touches another. Runs on a logic worker, before the ticks. |
+| `onCollisionStay(otherIndex)` | `static onCollisionStay(entityIndex, otherIndex)` | `CollisionListener` | Each later frame it still touches the other. Runs on a logic worker, before the ticks. |
+| `onCollisionExit(otherIndex)` | `static onCollisionExit(entityIndex, otherIndex)` | `CollisionListener` | The first frame it no longer touches the other. Runs on a logic worker, before the ticks. |
+| `onCollisionHit(otherIndex, px, py, nx, ny, approachSpeed)` | `static onCollisionHit(entityIndex, otherIndex, px, py, nx, ny, approachSpeed)` | `CollisionListener` | A hard impact above the world's hit threshold (Collider.enableHitEvents on): the contact point, the normal from this entity to the other, the approach speed. Runs on a logic worker, before the ticks. |
+| `onJointBreak(jointIndex, entityA, entityB)` | `static onJointBreak(entityIndex, jointIndex, entityA, entityB)` | `JointBreakListener` | A joint on this entity went past its force or torque threshold and was destroyed. Runs on a logic worker, before the ticks. |
+| `onScreenEnter()` | `static onScreenEnter(entityIndex)` | `CameraInOutListener` | The camera's view now holds the entity. Runs on a logic worker, after its tick (after the ticks for a type without tick()). |
+| `onScreenExit()` | `static onScreenExit(entityIndex)` | `CameraInOutListener` | The camera's view no longer holds it. Runs on a logic worker, after its tick (after the ticks for a type without tick()). |
+| `onGotShot(damage, hitX, hitY, ownerId, shooterEntityType)` | `static onGotShot(entityIndex, damage, hitX, hitY, ownerId, shooterEntityType)` |  | A BulletPool bullet hit this entity: the damage, where, the shooter and its entity type. Runs on a logic worker, at the start of its frame. |
+| `onMessage(name, from, a, b, c, d)` | `static onMessage(entityIndex, name, from, a, b, c, d)` |  | A message from sendTo or scene.sendToEntity (the scene lists its name in static messages); from is the sender's index, -1 for the scene. Runs on a logic worker, the frame after it was sent, before the ticks. |
+| `onAnimationEnd(name)` | `static onAnimationEnd(entityIndex, name)` |  | A play-once animation (setAnimation(name, false)) or an Adobe clip played without loop finished. Animations advance while drawn, so an off-screen one waits. Runs on a logic worker, the frame after, before the ticks. |
+| `onDirectionChanged(direction)` | `static onDirectionChanged(entityIndex, direction)` | `DirectionalSprite` | The direction its DirectionalSprite draws changed (and once when it draws its first): the sheet's name of it. Runs on a logic worker, after the ticks. |
+<!-- END entity hooks -->
+
+```javascript
+const { GameObject, SpriteRenderer, CameraInOutListener, Transform } = WEED;
+
+// Leaves fall across the view. tickAll moves the whole pool and the screen hook is static, so the logic workers make no
+// instance for them; an onScreenExit method would make one for each leaf it reaches.
+class Leaf extends GameObject {
+  static components = [SpriteRenderer, CameraInOutListener];
+  onSpawned() {
+    this.setSprite('leaf'); // spawn makes the instance it returns: a method here costs nothing more
+  }
+  static tickAll(list, count, dtRatio) {
+    for (let k = 0; k < count; k++) Transform.y[list[k]] += 1.5 * dtRatio;
+  }
+  static onScreenExit(i) {
+    this.despawn(i); // `this` is the class: Leaf.despawn(i)
+  }
+}
+```
 
 ### An entity that follows another (`transform.parent`)
 
@@ -2204,7 +2234,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
   }
   ```
 - Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
-- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. A sprite whose statics you write that way (alpha, tint, scale, anchor, sprite, animation, tiles) needs `SpriteRenderer.renderDirty[i] = 1` and `SpriteRenderer.keyedDirty[i] = 1`, what `markDirty()` sets: without them, frames that reuse the last queue draw the old values. Positions need nothing. If both `tick` and `tickAll` exist, instance `tick` wins. `tickInterval` works as for `tick()`: with `static tickInterval = 4` and `logic.staggeredUpdates` on, each frame's `list` holds the quarter of the entities `tick()` would tick on that frame, so each one comes once in 4 frames. `dtRatio` is the frame's, as `tick()` gets it: scale by the interval what accumulates between calls.
+- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. A sprite whose statics you write that way (alpha, tint, scale, anchor, sprite, animation, tiles) needs `SpriteRenderer.renderDirty[i] = 1` and `SpriteRenderer.keyedDirty[i] = 1`, what `markDirty()` sets: without them, frames that reuse the last queue draw the old values. Positions need nothing. If both `tick` and `tickAll` exist, instance `tick` wins. A `tickAll` type that lists `CameraInOutListener` keeps `tickAll`: its `onScreenEnter` / `onScreenExit` run after the ticks, with no instance in their static form. `tickInterval` works as for `tick()`: with `static tickInterval = 4` and `logic.staggeredUpdates` on, each frame's `list` holds the quarter of the entities `tick()` would tick on that frame, so each one comes once in 4 frames. `dtRatio` is the frame's, as `tick()` gets it: scale by the interval what accumulates between calls.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Entity pools (`static entities`) and the joint pool are finite too. A spawn into a full pool returns `null` (a joint returns `-1`); the first one warns once per scene, from whichever thread hit it, and the rest are counted in `getPoolStats(Type).dropped`.

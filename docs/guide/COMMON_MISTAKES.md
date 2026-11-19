@@ -26,7 +26,8 @@ A few mistakes are not warned about: the engine does the right thing instead. Th
 
 | Mistake | What happened | What the engine says |
 | --- | --- | --- |
-| `onCollisionEnter` (or Stay, Exit, Hit) without `CollisionListener`; `onJointBreak` without `JointBreakListener`; `onScreenEnter` / `onScreenExit` without `CameraInOutListener` | The hook never runs | Add the tag component. |
+| `onCollisionEnter` (or Stay, Exit, Hit) without `CollisionListener`; `onJointBreak` without `JointBreakListener`; `onScreenEnter` / `onScreenExit` without `CameraInOutListener`; `onDirectionChanged` without `DirectionalSprite` (methods and static forms alike) | The hook never runs | Add the tag component. |
+| A hook as a static (`static onCollisionEnter(i, other)`) and as a method of the same name, on the class or one it extends | Only the static one runs | Keep one form. |
 | An empty `tick() {}` | The logic workers still call it on every entity of the class, every frame | Delete it, or `static tickInterval = 0` if it stops a parent's tick. |
 | Two classes with the same name | The second is not registered: it has no pool and cannot spawn (the workers find classes by name) | Rename one. |
 | A parent listed after a class that extends it (`[[Grunt, 4], [Enemy, 6]]`) | The subclass registered the parent first, with no pool: `Enemy.spawn()` finds no slot | List the parent first. |

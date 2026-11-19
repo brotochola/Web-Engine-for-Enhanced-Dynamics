@@ -26,6 +26,12 @@ export class Coin extends GameObject {
     this.x = x;
     this.y = y;
   }
+
+  // E-528: a static hook, the entity's index first and the class as `this`.
+  /** @param {number} i @param {number} other */
+  static onCollisionEnter(i, other) {
+    if (GameObject.is(other, Player)) this.despawn(i);
+  }
 }
 
 export class Level extends Scene {
