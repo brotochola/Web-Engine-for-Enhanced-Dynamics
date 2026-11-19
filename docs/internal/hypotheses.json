@@ -23495,7 +23495,8 @@
         "R-1480",
         "R-1484",
         "R-1485",
-        "R-1486"
+        "R-1486",
+        "R-1487"
       ],
       "result": "Cause (R-1461, R-1480): the Intel D3D11 driver 27.20.100.8682's lock on Chrome's shader cache file broke, and every later compile waited 1 s. Intel's 31.0.101.2145 fixes it: 0 of 36 under the conditions that froze 10 of 23 (R-1485). The engine needs no change; the ASUS runs 31.0.101.2145 since 2026-11-19.",
       "next": "Nothing for the engine. If the freeze is reported on another Intel Gen9 machine, the answer is a current Intel driver (31.0.101.2145 or later). The ASUS keeps the driver's shader cache (the owner's yes to denying it was for the old driver; asked again).",
@@ -38597,6 +38598,15 @@
         "d3e01475",
         "958f3560"
       ]
+    },
+    {
+      "id": "R-1487",
+      "date": "2026-11-19",
+      "time": "03:04",
+      "timeFrom": "recorded",
+      "title": "The ASUS scoreboard on the new Intel driver against 0895 on the old one, same code (57044bd1 vs v0.14.0): no broad shift on the HD 620; renderer own work within about 5 % where both sides ran",
+      "verdict": "note",
+      "text": "ASUS lab job 0898l (01:39-03:04): the 0895 scoreboard again, unchanged (main 57044bd1 against v0.14.0, --full-rev,\n--skip-node), on the new Intel driver 31.0.101.2145 (R-1485), to read the driver's effect on the HD 620 with the same\ncode. Each side's per-run worker lines are compared with 0895's, whose sitting ran on 27.20.100.8682 the night before.\nThe comparison takes the median over runs of each worker's STEP_MS and its own work (exact-frame step minus wait). A\ndriver effect moves both sides the same way; a move on one side only is the laptop's night-to-night drift. A\nscratch tool reads the two logs (lab compareScoreboards.mjs).\n\n- Only one worker moved at least 10 % the same way on both sides: box2d's physics, own work -16.7 % (v0.14.0) and\n  -13.4 % (57044bd1). That is CPU work, so it is drift between the nights, not the GPU driver.\n- The renderer's own work held within about +-5 % where both sides ran: textureUpload -4.4 / +3.3 %,\n  meshFillMoving +1.5 / -1.5 %, bullets +0.5 / +0.2 %, decalBlit +2.6 % (v0.14.0).\n- Three lighting rows exist on main only: sunShadowMap, unshaded and flashlights. There the renderer's own work read\n  about 20 % lower (-21.7, -20.8, -19.9 %). That may be the driver, or the 10 to 15 % night-to-night noise; it was not\n  confirmed.\n- Raw STEP_MS on main's side moved a lot either way (spawn +111 %, meshFillMoving -45 %, liquidfun -39 %): those are\n  waits inside the step (N-294, N-311), not work.\n- Reading: the new driver does not shift the HD 620's rows broadly. Older ASUS numbers stay comparable within the\n  laptop's usual cross-sitting noise. Note the driver for any HD 620 number from 2026-11-19 on."
     }
   ],
   "leads": [
