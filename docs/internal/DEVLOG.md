@@ -6,6 +6,54 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 18 November 2026 (night) — Scenes That Start Sooner, and Room for a Million
+
+The owner asked a plain question of the backlog: of everything left, what would help most, what is short and worth it,
+and what would you do today. Then he said to do it all, in that order: the short ones first, then the scene start-up
+plan, then the big items. Most of it ran in parallel: agents on separate files and worktrees, one measurement at a time
+on the machine, and the second laptop running a bisect on its own.
+
+**The short ones were mostly about pixels nobody saw.** Water & Boxes drew each drop with the light gradient, whose
+visible falloff is only the inner 16 % of its radius: at its scale, 4 000 drops filled a 2 000 px square each of
+near-transparent texels, 7.8 ms of GPU a frame for the water. The compact glow is the same curve over its whole texture;
+the drops drawn with it cost 1.3 ms, at a clock the GPU now idles down to. The platformer's bloom ran a "separable" blur
+that was nested, 289 texture reads a pixel; read in pairs through the texture's linear filter it is the same blur in 81
+(11.3 to 5.2 ms). Pixi read the whole render queue three times a frame to pull the light glows out; one pass does it, and
+the keyed-pack scene's renderer got 8.5 % cheaper. One idea lost, as its Box2D cousin had: loading the next entity's
+neighbour row early, the way a prefetch would, made spatial's publish 4 to 8 % slower, because a WebAssembly load is not
+a prefetch and holds its place in the core until its data arrives.
+
+**A regression since the last release, found by the laptop.** The ASUS's scoreboard said a texture-upload stress scene
+cost its renderer twice what v0.14.0 did; the main PC agreed (11 to 41 ms). The laptop bisected 1 774 commits in eleven
+steps to one: E-504, which made a worldRect layer cache its picture in a target by default. The same GL calls ran either
+way; the CPU was waiting inside the upload. A probe narrowed it: painting a picture into the target in the frame it was
+uploaded left every later upload of it slow, for good, even after the cache was given up. Now a frame with an upload
+draws the layer directly and paints the next time, and a picture written every frame gives the cache up: 12.7 ms again,
+and the barrio keeps its cached floor.
+
+**Then the start-up.** First a tool, because nobody knew where the seconds went: every phase of a scene's start marked on
+the page and in every worker on one clock, and a runner that prints the waterfall. Predator by night took 3.3 s to its
+first frame from source, and the waterfall said why: the page packed the atlas (1.4 s, its maps page alone 0.6 s),
+parsed a 15.7 MB tilemap (1.7 s) and read every decal texture back, all on the main thread, while the workers sat idle
+for two seconds waiting for their init. So the workers now start at once with a boot message, engine.wasm compiled once
+on the page and shared; Pixi opens its GPU device and links its programs under the asset load; the programs a pass used to
+make on its first draw are made at init (the renderer's hitch after the start, 109 to 36 ms); the atlas is packed in a
+worker and cached by a hash of its inputs, the tilemap parsed in another; Box2D stopped zeroing a block of memory that was
+already zero (440 ms). Predator by night now starts in about 2 s from source on a warm visit, and in about 1.15 s from the
+bundle, whose new file mode, with the workers and wasm as cacheable files, takes 39 % off a cold visit.
+
+**And the ceilings.** bunnyMark already held the engine's 500 000 entities at 60 fps, so the cap, not the speed, was its
+limit. Only one field was narrower than a million: the spatial worker's pair stamp, 19 bits. With 20, the engine takes
+1 048 575 entities, and bunnyMark holds 570 000; past that the GPU gives out first. Scenes with physics stopped at 65 535,
+because Box2D kept a static table of that size; sized from the scene now, Boids holds 85 000 boids where it was capped at
+65 000. The batch's Predator gate and both LiquidFun gates read neutral.
+
+**What is left.** Both of those scenes now break first on the same thing: spatial's tail, its periodic long frames, which
+is the next work (a second spatial worker that runs when logic is done, and a spread of its refresh that keeps the mean).
+Box2D can put its awake bodies back in id order every few steps, 4 % off a step in the crowd harness, but at a 6.5 ms cost
+in one step; Predator is reading it now. The start-up still waits about a second for Box2D's own worker in a source build,
+and keeping the workers alive across scene changes waits for the owner to say what a game may count on.
+
 ## Wednesday 18 November 2026 (evening) — A Silhouette's Shadow, Right at Any Hour
 
 The owner was turning the sun in the light bench and the cars' shadows were wrong in two ways. At 13:30 the pickup's
