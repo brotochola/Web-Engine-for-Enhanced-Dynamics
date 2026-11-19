@@ -21184,7 +21184,8 @@
         "R-1458",
         "R-1506",
         "R-1508",
-        "R-1517"
+        "R-1517",
+        "R-1583"
       ]
     },
     {
@@ -39311,6 +39312,15 @@
       "title": "E-514 against the HD 620's A/A (R-1582): the renderer's -6 / -8.5 % clears its noise, the drawn frames' +2.2 % does not (3.8 %)",
       "verdict": "note",
       "text": "**E-514's reading against the barrio's noise on the HD 620 (R-1582, the ASUS's A/A at hour 22, b190651d on both sides, 4 rounds): the renderer's -6 and -8.5 % clear it (the renderer read 2.9 % apart between identical sides); the drawn frames' +2.2 % does not (3.8 %), 4 of 4 pairs or not.** So E-514 is kept on the renderer and on Chrome's GPU process (the statics upload -74 %), not on the frames drawn; pre-render's +13 % at night lies inside its own spread there (8.5 to 14.0 ms run to run), as R-1551 read it. The DEVLOG's entry says so (it said 2 % more frames)."
+    },
+    {
+      "id": "R-1583",
+      "date": "2026-11-19",
+      "time": "17:19",
+      "timeFrom": "recorded",
+      "title": "DX-STARTUP's matrix on the ASUS: Predator and the barrio start 28 to 59 % sooner (barrio bundle cold 12.0 -> 6.0 s), bunnyMark level; 2 to 3.3x the main PC's times",
+      "verdict": "note",
+      "text": "ASUS lab job 0899i (16:43-17:19): DX-STARTUP's final matrix on the low-end machine (i7-7500U 2C/4T, HDD, HD 620 on\nIntel 31.0.101.2145, on AC), set up as R-1517. loadWaterfall on main b190651d (the engine of 1b77eaa7, its own dist)\nagainst the base 1351a40b (served with --root, its own src and dist), both from the bench page's prepare (--t0\nprepare), headed, the default backend, 3 runs, cold (a fresh context, the OS file cache warm) and warm, settle 5 s.\nSides alternated per scene. First draw after prepare, medians of 3 in ms; the main PC's change from R-1517 in brackets:\n\n| scene | build | cold base | cold main | warm base | warm main |\n|---|---|---|---|---|---|\n| Predator `light3d=1&hour=22` | source | 11 333 | 7 687 (-32 %) [-23 %] | 9 941 (2 runs) | 6 033 (-39 %) [-53 %] |\n| Predator `light3d=1&hour=22` | bundle | 7 355 | 4 943 (-33 %) [-43 %] | 7 245 | 2 981 (-59 %) [-71 %] |\n| Buenos Aires `hour=22` | source | 12 187 | 8 780 (-28 %) [-9 %] | 11 186 | 6 762 (-40 %) [-33 %] |\n| Buenos Aires `hour=22` | bundle | 11 956 | 6 048 (-49 %) [-22 %] | 6 941 | 4 063 (-41 %) [-45 %] |\n| bunnyMark | source | 3 574 | 3 698 | 3 910 | 3 935 |\n| bunnyMark | bundle | 1 521 | 1 527 | 1 915 | 1 732 |\n\n- **The startup work holds on the slow machine.** Every Predator and barrio start is 28 to 59 % sooner. The barrio's\n  cold start gains more here than on the main PC: 6.0 s instead of 12.0 s from the bundle. bunnyMark is level, as on\n  the main PC.\n- **The ASUS takes 2 to 3.3 times the main PC's time:** Predator from the bundle warm 2 981 ms against 913, the barrio\n  4 063 against 1 893.\n- **The first cold run of each side reads the HDD:** the barrio from source on main 19.8 s, then 8.5 and 8.8 s; the\n  median leaves it out.\n- **A hang on the base side:** Predator from source at 1351a40b, run 2's warm visit, never finished. The driver's\n  15-minute timeout killed it, so the base's warm figure is the median of 2 runs (9 535 and 10 347). Base only, once.\n- **The longest own step is unreadable here:** nearly every worker on both sides reads 128 ms or more, frameTotals'\n  histogram ceiling. Rerun after the ceiling is raised, if the first seconds' steps matter on low-end."
     }
   ],
   "leads": [
