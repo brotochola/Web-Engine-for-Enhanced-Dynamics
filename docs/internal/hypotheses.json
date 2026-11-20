@@ -12948,13 +12948,13 @@
     {
       "id": "N-166",
       "title": "Demos whose camera starts on empty space: Oriented Boxes, Constraint Boxes, Constraints and Burning Boxes look black while their bodies lie on a floor out of view",
-      "status": "open",
-      "statusText": "found 2026-11-13 in a fresh-clone run of the 34 demos (owner: the camera is far from the entities); backlog",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (93f786af), on fix/n166-demo-first-view (R-1709)",
       "date": "2026-11-13",
       "area": "demos",
       "kind": "bug",
-      "result": "Each centres the camera on the middle of the world, and its bodies fall to a floor out of view. Oriented Boxes and Constraint Boxes (5000 x 6000): camera on (2500, 3000), floor at y 5925, 1040 boxes active on a black screen; zoomed out to 0.21 the view (y 1446 to 4494 at 1080 x 640) still misses the floor. Constraints (same layout): the ball grid and the ring rest on the floor. Burning Boxes (4000 x 3000): camera on (2000, 1300), floor at 0.72 x 3000 = 2160, so only the dark cave shows. Chrome 157 on Windows, a 1080 x 640 page.",
-      "next": "Each scene aims its first view at its entities (the floor and what lands on it), or zooms to fit them, through the public Camera API. Then a look at every demo's first frames: Destructible Terrain and the Procedural Tree also start very dark (read whether that is their look).",
+      "result": "Fixed 2026-11-20 (93f786af): Oriented Boxes, Constraint Boxes and Constraints aim the first view at their floor, Burning Boxes 250 px above its floor; pictures before (black, cave) and after (bodies on the floor); a demo test runs each create().",
+      "next": "The owner: whether Destructible Terrain's and the Procedural Tree's dark first frames are their look.",
       "refs": [
         "REVIEW_PLAN.md#N-166"
       ],
@@ -12967,7 +12967,9 @@
         "constraintsTestScene",
         "burningBoxesScene"
       ],
-      "records": []
+      "records": [
+        "R-1709"
+      ]
     },
     {
       "id": "N-167",
@@ -40165,6 +40167,15 @@
       "title": "N-220 fixed: writeEmitColumns shuts the four emit gates, no stale gate read",
       "verdict": "kept-hygiene",
       "text": "**N-220 fixed: writeEmitColumns shuts the four gates, so no frame reads a stale one.** Branch fix/n220-emit-gates, e552684b.\n\n- **Cause:** the emit table's gate slots for the bullets, glows, particles and LiquidFun (bActive, lColor, pcX, lfX) were written only by their own column writers. A frame whose table only writeEmitColumns wrote read what an earlier frame left there: the persist path's callers in the tests, and the ASan harness with its memory not zeroed. The product runs every writer each frame, so it never reached this.\n- **Fix:** writeEmitColumns, which every emit frame goes through, sets the four gates to 0 first. Each writer opens its own (four stores a frame). A frame without a writer leaves those rows to the JS, as a writer that fails already does.\n- **Test:** preRenderEmitWasm.test.js covers this with bullets, lights and particles in the queue. With the four gates set past the memory, the frame trapped on bugs/base (RuntimeError: memory access out of bounds, as the harness saw). With the fix, it writes the rows a frame with clean gates writes, and the gates read 0. Suites: node 3287 of 3288 (frameChainWait's \"Pixi waits ...\" timing flake, its file green alone), demos 121 of 121. The ASan harness itself needs emsdk, which the ASUS lacks, so it was not rerun."
+    },
+    {
+      "id": "R-1709",
+      "date": "2026-11-20",
+      "time": "06:02",
+      "timeFrom": "recorded",
+      "title": "N-166 fixed: four demos open on the floor their bodies land on",
+      "verdict": "kept-hygiene",
+      "text": "**N-166 fixed: Oriented Boxes, Constraint Boxes, Constraints and Burning Boxes open on their bodies.** Branch fix/n166-demo-first-view, 93f786af.\n\n- **Cause:** each centred the camera and the free camera's target on the middle of the world. Their bodies fall to a floor at the world's bottom (Constraints: 525 px above it; Burning Boxes: 0.72 of the height), out of view.\n- **Fix (public Camera API):**\n  - Oriented Boxes and Constraint Boxes put the view's bottom on the world's bottom, from Camera.canvasHeight / Camera.zoom.\n  - Constraints puts its floor 120 px above the view's bottom.\n  - Burning Boxes centres 250 px above its floor.\n  - Each sets the free target to the same point.\n- **Checked by picture** (compareCaptures --headless --save, 1280 x 720, 4 s in), before and after:\n  - Oriented Boxes: black before; after, the boxes piled on the floor.\n  - Constraint Boxes: the same.\n  - Constraints: the ring of balls on the floor after.\n  - Burning Boxes: the dark cave with the flames cut at the bottom edge before; after, the burning crates and a ledge.\n- **Test:** demos/tests/demoFirstView.test.js runs each scene's create() with its floor's spawns caught, at zoom 1. The floor's top must be in the first view and the free target at the view's centre. All 4 fail on bugs/base. Suites: demos 125 of 125, node 3285 of 3287 (two timing flakes, frameChainWait and physicsChainWait, green alone; the node suite cannot see demos).\n- **Note:** Burning Boxes is a measured scene (runHygieneSceneAb, profileSceneSweep, runHeadedMedian), so its first view, and with it the visible load, changes with this commit.\n- **Not done:** the item's \"look at every demo's first frames\". Destructible Terrain and the Procedural Tree start dark; whether that is their look is the owner's call."
     }
   ],
   "leads": [

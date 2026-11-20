@@ -138,9 +138,12 @@ export class BurningBoxesScene extends WEED.Scene {
     this._oilX = cx - 80;
     this._oilY = cy + 80;
     this._oilAcc = 0;
+    // N-166: the first view on the floor (spawnFloorAndLedges: 0.72 of the world's height), the ledges and the crates
+    // stacked on it; the middle of the world showed only the dark cave.
+    const viewY = this.config.worldHeight * 0.72 - 250;
     Camera.setFree(true, { panSpeed: 10, zoomSensitivity: 0.001 });
-    Camera.setFreeTarget(cx, cy - 200);
-    Camera.centerOn(cx, cy - 200);
+    Camera.setFreeTarget(cx, viewY);
+    Camera.centerOn(cx, viewY);
   }
 
   createNewGame() {
