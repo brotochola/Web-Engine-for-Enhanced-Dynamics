@@ -294,9 +294,11 @@ export class PredatorScene extends WEED.Scene {
         elevation: 45, // Degrees above horizon (0=horizon, 90=overhead)
         intensity: 1, // Light intensity (0-1), affects ambient brightness
         color: 0xffffff, // Sun color (warm white default)
-        // Base darkness of sun-cast shadows (0-1); ?light3d=1: as dark as the light bench's, long shadows not lightened.
-        shadowAlpha: LIGHT3D ? 0.6 : 0.25,
-        ...(LIGHT3D ? { shadowStretchAlphaFactor: 0 } : {}),
+        // Base darkness of sun-cast shadows (0-1), as dark as the light bench's and long shadows not lightened, in both
+        // modes: the classic one (the shadows' layer) at 0.25 with long shadows lightened read 0.09 to 0.17 of darkness,
+        // against light3d's 0.6 (the owner, 2026-11-19: "muy tenues").
+        shadowAlpha: 0.6,
+        shadowStretchAlphaFactor: 0,
         startHour: 12, // Starting hour for day cycle (0-24)
         dayCycle: {
           // Auto-advance time of day; ?light3d=1&hour= pins the hour (day or night stays, for looking and captures).
