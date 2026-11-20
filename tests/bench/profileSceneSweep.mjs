@@ -16,14 +16,16 @@
  *
  * For each scene, <out>/<name>/ gets the cpu pass's stress.json, cpu-summary.json, hot-lines.md and
  * summary.txt, <out>/<name>/deopt/deopt.json, <out>/<name>/heap/heap.json and <out>/<name>/code/code.json
- * (run the cpu pass first: the code pass ranks by it). <out>/inventory.md then
+ * (run the cpu pass first: the code pass ranks by it). N-246: the code pass and the inventory read the cpu pass's files
+ * (<dir>/results.json, <dir>/<name>/cpu-summary.json) from --cpu-from <dir>, by default --out: a pass run into its
+ * own folder names the cpu pass's with --cpu-from, and says so when it finds none. <out>/inventory.md then
  * lists, per scene, every busy worker's ms/s, GC ms/s and hottest engine functions (src/ and the
  * engine's own wasm://), with game and bench code (demos/, tests/) added up apart since that code
  * stays in JS, and the engine's steady-state deopts and allocation rates when those passes ran.
  *
  *   node tests/bench/profileSceneSweep.mjs [--pass cpu|deopt|heap|code|boot] [--set demos|stress|all]
  *        [--only name,name] [--warmup-ms 6000] [--duration-ms 8000] [--out tests/results/wasm-q1b]
- *        [--inventory-only] [--keep-traces] [--browser firefox] [--dist] [--query k=v&k=v]
+ *        [--inventory-only] [--keep-traces] [--browser firefox] [--dist] [--query k=v&k=v] [--cpu-from <dir>]
  *
  * --query goes to every scene of the run, after its own SCENE_ARGS (with --only, one scene's knob: Predator's crowd=2.5).
  *
@@ -169,6 +171,15 @@ function deoptPass(file, dir, opts) {
   return '';
 }
 
+/**
+ * N-246: where the cpu pass's files are, under `cpuFrom` (--cpu-from, else --out): its index, and scene `name`'s summary.
+ * @param {string} cpuFrom
+ * @param {string} [name]
+ */
+export function cpuPassPaths(cpuFrom, name) {
+  return { index: path.join(cpuFrom, 'results.json'), summary: name ? path.join(cpuFrom, name, 'cpu-summary.json') : null };
+}
+
 /** Like the deopt pass, the code log stops once the CPU profiler starts: no trace here, the cpu pass's summary ranks. */
 function codePass(file, dir, opts) {
   const logs = path.join(dir, 'v8');
@@ -177,7 +188,8 @@ function codePass(file, dir, opts) {
   fs.rmSync(bytecode, { recursive: true, force: true });
   const run = runScene(file, dir, opts, ['--js-flags', '--log-code --log-code-disassemble', '--v8-log-dir', logs], { traceCpu: false });
   if (run.status !== 0 || !fs.existsSync(logs)) return failed(run);
-  const cpu = path.join(path.dirname(dir), 'cpu-summary.json');
+  const cpu = cpuPassPaths(opts.cpuFrom || path.dirname(path.dirname(dir)), path.basename(path.dirname(dir))).summary;
+  if (!fs.existsSync(cpu)) console.warn(`[sweep]   no cpu summary at ${cpu}: nothing ranks the code (run the cpu pass, or --cpu-from its --out)`);
   const sum = spawn([
     bench('summarizeV8Code.mjs'), logs, '--output', path.join(dir, 'code.json'), '--dump', bytecode,
     ...(fs.existsSync(cpu) ? ['--cpu', cpu] : []),
@@ -286,7 +298,11 @@ export function codeRows(report, { top = 3 } = {}) {
     .filter((k) => k.calls.length || k.stuck.length || k.reopt.length);
 }
 
-function writeInventory(out, results) {
+/**
+ * <out>/inventory.md from the cpu pass's results; each scene's cpu summary from `cpuFrom` (N-246), the other passes'
+ * files from `out`.
+ */
+export function writeInventory(out, results, cpuFrom = out) {
   const lines = [
     '# Scene profile inventory (E-76 Q1b)',
     '',
@@ -300,7 +316,7 @@ function writeInventory(out, results) {
   for (const r of results) {
     const extra = SCENE_ARGS[r.name] ? ` with \`${SCENE_ARGS[r.name].join(' ')}\`` : '';
     lines.push(`## ${r.name}`, '', `\`${r.file}\`${extra}`, '');
-    const cpu = readJson(path.join(out, r.name, 'cpu-summary.json'));
+    const cpu = readJson(cpuPassPaths(cpuFrom, r.name).summary);
     if (!r.ok || !cpu) {
       lines.push(`Failed: ${r.why || 'no summary'}.`, '');
       continue;
@@ -359,7 +375,10 @@ function main() {
     keepTraces: Boolean(args['keep-traces']),
     browser: args.browser ? String(args.browser) : '',
     dist: Boolean(args.dist),
+    cpuFrom: '',
   };
+  // N-246: the cpu pass's own files are its --out; the others read them from --cpu-from, else --out.
+  opts.cpuFrom = pass !== 'cpu' && args['cpu-from'] ? path.resolve(repoRoot, String(args['cpu-from'])) : opts.out;
   fs.mkdirSync(opts.out, { recursive: true });
   // The cpu pass's index is results.json; the others keep their own.
   const indexOf = (p) => path.join(opts.out, p === 'cpu' ? 'results.json' : `results-${p}.json`);
@@ -378,10 +397,11 @@ function main() {
       fs.writeFileSync(indexOf(pass), JSON.stringify(results, null, 2));
     });
   }
-  const cpuResults = readJson(indexOf('cpu')) || [];
+  const cpuResults = readJson(cpuPassPaths(opts.cpuFrom).index) || [];
+  if (cpuResults.length === 0) console.warn(`[sweep] no cpu pass results in ${opts.cpuFrom}: the inventory lists no scene (--cpu-from its --out)`);
   const order = [...DEMOS, ...STRESS];
   cpuResults.sort((a, b) => order.indexOf(a.file) - order.indexOf(b.file));
-  writeInventory(opts.out, cpuResults);
+  writeInventory(opts.out, cpuResults, opts.cpuFrom);
   console.log(`[sweep] inventory: ${path.join(opts.out, 'inventory.md')}`);
 }
 
