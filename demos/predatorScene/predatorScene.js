@@ -229,7 +229,8 @@ export class PredatorScene extends WEED.Scene {
       // E-201: `?posesByRow=0` draws the keyed frames from a pose stream instead of by queue row (renderer.keyedPosesByRow).
       ...(predatorSearchParam('posesByRow') === '0' ? { keyedPosesByRow: false } : {}),
       // ?light3d=1 (light3d.js): each entity pixel's place on the floor corrects the painter where it has a height map.
-      ...(LIGHT3D ? { pixelDepth: true } : {}),
+      // `?pixelDepth=0` turns it off (it comes on by itself with an oblique camera and maps), to weigh its cost.
+      ...(predatorSearchParam('pixelDepth') === '0' ? { pixelDepth: false } : LIGHT3D ? { pixelDepth: true } : {}),
       // atlasScaleMode: 'linear',
     },
     // ?light3d=1 packs the atlas on load (the baked one lacks the farm's renders): room for the barn's 32 views.
@@ -283,6 +284,11 @@ export class PredatorScene extends WEED.Scene {
       // (the lamps light each other's shadows, the bulbs' heights in the shadows' lengths), and self-shadow.
       // maxVolumes: the houses' boxes (shadowCaster.setBox) need their room, one a house of the pool.
       ...(LIGHT3D ? { sunShadows: 'map', lampShadows: 'map', selfShadow: true, maxVolumes: 2000 } : {}),
+      // The 3D light's pieces one by one, to weigh them (light3d's cost, and its shadow maps on art without maps):
+      // `?sunShadows=map|layer`, `?lampShadows=map|layer` in either mode, `?selfShadow=0`.
+      ...(predatorSearchParam('sunShadows') ? { sunShadows: predatorSearchParam('sunShadows') } : {}),
+      ...(predatorSearchParam('lampShadows') ? { lampShadows: predatorSearchParam('lampShadows') } : {}),
+      ...(predatorSearchParam('selfShadow') === '0' ? { selfShadow: false } : {}),
       // No walls here (nothing calls shadowCaster.setWall). With walls: true, any camera, the walls' sweep and its budget.
       // E-529: `?walls=1` turns them on, so each light that casts gets a neighbour list over its shadows' reach.
       ...(predatorSearchParam('walls') === '1' ? { walls: true } : {}),
@@ -302,7 +308,8 @@ export class PredatorScene extends WEED.Scene {
         startHour: 12, // Starting hour for day cycle (0-24)
         dayCycle: {
           // Auto-advance time of day; ?light3d=1&hour= pins the hour (day or night stays, for looking and captures).
-          enabled: !(LIGHT3D && pinHour != null),
+          // `?dayCycle=0` stops it in either mode (the classic one with `hour` starts there and goes on, as it did).
+          enabled: !(LIGHT3D && pinHour != null) && predatorSearchParam('dayCycle') !== '0',
           speed: 1, // Multiplier (1 = real time, 60 = 1 minute = 1 hour)
           dayDurationMinutes: 1, // Real minutes for full day (1440 = 24 real hours)
         },
