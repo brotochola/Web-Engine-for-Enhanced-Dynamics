@@ -20827,19 +20827,20 @@
     {
       "id": "N-255",
       "title": "pruneTestResults (run by runPredatorAbab) deletes anything in tests/results untouched for 7 days, the capacity history included: a week without nightly runs loses it",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the capacity agent",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (d528396c), on fix/n255-prune-keeps-history (R-1706)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "nightlyCapacity writes tests/results/capacity-history.jsonl by default.",
-      "next": "Skip *history.jsonl in the pruner, or default the history outside tests/results; tonight's is in D:/claude/weed-capacity-history.jsonl.",
+      "result": "Fixed 2026-11-20 (d528396c): names ending in history.jsonl are never pruned, and a folder holding one is pruned file by file around it, so a week without a nightly run keeps capacity-history.jsonl.",
+      "next": "Nothing left.",
       "refs": [],
       "aliases": [
         "capacity history pruned"
       ],
       "records": [
-        "R-1240"
+        "R-1240",
+        "R-1706"
       ]
     },
     {
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1706",
+      "date": "2026-11-20",
+      "time": "05:34",
+      "timeFrom": "recorded",
+      "title": "N-255 fixed: pruneTestResults never removes a history file",
+      "verdict": "kept-hygiene",
+      "text": "**N-255 fixed: pruneTestResults never removes a history file.** Branch fix/n255-prune-keeps-history, d528396c.\n\n- **Cause:** the pruner, which runPredatorAbab runs before every sitting, removed any entry of tests/results untouched for 7 days. nightlyCapacity's default history, tests/results/capacity-history.jsonl, is touched once a night, so a week without a night lost it.\n- **Fix:** a name ending in history.jsonl is never removed. A folder that holds one directly is pruned file by file around it, where it used to go whole by its own age. nightlyCapacity's comment says so.\n- **Test:** pruneTestResults.test.js adds a case: a 30-day-old capacity-history.jsonl at the top and a history inside a 30-day-old folder both stay, and the old runs beside them go (on bugs/base the history went). Node suite 3287 of 3288: the one failure was physicsChainWait's \"physics sleeps until the bell rings\" timing test, which this change cannot reach (its file passed 3 of 3 alone)."
     }
   ],
   "leads": [
