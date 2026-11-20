@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS, STEP_MS_FLOOR } from './benchmarkDefaults.mjs';
+import { BOOT_FAILURE_EXIT } from './bootWatch.mjs';
 import { median, pctDelta, writeJson } from './featureTournamentLib.mjs';
 
 export const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -292,6 +293,10 @@ export function runIntegratedWithRetry(scene, outPath, opts) {
     try {
       report = runIntegratedOnce(scene, outPath, opts);
     } catch (e) {
+      // N-254: a scene that failed while booting fails the same way again: no second run (its error is in the output).
+      if (e?.status === BOOT_FAILURE_EXIT) {
+        return { ok: false, error: `the scene failed while booting (${String(e.message || e)})`, retried: failed > 0, bootFailure: true };
+      }
       failed++;
       if (failed > 1) return { ok: false, error: String(e.message || e), retried: true };
       console.warn(`Playwright fail; retry 1x (${e.message || e})`);
