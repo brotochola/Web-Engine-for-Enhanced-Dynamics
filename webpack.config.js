@@ -171,8 +171,14 @@ const mainConfig = {
     ],
     resolve: {
         extensions: ['.js'],
-        alias: debugStubAliases
-    }
+        alias: debugStubAliases,
+        symlinks: false,
+    },
+    // N-251: modules and loaders by the path they were found at, not through a symlink (and Node's own resolution the
+    // same way: buildBundle.js runs webpack with --preserve-symlinks). A worktree whose node_modules is a junction to
+    // the main folder's resolved babel-loader and style-loader's runtime into the main folder, and those paths went
+    // into module identifiers and assets, so its bundles differed from the main folder's build of the same sources.
+    resolveLoader: { symlinks: false },
 };
 
 // Workers bundle configuration.
@@ -225,8 +231,14 @@ const workersConfig = {
     ],
     resolve: {
         extensions: ['.js'],
-        alias: debugStubAliases
-    }
+        alias: debugStubAliases,
+        symlinks: false,
+    },
+    // N-251: modules and loaders by the path they were found at, not through a symlink (and Node's own resolution the
+    // same way: buildBundle.js runs webpack with --preserve-symlinks). A worktree whose node_modules is a junction to
+    // the main folder's resolved babel-loader and style-loader's runtime into the main folder, and those paths went
+    // into module identifiers and assets, so its bundles differed from the main folder's build of the same sources.
+    resolveLoader: { symlinks: false },
 };
 
 // Export main and workers configs

@@ -20741,18 +20741,20 @@
     {
       "id": "N-251",
       "title": "scripts/buildBundle.js cannot run in a git worktree (it resolves paths or node_modules from the main folder), so a branch cannot build and time its own bundle in a worktree",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-469 agent (opt/terser-closures) while building the bundles",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (33d93175, 0b577a9f), on fix/n251-bundle-worktree (R-1704)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Seen by the E-469 agent in D:/xampp/htdocs/weed-par-* worktrees.",
-      "next": "Resolve paths from the script's own tree and node_modules through the loader the worktrees use; a worktree build matching the main folder's byte for byte.",
+      "result": "Fixed 2026-11-20 (33d93175, 0b577a9f): no builder's file:// path in the bundles (atlasCache's import.meta.url), and webpack and Node resolve node_modules as found (symlinks false, --preserve-symlinks); 'cannot run' did not reproduce on the ASUS.",
+      "next": "If a worktree build still fails to start on the main PC, the error text is the next lead: on the ASUS it ran.",
       "refs": [],
       "aliases": [
         "buildBundle in worktrees"
       ],
-      "records": []
+      "records": [
+        "R-1704"
+      ]
     },
     {
       "id": "E-493",
@@ -40114,6 +40116,15 @@
       "title": "N-161 fixed: audioStorm's catalog row reads MARK_ACTIVE (one driver a 100 plays) and runs 48 000 plays a tick",
       "verdict": "kept-hygiene",
       "text": "**N-161 fixed: the catalog's audioStorm row has a load key the scene publishes, and a knob past the floor.** Branch fix/n161-audiostorm-load-key, 752f2353 and 703b8504.\n\n- **Cause:** the row's load key was BODY_COUNT in a scene with no bodies (a median of 0 on both sides: \"load not comparable\"). Its primary, logic0, read 0.56 ms at ?plays=1200, under the floor (3 ms then, 6 ms now).\n- **Fix 1:** the storm runs on one AudioStormDriver for each 100 plays a tick, each marked reportMarkActive, so logic0's MARK_ACTIVE is the population (plays / 100, as bunnyMark's is). The row reads MARK_ACTIVE.\n- **Fix 2:** the default is now 48 000 plays a tick. play() got about 5x cheaper since E-46's 2400 for 3 ms. Headless on the ASUS, 2026-11-20, logic0's own work (step - wait), 10 s after 10 s, one run each: 1200 -> 0.33 ms, 6000 -> 1.31, 14 400 -> 2.71, 36 000 -> 7.17, 48 000 -> 9.49 (default run 9.31, MARK_ACTIVE 480, 60 fps held). Linear at about 0.19 ms a 1000 plays. On the main PC, a faster CPU may read under 9 ms. If the scoreboard's floor still trips there, raise ?plays (the cost stays linear).\n- **Test:** engineFeatureCatalog.test.js checks that every row's load keys are ones extractMetrics publishes, that audioStorm reads MARK_ACTIVE, and that its drivers report it. Node suite 3288 of 3288."
+    },
+    {
+      "id": "R-1704",
+      "date": "2026-11-20",
+      "time": "05:19",
+      "timeFrom": "recorded",
+      "title": "N-251 fixed: a junctioned worktree builds the main folder's 12 dist files byte for byte",
+      "verdict": "kept-hygiene",
+      "text": "**N-251 fixed: a worktree builds the main folder's bundles byte for byte.** Branch fix/n251-bundle-worktree, 33d93175 and 0b577a9f.\n\n- **\"Cannot run\" did not reproduce on the ASUS.** buildBundle.js built in this worktree (its own node_modules) in 2 min 48 s. It also built in a scratch worktree whose node_modules is a junction, as revWorktree.mjs makes them. Every path in the script is already its own tree's.\n- **The bundles differed,** for two reasons:\n  - **(1) The builder's path:** atlasCache.js's bare import.meta.url (atlasCodeHash's default base), which webpack writes as the builder's file:// path. Every bundle carried, and published, the folder it was built in (2 times in each).\n  - **(2) The junction:** webpack and Node followed node_modules, so babel-loader's real path went into every module's identifier (the deterministic ids moved: 8264 against 4278). style-loader's runtime path went into the debug CSS asset's hash.\n- **Fix:**\n  - **(1)** atlasCodeHash's default is MODULE_URL: '' where the build defines __WEED_BUILD_INPUTS__, which webpack folds, so the URL is gone. A source build keeps the module's URL.\n  - **(2)** The three webpack configs set symlinks: false for resolve and resolveLoader. The ESM config was missing the UMD one's resolveLoader. buildBundle runs webpack with --preserve-symlinks and --preserve-symlinks-main.\n- **Checked by building:** after each step, a junctioned worktree and this tree built the 12 dist files: with (1) alone, 4 matched (the stamps, index.html, weed-sw.js); with resolveLoader only, 6 matched; with everything, 12 of 12 byte for byte. This tree's bundles lost only the path (about 0.1 KB each).\n- **Test:** bundleWorktreeBuild.test.js covers three points: every webpack config resolves without symlinks, buildBundle's env preserves them, and a webpack build's atlasCodeHash hashes no file. Each fails on bugs/base. Node suite 3290 of 3290."
     }
   ],
   "leads": [
