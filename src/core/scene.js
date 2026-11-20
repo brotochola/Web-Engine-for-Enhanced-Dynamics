@@ -812,6 +812,8 @@ class Scene {
    * and the component objects.
    */
   _createPageInstances() {
+    // The scene's config for every entity of the page, made or not.
+    GameObject._bindRealm(this.config, null);
     // E-209: made on a slot's first use (_makePageInstance), not one per pool slot here.
     const all = new Array(this.totalEntityCount | 0).fill(null);
     for (let r = 0; r < this.registeredClasses.length; r++) {

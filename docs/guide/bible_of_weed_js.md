@@ -257,6 +257,7 @@ Every entity can be written as objects (methods on the instance, `this` the enti
 | Its FSMs | `this.walkFSM.tick(dtRatio)` | `FSM.tickAll(list, count, dtRatio, this)` |
 | Ask an FSM for a state | `this.walkFSM.changeState(WalkFSM.states.RUN)` | `WalkFSM.changeState(i, WalkFSM.states.RUN)` |
 | The class's tuning | `this.constructor.speed` | `this.speed` (in a static), or `GameObject.classByType[Transform.entityType[i]].speed` |
+| The scene's config | `this.config` | `this.config` (in a static), `GameObject.config` |
 | End it | `this.despawn()` | `this.despawn(i)` (in a static) |
 
 ```javascript

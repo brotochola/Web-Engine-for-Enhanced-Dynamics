@@ -1633,6 +1633,8 @@ export declare class GameObject {
   static entityType: number | null;
   static scene: Scene | null;
   static instances: GameObject[];
+  /** The scene's config, for code that holds an index (a static tickAll or hook): what an entity's `this.config` reads. */
+  static readonly config: SceneConfig;
   index: number;
   /** The scene's config, the same object for every entity of a realm (an empty one before the scene binds it). */
   readonly config: SceneConfig;

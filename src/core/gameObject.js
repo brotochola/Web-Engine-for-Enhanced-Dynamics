@@ -651,6 +651,27 @@ export class GameObject {
    * @param {number} entityIndex
    * @returns {GameObject|undefined}
    */
+  /**
+   * The scene's config, for code that holds an index (a static tickAll or hook: `this.config.worldWidth`). The same
+   * object an entity's `this.config` reads; bound when the realm registers its entity types.
+   * @returns {Object}
+   */
+  static get config() {
+    return GameObject.prototype.config;
+  }
+
+  /**
+   * Binds the realm's scene config and logic worker for every entity of the realm, made or not (an entity's
+   * this.config, GameObject.config). The page's scene and each logic worker call it when they register their types.
+   * @param {Object} config
+   * @param {Object|null} logicWorker
+   */
+  static _bindRealm(config, logicWorker) {
+    const proto = GameObject.prototype;
+    if (config && proto.config !== config) proto.config = config;
+    if (logicWorker !== null && proto.logicWorker !== logicWorker) proto.logicWorker = logicWorker;
+  }
+
   static get(entityIndex) {
     return GameObject._at(entityIndex);
   }

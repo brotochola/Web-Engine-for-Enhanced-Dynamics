@@ -195,7 +195,7 @@ export class Person extends Lootable {
     const speed = RigidBody.speed;
     const vx = RigidBody.vx;
     const vy = RigidBody.vy;
-    const config = this.prototype.config;
+    const config = this.config;
     const maxX = (config.worldWidth || 1000) - EDGE_MARGIN;
     const maxY = (config.worldHeight || 1000) - EDGE_MARGIN;
 

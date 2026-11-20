@@ -605,6 +605,8 @@ class LogicWorker extends AbstractWorker {
 
   createGameObjectInstances() {
     const numTypes = this.registeredClasses.length;
+    // The scene's config and this worker for every entity, made or not (an ECS-style type makes no instance).
+    GameObject._bindRealm(this.config, this);
     // E-209: the instances, by index, made on first use.
     GameObject.instances = new Array(this.globalEntityCount | 0).fill(null);
     GameObject._makeAt = this._makeAtFn;
