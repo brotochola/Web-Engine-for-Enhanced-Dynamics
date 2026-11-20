@@ -24352,18 +24352,19 @@
     },
     {
       "records": [
-        "R-1565"
+        "R-1565",
+        "R-1576"
       ],
       "refs": [],
       "id": "N-324",
       "title": "A neighbour read from a method more than four entity classes inherit goes megamorphic at its call site: 19.6-23 ns a neighbour against the row's 2.5-2.7 (neighborAccessMicrobench --classes 20)",
-      "status": "open",
+      "status": "kept-kernel",
       "kind": "bug",
       "area": "logic speed",
       "date": "2026-11-19",
-      "statusText": "Filed 2026-11-19 from N-319's kernel work (R-1565); not seen in Predator, whose reads are per class",
-      "result": "",
-      "next": "Make Grid's static reads fast (module-level neighbour memory and stride, no buffer test: today 6.7-7.3 ns at any class count) and point base-class code to them in the guide, or give GameObject a read that needs no per-map inlining; then the kernel at --classes 20 and a scene with a shared base class.",
+      "statusText": "Fixed 2026-11-20 (45a145d9); the megamorphic instance read past four types stays, the guide steers around it",
+      "result": "Grid.getNeighborCount/getNeighbor load the memory once: statics 6.55 -> 5.17 ns a neighbour (-21 %), the compiled getter unchanged at 2.34; the guide points index-holding and shared base-class code to them",
+      "next": "E-530 (Predator's soldiers and civilians on static hooks and tickAll) reads its neighbours through these statics: its sitting is the scene check.",
       "aliases": [
         "megamorphic neighborCount",
         "inherited neighbour read cliff",
@@ -40026,6 +40027,21 @@
       "title": "Fewer pixels on the HD 620: at 1280x720, Predator's night light3d draws 26 -> 43 fps (+64 %) and bunnyMark 20 000 holds 60 (56 at 1080p); the engine has no render scale",
       "verdict": "note",
       "text": "ASUS lab job 0899z2 (01:27-01:32): is \"fewer pixels\" the lever on the HD 620? R-1584 found bunnyMark pixel-bound\nthere, and R-1623 found Predator's light3d at 24 to 31 ms of GPU. The engine has no render scale, so the canvas size\nstands in for one: 1280x720 (44 % of the pixels) against 1920x1080. 2 rounds alternated, headed, --src, detailed stats\noff, main 9647eb9b, Intel 31.0.101.2145. The renderer's drawn frames over 10 s:\n\n| scene | 1920x1080 (r1 / r2) | 1280x720 (r1 / r2) |\n|---|---|---|\n| bunnyMark 20 000 (its capacity is 15 000, R-1598) | 560 / 561 (56 fps) | 601 / 601 (60, the cap) |\n| Predator light3d at 22 h, crowd 0.2 | 259 / 260 (26 fps) | 426 / 427 (43 fps, +64 %) |\n\n- **On the weak GPU, pixels are the lever.**\n  - At 44 % of the pixels, Predator's night light3d draws 64 % more frames, though still not 60.\n  - bunnyMark at 20 000 holds 60 fps.\n  - The CPU side barely moves: Predator's pre-render own work 3.2 to 2.9 ms. So these scenes are GPU-bound on this\n    laptop at 1080p.\n- **For DX-AUTOQUALITY:** the engine has no render scale (an internal resolution under the canvas's, upscaled once).\n  On this class of GPU it would be the largest single knob measured so far: more than C's light3d settings (R-1623),\n  and without changing the art."
+    },
+    {
+      "id": "R-1576",
+      "date": "2026-11-20",
+      "time": "01:38",
+      "timeFrom": "recorded",
+      "title": "N-324 kept on the kernel: Grid's static neighbour reads 6.55 -> 5.17 ns a neighbour (-21 %), the instance getter unchanged",
+      "verdict": "kept",
+      "text": "**N-324 kept on the kernel: Grid's static neighbour reads load the memory once, 6.55 -> 5.17 ns a neighbour (-21 %).**\n`Grid.getNeighborCount(id)` and `Grid.getNeighbor(id, k)` read `Grid._neighborData` twice (a truthiness test, then the\nindex); now one load into a local and a test against null. neighborAccessMicrobench --classes 5 (its new `statics`\ncase, de83b322), same sitting, 2 runs a side: statics 6.64 / 6.46 -> 5.31 / 5.03 ns; shipped (the per-class compiled\ngetter) 2.33 / 2.35 -> 2.34 / 2.35; row 2.43 / 2.40 -> 2.38 / 2.35. At 20 classes statics 4.8-5.0 ns, shipped still\nthe megamorphic 21-23 ns. Not taken: the neighbour memory and stride as module bindings behind static accessors (statics\n4.7 ns) made the compiled getter, which reads `Grid._neighborData`, 3.3-3.6 ns at 5 classes. No scene: the only caller\nin src/ and demos/ is planetScene's waterDrop; E-530 is the scene that will read these. The guide's neighbour section\nnow sends index-holding code (static tickAll, static hooks) and base classes more than four types share to Grid's\nstatics (127362ed). Merged 45a145d9, dist 47c5f749.",
+      "commits": [
+        "de83b322",
+        "fe08dd62",
+        "45a145d9",
+        "127362ed"
+      ]
     }
   ],
   "leads": [
