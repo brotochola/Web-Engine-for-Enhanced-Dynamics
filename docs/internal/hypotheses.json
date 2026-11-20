@@ -24092,7 +24092,8 @@
         "R-1561",
         "R-1593",
         "R-1594",
-        "R-1567"
+        "R-1567",
+        "R-1595"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24295,7 +24296,8 @@
     },
     {
       "records": [
-        "R-1562"
+        "R-1562",
+        "R-1595"
       ],
       "refs": [],
       "id": "N-322",
@@ -39758,6 +39760,15 @@
       "title": "E-318 screened: a row-head touch-ahead gains at most 2 % in a probe of bucket-order ticks over 2 KB rows; not built",
       "verdict": "screened",
       "text": "**E-318 screened: touching the neighbour row head ahead does not pay.** A standalone probe (not the engine, Node): 57 600\nrows 2 050 bytes apart (stride 1025), one tick bucket (ids rising by 4, 14 400 ticks), 12 neighbours a row, the rows\nrewritten and an 8 MB walk between passes so they come from memory, 40 rounds each, median ms a pass:\n\n| loop | plain | head 8 ahead | 16 ahead | 32 ahead |\n| --- | --- | --- | --- | --- |\n| the reads alone | 0.755 / 0.762 | 0.759 / 0.762 | 0.754 / 0.758 | 0.753 / 0.758 |\n| with ~60 dependent float ops a tick | 2.281 / 2.282 | 2.237 / 2.231 | 2.275 / 2.268 | 2.271 / 2.283 |\n\nAt best 2 % (8 ahead with work between the reads), inside a probe's noise and far from the -3 to -6 % estimated: the\ncore already overlaps the head's miss with the work of the ticks before it. Not built in the engine (it would take a\ncopied bucket loop, rule R8, for that)."
+    },
+    {
+      "id": "R-1595",
+      "date": "2026-11-19",
+      "time": "21:28",
+      "timeFrom": "recorded",
+      "title": "The ASUS's night scoreboard of 7ffea480: lockstep passes; the visualRange audit puts rayVsBox2d's spatial back at v0.14.0's (0.087 ms) and logic0 at -17.7 %; N-322 flags the spatial row's load",
+      "verdict": "note",
+      "text": "ASUS lab job 0899t (20:11-21:28): the night's scoreboard of local main 7ffea480 against v0.14.0, on the ASUS (i7-7500U\n2C/4T, HD 620 on Intel 31.0.101.2145), --full-rev --skip-node, lockstep on. 7ffea480 is the evening's merges plus\nE-378, 9003489e's visualRange audit and N-322's load gate; N-323 is not in. Read against 0899p (4bf02ffd, R-1590).\n\n- **Lockstep passes** (balls, liquidfun, lfstress, particles).\n- **The visualRange audit undoes R-1590's rayVsBox2d cost.** spatialMax 0.885 -> 0.087 ms (v0.14.0 0.077),\n  NEIGHBORS_REUSED 2 480 -> 0. logic0 4.58 -> 4.14 ms, -17.7 % against v0.14.0 (it was -8.2 % in R-1590, -22.0 % in\n  R-1580).\n- **N-322 works on the spatial row.** It now reads \"load not comparable\" (NEIGHBORS_REUSED 0 against 4 300). Its\n  spatialMax 0.680 ms with a cv of 88.6 % is R-1594's periodic rebuild, which N-323 (546c5afc) fixes after this build.\n- **Other flips are inside the ASUS's kernel swing (R-1580):**\n  - particleLists and particleListsZoomed TIE -> KEPT (kernel +12.6 % and +20.3 %).\n  - gpuQueuePack TIE -> KEPT, textureUpload TIE -> KEPT, tilemap KEPT -> TIE.\n  - liquidfunCouple WORSE -> TIE (kernel -0.2 %, physics -2.4 %): R-1590's WORSE was noise.\n- Scene rows held: box2d -29 %, bullets -17 %, ray -13 %, box2dRayJs -23 %, meshFillMoving's renderer -27 %,\n  decalBlit -5.9 %."
     }
   ],
   "leads": [
