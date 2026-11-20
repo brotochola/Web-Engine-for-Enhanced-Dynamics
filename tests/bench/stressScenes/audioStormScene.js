@@ -3,21 +3,24 @@
  * across several compressed buses. Primary: logic0_STEP_MS. Load: logic0 MARK_ACTIVE, the drivers, one for each
  * PLAYS_PER_DRIVER plays a tick (N-161: the scene has no bodies, so BODY_COUNT was 0 on both sides).
  *
- * Raise PLAYS_PER_TICK if logic0 stays under 3 ms. Freeze the knobs after that.
+ * Raise PLAYS_PER_TICK if logic0's own work stays under the 6 ms floor. Freeze the knobs after that.
  */
 import WEED from '/src/index.js';
 import { AudioStormDriver } from './audio/audioStormDriver.js';
 
 const { Scene, Camera } = WEED;
 
-/** `?plays=N` overrides it (E-46 needed 2400 for a 3 ms baseline on 2026-10-21). */
+/**
+ * `?plays=N` overrides it. E-46 needed 2400 for a 3 ms baseline on 2026-10-21; play() got cheaper since, and logic0's
+ * own work read 0.33 ms at 1200 and 9.5 ms at 48 000 on the ASUS on 2026-11-20 (N-161: 0.19 ms a 1000, linear).
+ */
 export const PLAYS_PER_TICK = (() => {
   try {
     const raw = new URLSearchParams(globalThis.location?.search || '').get('plays');
     const n = raw ? parseInt(raw, 10) : NaN;
-    return Number.isFinite(n) && n > 0 ? n : 1200;
+    return Number.isFinite(n) && n > 0 ? n : 48000;
   } catch {
-    return 1200;
+    return 48000;
   }
 })();
 export const ACTIVE_LOOPS = 128;
