@@ -2383,18 +2383,19 @@ export declare class FSM extends Component {
   static time: Float32Array;
   static nextState: Int16Array;
 
-  tick(dt: number, owner: GameObject): void;
+  /** This entity's FSM, from its tick(): `this.walkFSM.tick(dtRatio)`. */
+  tick(dt: number): void;
   changeState(StateClass: typeof FSMState): void;
   forceChangeState(StateClass: typeof FSMState): void;
 
   /**
-   * Tick the FSMs of `count` listed entities of EntityClass, as each one's tick(dt, owner)
-   * would: the pending transition (onExit, onEnter), the time in state, the state's onUpdate,
-   * entity by entity in the list's order. On FSM itself, every FSM component of EntityClass
-   * (components order) for each entity before the next; on an FSM subclass, that FSM alone.
-   * The owner is the entity's instance, made on its first tick. The logic workers call it for a
-   * type with FSM components and neither tick() nor tickAll; a type's own static tickAll can
-   * call it: `FSM.tickAll(list, count, dtRatio, this)`.
+   * Tick the FSMs of `count` listed entities of EntityClass, as each one's tick(dt) would: the
+   * pending transition (onExit, onEnter), the time in state, the state's onUpdate, entity by
+   * entity in the list's order. On FSM itself, every FSM component of EntityClass (components
+   * order) for each entity before the next; on an FSM subclass, that FSM alone. It makes no
+   * instance: states get the index. The logic workers call it for a type with FSM components and
+   * neither tick() nor tickAll; a type's own static tickAll can call it:
+   * `FSM.tickAll(list, count, dtRatio, this)`.
    */
   static tickAll(list: ArrayLike<number>, count: number, dt: number, EntityClass: typeof GameObject): void;
 
@@ -2402,8 +2403,8 @@ export declare class FSM extends Component {
   static changeState(i: number, StateClass: typeof FSMState): void;
   static getStateName(i: number): string | null;
   static isInState(i: number, StateClass: typeof FSMState): boolean;
-  static forceChangeState(i: number, StateClass: typeof FSMState, owner: GameObject): void;
-  static initializeEntity(i: number, owner: GameObject): void;
+  static forceChangeState(i: number, StateClass: typeof FSMState): void;
+  static initializeEntity(i: number): void;
 }
 
 /**
@@ -2414,10 +2415,11 @@ export declare class FSMState {
   static fsm: typeof FSM | null;
   /** Assigned when the FSM links states at init. */
   static stateIndex: number;
-  static onEnter(owner: GameObject, i: number, fromState: string | null): void;
-  static onExit(owner: GameObject, i: number, toState: string): void;
+  /** `i`: the entity's index (the instance, when a state wants it: `GameObject.get(i)`). */
+  static onEnter(i: number, fromState: string | null): void;
+  static onExit(i: number, toState: string): void;
   /** `timeInState`: time in this state, in whole milliseconds. */
-  static onUpdate(owner: GameObject, i: number, dt: number, timeInState?: number): void;
+  static onUpdate(i: number, dt: number, timeInState?: number): void;
 }
 
 export declare const DEBUG_FLAGS: Readonly<DebugFlagConstants>;

@@ -3801,7 +3801,7 @@ export class GameObject {
       for (const name in entityComponentMap) {
         const ComponentClass = entityComponentMap[name];
         if (ComponentClass && ComponentClass.isFSM) {
-          ComponentClass.initializeEntity(i, instance);
+          ComponentClass.initializeEntity(i);
         }
       }
 

@@ -13,8 +13,12 @@
 //   }
 //
 // A type with FSM components and no tick() (nor a static tickAll) has its FSMs run by the logic workers through
-// FSM.tickAll (E-526). A type with more to do each frame calls them from its tick()
-// (this.enemyBehaviourFSM.tick(dt, this)) or from its static tickAll (FSM.tickAll(list, count, dtRatio, this)).
+// FSM.tickAll (E-526). A type with more to do each frame calls them from its tick() (this.enemyBehaviourFSM.tick(dt))
+// or from its static tickAll (FSM.tickAll(list, count, dtRatio, this)).
+//
+// E-532: an FSM has no owner. Its states get the entity's index (onEnter(i, fromState), onExit(i, toState),
+// onUpdate(i, dt, timeInState)) and read the entity from its components' columns; a state that wants the entity's
+// instance asks GameObject.get(i). So FSMs make no instance, whichever way their type is written.
 
 import { Component } from './component.js';
 import { FSMState } from './fsmState.js';
@@ -67,8 +71,6 @@ function tickOneFsm(F, list, count, dt, EntityClass) {
   const nextState = F.nextState;
   const stateArray = F._stateArray;
   const onUpdates = F._onUpdates;
-  const instances = EntityClass.instances;
-  const startIndex = EntityClass.startIndex;
   // FSM#tick's dt × ms per tick (16.67 × the type's tickInterval), the same double, once.
   const dtMs = dt * (16.67 * (EntityClass.tickInterval || 1));
   let k = 0;
@@ -76,15 +78,13 @@ function tickOneFsm(F, list, count, dt, EntityClass) {
     try {
       for (; k < count; k++) {
         const i = list[k];
-        const owner = instances[i - startIndex] ?? EntityClass._instanceOf(EntityClass, i);
-        if (owner === null || owner === undefined) continue;
         const pending = nextState[i];
-        if (pending >= 0) F._executeTransition(i, pending, owner);
+        if (pending >= 0) F._executeTransition(i, pending);
         const s = state[i];
         const CurrentState = stateArray[s];
         if (CurrentState) {
           time[i] += dtMs;
-          onUpdates[s].call(CurrentState, owner, i, dt, time[i] | 0);
+          onUpdates[s].call(CurrentState, i, dt, time[i] | 0);
         }
       }
       return;
@@ -101,25 +101,21 @@ function tickOneFsm(F, list, count, dt, EntityClass) {
  */
 function tickFsms(fsms, list, count, dt, EntityClass) {
   const fsmCount = fsms.length;
-  const instances = EntityClass.instances;
-  const startIndex = EntityClass.startIndex;
   const dtMs = dt * (16.67 * (EntityClass.tickInterval || 1));
   let k = 0;
   for (;;) {
     try {
       for (; k < count; k++) {
         const i = list[k];
-        const owner = instances[i - startIndex] ?? EntityClass._instanceOf(EntityClass, i);
-        if (owner === null || owner === undefined) continue;
         for (let f = 0; f < fsmCount; f++) {
           const F = fsms[f];
           const pending = F.nextState[i];
-          if (pending >= 0) F._executeTransition(i, pending, owner);
+          if (pending >= 0) F._executeTransition(i, pending);
           const s = F.state[i];
           const CurrentState = F._stateArray[s];
           if (CurrentState) {
             F.time[i] += dtMs;
-            F._onUpdates[s].call(CurrentState, owner, i, dt, F.time[i] | 0);
+            F._onUpdates[s].call(CurrentState, i, dt, F.time[i] | 0);
           }
         }
       }
@@ -282,27 +278,25 @@ export class FSM extends Component {
 
   constructor(index) {
     super(index);
-    // The owner's ms per tick (16.67 × its class's tickInterval), read on the first tick: one FSM instance has one
-    // owner, and reading owner.constructor.tickInterval every tick cost (E-146). NaN until then.
+    // Its entity's ms per tick (16.67 × its class's tickInterval), read on the first tick: one FSM instance belongs to
+    // one entity, and reading its class's tickInterval every tick cost (E-146). NaN until then.
     this._msPerTick = NaN;
   }
 
   /**
-   * Process FSM for this entity - call this in entity's tick()
+   * Process FSM for this entity - call this in entity's tick(): this.walkFSM.tick(dtRatio)
    * Handles state transitions and calls state update
    *
    * @param {number} dt - Delta time ratio (1.0 = 16.67ms frame)
-   * @param {GameObject} owner - The entity instance (stateless accessor)
    */
-  tick(dt, owner) {
-    if (!owner) return console.warn("FSM.tick called without owner", this.constructor.name);
+  tick(dt) {
     const i = this.index;
     const FSMClass = this.constructor;
 
     // Process pending state transition (from previous tick's changeState() call)
     const pending = FSMClass.nextState[i];
     if (pending >= 0) {
-      FSMClass._executeTransition(i, pending, owner);
+      FSMClass._executeTransition(i, pending);
     }
 
     // Get current state class
@@ -312,23 +306,27 @@ export class FSM extends Component {
     if (CurrentState) {
       // Update time in state (approximate ms based on 60fps baseline)
       // Scale by tickInterval so decimated entities track real elapsed time
+      // The entity's class: the entity that made this component instance (its this.walkFSM).
       let msPerTick = this._msPerTick;
-      if (msPerTick !== msPerTick) msPerTick = this._msPerTick = 16.67 * (owner.constructor.tickInterval || 1);
+      if (msPerTick !== msPerTick) {
+        const Entity = this.owner ? this.owner.constructor : null;
+        msPerTick = this._msPerTick = 16.67 * ((Entity && Entity.tickInterval) || 1);
+      }
       FSMClass.time[i] += dt * msPerTick;
 
       // Call state's onUpdate, with the state class as `this`. The time goes as whole ms: a fractional double
       // crossing this call (a different onUpdate per state, never inlined) was a heap number per tick (E-105).
-      FSMClass._onUpdates[currentStateIndex].call(CurrentState, owner, i, dt, FSMClass.time[i] | 0);
+      FSMClass._onUpdates[currentStateIndex].call(CurrentState, i, dt, FSMClass.time[i] | 0);
     }
   }
 
   /**
-   * E-526: tick the FSMs of `count` entities of EntityClass, as each one's FSM#tick(dt, owner) would: the pending
-   * transition (onExit, onEnter), the time in state, the state's onUpdate(owner, i, dt, timeInState), entity by entity
-   * in the list's order. On FSM itself it ticks every FSM component of EntityClass, in its components order, for each
-   * entity before the next; on an FSM subclass (WalkFSM.tickAll) that FSM alone. The owner is the entity's instance,
-   * made on its first tick. A logic worker calls FSM.tickAll for a type with FSM components and neither a tick() nor a
-   * static tickAll; a type's own tickAll can call it:
+   * E-526: tick the FSMs of `count` entities of EntityClass, as each one's FSM#tick(dt) would: the pending transition
+   * (onExit, onEnter), the time in state, the state's onUpdate(i, dt, timeInState), entity by entity in the list's
+   * order. On FSM itself it ticks every FSM component of EntityClass, in its components order, for each entity before
+   * the next; on an FSM subclass (WalkFSM.tickAll) that FSM alone. It makes no instance (E-532: states get the index).
+   * A logic worker calls FSM.tickAll for a type with FSM components and neither a tick() nor a static tickAll; a type's
+   * own tickAll can call it:
    *   static tickAll(list, count, dtRatio) { FSM.tickAll(list, count, dtRatio, this); ... }
    * @param {ArrayLike<number>} list entity indices
    * @param {number} count how many of `list` to tick
@@ -373,11 +371,7 @@ export class FSM extends Component {
    * @static
    * @private
    */
-  static _executeTransition(i, newStateIndex, owner) {
-    if (!owner) {
-      console.warn('FSM._executeTransition called without owner', this.name);
-      return;
-    }
+  static _executeTransition(i, newStateIndex) {
     const oldStateIndex = this.state[i];
 
     // Get state classes
@@ -392,7 +386,7 @@ export class FSM extends Component {
     // (Predator: 17), each was a megamorphic load, twice per hook (E-301).
     // Call onExit on old state (pass next state name)
     const onExit = this._onExits[oldStateIndex];
-    if (onExit) onExit.call(OldState, owner, i, newStateName);
+    if (onExit) onExit.call(OldState, i, newStateName);
 
     // Update state
     this.state[i] = newStateIndex;
@@ -401,7 +395,7 @@ export class FSM extends Component {
 
     // Call onEnter on new state (pass previous state name)
     const onEnter = this._onEnters[newStateIndex];
-    if (onEnter) onEnter.call(NewState, owner, i, oldStateName);
+    if (onEnter) onEnter.call(NewState, i, oldStateName);
   }
 
   // ==========================================
@@ -444,10 +438,9 @@ export class FSM extends Component {
    * Use sparingly - prefer changeState() for controlled transitions
    * @param {number} i - Entity index
    * @param {Class} StateClass - Target state class (from this.fsm.states.X)
-   * @param {GameObject} owner - The entity instance
    */
-  static forceChangeState(i, StateClass, owner) {
-    this._executeTransition(i, StateClass.stateIndex, owner);
+  static forceChangeState(i, StateClass) {
+    this._executeTransition(i, StateClass.stateIndex);
   }
 
   /**
@@ -456,16 +449,15 @@ export class FSM extends Component {
    * @param {Class} StateClass - Target state class (from FSMClass.states.X)
    */
   forceChangeState(StateClass) {
-    this.constructor._executeTransition(this.index, StateClass.stateIndex, this.owner);
+    this.constructor._executeTransition(this.index, StateClass.stateIndex);
   }
 
   /**
-   * Initialize an entity's FSM state (call in onSpawned)
+   * Initialize an entity's FSM state (a spawn does it)
    * Resets to initial state and calls onEnter
    * @param {number} i - Entity index
-   * @param {GameObject} owner - The entity instance
    */
-  static initializeEntity(i, owner) {
+  static initializeEntity(i) {
     if (!this._stateNameToIndex) {
       this._linkStates();
     }
@@ -479,6 +471,6 @@ export class FSM extends Component {
 
     // Call onEnter for initial state (fromState = null since it's initialization)
     const onEnter = this._onEnters[initialIndex];
-    if (onEnter) onEnter.call(this._stateArray[initialIndex], owner, i, null);
+    if (onEnter) onEnter.call(this._stateArray[initialIndex], i, null);
   }
 }

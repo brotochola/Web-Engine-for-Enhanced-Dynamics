@@ -11,6 +11,8 @@ import { FSMState } from '../../src/core/fsmState.js';
 // with no hooks of its own (or no FSMState base at all) makes none.
 
 const log = [];
+/** Each test entity's data by index (its name, the state its next update asks for): states get the index only. */
+const ents = [];
 
 /** What the FSM looked like when a hook ran: its state, time in state and pending transition for the entity. */
 function seenBy(F, i) {
@@ -18,57 +20,57 @@ function seenBy(F, i) {
 }
 
 class GuardState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    log.push(['enter GUARD', this === GuardState, owner.name, i, fromState, seenBy(this.fsm, i)]);
+  static onEnter(i, fromState) {
+    log.push(['enter GUARD', this === GuardState, ents[i].name, i, fromState, seenBy(this.fsm, i)]);
   }
-  static onExit(owner, i, toState) {
-    log.push(['exit GUARD', this === GuardState, owner.name, i, toState, seenBy(this.fsm, i)]);
+  static onExit(i, toState) {
+    log.push(['exit GUARD', this === GuardState, ents[i].name, i, toState, seenBy(this.fsm, i)]);
   }
-  static onUpdate(owner, i) {
+  static onUpdate(i) {
     log.push(['update GUARD', i]);
-    if (owner.goTo) this.fsm.changeState(i, owner.goTo);
+    if (ents[i].goTo) this.fsm.changeState(i, ents[i].goTo);
   }
 }
 
 class ChaseState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    log.push(['enter CHASE', this === ChaseState, owner.name, i, fromState, seenBy(this.fsm, i)]);
+  static onEnter(i, fromState) {
+    log.push(['enter CHASE', this === ChaseState, ents[i].name, i, fromState, seenBy(this.fsm, i)]);
   }
-  static onExit(owner, i, toState) {
-    log.push(['exit CHASE', this === ChaseState, owner.name, i, toState, seenBy(this.fsm, i)]);
+  static onExit(i, toState) {
+    log.push(['exit CHASE', this === ChaseState, ents[i].name, i, toState, seenBy(this.fsm, i)]);
   }
-  static onUpdate(owner, i) {
+  static onUpdate(i) {
     log.push(['update CHASE', i]);
-    if (owner.goTo) this.fsm.changeState(i, owner.goTo);
+    if (ents[i].goTo) this.fsm.changeState(i, ents[i].goTo);
   }
 }
 
 /** No hooks of its own: it inherits FSMState's empty onEnter and onExit. */
 class WaitState extends FSMState {
-  static onUpdate(owner, i) {
+  static onUpdate(i) {
     log.push(['update WAIT', i]);
-    if (owner.goTo) this.fsm.changeState(i, owner.goTo);
+    if (ents[i].goTo) this.fsm.changeState(i, ents[i].goTo);
   }
 }
 
 /** A hook inherited from a game's own base state runs with the subclass as `this`. */
 class LoudState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    log.push([`enter ${this.name}`, owner.name, i, fromState]);
+  static onEnter(i, fromState) {
+    log.push([`enter ${this.name}`, ents[i].name, i, fromState]);
   }
 }
 class AlarmState extends LoudState {
-  static onUpdate(owner, i) {
+  static onUpdate(i) {
     log.push(['update ALARM', i]);
-    if (owner.goTo) this.fsm.changeState(i, owner.goTo);
+    if (ents[i].goTo) this.fsm.changeState(i, ents[i].goTo);
   }
 }
 
 /** Not an FSMState at all: only an onUpdate. */
 class BareState {
-  static onUpdate(owner, i) {
+  static onUpdate(i) {
     log.push(['update BARE', i]);
-    if (owner.goTo) this.fsm.changeState(i, owner.goTo);
+    if (ents[i].goTo) this.fsm.changeState(i, ents[i].goTo);
   }
 }
 
@@ -83,20 +85,21 @@ function setup(count = 4) {
 }
 
 function makeOwner(name, i) {
-  const owner = { name, goTo: null, constructor: { tickInterval: 1 } };
+  const owner = { name, goTo: null };
+  ents[i] = owner;
   const fsm = new GuardFSM(i);
-  fsm.owner = owner; // as the engine's component getter does
+  fsm.owner = { constructor: { tickInterval: 1 } }; // the entity the engine's component getter records
   return { owner, fsm };
 }
 
 test('a requested transition runs onExit, then the state write, then onEnter, then the new state\'s onUpdate', () => {
   setup();
   const { owner, fsm } = makeOwner('guard', 2);
-  GuardFSM.initializeEntity(2, owner);
+  GuardFSM.initializeEntity(2);
   owner.goTo = ChaseState;
-  fsm.tick(1, owner); // GUARD's onUpdate asks for CHASE
+  fsm.tick(1); // GUARD's onUpdate asks for CHASE
   owner.goTo = null;
-  fsm.tick(1, owner);
+  fsm.tick(1);
   assert.deepEqual(log, [
     ['enter GUARD', true, 'guard', 2, null, 'GUARD t=0 next=-1'],
     ['update GUARD', 2],
@@ -111,9 +114,9 @@ test('changeState to the current state exits and re-enters it', () => {
   setup();
   const { owner, fsm } = makeOwner('guard', 0);
   owner.goTo = GuardState;
-  fsm.tick(1, owner);
+  fsm.tick(1);
   owner.goTo = null;
-  fsm.tick(1, owner);
+  fsm.tick(1);
   assert.deepEqual(log.map((e) => e.slice(0, 5)), [
     ['update GUARD', 0],
     ['exit GUARD', true, 'guard', 0, 'GUARD'],
@@ -125,7 +128,7 @@ test('changeState to the current state exits and re-enters it', () => {
 test('forceChangeState, static and instance, transitions at once with the same hooks', () => {
   setup();
   const { owner, fsm } = makeOwner('scout', 1);
-  GuardFSM.forceChangeState(1, ChaseState, owner);
+  GuardFSM.forceChangeState(1, ChaseState);
   fsm.forceChangeState(GuardState);
   assert.deepEqual(log, [
     ['exit GUARD', true, 'scout', 1, 'CHASE', 'GUARD t=0 next=-1'],
@@ -142,10 +145,10 @@ test('states without hooks of their own make no hook call; an inherited hook run
   const path = [WaitState, AlarmState, BareState, WaitState, GuardState];
   for (const next of path) {
     owner.goTo = next;
-    fsm.tick(1, owner);
+    fsm.tick(1);
   }
   owner.goTo = null;
-  fsm.tick(1, owner);
+  fsm.tick(1);
   assert.deepEqual(log.map((e) => e.slice(0, 5)), [
     ['update GUARD', 3],
     ['exit GUARD', true, 'idler', 3, 'WAIT'],
@@ -163,7 +166,7 @@ test('states without hooks of their own make no hook call; an inherited hook run
 test('initializeEntity enters the initial state once, from null; one without onEnter makes no call', () => {
   setup();
   const { owner } = makeOwner('spawned', 0);
-  GuardFSM.initializeEntity(0, owner);
+  GuardFSM.initializeEntity(0);
   assert.deepEqual(log, [['enter GUARD', true, 'spawned', 0, null, 'GUARD t=0 next=-1']]);
 
   class SilentState extends FSMState {
@@ -175,7 +178,7 @@ test('initializeEntity enters the initial state once, from null; one without onE
   }
   QuietFSM.initializeArrays(new SharedArrayBuffer(QuietFSM.getBufferSize(1)), 1);
   log.length = 0;
-  QuietFSM.initializeEntity(0, owner);
+  QuietFSM.initializeEntity(0);
   assert.deepEqual(log, []);
   assert.equal(QuietFSM.getStateName(0), 'WAIT');
 });

@@ -14,14 +14,14 @@ function version(tag, { runExit = true, exportStates = true } = {}) {
   const log = [];
   const ns = new Function('FSM', 'FSMState', 'log', `
     class IdleState extends FSMState {
-      static onEnter(owner, i, from) { log.push('${tag} enter IDLE from ' + from); }
-      static onExit(owner, i, to) { log.push('${tag} exit IDLE to ' + to); }
-      static onUpdate(owner, i) { log.push('${tag} update IDLE'); this.fsm.changeState(i, this.fsm.states.RUN); }
+      static onEnter(i, from) { log.push('${tag} enter IDLE from ' + from); }
+      static onExit(i, to) { log.push('${tag} exit IDLE to ' + to); }
+      static onUpdate(i) { log.push('${tag} update IDLE'); this.fsm.changeState(i, this.fsm.states.RUN); }
     }
     class RunState extends FSMState {
-      static onEnter(owner, i, from) { log.push('${tag} enter RUN from ' + from); }
-      ${runExit ? `static onExit(owner, i, to) { log.push('${tag} exit RUN to ' + to); }` : ''}
-      static onUpdate(owner, i) { log.push('${tag} update RUN'); this.fsm.changeState(i, this.fsm.states.IDLE); }
+      static onEnter(i, from) { log.push('${tag} enter RUN from ' + from); }
+      ${runExit ? `static onExit(i, to) { log.push('${tag} exit RUN to ' + to); }` : ''}
+      static onUpdate(i) { log.push('${tag} update RUN'); this.fsm.changeState(i, this.fsm.states.IDLE); }
     }
     class MoveFSM extends FSM {
       static states = { IDLE: IdleState, RUN: RunState };
@@ -35,19 +35,21 @@ function version(tag, { runExit = true, exportStates = true } = {}) {
 function start(live) {
   const F = live.ns.MoveFSM;
   F.initializeArrays(new ArrayBuffer(F.getBufferSize(1)), 1);
-  return { F, fsm: new F(0), owner: { constructor: { tickInterval: 1 } } };
+  const fsm = new F(0);
+  fsm.owner = { constructor: { tickInterval: 1 } }; // the entity the engine's component getter records
+  return { F, fsm };
 }
 
 test('after a swap the FSM runs the new onUpdate, onExit and onEnter', () => {
   const live = version('old');
-  const { F, fsm, owner } = start(live);
-  fsm.tick(1, owner); // IDLE asks for RUN
+  const { F, fsm } = start(live);
+  fsm.tick(1); // IDLE asks for RUN
   const fresh = version('new');
   const result = swapModule(live.ns, fresh.ns);
   assert.equal(result.reload, null);
   assert.deepEqual(result.swapped.sort(), ['IdleState', 'MoveFSM', 'RunState']);
-  fsm.tick(1, owner);
-  fsm.tick(1, owner);
+  fsm.tick(1);
+  fsm.tick(1);
   assert.deepEqual(live.log, ['old update IDLE']);
   assert.deepEqual(fresh.log, [
     'new exit IDLE to RUN',
@@ -62,12 +64,12 @@ test('after a swap the FSM runs the new onUpdate, onExit and onEnter', () => {
 
 test('a hook the new version adds to a state runs from the next transition', () => {
   const live = version('old', { runExit: false });
-  const { fsm, owner } = start(live);
-  fsm.tick(1, owner); // IDLE asks for RUN
-  fsm.tick(1, owner); // RUN entered (no onExit of its own), asks for IDLE
+  const { fsm } = start(live);
+  fsm.tick(1); // IDLE asks for RUN
+  fsm.tick(1); // RUN entered (no onExit of its own), asks for IDLE
   const fresh = version('new', { runExit: true });
   assert.equal(swapModule(live.ns, fresh.ns).reload, null);
-  fsm.tick(1, owner);
+  fsm.tick(1);
   assert.deepEqual(live.log, ['old update IDLE', 'old exit IDLE to RUN', 'old enter RUN from IDLE', 'old update RUN']);
   assert.deepEqual(fresh.log, ['new exit RUN to IDLE', 'new enter IDLE from RUN', 'new update IDLE']);
 });
@@ -76,15 +78,15 @@ test('a hook the new version adds to a state runs from the next transition', () 
 // so they keep their state numbers and changeState still reaches them (it used to write state 0 for every one).
 test('a swap of an FSM module whose states are not exported keeps its states numbered', () => {
   const live = version('old', { exportStates: false });
-  const { F, fsm, owner } = start(live);
-  fsm.tick(1, owner); // IDLE asks for RUN
+  const { F, fsm } = start(live);
+  fsm.tick(1); // IDLE asks for RUN
   const fresh = version('new', { exportStates: false });
   const result = swapModule(live.ns, fresh.ns);
   assert.equal(result.reload, null);
   assert.deepEqual(result.swapped.sort(), ['IdleState', 'MoveFSM', 'RunState']);
-  fsm.tick(1, owner);
+  fsm.tick(1);
   assert.equal(F.getStateName(0), 'RUN', 'the pending transition reached RUN');
-  fsm.tick(1, owner);
+  fsm.tick(1);
   assert.equal(F.getStateName(0), 'IDLE', 'and RUN\'s request reached IDLE');
   assert.deepEqual(fresh.log, [
     'new exit IDLE to RUN',

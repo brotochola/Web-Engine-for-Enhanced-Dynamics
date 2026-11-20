@@ -2,7 +2,7 @@
 // States: IDLE (do nothing) and FLEEING (run away from predators)
 //
 // The states work by entity index (E-530: Predator written static): positions and neighbours come from the columns and
-// Grid's statics, the civilian's tuning from its class (GameObject.classByType), and no state touches the instance.
+// Grid's statics, the civilian's tuning from its class (GameObject.classByType). A state gets the index alone.
 
 import WEED from '/src/index.js';
 
@@ -41,9 +41,9 @@ function tryPanicFromAttackingSoldier(i, neighborIndex, soldierType) {
 // ==========================================
 
 class IdleCivilianBehaviorState extends FSMState {
-  static onEnter(owner, i, fromState) { }
+  static onEnter(i, fromState) { }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // const playerEntityType = Player.entityType;
     const mySoldierEntityType = MySoldier.entityType;
     const rows = Grid.neighborData; // the neighbour row, read straight: its count, then the ids
@@ -70,7 +70,7 @@ class IdleCivilianBehaviorState extends FSMState {
 // ==========================================
 
 class FleeingCivilianBehaviorState extends FSMState {
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // const playerEntityType = Player.entityType;
     const mySoldierEntityType = MySoldier.entityType;
     const rows = Grid.neighborData; // the neighbour row, read straight: its count, then the ids
@@ -117,14 +117,14 @@ class FleeingCivilianBehaviorState extends FSMState {
     RigidBody.ay[i] += fleeY * fleeFactor;
   }
 
-  static onExit(owner, i, toState) {
+  static onExit(i, toState) {
   }
 }
 
 const PANIC_DURATION_MS = 20_000;
 
 class PanicCivilianBehaviorState extends FSMState {
-  static onUpdate(owner, i, dt, totalTime) {
+  static onUpdate(i, dt, totalTime) {
     if (totalTime >= PANIC_DURATION_MS) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
@@ -158,7 +158,7 @@ class PanicCivilianBehaviorState extends FSMState {
     }
   }
 
-  static onExit(owner, i, toState) {
+  static onExit(i, toState) {
   }
 }
 

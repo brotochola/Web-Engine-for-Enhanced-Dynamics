@@ -233,7 +233,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
 
     if (isDead) {
       if (this.spriteRenderer?.spritesheetId) {
-        this.personAnimationFSM.tick(dtRatio, this);
+        this.personAnimationFSM.tick(dtRatio);
       }
       return;
     }
@@ -286,7 +286,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     }
 
     if (this.spriteRenderer?.spritesheetId) {
-      this.personAnimationFSM.tick(dtRatio, this);
+      this.personAnimationFSM.tick(dtRatio);
     }
   }
 }

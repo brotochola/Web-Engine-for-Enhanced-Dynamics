@@ -67,14 +67,14 @@ function stateNumber(name) {
 function makeState(s, stay, next, enter, exit) {
   if (enter && exit) {
     return class extends FSMState {
-      static onEnter(owner, i, fromState) {
-        sums[owner.index] += 3 + s * 11 + stateNumber(fromState);
+      static onEnter(i, fromState) {
+        sums[i] += 3 + s * 11 + stateNumber(fromState);
       }
-      static onExit(owner, i, toState) {
-        sums[owner.index] += 5 + s * 13 + stateNumber(toState) * 17;
+      static onExit(i, toState) {
+        sums[i] += 5 + s * 13 + stateNumber(toState) * 17;
       }
-      static onUpdate(owner, i, dt, timeInState) {
-        sums[owner.index] += (timeInState & 7) + s;
+      static onUpdate(i, dt, timeInState) {
+        sums[i] += (timeInState & 7) + s;
         updates++;
         if (timeInState > stay) this.fsm.changeState(i, this.fsm._stateArray[next]);
       }
@@ -82,11 +82,11 @@ function makeState(s, stay, next, enter, exit) {
   }
   if (enter) {
     return class extends FSMState {
-      static onEnter(owner, i, fromState) {
-        sums[owner.index] += 3 + s * 11 + stateNumber(fromState);
+      static onEnter(i, fromState) {
+        sums[i] += 3 + s * 11 + stateNumber(fromState);
       }
-      static onUpdate(owner, i, dt, timeInState) {
-        sums[owner.index] += (timeInState & 7) + s;
+      static onUpdate(i, dt, timeInState) {
+        sums[i] += (timeInState & 7) + s;
         updates++;
         if (timeInState > stay) this.fsm.changeState(i, this.fsm._stateArray[next]);
       }
@@ -94,19 +94,19 @@ function makeState(s, stay, next, enter, exit) {
   }
   if (exit) {
     return class extends FSMState {
-      static onExit(owner, i, toState) {
-        sums[owner.index] += 5 + s * 13 + stateNumber(toState) * 17;
+      static onExit(i, toState) {
+        sums[i] += 5 + s * 13 + stateNumber(toState) * 17;
       }
-      static onUpdate(owner, i, dt, timeInState) {
-        sums[owner.index] += (timeInState & 7) + s;
+      static onUpdate(i, dt, timeInState) {
+        sums[i] += (timeInState & 7) + s;
         updates++;
         if (timeInState > stay) this.fsm.changeState(i, this.fsm._stateArray[next]);
       }
     };
   }
   return class extends FSMState {
-    static onUpdate(owner, i, dt, timeInState) {
-      sums[owner.index] += (timeInState & 7) + s;
+    static onUpdate(i, dt, timeInState) {
+      sums[i] += (timeInState & 7) + s;
       updates++;
       if (timeInState > stay) this.fsm.changeState(i, this.fsm._stateArray[next]);
     }
@@ -189,16 +189,16 @@ function makeOwners(fsms, path, intervals) {
       static components = [SpriteRenderer, PersonAnimationFSM, CivilianBehaviorFSM];
       static tickInterval = intervals[0];
       tick(dt) {
-        this.personAnimationFSM.tick(dt, this);
-        this.civilianBehaviorFSM.tick(dt, this);
+        this.personAnimationFSM.tick(dt);
+        this.civilianBehaviorFSM.tick(dt);
       }
     }
     class Soldier extends GameObject {
       static components = [SpriteRenderer, PersonAnimationFSM, SoldierBehaviorFSM];
       static tickInterval = intervals[1];
       tick(dt) {
-        this.personAnimationFSM.tick(dt, this);
-        this.soldierBehaviorFSM.tick(dt, this);
+        this.personAnimationFSM.tick(dt);
+        this.soldierBehaviorFSM.tick(dt);
       }
     }
     return [Civilian, Soldier];

@@ -541,9 +541,8 @@ export class Person extends Lootable {
     });
 
     // Start dying animation IMMEDIATELY - forceChangeState executes transition now
-    // (changeState only queues for next tick, which can cause animation issues). The FSM's states get the instance as
-    // their owner (DYING's onEnter sets the animation through it): made here for the death alone.
-    PersonAnimationFSM.forceChangeState(i, PersonAnimationFSM.states.DYING, this.get(i));
+    // (changeState only queues for next tick, which can cause animation issues).
+    PersonAnimationFSM.forceChangeState(i, PersonAnimationFSM.states.DYING);
   }
 
   /**

@@ -35,6 +35,9 @@ import { FSM } from '../../src/core/fsm.js';
 import { FSMState } from '../../src/core/fsmState.js';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 
+/** Each entity's sum, by its index (a state gets the index only, E-532). */
+let sums = new Int32Array(0);
+
 /** The state number in a state's name ('S3' → 3), or 7 for none (an FSM's first state has no previous one). */
 function stateNumber(name) {
   return name === null ? 7 : name.charCodeAt(1) - 48;
@@ -47,43 +50,43 @@ function stateNumber(name) {
 function makeState(s, stay, next, enter, exit) {
   if (enter && exit) {
     return class extends FSMState {
-      static onEnter(owner, i, fromState) {
-        owner.sum += 3 + s * 11 + stateNumber(fromState);
+      static onEnter(i, fromState) {
+        sums[i] += 3 + s * 11 + stateNumber(fromState);
       }
-      static onExit(owner, i, toState) {
-        owner.sum += 5 + s * 13 + stateNumber(toState) * 17;
+      static onExit(i, toState) {
+        sums[i] += 5 + s * 13 + stateNumber(toState) * 17;
       }
-      static onUpdate(owner, i, dt, timeInState) {
-        owner.sum += (timeInState & 7) + s;
+      static onUpdate(i, dt, timeInState) {
+        sums[i] += (timeInState & 7) + s;
         if (timeInState > stay) this.fsm.changeState(i, this.fsm._stateArray[next]);
       }
     };
   }
   if (enter) {
     return class extends FSMState {
-      static onEnter(owner, i, fromState) {
-        owner.sum += 3 + s * 11 + stateNumber(fromState);
+      static onEnter(i, fromState) {
+        sums[i] += 3 + s * 11 + stateNumber(fromState);
       }
-      static onUpdate(owner, i, dt, timeInState) {
-        owner.sum += (timeInState & 7) + s;
+      static onUpdate(i, dt, timeInState) {
+        sums[i] += (timeInState & 7) + s;
         if (timeInState > stay) this.fsm.changeState(i, this.fsm._stateArray[next]);
       }
     };
   }
   if (exit) {
     return class extends FSMState {
-      static onExit(owner, i, toState) {
-        owner.sum += 5 + s * 13 + stateNumber(toState) * 17;
+      static onExit(i, toState) {
+        sums[i] += 5 + s * 13 + stateNumber(toState) * 17;
       }
-      static onUpdate(owner, i, dt, timeInState) {
-        owner.sum += (timeInState & 7) + s;
+      static onUpdate(i, dt, timeInState) {
+        sums[i] += (timeInState & 7) + s;
         if (timeInState > stay) this.fsm.changeState(i, this.fsm._stateArray[next]);
       }
     };
   }
   return class extends FSMState {
-    static onUpdate(owner, i, dt, timeInState) {
-      owner.sum += (timeInState & 7) + s;
+    static onUpdate(i, dt, timeInState) {
+      sums[i] += (timeInState & 7) + s;
       if (timeInState > stay) this.fsm.changeState(i, this.fsm._stateArray[next]);
     }
   };
@@ -132,18 +135,17 @@ class FnArrayFSM extends FSM {
     this._onUpdates = this._stateArray.map((S) => S.onUpdate);
   }
 
-  tick(dt, owner) {
-    if (!owner) return console.warn('FSM.tick called without owner', this.constructor.name);
+  tick(dt) {
     const i = this.index;
     const FSMClass = this.constructor;
     const pending = FSMClass.nextState[i];
-    if (pending >= 0) FSMClass._executeTransition(i, pending, owner);
+    if (pending >= 0) FSMClass._executeTransition(i, pending);
     const s = FSMClass.state[i];
     const CurrentState = FSMClass._stateArray[s];
     if (CurrentState) {
-      const tickInterval = owner?.constructor?.tickInterval || 1;
+      const tickInterval = this.owner.constructor.tickInterval || 1;
       FSMClass.time[i] += dt * 16.67 * tickInterval;
-      FSMClass._onUpdates[s].call(CurrentState, owner, i, dt, FSMClass.time[i] | 0);
+      FSMClass._onUpdates[s].call(CurrentState, i, dt, FSMClass.time[i] | 0);
     }
   }
 }
@@ -154,19 +156,18 @@ class CachedFSM extends FnArrayFSM {
     this.msPerTick = NaN;
   }
 
-  tick(dt, owner) {
-    if (!owner) return console.warn('FSM.tick called without owner', this.constructor.name);
+  tick(dt) {
     const i = this.index;
     const FSMClass = this.constructor;
     const pending = FSMClass.nextState[i];
-    if (pending >= 0) FSMClass._executeTransition(i, pending, owner);
+    if (pending >= 0) FSMClass._executeTransition(i, pending);
     const s = FSMClass.state[i];
     const CurrentState = FSMClass._stateArray[s];
     if (CurrentState) {
       let ms = this.msPerTick;
-      if (ms !== ms) ms = this.msPerTick = 16.67 * (owner.constructor.tickInterval || 1);
+      if (ms !== ms) ms = this.msPerTick = 16.67 * (this.owner.constructor.tickInterval || 1);
       FSMClass.time[i] += dt * ms;
-      FSMClass._onUpdates[s].call(CurrentState, owner, i, dt, FSMClass.time[i] | 0);
+      FSMClass._onUpdates[s].call(CurrentState, i, dt, FSMClass.time[i] | 0);
     }
   }
 }
@@ -177,18 +178,17 @@ class MsCachedFSM extends FSM {
     this.msPerTick = NaN;
   }
 
-  tick(dt, owner) {
-    if (!owner) return console.warn('FSM.tick called without owner', this.constructor.name);
+  tick(dt) {
     const i = this.index;
     const FSMClass = this.constructor;
     const pending = FSMClass.nextState[i];
-    if (pending >= 0) FSMClass._executeTransition(i, pending, owner);
+    if (pending >= 0) FSMClass._executeTransition(i, pending);
     const CurrentState = FSMClass._stateArray[FSMClass.state[i]];
     if (CurrentState) {
       let ms = this.msPerTick;
-      if (ms !== ms) ms = this.msPerTick = 16.67 * (owner.constructor.tickInterval || 1);
+      if (ms !== ms) ms = this.msPerTick = 16.67 * (this.owner.constructor.tickInterval || 1);
       FSMClass.time[i] += dt * ms;
-      CurrentState.onUpdate(owner, i, dt, FSMClass.time[i] | 0);
+      CurrentState.onUpdate(i, dt, FSMClass.time[i] | 0);
     }
   }
 }
@@ -203,12 +203,13 @@ function build(Base, count, hooks, stayScale) {
     static tickInterval = 4;
     constructor(index) {
       this.index = index;
-      this.sum = 0;
       this.animation = new PersonAnimation(index);
       this.behavior = new CivilianBehavior(index);
+      this.animation.owner = this; // what the engine's component getter records
+      this.behavior.owner = this;
     }
     reset() {
-      this.sum = 0;
+      sums[this.index] = 0;
       for (const F of [this.animation.constructor, this.behavior.constructor]) {
         F.state[this.index] = F.initial.stateIndex;
         F.time[this.index] = 0;
@@ -216,20 +217,21 @@ function build(Base, count, hooks, stayScale) {
       }
     }
     tick(dt) {
-      this.animation.tick(dt, this);
-      this.behavior.tick(dt, this);
+      this.animation.tick(dt);
+      this.behavior.tick(dt);
     }
   }
   class Soldier {
     static tickInterval = 6;
     constructor(index) {
       this.index = index;
-      this.sum = 0;
       this.animation = new PersonAnimation(index);
       this.behavior = new SoldierBehavior(index);
+      this.animation.owner = this; // what the engine's component getter records
+      this.behavior.owner = this;
     }
     reset() {
-      this.sum = 0;
+      sums[this.index] = 0;
       for (const F of [this.animation.constructor, this.behavior.constructor]) {
         F.state[this.index] = F.initial.stateIndex;
         F.time[this.index] = 0;
@@ -237,10 +239,11 @@ function build(Base, count, hooks, stayScale) {
       }
     }
     tick(dt) {
-      this.animation.tick(dt, this);
-      this.behavior.tick(dt, this);
+      this.animation.tick(dt);
+      this.behavior.tick(dt);
     }
   }
+  sums = new Int32Array(count);
   const owners = [];
   for (let i = 0; i < count; i++) owners.push(i % 3 === 2 ? new Soldier(i) : new Civilian(i));
   return { owners, fsms: [CivilianBehavior, PersonAnimation, SoldierBehavior] };
@@ -252,7 +255,7 @@ function tickAll(owners) {
 
 function checksum({ owners, fsms }) {
   let h = 0;
-  for (const o of owners) h = (h * 31 + o.sum) >>> 0;
+  for (const o of owners) h = (h * 31 + sums[o.index]) >>> 0;
   for (const F of fsms) {
     for (let i = 0; i < owners.length; i++) h = (h * 31 + F.state[i] * 1000 + (F.time[i] | 0)) >>> 0;
   }

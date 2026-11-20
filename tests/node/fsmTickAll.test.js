@@ -13,8 +13,7 @@ import { EntityIdArray } from '../../src/util/entityIdWidth.js';
 
 // E-526: a type with FSM components and neither a tick() nor a static tickAll had FSMs that never ran (the logic
 // workers skip a type without tick()). Its FSMs now run through FSM.tickAll, as a tickAll type: each state's
-// onUpdate(owner, i, dt, timeInState) with the owner the entity's instance, each pending transition's onExit and
-// onEnter, entity by entity in the active list's order and, on one entity, its FSMs in its components order. Those are
+// onUpdate(i, dt, timeInState), each pending transition's onExit and onEnter, entity by entity in the active list's order and, on one entity, its FSMs in its components order. Those are
 // the calls a tick() that runs its FSMs makes (this.walkFSM.tick(dt, this); this.lookFSM.tick(dt, this)), so the tests
 // run a type with such a tick() beside one with none and compare what their states saw. Through the real logic worker:
 // createGameObjectInstances classifies the types, update() runs the frames.
@@ -25,37 +24,37 @@ const N = MAX_TYPES * PER_TYPE;
 
 let log = [];
 let boomSlot = -1; // the pool slot whose WALK onUpdate throws (in each pool), -1 for none
+let slotClass = []; // each entity index's class, from setup: a state gets the index only (E-532)
 
-/** What a hook saw, its entity given as its slot in its pool, and whether its owner was that entity's instance. */
-function note(kind, fsm, state, owner, i, extra) {
-  const C = owner.constructor;
-  const ownerIsEntity = owner === GameObject.instances[i] && owner.index === i;
-  log.push({ who: C.name, entry: [kind, fsm, state, i - C.startIndex, ownerIsEntity, ...extra] });
+/** What a hook saw, its entity given as its slot in its pool. */
+function note(kind, fsm, state, i, extra) {
+  const C = slotClass[i];
+  log.push({ who: C.name, entry: [kind, fsm, state, i - C.startIndex, ...extra] });
 }
 
 class IdleState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    note('enter', 'walk', 'IDLE', owner, i, [fromState, this === IdleState]);
+  static onEnter(i, fromState) {
+    note('enter', 'walk', 'IDLE', i, [fromState, this === IdleState]);
   }
-  static onExit(owner, i, toState) {
-    note('exit', 'walk', 'IDLE', owner, i, [toState, this === IdleState]);
+  static onExit(i, toState) {
+    note('exit', 'walk', 'IDLE', i, [toState, this === IdleState]);
   }
-  static onUpdate(owner, i, dt, timeInState) {
-    note('update', 'walk', 'IDLE', owner, i, [dt, timeInState, this === IdleState]);
+  static onUpdate(i, dt, timeInState) {
+    note('update', 'walk', 'IDLE', i, [dt, timeInState, this === IdleState]);
     if (timeInState > 40 + (i % 3) * 17) this.fsm.changeState(i, this.fsm.states.WALK);
   }
 }
 
 class WalkState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    note('enter', 'walk', 'WALK', owner, i, [fromState, this === WalkState]);
+  static onEnter(i, fromState) {
+    note('enter', 'walk', 'WALK', i, [fromState, this === WalkState]);
   }
-  static onExit(owner, i, toState) {
-    note('exit', 'walk', 'WALK', owner, i, [toState, this === WalkState]);
+  static onExit(i, toState) {
+    note('exit', 'walk', 'WALK', i, [toState, this === WalkState]);
   }
-  static onUpdate(owner, i, dt, timeInState) {
-    if (i - owner.constructor.startIndex === boomSlot) throw new Error('walk boom');
-    note('update', 'walk', 'WALK', owner, i, [dt, timeInState, this === WalkState]);
+  static onUpdate(i, dt, timeInState) {
+    if (i - slotClass[i].startIndex === boomSlot) throw new Error('walk boom');
+    note('update', 'walk', 'WALK', i, [dt, timeInState, this === WalkState]);
     if (timeInState > 60) this.fsm.changeState(i, this.fsm.states.IDLE);
   }
 }
@@ -66,18 +65,18 @@ class WalkFSM extends FSM {
 }
 
 class LeftState extends FSMState {
-  static onUpdate(owner, i, dt, timeInState) {
-    note('update', 'look', 'LEFT', owner, i, [dt, timeInState, this === LeftState]);
+  static onUpdate(i, dt, timeInState) {
+    note('update', 'look', 'LEFT', i, [dt, timeInState, this === LeftState]);
     if (timeInState > 30) this.fsm.changeState(i, this.fsm.states.RIGHT);
   }
 }
 
 class RightState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    note('enter', 'look', 'RIGHT', owner, i, [fromState, this === RightState]);
+  static onEnter(i, fromState) {
+    note('enter', 'look', 'RIGHT', i, [fromState, this === RightState]);
   }
-  static onUpdate(owner, i, dt, timeInState) {
-    note('update', 'look', 'RIGHT', owner, i, [dt, timeInState, this === RightState]);
+  static onUpdate(i, dt, timeInState) {
+    note('update', 'look', 'RIGHT', i, [dt, timeInState, this === RightState]);
     if (timeInState > 30 + (i % 2) * 20) this.fsm.changeState(i, this.fsm.states.LEFT);
   }
 }
@@ -91,8 +90,8 @@ class LookFSM extends FSM {
 class Ticker extends GameObject {
   static components = [SpriteRenderer, WalkFSM, LookFSM];
   tick(dtRatio) {
-    this.walkFSM.tick(dtRatio, this);
-    this.lookFSM.tick(dtRatio, this);
+    this.walkFSM.tick(dtRatio);
+    this.lookFSM.tick(dtRatio);
   }
 }
 
@@ -168,7 +167,9 @@ async function setup(classes, { staggered = false } = {}) {
   lw.processListUpdates = () => {};
   lw._latchDisplayPose = () => {};
   lw.sendListUpdatesToLogic0 = () => {};
+  slotClass = new Array(N);
   lw.registeredClasses = classes.map((C, t) => {
+    for (let k = 0; k < PER_TYPE; k++) slotClass[t * PER_TYPE + k] = C;
     globalThis.self[C.name] = C;
     C._activeList = new (EntityIdArray())(1 + PER_TYPE);
     return { name: C.name, poolSize: PER_TYPE, startIndex: t * PER_TYPE, endIndex: (t + 1) * PER_TYPE - 1, entityType: t };
@@ -222,12 +223,11 @@ test('a type with FSMs and no tick(): its states get the calls a tick() that run
       // Entity by entity, its walk FSM then its look FSM (components order).
       const updated = batched.filter((e) => e[0] === 'update').map((e) => `${e[3]}${e[1]}`);
       assert.deepEqual(updated.slice(0, 4), ['0walk', '0look', '1walk', '1look'], `frame ${f}: entity by entity`);
-      assert.ok(log.every((e) => e.entry[4] === true), `frame ${f}: every owner was its entity's instance`);
     }
     assert.equal(updates, 16 * PER_TYPE * 2, 'each FSM of each entity every frame');
     assert.ok(transitions > PER_TYPE, `transitions ran (${transitions})`);
     for (let k = 0; k < PER_TYPE; k++) {
-      assert.ok(GameObject.instances[PER_TYPE + k] instanceof Plain, 'the owners were made on their first tick');
+      assert.equal(GameObject.instances[PER_TYPE + k] ?? null, null, 'E-532: its FSMs made no instance');
       assert.equal(WalkFSM.state[PER_TYPE + k], WalkFSM.state[k], `entity ${k}: the same walk state`);
       assert.equal(WalkFSM.time[PER_TYPE + k], WalkFSM.time[k], `entity ${k}: the same time in state`);
       assert.equal(LookFSM.state[PER_TYPE + k], LookFSM.state[k], `entity ${k}: the same look state`);
@@ -255,7 +255,7 @@ test('tickInterval 4 with logic.staggeredUpdates: the FSMs tick on the buckets t
         // Each entity's first tick: its time in state is one tick of 4 frames, 16.67 x 4 x dtRatio (FSM#tick's count).
         const firstTicks = batched.filter((e) => e[0] === 'update' && e[1] === 'walk');
         const ms = Math.fround(dtRatio * (16.67 * 4)) | 0;
-        assert.ok(firstTicks.length > 0 && firstTicks.every((e) => e[5] === dtRatio && e[6] === ms), `frame ${f}: ${ms} ms`);
+        assert.ok(firstTicks.length > 0 && firstTicks.every((e) => e[4] === dtRatio && e[5] === ms), `frame ${f}: ${ms} ms`);
       }
       const ids = [...new Set(batched.filter((e) => e[0] === 'update').map((e) => e[3]))];
       assert.equal(ids.length, PER_TYPE / 4, `frame ${f}: a quarter of the entities`);
@@ -281,11 +281,11 @@ test("transitions: onExit with the next state's name, then onEnter with the prev
     }
     // Slot 0 asks for WALK when its time passes 40 ms (16, 33, 50: on its third tick), so its fourth starts with the
     // transition.
-    assert.deepEqual(walkOfSlot0[2], [['update', 'walk', 'IDLE', 0, true, 1, 50, true]]);
+    assert.deepEqual(walkOfSlot0[2], [['update', 'walk', 'IDLE', 0, 1, 50, true]]);
     assert.deepEqual(walkOfSlot0[3], [
-      ['exit', 'walk', 'IDLE', 0, true, 'WALK', true],
-      ['enter', 'walk', 'WALK', 0, true, 'IDLE', true],
-      ['update', 'walk', 'WALK', 0, true, 1, 16, true],
+      ['exit', 'walk', 'IDLE', 0, 'WALK', true],
+      ['enter', 'walk', 'WALK', 0, 'IDLE', true],
+      ['update', 'walk', 'WALK', 0, 1, 16, true],
     ]);
     assert.equal(WalkFSM.getStateName(0), 'WALK');
   } finally {
@@ -314,6 +314,17 @@ test("a type with its own tickAll is left alone; it can call FSM.tickAll, or one
       assert.ok(glancer.length >= PER_TYPE && glancer.every((e) => e[1] === 'look'), 'LookFSM.tickAll: the look FSM only');
       assert.equal(entriesOf('Statue').length, 0);
     }
+  } finally {
+    restore();
+  }
+});
+
+test('E-532: a type whose tickAll calls FSM.tickAll makes no instance for its FSMs either', { concurrency: false }, async () => {
+  try {
+    const lw = await setup([Pack]);
+    for (let f = 1; f <= 8; f++) frame(lw, f, 1);
+    assert.ok(entriesOf('Pack').filter((e) => e[0] === 'update').length >= 2 * PER_TYPE, "Pack's states ran");
+    for (let k = 0; k < PER_TYPE; k++) assert.equal(GameObject.instances[k] ?? null, null, `no instance at slot ${k}`);
   } finally {
     restore();
   }

@@ -712,7 +712,7 @@ class LogicWorker extends AbstractWorker {
         if (poolSize > 0) {
           const needsTick = GameObject.typeNeedsLogicTick(EntityClass);
           // E-526: a type with FSM components and neither tick() nor tickAll ticks as a tickAll type, its tickAll
-          // FSM.tickAll (its FSMs, components order, the owner made on its first tick).
+          // FSM.tickAll (its FSMs, components order; no instance: states get the index, E-532).
           const fsmTickAll = !needsTick && GameObject.typeRunsFsmTickAll(EntityClass);
           const hasTickAll = fsmTickAll || GameObject.typeHasTickAll(EntityClass);
           // The class whose static tickAll runs; it is given the entity class too (FSM.tickAll's fourth argument).

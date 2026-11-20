@@ -4,7 +4,7 @@
 import WEED from '/src/index.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 
-const { FSM, FSMState, RigidBody, SpriteRenderer } = WEED;
+const { FSM, FSMState, RigidBody, SpriteRenderer, GameObject } = WEED;
 
 const ACTION_ANIM_SPEED = 0.25;
 const DYING_ANIM_SPEED = 0.5;
@@ -38,16 +38,17 @@ const IDLE_ANIMATION_MULTIPLIER = 0.05; // idle is not speed-scaled
 // ==========================================
 
 class IdleState extends FSMState {
-  static onEnter(owner, i, fromState) {
+  static onEnter(i, fromState) {
     // Skip animation if no spritesheet set yet (FSM auto-init runs before onSpawned)
-    if (!owner.spriteRenderer?.spritesheetId) return;
+    if (SpriteRenderer.spritesheetId[i] === 0) return;
+    const owner = GameObject.get(i);
 
     owner.directionalSprite.facingFrom = 'velocity';
     owner.setAnimation('idle');
     owner.setAnimationSpeed(IDLE_ANIMATION_MULTIPLIER);
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // Check for death first (highest priority)
     if (LootableComponent.health[i] <= 0) {
 
@@ -69,14 +70,15 @@ class IdleState extends FSMState {
 // ==========================================
 
 class WalkingState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    if (!owner.spriteRenderer?.spritesheetId) return;
+  static onEnter(i, fromState) {
+    if (SpriteRenderer.spritesheetId[i] === 0) return;
+    const owner = GameObject.get(i);
     owner.directionalSprite.facingFrom = 'velocity';
     owner.setAnimation('walk');
     owner.setAnimationSpeed(RigidBody.speed[i] * WALK_ANIMATION_MULTIPLIER);
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // Check for death first (highest priority)
     if (LootableComponent.health[i] <= 0) {
       this.fsm.changeState(i, this.fsm.states.DYING);
@@ -108,14 +110,15 @@ class WalkingState extends FSMState {
 // ==========================================
 
 class RunningState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    if (!owner.spriteRenderer?.spritesheetId) return;
+  static onEnter(i, fromState) {
+    if (SpriteRenderer.spritesheetId[i] === 0) return;
+    const owner = GameObject.get(i);
     owner.directionalSprite.facingFrom = 'velocity';
     owner.setAnimation('run');
     owner.setAnimationSpeed(RigidBody.speed[i] * RUN_ANIMATION_MULTIPLIER);
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // Check for death first (highest priority)
     if (LootableComponent.health[i] <= 0) {
       this.fsm.changeState(i, this.fsm.states.DYING);
@@ -141,13 +144,13 @@ class RunningState extends FSMState {
 // ==========================================
 
 class ShootingState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    if (!owner) return console.warn("ShootingState.onEnter called without owner", this.constructor.name);
+  static onEnter(i, fromState) {
+    const owner = GameObject.get(i);
     owner.setAnimation('shoot', false);
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     if (LootableComponent.health[i] <= 0) {
       this.fsm.changeState(i, this.fsm.states.DYING);
       return;
@@ -164,13 +167,14 @@ class ShootingState extends FSMState {
 // ==========================================
 
 class PunchingState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    if (!owner.spriteRenderer?.spritesheetId) return;
+  static onEnter(i, fromState) {
+    if (SpriteRenderer.spritesheetId[i] === 0) return;
+    const owner = GameObject.get(i);
     owner.setAnimation('slash');
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // Death interrupts
     if (LootableComponent.health[i] <= 0) {
       this.fsm.changeState(i, this.fsm.states.DYING);
@@ -189,13 +193,14 @@ class PunchingState extends FSMState {
 // ==========================================
 
 class StickHitState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    if (!owner.spriteRenderer?.spritesheetId) return;
+  static onEnter(i, fromState) {
+    if (SpriteRenderer.spritesheetId[i] === 0) return;
+    const owner = GameObject.get(i);
     owner.setAnimation('1h_slash');
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // Death interrupts
     if (LootableComponent.health[i] <= 0) {
       this.fsm.changeState(i, this.fsm.states.DYING);
@@ -214,13 +219,14 @@ class StickHitState extends FSMState {
 // ==========================================
 
 class HurtState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    if (!owner.spriteRenderer?.spritesheetId) return;
+  static onEnter(i, fromState) {
+    if (SpriteRenderer.spritesheetId[i] === 0) return;
+    const owner = GameObject.get(i);
     owner.setAnimation('hurt'); // No direction for hurt
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // Death during hurt
     if (LootableComponent.health[i] <= 0) {
       this.fsm.changeState(i, this.fsm.states.DYING);
@@ -245,15 +251,16 @@ class DyingState extends FSMState {
   // At speed 0.15: 6 * (1000 / 9) = 667ms
   // static DYING_DURATION_MS = 100//(HURT_FRAMES -1)* (1000 / (DyingState.DYING_ANIM_SPEED * 60))
 
-  static onEnter(owner, i, fromState) {
-    if (!owner.spriteRenderer?.spritesheetId) return;
+  static onEnter(i, fromState) {
+    if (SpriteRenderer.spritesheetId[i] === 0) return;
+    const owner = GameObject.get(i);
     // Use hurt animation for death (no direction variant) - don't loop
 
     owner.setAnimation('hurt', false);
     owner.setAnimationSpeed(DYING_ANIM_SPEED);
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // Animation complete? Transition to DEAD
 
     if (this.fsm.time[i] >= DYING_DURATION_MS) {
@@ -267,14 +274,15 @@ class DyingState extends FSMState {
 // ==========================================
 
 class DeadState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    if (!owner.spriteRenderer?.spritesheetId) return;
+  static onEnter(i, fromState) {
+    if (SpriteRenderer.spritesheetId[i] === 0) return;
+    const owner = GameObject.get(i);
     // Stop on final frame, fade out
     owner.setAnimationSpeed(0);
     owner.onDeathAnimationComplete();
   }
 
-  static onUpdate(owner, i, dt) {
+  static onUpdate(i, dt) {
     // Do nothing - Lootable.tick() handles despawn via die()
   }
 }
