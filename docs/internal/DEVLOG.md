@@ -6,6 +6,44 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Friday 20 November 2026 (afternoon) — A Second Laptop on the Bug Queue
+
+The owner split the work between his two machines. This PC keeps the speed and GPU work. The ASUS laptop (an
+i7-7500U with 2 cores and an Intel HD 620) got a session of its own that only fixes bugs, one branch per bug, each
+with a test that fails before the fix. It worked from 03:10 to 06:40, and its branch was merged here in the afternoon:
+13 bugs fixed, one probe, one idea rejected. No speed was sought.
+
+**A frozen world now holds what is put in it.** At a time scale of 0 (a game's hitstop, an editor holding the world)
+the physics host skipped the frame whole. A body spawned, teleported or jointed during the pause reached Box2D only
+at the next step, so raycasts and overlap queries missed it (N-81). A paused frame now syncs the bodies, commands and
+joints and answers the queries, without stepping.
+
+**Entities were falling out of every neighbour list, silently.** At crowd 2.5, Predator had 335 to 340 grid cells
+over their cap of 32. About 2 600 entities (6.8 %) were in no cell and in nobody's neighbour list, so they were missing
+from flocking, boids and the lights under walls (N-325). Spatial now counts them (`CELL_OVERFLOW`, "CellOver" in the
+stats panel), and the debug build says which knob to raise. The count costs nothing the kernel can see (2.15 to 2.25
+ms a frame against 2.17 to 2.26). The right cap for Predator is still to be measured here.
+
+**The bundle on npm carried the folder it was built in.** Webpack wrote atlasCache's bare `import.meta.url` as the
+builder's own `file://` path, so every published bundle held `file:///d:/xampp/htdocs/...`. A worktree also built
+different bytes, because webpack followed its node_modules junction into the module ids (N-251). The bundles now
+hold no path, and a worktree builds the main folder's bundles byte for byte.
+
+**Mipmaps lost** (E-204). In Predator they cut the GPU frame only when zoomed far out (11.43 to 10.60 ms, -7.2 %).
+They were flat by day at the default zoom (+0.6 %) and at night (-0.9 %), and they blurred the pixel art: the crowd
+read as brown dots. Predator keeps them off.
+
+The rest:
+- Keyboard stopped making a string on every key read (N-247).
+- A scene that dies while booting now ends a bench run in 15 s, where it used to cost about 10 minutes of the queue
+  (N-254).
+- The results pruner no longer deletes the capacity history (N-255).
+- Four demos that opened on empty space now open on their floor (N-166).
+- Predator's camera no longer jumps thousands of pixels off the squad at start when the zoom is pinned (N-248).
+- The emit kernel shuts its stale gates (N-220).
+- Four measuring tools were fixed: audioStorm's scoreboard row can decide now, logic0 at 7.2 ms here and 9.4 on the
+  ASUS (N-161), plus N-237, N-243 and N-246.
+
 ## Friday 20 November 2026 (morning) — A Whole Game With No Objects
 
 The small hours ended with a list of what still made an object on the ECS way: a spawn returned one, an FSM handed
