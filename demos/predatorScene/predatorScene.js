@@ -193,7 +193,9 @@ export class PredatorScene extends WEED.Scene {
     // Logic configuration
     logic: {
       noLimitFPS: predatorNoLimitFPS,
-      numberOfLogicWorkers: 2,
+      // E-530: `?logicWorkers=<n>` (1 to 4, 2 by default). One worker puts the whole logic on one thread: at crowd 2.5 that
+      // lifts logic's STEP_MS over the gates' 6 ms floor once the people tick static.
+      numberOfLogicWorkers: Math.min(4, Math.max(1, Math.trunc(predatorNumberParam('logicWorkers', 2)))),
       staggeredUpdates: true, // Enable tick decimation (entities tick based on their tickInterval)
     },
 
