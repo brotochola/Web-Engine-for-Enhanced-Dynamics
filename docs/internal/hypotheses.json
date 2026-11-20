@@ -18871,20 +18871,21 @@
     {
       "id": "N-220",
       "title": "The emit's persist flow never writes the emit table's gate slots for bullets, glows, particles and LiquidFun (bActive, lColor, pcX, lfX): it leans on the memory starting zeroed, and a non-zero table traps emit_rows in trail_row",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the ASan harness (tests/asan), a test-side dependency: the product writes those slots every frame (_writeEmitTable)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (e552684b), on fix/n220-emit-gates (R-1708)",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "bug",
-      "result": "Under the harness, with relocated regions not zeroed, emit_rows trapped in trail_row (wasm/preRenderEmit.c:852) on the persist path; zero-filled, every case matched the shipped kernel. In the product _writeEmitTable writes the slots each frame, so no frame reaches it today.",
-      "next": "Write the gate slots on the persist path too (or assert them), so a frame that skips _writeEmitTable for those systems cannot read stale slots; a node test with a dirtied table.",
+      "result": "Fixed 2026-11-20 (e552684b): every emit frame starts with bActive, lColor, pcX and lfX at 0 and each writer opens its own; a stale gate past the memory trapped emit_rows before, and writes a clean frame's rows now.",
+      "next": "The ASan harness (tests/asan) can drop its zero-fill of the emit table on the next run with emsdk.",
       "refs": [],
       "aliases": [
         "emit persist gate slots"
       ],
       "records": [
         "R-1182",
-        "R-1207"
+        "R-1207",
+        "R-1708"
       ]
     },
     {
@@ -40155,6 +40156,15 @@
       "title": "N-325 step 1 kept: spatial counts entries past maxEntitiesPerCell (CELL_OVERFLOW) and warns in the debug build",
       "verdict": "kept-hygiene",
       "text": "**N-325, step 1 kept: spatial counts the entries past maxEntitiesPerCell (SPATIAL_STATS.CELL_OVERFLOW) and the debug build warns.** Branch fix/n325-cell-overflow-stat, 20ba14c4. Step 2, Predator's cap, is left to the main PC.\n\n- **Cause of the silence:** a cell over its cap holds the first maxEntitiesPerCell entities, and nothing counted the rest (R-1571: about 2 600 entities, 6.8 %, at crowd 2.5).\n- **Fix:** every grid pass counts them per worker:\n  - **the two rebuilds** (rebuildOwnedRows, _rebuildOwnedRowsLatched): in the else of their cap test, a branch taken only when a cell is full;\n  - **the movers rewrite** (_rebuildMovedRows): a running count, moved by each touched cell's change in excess over the cap, kept only when the rewrite holds.\n  - **Published:** SPATIAL_STATS.CELL_OVERFLOW (slot 16, stride 17), written every frame with a 'CellOver' row in the stats panel. The debug build warns once a thread with the count and the fix (devChecks.cellOverflow; the production stub does nothing).\n- **Cost:** rebuildOwnedRowsMicrobench (40 000 points, 2 workers), 3 alternated pairs on the ASUS: base 2.173 / 2.214 / 2.262 ms a frame, fix 2.150 / 2.250 / 2.192 (-0.9 %, noise), same checksum.\n- **Tests:**\n  - spatialGridMovers.test.js: in the movers parity world, the rewrite's count equals the full rebuild's frame by frame (forced and auto) and the movers state's per-cell totals wherever seeded; reportFPS publishes it.\n  - devChecks.test.js: one warning with the count, none at 0 or with the checks off.\n  - The trueCount mutant follows the renamed line, and the parity helper turns the checks off.\n  - Suites: node 3289 of 3289, demos 121 of 121.\n- **Left (step 2, main PC):** Predator's maxEntitiesPerCell (32) against its crowds (64 at crowd 2.5?), with spatial's cost measured in Predator (owner spatial), since the cap bounds every cell walk. CELL_OVERFLOW now reads the overflow directly."
+    },
+    {
+      "id": "R-1708",
+      "date": "2026-11-20",
+      "time": "05:52",
+      "timeFrom": "recorded",
+      "title": "N-220 fixed: writeEmitColumns shuts the four emit gates, no stale gate read",
+      "verdict": "kept-hygiene",
+      "text": "**N-220 fixed: writeEmitColumns shuts the four gates, so no frame reads a stale one.** Branch fix/n220-emit-gates, e552684b.\n\n- **Cause:** the emit table's gate slots for the bullets, glows, particles and LiquidFun (bActive, lColor, pcX, lfX) were written only by their own column writers. A frame whose table only writeEmitColumns wrote read what an earlier frame left there: the persist path's callers in the tests, and the ASan harness with its memory not zeroed. The product runs every writer each frame, so it never reached this.\n- **Fix:** writeEmitColumns, which every emit frame goes through, sets the four gates to 0 first. Each writer opens its own (four stores a frame). A frame without a writer leaves those rows to the JS, as a writer that fails already does.\n- **Test:** preRenderEmitWasm.test.js covers this with bullets, lights and particles in the queue. With the four gates set past the memory, the frame trapped on bugs/base (RuntimeError: memory access out of bounds, as the harness saw). With the fix, it writes the rows a frame with clean gates writes, and the gates read 0. Suites: node 3287 of 3288 (frameChainWait's \"Pixi waits ...\" timing flake, its file green alone), demos 121 of 121. The ASan harness itself needs emsdk, which the ASUS lacks, so it was not rerun."
     }
   ],
   "leads": [

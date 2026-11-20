@@ -450,6 +450,14 @@ function putSlot(b, slot, view, optional) {
  * @returns {boolean} false when a column the kernel needs is not in the memory: the JS emits the frame
  */
 export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, source) {
+  // N-220: the frame starts with the bullets', glows', particles' and LiquidFun's gates shut; each of their writers
+  // (writeEmitBulletColumns …) opens its own. A table only this function wrote (the persist path's callers, a harness)
+  // read whatever an earlier frame left there: an address past the memory trapped emit_rows in trail_row.
+  const t = b.table;
+  t[SLOT.bActive] = 0;
+  t[SLOT.lColor] = 0;
+  t[SLOT.pcX] = 0;
+  t[SLOT.lfX] = 0;
   if (!putSlot(b, 'cType', source.collectorType) || !putSlot(b, 'cIndex', source.collectorIndex) || !putSlot(b, 'cY', source.collectorY)) return false;
   if (!putSlot(b, 'stashX', source.stashX) || !putSlot(b, 'stashY', source.stashY) || !putSlot(b, 'stashRc', source.stashRotC) || !putSlot(b, 'stashRs', source.stashRotS)) return false;
   for (let k = 0; k < EMIT_SPRITE_COLUMNS.length; k++) {
