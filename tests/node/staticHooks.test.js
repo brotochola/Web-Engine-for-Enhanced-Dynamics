@@ -221,6 +221,28 @@ test('static onSpawned gets the index and the config, static onDespawned the ind
   Transform.active.fill(0);
 });
 
+/** No onGotShot at all, static or method. */
+class Pebble extends GameObject {
+  static components = [CollisionListener];
+}
+
+test('a bullet hitting a type with no onGotShot makes no instance (it made one for the empty default method)', { concurrency: false }, async () => {
+  const lw = await setup([Pebble]);
+  const impacts = new SharedArrayBuffer(impactRingBytes(8));
+  const writer = bindImpactRing(impacts, 8);
+  lw._impactRing = bindImpactRing(impacts, 8);
+  lw._impactData = lw._impactRing.data;
+  lw._impactMask = lw._impactRing.mask;
+  lw._impactRead = Atomics.load(lw._impactRing.header, 0);
+  Transform.active[3] = 1;
+  const shot = new Float32Array(IMPACT_FLOATS);
+  shot.set([3, 25, 1, 2, 7, 0]);
+  publishImpacts(writer, shot, 1);
+  lw._pollImpacts();
+  assert.equal(made(lw), 0, 'no instance made');
+  Transform.active.fill(0);
+});
+
 /** An object-style onSpawned: spawnIndex still makes the instance it runs on. */
 class Ruby extends GameObject {
   static components = [CollisionListener];

@@ -14,7 +14,13 @@ import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { drainMessages } from '../util/messageRing.js';
-import { clearStaticHookTables, createStaticHookTables, definesHook, resolveStaticHooks } from '../core/entityHooks.js';
+import {
+  clearStaticHookTables,
+  createStaticHookTables,
+  definesHook,
+  definesMethodBelow,
+  resolveStaticHooks,
+} from '../core/entityHooks.js';
 import { Joint } from '../core/joint.js';
 import { FSM } from '../core/fsm.js';
 import { noteEntityType } from '../core/entityTypes.js';
@@ -331,6 +337,8 @@ class LogicWorker extends AbstractWorker {
     // in createGameObjectInstances. A slot for every Uint8 entity type, so one never resolved reads null. Dispatch calls
     // a static form with the type's class as `this` (_entityClassByType) and makes no instance.
     this.staticHooks = createStaticHookTables(256);
+    // By entity type: 1 when its class has an onGotShot method of its own (a bullet's hit makes its instance for it).
+    this.gotShotMethodByType = new Uint8Array(256);
 
     // ========================================
     // TICK DECIMATION OPTIMIZATION
@@ -547,6 +555,7 @@ class LogicWorker extends AbstractWorker {
         const EntityClass = classes[entityType];
         if (EntityClass === undefined) continue;
         resolveStaticHooks(this.staticHooks, EntityClass, entityType, GameObject);
+        this.gotShotMethodByType[entityType] = definesMethodBelow(EntityClass, GameObject, 'onGotShot') ? 1 : 0;
         if (this.collisionListenerByType !== null && (this.collisionListenerByType[entityType] & COLLISION_LISTENS) !== 0) {
           this.collisionListenerByType[entityType] = this._collisionFlagOf(entityType);
           this.collisionStayByType[entityType] = this._stayFlagOf(EntityClass, entityType);
@@ -634,6 +643,7 @@ class LogicWorker extends AbstractWorker {
         GameObject.classByType[entityType] = EntityClass;
         noteEntityType(entityType, EntityClass);
         resolveStaticHooks(this.staticHooks, EntityClass, entityType, GameObject);
+        this.gotShotMethodByType[entityType] = definesMethodBelow(EntityClass, GameObject, 'onGotShot') ? 1 : 0;
 
         // Pre-computed typed array of all entity indices for this class
         // Uses Uint16 since max entities = 65535 (fits in 16 bits)
@@ -2253,6 +2263,7 @@ class LogicWorker extends AbstractWorker {
     const pins = GameObject.forceProcessOnLogicWorker;
     const entityType = Transform.entityType;
     const staticShot = this.staticHooks.onGotShot;
+    const shotMethod = this.gotShotMethodByType;
 
     for (let c = from; c !== to; c = (c + 1) | 0) {
       const base = (c & mask) * IMPACT_FLOATS;
@@ -2277,6 +2288,8 @@ class LogicWorker extends AbstractWorker {
         }
         continue;
       }
+      // A class with no onGotShot of its own hears nothing: no instance made to call GameObject's empty one.
+      if (shotMethod[type] !== 1) continue;
       const obj = gameObjects[targetId] ?? this._makeInstance(targetId);
       if (obj && obj.onGotShot) {
         try {
