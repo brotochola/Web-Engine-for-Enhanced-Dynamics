@@ -203,3 +203,24 @@ test('every depth variant the batch builds is balanced, in both languages (an un
     }
   }
 });
+
+// E-378 on WebGPU: one vertex entry serves every entry of a module, so the edge program gets a module of its own whose
+// vertex leaves out a plain frame's instance at a tint alpha of 1 (the GLSL cull's twin).
+test("the WebGPU edge module leaves out a plain frame's instance at a tint alpha of 1 when the atlas is nearest", () => {
+  const cull = 'if (out.vPlain > 0.5 && instA * localUniforms.uColor.a >= 1.0) { out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); }';
+  const plain = shader('instancedSprite.wgsl');
+  const sources = [['instancedSprite.wgsl', plain], ['instancedSpritePose.wgsl', shader('instancedSpritePose.wgsl')], ['indexed', spriteIndexedWgsl(plain)]];
+  for (const [name, source] of sources) {
+    for (const gbuf of [false, true]) {
+      for (const faces of [false, true]) {
+        assert.ok(!pixelDepthWgsl(source, { gbuf, faces }).includes(cull), `${name}: none without the option`);
+        const edge = pixelDepthWgsl(source, { gbuf, faces, plainEdge: true });
+        const at = edge.indexOf(cull);
+        assert.ok(at > 0, `${name}, gbuf ${gbuf}, faces ${faces}: the cull`);
+        assert.ok(at > edge.lastIndexOf('out.vPlain = '), 'after vPlain is final');
+        assert.ok(at < edge.indexOf('@fragment'), 'in the vertex entry');
+      }
+    }
+  }
+  assert.throws(() => pixelDepthWgsl(plain.split('let instA = ').join('let instAlpha = '), { plainEdge: true }), /instA and uColor/);
+});

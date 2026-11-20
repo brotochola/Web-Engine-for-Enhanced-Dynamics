@@ -459,18 +459,25 @@ function facesDepthCoreWgsl(gbuf) {
  * opaque pass and gets one `<name>Edge` for the edge pass, each writing the floor depth (@builtin(frag_depth): a depth
  * attachment in the target) and discarding the other pass's pixels. The twin page is group 2's binding 5 (`maps`).
  * DX-FACEDEPTH: `faces` and `cull` as pixelDepthVertex's (vDepthFloor at location 6); with cull 'heights' each entry is
- * the vertex-depth opaque program's, writing no depth of its own (no `<name>Edge`).
+ * the vertex-depth opaque program's, writing no depth of its own (no `<name>Edge`). E-378: `plainEdge` as
+ * pixelDepthVertex's, for a module only the edge pass's program uses (one vertex entry serves every entry of a module).
  * @param {string} source
- * @param {{ poseAlpha?: boolean, gbuf?: boolean, faces?: boolean, cull?: 'none'|'flat'|'heights' }} [opts] `poseAlpha`:
- *   the group holds uPoseAlpha before uDepth though this source does not read it (the indexed program over a split
- *   batch's group); `gbuf`: the source takes aInstGbuf
+ * @param {{ poseAlpha?: boolean, gbuf?: boolean, faces?: boolean, cull?: 'none'|'flat'|'heights', plainEdge?: boolean }}
+ *   [opts] `poseAlpha`: the group holds uPoseAlpha before uDepth though this source does not read it (the indexed
+ *   program over a split batch's group); `gbuf`: the source takes aInstGbuf
  * @returns {string}
  */
-export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces = false, cull = 'none' } = {}) {
+export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces = false, cull = 'none', plainEdge = false } = {}) {
   const once = (text, find, add, what) => {
     if (text.split(find).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite WGSL (${what})`);
     return text.replace(find, () => find + add);
   };
+  if (plainEdge && !(source.includes('let instA = ') && source.includes('localUniforms.uColor'))) {
+    throw new Error('WeedJS: the edge pass\'s plain cull needs the sprite WGSL\'s instA and uColor');
+  }
+  const plainEdgeCull = plainEdge
+    ? '  if (out.vPlain > 0.5 && instA * localUniforms.uColor.a >= 1.0) { out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); }\n'
+    : '';
   const pose = '  uPoseAlpha: f32,\n';
   const hasPose = source.split(pose).length === 2;
   let out = hasPose
@@ -492,7 +499,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces 
     // N-194: z, the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
     `${FOOT_RY_WGSL}  out.vDepthFoot = vec4<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y), footRy);\n` +
       (gbuf ? '  out.vDepthWord = aInstGbuf.xy;\n' : '') + '  out.vMapsWin = twinWindow(tid);\n' + plainWgsl(gbuf) +
-      (faces ? facesDepthWgsl(gbuf, cull) : ''),
+      plainEdgeCull + (faces ? facesDepthWgsl(gbuf, cull) : ''),
     'out.position',
   );
   const entries = [];

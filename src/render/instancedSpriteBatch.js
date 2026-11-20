@@ -1394,7 +1394,9 @@ export class InstancedSpriteBatch {
       // DX-GBUF: the words' stream is in every geometry of a batch with words, so its programs declare it.
       const source = this.gbuf && spriteSource ? gbufAttributeWgsl(spriteSource) : spriteSource;
       const faces = this._depthFaces;
-      const depthOf = (cull) => pixelDepthWgsl(source, { gbuf: this.gbuf, faces, cull });
+      // E-378: the edge program's module of its own when its vertex culls (a nearest atlas) or runs over every instance.
+      const plainEdge = this._pixelDepth?.plainEdge === true;
+      const depthOf = (cull, edge = false) => pixelDepthWgsl(source, { gbuf: this.gbuf, faces, cull, plainEdge: edge && plainEdge });
       const program = depth ? depthOf(faces ? 'flat' : 'none') : source;
       const gpuProgram = instancedSpriteGpuProgram(GpuProgram, program, fragEntry, name, { maps: depth });
       const shader = new Shader({ gpuProgram, resources });
@@ -1402,7 +1404,7 @@ export class InstancedSpriteBatch {
         // DX-DEPTH (F5 v2): the edge pass's entry (pixelDepthWgsl's <entry>Edge) over the same group; with faces, over every
         // instance (the opaque program keeps the frames with heights).
         this._edgeShader = new Shader({
-          gpuProgram: instancedSpriteGpuProgram(GpuProgram, faces ? depthOf('none') : program, `${fragEntry}Edge`, `${name}-edge`, { maps: true }),
+          gpuProgram: instancedSpriteGpuProgram(GpuProgram, faces || plainEdge ? depthOf('none', true) : program, `${fragEntry}Edge`, `${name}-edge`, { maps: true }),
           resources: this._edgeResources(shader, null),
         });
         // DX-FACEDEPTH (E-378): the opaque pass's vertex-depth twin.
@@ -1541,7 +1543,10 @@ export class InstancedSpriteBatch {
     const plainSource = shaders?.sprite && this.gbuf ? gbufAttributeWgsl(shaders.sprite) : shaders?.sprite;
     const indexedSource = plainSource ? spriteIndexedWgsl(plainSource) : null;
     const faces = this._depthFaces;
-    const depthOf = (cull) => pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams, gbuf: this.gbuf, faces, cull });
+    // E-378: the edge program's module of its own when its vertex culls (a nearest atlas) or runs over every instance.
+    const plainEdge = this._pixelDepth?.plainEdge === true;
+    const depthOf = (cull, edge = false) =>
+      pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams, gbuf: this.gbuf, faces, cull, plainEdge: edge && plainEdge });
     const program = depth ? depthOf(faces ? 'flat' : 'none') : indexedSource;
     const entry = this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd';
     const gpuProgram = instancedSpriteIndexedGpuProgram(GpuProgram, program, entry, `${name}-indexed`, { maps: depth });
@@ -1560,7 +1565,7 @@ export class InstancedSpriteBatch {
     const shader = new Shader({ gpuProgram, resources });
     if (depth) {
       this._edgeIndexedShader = new Shader({
-        gpuProgram: instancedSpriteIndexedGpuProgram(GpuProgram, faces ? depthOf('none') : program, `${entry}Edge`, `${name}-indexed-edge`, { maps: true }),
+        gpuProgram: instancedSpriteIndexedGpuProgram(GpuProgram, faces || plainEdge ? depthOf('none', true) : program, `${entry}Edge`, `${name}-indexed-edge`, { maps: true }),
         resources: this._edgeResources(shader, this._staticsSource),
       });
       this._vdepthIndexedShader = faces
