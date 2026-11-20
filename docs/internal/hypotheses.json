@@ -20629,19 +20629,20 @@
     {
       "id": "N-246",
       "title": "profileSceneSweep's passes read each other's files: the code pass reads <out>/<scene>/cpu-summary.json and the inventory the cpu pass's results.json, so a per-pass --out directory needs the cpu files copied in first or its inventory comes out empty",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (4e585b8e), on fix/n246-sweep-cpu-from (R-1711)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Seen by the sweep agent running passes into separate folders.",
-      "next": "Say it in the tool's header, or let each pass take --cpu-from <dir>.",
+      "result": "Fixed 2026-11-20 (4e585b8e): the code pass and the inventory read results.json and cpu-summary.json from --cpu-from (default --out) and warn when there are none.",
+      "next": "Nothing left.",
       "refs": [],
       "aliases": [
         "sweep pass layout"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1711"
       ]
     },
     {
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1711",
+      "date": "2026-11-20",
+      "time": "06:15",
+      "timeFrom": "recorded",
+      "title": "N-246 fixed: profileSceneSweep's passes take --cpu-from for the cpu pass's files",
+      "verdict": "kept-hygiene",
+      "text": "**N-246 fixed: profileSceneSweep's passes take --cpu-from <dir> for the cpu pass's files.** Branch fix/n246-sweep-cpu-from, 4e585b8e.\n\n- **Cause:** the code pass read <out>/<scene>/cpu-summary.json and the inventory the cpu pass's results.json, both from --out. A pass run into its own folder ranked nothing and wrote an empty inventory, silently.\n- **Fix:** both read from --cpu-from <dir>, by default --out, so a sweep into one folder runs as before. The cpu pass always uses its own --out. One helper (cpuPassPaths) names the files, and each place warns when it finds none. The header says so.\n- **Test:** profileSceneSweepCpuFrom.test.js builds an inventory into one folder from a cpu pass's files in another: the scene gets its worker row. Without the folder it reads --out, as before. Node suite 3287 of 3289: the two failures were frameChainWait timing tests, green alone. The CLI run was not repeated."
     }
   ],
   "leads": [
