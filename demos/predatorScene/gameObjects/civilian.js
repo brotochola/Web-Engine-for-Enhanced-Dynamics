@@ -12,6 +12,7 @@ export class Civilian extends Person {
   static tickInterval = 4;
 
   static components = [...Person.components, CivilianBehaviorFSM, CivilianComponent];
+  static behaviorFSM = CivilianBehaviorFSM;
 
   onSpawned(spawnConfig = {}) {
     // Random spritesheet for variety
@@ -67,13 +68,5 @@ export class Civilian extends Person {
         neighborInstance.civilianBehaviorFSM.changeState(PANIC);
       }
     }
-  }
-
-  tick(dt) {
-    super.tick(dt);
-
-    if (PersonComponent.dead[this.index] === 1) return;
-
-    this.civilianBehaviorFSM.tick(dt, this);
   }
 }

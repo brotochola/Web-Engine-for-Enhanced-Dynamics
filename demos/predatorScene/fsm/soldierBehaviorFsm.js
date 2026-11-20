@@ -29,6 +29,14 @@ const LOS_CACHE_FRAMES = 4;
 /** An idle soldier whose scan found nobody scans again after this many logic frames (~67 ms at 60 fps). */
 const IDLE_RESCAN_FRAMES = 4;
 
+/** The frames MySoldier.tickAll ran on this worker: the clock of the caches above (each worker counts its own). */
+let soldierFrame = 0;
+
+/** Called by MySoldier.tickAll once a frame, before the soldiers tick. */
+export function advanceSoldierFrame() {
+  soldierFrame++;
+}
+
 // ==========================================
 // HELPER: Find closest civilian in neighbors
 // ==========================================
@@ -157,7 +165,7 @@ function canShootTarget(owner, targetIndex, targetDistSq) {
   const weapon = owner.getBestWeapon();
   if (targetDistSq > weapon.rangeSq) return false;
 
-  const frame = owner._logicFrame | 0;
+  const frame = soldierFrame;
   if (
     owner._losCacheTarget === targetIndex &&
     frame < (owner._losCacheUntilFrame | 0)
@@ -192,7 +200,7 @@ class IdleSoldierState extends FSMState {
 
   static onUpdate(owner, i, dt) {
     // A scan walks every neighbour (and casts rays with a gun): when the last one found nobody, wait a few frames.
-    const frame = owner._logicFrame | 0;
+    const frame = soldierFrame;
     if (frame < owner._idleScanAt) return;
 
     // Scan for civilians: gun → need LOS; no gun → closest (melee)

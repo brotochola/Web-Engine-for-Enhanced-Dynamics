@@ -11,10 +11,16 @@ export class Lootable extends GameObject {
   static resistance = 0.1
   static components = [LootableComponent];
 
-  tick(dtRatio) {
-    const myHealth = LootableComponent.health[this.index];
-
-    if (myHealth <= 0) this.die();
+  /**
+   * Each frame, for the whole type at once: an entity with no health left dies. The death goes through the instance
+   * (die() is a method subclasses extend), so only the dying make one.
+   */
+  static tickAll(list, count) {
+    const health = LootableComponent.health;
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      if (health[i] <= 0) this.get(i).die();
+    }
   }
 
   recieveDamage(damage, sourceX, sourceY) {

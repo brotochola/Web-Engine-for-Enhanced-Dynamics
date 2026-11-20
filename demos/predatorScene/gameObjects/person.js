@@ -23,6 +23,15 @@ import {
 
 const { ShadowCaster, RigidBody, Collider, DirectionalSprite, Transform, rng, NavGrid } = WEED;
 
+/** How close to the world's edge (px) a person starts to be pushed back in, and how hard (px/s²). */
+const EDGE_MARGIN = 50;
+const EDGE_PUSH = 360;
+/** Under this speed (px/s) a person that is not shooting stops: friction alone would leave it creeping. */
+const STOP_SPEED = 0.166;
+
+/** The living among the entities a tickAll got, for the behaviour FSMs (grown when a bigger list comes). */
+let living = new Int32Array(1024);
+
 export class Person extends Lootable {
   static deriveSpeed = true;
 
@@ -167,43 +176,59 @@ export class Person extends Lootable {
     });
   }
 
-  tick(dtRatio) {
-    const isDead = PersonComponent.dead[this.index] === 1;
-    const isShooting = PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.SHOOTING);
+  /**
+   * Each frame, for the whole type at once (E-530: Predator written static). Every person: a living one with no health
+   * left dies (Lootable's check); one that is not shooting is pushed back in near the world's edges and stops when too
+   * slow to walk (a shooter skips both, so knockback and collisions still move it). Then the animation FSM for all, and
+   * the type's behaviour FSM (static behaviorFSM) for the living. All from the columns, by index: an instance is made
+   * only for a death.
+   */
+  static tickAll(list, count, dtRatio) {
+    const dead = PersonComponent.dead;
+    const animationState = PersonAnimationFSM.state;
+    const shooting = PersonAnimationFSM.states.SHOOTING.stateIndex;
+    const health = LootableComponent.health;
+    const x = Transform.x;
+    const y = Transform.y;
+    const ax = RigidBody.ax;
+    const ay = RigidBody.ay;
+    const speed = RigidBody.speed;
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+    const config = this.prototype.config;
+    const maxX = (config.worldWidth || 1000) - EDGE_MARGIN;
+    const maxY = (config.worldHeight || 1000) - EDGE_MARGIN;
 
-    if (!isDead) {
-      super.tick(dtRatio);
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      const isShooting = animationState[i] === shooting;
+      if (dead[i] !== 1 && health[i] <= 0) this.get(i).die();
+      if (isShooting) continue;
+
+      const px = x[i];
+      const py = y[i];
+      if (px < EDGE_MARGIN) ax[i] += EDGE_PUSH;
+      if (px > maxX) ax[i] -= EDGE_PUSH;
+      if (py < EDGE_MARGIN) ay[i] += EDGE_PUSH;
+      if (py > maxY) ay[i] -= EDGE_PUSH;
+      if (speed[i] < STOP_SPEED && (vx[i] !== 0 || vy[i] !== 0)) RigidBody.setVelocity(i, 0, 0);
     }
 
-    // When shooting: don't run (no acceleration from behavior) but allow being pushed.
-    // We skip keepWithinBounds and low-speed zero so external pushes (knockback, collisions) work.
-    if (!isShooting) {
-      this.keepWithinBounds();
-      if (RigidBody.speed[this.index] < 0.166) {
-        const i = this.index;
-        if (RigidBody.vx[i] !== 0 || RigidBody.vy[i] !== 0) {
-          this.setVelocity(0, 0);
-        }
-      }
+    PersonAnimationFSM.tickAll(list, count, dtRatio, this);
+
+    const BehaviorFSM = this.behaviorFSM;
+    if (BehaviorFSM === null) return;
+    if (living.length < count) living = new Int32Array(count);
+    let alive = 0;
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      if (dead[i] !== 1) living[alive++] = i;
     }
-
-    // const animAfterDie = SpriteRenderer.animationState[this.index];
-
-    // Animation FSM handles all animation state
-    if (this.spriteRenderer?.spritesheetId) this.personAnimationFSM.tick(dtRatio, this);
-
-    // const animAfterFSM = SpriteRenderer.animationState[this.index];
-
-    // Debug: track animation state changes for dying entities
-    // if (isDead && animBefore !== animAfterFSM) {
-    //     console.log(`[Person ${this.index}] DYING - Anim changed! Before:${animBefore} AfterDie:${animAfterDie} AfterFSM:${animAfterFSM}`);
-    // }
-
-    // Check if dying animation finished (FSM transitioned to DEAD)
-    // if (PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD)) {
-    // this.onDeathAnimationComplete();
-    // }
+    BehaviorFSM.tickAll(living, alive, dtRatio, this);
   }
+
+  /** The FSM that decides what a person of this type does (its subclasses name theirs); null for none. */
+  static behaviorFSM = null;
 
   // ==========================================
   // WEAPON HELPERS - Check inventory and get best weapon
@@ -480,33 +505,6 @@ export class Person extends Lootable {
     if (PersonComponent.dead[this.index] === 1) return true;
     if (LootableComponent.health[this.index] <= 0) return true;
     return PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD);
-  }
-
-  /**
-   * Keep entity within world boundaries
-   */
-  keepWithinBounds() {
-    const margin = 50;
-    const turnFactor = 360; // px/s²
-    const i = this.index;
-
-    const x = Transform.x[i];
-    const y = Transform.y[i];
-    const worldWidth = this.config.worldWidth || 1000;
-    const worldHeight = this.config.worldHeight || 1000;
-
-    if (x < margin) {
-      this.addAcceleration(turnFactor, 0);
-    }
-    if (x > worldWidth - margin) {
-      this.addAcceleration(-turnFactor, 0);
-    }
-    if (y < margin) {
-      this.addAcceleration(0, turnFactor);
-    }
-    if (y > worldHeight - margin) {
-      this.addAcceleration(0, -turnFactor);
-    }
   }
 
   die() {
