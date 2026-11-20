@@ -52,6 +52,18 @@ export function setupSetters(GameObject, n) {
   return entities;
 }
 
+/**
+ * N-237: the columns back to setupSetters' values, the same arrays kept. A second setupSetters binds new arrays to
+ * Transform's, RigidBody's and SpriteRenderer's statics, which deoptimizes every setter compiled against the first ones
+ * (code dependencies: the fields' constness), so the second case timed other code than the first.
+ */
+export function resetSetters() {
+  for (const a of [Transform.x, Transform.y, Transform.rotation, Transform.rotS, Transform.entityType, RigidBody.vx,
+    RigidBody.vy, RigidBody.angularVelocity, SpriteRenderer.animationSpeed, SpriteRenderer.flip, SpriteRenderer.renderDirty,
+    SpriteRenderer.keyedDirty]) a.fill(0);
+  for (const a of [Transform.rotC, SpriteRenderer.alpha, SpriteRenderer.scaleX, SpriteRenderer.scaleY]) a.fill(1);
+}
+
 /** One frame of the `moving` case: frame f moves every walker; speed and alpha are set again to the same values. */
 function frameMoving(entities, f) {
   const n = entities.length;
@@ -98,8 +110,10 @@ async function main() {
   const { GameObject } = await import(pathToFileURL(goFile).href);
   const cases = {};
   const sums = {};
+  // N-237: the columns are bound once; each case starts from them reset.
+  const entities = setupSetters(GameObject, n);
   for (const name of ['moving', 'same']) {
-    const entities = setupSetters(GameObject, n);
+    resetSetters();
     let f = 0;
     const one = name === 'moving' ? () => frameMoving(entities, f++) : () => frameSame(entities);
     // The flags the first frames set, cleared once: the checksum counts what CHECK_FRAMES frames mark after that.
