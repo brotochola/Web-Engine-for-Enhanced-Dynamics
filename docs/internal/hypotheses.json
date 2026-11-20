@@ -18066,18 +18066,19 @@
       "id": "E-390",
       "title": "With light3d by day Pixi uploads 2.3 MB of buffers a frame against 0.73 MB without it: two bufferSubData of 1196 KB and 844 KB a frame",
       "status": "open",
-      "statusText": "proposed 2026-11-16 from glFrameRecorder on Predator",
+      "statusText": "Proposed 2026-11-16; the words-in-statics version built and rejected 2026-11-20 (R-1575, a small saving for much plumbing); the big uploads still to identify",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "glFrameRecorder, Predator zoom 0.3: plain 733.7 KB of buffers a frame; ?light3d=1 by day 2317.4 KB (buffer#7 1196.4 KB, buffer#9 844.1 KB, one call each a frame), by night 1121.9 KB.",
-      "next": "Identified 2026-11-19 (glFrameRecorder, Predator light3d=1 hour=12 zoom=0.3): the 1.2 MB buffer is the batch’s G-buffer words (aInstGbuf, 12 bytes for each of about 100 000 instances, commitGbuf every frame) and the 0.85 MB one the indexed slots (8 bytes an instance). The words’ entity id and flags are per entity and the zIndex band per row: on the indexed path they could live in the statics texture (E-514’s diff uploads a row only when it changes), the vertex reading them by row; the attached decorations’ foot (z) stays per instance or moves with its parent. Then bufferSubData KB a frame and CrGpuMain per frame (E-407) before and after. Both packs carry the words: Predator packs on Pixi’s keyed path (packGpuSprites ’pixi’: wasm pack_keyed writes them from the key column, the keyed statics scatter), the default and the barrio on pre-render’s indexed pack (pack_indexed_scatter’s _gbuf): both statics rows grow from 12 to 16 floats (a fourth texel; WebGPU’s INDEXED_SPRITES_MAX_WEBGPU shrinks by a quarter), the indexed vertex transforms (spriteIndexed.js GLSL and WGSL) define aInstGbuf from that texel instead of an attribute, commitGbuf skips the stream on such frames, and gpuPackKeyedGbuf/gpuPackSplitGbuf/gpuPackIndexedDiff hold the packs equal.",
+      "result": "Predator light3d uploads 2.7 MB a frame against 0.73 MB plain: two buffers of 1.2 MB and 0.83 MB a frame (not the G-buffer words, 85 KB; not the shadow maps; not pixel depth). The words in the statics: -151 KB a frame, not kept.",
+      "next": "Identify the two buffers light3d adds (1.2 MB and 0.83 MB a frame, one bufferSubData each in Predator light3d=1&hour=12&zoom=0.3): not the G-buffer words, not the lamps’ or the sun’s map, not pixel depth (R-1575). Next suspects: the sprite path light3d’s packed atlas with maps sends its frames down (instance rows instead of keyed poses), the farm trees’ and houses’ decorations, the volumes. glFrameRecorder with each piece off, or a stack at bufferSubData in the Pixi worker.",
       "refs": [],
       "aliases": [
         "light3d buffer uploads"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1575"
       ]
     },
     {
@@ -39981,6 +39982,19 @@
       "title": "The spatial row like for like on the main PC: main +24 % by exact-frame mean (STEP_MS +100 % hides v0.14.0's 5 ms spike); N-323's spread costs no more work in a kernel (mean level, p95 14.3 -> 1.5 ms)",
       "verdict": "note",
       "text": "**The spatial row against v0.14.0, like for like on the main PC, and N-323's cost in a kernel.** The ASUS read\nv0.14.0 0.434 ms against main 0.867 (+100 %, R-1599) by spatialMax's STEP_MS.\n\n- **Scoreboard row here** (runScoreboard --vs v0.14.0 --only spatial, stationarySpatialScene 9 000 with the reading tick\n  both sides, headless, 2 runs a side, 00:25): v0.14.0's spatial workers exact-frame mean 0.57-0.60 ms, p50 0.25-0.29,\n  p95 about 5 ms (its own all-at-once rebuild every 16 frames: STEP_MS 0.25-0.44 reads mostly the quiet frames); main\n  0.67-0.78, p50 0.54-0.65, p95 1.55-1.71 (STEP_MS 0.71-0.81). By the exact-frame mean main is about +24 %, across\n  every change since v0.14.0; by STEP_MS +100 %, which hides v0.14.0's spike.\n- **Kernel** (setupSpatialKernel, 12 000 still entities, cap 15, one worker; v0.14.0's cycle against main's blocks, both\n  patched alike, 3 runs, 8 cycles timed after 6): the same 623 rebuilds a frame; mean 1.19-1.34 against 1.20-1.40 ms\n  (level), p95 14.2-14.5 against 1.35-1.62. Spreading costs no more work.\n- **So** N-323's +20 % mean on the ASUS's 2 cores (R-1596) is not more work: a worker busy every frame on an\n  oversubscribed machine loses more to scheduling. Capacity reads the p99, where spreading wins tenfold; kept as it is.\n  A middle way (fewer, larger blocks) stays a possibility if a 2-core mean ever matters more than its tail."
+    },
+    {
+      "id": "R-1575",
+      "date": "2026-11-20",
+      "time": "00:45",
+      "timeFrom": "recorded",
+      "title": "E-390 as built rejected: the G-buffer words in the statics save 151 KB a frame of Predator light3d's 2.7 MB; the 1.2 MB and 0.83 MB uploads are neither the words nor the shadow maps nor pixel depth",
+      "verdict": "rejected",
+      "text": "**E-390 as built rejected: the G-buffer words were about 85 KB a frame in Predator light3d, not the 1.2 MB I read into\nbuffer#9; the big uploads are something else.** An agent built the words into the statics rows on both packs\n(perf/e390-gbuf-statics in weed-par-export: 689aa094 indexed, bd15fa0f keyed, daec84ad, c19f1da2; suites green, 3 291\nand 121; programs compiled and scatters read back exact on both backends).\n\n- **Bytes** (glFrameRecorder, Predator light3d=1&hour=12&zoom=0.3, the branch against its base 98774915, 00:40): every\n  upload a frame 2 699 -> 2 548 KB (-151 KB, -5.6 %). What went: two ring buffers at 0.5 calls a frame, 85 KB each\n  (the words of about 7 100 instances). What stays: 1 195 KB and 832 KB a frame, one call each.\n- **Those two are not** the lamps' map casters (?lampShadows=layer: 1 200 and 829 KB), the sun map's (?sunShadows=layer:\n  1 200 and 831), nor pixel depth (?pixelDepth=0: 1 199 and 847). Plain Predator uploads about 0.73 MB a frame in all,\n  so light3d brings them some other way (its packed atlas with maps, the sprite path its frames take, the trees' or\n  houses' rows): E-390's real target, not identified yet.\n- **Why not keep the 151 KB:** the change grows every statics row from 12 to 16 floats, adds a queue header version, a\n  words-update pass on both backends and a keyed words memory, and an O(rows) words check in pre-render's indexed frames\n  each frame; a zIndex band shift resends rows. For 85 to 150 KB a frame (E-514 needed 460 KB to move the HD 620's\n  renderer 6 to 8.5 %) it does not pay. The branch stays for reference.",
+      "commits": [
+        "689aa094",
+        "bd15fa0f"
+      ]
     }
   ],
   "leads": [
