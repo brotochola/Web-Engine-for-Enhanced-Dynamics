@@ -24397,7 +24397,8 @@
     },
     {
       "records": [
-        "R-1571"
+        "R-1571",
+        "R-1707"
       ],
       "refs": [],
       "id": "N-325",
@@ -24406,9 +24407,9 @@
       "kind": "bug",
       "area": "spatial",
       "date": "2026-11-19",
-      "statusText": "Filed 2026-11-19 from E-529's probe (R-1571)",
+      "statusText": "Filed 2026-11-19 from E-529's probe (R-1571); step 1 (the stat and the warning) kept 2026-11-20 (20ba14c4, R-1707) on fix/n325-cell-overflow-stat",
       "result": "",
-      "next": "A stat (entities past their cell's cap) and a development warning when it is not zero; then Predator's cap against its crowds (64 at crowd 2.5?) with spatial's cost measured (owner spatial), since the cap bounds every cell walk.",
+      "next": "Step 2 (main PC): Predator's maxEntitiesPerCell (32) against its crowds (64 at crowd 2.5?), spatial's cost measured in Predator (owner spatial); SPATIAL_STATS.CELL_OVERFLOW reads the overflow.",
       "aliases": [
         "grid cell overflow",
         "maxEntitiesPerCell overflow",
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1707",
+      "date": "2026-11-20",
+      "time": "05:47",
+      "timeFrom": "recorded",
+      "title": "N-325 step 1 kept: spatial counts entries past maxEntitiesPerCell (CELL_OVERFLOW) and warns in the debug build",
+      "verdict": "kept-hygiene",
+      "text": "**N-325, step 1 kept: spatial counts the entries past maxEntitiesPerCell (SPATIAL_STATS.CELL_OVERFLOW) and the debug build warns.** Branch fix/n325-cell-overflow-stat, 20ba14c4. Step 2, Predator's cap, is left to the main PC.\n\n- **Cause of the silence:** a cell over its cap holds the first maxEntitiesPerCell entities, and nothing counted the rest (R-1571: about 2 600 entities, 6.8 %, at crowd 2.5).\n- **Fix:** every grid pass counts them per worker:\n  - **the two rebuilds** (rebuildOwnedRows, _rebuildOwnedRowsLatched): in the else of their cap test, a branch taken only when a cell is full;\n  - **the movers rewrite** (_rebuildMovedRows): a running count, moved by each touched cell's change in excess over the cap, kept only when the rewrite holds.\n  - **Published:** SPATIAL_STATS.CELL_OVERFLOW (slot 16, stride 17), written every frame with a 'CellOver' row in the stats panel. The debug build warns once a thread with the count and the fix (devChecks.cellOverflow; the production stub does nothing).\n- **Cost:** rebuildOwnedRowsMicrobench (40 000 points, 2 workers), 3 alternated pairs on the ASUS: base 2.173 / 2.214 / 2.262 ms a frame, fix 2.150 / 2.250 / 2.192 (-0.9 %, noise), same checksum.\n- **Tests:**\n  - spatialGridMovers.test.js: in the movers parity world, the rewrite's count equals the full rebuild's frame by frame (forced and auto) and the movers state's per-cell totals wherever seeded; reportFPS publishes it.\n  - devChecks.test.js: one warning with the count, none at 0 or with the checks off.\n  - The trueCount mutant follows the renamed line, and the parity helper turns the checks off.\n  - Suites: node 3289 of 3289, demos 121 of 121.\n- **Left (step 2, main PC):** Predator's maxEntitiesPerCell (32) against its crowds (64 at crowd 2.5?), with spatial's cost measured in Predator (owner spatial), since the cap bounds every cell walk. CELL_OVERFLOW now reads the overflow directly."
     }
   ],
   "leads": [
