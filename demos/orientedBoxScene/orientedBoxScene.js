@@ -68,8 +68,10 @@ export class OrientedBoxScene extends WEED.Scene {
     create() {
         this.spawnFloorAndWalls();
 
+        // N-166: the boxes fall to the floor at the world's bottom; the first view shows it (the view's bottom on it).
         const cx = this.config.worldWidth / 2;
-        const cy = this.config.worldHeight / 2;
+        const viewHeight = (Camera.canvasHeight || 640) / (Camera.zoom || 1);
+        const cy = this.config.worldHeight - viewHeight / 2;
         Camera.setFree(true, { panSpeed: 10 });
         Camera.setFreeTarget(cx, cy);
         Camera.centerOn(cx, cy);

@@ -129,3 +129,4 @@ results are records of the register.
 | [`DX_SUNMASK_DESIGN.md`](./reports/DX_SUNMASK_DESIGN.md) | November 2026. A design never built as written: the sun's shadow inside the light sum. Superseded by DX-LIGHT3D's shadow maps and DX-BARRIOS. |
 | [`DX_NORMALS_DESIGN.md`](./reports/DX_NORMALS_DESIGN.md) | November 2026. A design never built as written: light by the way a surface faces (normal maps), and what DX-FACES built. Superseded by DX-LIGHT3D's maps and DX-BARRIOS. |
 | [`DX_VOLLIGHTS_DESIGN.md`](./reports/DX_VOLLIGHTS_DESIGN.md) | November 2026. A plan never built as written: lamps and headlights cast a volume's shadow (DX-VOLUME's phase 3). Superseded by DX-LIGHT3D's lamp shadow maps and DX-BARRIOS. |
+| [`ASUS_BUGS_2026-11-20.md`](./reports/ASUS_BUGS_2026-11-20.md) | November 2026. The ASUS bug session's handoff: mipmaps in Predator rejected, 13 bugs fixed on `asus/bugs-2026-11-20`, what to check before merging it. |

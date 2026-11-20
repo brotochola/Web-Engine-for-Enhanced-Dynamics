@@ -5,6 +5,9 @@
 
 import { unknownKey } from './debug/devChecks.js';
 
+/** N-247: the most key names Keyboard remembers resolved (a game asks for a few dozen). */
+const INDEX_CACHE_MAX = 512;
+
 export class Keyboard {
   static _inputData = null; // Int32Array view of shared keyboard data
   static _keyIndexMap = null; // Map of key names to input buffer indices
@@ -14,6 +17,11 @@ export class Keyboard {
   static _pressedThisFrame = null; // Stable edge flags updated once per frame
   /** Own-property key getters stamped in initialize(); deleted on re-init. */
   static _stampedKeys = [];
+  /**
+   * N-247: each name asked for, as given, to its index (-1: not a key), so a read every frame normalizes nothing
+   * (toLowerCase made a string per call). Cleared by initialize(); names past INDEX_CACHE_MAX are resolved each time.
+   */
+  static _indexByName = new Map();
 
   /** Aliases resolved once — avoids per-key lookup object allocation. */
   static _SPECIAL_KEYS = Object.freeze({
@@ -42,6 +50,7 @@ export class Keyboard {
     '_lastPressCounts',
     '_pressedThisFrame',
     '_stampedKeys',
+    '_indexByName',
     '_SPECIAL_KEYS',
     '_RESERVED_STAMP',
     '_unstampKeyProps',
@@ -102,6 +111,7 @@ export class Keyboard {
    */
   static initialize(inputData, keyIndexMap) {
     this._unstampKeyProps();
+    this._indexByName.clear();
     this._inputData = inputData;
     this._keyIndexMap = keyIndexMap;
 
@@ -141,8 +151,19 @@ export class Keyboard {
 
   static _getKeyIndex(key) {
     if (!this._inputData || !this._keyIndexMap) return undefined;
+    const known = this._indexByName.get(key);
+    if (known !== undefined) {
+      if (known >= 0) return known;
+      unknownKey(key, this._keyIndexMap, this._SPECIAL_KEYS);
+      return undefined;
+    }
     const keyName = this._normalizeKeyName(key);
-    const index = keyName == null ? undefined : this._keyIndexMap[keyName];
+    // Own names only: a plain map also answers 'constructor' or 'tostring' with Object's functions.
+    const found = keyName == null || !Object.hasOwn(this._keyIndexMap, keyName) ? undefined : this._keyIndexMap[keyName];
+    const index = typeof found === 'number' ? found : undefined;
+    if (typeof key === 'string' && this._indexByName.size < INDEX_CACHE_MAX) {
+      this._indexByName.set(key, index === undefined ? -1 : index);
+    }
     // DX-GUARDS E7 (debug build): a name the map does not have is never down.
     if (index === undefined) unknownKey(key, this._keyIndexMap, this._SPECIAL_KEYS);
     return index;

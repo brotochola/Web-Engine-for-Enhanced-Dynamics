@@ -386,15 +386,11 @@
       });
       currentGame = game;
 
-      // A worker that dies while booting never reports ready, and loadScene would wait forever.
-      // Its error shows as the fatal overlay: end the run with that text instead.
-      let fatalWatch = 0;
-      const fatalDuringBoot = new Promise((_, reject) => {
-        fatalWatch = setInterval(() => {
-          const text = fatalErrorText();
-          if (text) reject(new Error(`Fatal engine error while the scene booted: ${text}`));
-        }, 100);
-      });
+      // A worker that dies while booting never reports ready, and loadScene would wait forever. A reported error
+      // shows as the fatal overlay, one outside the engine's handlers as the page's uncaught error (N-254): end the
+      // run with that text instead (bootWatch.mjs).
+      const { watchBoot } = await import('/tests/bench/bootWatch.mjs');
+      const bootWatch = watchBoot(window, fatalErrorText);
       try {
         // ?restore=<url> (E-210): the scene starts from that save (WEED.encodeSave bytes), as scene.loadGame starts it.
         const restoreUrl = new URLSearchParams(location.search).get('restore');
@@ -402,9 +398,9 @@
           ? await WEED.decodeSave(new Uint8Array(await (await fetch(restoreUrl)).arrayBuffer()))
           : null;
         const loadOptions = restorePayload ? { export: config.sceneExport, restorePayload } : { export: config.sceneExport };
-        await Promise.race([game.loadScene(config.sceneModule, loadOptions), fatalDuringBoot]);
+        await Promise.race([game.loadScene(config.sceneModule, loadOptions), bootWatch.failed]);
       } finally {
-        clearInterval(fatalWatch);
+        bootWatch.stop();
       }
       const scene = game.currentScene;
       // loadScene resolves after the scene's create(), so this zoom stays.

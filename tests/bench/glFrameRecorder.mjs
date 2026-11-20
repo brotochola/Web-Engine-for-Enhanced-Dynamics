@@ -359,17 +359,20 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
       collect();
     }
     clearInterval(poll);
-    const perMs = (ns) => Math.round((ns / 1e6 / Math.max(1, frames)) * 1000) / 1000;
+    // N-243: rates a frame unrounded, with the totals they come from: a layer that draws in fewer than every frame read
+    // about +-8 % per draw from a draws-a-frame rounded to 0.1. Only the printed table rounds.
+    const perMs = (ns) => ns / 1e6 / Math.max(1, frames);
+    const rate = (n) => n / Math.max(1, frames);
     const rows = [...passes.values()].sort((x, y) => y.ns - x.ns).map((p) => ({
-      label: p.label, msPerFrame: perMs(p.ns), segmentsPerFrame: Math.round((p.segments / Math.max(1, frames)) * 10) / 10,
-      drawsPerFrame: Math.round((p.draws / Math.max(1, frames)) * 10) / 10, instancesPerFrame: Math.round(p.instances / Math.max(1, frames)),
+      label: p.label, msPerFrame: perMs(p.ns), segmentsPerFrame: rate(p.segments), drawsPerFrame: rate(p.draws),
+      instancesPerFrame: rate(p.instances), ns: p.ns, segments: p.segments, draws: p.draws, instances: p.instances,
     }));
     gpu = { msPerFrame: perMs([...passes.values()].reduce((s, p) => s + p.ns, 0)), disjoint, lost: pending.length, passes: rows, perDraw };
     // gpuDraws: each pass's draws summed (the pass's busy time, without the gaps between its draws).
     if (perDraw) {
       gpu.drawPasses = [...drawPasses.values()].sort((x, y) => y.ns - x.ns).map((p) => ({
-        label: p.label, msPerFrame: perMs(p.ns), drawsPerFrame: Math.round((p.draws / Math.max(1, frames)) * 10) / 10,
-        instancesPerFrame: Math.round(p.instances / Math.max(1, frames)),
+        label: p.label, msPerFrame: perMs(p.ns), drawsPerFrame: rate(p.draws), instancesPerFrame: rate(p.instances),
+        msPerDraw: p.draws > 0 ? p.ns / 1e6 / p.draws : 0, ns: p.ns, draws: p.draws, instances: p.instances,
       }));
     }
   }
@@ -487,19 +490,19 @@ async function main() {
   console.log('uploads and queries, per frame:');
   for (const row of r.detail.slice(0, 20)) console.log(`  ${String(row.perFrame).padStart(6)} calls ${String(row.kbPerFrame).padStart(7)} KB  ${row.key}`);
   if (r.gpu?.perDraw) {
-    console.log(`GPU time in draws (a timer query per draw, ${r.gpu.disjoint} disjoint, ${r.gpu.lost} unread): ${r.gpu.msPerFrame} ms a frame; by pass:`);
+    console.log(`GPU time in draws (a timer query per draw, ${r.gpu.disjoint} disjoint, ${r.gpu.lost} unread): ${r.gpu.msPerFrame.toFixed(3)} ms a frame; by pass:`);
     for (const row of r.gpu.drawPasses.slice(0, 20)) {
-      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  ${String(row.drawsPerFrame).padStart(5)} draws ${String(row.instancesPerFrame).padStart(7)} inst  ${row.label}`);
+      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  ${row.drawsPerFrame.toFixed(1).padStart(5)} draws ${String(Math.round(row.instancesPerFrame)).padStart(7)} inst  ${row.label}`);
     }
     console.log('the costliest draws:');
     for (const row of r.gpu.passes.slice(0, 30)) {
-      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${String(row.segmentsPerFrame).padStart(4)} ${String(row.instancesPerFrame).padStart(7)} inst  ${row.label}`);
+      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${row.segmentsPerFrame.toFixed(1).padStart(4)} ${String(Math.round(row.instancesPerFrame)).padStart(7)} inst  ${row.label}`);
     }
   } else if (r.gpu) {
-    console.log(`GPU time by pass (timer queries, ${r.gpu.disjoint} disjoint, ${r.gpu.lost} unread): ${r.gpu.msPerFrame} ms a frame`);
+    console.log(`GPU time by pass (timer queries, ${r.gpu.disjoint} disjoint, ${r.gpu.lost} unread): ${r.gpu.msPerFrame.toFixed(3)} ms a frame`);
     for (const row of r.gpu.passes.slice(0, 30)) {
-      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${String(row.segmentsPerFrame).padStart(4)}  ${String(row.drawsPerFrame).padStart(5)} draws ` +
-        `${String(row.instancesPerFrame).padStart(7)} inst  ${row.label}`);
+      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${row.segmentsPerFrame.toFixed(1).padStart(4)}  ${row.drawsPerFrame.toFixed(1).padStart(5)} draws ` +
+        `${String(Math.round(row.instancesPerFrame)).padStart(7)} inst  ${row.label}`);
     }
   } else if (args['gpu-passes'] || args['gpu-draws']) console.log('GPU time: no EXT_disjoint_timer_query_webgl2 in this context');
   if (r.gpuClocks) {

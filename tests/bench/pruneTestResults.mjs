@@ -7,6 +7,10 @@
  * by each child's own modification time; any other entry as a whole. A link is unlinked, never followed.
  * runPredatorAbab calls it before a sitting.
  *
+ * N-255: a history (a name ending in history.jsonl: nightlyCapacity's capacity-history.jsonl) is a record kept across
+ * nights, not a raw result: it is never removed, and a folder that holds one is pruned file by file around it. A week
+ * without a night used to lose the capacity history.
+ *
  *   node tests/bench/pruneTestResults.mjs [--days 7] [--dry-run]
  */
 import fs from 'node:fs';
@@ -21,6 +25,20 @@ function remove(p, dryRun) {
   const st = fs.lstatSync(p);
   if (st.isSymbolicLink()) fs.unlinkSync(p);
   else fs.rmSync(p, { recursive: true, force: true });
+}
+
+/** N-255: a history file, kept whatever its age. */
+export function isHistory(name) {
+  return /history\.jsonl$/i.test(name);
+}
+
+/** Whether a folder holds a history file directly. */
+function holdsHistory(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).some((e) => e.isFile() && isHistory(e.name));
+  } catch {
+    return false;
+  }
 }
 
 function isContainer(dir) {
@@ -47,10 +65,15 @@ export function pruneTestResults({ days = 7, dryRun = false, dir = resultsDir, n
     return removed;
   }
   const consider = (p) => {
+    if (isHistory(path.basename(p))) return;
     let st;
     try {
       st = fs.lstatSync(p);
     } catch {
+      return;
+    }
+    if (st.isDirectory() && !st.isSymbolicLink() && holdsHistory(p)) {
+      for (const child of fs.readdirSync(p)) consider(path.join(p, child));
       return;
     }
     if (st.mtimeMs < cutoff) {

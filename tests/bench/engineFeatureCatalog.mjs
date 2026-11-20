@@ -563,7 +563,8 @@ export const ENGINE_FEATURES = [
       kind: 'stress',
     },
     primary: ['logic0_STEP_MS'],
-    load: ['BODY_COUNT'],
+    // N-161: the drivers (one for each 100 plays a tick); the scene has no bodies, so BODY_COUNT was 0 on both sides.
+    load: ['MARK_ACTIVE'],
   },
   // DX-LIGHT3D's owner scenes (docs/internal/DX_LIGHT3D_PLAN.md §10). Most of what they cost is the GPU's: the scoreboard
   // reads the CPU primaries below, and the GPU's reading is the presented (drawn) frames, `runPredatorAbab --scene <path>

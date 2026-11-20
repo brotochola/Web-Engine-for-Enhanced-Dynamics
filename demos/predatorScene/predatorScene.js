@@ -660,8 +660,9 @@ export class PredatorScene extends WEED.Scene {
     if (frameNumber % 300 === 0) {
       this.createNavGridForTheFlowField()
     }
-    if (!this._freeCam) updateSquadCamera(dtRatio);
-    if (this._pinZoom > 0) Camera.setZoom(this._pinZoom);
+    // N-248: the squad camera takes the pinned zoom itself; the free camera keeps it by setZoom.
+    if (!this._freeCam) updateSquadCamera(dtRatio, this._pinZoom);
+    else if (this._pinZoom > 0) Camera.setZoom(this._pinZoom);
   }
 
   _createFreeCamButton() {

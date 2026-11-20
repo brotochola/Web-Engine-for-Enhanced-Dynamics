@@ -44,6 +44,7 @@ import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRend
 import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { Grid as GridImport } from '../core/grid.js';
+import { cellOverflow } from '../core/debug/devChecks.js';
 import {
   SPATIAL_STATS,
   createMultiWorkerStatsWriter,
@@ -276,6 +277,8 @@ class SpatialWorker extends AbstractWorker {
     this._ownedEntityCount = 0;
     /** Sprites without a collider or a body this frame (detailed stats), counted by the grid passes. */
     this._noBodyCount = 0;
+    /** N-325: entries past maxEntitiesPerCell in this worker's rows, kept by every grid pass (SPATIAL_STATS.CELL_OVERFLOW). */
+    this._cellOverflow = 0;
     this._neighborCandidateTruncated = null;
     this._entityFramesSinceBuild = null;
 
@@ -513,6 +516,7 @@ class SpatialWorker extends AbstractWorker {
     this._neighborCandidateTruncated = new Uint8Array(this.globalEntityCount);
     this._entityFramesSinceBuild = new Uint16Array(this.globalEntityCount);
     this._noBodyCount = 0;
+    this._cellOverflow = 0;
     const syncByte = data.gridMetadata.syncByte | 0;
     this._poseGenShared = syncByte > 0;
     this._poseGen = this._poseGenShared
@@ -851,6 +855,7 @@ class SpatialWorker extends AbstractWorker {
     const ownedList = this._ownedEntityList;
     let ownedCount = 0;
     let poseChanged = false;
+    let overflow = 0;
 
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
@@ -982,6 +987,8 @@ class SpatialWorker extends AbstractWorker {
             if (localCount < maxPerCell) {
               gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
               localCounts[cellIndex] = localCount + 1;
+            } else {
+              overflow++;
             }
           }
         }
@@ -1006,6 +1013,7 @@ class SpatialWorker extends AbstractWorker {
     if (poseChanged) this._poseChanged = true;
     this._noBodyCount = noBody;
     this._ownedEntityCount = ownedCount;
+    this._cellOverflow = overflow;
   }
 
   /**
@@ -1270,6 +1278,7 @@ class SpatialWorker extends AbstractWorker {
     const ownedList = this._ownedEntityList;
     let ownedCount = 0;
     let poseChanged = false;
+    let overflow = 0;
 
     const n = this.globalEntityCount;
     const state = this._mvState;
@@ -1420,6 +1429,8 @@ class SpatialWorker extends AbstractWorker {
           if (localCount < Grid.maxEntitiesPerCell) {
             gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
             localCounts[cellIndex] = localCount + 1;
+          } else {
+            overflow++;
           }
         }
       }
@@ -1444,6 +1455,7 @@ class SpatialWorker extends AbstractWorker {
     if (poseChanged) this._poseChanged = true;
     this._noBodyCount = noBody;
     this._ownedEntityCount = ownedCount;
+    this._cellOverflow = overflow;
     this._mvLooseCount = looseCount;
     return ascending;
   }
@@ -1841,6 +1853,8 @@ class SpatialWorker extends AbstractWorker {
     const writtenCounts = this._writtenCounts;
     const trueCount = this._mvTrue;
     const scratch = this._mvCellScratch;
+    // N-325: the entries past the cap follow each touched cell's count; kept only when the rewrite holds.
+    let overflow = this._cellOverflow;
     for (let t = 0; t < touchedCount; t++) {
       const cell = touched[t];
       const byteOffset = cell * cellByteSize;
@@ -1891,11 +1905,14 @@ class SpatialWorker extends AbstractWorker {
       gridCounts[byteOffset] = count;
       writtenCounts[cell] = count;
       localCounts[cell] = count;
-      trueCount[cell] = total - leaves[cell] + joins;
+      const nextTotal = total - leaves[cell] + joins;
+      overflow += (nextTotal > maxPerCell ? nextTotal - maxPerCell : 0) - (total > maxPerCell ? total - maxPerCell : 0);
+      trueCount[cell] = nextTotal;
       leaves[cell] = 0;
       joinHead[cell] = -1;
       mark[cell] = 0;
     }
+    this._cellOverflow = overflow;
 
     // 6. The owned list, in active-list order, when an entity entered or left it.
     if (ownedChanged) {
@@ -2314,6 +2331,8 @@ class SpatialWorker extends AbstractWorker {
     this.stats[SPATIAL_STATS.GRID_MOVERS] = this._gridMoversThisFrame;
     this.stats[SPATIAL_STATS.NEIGHBORS_REBUILT] = this.neighborsRebuiltThisFrame;
     this.stats[SPATIAL_STATS.NEIGHBORS_PUBLISHED] = this.neighborsPublishedThisFrame;
+    this.stats[SPATIAL_STATS.CELL_OVERFLOW] = this._cellOverflow;
+    cellOverflow(this._cellOverflow, Grid.maxEntitiesPerCell);
     if (!this.collectDetailedStats) return;
     this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
     this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;

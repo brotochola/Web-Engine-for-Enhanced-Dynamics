@@ -10171,10 +10171,10 @@
     {
       "id": "N-81",
       "title": "A paused world (time scale 0) makes no body: spawns and teleports wait for the next step to be in Box2D",
-      "status": "open",
-      "statusText": "found 2026-10-27, a bug: probed in Chromium, not visible today, a fix tried and not kept",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (21f915a0), on fix/n81-paused-world-sync (R-1701)",
       "date": "2026-10-27",
-      "result": "The physics host steps only when the scaled dt is above 0, and doStep at dt 0 only services queries: no syncBodies, command drain, joint sync, pose publish or moved list. A body spawned in a hitstop is missing from Box2D's queries until it ends (the editor's held world: until Play). Not visible: a reused slot's published pose has rotation (0, 0), read as not live, so the collect draws Transform.",
+      "result": "Fixed 2026-11-20 (21f915a0): on a frame whose scaled dt is 0 the host runs weedjsSyncPaused (bodies, commands, joints, queries; pose and the teleports' moved list when something changed), so a hitstop's spawns and teleports are in Box2D's queries at once.",
       "area": "physics",
       "kind": "bug",
       "refs": [
@@ -10185,7 +10185,10 @@
         "hitstop spawn",
         "dt 0 sync"
       ],
-      "next": "Take it up if a game queries what it spawns during a hitstop: at dt 0, syncBodies, drainCommands and syncJoints, then the moved list of the teleports and the pose when something changed (tried: the pose right 27 ms after an edit)."
+      "next": "Nothing left: a game that queries what it spawns in a hitstop finds it. A scene check (no demo sets Time.scale 0 today) can come with the first game that does.",
+      "records": [
+        "R-1701"
+      ]
     },
     {
       "id": "N-82",
@@ -11403,7 +11406,8 @@
       "records": [
         "R-0854",
         "R-1174",
-        "R-1428"
+        "R-1428",
+        "R-1700"
       ]
     },
     {
@@ -12848,13 +12852,13 @@
     {
       "id": "N-161",
       "title": "The catalog's audioStorm row cannot decide: its load key BODY_COUNT is 0 in a scene without bodies, and logic0 sits at 0.56 ms",
-      "status": "open",
-      "statusText": "found 2026-11-13 in the same scoreboard",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (752f2353, 703b8504), on fix/n161-audiostorm-load-key (R-1703)",
       "date": "2026-11-13",
       "area": "harness",
       "kind": "bug",
-      "result": "load not comparable (median 0 on both sides) and under the 3 ms floor at ?plays=1200.",
-      "next": "A load count the scene publishes (plays a tick or voices playing) as the load key, and ?plays= high enough for logic0 past 3 ms.",
+      "result": "Fixed 2026-11-20 (752f2353, 703b8504): one driver a 100 plays, counted in MARK_ACTIVE, the row's load key; the default 48 000 plays put logic0's own work at 9.3 to 9.5 ms on the ASUS (0.33 ms at the old 1200).",
+      "next": "Check the floor on the main PC at the next scoreboard: raise ?plays there if logic0 reads under 6 ms.",
       "refs": [
         "REVIEW_PLAN.md#N-161"
       ],
@@ -12865,7 +12869,8 @@
       ],
       "records": [
         "R-0951",
-        "R-0952"
+        "R-0952",
+        "R-1703"
       ]
     },
     {
@@ -12944,13 +12949,13 @@
     {
       "id": "N-166",
       "title": "Demos whose camera starts on empty space: Oriented Boxes, Constraint Boxes, Constraints and Burning Boxes look black while their bodies lie on a floor out of view",
-      "status": "open",
-      "statusText": "found 2026-11-13 in a fresh-clone run of the 34 demos (owner: the camera is far from the entities); backlog",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (93f786af), on fix/n166-demo-first-view (R-1709)",
       "date": "2026-11-13",
       "area": "demos",
       "kind": "bug",
-      "result": "Each centres the camera on the middle of the world, and its bodies fall to a floor out of view. Oriented Boxes and Constraint Boxes (5000 x 6000): camera on (2500, 3000), floor at y 5925, 1040 boxes active on a black screen; zoomed out to 0.21 the view (y 1446 to 4494 at 1080 x 640) still misses the floor. Constraints (same layout): the ball grid and the ring rest on the floor. Burning Boxes (4000 x 3000): camera on (2000, 1300), floor at 0.72 x 3000 = 2160, so only the dark cave shows. Chrome 157 on Windows, a 1080 x 640 page.",
-      "next": "Each scene aims its first view at its entities (the floor and what lands on it), or zooms to fit them, through the public Camera API. Then a look at every demo's first frames: Destructible Terrain and the Procedural Tree also start very dark (read whether that is their look).",
+      "result": "Fixed 2026-11-20 (93f786af): Oriented Boxes, Constraint Boxes and Constraints aim the first view at their floor, Burning Boxes 250 px above its floor; pictures before (black, cave) and after (bodies on the floor); a demo test runs each create().",
+      "next": "The owner: whether Destructible Terrain's and the Procedural Tree's dark first frames are their look.",
       "refs": [
         "REVIEW_PLAN.md#N-166"
       ],
@@ -12963,7 +12968,9 @@
         "constraintsTestScene",
         "burningBoxesScene"
       ],
-      "records": []
+      "records": [
+        "R-1709"
+      ]
     },
     {
       "id": "N-167",
@@ -18867,20 +18874,21 @@
     {
       "id": "N-220",
       "title": "The emit's persist flow never writes the emit table's gate slots for bullets, glows, particles and LiquidFun (bActive, lColor, pcX, lfX): it leans on the memory starting zeroed, and a non-zero table traps emit_rows in trail_row",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the ASan harness (tests/asan), a test-side dependency: the product writes those slots every frame (_writeEmitTable)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (e552684b), on fix/n220-emit-gates (R-1708)",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "bug",
-      "result": "Under the harness, with relocated regions not zeroed, emit_rows trapped in trail_row (wasm/preRenderEmit.c:852) on the persist path; zero-filled, every case matched the shipped kernel. In the product _writeEmitTable writes the slots each frame, so no frame reaches it today.",
-      "next": "Write the gate slots on the persist path too (or assert them), so a frame that skips _writeEmitTable for those systems cannot read stale slots; a node test with a dirtied table.",
+      "result": "Fixed 2026-11-20 (e552684b): every emit frame starts with bActive, lColor, pcX and lfX at 0 and each writer opens its own; a stale gate past the memory trapped emit_rows before, and writes a clean frame's rows now.",
+      "next": "The ASan harness (tests/asan) can drop its zero-fill of the emit table on the next run with emsdk.",
       "refs": [],
       "aliases": [
         "emit persist gate slots"
       ],
       "records": [
         "R-1182",
-        "R-1207"
+        "R-1207",
+        "R-1708"
       ]
     },
     {
@@ -20144,19 +20152,20 @@
     {
       "id": "N-237",
       "title": "setterMicrobench's second case runs on different code: its \"same\" case calls setupSetters again, which rebinds Transform's columns, so every setter deopts (dependent field type constness changed) and \"same\" runs with the columns no longer constant",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (c1f85e3b), on fix/n237-setter-bench-one-binding (R-1713)",
       "date": "2026-11-16",
       "area": "bench",
       "kind": "bug",
-      "result": "Seen by the d8 agent; every setter deopts at the second setup.",
-      "next": "One case per process (or set up once and reset the values instead of rebinding the columns); re-time the \"same\" case.",
+      "result": "Fixed 2026-11-20 (c1f85e3b): the columns bound once and reset between cases; 12 dependent-code deopts a run -> 0, checksums unchanged, 'same' re-timed 11 890 / 12 183 ops/s on the ASUS (base 10 977 / 12 114).",
+      "next": "Nothing left; records that timed the old \"same\" case read rebound, deoptimized setters.",
       "refs": [],
       "aliases": [
         "setterMicrobench rebind deopt"
       ],
       "records": [
-        "R-1222"
+        "R-1222",
+        "R-1713"
       ]
     },
     {
@@ -20337,19 +20346,20 @@
     {
       "id": "N-243",
       "title": "glFrameRecorder rounds draws a frame to 0.1, so per-draw times of layers that redraw in fewer than every frame read about +-8 %",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (289933e0), on fix/n243-recorder-unrounded (R-1712)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "E-453 agent normalised the row draws by their instance counts instead.",
-      "next": "Report draws a frame and ms a draw unrounded (or ms a draw from the totals), the table rounded only when printed.",
+      "result": "Fixed 2026-11-20 (289933e0): the result's rows hold unrounded rates, their totals and msPerDraw; only the printed table rounds. The WebGPU recorder rounds the same way (left to the main PC).",
+      "next": "webgpuRecorderWorker.mjs rounds draws a frame the same way (WebGPU: the main PC).",
       "refs": [],
       "aliases": [
         "recorder draw rounding"
       ],
       "records": [
-        "R-1228"
+        "R-1228",
+        "R-1712"
       ]
     },
     {
@@ -20629,55 +20639,58 @@
     {
       "id": "N-246",
       "title": "profileSceneSweep's passes read each other's files: the code pass reads <out>/<scene>/cpu-summary.json and the inventory the cpu pass's results.json, so a per-pass --out directory needs the cpu files copied in first or its inventory comes out empty",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (4e585b8e), on fix/n246-sweep-cpu-from (R-1711)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Seen by the sweep agent running passes into separate folders.",
-      "next": "Say it in the tool's header, or let each pass take --cpu-from <dir>.",
+      "result": "Fixed 2026-11-20 (4e585b8e): the code pass and the inventory read results.json and cpu-summary.json from --cpu-from (default --out) and warn when there are none.",
+      "next": "Nothing left.",
       "refs": [],
       "aliases": [
         "sweep pass layout"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1711"
       ]
     },
     {
       "id": "N-247",
       "title": "Keyboard.isPressed runs _normalizeKeyName's toLowerCase on every call (keyboard.js:144): 341 B a frame in burningBoxes",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (31cbc600), on fix/n247-keyboard-name-cache (R-1702)",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "bug",
-      "result": "Heap pass on the demos.",
-      "next": "Normalize once per key name (a cache) or at registration; heap pass before and after.",
+      "result": "Fixed 2026-11-20 (31cbc600): _getKeyIndex keeps each name asked for mapped to its index (a Map cleared by initialize, 512 names at most), so a read every frame makes no string.",
+      "next": "Nothing left; a heap pass on burningBoxes would show the site gone.",
       "refs": [],
       "aliases": [
         "keyboard key name garbage"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1702"
       ]
     },
     {
       "id": "N-248",
       "title": "Predator's drawn camera jumps for one frame at startup: queue frame 1 at (4040, 1960), frame 2 at (1846, 727), frame 3 at (3631, 1732), and Pixi's first keyed draw is frame 2",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the N-238 agent (probe3: every sprite's enter, leave and mark frames, and Pixi's keyed draws)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (0711c2b8), on fix/n248-squad-camera-start (R-1710)",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "bug",
-      "result": "Seen in every probe run at crowd 2.5 and crowd 1 (main 9c40fda7 and the fix). The jump is what left N-238's keys unmarked.",
-      "next": "Find where frame 2's camera comes from (the scene's zoom or follow settling, a camera reset before the first follow): log the camera each of the first frames; the jump gone or explained.",
+      "result": "Fixed 2026-11-20 (0711c2b8): setZoom(pin) after the squad follow re-zoomed around the view's corner every frame; the first frame (dtRatio ~280) threw the view off the squad. The squad camera now targets the pinned zoom. Predator's view at zoom 0.216 moves ~585 px (now on the squad).",
+      "next": "When merged: Predator absolute numbers across this commit move (its view at zoom 0.216 follows the squad now).",
       "refs": [],
       "aliases": [
         "camera jump at startup"
       ],
       "records": [
-        "R-1232"
+        "R-1232",
+        "R-1710"
       ]
     },
     {
@@ -20736,18 +20749,20 @@
     {
       "id": "N-251",
       "title": "scripts/buildBundle.js cannot run in a git worktree (it resolves paths or node_modules from the main folder), so a branch cannot build and time its own bundle in a worktree",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-469 agent (opt/terser-closures) while building the bundles",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (33d93175, 0b577a9f), on fix/n251-bundle-worktree (R-1704)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Seen by the E-469 agent in D:/xampp/htdocs/weed-par-* worktrees.",
-      "next": "Resolve paths from the script's own tree and node_modules through the loader the worktrees use; a worktree build matching the main folder's byte for byte.",
+      "result": "Fixed 2026-11-20 (33d93175, 0b577a9f): no builder's file:// path in the bundles (atlasCache's import.meta.url), and webpack and Node resolve node_modules as found (symlinks false, --preserve-symlinks); 'cannot run' did not reproduce on the ASUS.",
+      "next": "If a worktree build still fails to start on the main PC, the error text is the next lead: on the ASUS it ran.",
       "refs": [],
       "aliases": [
         "buildBundle in worktrees"
       ],
-      "records": []
+      "records": [
+        "R-1704"
+      ]
     },
     {
       "id": "E-493",
@@ -20809,37 +20824,39 @@
     {
       "id": "N-254",
       "title": "A scene that fails while booting makes runIntegratedWorkerBenchmark wait out its 318 s watchdog instead of exiting, and measureLib retries once: about 5 minutes of the bench queue lost per failed boot",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the capacity agent",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (cb0b5621, 2eca13c3), on fix/n254-boot-failure-exit (R-1705)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Seen at bunnyMark ?bunnies=500000 (500 001 entities with the spawner) and boids past 65 535 with physics.",
-      "next": "Exit as soon as the page reports a boot error (pageerror or the scene failing to start), with the error in the result; no retry on a boot error.",
+      "result": "Fixed 2026-11-20 (cb0b5621, 2eca13c3): the page's boot watch also fails the boot 10 s after an uncaught error or unhandled rejection with no ready; the runner exits 4 and measureLib does not run it again (bootFailureScene: 15 s, was the 302 s watchdog).",
+      "next": "runCapacity could read exit 4 as \"over capacity\" at once; it fails the step today, as any failed run.",
       "refs": [],
       "aliases": [
         "bench boot failure watchdog"
       ],
       "records": [
-        "R-1240"
+        "R-1240",
+        "R-1705"
       ]
     },
     {
       "id": "N-255",
       "title": "pruneTestResults (run by runPredatorAbab) deletes anything in tests/results untouched for 7 days, the capacity history included: a week without nightly runs loses it",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the capacity agent",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (d528396c), on fix/n255-prune-keeps-history (R-1706)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "nightlyCapacity writes tests/results/capacity-history.jsonl by default.",
-      "next": "Skip *history.jsonl in the pruner, or default the history outside tests/results; tonight's is in D:/claude/weed-capacity-history.jsonl.",
+      "result": "Fixed 2026-11-20 (d528396c): names ending in history.jsonl are never pruned, and a folder holding one is pruned file by file around it, so a week without a nightly run keeps capacity-history.jsonl.",
+      "next": "Nothing left.",
       "refs": [],
       "aliases": [
         "capacity history pruned"
       ],
       "records": [
-        "R-1240"
+        "R-1240",
+        "R-1706"
       ]
     },
     {
@@ -23790,10 +23807,10 @@
       "id": "N-302",
       "title": "Pixel snap (atlasScaleMode nearest) rounds each sprite's origin on its own at any zoom: at a fractional zoom two sprites placed edge to edge may open a 1 px seam or cover a column of each other (to confirm)",
       "status": "open",
-      "statusText": "suspected 2026-11-18 from Phaser's history (3.86 snaps only at an integer zoom, against 'black lines between tightly grouped sprites or tiles', 79de922e) (R-1422); not reproduced",
+      "statusText": "suspected 2026-11-18 (R-1422); step 0 on the ASUS 2026-11-20 (R-1714): not reproduced, probe snapSeamScene on fix/n302-snap-seam-probe",
       "date": "2026-11-18",
       "result": "",
-      "next": "A capture of edge-to-edge pieces at zoom 1.3 and 1.5, the camera panning slowly, counting background pixels between them. If they show: snap only at an integer zoom, or round the quad's edges so neighbours share theirs; aInstXY keeps the true place (N-271). REVIEW_PLAN.md#N-302.",
+      "next": "Check which grid weedSnapXY rounds to at a fractional zoom (the probe's nearest and linear captures were identical at zoom 1.2, where a screen-pixel snap must leave a seam every fifth piece); then judge the seam. Shader work: main PC.",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -23805,7 +23822,8 @@
         "fractional zoom seams"
       ],
       "records": [
-        "R-1422"
+        "R-1422",
+        "R-1714"
       ]
     },
     {
@@ -24397,7 +24415,8 @@
     },
     {
       "records": [
-        "R-1571"
+        "R-1571",
+        "R-1707"
       ],
       "refs": [],
       "id": "N-325",
@@ -24406,9 +24425,9 @@
       "kind": "bug",
       "area": "spatial",
       "date": "2026-11-19",
-      "statusText": "Filed 2026-11-19 from E-529's probe (R-1571)",
+      "statusText": "Filed 2026-11-19 from E-529's probe (R-1571); step 1 (the stat and the warning) kept 2026-11-20 (20ba14c4, R-1707) on fix/n325-cell-overflow-stat",
       "result": "",
-      "next": "A stat (entities past their cell's cap) and a development warning when it is not zero; then Predator's cap against its crowds (64 at crowd 2.5?) with spatial's cost measured (owner spatial), since the cap bounds every cell walk.",
+      "next": "Step 2 (main PC): Predator's maxEntitiesPerCell (32) against its crowds (64 at crowd 2.5?), spatial's cost measured in Predator (owner spatial); SPATIAL_STATS.CELL_OVERFLOW reads the overflow.",
       "aliases": [
         "grid cell overflow",
         "maxEntitiesPerCell overflow",
@@ -40363,6 +40382,141 @@
         "9a9d5688",
         "c26e60ba"
       ]
+    },
+    {
+      "id": "R-1701",
+      "date": "2026-11-20",
+      "time": "04:25",
+      "timeFrom": "recorded",
+      "title": "N-81 fixed: a frame at time scale 0 syncs bodies, commands and joints into Box2D",
+      "verdict": "kept-hygiene",
+      "text": "**N-81 fixed: a frame at a time scale of 0 now syncs the paused world into Box2D.** Branch fix/n81-paused-world-sync, 21f915a0.\n\n- **Cause:** the physics host called weedjsDoStep only when the frame's scaled dt was above 0, so a hitstop's (or the editor's held world's) spawns, despawns, teleports, commands and joints waited for the next step. Box2D's queries missed them meanwhile, and the spatial grid's movers path missed the teleports.\n- **Fix:** on such a frame, gameLoop and stepOnce call weedjsSyncPaused (weedjsPost.js, marked as in a step so the query wake leaves the services to it). It runs syncBodies, drainCommands and syncJoints, then the six query services. When anything changed, it also publishes the previous pose, the children, the pose, and a moved list holding the teleports alone. A paused frame that changes nothing publishes nothing. The step path is untouched, so no speed verdict is needed: the paused path runs only at a time scale of 0.\n- **Test:** tests/node/pausedWorldSync.test.js runs the host's stepOnce, its paused frame and the paused sync as shipped, against stand-ins (5 tests; all fail on bugs/base). Suites: node 3291 of 3292, the one failure frameChainWait's \"Pixi waits …\" timing flake (its file passed twice alone); demos 121 of 121."
+    },
+    {
+      "id": "R-1702",
+      "date": "2026-11-20",
+      "time": "04:30",
+      "timeFrom": "recorded",
+      "title": "N-247 fixed: Keyboard resolves each key name once, no toLowerCase per read",
+      "verdict": "kept-hygiene",
+      "text": "**N-247 fixed: Keyboard resolves each key name once instead of lower-casing it on every read.** Branch fix/n247-keyboard-name-cache, 31cbc600.\n\n- **Cause:** isPressed and isDown went through _getKeyIndex, which ran _normalizeKeyName's toLowerCase on every call: a new string a read (341 B a frame in burningBoxes, the heap pass of R-1229).\n- **Fix:** _getKeyIndex keeps each name it was asked for, as given, mapped to its index (-1: no key) in Keyboard._indexByName. initialize() clears it, and it is capped at 512 names. Only the first read of a name normalizes it. The lookup takes the map's own names only, so 'constructor' and 'tostring' no longer resolve to Object's functions. The debug build's unknown-key warning still fires (it says each name once).\n- **Test:** keyboard.test.js counts toLowerCase calls over three frames of five names: 4 (one a distinct name) where bugs/base made 15. The answers are unchanged, a new map resolves names again, and 'constructor' is not a key. No heap pass: the test shows that the per-read string is gone. Suites: node 3285 of 3288, the 3 failures frameChainWait's timing tests under the suite's concurrency (the file passed 3 of 3 alone); demos 121 of 121."
+    },
+    {
+      "id": "R-1703",
+      "date": "2026-11-20",
+      "time": "04:43",
+      "timeFrom": "recorded",
+      "title": "N-161 fixed: audioStorm's catalog row reads MARK_ACTIVE (one driver a 100 plays) and runs 48 000 plays a tick",
+      "verdict": "kept-hygiene",
+      "text": "**N-161 fixed: the catalog's audioStorm row has a load key the scene publishes, and a knob past the floor.** Branch fix/n161-audiostorm-load-key, 752f2353 and 703b8504.\n\n- **Cause:** the row's load key was BODY_COUNT in a scene with no bodies (a median of 0 on both sides: \"load not comparable\"). Its primary, logic0, read 0.56 ms at ?plays=1200, under the floor (3 ms then, 6 ms now).\n- **Fix 1:** the storm runs on one AudioStormDriver for each 100 plays a tick, each marked reportMarkActive, so logic0's MARK_ACTIVE is the population (plays / 100, as bunnyMark's is). The row reads MARK_ACTIVE.\n- **Fix 2:** the default is now 48 000 plays a tick. play() got about 5x cheaper since E-46's 2400 for 3 ms. Headless on the ASUS, 2026-11-20, logic0's own work (step - wait), 10 s after 10 s, one run each: 1200 -> 0.33 ms, 6000 -> 1.31, 14 400 -> 2.71, 36 000 -> 7.17, 48 000 -> 9.49 (default run 9.31, MARK_ACTIVE 480, 60 fps held). Linear at about 0.19 ms a 1000 plays. On the main PC, a faster CPU may read under 9 ms. If the scoreboard's floor still trips there, raise ?plays (the cost stays linear).\n- **Test:** engineFeatureCatalog.test.js checks that every row's load keys are ones extractMetrics publishes, that audioStorm reads MARK_ACTIVE, and that its drivers report it. Node suite 3288 of 3288."
+    },
+    {
+      "id": "R-1704",
+      "date": "2026-11-20",
+      "time": "05:19",
+      "timeFrom": "recorded",
+      "title": "N-251 fixed: a junctioned worktree builds the main folder's 12 dist files byte for byte",
+      "verdict": "kept-hygiene",
+      "text": "**N-251 fixed: a worktree builds the main folder's bundles byte for byte.** Branch fix/n251-bundle-worktree, 33d93175 and 0b577a9f.\n\n- **\"Cannot run\" did not reproduce on the ASUS.** buildBundle.js built in this worktree (its own node_modules) in 2 min 48 s. It also built in a scratch worktree whose node_modules is a junction, as revWorktree.mjs makes them. Every path in the script is already its own tree's.\n- **The bundles differed,** for two reasons:\n  - **(1) The builder's path:** atlasCache.js's bare import.meta.url (atlasCodeHash's default base), which webpack writes as the builder's file:// path. Every bundle carried, and published, the folder it was built in (2 times in each).\n  - **(2) The junction:** webpack and Node followed node_modules, so babel-loader's real path went into every module's identifier (the deterministic ids moved: 8264 against 4278). style-loader's runtime path went into the debug CSS asset's hash.\n- **Fix:**\n  - **(1)** atlasCodeHash's default is MODULE_URL: '' where the build defines __WEED_BUILD_INPUTS__, which webpack folds, so the URL is gone. A source build keeps the module's URL.\n  - **(2)** The three webpack configs set symlinks: false for resolve and resolveLoader. The ESM config was missing the UMD one's resolveLoader. buildBundle runs webpack with --preserve-symlinks and --preserve-symlinks-main.\n- **Checked by building:** after each step, a junctioned worktree and this tree built the 12 dist files: with (1) alone, 4 matched (the stamps, index.html, weed-sw.js); with resolveLoader only, 6 matched; with everything, 12 of 12 byte for byte. This tree's bundles lost only the path (about 0.1 KB each).\n- **Test:** bundleWorktreeBuild.test.js covers three points: every webpack config resolves without symlinks, buildBundle's env preserves them, and a webpack build's atlasCodeHash hashes no file. Each fails on bugs/base. Node suite 3290 of 3290."
+    },
+    {
+      "id": "R-1705",
+      "date": "2026-11-20",
+      "time": "05:30",
+      "timeFrom": "recorded",
+      "title": "N-254 fixed: a scene that fails while booting ends the run at once (exit 4), no retry",
+      "verdict": "kept-hygiene",
+      "text": "**N-254 fixed: a scene that fails while booting ends the integrated run at once (exit 4) and is not run again.** Branch fix/n254-boot-failure-exit, cb0b5621 (the fixture) and 2eca13c3.\n\n- **Cause:** the page raced loadScene only with the engine's fatal overlay, which shows a worker's error only when the worker reports it. A worker that dies outside the engine's handlers (sceneWorkerBootstrap's worker.onerror only logs) reaches the page as an uncaught error and nowhere else. The scene never reported ready, the run waited out its watchdog (warm-up + window + 5 min), and measureLib ran it again. The original case (500 001 entities, over the old ceiling) no longer fails since DX-ENT1M, so a fixture stands in for it: bootFailureScene, whose entity module never finishes loading in a worker and throws uncaught.\n- **Fix:** tests/bench/bootWatch.mjs, raced with loadScene by the page. It fails the boot at once on the fatal overlay, as before. It also fails the boot 10 s after the page's first uncaught error or unhandled rejection when the scene has still not booted, so a scene that boots through a stray error is not failed. The runner exits 4 on a boot failure, and measureLib's runIntegratedWithRetry returns it without a second run (bootFailure: true).\n- **Checked on the ASUS:** bootFailureScene on bugs/base was still running when cut at 60 s (its watchdog: 302 s); with the fix it exits 4 in 15 s and measureLib returns after one run (15 s). A normal run (audioStorm, plays 1200) is unchanged.\n- **Test:** bootWatch.test.js covers four cases with mocked timers: an uncaught error past the grace, the overlay at once, an unhandled rejection, and a boot that finishes and is never failed. Node suite 3291 of 3291."
+    },
+    {
+      "id": "R-1706",
+      "date": "2026-11-20",
+      "time": "05:34",
+      "timeFrom": "recorded",
+      "title": "N-255 fixed: pruneTestResults never removes a history file",
+      "verdict": "kept-hygiene",
+      "text": "**N-255 fixed: pruneTestResults never removes a history file.** Branch fix/n255-prune-keeps-history, d528396c.\n\n- **Cause:** the pruner, which runPredatorAbab runs before every sitting, removed any entry of tests/results untouched for 7 days. nightlyCapacity's default history, tests/results/capacity-history.jsonl, is touched once a night, so a week without a night lost it.\n- **Fix:** a name ending in history.jsonl is never removed. A folder that holds one directly is pruned file by file around it, where it used to go whole by its own age. nightlyCapacity's comment says so.\n- **Test:** pruneTestResults.test.js adds a case: a 30-day-old capacity-history.jsonl at the top and a history inside a 30-day-old folder both stay, and the old runs beside them go (on bugs/base the history went). Node suite 3287 of 3288: the one failure was physicsChainWait's \"physics sleeps until the bell rings\" timing test, which this change cannot reach (its file passed 3 of 3 alone)."
+    },
+    {
+      "id": "R-1707",
+      "date": "2026-11-20",
+      "time": "05:47",
+      "timeFrom": "recorded",
+      "title": "N-325 step 1 kept: spatial counts entries past maxEntitiesPerCell (CELL_OVERFLOW) and warns in the debug build",
+      "verdict": "kept-hygiene",
+      "text": "**N-325, step 1 kept: spatial counts the entries past maxEntitiesPerCell (SPATIAL_STATS.CELL_OVERFLOW) and the debug build warns.** Branch fix/n325-cell-overflow-stat, 20ba14c4. Step 2, Predator's cap, is left to the main PC.\n\n- **Cause of the silence:** a cell over its cap holds the first maxEntitiesPerCell entities, and nothing counted the rest (R-1571: about 2 600 entities, 6.8 %, at crowd 2.5).\n- **Fix:** every grid pass counts them per worker:\n  - **the two rebuilds** (rebuildOwnedRows, _rebuildOwnedRowsLatched): in the else of their cap test, a branch taken only when a cell is full;\n  - **the movers rewrite** (_rebuildMovedRows): a running count, moved by each touched cell's change in excess over the cap, kept only when the rewrite holds.\n  - **Published:** SPATIAL_STATS.CELL_OVERFLOW (slot 16, stride 17), written every frame with a 'CellOver' row in the stats panel. The debug build warns once a thread with the count and the fix (devChecks.cellOverflow; the production stub does nothing).\n- **Cost:** rebuildOwnedRowsMicrobench (40 000 points, 2 workers), 3 alternated pairs on the ASUS: base 2.173 / 2.214 / 2.262 ms a frame, fix 2.150 / 2.250 / 2.192 (-0.9 %, noise), same checksum.\n- **Tests:**\n  - spatialGridMovers.test.js: in the movers parity world, the rewrite's count equals the full rebuild's frame by frame (forced and auto) and the movers state's per-cell totals wherever seeded; reportFPS publishes it.\n  - devChecks.test.js: one warning with the count, none at 0 or with the checks off.\n  - The trueCount mutant follows the renamed line, and the parity helper turns the checks off.\n  - Suites: node 3289 of 3289, demos 121 of 121.\n- **Left (step 2, main PC):** Predator's maxEntitiesPerCell (32) against its crowds (64 at crowd 2.5?), with spatial's cost measured in Predator (owner spatial), since the cap bounds every cell walk. CELL_OVERFLOW now reads the overflow directly."
+    },
+    {
+      "id": "R-1708",
+      "date": "2026-11-20",
+      "time": "05:52",
+      "timeFrom": "recorded",
+      "title": "N-220 fixed: writeEmitColumns shuts the four emit gates, no stale gate read",
+      "verdict": "kept-hygiene",
+      "text": "**N-220 fixed: writeEmitColumns shuts the four gates, so no frame reads a stale one.** Branch fix/n220-emit-gates, e552684b.\n\n- **Cause:** the emit table's gate slots for the bullets, glows, particles and LiquidFun (bActive, lColor, pcX, lfX) were written only by their own column writers. A frame whose table only writeEmitColumns wrote read what an earlier frame left there: the persist path's callers in the tests, and the ASan harness with its memory not zeroed. The product runs every writer each frame, so it never reached this.\n- **Fix:** writeEmitColumns, which every emit frame goes through, sets the four gates to 0 first. Each writer opens its own (four stores a frame). A frame without a writer leaves those rows to the JS, as a writer that fails already does.\n- **Test:** preRenderEmitWasm.test.js covers this with bullets, lights and particles in the queue. With the four gates set past the memory, the frame trapped on bugs/base (RuntimeError: memory access out of bounds, as the harness saw). With the fix, it writes the rows a frame with clean gates writes, and the gates read 0. Suites: node 3287 of 3288 (frameChainWait's \"Pixi waits ...\" timing flake, its file green alone), demos 121 of 121. The ASan harness itself needs emsdk, which the ASUS lacks, so it was not rerun."
+    },
+    {
+      "id": "R-1709",
+      "date": "2026-11-20",
+      "time": "06:02",
+      "timeFrom": "recorded",
+      "title": "N-166 fixed: four demos open on the floor their bodies land on",
+      "verdict": "kept-hygiene",
+      "text": "**N-166 fixed: Oriented Boxes, Constraint Boxes, Constraints and Burning Boxes open on their bodies.** Branch fix/n166-demo-first-view, 93f786af.\n\n- **Cause:** each centred the camera and the free camera's target on the middle of the world. Their bodies fall to a floor at the world's bottom (Constraints: 525 px above it; Burning Boxes: 0.72 of the height), out of view.\n- **Fix (public Camera API):**\n  - Oriented Boxes and Constraint Boxes put the view's bottom on the world's bottom, from Camera.canvasHeight / Camera.zoom.\n  - Constraints puts its floor 120 px above the view's bottom.\n  - Burning Boxes centres 250 px above its floor.\n  - Each sets the free target to the same point.\n- **Checked by picture** (compareCaptures --headless --save, 1280 x 720, 4 s in), before and after:\n  - Oriented Boxes: black before; after, the boxes piled on the floor.\n  - Constraint Boxes: the same.\n  - Constraints: the ring of balls on the floor after.\n  - Burning Boxes: the dark cave with the flames cut at the bottom edge before; after, the burning crates and a ledge.\n- **Test:** demos/tests/demoFirstView.test.js runs each scene's create() with its floor's spawns caught, at zoom 1. The floor's top must be in the first view and the free target at the view's centre. All 4 fail on bugs/base. Suites: demos 125 of 125, node 3285 of 3287 (two timing flakes, frameChainWait and physicsChainWait, green alone; the node suite cannot see demos).\n- **Note:** Burning Boxes is a measured scene (runHygieneSceneAb, profileSceneSweep, runHeadedMedian), so its first view, and with it the visible load, changes with this commit.\n- **Not done:** the item's \"look at every demo's first frames\". Destructible Terrain and the Procedural Tree start dark; whether that is their look is the owner's call."
+    },
+    {
+      "id": "R-1710",
+      "date": "2026-11-20",
+      "time": "06:10",
+      "timeFrom": "recorded",
+      "title": "N-248 fixed: Predator's squad camera takes the pinned zoom, no startup jump",
+      "verdict": "kept-hygiene",
+      "text": "**N-248 fixed: Predator's camera no longer jumps at startup with a pinned zoom.** Branch fix/n248-squad-camera-start, 0711c2b8.\n\n- **Cause (logged in the page, crowd 1, the ASUS):** with ?zoom= pinned, update() ran updateSquadCamera at its own fitted zoom (0.334), then Camera.setZoom(pin), which keeps the view's top-left corner, so every frame re-zoomed around the corner.\n  - **The jump:** the first update has a dtRatio of about 280 (the load time), so the follow runs at full strength. At zoom 1 it left the view centred at (3082, 1425) for a squad at (4996, 2502).\n  - **The crawl:** the next frames moved back toward the squad (3564, 3708, ... 4213 by frame 8) while the two zooms fought (0.686, 0.974 inside each frame).\n  - **Match with N-238's probe:** its queue camera (frame 1 at 4040,1960, frame 2 at 1846,727, frame 3 at 3631,1732) is this sequence at crowd 2.5. The soldiers' positions were all set from the first update (no zeros), so they were not the cause.\n- **Fix (demo):** updateSquadCamera(dtRatio, pinZoom) takes the pinned zoom as its target instead of fitting the squad. The free camera keeps the pin by setZoom.\n- **Logged after the fix:** zoom 1, centre (4996, 2502) from the first update to the 300th. At zoom 0.216 the centre is (4997, 2500), then 4971 by the 300th.\n- **Effect on measurements:** at ?zoom=0.216, the Predator sittings' view, bugs/base held the view off the squad (centre x 5556 every frame); it now follows the squad (x 4971 to 4997). Predator's measured view moves about 585 px left in a 5926 px wide view. A/B pairs take the scene from HEAD on both sides and stay comparable; absolute Predator numbers across this commit (the capacity history, older records) are not.\n- **Test:** demos/tests/predatorSquadCamera.test.js runs the real updateSquadCamera and PredatorScene.update on a stand-in squad, with a camera far away and a dtRatio of 280. Pinned at 1, the first frame is on the squad and stays; unpinned, it fits the squad. Both fail on bugs/base. Suites: demos 123 of 123, node 3286 of 3287 (frameChainWait's \"logic waits ...\" flake, its file green alone)."
+    },
+    {
+      "id": "R-1711",
+      "date": "2026-11-20",
+      "time": "06:15",
+      "timeFrom": "recorded",
+      "title": "N-246 fixed: profileSceneSweep's passes take --cpu-from for the cpu pass's files",
+      "verdict": "kept-hygiene",
+      "text": "**N-246 fixed: profileSceneSweep's passes take --cpu-from <dir> for the cpu pass's files.** Branch fix/n246-sweep-cpu-from, 4e585b8e.\n\n- **Cause:** the code pass read <out>/<scene>/cpu-summary.json and the inventory the cpu pass's results.json, both from --out. A pass run into its own folder ranked nothing and wrote an empty inventory, silently.\n- **Fix:** both read from --cpu-from <dir>, by default --out, so a sweep into one folder runs as before. The cpu pass always uses its own --out. One helper (cpuPassPaths) names the files, and each place warns when it finds none. The header says so.\n- **Test:** profileSceneSweepCpuFrom.test.js builds an inventory into one folder from a cpu pass's files in another: the scene gets its worker row. Without the folder it reads --out, as before. Node suite 3287 of 3289: the two failures were frameChainWait timing tests, green alone. The CLI run was not repeated."
+    },
+    {
+      "id": "R-1712",
+      "date": "2026-11-20",
+      "time": "06:20",
+      "timeFrom": "recorded",
+      "title": "N-243 fixed: glFrameRecorder keeps rates a frame unrounded, with totals and ms a draw",
+      "verdict": "kept-hygiene",
+      "text": "**N-243 fixed: glFrameRecorder's result holds unrounded rates a frame, their totals and ms a draw; only the printed table rounds.** Branch fix/n243-recorder-unrounded, 289933e0.\n\n- **Cause:** the recorder rounded draws a frame and segments a frame to 0.1, and ms a frame to 0.001, in the result itself. A layer that draws in fewer than every frame read about +-8 % per draw.\n- **Fix:** the rows carry drawsPerFrame, segmentsPerFrame, instancesPerFrame and msPerFrame unrounded, with the totals they come from (ns, draws, instances, segments). Each draw pass also carries msPerDraw. The printed tables round as they did. The header's ms a frame prints 3 decimals, so the lab's kmip.mjs regex reads it as before.\n- **Checked by a real recording**, since the recorder runs serialized in the Pixi worker and a node test would need a fake WebGL2 context: ballsScene, --gpu-draws, 120 frames on the HD 620. draws / frames equals drawsPerFrame exactly; msPerDraw is 1.45060 ms; the table prints 1.451 ms, 1.0 draws, 1981 inst. Node suite 3286 of 3287 (frameChainWait's \"logic waits ...\" flake, its file green alone).\n- **Left:** webgpuRecorderWorker.mjs rounds the same way (per(), drawsPerFrame). That is WebGPU work, for the main PC."
+    },
+    {
+      "id": "R-1713",
+      "date": "2026-11-20",
+      "time": "06:24",
+      "timeFrom": "recorded",
+      "title": "N-237 fixed: setterMicrobench binds its columns once, no rebind deopt between cases",
+      "verdict": "kept-hygiene",
+      "text": "**N-237 fixed: setterMicrobench binds its columns once; its \"same\" case times the code its \"moving\" case compiled.** Branch fix/n237-setter-bench-one-binding, c1f85e3b.\n\n- **Cause:** each case called setupSetters, which binds new arrays to Transform's, RigidBody's and SpriteRenderer's statics. The second binding marked every setter's TurboFan code for deoptimization (reason: code dependencies, the fields' constness): 12 marks a run (node --trace-deopt, Node 22.16), the setters, poseMoved and the frame loop among them.\n- **Fix:** setupSetters runs once. Each case starts from resetSetters, the same arrays filled back to setup's values.\n- **Checked:** 0 dependent-code marks in 2 runs, and the checksums are unchanged (moving 712077207, same 3157746663). \"same\" re-timed at 11 890 and 12 183 ops/s, against 10 977 and 12 114 on bugs/base (2 runs each on the ASUS: noise, no verdict). \"moving\" read 8 484 and 8 882 (base 8 264 and 8 846).\n- **Test:** setterMicrobenchReset.test.js checks that resetSetters keeps the bound arrays and restores setup's values. Node suite 3286 of 3288 (two frameChainWait timing flakes, its file green alone)."
+    },
+    {
+      "id": "R-1714",
+      "date": "2026-11-20",
+      "time": "06:37",
+      "timeFrom": "recorded",
+      "title": "N-302 step 0: no seam on the HD 620 at zooms 1 to 1.5; nearest and linear captures identical, so the snap may not round in screen pixels",
+      "verdict": "note",
+      "text": "**N-302 step 0: not reproduced on the HD 620, and the probe suggests the snap does not move these sprites at all.** Probe scene on branch fix/n302-snap-seam-probe (e6f85a8b): tests/bench/stressScenes/snapSeamScene.js.\n\n- **The capture:** a white floor of 4 x 120 pieces of 16 px laid edge to edge on a black page, renderer.atlasScaleMode 'nearest'. compareCaptures, headed, 1280 x 720, 3 s in, rows 330 to 390 (inside the floor) scanned for dark pixels:\n  - zoom 1.3 and 1.5, camera offsets 0, 0.37 and 0.77: 0;\n  - zoom 1, 1.15 and 1.2: 0;\n  - zoom 1.2 with E-448's opaque pass off (?opaquePass=0): 0.\n  - The floor shows where expected (about 84 px tall at zoom 1.3).\n- **Why that is odd:** if the snap rounded each origin in screen pixels at zoom 1.2, a piece is 19.2 px wide and the origins' fractions cycle through .0, .2, .4, .6 and .8. Every fifth neighbour would leave a column uncovered (an origin with a fraction in [0.3, 0.5) rounds up while its neighbour's right edge stays at .2). Yet the nearest and linear captures at zoom 1.2 are byte-identical.\n- **Lead:** the snap's grid (uWorldTransformMatrix · uTransformMatrix in pixelSnap.js) may not include the camera's zoom, so it rounds in world pixels, where these pieces already sit. Or these sprites do not reach the snapped shader.\n- **Next (main PC, shader work):** check which grid weedSnapXY rounds to at a fractional zoom (pieces at fractional world positions with a patterned texture, or a readback of a snapped vertex). Only then judge the seam."
+    },
+    {
+      "id": "R-1700",
+      "date": "2026-11-20",
+      "time": "03:31",
+      "timeFrom": "recorded",
+      "title": "Mipmaps in Predator on the ASUS's HD 620: GPU −7 % zoomed out, flat by day and at night, blurrier pixel art; Predator keeps them off",
+      "verdict": "rejected",
+      "text": "**Mipmaps in Predator on the ASUS's Intel HD 620: −7 % GPU zoomed out, flat by day and at night, and blurrier pixel art. Predator keeps `autoGenerateMipmaps: false`.** The owner's question, asked on the ASUS (i7-7500U, HD 620, Chrome headed at 1920 × 1080). The probe flipped Predator's own `renderer.autoGenerateMipmaps` line in a lab tree at main 13b16c41, off against on, two rounds alternated, run twice (four pairs, 2026-11-20 03:31 to 04:08): glFrameRecorder `--gpu-draws` (the GPU time a frame, 3 s after 20 s) by day at the default zoom and at zoom 0.216, by night with light3d (hour 22), plus the frames drawn at crowd 0.2, and one picture a side.\n\n| GPU ms a frame, mean of 4 pairs | off | on | change | the 4 pairs |\n| --- | --- | --- | --- | --- |\n| day, default zoom | 10.95 | 11.02 | +0.6 % | −4.7, +7.7, +1.3, −1.0 % |\n| day, zoom 0.216 | 11.43 | 10.60 | −7.2 % | −8.3, −6.3, −8.9, −5.4 % |\n| night, light3d | 28.37 | 28.12 | −0.9 % | −3.9, (+32), +6.4, −5.9 % |\n| the sprite program [uTexLut,uStatics,uPoses,uTexture], zoom 0.216 | 3.36 | 2.43 | −28 % | |\n| the same, default zoom | 2.92 | 2.56 | −12 % | |\n| night: G-buffer sprites [… uTexture,uMaps] / lamps' map [uTexLut,uLampTiles,uTexture] | 9.43 / 3.97 | 8.56 / 4.43 | −9 % / +12 % | |\n\n- **Where it acts:** only on sprite draws. The tileset pass [uGid,uTileset] and the light pass (the control: mipmaps cannot reach it) stayed flat. At night the lamps' map got slower and ate most of the G-buffer's gain. By day the sprite gain (−0.36 ms) drowned in the other programs' noise.\n- **The outlier:** night off in the first run's second round read 21.4 ms, with every pass ~25 % faster, the light pass included (4.81 against ~6.2 ms). That is the GPU in another clock state, not mipmaps: the night mean leaves it out.\n- **Frames drawn:** 600 of 600 in 10 s on both sides (vsync bound at crowd 0.2).\n- **The pictures** (compareCaptures, zoom 0.216, crowd 0.2, enlarged ×4 to ×5): no colour bleeding between atlas frames and no 1 px halo. But mipmaps blur Predator's pixel art: houses, people, lamps and trees lose their detail (the crowd reads as brown dots), and tree shadows smear into soft grey smudges where off shows their dappled shape.\n- **Verdict:** rejected for Predator. The bar was −3 % in all three views. It cleared only zoomed out, and the look got worse. E-204 stays open for its BunnyMark and overdraw steps. Zoomed-out sprite fill rate is real on this GPU (−28 % on the sprite program), so a mip chain with a sharper filter (a LOD bias, or mips only below some zoom) could be revisited."
     }
   ],
   "leads": [

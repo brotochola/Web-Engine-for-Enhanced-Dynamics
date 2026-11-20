@@ -1411,6 +1411,8 @@
           state._inStep = false;
         }
         state.ownStepMs = (performance.now() - t0 - WAIT_METER.ms) / split.steps;
+      } else {
+        syncPausedFrame();
       }
       if (state.stats) {
         var stepMs = performance.now() - t0;
@@ -1451,12 +1453,28 @@
     pumpQueryWake();
   }
 
+  // paused-frame-start
+  // N-81: a frame at a time scale of 0 steps nothing, but what logic spawned, despawned, teleported or joined in it
+  // reaches Box2D now (weedjsPost.js weedjsSyncPaused), so a game's hitstop and the editor's held world can query it.
+  // Marked in a step, so the query wake leaves the services to it.
+  function syncPausedFrame() {
+    if (typeof weedjsSyncPaused !== 'function') return;
+    state._inStep = true;
+    try {
+      weedjsSyncPaused();
+    } finally {
+      state._inStep = false;
+    }
+  }
+  // paused-frame-end
+
   function stepOnce(deltaTimeMs) {
     if (!(deltaTimeMs > 0)) deltaTimeMs = 1000 / 60;
     state.frameNumber++;
     state.lastFrameTime = performance.now();
     state.currentFPS = 1000 / deltaTimeMs;
     var dt = (deltaTimeMs / 1000) * readTimeScale();
+    if (state.box2dReady && !(dt > 0)) syncPausedFrame();
     if (state.box2dReady && dt > 0) {
       var t0 = performance.now();
       WAIT_METER.ms = 0;

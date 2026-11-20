@@ -147,6 +147,24 @@ export function lateBodyWrite(index, what) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// N-325: grid cells over spatial.maxEntitiesPerCell.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * A spatial worker's frame left `entries` entities past their cell's cap: they are in no cell there and in nobody's
+ * neighbour list (Predator at crowd 2.5 lost 6.8 % of its entities that way, silently).
+ */
+export function cellOverflow(entries, cap) {
+  if (!on || !(entries > 0)) return;
+  warnOnce(
+    'spatial',
+    'cell-overflow',
+    `${entries} times in a frame an entity did not fit a full spatial grid cell (spatial.maxEntitiesPerCell ${cap}): there it ` +
+      'is in no neighbour list and no query of the cell finds it. Raise spatial.maxEntitiesPerCell, or make spatial.cellSize smaller.',
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // E4: a mass set by hand, replaced by the collider's.
 // ---------------------------------------------------------------------------------------------------------------------
 

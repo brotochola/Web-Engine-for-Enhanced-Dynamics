@@ -25,6 +25,13 @@ const ENTRY_PATH = '/__weedjs/atlas-cache';
  * bundle built from changed atlas code under the same engine version gets another key.
  */
 const BUNDLE_BUILD = typeof __WEED_BUILD_INPUTS__ === 'string' && __WEED_BUILD_INPUTS__ !== '' ? __WEED_BUILD_INPUTS__ : null;
+/**
+ * This module's URL in a source build; '' in a webpack build (it defines __WEED_BUILD_INPUTS__), whose modules are not
+ * files. N-251: webpack wrote a bare import.meta.url as the builder's own file:// path, so every bundle carried the
+ * folder it was built in (a worktree's bundle never matched the main folder's) and published it. The test folds at
+ * build time, so the bundle holds no import.meta.url.
+ */
+const MODULE_URL = typeof __WEED_BUILD_INPUTS__ === 'string' ? '' : import.meta.url;
 
 /**
  * The modules whose code decides a packed atlas's pixels and json, relative to this one: in a source build the key holds
@@ -151,10 +158,10 @@ export function atlasCacheKeyText({ assets, options, builtins, sources, version,
 
 /**
  * The hash of a source build's atlas code (ATLAS_CODE_MODULES' text), or null where the modules are not files (a bundle).
- * @param {string} base this module's URL (import.meta.url)
+ * @param {string} base this module's URL (import.meta.url; '' in a bundle)
  * @param {(url: string) => Promise<Response>} [fetchFn]
  */
-export async function atlasCodeHash(base = import.meta.url, fetchFn = (u) => fetch(u)) {
+export async function atlasCodeHash(base = MODULE_URL, fetchFn = (u) => fetch(u)) {
   if (!/^(https?|file):/.test(String(base))) return null;
   const texts = await Promise.all(ATLAS_CODE_MODULES.map(async (rel) => {
     const response = await fetchFn(new URL(rel, base).href);

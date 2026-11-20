@@ -142,7 +142,7 @@ const MUTANTS = {
   // Forget that a cell over its cap holds only the first maxEntitiesPerCell.
   overflow: [[OVERFLOW_ANCHOR, 'if (total <= maxPerCell && heldLeaves !== leaves[cell]) return false;']],
   // Do not count the entities that join a cell, so a cell over its cap looks complete.
-  trueCount: [['trueCount[cell] = total - leaves[cell] + joins;', 'trueCount[cell] = total - leaves[cell];']],
+  trueCount: [['const nextTotal = total - leaves[cell] + joins;', 'const nextTotal = total - leaves[cell];']],
   // Append a cell's joins in the order they came, not by id.
   joinOrder: [['while (at >= 0 && joinId[at] < i) {', 'while (false) {']],
   // Keep the owned list when an entity enters or leaves it.
@@ -168,4 +168,18 @@ test('a mutant of the rewrite is caught, the unedited variant is not', async () 
     if (names[m] === 'identity') assert.equal(diff, -1, `the unedited variant differs from frame ${diff}: its scope is stale`);
     else assert.notEqual(diff, -1, `mutant ${names[m]} was not caught`);
   }
+});
+
+// N-325: entities past maxEntitiesPerCell are in no cell and in nobody's neighbour list, and nothing counted them. Every
+// grid pass now counts them (SPATIAL_STATS.CELL_OVERFLOW): the rewrite's running count is the full rebuild's, frame by
+// frame, and the movers state's own per-cell totals say the same wherever it is seeded.
+test("the entries past each cell's cap are counted alike by the full rebuild and the rewrite", async () => {
+  const [base, forced, auto] = await Promise.all([run({ mode: OFF }), run({ mode: FORCE }), run({ mode: FIXED })]);
+  assert.ok(base.overflow.some((n) => n > 0), 'the scripted world puts entities past a cap');
+  assert.deepEqual(forced.overflow, base.overflow, 'forced rewrite: the same count every frame');
+  assert.deepEqual(auto.overflow, base.overflow, 'auto: the same count every frame');
+  const seeded = forced.overflowFromTrue.map((n, f) => [n, forced.overflow[f]]).filter(([n]) => n >= 0);
+  assert.ok(seeded.length > 0);
+  for (const [fromTrue, counted] of seeded) assert.equal(counted, fromTrue);
+  assert.equal(base.overflowStat, base.overflowLast, 'reportFPS publishes it');
 });

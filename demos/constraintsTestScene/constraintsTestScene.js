@@ -101,8 +101,12 @@ export class ConstraintsTestScene extends Scene {
         console.log('🎬 ConstraintsTestScene: Spawning floor and walls...');
         this.spawnFloorAndWalls();
 
+        // N-166: the balls and the ring rest on the floor (spawnFloorAndWalls: its centre 3.5 walls above the world's
+        // bottom); the first view shows it, 120 px above the view's bottom.
         const cx = this.config.worldWidth / 2;
-        const cy = this.config.worldHeight / 2;
+        const floorY = this.config.worldHeight - 150 * 3.5;
+        const viewHeight = (Camera.canvasHeight || 640) / (Camera.zoom || 1);
+        const cy = floorY + 120 - viewHeight / 2;
         Camera.setFree(true, { panSpeed: 10, zoomSensitivity: 0.001 });
         Camera.setFreeTarget(cx, cy);
         Camera.centerOn(cx, cy);

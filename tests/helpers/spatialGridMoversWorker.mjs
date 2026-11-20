@@ -12,6 +12,8 @@ import { RigidBody } from '../../src/components/rigidBody.js';
 import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Grid } from '../../src/core/grid.js';
+import { SPATIAL_STATS } from '../../src/util/workersUtils.js';
+import { setDevChecks } from '../../src/core/debug/devChecks.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE, SHAPE_BOX } from '../../src/util/colliderUtils.js';
 import {
@@ -75,6 +77,8 @@ const k = await setupSpatialKernel({
   make: patches ? (Base) => variantClass(Base, patches, SCOPE) : undefined,
 });
 const { workers } = k;
+// The world puts entities past a cell's cap on purpose: the debug build's warning about it (N-325) is not this test's.
+setDevChecks(false);
 const movedSab = createMovedBodiesSab(N);
 if (!noPhysics) bindMovedBodies(movedSab);
 const movedHeader = viewsFromSab(movedSab).hdrI32;
@@ -464,6 +468,9 @@ function checksum() {
 const sums = [];
 const paths = workers.map(() => []);
 let overfull = 0;
+// N-325: each frame's entries past the cap, as the workers count them, and from the movers state where it is seeded.
+const overflow = [];
+const overflowFromTrue = [];
 for (let f = 0; f < frames; f++) {
   frameWorld(f);
   // A publish in progress while the spatial workers read the header.
@@ -478,7 +485,31 @@ for (let f = 0; f < frames; f++) {
       for (let c = 0; c < trueCount.length; c++) if (trueCount[c] > MAX_PER_CELL) overfull++;
     }
   }
+  overflow.push(workers.reduce((s, w) => s + w._cellOverflow, 0));
+  if (workers.every((w) => w._mvSeeded)) {
+    let excess = 0;
+    for (const w of workers) {
+      for (let r = 0; r < w.ownedRowCount; r++) {
+        const rowBase = w.ownedRows[r] * w.gridWidth;
+        for (let col = 0; col < w.gridWidth; col++) {
+          const t = w._mvTrue[rowBase + col];
+          if (t > MAX_PER_CELL) excess += t - MAX_PER_CELL;
+        }
+      }
+    }
+    overflowFromTrue.push(excess);
+  } else {
+    overflowFromTrue.push(-1);
+  }
 }
+// The stat as reportFPS publishes it, from the last frame.
+const statWorker = workers[0];
+statWorker.stats = new Float32Array(SPATIAL_STATS.STRIDE_FLOATS);
+statWorker.reportFPS();
+const overflowStat = statWorker.stats[SPATIAL_STATS.CELL_OVERFLOW];
+const overflowLast = statWorker._cellOverflow;
 let noBody = 0;
 for (const w of workers) noBody += w._noBodyCount;
-parentPort.postMessage({ sums, paths, overfull, noBody, maxPerCell: Grid.maxEntitiesPerCell });
+parentPort.postMessage({
+  sums, paths, overfull, noBody, maxPerCell: Grid.maxEntitiesPerCell, overflow, overflowFromTrue, overflowStat, overflowLast,
+});

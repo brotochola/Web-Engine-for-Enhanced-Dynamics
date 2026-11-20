@@ -250,8 +250,13 @@ export const SPATIAL_STATS = Object.freeze({
   NEIGHBORS_REBUILT: 14,
   /** Neighbour lists published this frame: the rebuilt ones and the ones kept within the skin. See E-147. */
   NEIGHBORS_PUBLISHED: 15,
-  STRIDE_FLOATS: 16,
-  BUFFER_SIZE_PER_WORKER: 16 * 4,
+  /**
+   * N-325: entries past spatial.maxEntitiesPerCell this frame, in this worker's rows (an entity counts once for each
+   * full cell it covers). Such an entity is in no cell there and in nobody's neighbour list. Always written.
+   */
+  CELL_OVERFLOW: 16,
+  STRIDE_FLOATS: 17,
+  BUFFER_SIZE_PER_WORKER: 17 * 4,
 });
 
 /**
@@ -560,6 +565,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'NEIGHBOR_CHECKS', label: 'Neighbors', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'NEIGHBORS_REUSED', label: 'Reused', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'SLEEP_NEIGHBOR_SKIPS', label: 'SleepSkip', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'CELL_OVERFLOW', label: 'CellOver', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.OUTSIDE },
     ],
   },

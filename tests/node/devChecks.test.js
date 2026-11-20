@@ -407,3 +407,20 @@ test('E7: keys it reads, in any case and by their other names, are silent', () =
   });
   assert.deepEqual(lines, []);
 });
+
+// N-325: Predator at crowd 2.5 left 6.8 % of its entities in no grid cell and in no neighbour list, and nothing said so.
+test('entities past a full grid cell warn once, with the count and the fix; none past it, nothing', () => {
+  const lines = warningsOf(() => {
+    real.cellOverflow(0, 32);
+    real.cellOverflow(2600, 32);
+    real.cellOverflow(2700, 32);
+  });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /2600 times in a frame an entity did not fit a full spatial grid cell \(spatial\.maxEntitiesPerCell 32\)/);
+  assert.match(lines[0], /Raise spatial\.maxEntitiesPerCell/);
+  const off = warningsOf(() => {
+    real.setDevChecks(false);
+    real.cellOverflow(2600, 32);
+  });
+  assert.deepEqual(off, []);
+});

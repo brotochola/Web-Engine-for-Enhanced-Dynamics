@@ -135,13 +135,15 @@ function gzipB64(text) {
     return zlib.gzipSync(Buffer.from(text, 'utf8'), { level: 9 }).toString('base64');
 }
 
-function makeBuildEnv(prod, compressed) {
+export function makeBuildEnv(prod, compressed) {
     return {
         ...process.env,
         OBFUSCATE: shouldObfuscate ? 'true' : 'false',
         WEED_PROD: prod ? 'true' : 'false',
         WEED_COMPRESSED: compressed ? 'true' : 'false',
-        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=8192']
+        // N-251: paths through node_modules as found, not resolved through its junction (the webpack configs' symlinks:
+        // false is the same for webpack's resolver), so a worktree builds the main folder's bytes.
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=8192', '--preserve-symlinks', '--preserve-symlinks-main']
             .filter(Boolean)
             .join(' '),
     };
