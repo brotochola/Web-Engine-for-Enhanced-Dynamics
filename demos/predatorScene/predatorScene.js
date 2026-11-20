@@ -54,6 +54,10 @@ function predatorCrowd() {
   const f = predatorNumberParam('crowd', 1);
   return f > 0 ? Math.min(f, PREDATOR_CROWD_MAX) : 1;
 }
+// `?mix=1`: the soldiers spawn spread over the whole map among the civilians, as the civilians do, instead of as a squad
+// in the middle. Every soldier then has civilians in sight from the first frame, so its scans, shots and the panic they
+// spread load the logic all over the map, not only at the squad's edge.
+const PREDATOR_MIXED_CROWD = predatorSearchParam('mix') === '1';
 const PREDATOR_CIVILIAN_POOL = Math.max(15000, Math.ceil(10000 * predatorCrowd()));
 const PREDATOR_SOLDIER_POOL = Math.max(10000, Math.ceil(6000 * predatorCrowd()));
 
@@ -731,6 +735,12 @@ export class PredatorScene extends WEED.Scene {
     }
   }
   spawnMySoldiers(count, soldierRadius = 10) {
+    if (PREDATOR_MIXED_CROWD) {
+      for (let i = 0; i < count; i++) {
+        MySoldier.spawn({ x: this.config.worldWidth * this.rng(), y: this.config.worldHeight * this.rng() });
+      }
+      return;
+    }
     const centerX = this.config.worldWidth / 2;
     const centerY = this.config.worldHeight / 2;
     const spawnRadius = containerRadius(count, soldierRadius);
