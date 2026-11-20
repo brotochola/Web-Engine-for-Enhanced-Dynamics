@@ -242,7 +242,7 @@ class Leaf extends GameObject {
 
 ### Objects or ECS: one entity, two ways to write it
 
-Every entity can be written as objects (methods on the instance, `this` the entity) or ECS-style (statics that take the entity's index, `this` the class, the state read and written in the components' columns). The engine runs both the same, and one class may mix them. The ECS way makes no instance for what it runs, and it walks the columns instead of one object per entity: Predator's people written that way (`tickAll`, FSM states by index, static damage hooks) cut its logic from 11.4 to 8.2 ms a frame (40 000 people on one logic worker, −28 %).
+Every entity can be written as objects (methods on the instance, `this` the entity) or ECS-style (statics that take the entity's index, `this` the class, the state read and written in the components' columns). The engine runs both the same, and one class may mix them. The ECS way makes no instance for what it runs, and it walks the columns instead of one object per entity: Predator's people written that way (`tickAll`, FSM states by index, static damage hooks) cut its logic from 11.4 to 8.2 ms a frame (40 000 people on one logic worker, −28 %). Written that way end to end (every entity, its spawns with `spawnIndex`), Predator makes no entity instance at all, and its threads hold 35 % less JS heap (49.6 → 32.1 MB).
 
 | What | Objects | ECS |
 |---|---|---|
@@ -254,6 +254,11 @@ Every entity can be written as objects (methods on the instance, `this` the enti
 | Set the velocity | `this.setVelocity(vx, vy)` | `RigidBody.setVelocity(i, vx, vy)` |
 | A force or an impulse | `this.applyForce(fx, fy)` | `RigidBody.applyForce(i, fx, fy)` |
 | The animation's rate | `this.setAnimationSpeed(s)` | `SpriteRenderer.setAnimationSpeed(i, s)` |
+| The sprite, its animation, its look | `this.setAnimation('walk')`, `this.setTint(c)`, `this.setAlpha(a)` | `SpriteRenderer.setAnimation(i, 'walk')`, `SpriteRenderer.setTint(i, c)`, `SpriteRenderer.setAlpha(i, a)` |
+| The collider's size | `this.collider.radius = r` | `Collider.setRadius(i, r)` (a write to `Collider.radius[i]` does not reach Box2D) |
+| Where it faces | `this.directionalSprite.facing = a` | `DirectionalSprite.setFacing(i, a)` |
+| A muzzle flash | `Flash.spawn({ x, y })` | `Flash.spawnIndex({ x, y })` |
+| Do something later | `setTimeout(() => this.open(), 500)` | a column with the time it is due, on the scene's clock (`Time.simNowMs`), checked in `tickAll` |
 | Neighbours | `this.neighborCount`, `this.getNeighbor(k)` | `Grid.getNeighborCount(i)`, `Grid.getNeighbor(i, k)`; in a hot loop the row itself (below) |
 | Its FSMs | `this.walkFSM.tick(dtRatio)` | `FSM.tickAll(list, count, dtRatio, this)` |
 | Ask an FSM for a state | `this.walkFSM.changeState(WalkFSM.states.RUN)` | `WalkFSM.changeState(i, WalkFSM.states.RUN)` |
@@ -268,8 +273,8 @@ const { GameObject, RigidBody, Collider, Transform, Grid } = WEED;
 class Walker extends GameObject {
   static components = [RigidBody, Collider];
   static repel = 200; // px/s², the class's tuning: `this.repel` in its statics
-  onSpawned() {
-    this.collider.visualRange = 60; // spawn makes the instance it returns: setup through it costs nothing more
+  static onSpawned(i) {
+    Collider.visualRange[i] = 60; // a static: spawnIndex makes no instance (a method onSpawned would make one)
   }
   static tickAll(list, count, dtRatio) {
     for (let k = 0; k < count; k++) {
