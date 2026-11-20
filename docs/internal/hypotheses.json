@@ -20337,19 +20337,20 @@
     {
       "id": "N-243",
       "title": "glFrameRecorder rounds draws a frame to 0.1, so per-draw times of layers that redraw in fewer than every frame read about +-8 %",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (289933e0), on fix/n243-recorder-unrounded (R-1712)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "E-453 agent normalised the row draws by their instance counts instead.",
-      "next": "Report draws a frame and ms a draw unrounded (or ms a draw from the totals), the table rounded only when printed.",
+      "result": "Fixed 2026-11-20 (289933e0): the result's rows hold unrounded rates, their totals and msPerDraw; only the printed table rounds. The WebGPU recorder rounds the same way (left to the main PC).",
+      "next": "webgpuRecorderWorker.mjs rounds draws a frame the same way (WebGPU: the main PC).",
       "refs": [],
       "aliases": [
         "recorder draw rounding"
       ],
       "records": [
-        "R-1228"
+        "R-1228",
+        "R-1712"
       ]
     },
     {
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1712",
+      "date": "2026-11-20",
+      "time": "06:20",
+      "timeFrom": "recorded",
+      "title": "N-243 fixed: glFrameRecorder keeps rates a frame unrounded, with totals and ms a draw",
+      "verdict": "kept-hygiene",
+      "text": "**N-243 fixed: glFrameRecorder's result holds unrounded rates a frame, their totals and ms a draw; only the printed table rounds.** Branch fix/n243-recorder-unrounded, 289933e0.\n\n- **Cause:** the recorder rounded draws a frame and segments a frame to 0.1, and ms a frame to 0.001, in the result itself. A layer that draws in fewer than every frame read about +-8 % per draw.\n- **Fix:** the rows carry drawsPerFrame, segmentsPerFrame, instancesPerFrame and msPerFrame unrounded, with the totals they come from (ns, draws, instances, segments). Each draw pass also carries msPerDraw. The printed tables round as they did. The header's ms a frame prints 3 decimals, so the lab's kmip.mjs regex reads it as before.\n- **Checked by a real recording**, since the recorder runs serialized in the Pixi worker and a node test would need a fake WebGL2 context: ballsScene, --gpu-draws, 120 frames on the HD 620. draws / frames equals drawsPerFrame exactly; msPerDraw is 1.45060 ms; the table prints 1.451 ms, 1.0 draws, 1981 inst. Node suite 3286 of 3287 (frameChainWait's \"logic waits ...\" flake, its file green alone).\n- **Left:** webgpuRecorderWorker.mjs rounds the same way (per(), drawsPerFrame). That is WebGPU work, for the main PC."
     }
   ],
   "leads": [
