@@ -325,8 +325,8 @@ export class Grid {
    * @returns {number} Total number of neighbors
    */
   static getNeighborCount(entityId) {
-    if (!Grid._neighborData) return 0;
-    return Grid._neighborData[entityId * Grid._stride];
+    const nd = Grid._neighborData;
+    return nd === null ? 0 : nd[entityId * Grid._stride];
   }
 
   /**
@@ -336,8 +336,8 @@ export class Grid {
    * @returns {number} Neighbor entity ID
    */
   static getNeighbor(entityId, k) {
-    if (!Grid._neighborData) return 0;
-    return Grid._neighborData[entityId * Grid._stride + 1 + k];
+    const nd = Grid._neighborData;
+    return nd === null ? 0 : nd[entityId * Grid._stride + 1 + k];
   }
 
   /**
