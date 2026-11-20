@@ -24439,7 +24439,7 @@
       "date": "2026-11-20",
       "statusText": "Filed 2026-11-20 from the cheap-light3d study (R-1573): the owner wants one shadow mode; B looks better than A without extra art",
       "result": "",
-      "next": "glFrameRecorder --gpu-draws on B against A at 16 h, by pass: the sun map, the G-buffer map mode needs, the lamps' maps; then cut the largest (the sun map's casters to the view and its margin, a lower resolution, still casters cached). The HD 620 for all four modes. If B lands within about 0.5 ms of A, B becomes the default and the layer mode (~8-10k lines with its stamp) goes.",
+      "next": "Where B’s cost goes (glFrameRecorder --gpu-draws, Predator dayCycle=0&hour=16, 2 rounds, 2026-11-20 01:05; this sitting A 2.69/2.77 ms, B 4.09/4.11): the lamps’ map 0.51 ms (about 17 000 caster instances into 48 tiles of a 4096x384 target), the sun map 0.36-0.38 (about 14 000 casters into 512x318), the G-buffer 0.20, the light pass 0.46 against A’s 0.13 (three more maps sampled); A’s shadows layer 0.34-0.41 goes. Levers, largest first: (1) still lamps keep their still casters’ tiles and redraw only the movers (E-460, E-508’s volume cache extended to sprite casters); (2) the sun map’s still casters drawn once while the sun moves less than a texel; (3) no lamps’ map while no lamp lights (by day). Then the HD 620 (the ASUS’s 0899y has the four levels queued) and the default question.",
       "rank": 12,
       "aliases": [
         "cheap map shadows",
