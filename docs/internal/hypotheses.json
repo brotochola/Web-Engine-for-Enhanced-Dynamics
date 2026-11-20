@@ -24506,7 +24506,8 @@
     },
     {
       "records": [
-        "R-1663"
+        "R-1663",
+        "R-1665"
       ],
       "refs": [],
       "id": "E-535",
@@ -24589,6 +24590,25 @@
       "result": "",
       "statusText": "Filed 2026-11-20 from the instance survey: three Array(N) per logic worker and two on the page stay all null in an ECS scene (about 1.8 MB at 57.6k slots; gameObjects and GameObject.instances hold the same); every facade gets .owner after construction (read only for the mesh bit and tickInterval); start() is unused and undocumented; noteSpawned walks ~27 keys per spawn in debug builds",
       "next": "Alias gameObjects to GameObject.instances or allocate on the first _makeInstance; read the mesh bit and tickInterval from typeBitsOf and classByType, then drop owner; remove start(); note spawns by class."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-326",
+      "title": "Wall-clock bounds in spatialTailStartOn.test.js and frameChainWait.test.js fail now and then under the full suite",
+      "status": "open",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-20",
+      "rank": 30,
+      "result": "",
+      "statusText": "found 2026-11-20 on main around the ECS-way merge: spatialTailStartOn's already-done case (waited < 20 ms) once in 3350, frameChainWait's logic-waits-for-main case once in 3350, each in another full run; both 4 of 4 alone, and two full discovery runs (3471) green",
+      "next": "A deadline given ahead or a wider bound, as N-156 did for physicsChainWait (a thread released from a wait took 1.5 ms to run here; under the suite's parallel files, tens).",
+      "aliases": [
+        "spatialTailStartOn",
+        "frameChainWait",
+        "flaky test"
+      ]
     }
   ],
   "records": [
@@ -40327,6 +40347,21 @@
       "text": "**Flash written the ECS way (d9eff8fb).** `Flash.spawnIndex(config)` spawns a flash with no instance (its index, or\n-1 off-screen, before initialization or with the pool full); `static onSpawned(i, cfg)`, `static onDespawned(i)` and\n`static tickAll(list, count, dtRatio)` (the fade, deltaTime = dtRatio x 16.67 ms) by index. `Flash.spawn` returns the\ninstance for the object way. Before, every muzzle flash made an instance and its tick a second one on the worker\nowning its block. Predator's shots, barrels, houses and lamps use spawnIndex; lightCastShadows' tests call the static\nonSpawned on real columns.",
       "commits": [
         "d9eff8fb"
+      ]
+    },
+    {
+      "id": "R-1665",
+      "date": "2026-11-20",
+      "time": "07:49",
+      "timeFrom": "recorded",
+      "title": "The ECS-way merge's bundles: prod ESM bundle logic -7.2 % against src in Predator, Boids below the floor",
+      "verdict": "passed",
+      "text": "**The ECS-way merge's bundles against their sources (main 41a242ff, dist 9966d2d1 built at 0.14.179).** One build both\nsides (HEAD's worktree), B the prod ESM bundle (weedBundle=weed.prod.bundle.esm.min.js), file times:\n- 07:32-07:38, Predator crowd 2.5 with one logic worker, 4 pairs: logic 7.34 -> 6.61 ms, -7.2 %, worse 0/4 (the\n  bundle faster, as R-0764 read); spatial +0.5 %, physics +1.2 %, load keys equal.\n- 07:38-07:49, Boids, 8 pairs: every worker below the 6 ms floor (spatial 3.46 -> 3.19 ms), not judged; not slower.\nTwo guards had to be fixed first: since the per-commit version bump, the input hash counted src/version.js (every\ncommit made dist/ stale, 9a9d5688) and the bench page compared the bundle's version with src/version.js (c26e60ba).",
+      "commits": [
+        "41a242ff",
+        "9966d2d1",
+        "9a9d5688",
+        "c26e60ba"
       ]
     }
   ],
