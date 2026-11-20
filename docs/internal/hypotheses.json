@@ -16041,12 +16041,12 @@
       "id": "E-378",
       "title": "The pixel depth (DX-DEPTH) costs the colour pass +30 % on WebGL and +90 % on WebGPU: every fragment writes its depth, also a sprite without maps whose depth is its foot's",
       "status": "open",
-      "statusText": "Proposed 2026-11-15 on dx/light3d; first step kept 2026-11-19 (c72d9a04: the edge pass's cull, nearest atlases, WebGL)",
+      "statusText": "Proposed 2026-11-15 on dx/light3d; first step kept 2026-11-19 on both backends (c72d9a04, 3ef09458): the edge pass's cull with a nearest atlas",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "First step kept 2026-11-19 (c72d9a04, nearest atlases, WebGL): the barrio’s edge pass 0.545/0.568 -> 0.060/0.092 ms on the GTX 1650 (R-1559); on the HD 620 2.40/2.28 -> 0.82/0.78 ms, the frame’s draws -10 %, drawn frames 418 -> 448 (+7.2 %, 4 of 4; R-1591). Linear atlases and WebGPU unchanged.",
-      "next": "WebGPU: the same cull needs an edge vertex entry of its own (one entry serves both passes there). Predator light3d (linear atlas): its people are about 95 % fill in both passes (1-px scissor probe, R-1559); the lever is the upright frames’ depth from the vertex (early-z) with the opaque pass drawn front to back, the fragment depth kept for frames with height maps. gpuPassBench color/colorDepth, glFrameRecorder --gpu-draws.",
+      "result": "First step kept 2026-11-19 (nearest atlases): WebGL c72d9a04, the barrio's edge pass 0.545/0.568 -> 0.060/0.092 ms on the GTX 1650 (R-1559), on the HD 620 2.40/2.28 -> 0.82/0.78 ms and drawn frames +7.2 % (R-1591); WebGPU 3ef09458, the edge draw 0.435 -> 0.094 ms (R-1566). Linear atlases unchanged.",
+      "next": "Predator light3d (linear atlas): its people are about 95 % fill in both passes (1-px scissor probe, R-1559) and carry height maps, so their depth stays per pixel; what is left is the edge pass over linear plain frames, whose soft rims it must draw. The opaque pass front to back where a frame has no maps (vertex depth, DX-FACEDEPTH’s twin without faces). gpuPassBench color/colorDepth, glFrameRecorder --gpu-draws.",
       "refs": [
         "EXECUTION_PLAN.md#E-378"
       ],
@@ -16058,7 +16058,8 @@
         "R-1129",
         "R-1174",
         "R-1559",
-        "R-1591"
+        "R-1591",
+        "R-1566"
       ]
     },
     {
@@ -39725,6 +39726,18 @@
       "title": "N-324 filed: past four classes a base class's neighbour reads go megamorphic, 19.6-23 ns a neighbour; Grid's statics flat at 6.7-7.3",
       "verdict": "note",
       "text": "**N-324 filed: a neighbour read from a method more than four classes inherit costs 8 times the row.** neighborAccessMicrobench\n--classes 20 (three base classes' methods, each inherited by about 7 classes): `this.neighborCount` and\n`this.getNeighbor(k)` read 19.6 to 23 ns a neighbour, the bare row 2.5 to 2.7; at 12 classes (4 a family) 3.8 ns. Past\nfour receiver maps a call site's accessor and method loads go megamorphic and V8 stops inlining them, whoever wrote the\ngetter (E-289's copies, a family copy or GameObject's). Grid's statics from the same methods\n(`Grid.getNeighborCount(this.index)`, `Grid.getNeighbor(this.index, k)`, an ad hoc variant of the kernel) read 6.7 to\n7.3 ns at 5 and at 20 classes alike: no cliff, but slow, since each call reloads Grid's static fields\n(`_neighborData`, `_stride`) and tests the buffer."
+    },
+    {
+      "id": "R-1566",
+      "date": "2026-11-19",
+      "time": "20:58",
+      "timeFrom": "recorded",
+      "title": "E-378 on WebGPU kept: the edge program's own module culls plain full-alpha instances; the barrio's edge draw 0.435 -> 0.094 ms",
+      "verdict": "kept",
+      "text": "**E-378 on WebGPU kept (3ef09458): the edge pass's own module culls plain full-alpha instances in its vertex.** One\nvertex entry serves every entry of a WGSL module, so with a nearest atlas the edge program now gets a module of its own\n(the GLSL cull's twin, c72d9a04, R-1559); the opaque program keeps the shared one. Barrio on WebGPU (owner camera, 13 h,\n5000 people, GTX 1650; 20:54 to 20:58): webgpuFrameRecorder --split-passes, the indexed edge draw 0.435 -> 0.094 ms\n(-78 %); --gpu-draws, 2 rounds, the screen pass 1.795 / 1.857 -> 1.707 / 1.670 ms. The picture at 13 h matches main's\nby eye (trees sway between captures, so no pixel diff). The unshaded mask's edge draw (0.05 ms) is left as it is.",
+      "commits": [
+        "3ef09458"
+      ]
     }
   ],
   "leads": [
