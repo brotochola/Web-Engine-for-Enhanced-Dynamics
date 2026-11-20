@@ -13,6 +13,7 @@ import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import { createStockFirefox, stockFirefoxExe } from './stockFirefox.mjs';
 import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
+import { BOOT_FAILURE_EXIT, BOOT_FAILURE_PATTERN } from './bootWatch.mjs';
 import { assertDistFreshForRun } from '../../scripts/distVersion.js';
 import {
   DEFAULT_DURATION_MS,
@@ -946,5 +947,6 @@ async function main() {
 
 main().catch((error) => {
   console.error(error);
-  process.exitCode = 1;
+  // N-254: a scene that failed while booting gets its own exit code, which measureLib does not run again.
+  process.exitCode = BOOT_FAILURE_PATTERN.test(String(error?.message || error)) ? BOOT_FAILURE_EXIT : 1;
 });
