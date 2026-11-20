@@ -7,6 +7,7 @@ const {
   Decal,
   GameObject,
   Collider,
+  Transform,
   SpriteRenderer,
   LightEmitter,
   rng,
@@ -149,9 +150,9 @@ export class Explosion extends GameObject {
     for (let i = 0; i < neighborCount; i++) {
       const neighbor = this.getNeighbor(i);
       if (neighbor == -1) continue;
-      const neighborInstance = GameObject.get(neighbor);
-      if (neighborInstance == null) continue;
-      if (!neighborInstance.recieveDamage) continue;
+      // The neighbour's class takes the damage (a Lootable's recieveDamage is static: index first).
+      const Neighbor = GameObject.classByType[Transform.entityType[neighbor]];
+      if (!Neighbor || typeof Neighbor.recieveDamage !== 'function') continue;
 
       // Calculate distance on-the-fly (collider positions)
       const myX = Transform.x[this.index] + (Collider.offsetX[this.index] || 0);
@@ -164,7 +165,7 @@ export class Explosion extends GameObject {
 
       const damage = this.explosionComponent.wantedIntensity / (distSq * 50);
 
-      neighborInstance.recieveDamage(damage, myX, myY);
+      Neighbor.recieveDamage(neighbor, damage, myX, myY);
     }
   }
 

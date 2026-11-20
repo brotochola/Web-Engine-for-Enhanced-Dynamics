@@ -144,15 +144,16 @@ export class Person extends Lootable {
     this.setScale(scale, scale);
   }
 
-  recieveDamage(damage, sourceX, sourceY) {
+  /** Damage to person i: none once dead; a lethal one kills at once; a real one bleeds. */
+  static recieveDamage(i, damage, sourceX, sourceY) {
     // Don't process damage if already dead
-    if (PersonComponent.dead[this.index] === 1) return;
+    if (PersonComponent.dead[i] === 1) return;
 
-    super.recieveDamage(damage, sourceX, sourceY);
+    super.recieveDamage(i, damage, sourceX, sourceY);
 
     // Trigger death immediately on lethal damage (don't wait for next tick)
-    if (LootableComponent.health[this.index] <= 0) {
-      this.die();
+    if (LootableComponent.health[i] <= 0) {
+      this.die(i);
       return;
     }
 
@@ -161,8 +162,8 @@ export class Person extends Lootable {
     ParticleEmitter.emit({
       count: Math.floor(damage * (rng() * 10 + 4)),
       texture: 'blood',
-      x: this.x,
-      y: this.y,
+      x: Transform.x[i],
+      y: Transform.y[i],
       z: -30,
       angleXY: { min: 0, max: 360 },
       speed: { min: 0.7, max: 1.66 },
@@ -180,8 +181,7 @@ export class Person extends Lootable {
    * Each frame, for the whole type at once (E-530: Predator written static). Every person: a living one with no health
    * left dies (Lootable's check); one that is not shooting is pushed back in near the world's edges and stops when too
    * slow to walk (a shooter skips both, so knockback and collisions still move it). Then the animation FSM for all, and
-   * the type's behaviour FSM (static behaviorFSM) for the living. All from the columns, by index: an instance is made
-   * only for a death.
+   * the type's behaviour FSM (static behaviorFSM) for the living. All from the columns, by index.
    */
   static tickAll(list, count, dtRatio) {
     const dead = PersonComponent.dead;
@@ -202,7 +202,7 @@ export class Person extends Lootable {
     for (let k = 0; k < count; k++) {
       const i = list[k];
       const isShooting = animationState[i] === shooting;
-      if (dead[i] !== 1 && health[i] <= 0) this.get(i).die();
+      if (dead[i] !== 1 && health[i] <= 0) this.die(i);
       if (isShooting) continue;
 
       const px = x[i];
@@ -464,10 +464,10 @@ export class Person extends Lootable {
     this.directionalSprite.facingFrom = 'manual';
     this.directionalSprite.lookAt(Transform.x[targetEntityIndex], Transform.y[targetEntityIndex]);
 
-    const target = GameObject.get(targetEntityIndex);
-    if (target && target.recieveDamage) {
-      const damage = this.constructor.punchDamage;
-      target.recieveDamage(damage, this.x, this.y);
+    // The target's class takes the damage (its recieveDamage is static, like this one's).
+    const Target = GameObject.classByType[Transform.entityType[targetEntityIndex]];
+    if (Target && typeof Target.recieveDamage === 'function') {
+      Target.recieveDamage(targetEntityIndex, this.constructor.punchDamage, this.x, this.y);
     }
 
     return true;
@@ -508,23 +508,26 @@ export class Person extends Lootable {
     return PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD);
   }
 
-  die() {
+  /** Person i dies: it stops fighting, falls (the dying animation) and bleeds; its loot drops when the fall ends. */
+  static die(i) {
     // Already dead? Don't trigger again
-    if (PersonComponent.dead[this.index] === 1) return;
-    this.rigidBody.linearDamping = 0.9;
+    if (PersonComponent.dead[i] === 1) return;
+    RigidBody.linearDamping[i] = 0.9;
     // Mark as dead immediately - prevents firing and other actions
-    PersonComponent.dead[this.index] = 1;
+    PersonComponent.dead[i] = 1;
 
+    const x = Transform.x[i];
+    const y = Transform.y[i];
     const deathSounds = ['dolor1', 'dolor2', 'dolor3', 'dolor4'];
     const deathSound = deathSounds[(rng() * deathSounds.length) | 0];
-    SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, this.x, this.y, 'voice');
+    SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, x, y, 'voice');
 
     // Emit blood particles
     ParticleEmitter.emit({
       count: Math.floor(10 + rng() * 5),
       texture: 'blood',
-      x: this.x,
-      y: this.y,
+      x,
+      y,
       z: -10,
       angleXY: { min: 0, max: 360 },
       speed: { min: 0.7, max: 2 },
@@ -538,10 +541,9 @@ export class Person extends Lootable {
     });
 
     // Start dying animation IMMEDIATELY - forceChangeState executes transition now
-    // (changeState only queues for next tick, which can cause animation issues)
-    // console.log(`[Person ${this.index}] die() called, forcing DYING state. AnimState BEFORE:`, SpriteRenderer.animationState[this.index]);
-    this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.DYING);
-    // console.log(`[Person ${this.index}] After forceChangeState, FSM state:`, PersonAnimationFSM.getStateName(this.index), `AnimState AFTER:`, SpriteRenderer.animationState[this.index]);
+    // (changeState only queues for next tick, which can cause animation issues). The FSM's states get the instance as
+    // their owner (DYING's onEnter sets the animation through it): made here for the death alone.
+    PersonAnimationFSM.forceChangeState(i, PersonAnimationFSM.states.DYING, this.get(i));
   }
 
   /**
@@ -567,8 +569,8 @@ export class Person extends Lootable {
       alpha: 1,
     });
 
-    // Spawn loot drops (from Lootable.die())
-    super.die();
+    // Spawn loot drops
+    Lootable.dropLoot(this.index);
 
     // Remove the entity
     this.despawn();

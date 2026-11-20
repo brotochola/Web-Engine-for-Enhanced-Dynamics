@@ -2,60 +2,63 @@ import WEED from '/src/index.js';
 
 import { LootableComponent } from '../components/lootableComponent.js';
 import { DropMoney } from './dropMoney.js';
-import { randomColor } from '/src/index.js';
 
-const { GameObject } = WEED;
+const { GameObject, ParticleEmitter, Transform, Collider, rng } = WEED;
 
+// Everything here is static (E-530: Predator written static): each call takes the entity's index and runs with its
+// class as `this`, so a subclass's override and its statics (resistance) apply, and no instance is made for it.
 export class Lootable extends GameObject {
-  // Auto-detected by GameEngine
+  // Damage resistance (0..1), read from the entity's class: subclasses override it
   static resistance = 0.1
   static components = [LootableComponent];
 
-  /**
-   * Each frame, for the whole type at once: an entity with no health left dies. The death goes through the instance
-   * (die() is a method subclasses extend), so only the dying make one.
-   */
+  /** Each frame, for the whole type at once: an entity with no health left dies. */
   static tickAll(list, count) {
     const health = LootableComponent.health;
     for (let k = 0; k < count; k++) {
       const i = list[k];
-      if (health[i] <= 0) this.get(i).die();
+      if (health[i] <= 0) this.die(i);
     }
-  }
-
-  recieveDamage(damage, sourceX, sourceY) {
-    const resistance = this.constructor.resistance;
-    LootableComponent.health[this.index] -= damage * (1 - resistance);
   }
 
   /**
-   * LIFECYCLE: Called by engine when a bullet hits this entity (raycast impact).
-   * Delegates to game's recieveDamage for damage logic.
-   * Passes hit position as damage source (civilian panic flees away from it).
+   * LIFECYCLE: a BulletPool bullet hit entity i (raycast impact). The hit point is the damage's source (a civilian's
+   * panic flees away from it).
    */
-  onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
-    this.recieveDamage(damage, hitX, hitY);
+  static onGotShot(i, damage, hitX, hitY, ownerId, shooterEntityType) {
+    this.recieveDamage(i, damage, hitX, hitY);
   }
 
-  die() {
-    const amountOfMoney = LootableComponent.dropMoney[this.index];
+  /** Damage to entity i, less its class's resistance; sourceX/Y is where it came from. */
+  static recieveDamage(i, damage, sourceX, sourceY) {
+    LootableComponent.health[i] -= damage * (1 - this.resistance);
+  }
+
+  /** Entity i has no health left: it drops its loot (subclasses add their own death). */
+  static die(i) {
+    this.dropLoot(i);
+  }
+
+  /** The money entity i carried, dropped around it. */
+  static dropLoot(i) {
+    const amountOfMoney = LootableComponent.dropMoney[i];
     if (amountOfMoney > 0) {
+      const radius = Collider.radius[i];
       DropMoney.spawn({
         amount: amountOfMoney,
-        x: this.x + rng() * this.radius * 4 - this.radius * 2,
-        y: this.y + rng() * this.radius * 4 - this.radius * 2,
+        x: Transform.x[i] + rng() * radius * 4 - radius * 2,
+        y: Transform.y[i] + rng() * radius * 4 - radius * 2,
       });
     }
-
-    // this.despawn()
   }
 
-  emitSparks() {
-    const radius = this.collider.radius;
+  /** Sparks off entity i (a hit on something hard). */
+  static emitSparks(i) {
+    const radius = Collider.radius[i];
     ParticleEmitter.emit({
       count: Math.floor(rng() * radius) + radius * 0.5,
-      x: this.x + (rng() * radius - radius * 0.5),
-      y: this.y + (rng() * radius - radius * 0.5),
+      x: Transform.x[i] + (rng() * radius - radius * 0.5),
+      y: Transform.y[i] + (rng() * radius - radius * 0.5),
       z: -radius - rng() * radius,
       angleXY: { min: 0, max: 360 },
       speed: { min: radius * 0.1, max: radius * 0.2 },

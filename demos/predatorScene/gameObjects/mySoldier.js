@@ -81,10 +81,4 @@ export class MySoldier extends Person {
     this.soldierBehaviorFSM.changeState(SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
     this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE);
   }
-
-  die() {
-    // this.sendMessageToScene('die');
-
-    super.die();
-  }
 }

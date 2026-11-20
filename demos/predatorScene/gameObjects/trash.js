@@ -49,14 +49,16 @@ export class Trash extends Lootable {
         this.setFixedRotation(1);
     }
 
-    recieveDamage(damage) {
-        super.recieveDamage(damage)
-        this.emitSparks()
+    /** A hit on bin i: Lootable's damage, and sparks. */
+    static recieveDamage(i, damage, sourceX, sourceY) {
+        super.recieveDamage(i, damage, sourceX, sourceY)
+        this.emitSparks(i)
     }
 
-    die() {
-        super.die()
-        this.despawn()
-        this.emitSparks()
+    /** Bin i is broken: its loot drops, it goes, sparks fly. */
+    static die(i) {
+        super.die(i)
+        this.despawn(i)
+        this.emitSparks(i)
     }
 }
