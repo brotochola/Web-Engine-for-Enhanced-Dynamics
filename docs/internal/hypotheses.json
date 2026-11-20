@@ -24416,18 +24416,21 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-1577",
+        "R-1578",
+        "R-1579"
+      ],
       "refs": [],
       "id": "E-530",
       "title": "Predator written static: Lootable/Person's onGotShot and collision hooks static (E-528), MySoldier and Civilian on tickAll with their FSMs through FSM.tickAll (E-526 layer 0, E-527), measured on Predator crowd 2.5's logic",
-      "status": "open",
+      "status": "kept",
       "kind": "hypothesis",
       "area": "logic speed",
       "date": "2026-11-19",
-      "statusText": "The owner's ask 2026-11-19: everything static, the developer's choice of object or ECS style; the engine side is kept (E-526 layer 0, E-527, E-528), no demo converted yet",
-      "result": "",
-      "next": "First N-324 (Grid's static neighbour reads 6.7-7.3 ns against 2.7 for the inlined getter: static code reads through them). Then in steps, each measured with runPredatorAbab crowd=2.5&zoom=0.216, owner logic: (1) the hooks static, (2) Civilian and MySoldier on tickAll, (3) their FSMs through FSM.tickAll. Spawn still makes the instance (an instance-free spawn is its own API item).",
-      "rank": 11,
+      "statusText": "Kept 2026-11-20, merged cde5b3e7 (dist 67d41079); what still makes an instance: E-532 (FSM owner), E-533 (setters), E-534 (spawn)",
+      "result": "Predator's people written ECS-style (static tickAll, FSM states by index, static damage hooks): logic -28.0 % on one logic worker (11.42 -> 8.23 ms), step 1 -17.4 % on two; the mixed battle inside its noise. Engine: RigidBody.setVelocity, SpriteRenderer.setAnimationSpeed static; guide: objects or ECS",
+      "next": "Done. What still makes an instance on the ECS way: E-532 (FSM states get the instance as owner), E-533 (setters with no static form), E-534 (spawn returns the instance).",
       "aliases": [
         "predator static",
         "static soldiers civilians",
@@ -24455,6 +24458,48 @@
         "one shadow mode",
         "remove classic shadows"
       ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-532",
+      "title": "FSM states without the instance: an ECS type's FSM.tickAll hands no owner and makes no instance; the states work by index",
+      "status": "open",
+      "kind": "hypothesis",
+      "area": "logic",
+      "date": "2026-11-20",
+      "rank": 6,
+      "result": "",
+      "statusText": "Filed 2026-11-20 from E-530: FSM.tickAll makes each entity's instance on its first tick only to hand it to the states as owner, so a type written ECS-style still holds one instance per entity",
+      "next": "Decide the opt-in (an FSM or entity class flag, or owner null for a type with no instance methods), keep instance-style states working, measure Predator mix=1 with the instances counted."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-533",
+      "title": "Static forms of the per-entity setters that still need an instance: setAnimation, setSprite, setTint, setScale, setAlpha, a DirectionalSprite's facing, facingFrom and lookAt",
+      "status": "open",
+      "kind": "dx",
+      "area": "logic",
+      "date": "2026-11-20",
+      "rank": 7,
+      "result": "",
+      "statusText": "Filed 2026-11-20 from E-530: the ECS way (static tickAll, static hooks) reaches these through this.get(i), which makes the instance",
+      "next": "Static forms by index next to each instance setter (one implementation each, the dirty flags shared), weed.d.ts and the guide's objects-or-ECS table; Predator's animation FSM onEnter states as the first user."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-534",
+      "title": "A spawn without an instance: an ECS type's spawn returns the entity's index and writes its config keys to the columns",
+      "status": "open",
+      "kind": "dx",
+      "area": "logic",
+      "date": "2026-11-20",
+      "rank": 8,
+      "result": "",
+      "statusText": "Filed 2026-11-20 from E-530 (and E-528's note): Type.spawn returns the instance and its config keys go through its setters",
+      "next": "An index-returning form (or spawn returning the index for a type that opts in), config keys through the static setters (E-533), onSpawned static; measure spawn-heavy scenes."
     }
   ],
   "records": [
@@ -40082,6 +40127,49 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1577",
+      "date": "2026-11-20",
+      "time": "02:05",
+      "timeFrom": "recorded",
+      "title": "E-530 step 1 kept: Predator's people tick as static tickAll by index, logic -17.4 % (4/4, -20.5 % against the others)",
+      "verdict": "kept",
+      "text": "**E-530 step 1 kept: Predator's people tick as static tickAll, logic −17.4 %.** First a CPU profile (Predator crowd 2.5, main 1eb75304). The logic's time was mostly the first touch of objects each entity owns. The tick dispatch took 8 % of logic, 82 % of it `typeof obj.tick` on the instance. Person.tick took 14 %, 72 % of it `this.spriteRenderer`. FSM#tick took 10 %, 54 % of it the FSM instance's `_msPerTick`. Neighbour reads took 23 %.\n\nCommits:\n- Engine dd6b5cdd: RigidBody.setVelocity(index, vx, vy).\n- Step 1, 0c7178b5: Lootable, Person, MySoldier and Civilian lose tick(). Person.tickAll does Lootable's death check, the edge push and the stop of a slow body by index, then PersonAnimationFSM.tickAll for all and the type's static behaviorFSM through FSM.tickAll for the living. MySoldier.tickAll counts the frames its line-of-sight cache uses (advanceSoldierFrame).\n\nSitting e530-step1: runPredatorAbab, A dd6b5cdd, B 0c7178b5, --full-rev, crowd=2.5&zoom=0.216, logic owner, 4 pairs, ended 02:05.\n- logic 6.460 → 5.021 ms (−17.4 %, worse 0/4; −20.5 % against the others, lower 4/4).\n- spatial +3.8 % (worse 3/4). The session's A/A, e530-aa (dd6b5cdd on both sides, ended 02:26; spatial +0.6 %, physics −0.6 %), puts spatial's limit at ±3.7 % and physics' at ±5.3 %. The spatial rise did not come back: +0.5 % in step 2's sitting, −0.6 % in the total's.\n\nBehaviour probe: FSM state histograms, the dead and the entity errors at 10, 25 and 40 s. Base and branch match: soldiers mostly IDLE with a few RANGED_ATTACKING, civilians' panic 3 000 to 3 400 at 10 s and fading by 40 s, no errors.",
+      "commits": [
+        "dd6b5cdd",
+        "0c7178b5"
+      ]
+    },
+    {
+      "id": "R-1578",
+      "date": "2026-11-20",
+      "time": "02:47",
+      "timeFrom": "recorded",
+      "title": "E-530 steps 2 and 3: FSM states by index -12.9 % (logicWorkers=1); the whole rewrite against the instance version -28.0 % (-25.5 % against the others)",
+      "verdict": "kept",
+      "text": "**E-530 steps 2 and 3, and the whole rewrite against the instance version: logic −28.0 % on one logic worker.**\n\nStep 2:\n- Engine 37c3cda6: SpriteRenderer.setAnimationSpeed(index, speed). RigidBody.setVelocity now compares as float32, as entity.setVelocity does.\n- Demo ceeea6f9: the soldiers' and civilians' FSM states work by index. Neighbours come through Grid's statics, the tuning from GameObject.classByType, the line-of-sight and idle-scan caches from per-worker typed arrays. Person.hasGun, bestWeapon and isPerformingAction are static.\n- Sitting e530-step2 (0c7178b5 against ceeea6f9, 2 logic workers, ended 02:19): logic 5.343 → 4.829 ms, under the 6 ms floor, not judged.\n- Tool 9555c9e6: Predator ?logicWorkers=<n>. Measurement revisions with the knob, off the branch: dca4e077 (dd6b5cdd plus the knob) and 1a3acc4e (0c7178b5 plus the knob).\n- Sitting e530-step2k (1a3acc4e against 9555c9e6, logicWorkers=1, 4 pairs, ended 02:47): KEPT, logic 9.024 → 7.854 ms (−12.9 %, worse 1/4; −11.2 % against the others, lower 4/4), spatial −3.0 %.\n\nStep 3, 5adbc983:\n- Damage and death are static (Lootable.onGotShot is the static hook; recieveDamage, die, dropLoot and emitSparks take the index down Lootable, Person, Civilian and Trash). Punches and explosions call the target's class.\n- Two old bugs fixed: Lootable's sparks used ParticleEmitter without importing it, and the explosion used Transform without declaring it.\n- Its own sitting was stopped at its start, for the mixed gate.\n\nSitting e530-total (dca4e077 against 5adbc983, logicWorkers=1, --early, ended 02:39): KEPT after 2 pairs. Logic 11.422 → 8.228 ms (−28.0 %, worse 0/2; −25.5 % against the others), spatial −0.6 %, physics −4.3 %.\n\nMerged with the rest as cde5b3e7, dist 67d41079.",
+      "commits": [
+        "37c3cda6",
+        "ceeea6f9",
+        "9555c9e6",
+        "5adbc983",
+        "cde5b3e7",
+        "67d41079"
+      ]
+    },
+    {
+      "id": "R-1579",
+      "date": "2026-11-20",
+      "time": "03:16",
+      "timeFrom": "recorded",
+      "title": "E-530 in the mixed battle (?mix=1): +6.1 % fresh, -5.9 % from one save, inside the fight's run-to-run spread; neighbour rows read straight",
+      "verdict": "note",
+      "text": "**E-530 in the mixed battle (the owner's ?mix=1): inside the noise.** Tool 1c51192b: ?mix=1 spawns the soldiers over the whole map among the civilians. The instance side is 389d76e1 (dca4e077 plus the mix knob).\n\nProbes picked the load:\n- Crowd 2.5 mixed overloads every worker: logic 45 ms on one logic worker, physics 19 ms.\n- Crowd 1.5 mixed fits at 60 fps: the static side's logic reads 9.7 / 9.4 ms.\n\nA CPU profile of the mixed scene shows game work that both styles share: findACivilianToShoot 17.6 %, rays (line of sight) 27 %, particle spawns 12 %. Every worker is saturated, and the particle pool is full on both sides (7 790).\n\nSitting e530-mix (389d76e1 against 1c51192b, crowd=1.5&zoom=0.216&mix=1, 4 pairs, ended 03:06): NEUTRAL. Logic 9.110 → 9.679 ms (+6.1 %, worse 2/4, cv 5/13 %). Physics +8.4 %, which the change cannot reach: the fight differs from run to run.\n\nOne real cost found: the states' Grid.getNeighbor (5.2 ns a neighbour) had replaced the per-class getter (2.3 ns), and a mixed soldier has many neighbours. 3f455ebc reads the neighbour row straight (Grid.neighborData at Grid.getNeighborOffset(i), the kernel's 2.4 ns).\n\nSitting e530-mixr (389d76e1 against 3f455ebc, both started from one save of the mixed battle at 15 s, 23 021 entities, --restore, ended 03:16):\n- logic 7.815 → 7.374 ms (−5.9 %, worse 2/4); physics −5.0 %.\n- FAIL on load: DECAL_TILES_DIRTY −8.3 % (cv 15 %), the stamps of the dead. About 4 000 civilians die in the 10 s warm-up.\n\nThe ECS way's gain shows where the per-entity overhead dominates (the calm crowd: −17 to −28 %). In the battle it is inside the run-to-run spread.",
+      "commits": [
+        "1c51192b",
+        "3f455ebc"
+      ]
     }
   ],
   "leads": [

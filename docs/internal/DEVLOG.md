@@ -6,6 +6,35 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Friday 20 November 2026 (small hours) — The Same Game, Written as Data
+
+I want WeedJS to be written two ways, and the developer picks. One is objects: an entity is an instance, with a
+`tick()` and methods. The other is ECS: a type ticks all its entities in one static `tickAll` loop, reading and writing
+the components' columns by index, and its hooks are statics that take the index. The engine had both halves for ticks
+and hooks. I wanted to know what the second way buys in a real game, so I rewrote Predator's soldiers and civilians in it.
+
+First I profiled Predator's logic. It was not computing much; it was waiting on memory. Each entity's tick touched the
+entity's object, then its sprite component's object, then its FSM's object, and each first touch was a cache miss.
+Most of the tick dispatch's time was finding the method on the instance. Most of the person's own tick was reaching
+`this.spriteRenderer`.
+
+So the rewrite went in steps, each measured against the one before. First, the people tick as one `tickAll` per type,
+and their FSMs run through `FSM.tickAll`. Then the FSM states work by index: neighbours read straight from the
+neighbour rows, positions from the columns, a soldier's tuning from its class. Then damage and death became static,
+with `onGotShot` as a static hook. Logic went from 6.5 to 5.0 ms a frame after the first step. Against the instance
+version, all of it took logic from 11.4 to 8.2 ms on one logic worker: 28 % less for the same game. The engine gained
+the two static calls the people needed (`RigidBody.setVelocity`, `SpriteRenderer.setAnimationSpeed`), and the guide a
+section with both ways side by side. The rewrite also turned up two old bugs: the trash bins' sparks and the explosions
+each used an engine object they had never imported.
+
+The owner's idea was to mix soldiers and civilians from the start, so every soldier fights from the first frame and
+the logic works hard. There, the two ways came out even: once everyone shoots, the time goes to work both styles share,
+like finding targets, casting rays and spawning particles, and each run's battle goes differently. The ECS way pays
+where the cost is being an object.
+
+What still makes an instance on that path: a spawn returns one, an FSM hands one to its states, and a few setters have
+no static form yet. Those are next.
+
 ## Thursday 19 November 2026 (night) — Lists Nobody Read
 
 This morning a visualRange started to mean one thing: this entity's code reads its neighbours, so it gets a list from
