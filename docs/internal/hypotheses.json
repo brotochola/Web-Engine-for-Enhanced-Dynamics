@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-19",
+  "updated": "2026-11-20",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -24096,7 +24096,8 @@
         "R-1594",
         "R-1567",
         "R-1595",
-        "R-1596"
+        "R-1596",
+        "R-1599"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24322,7 +24323,8 @@
       "records": [
         "R-1563",
         "R-1596",
-        "R-1569"
+        "R-1569",
+        "R-1599"
       ],
       "refs": [],
       "id": "N-323",
@@ -39895,6 +39897,15 @@
       "title": "The night's low-end capacity at 9ddd959f: predator 0.15, boids 27 000, bunnyMark 15 000, keyedPack 85 000, each within a step of the morning's; Predator by night under 0.05 (GPU, ~26 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899u (21:31-21:42): the night's low-end capacity at main 9ddd959f (the evening's merges, E-378, the\nvisualRange audit, N-322, N-323). runCapacity on the five capacity scenes, headed, --src, starts near the morning's\nedges with floors under them. i7-7500U 2C/4T, HD 620 on Intel 31.0.101.2145. The CPU frequency was logged every 5 s:\nmean 95 % of the 2.7 GHz base, 17 of 117 samples under 80 %.\n\n| scene | capacity at 9ddd959f | what breaks above it | the morning (R-1498 at 8c310e43, R-1587/R-1588 at b190651d) |\n|---|---|---|---|\n| predator | crowd 0.15 (2 400) | crowd 0.2: drawn 58.18 fps | 0.2 (3 200) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | drawn 25.6 fps at 0.15, 27.0 at 0.05: the GPU | under 0.25 (drawn 24.2) |\n| boids | 27 000 | 28 000: physics p99 16.75 ms | 28 000 |\n| bunnyMark | 15 000 | 20 000: drawn 52.1 fps | 15 000 |\n| keyedPack | 85 000 | 90 000: pre-render p99 18.88 ms | 90 000 |\n\n- **Every edge is within one search step of the morning's, by a hair:** Predator's crowd 0.2 drew 58.2 fps against the\n  59 bar, and boids' p99 missed by 0.05 ms. Three scenes landing a step lower is worth watching, not a regression: each\n  edge is a single run, and R-1588 saw 0.2 pass or fail between thread counts.\n- **Predator by night cannot reach 60 fps on the HD 620 at any crowd:** about 26 fps drawn even at crowd 0.05. That is\n  the GPU: the light pass costs 11 to 12.5 ms an execution there (R-1499)."
+    },
+    {
+      "id": "R-1599",
+      "date": "2026-11-20",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "The ASUS scoreboard of 832a99bf: the spatial row like for like reads main 0.867 ms against v0.14.0's 0.434 (+100 %, both 9 000 lists); decorations' logic0 +3.6 %; lockstep passes",
+      "verdict": "note",
+      "text": "ASUS lab job 0899v (22:49-00:15): the scoreboard of local main 832a99bf against v0.14.0 on the ASUS (i7-7500U 2C/4T,\nHD 620 on Intel 31.0.101.2145), --full-rev --skip-node, lockstep on. 832a99bf holds N-323 (spread list ages), 820048fa\n(the stationary spatial entities read their neighbour count, so v0.14.0 builds their lists too) and 2a1e2859 (that row's\nload is BODY_COUNT). Read against 0899t (7ffea480, R-1595).\n\n- **Lockstep passes.**\n- **The spatial row, now like for like, reads main at twice v0.14.0 on this laptop.**\n  - spatialMax_STEP_MS: v0.14.0 0.434 ms (cv 11 %), 832a99bf 0.867 ms (cv 18 %), +100 %.\n  - ENTITIES_PROCESSED is 9 000 on both sides now, BODY_COUNT 9 000. The kernel is +14.8 % for main.\n  - v0.14.0's row was 0.392 ms when it built no lists (R-1595's baseline), so its lists added only about 0.04 ms here.\n    Main's list path costs 0.87, about 1.0 in exact frames (R-1596).\n  - The main PC read the 30 000-body scene with main 15 % faster than v0.14.0 (R-1569). The two machines disagree.\n  - Both sides are far under the 6 ms floor, so FAIL.\n- **decorations reads WORSE:** logic0 12.66 -> 13.11 ms (+3.6 %, cv 5.4 and 0.2 %), and its kernel -16.7 %. It was a\n  TIE at -5.1 % in R-1595. The kernel is inside the ASUS's swing; the scene's +3.6 % is one sitting.\n- **Kernel-only flips, inside the ASUS's swing (R-1580):**\n  - gpuQueuePack KEPT -> WORSE (kernel -14.7 %), decorationCollect KEPT -> WORSE (-4.4 %).\n  - audioSlots, particleListsZoomed, attachedSway, textureUpload KEPT -> TIE. tweenPool, attachedWalls TIE -> KEPT.\n- **Scene rows held:** box2d -24.5 %, bullets -17.6 %, ray -26 %, rayVsBox2d -12.7 %, box2dRayJs -23 %,\n  meshFillMoving's renderer -26.7 %, decalBlit -5.2 %, queryAabb -12.9 %."
     }
   ],
   "leads": [
