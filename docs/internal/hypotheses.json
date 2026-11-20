@@ -24091,7 +24091,8 @@
         "R-1590",
         "R-1561",
         "R-1593",
-        "R-1594"
+        "R-1594",
+        "R-1567"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24215,7 +24216,8 @@
     {
       "records": [
         "R-1554",
-        "R-1590"
+        "R-1590",
+        "R-1567"
       ],
       "refs": [],
       "id": "N-318",
@@ -39738,6 +39740,15 @@
       "commits": [
         "3ef09458"
       ]
+    },
+    {
+      "id": "R-1567",
+      "date": "2026-11-19",
+      "time": "21:18",
+      "timeFrom": "recorded",
+      "title": "The start with N-318, SST-21 and N-323 against main before them: warm first draw +60 to 90 ms (the physics prime +70), spatial0's early hitch 80 -> 15 ms",
+      "verdict": "note",
+      "text": "**The start with N-318, SST-21 and N-323 together, against main before them: the first draw 60 to 90 ms later warm,\nspatial0's early hitch gone.** loadWaterfall --bundle --t0 prepare, Predator light3d=1&hour=22, each side served from its\nown worktree at a dist commit (c026f7e6 at 0.14.81 against 69fdead0 at 0.14.115), 2 rounds of 2 runs a side alternated,\ncold and warm visits (21:11 to 21:14), then an A/A of 69fdead0 from both worktrees (21:15 to 21:18).\n\n| | c026f7e6 | 69fdead0 | A/A (69fdead0, the two trees) |\n| --- | --- | --- | --- |\n| warm first draw, ms | 989, 990, 992, 1003 | 1266, 1089, 1083, 1054 | 1097, 1051, (2098), 1067 / 1082, 1072, 985, 1038 |\n| cold first draw, ms | 4767, 2074, 4825, 2015 | 7202, 2265, 5057, 2344 | 3747, 2123, 3599, 2058 / 4939, 2101, 3600, 2028 |\n\n- **Where it goes (warm, medians).** The physics prime ends 102 ms after the world spawns on 69fdead0 against 32 on\n  c026f7e6: N-318's cost (the prime builds every body after the spawns). The spatial prime ends 35 ms before the\n  physics one, so it is not on the critical path. The rest is spread over every phase from module load on (the\n  renderer ready 690 -> 789 ms).\n- **The first seconds (warm, round 1, longest own step after the start).** spatial0 80 -> 15 ms (SST-21), logic0 30 ->\n  47, logic1 34 -> 54 (the lists exist from frame 1, so the first ticks read neighbours), physics 17 -> 23, the\n  renderer 64 -> 75.\n- The ASUS read the first draws level within its spread (R-1593). N-318's next (prime between logic0's spawn batches)\n  would win back most of the 70 ms."
     }
   ],
   "leads": [
