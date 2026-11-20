@@ -92,6 +92,15 @@ export function typeBitsOf(entityType) {
   return bits !== 0 ? bits : unregisteredTypeBits(entityType);
 }
 
+/**
+ * The name of entity type `entityType`'s class, for a warning a static gives (an entity's method names this.constructor).
+ * @param {number} entityType
+ */
+export function classNameOfType(entityType) {
+  const C = classOfType !== null ? classOfType(entityType) : undefined;
+  return C ? C.name : 'An entity';
+}
+
 function unregisteredTypeBits(entityType) {
   const C = classOfType !== null ? classOfType(entityType) : undefined;
   return C ? bitsOfClass(C) : 0;
