@@ -3847,6 +3847,8 @@ export declare class RigidBody extends Component {
   static applyImpulse(index: number, ix: number, iy: number, atX?: number, atY?: number): void;
   /** One spin kick on the next physics step. */
   static applyAngularImpulse(index: number, impulse: number): void;
+  /** Set the velocity (px/s), as entity.setVelocity does, without an instance; the same velocity again sends nothing. */
+  static setVelocity(index: number, vx: number, vy: number): void;
   syncMassFromCollider(): boolean;
   applyForce(fx: number, fy: number, atX?: number, atY?: number): void;
   applyTorque(torque: number): void;

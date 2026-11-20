@@ -427,6 +427,21 @@ export class RigidBody extends Component {
     if (ring && ring.isCommandRingBound()) ring.enqueueApplyAngularImpulse(index, impulse);
   }
 
+  /**
+   * Set the velocity (px/s), as entity.setVelocity(vx, vy) does, without an instance (a static tickAll or hook): the
+   * columns, and Box2D's body on its next step. The same velocity again sends nothing.
+   * @param {number} index - entity index
+   * @param {number} vx
+   * @param {number} vy
+   */
+  static setVelocity(index, vx, vy) {
+    if (RigidBody.vx[index] === vx && RigidBody.vy[index] === vy) return;
+    RigidBody.vx[index] = vx;
+    RigidBody.vy[index] = vy;
+    const ring = globalThis.Box2dCommandRing;
+    if (ring && ring.isCommandRingBound()) ring.enqueueSetVelocity(index, vx, vy);
+  }
+
   applyForce(fx, fy, atX, atY) {
     RigidBody.applyForce(this.index, fx, fy, atX, atY);
   }
