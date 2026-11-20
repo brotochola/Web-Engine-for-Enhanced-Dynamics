@@ -20835,19 +20835,20 @@
     {
       "id": "N-255",
       "title": "pruneTestResults (run by runPredatorAbab) deletes anything in tests/results untouched for 7 days, the capacity history included: a week without nightly runs loses it",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the capacity agent",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (d528396c), on fix/n255-prune-keeps-history (R-1706)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "nightlyCapacity writes tests/results/capacity-history.jsonl by default.",
-      "next": "Skip *history.jsonl in the pruner, or default the history outside tests/results; tonight's is in D:/claude/weed-capacity-history.jsonl.",
+      "result": "Fixed 2026-11-20 (d528396c): names ending in history.jsonl are never pruned, and a folder holding one is pruned file by file around it, so a week without a nightly run keeps capacity-history.jsonl.",
+      "next": "Nothing left.",
       "refs": [],
       "aliases": [
         "capacity history pruned"
       ],
       "records": [
-        "R-1240"
+        "R-1240",
+        "R-1706"
       ]
     },
     {
@@ -40135,6 +40136,15 @@
       "title": "N-254 fixed: a scene that fails while booting ends the run at once (exit 4), no retry",
       "verdict": "kept-hygiene",
       "text": "**N-254 fixed: a scene that fails while booting ends the integrated run at once (exit 4) and is not run again.** Branch fix/n254-boot-failure-exit, cb0b5621 (the fixture) and 2eca13c3.\n\n- **Cause:** the page raced loadScene only with the engine's fatal overlay, which shows a worker's error only when the worker reports it. A worker that dies outside the engine's handlers (sceneWorkerBootstrap's worker.onerror only logs) reaches the page as an uncaught error and nowhere else. The scene never reported ready, the run waited out its watchdog (warm-up + window + 5 min), and measureLib ran it again. The original case (500 001 entities, over the old ceiling) no longer fails since DX-ENT1M, so a fixture stands in for it: bootFailureScene, whose entity module never finishes loading in a worker and throws uncaught.\n- **Fix:** tests/bench/bootWatch.mjs, raced with loadScene by the page. It fails the boot at once on the fatal overlay, as before. It also fails the boot 10 s after the page's first uncaught error or unhandled rejection when the scene has still not booted, so a scene that boots through a stray error is not failed. The runner exits 4 on a boot failure, and measureLib's runIntegratedWithRetry returns it without a second run (bootFailure: true).\n- **Checked on the ASUS:** bootFailureScene on bugs/base was still running when cut at 60 s (its watchdog: 302 s); with the fix it exits 4 in 15 s and measureLib returns after one run (15 s). A normal run (audioStorm, plays 1200) is unchanged.\n- **Test:** bootWatch.test.js covers four cases with mocked timers: an uncaught error past the grace, the overlay at once, an unhandled rejection, and a boot that finishes and is never failed. Node suite 3291 of 3291."
+    },
+    {
+      "id": "R-1706",
+      "date": "2026-11-20",
+      "time": "05:34",
+      "timeFrom": "recorded",
+      "title": "N-255 fixed: pruneTestResults never removes a history file",
+      "verdict": "kept-hygiene",
+      "text": "**N-255 fixed: pruneTestResults never removes a history file.** Branch fix/n255-prune-keeps-history, d528396c.\n\n- **Cause:** the pruner, which runPredatorAbab runs before every sitting, removed any entry of tests/results untouched for 7 days. nightlyCapacity's default history, tests/results/capacity-history.jsonl, is touched once a night, so a week without a night lost it.\n- **Fix:** a name ending in history.jsonl is never removed. A folder that holds one directly is pruned file by file around it, where it used to go whole by its own age. nightlyCapacity's comment says so.\n- **Test:** pruneTestResults.test.js adds a case: a 30-day-old capacity-history.jsonl at the top and a history inside a 30-day-old folder both stay, and the old runs beside them go (on bugs/base the history went). Node suite 3287 of 3288: the one failure was physicsChainWait's \"physics sleeps until the bell rings\" timing test, which this change cannot reach (its file passed 3 of 3 alone)."
     }
   ],
   "leads": [

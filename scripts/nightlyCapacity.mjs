@@ -18,8 +18,8 @@
  * --duration-ms as runCapacity. --allow-battery runs on battery (the lines say so;
  * by default a night on battery writes a skipped line a scene and runs nothing).
  *
- * tests/results is git-ignored and tests/bench/pruneTestResults.mjs removes what is not touched for 7 days: the
- * history file is touched every night, but a week without a night loses it. Point --history elsewhere to keep it.
+ * tests/results is git-ignored, and tests/bench/pruneTestResults.mjs removes what is not touched for 7 days, but never a
+ * history file (*history.jsonl, N-255): a week without a night keeps it.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';

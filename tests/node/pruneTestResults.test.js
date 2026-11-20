@@ -67,3 +67,20 @@ test('a link to a folder outside is unlinked, its target kept', () => {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(outside, { recursive: true, force: true });
 });
+
+// N-255: nightlyCapacity keeps its history in tests/results/capacity-history.jsonl by default, touched once a night; a
+// week without a night lost it to the pruner. A history (*history.jsonl) is a record, not a raw result: never pruned.
+test('a history file is kept however old, at the top and in an old folder (whose other old files go)', () => {
+  const { dir, put, age } = tree();
+  put('capacity-history.jsonl', 30);
+  put('nightly/old-history.jsonl', 30);
+  put('nightly/old-run.json', 30);
+  put('nightly/new-run.json', 1);
+  age('nightly', 30);
+  put('old-run.json', 30);
+  const removed = pruneTestResults({ dir, days: 7 }).map((p) => path.relative(dir, p).replace(/\\/g, '/')).sort();
+  assert.deepEqual(removed, ['nightly/old-run.json', 'old-run.json']);
+  assert.ok(fs.existsSync(path.join(dir, 'capacity-history.jsonl')));
+  assert.ok(fs.existsSync(path.join(dir, 'nightly/old-history.jsonl')));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
