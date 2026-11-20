@@ -1,3 +1,4 @@
+import { resetSpriteLookups } from '../components/spriteRenderer.js';
 import { debugWorkerLog } from './debugLog.js';
 import { clearEntityTypes } from '../core/entityTypes.js';
 import { createSpatialPublishMemory, spatialPublishMemoryBytes } from './spatialPublishMemory.js';
@@ -1519,8 +1520,7 @@ export function teardownSceneSharedState(scene) {
   bindStaticSceneryGen(null);
   bindStaticTypes(null);
   GameObject.instances = [];
-  GameObject._globalAnimationCache = Object.create(null);
-  GameObject._animIndexBySheet = [];
+  resetSpriteLookups();
 
   Sun.unbind();
 

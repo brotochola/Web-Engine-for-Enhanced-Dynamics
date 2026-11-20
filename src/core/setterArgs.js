@@ -28,3 +28,13 @@
 export const SETTER_ARGS = new Float32Array(
   new (typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer)(8),
 );
+
+/**
+ * E-533: the same for the work that computes with its values before a column holds the result, where rounding them to
+ * float32 first would change it: addVelocity's sum, scaleVelocity's product, accelerateTowards' direction, a
+ * rotation's cos and sin, setRotationCS's atan2, a mass's inverse. Doubles, read exactly as given. Four: the most any
+ * such setter takes (accelerateTowards: x, y, acc).
+ */
+export const SETTER_ARGS64 = new Float64Array(
+  new (typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer)(32),
+);

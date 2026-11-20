@@ -8,6 +8,9 @@ import assert from 'node:assert/strict';
 
 import { SpriteSheetRegistry, addBigAtlasChunks, bigAtlasChunkName, BIG_ATLAS_CHUNK } from '../../src/core/spriteSheetRegistry.js';
 import { GameObject } from '../../src/core/gameObject.js';
+import { SpriteRenderer, resetSpriteLookups } from '../../src/components/spriteRenderer.js';
+import { Transform } from '../../src/components/transform.js';
+import { noteEntityType, clearEntityTypes } from '../../src/core/entityTypes.js';
 import { Scene } from '../../src/core/scene.js';
 
 /** A bigAtlas of `n` single-frame animations a0 … a{n-1}, frame k being (k + 1) px wide. */
@@ -28,7 +31,7 @@ function install(json) {
   SpriteSheetRegistry._frameSizeCache.clear();
   SpriteSheetRegistry.spritesheetNames = [''];
   SpriteSheetRegistry.spritesheetNameToId = new Map();
-  GameObject._globalAnimationCache = Object.create(null);
+  resetSpriteLookups();
   const proxySheets = { ...(json.meta?.proxySheets || {}) };
   addBigAtlasChunks(json, proxySheets);
   SpriteSheetRegistry.register('bigAtlas', json);
@@ -51,24 +54,35 @@ test('setSprite stores the chunk’s sheet and an index under 256; past 255 it n
   const json = atlasJson(1100);
   const proxies = install(json);
   assert.equal(Object.keys(proxies).length, 1 + 4, 'the walker spritesheet and chunks 1 to 4');
-  const entity = {
-    constructor: { name: 'House' },
-    spriteRenderer: {},
-    state: -1,
-    setAnimationState(i) {
-      this.state = i;
-    },
-  };
+  // One house at index 0 of a registered type with a SpriteRenderer (E-533: setSprite is SpriteRenderer's work by index).
+  class House extends GameObject {
+    static components = [SpriteRenderer];
+  }
+  const keys = ['spritesheetId', 'isAnimated', 'active', 'renderVisible', 'animationState', 'renderDirty', 'keyedDirty', 'updateBounds'];
+  const saved = keys.map((k) => [k, SpriteRenderer[k]]);
+  const savedType = Transform.entityType;
+  for (const k of keys.slice(0, 7)) SpriteRenderer[k] = new Uint8Array(1);
+  SpriteRenderer.updateBounds = () => {};
+  Transform.entityType = new Uint8Array(1);
+  noteEntityType(0, House);
+  const entity = { state: -1 };
   const set = (name) => {
-    GameObject.prototype.setSprite.call(entity, name);
-    return [SpriteSheetRegistry.getSpritesheetName(entity.spriteRenderer.spritesheetId), entity.state];
+    SpriteRenderer.setSprite(0, name);
+    entity.state = SpriteRenderer.animationState[0];
+    return [SpriteSheetRegistry.getSpritesheetName(SpriteRenderer.spritesheetId[0]), entity.state];
   };
+  try {
   assert.deepEqual(set('a10'), ['bigAtlas', 10]);
   assert.deepEqual(set('a255'), ['bigAtlas', 255]);
   assert.deepEqual(set('a256'), [bigAtlasChunkName(1), 0]);
   assert.deepEqual(set('a1067'), [bigAtlasChunkName(4), 1067 - 4 * BIG_ATLAS_CHUNK], 'littleCity’s last house');
   assert.deepEqual(set('a1067'), [bigAtlasChunkName(4), 43], 'from the cache too');
   assert.ok(entity.state < 256);
+  } finally {
+    for (const [k, v] of saved) SpriteRenderer[k] = v;
+    Transform.entityType = savedType;
+    clearEntityTypes();
+  }
 });
 
 test('the pre-render’s table maps a chunk’s index back to the global one; frame sizes resolve through it', () => {

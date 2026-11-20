@@ -2,6 +2,7 @@
 // edge's width); on a real Pixi worker a cone light takes the first slot with a third row (its direction on the floor)
 // and uConeCount; the lighting shader's cone term (emulated here as written) is 1 inside, 0 outside, smooth between;
 // followFlip mirrors a light's offsetX and direction when its entity's flipX changes, and only then.
+import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -84,6 +85,7 @@ test('GameObject flipX mirrors a followFlip light once per change, and leaves ot
     const go = Object.create(GameObject.prototype);
     Object.defineProperty(go, 'index', { value: 1 });
     Object.defineProperty(go, '_hasComponents', { value: { SpriteRenderer: true, LightEmitter: true } });
+    Object.defineProperty(go, '_componentBits', { value: bitsOfFlags(go._hasComponents) });
     LightEmitter.offsetX[1] = 12;
     LightEmitter.followFlip[1] = 1;
     go.flipX = true;

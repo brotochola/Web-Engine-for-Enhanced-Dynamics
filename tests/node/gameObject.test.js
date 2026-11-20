@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import assert from 'node:assert/strict';
 
 import { GameObject } from '../../src/core/gameObject.js';
@@ -627,10 +628,12 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   const adobeOnly = Object.create(GameObject.prototype);
   adobeOnly.index = 0;
   adobeOnly._hasComponents = { adobeAnimComponent: true };
+  adobeOnly._componentBits = bitsOfFlags(adobeOnly._hasComponents);
 
   const both = Object.create(GameObject.prototype);
   both.index = 1;
   both._hasComponents = { SpriteRenderer: true, adobeAnimComponent: true };
+  both._componentBits = bitsOfFlags(both._hasComponents);
 
   try {
     adobeOnly.alpha = 0.4;
@@ -762,6 +765,7 @@ test('setLayer(fire) keeps ENTITIES sprite bit and packs collider into fire', ()
     const go = Object.create(GameObject.prototype);
     go.index = 0;
     go._hasComponents = { SpriteRenderer: true, Collider: true };
+    go._componentBits = bitsOfFlags(go._hasComponents);
     go.setLayer('fire');
     assert.equal(SpriteRenderer.layerMask[0] & entities, entities);
     assert.equal(SpriteRenderer.layerMask[0] & (1 << fireId), 1 << fireId);

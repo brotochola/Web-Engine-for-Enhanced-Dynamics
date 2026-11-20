@@ -3738,6 +3738,13 @@ export declare class SceneBridge {
 // --- Components ---
 
 export declare class Transform extends Component {
+  // E-533: the setters by index (the entity's setters call these): the pose and, on a body, its SET_TRANSFORM.
+  static setX(index: number, x: number): void;
+  static setY(index: number, y: number): void;
+  static setPosition(index: number, x: number, y: number): void;
+  static setRotation(index: number, radians: number): void;
+  static setRotationCS(index: number, c: number, s: number): void;
+  static setParent(index: number, parent: GameObject | number | null): void;
   /** SoA only — pose lives on Box2D HEAP via `bindBox2dHotFields`. */
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
@@ -3851,6 +3858,22 @@ export declare class RigidBody extends Component {
   static applyAngularImpulse(index: number, impulse: number): void;
   /** Set the velocity (px/s), as entity.setVelocity does, without an instance; the same velocity again sends nothing. */
   static setVelocity(index: number, vx: number, vy: number): void;
+  // E-533: the rest by index (the entity's methods and this component's setters call these); nothing without a RigidBody.
+  static setVx(index: number, vx: number): void;
+  static setVy(index: number, vy: number): void;
+  static setAngularVelocity(index: number, w: number): void;
+  static addVelocity(index: number, dvx: number, dvy: number): void;
+  static scaleVelocity(index: number, factor: number): void;
+  static addAcceleration(index: number, ax: number, ay: number): void;
+  static accelerateTowards(index: number, x: number, y: number, acc: number): void;
+  static setFixedRotation(index: number, on: boolean | number): void;
+  static setStatic(index: number, on: boolean | number): void;
+  static setAwake(index: number, awake?: boolean): void;
+  static setActive(index: number, on: boolean | number): void;
+  static setLinearDamping(index: number, damping: number): void;
+  static setAngularDamping(index: number, damping: number): void;
+  static setSleepThreshold(index: number, threshold: number): void;
+  static setMass(index: number, mass: number): void;
   syncMassFromCollider(): boolean;
   applyForce(fx: number, fy: number, atX?: number, atY?: number): void;
   applyTorque(torque: number): void;
@@ -3920,6 +3943,27 @@ export declare class Collider extends Component {
     polygonCount: number,
   ): boolean;
   static clearFixtures(index: number): void;
+  // E-533: the setters by index (the instance's setters call these): for code that holds an index, not an entity.
+  static setActive(index: number, on: boolean | number): void;
+  static setShapeType(index: number, shapeType: number): void;
+  static setOffsetX(index: number, x: number): void;
+  static setOffsetY(index: number, y: number): void;
+  static setOffset(index: number, x: number, y: number): void;
+  static setRadius(index: number, radius: number): void;
+  static setWidth(index: number, width: number): void;
+  static setHeight(index: number, height: number): void;
+  static setSize(index: number, width: number, height: number): void;
+  static setCollisionLayer(index: number, layer: number): void;
+  static setCollisionMask(index: number, mask: number): void;
+  static setCollisionGroupIndex(index: number, group: number): void;
+  static setFriction(index: number, friction: number): void;
+  static setRestitution(index: number, restitution: number): void;
+  static setIsTrigger(index: number, on: boolean | number): void;
+  static setEnableHitEvents(index: number, on: boolean | number): void;
+  static addLayerToMask(index: number, layer: number): void;
+  static removeLayerFromMask(index: number, layer: number): void;
+  static collidesWithLayer(index: number, layer: number): boolean;
+  static fitToSprite(index: number, factor?: number): boolean;
   static fixtureCount: Uint16Array;
   makePolygon(points: ArrayLike<{ x: number; y: number } | number> | number[]): boolean;
   replacePolygons(polys: Array<ArrayLike<{ x: number; y: number } | number>>): boolean;
@@ -4131,8 +4175,41 @@ export declare class SpriteRenderer extends Component {
    */
   get unshaded(): boolean;
   set unshaded(v: boolean);
-  /** The animation's rate (frames per 1/60 s), as entity.setAnimationSpeed sets it, without an instance. */
-  static setAnimationSpeed(entityIndex: number, speed: number): void;
+  /** E-533: an entity's sprite methods by index (SpriteRenderer.setAlpha(i, a) is entity.setAlpha(a)): its sprite, and its Adobe clip and mesh row where it has them. */
+  static markDirty(index: number): void;
+  static setAlpha(index: number, alpha: number): void;
+  static setTint(index: number, tint: number): void;
+  static setVisible(index: number, visible: boolean): void;
+  static setScale(index: number, x: number, y?: number): void;
+  static setScaleX(index: number, x: number): void;
+  static setScaleY(index: number, y: number): void;
+  static setFlip(index: number, x: boolean, y?: boolean): void;
+  static setFlipX(index: number, on: boolean): void;
+  static setFlipY(index: number, on: boolean): void;
+  static setTileWorld(index: number, periodX: number, periodY?: number | null, u0?: number, v0?: number): void;
+  static setTileLocal(index: number, periodX: number, periodY?: number | null, u0?: number, v0?: number): void;
+  static clearTile(index: number): void;
+  static bakeWorldTileToLocal(index: number): void;
+  static setDisplaySize(index: number, width: number, height?: number): void;
+  static setAnchor(index: number, x: number, y: number): void;
+  static setAnimationState(index: number, state: number): void;
+  /** The animation's rate (frames per 1/60 s). */
+  static setAnimationSpeed(index: number, speed: number): void;
+  static setAnimationLoop(index: number, loop: boolean): void;
+  static setSpritesheet(index: number, spritesheetName: string): void;
+  static setAnimation(index: number, animationName: string, loop?: boolean): void;
+  static setSprite(index: number, spriteNameOrSheet: string, animation?: string, frameIndex?: number): void;
+  /** E-533: the component's setters by index (spriteRenderer.zIndex = v is SpriteRenderer.setZIndex(i, v)). */
+  static setZIndex(index: number, zIndex: number): void;
+  static setRepeatX(index: number, px: number): void;
+  static setRepeatY(index: number, px: number): void;
+  static setTileMode(index: number, mode: number): void;
+  static setTileOffsetU(index: number, u: number): void;
+  static setTileOffsetV(index: number, v: number): void;
+  static setSpriteRotation(index: number, radians: number): void;
+  static setNormals(index: number, normals: 'auto' | 'map' | 'height' | 'flat'): void;
+  static setSurface(index: number, surface: 'standing' | 'floor'): void;
+  static setUnshaded(index: number, unshaded: boolean): void;
   static getOriginalWidth(entityIndex: number): number;
   static getOriginalHeight(entityIndex: number): number;
   static updateBounds(entityIndex: number): void;
@@ -4404,6 +4481,16 @@ export declare class DecorationComponent extends Component {
 }
 
 export declare class LightEmitter extends Component {
+  // E-533: the setters by index (the instance's setters call these), for code that holds an index.
+  static setGlow(index: number, value: number): void;
+  static setGlowRadius(index: number, value: number): void;
+  /** Throws on an unknown layer. */
+  static setGlowLayer(index: number, name: string | null): void;
+  static setOffsetX(index: number, value: number): void;
+  static setDirection(index: number, angle: number): void;
+  static setConeAngle(index: number, angle: number): void;
+  static setConeSoftness(index: number, value: number): void;
+  static setFollowFlip(index: number, on: number | boolean): void;
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
     color: typeof Uint32Array;
@@ -4535,6 +4622,12 @@ export declare const DIRECTION_NAMES: readonly ['right', 'downRight', 'down', 'd
  * Brings a SpriteRenderer.
  */
 export declare class DirectionalSprite extends Component {
+  // E-533: the setters by index (the instance's setters call these), for code that holds an index.
+  static setFacing(index: number, radians: number): void;
+  /** Throws on anything else. */
+  static setFacingFrom(index: number, source: 'manual' | 'velocity' | 'rotation' | number): void;
+  static setTurnMargin(index: number, radians: number): void;
+  static lookAt(index: number, x: number, y: number): void;
   static readonly requires: readonly [typeof SpriteRenderer];
   static facing: Float32Array;
   static facingFrom: Uint8Array;
@@ -4572,6 +4665,17 @@ export declare const CAST_KIND: Readonly<{ AUTO: 0; SPRITE: 1; HEIGHT_MAP: 2; BO
 export type ShadowCastType = 'sprite' | 'heightMap' | 'box' | 'hull' | 'wall' | 'none';
 
 /** Options of `shadowCaster.setSprite`. */
+/** A ShadowCaster's calls for one light kind, by index (ShadowCaster.sun, ShadowCaster.lamps). */
+export interface ShadowCasterLightSideByIndex {
+  setSprite(index: number, options?: ShadowCasterSpriteOptions): void;
+  setHeightMap(index: number): void;
+  clear(index: number): void;
+  setBox(index: number, width: number, depth: number, height: number, options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number }): void;
+  addLevel(index: number, outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>, bottom: number, top: number, topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>, options?: { floorScaleY?: number }): void;
+  setHull(index: number, points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): void;
+  setWall(index: number, options?: { shape?: 'collider' | 'sprite' }): void;
+}
+
 export interface ShadowCasterSpriteOptions {
   /**
    * 'light' (the default): the card faces each light. 'fixed': it stands along the object through its anchor and shows the
@@ -4639,6 +4743,20 @@ export interface ShadowCasterLightSide {
  * not shaded by its own entity. How the shadows are drawn is the scene's: `lighting.sunShadows`, `lighting.lampShadows`.
  */
 export declare class ShadowCaster extends Component {
+  // E-533: everything the instance's methods do, by index (they call these), for code that holds an index.
+  /** One light kind by index: `ShadowCaster.lamps.setWall(i)`, `ShadowCaster.sun.setBox(i, ...)`. */
+  static readonly sun: ShadowCasterLightSideByIndex;
+  static readonly lamps: ShadowCasterLightSideByIndex;
+  static setSprite(index: number, options?: ShadowCasterSpriteOptions): void;
+  static setHeightMap(index: number): void;
+  static setBox(index: number, width: number, depth: number, height: number, options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number }): void;
+  static addLevel(index: number, outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>, bottom: number, top: number, topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>, options?: { floorScaleY?: number }): void;
+  static setHull(index: number, points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): void;
+  static setWall(index: number, options?: { shape?: 'collider' | 'sprite' }): void;
+  static clear(index: number): void;
+  static setOpacity(index: number, value: number): void;
+  static setBaseRadius(index: number, value: number): void;
+  static setSelfShadow(index: number, value: boolean | 'auto' | 'off' | null): void;
   /** Its card for every light: standing on its base, the frame each light sees (`orient: 'fixed'`: along the object). */
   setSprite(options?: ShadowCasterSpriteOptions): this;
   /** Its solid for every light: each pixel where it is in 3D (needs the sheet's heightMap). */

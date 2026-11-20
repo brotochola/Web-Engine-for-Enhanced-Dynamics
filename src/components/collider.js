@@ -2,7 +2,9 @@
 // Supports circles, oriented boxes, convex polygons (max 8 verts)
 //
 // CUSTOM SETTERS FOR MASS AUTO-COMPUTATION:
-// radius / width / height setters recompute RigidBody.mass / invMass.
+// radius / width / height setters recompute RigidBody.mass / invMass. Every
+// setter with a side effect is a static by entity index (Collider.setRadius(i, r),
+// E-533); the instance setters call it.
 //
 // Mass formulas:
 // - Circle: mass = π * radius²  (area)
@@ -309,6 +311,234 @@ class Collider extends Component {
     return (mass / area) * unitI;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SETTERS BY ENTITY INDEX (E-533)
+  // The implementation of every collider write with a side effect: a collider's
+  // setters (this.collider.radius = 10) and an entity's (this.radius = 10) call
+  // these, and ECS code calls them with no instance (Collider.setRadius(i, 10)).
+  // A plain column write (Collider.visualRange[i] = r) needs none.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Toggle Collider participation. Off + RigidBody still on → shapeless body
+   * (moves, no Box2D contacts). Host clears/adds shapes via GEOMETRY dirty.
+   * Compound fixtures (replacePolygons*) are kept while off, so turning it back on
+   * restores the whole shape. Rays, spatial and pointInCollider skip inactive colliders.
+   * @param {number} index
+   * @param {boolean|number} on
+   */
+  static setActive(index, on) {
+    const next = on ? 1 : 0;
+    if (Collider.active[index] === next) return;
+    Collider.active[index] = next;
+    markBodyDirty(index, BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS);
+  }
+
+  /**
+   * @param {number} index
+   * @param {number} shapeType - ShapeType
+   */
+  static setShapeType(index, shapeType) {
+    Collider.shapeType[index] = shapeType | 0;
+    RigidBody.syncMassFromCollider(index);
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /** @param {number} index @param {number} x */
+  static setOffsetX(index, x) {
+    Collider.offsetX[index] = Number(x) || 0;
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /** @param {number} index @param {number} y */
+  static setOffsetY(index, y) {
+    Collider.offsetY[index] = Number(y) || 0;
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /** Both offsets, one body mark. @param {number} index @param {number} x @param {number} y */
+  static setOffset(index, x, y) {
+    Collider.offsetX[index] = Number(x) || 0;
+    Collider.offsetY[index] = Number(y) || 0;
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /**
+   * A positive radius makes a box a circle. A polygon keeps its shape: radius is
+   * the Box2D border around the hull (0 = sharp). Syncs RigidBody mass.
+   * @param {number} index
+   * @param {number} radius
+   */
+  static setRadius(index, radius) {
+    Collider.radius[index] = radius;
+    const shape = Collider.shapeType[index];
+    if (radius > 0 && shape !== ShapeType.Chain && shape !== ShapeType.Polygon) {
+      Collider.shapeType[index] = ShapeType.Circle;
+    }
+    RigidBody.syncMassFromCollider(index);
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /**
+   * A positive width makes a circle a box (polygons and chains keep their shape). Syncs RigidBody mass.
+   * @param {number} index
+   * @param {number} width
+   */
+  static setWidth(index, width) {
+    Collider.width[index] = width;
+    const shape = Collider.shapeType[index];
+    if (width > 0 && shape !== ShapeType.Polygon && shape !== ShapeType.Chain) {
+      Collider.shapeType[index] = ShapeType.Box;
+    }
+    RigidBody.syncMassFromCollider(index);
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /**
+   * A positive height makes a circle a box (polygons and chains keep their shape). Syncs RigidBody mass.
+   * @param {number} index
+   * @param {number} height
+   */
+  static setHeight(index, height) {
+    Collider.height[index] = height;
+    const shape = Collider.shapeType[index];
+    if (height > 0 && shape !== ShapeType.Polygon && shape !== ShapeType.Chain) {
+      Collider.shapeType[index] = ShapeType.Box;
+    }
+    RigidBody.syncMassFromCollider(index);
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /**
+   * Width and height, one mass sync from the final box (setWidth then setHeight
+   * synced it from the half-changed one in between) and one body mark.
+   * @param {number} index
+   * @param {number} width
+   * @param {number} height
+   */
+  static setSize(index, width, height) {
+    Collider.width[index] = width;
+    Collider.height[index] = height;
+    const shape = Collider.shapeType[index];
+    if ((width > 0 || height > 0) && shape !== ShapeType.Polygon && shape !== ShapeType.Chain) {
+      Collider.shapeType[index] = ShapeType.Box;
+    }
+    RigidBody.syncMassFromCollider(index);
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /** @param {number} index @param {number} layer - 0..31 */
+  static setCollisionLayer(index, layer) {
+    Collider.collisionLayer[index] = layer & 31;
+    markBodyDirty(index, BODY_DIRTY.FILTER);
+  }
+
+  /** @param {number} index @param {number} mask - bit i = layer i */
+  static setCollisionMask(index, mask) {
+    Collider.collisionMask[index] = mask;
+    markBodyDirty(index, BODY_DIRTY.FILTER);
+  }
+
+  /** @param {number} index @param {number} group - 0 ignore; same negative never; same positive always */
+  static setCollisionGroupIndex(index, group) {
+    Collider.collisionGroupIndex[index] = group | 0;
+    markBodyDirty(index, BODY_DIRTY.FILTER);
+  }
+
+  /** @param {number} index @param {number} friction - μ, 0 or more */
+  static setFriction(index, friction) {
+    Collider.friction[index] = Math.max(0, Number(friction) || 0);
+    markBodyDirty(index, BODY_DIRTY.FRICTION);
+  }
+
+  /** @param {number} index @param {number} restitution - bounce, 0 or more */
+  static setRestitution(index, restitution) {
+    Collider.restitution[index] = Math.max(0, Number(restitution) || 0);
+    markBodyDirty(index, BODY_DIRTY.FRICTION);
+  }
+
+  /**
+   * A sensor: events, no physical response. Box2D reads it when it makes the body, so a change makes the body again
+   * (N-131: a write after the body existed did nothing).
+   * @param {number} index
+   * @param {boolean|number} on
+   */
+  static setIsTrigger(index, on) {
+    const next = on ? 1 : 0;
+    if (Collider.isTrigger[index] === next) return;
+    Collider.isTrigger[index] = next;
+    remakeBody(index, Transform.active?.[index] === 1);
+  }
+
+  /**
+   * A shape's hit events: Box2D reads them when it makes the body, so a change makes it again (N-135).
+   * @param {number} index
+   * @param {boolean|number} on
+   */
+  static setEnableHitEvents(index, on) {
+    const next = on ? 1 : 0;
+    if (Collider.enableHitEvents[index] === next) return;
+    Collider.enableHitEvents[index] = next;
+    remakeBody(index, Transform.active?.[index] === 1);
+  }
+
+  /** @param {number} index @param {number} layer - 0..31 */
+  static addLayerToMask(index, layer) {
+    Collider.collisionMask[index] |= (1 << (layer & 31));
+    markBodyDirty(index, BODY_DIRTY.FILTER);
+  }
+
+  /** @param {number} index @param {number} layer - 0..31 */
+  static removeLayerFromMask(index, layer) {
+    Collider.collisionMask[index] &= ~(1 << (layer & 31));
+    markBodyDirty(index, BODY_DIRTY.FILTER);
+  }
+
+  /** @param {number} index @param {number} layer - 0..31 @returns {boolean} */
+  static collidesWithLayer(index, layer) {
+    return !!(Collider.collisionMask[index] & (1 << (layer & 31)));
+  }
+
+  /**
+   * Size the collider to the sprite as drawn (frame × scale): a box gets its
+   * width and height, a circle a radius of half the smaller side. The offset
+   * follows the sprite anchor (and a flip), so box and sprite line up.
+   * Polygons and chains are left alone. Call after setSprite and setScale.
+   * @param {number} index
+   * @param {number} [factor=1] - 0.8 = a collider 80 % of the sprite
+   * @returns {boolean} false when there is no sprite to fit
+   */
+  static fitToSprite(index, factor = 1) {
+    const i = index;
+    const shape = Collider.shapeType[i];
+    if (shape === ShapeType.Polygon || shape === ShapeType.Chain) {
+      console.warn('Collider.fitToSprite: polygon and chain colliders keep their shape');
+      return false;
+    }
+    const active = SpriteRenderer.active;
+    const dims = active && active[i]
+      ? SpriteSheetRegistry.frameSizeOf(SpriteRenderer.spritesheetId[i], SpriteRenderer.animationState[i])
+      : null;
+    if (dims === null || !(dims.w > 0) || !(dims.h > 0)) return false;
+    const sx = SpriteRenderer.scaleX[i];
+    const sy = SpriteRenderer.scaleY[i];
+    const w = dims.w * (sx < 0 ? -sx : sx) * factor;
+    const h = dims.h * (sy < 0 ? -sy : sy) * factor;
+    if (shape === ShapeType.Circle) {
+      Collider.setRadius(i, (w < h ? w : h) * 0.5);
+    } else {
+      Collider.setWidth(i, w);
+      Collider.setHeight(i, h);
+    }
+    // The sprite's centre sits at (0.5 - anchor) × drawn size from the transform.
+    Collider.setOffset(
+      i,
+      (0.5 - SpriteRenderer.anchorX[i]) * dims.w * sx,
+      (0.5 - SpriteRenderer.anchorY[i]) * dims.h * sy,
+    );
+    return true;
+  }
+
   makePolygon(points) {
     return Collider.makePolygon(this.index, points);
   }
@@ -335,212 +565,129 @@ class Collider extends Component {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CUSTOM GETTERS/SETTERS
+  // Each setter with a side effect is its static above, by this collider's index.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /**
-   * Toggle Collider participation. Off + RigidBody still on → shapeless body
-   * (moves, no Box2D contacts). Host clears/adds shapes via GEOMETRY dirty.
-   * Compound fixtures (replacePolygons*) are kept while off, so turning it back on
-   * restores the whole shape. Rays, spatial and pointInCollider skip inactive colliders.
-   */
+  /** Collider participation (Collider.setActive). */
   get active() {
     return Collider.active[this.index];
   }
   set active(value) {
-    const next = value ? 1 : 0;
-    if (Collider.active[this.index] === next) return;
-    Collider.active[this.index] = next;
-    markBodyDirty(
-      this.index,
-      BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS,
-    );
+    Collider.setActive(this.index, value);
   }
 
   get shapeType() {
     return Collider.shapeType[this.index];
   }
   set shapeType(value) {
-    Collider.shapeType[this.index] = value | 0;
-    RigidBody.syncMassFromCollider(this.index);
-    markBodyDirty(this.index, BODY_DIRTY.GEOMETRY);
+    Collider.setShapeType(this.index, value);
   }
 
   /**
-   * Size the collider to the sprite as drawn (frame × scale): a box gets its
-   * width and height, a circle a radius of half the smaller side. The offset
-   * follows the sprite anchor (and a flip), so box and sprite line up.
-   * Polygons and chains are left alone. Call after setSprite and setScale.
+   * Size the collider to the sprite as drawn (Collider.fitToSprite). Call after setSprite and setScale.
    * @param {number} [factor=1] - 0.8 = a collider 80 % of the sprite
    * @returns {boolean} false when there is no sprite to fit
    */
   fitToSprite(factor = 1) {
-    const i = this.index;
-    const shape = Collider.shapeType[i];
-    if (shape === ShapeType.Polygon || shape === ShapeType.Chain) {
-      console.warn('Collider.fitToSprite: polygon and chain colliders keep their shape');
-      return false;
-    }
-    const active = SpriteRenderer.active;
-    const dims = active && active[i]
-      ? SpriteSheetRegistry.frameSizeOf(SpriteRenderer.spritesheetId[i], SpriteRenderer.animationState[i])
-      : null;
-    if (dims === null || !(dims.w > 0) || !(dims.h > 0)) return false;
-    const sx = SpriteRenderer.scaleX[i];
-    const sy = SpriteRenderer.scaleY[i];
-    const w = dims.w * (sx < 0 ? -sx : sx) * factor;
-    const h = dims.h * (sy < 0 ? -sy : sy) * factor;
-    if (shape === ShapeType.Circle) {
-      this.radius = (w < h ? w : h) * 0.5;
-    } else {
-      this.width = w;
-      this.height = h;
-    }
-    // The sprite's centre sits at (0.5 - anchor) × drawn size from the transform.
-    this.offsetX = (0.5 - SpriteRenderer.anchorX[i]) * dims.w * sx;
-    this.offsetY = (0.5 - SpriteRenderer.anchorY[i]) * dims.h * sy;
-    return true;
+    return Collider.fitToSprite(this.index, factor);
   }
 
   get offsetX() {
     return Collider.offsetX[this.index];
   }
   set offsetX(value) {
-    Collider.offsetX[this.index] = Number(value) || 0;
-    markBodyDirty(this.index, BODY_DIRTY.GEOMETRY);
+    Collider.setOffsetX(this.index, value);
   }
 
   get offsetY() {
     return Collider.offsetY[this.index];
   }
   set offsetY(value) {
-    Collider.offsetY[this.index] = Number(value) || 0;
-    markBodyDirty(this.index, BODY_DIRTY.GEOMETRY);
+    Collider.setOffsetY(this.index, value);
   }
 
   get radius() {
     return Collider.radius[this.index];
   }
   set radius(value) {
-    Collider.radius[this.index] = value;
-    // Positive radius on a box means a circle. A polygon keeps its shape:
-    // radius is the Box2D border around the hull (0 = sharp).
-    const shape = Collider.shapeType[this.index];
-    if (value > 0 && shape !== ShapeType.Chain && shape !== ShapeType.Polygon) {
-      Collider.shapeType[this.index] = ShapeType.Circle;
-    }
-    RigidBody.syncMassFromCollider(this.index);
-    markBodyDirty(this.index, BODY_DIRTY.GEOMETRY);
+    Collider.setRadius(this.index, value);
   }
 
   get width() {
     return Collider.width[this.index];
   }
   set width(value) {
-    Collider.width[this.index] = value;
-    if (
-      value > 0 &&
-      Collider.shapeType[this.index] !== ShapeType.Polygon &&
-      Collider.shapeType[this.index] !== ShapeType.Chain
-    ) {
-      Collider.shapeType[this.index] = ShapeType.Box;
-    }
-    RigidBody.syncMassFromCollider(this.index);
-    markBodyDirty(this.index, BODY_DIRTY.GEOMETRY);
+    Collider.setWidth(this.index, value);
   }
 
   get height() {
     return Collider.height[this.index];
   }
   set height(value) {
-    Collider.height[this.index] = value;
-    if (
-      value > 0 &&
-      Collider.shapeType[this.index] !== ShapeType.Polygon &&
-      Collider.shapeType[this.index] !== ShapeType.Chain
-    ) {
-      Collider.shapeType[this.index] = ShapeType.Box;
-    }
-    RigidBody.syncMassFromCollider(this.index);
-    markBodyDirty(this.index, BODY_DIRTY.GEOMETRY);
+    Collider.setHeight(this.index, value);
   }
 
   get collisionLayer() {
     return Collider.collisionLayer[this.index];
   }
   set collisionLayer(value) {
-    Collider.collisionLayer[this.index] = value & 31;
-    markBodyDirty(this.index, BODY_DIRTY.FILTER);
+    Collider.setCollisionLayer(this.index, value);
   }
 
   get collisionMask() {
     return Collider.collisionMask[this.index];
   }
   set collisionMask(value) {
-    Collider.collisionMask[this.index] = value;
-    markBodyDirty(this.index, BODY_DIRTY.FILTER);
+    Collider.setCollisionMask(this.index, value);
   }
 
   get collisionGroupIndex() {
     return Collider.collisionGroupIndex[this.index];
   }
   set collisionGroupIndex(value) {
-    Collider.collisionGroupIndex[this.index] = value | 0;
-    markBodyDirty(this.index, BODY_DIRTY.FILTER);
+    Collider.setCollisionGroupIndex(this.index, value);
   }
 
   get friction() {
     return Collider.friction[this.index];
   }
   set friction(value) {
-    Collider.friction[this.index] = Math.max(0, Number(value) || 0);
-    markBodyDirty(this.index, BODY_DIRTY.FRICTION);
+    Collider.setFriction(this.index, value);
   }
 
   get restitution() {
     return Collider.restitution[this.index];
   }
   set restitution(value) {
-    Collider.restitution[this.index] = Math.max(0, Number(value) || 0);
-    markBodyDirty(this.index, BODY_DIRTY.FRICTION);
+    Collider.setRestitution(this.index, value);
   }
 
-  /**
-   * A sensor: events, no physical response. Box2D reads it when it makes the body, so a change makes the body again
-   * (N-131: a write after the body existed did nothing).
-   */
+  /** A sensor (Collider.setIsTrigger: a change makes the body again). */
   get isTrigger() {
     return Collider.isTrigger[this.index];
   }
   set isTrigger(value) {
-    const next = value ? 1 : 0;
-    if (Collider.isTrigger[this.index] === next) return;
-    Collider.isTrigger[this.index] = next;
-    remakeBody(this.index, Transform.active?.[this.index] === 1);
+    Collider.setIsTrigger(this.index, value);
   }
 
   get enableHitEvents() {
     return Collider.enableHitEvents[this.index] !== 0;
   }
-  /** A shape's hit events: Box2D reads them when it makes the body, so a change makes it again (N-135). */
+  /** A shape's hit events (Collider.setEnableHitEvents: a change makes the body again). */
   set enableHitEvents(value) {
-    const next = value ? 1 : 0;
-    if (Collider.enableHitEvents[this.index] === next) return;
-    Collider.enableHitEvents[this.index] = next;
-    remakeBody(this.index, Transform.active?.[this.index] === 1);
+    Collider.setEnableHitEvents(this.index, value);
   }
 
   addLayerToMask(layer) {
-    Collider.collisionMask[this.index] |= (1 << (layer & 31));
-    markBodyDirty(this.index, BODY_DIRTY.FILTER);
+    Collider.addLayerToMask(this.index, layer);
   }
 
   removeLayerFromMask(layer) {
-    Collider.collisionMask[this.index] &= ~(1 << (layer & 31));
-    markBodyDirty(this.index, BODY_DIRTY.FILTER);
+    Collider.removeLayerFromMask(this.index, layer);
   }
 
   collidesWithLayer(layer) {
-    return !!(Collider.collisionMask[this.index] & (1 << (layer & 31)));
+    return Collider.collidesWithLayer(this.index, layer);
   }
 
   get fixtureCount() {

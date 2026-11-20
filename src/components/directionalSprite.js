@@ -9,6 +9,7 @@
 // onDirectionChanged.
 
 import { Component } from '../core/component.js';
+import { SETTER_ARGS, SETTER_ARGS64 } from '../core/setterArgs.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { PICK_ARGS, angleDistance, pickDirectionArgs, wrapAngle } from '../core/spriteDirections.js';
 import { warnOnce } from '../util/dxWarn.js';
@@ -146,22 +147,18 @@ export class DirectionalSprite extends Component {
     return DirectionalSprite.facing[i];
   }
   set facing(radians) {
-    const i = this.index;
-    const v = +radians;
-    if (v !== v) return;
-    // E-363: the same facing again resolves to what is drawn (the column holds floats, so compare the float).
-    if (
-      DirectionalSprite.facing[i] === Math.fround(v) &&
-      DirectionalSprite.aimX[i] === 0 &&
-      DirectionalSprite.aimY[i] === 0 &&
-      DirectionalSprite.directionIndex[i] !== NO_DIRECTION
-    ) {
-      return;
-    }
-    DirectionalSprite.facing[i] = v;
-    DirectionalSprite.aimX[i] = 0;
-    DirectionalSprite.aimY[i] = 0;
-    DirectionalSprite.resolve(i);
+    DirectionalSprite.setFacing(this.index, radians);
+  }
+
+  /**
+   * E-533: entity i's `facing`, by index: a manual facing and the direction drawn for it; NaN changes nothing. A game may
+   * write it each frame: the radians go through SETTER_ARGS to setFacingFromArgs, so no call boxes them.
+   * @param {number} i
+   * @param {number} radians
+   */
+  static setFacing(i, radians) {
+    SETTER_ARGS[0] = radians;
+    setFacingFromArgs(i);
   }
 
   /** 'manual' (default: the game writes facing), 'velocity' (where it moves; still, the last) or 'rotation'. */
@@ -169,11 +166,20 @@ export class DirectionalSprite extends Component {
     return FACING_FROM_NAMES[DirectionalSprite.facingFrom[this.index]] || 'manual';
   }
   set facingFrom(source) {
+    DirectionalSprite.setFacingFrom(this.index, source);
+  }
+
+  /**
+   * E-533: entity i's `facingFrom`, by index: 'manual', 'velocity', 'rotation' or a FACING_FROM value; anything else
+   * throws.
+   * @param {number} i
+   * @param {'manual'|'velocity'|'rotation'|number} source
+   */
+  static setFacingFrom(i, source) {
     const k = typeof source === 'number' ? source | 0 : FACING_FROM_NAMES.indexOf(source);
     if (!(k >= 0 && k < FACING_FROM_NAMES.length)) {
       throw new Error(`DirectionalSprite.facingFrom: '${source}' is not one of ${FACING_FROM_NAMES.join(', ')}`);
     }
-    const i = this.index;
     // E-363: the source it already has (Predator's FSM sets 'velocity' again in each state's onEnter): nothing to
     // resolve, and the position delta keeps running (a reset stalled a facing from positions for a frame).
     if (DirectionalSprite.facingFrom[i] === k) return;
@@ -192,8 +198,17 @@ export class DirectionalSprite extends Component {
     return t.count > 0 ? t.margin : 0;
   }
   set turnMargin(radians) {
+    DirectionalSprite.setTurnMargin(this.index, radians);
+  }
+
+  /**
+   * E-533: entity i's `turnMargin`, by index; a negative or NaN margin is the default (TURN_MARGIN_SHARE of a step).
+   * @param {number} i
+   * @param {number} radians
+   */
+  static setTurnMargin(i, radians) {
     const v = +radians;
-    DirectionalSprite.turnMargin[this.index] = v >= 0 ? v : Number.NaN;
+    DirectionalSprite.turnMargin[i] = v >= 0 ? v : Number.NaN;
   }
 
   /** The direction drawn: its name in the sheet ('left', 'downRight', '12'), or null before the first. */
@@ -230,12 +245,20 @@ export class DirectionalSprite extends Component {
 
   /** Look at a point of the world. */
   lookAt(x, y) {
-    const i = this.index;
-    const dx = x - Transform.x[i];
-    const dy = y - Transform.y[i];
-    if (dx === 0 && dy === 0) return;
-    DirectionalSprite.facing[i] = Math.atan2(dy, dx);
-    DirectionalSprite.resolve(i);
+    DirectionalSprite.lookAt(this.index, x, y);
+  }
+
+  /**
+   * E-533: entity i looks at a point of the world (`lookAt`, by index); the point it stands on changes nothing. A state's
+   * tick may call it each frame: the point goes through SETTER_ARGS64 (doubles, as the atan2 takes them) to lookAtFromArgs.
+   * @param {number} i
+   * @param {number} x
+   * @param {number} y
+   */
+  static lookAt(i, x, y) {
+    SETTER_ARGS64[0] = x;
+    SETTER_ARGS64[1] = y;
+    lookAtFromArgs(i);
   }
 
   /**
@@ -365,6 +388,34 @@ export class DirectionalSprite extends Component {
 
   /** wrapAngle, for game code that compares facings. */
   static wrapAngle = wrapAngle;
+}
+
+/** setFacing's work, the radians in SETTER_ARGS[0] (as the column holds them). */
+function setFacingFromArgs(i) {
+  const v = SETTER_ARGS[0];
+  if (v !== v) return;
+  // E-363: the same facing again resolves to what is drawn (the column holds floats, and so does SETTER_ARGS).
+  if (
+    DirectionalSprite.facing[i] === v &&
+    DirectionalSprite.aimX[i] === 0 &&
+    DirectionalSprite.aimY[i] === 0 &&
+    DirectionalSprite.directionIndex[i] !== NO_DIRECTION
+  ) {
+    return;
+  }
+  DirectionalSprite.facing[i] = v;
+  DirectionalSprite.aimX[i] = 0;
+  DirectionalSprite.aimY[i] = 0;
+  DirectionalSprite.resolve(i);
+}
+
+/** lookAt's work, the point in SETTER_ARGS64[0] and [1]. */
+function lookAtFromArgs(i) {
+  const dx = SETTER_ARGS64[0] - Transform.x[i];
+  const dy = SETTER_ARGS64[1] - Transform.y[i];
+  if (dx === 0 && dy === 0) return;
+  DirectionalSprite.facing[i] = Math.atan2(dy, dx);
+  DirectionalSprite.resolve(i);
 }
 
 /** GameObject.setAnimationState for a static caller: the sprite's animation, its bounds and its dirty flags. */

@@ -15,6 +15,9 @@
 //
 // x and y are on the floor, height in screen px. A floor seen at an angle is drawn floorScaleY as tall as it is wide: the
 // shader applies it, after the turn, so a turning car rewrites no vertex (meshUvFill.vert.glsl).
+//
+// E-533: no instance. Its setters are statics that take the entity's index and whether its class lists MeshRenderer
+// (ownMesh, as joinLayer and leaveLayer take it): ShadowCaster's statics call them, and its instances through those.
 
 import { Component } from '../core/component.js';
 import { Layer } from '../core/layer.js';
@@ -100,6 +103,13 @@ function publish(i, ownMesh, scale, xy, heights, indices, vertN, indexN) {
   }
   VolumeShadowCaster.joinLayer(i, ownMesh, scale);
   return true;
+}
+
+/** The scale a setter gives entity i's volume: `floorScaleY` when it says, else the volume's, else config.camera.floorScaleY. */
+function scaleFor(i, floorScaleY) {
+  if (floorScaleY !== undefined) return resolveGroundScaleY(floorScaleY);
+  const held = VolumeShadowCaster.floorScaleY[i];
+  return held > 0 ? held : VolumeShadowCaster.defaultFloorScaleY;
 }
 
 /** How far apart, against the base's size, two corners must be to be two. */
@@ -286,51 +296,31 @@ export class VolumeShadowCaster extends Component {
   }
 
   /**
-   * @param {number} index the entity
-   * @param {boolean} [ownMesh] its class lists MeshRenderer: its row is its own, on whatever the volume does
-   */
-  constructor(index, ownMesh = false) {
-    super(index);
-    this.ownMesh = ownMesh === true;
-  }
-
-  /** The scale a setter gives the volume: `floorScaleY` when it says, else the volume's, else config.camera.floorScaleY. */
-  _scaleFor(floorScaleY) {
-    if (floorScaleY !== undefined) return resolveGroundScaleY(floorScaleY);
-    const held = VolumeShadowCaster.floorScaleY[this.index];
-    return held > 0 ? held : VolumeShadowCaster.defaultFloorScaleY;
-  }
-
-  /** How tall the floor is drawn against its width, in (0, 1]; 0 while the entity holds no volume. */
-  get floorScaleY() {
-    return VolumeShadowCaster.floorScaleY[this.index];
-  }
-
-  /**
-   * A box. Replaces the volume this entity had.
+   * A box: entity i's volume, replacing the one it had.
+   * @param {number} i the entity
+   * @param {boolean} ownMesh its class lists MeshRenderer: its row is its own, on whatever the volume does
    * @param {number} width along x, the way the entity looks
    * @param {number} depth across it, on the floor
    * @param {number} height screen px
    * @param {{ offsetX?: number, offsetY?: number, topScale?: number, floorScaleY?: number }} [options] the box's centre on
    *   the entity's frame; how much smaller the roof is, about that centre
-   * @returns {this}
    */
-  setBox(width, depth, height, { offsetX = 0, offsetY = 0, topScale = 1, floorScaleY } = {}) {
+  static setBox(i, ownMesh, width, depth, height, { offsetX = 0, offsetY = 0, topScale = 1, floorScaleY } = {}) {
     if (![width, depth, height, offsetX, offsetY, topScale].every(Number.isFinite)) {
       warnShape('setBox needs finite sizes, offsets and topScale');
-      return this;
+      return;
     }
     if (!(topScale >= 0)) {
       warnShape('setBox needs a topScale of 0 or more: 0 is a pyramid');
-      return this;
+      return;
     }
     const hw = width * 0.5;
     const hd = depth * 0.5;
     if (!(hw > 0) || !(hd > 0) || !(height > 0)) {
       warnShape('setBox needs a width, a depth and a height above 0');
-      return this;
+      return;
     }
-    const scale = this._scaleFor(floorScaleY);
+    const scale = scaleFor(i, floorScaleY);
     const corners = [-hw, -hd, hw, -hd, hw, hd, -hw, hd];
     for (let c = 0; c < 4; c++) {
       _base[c * 2] = offsetX + corners[c * 2];
@@ -338,52 +328,52 @@ export class VolumeShadowCaster extends Component {
       _top[c * 2] = offsetX + corners[c * 2] * topScale;
       _top[c * 2 + 1] = offsetY + corners[c * 2 + 1] * topScale;
     }
-    writeLevel(this.index, this.ownMesh, scale, _base, _top, 4, 0, height, false);
-    return this;
+    writeLevel(i, ownMesh, scale, _base, _top, 4, 0, height, false);
   }
 
   /**
-   * One more level on top of what the volume has: a body, a cabin on it, a tank on a roof. Its outline need not be convex. One
-   * the arena has no room for warns and leaves the volume as it was.
+   * One more level on top of what entity i's volume has: a body, a cabin on it, a tank on a roof. Its outline need not be
+   * convex. One the arena has no room for warns and leaves the volume as it was.
+   * @param {number} i the entity
+   * @param {boolean} ownMesh its class lists MeshRenderer
    * @param {ArrayLike<number>|Array<{x:number,y:number}>} outline on the entity's frame
    * @param {number} bottom height of the outline, screen px
    * @param {number} top height of the level's top
    * @param {ArrayLike<number>|Array<{x:number,y:number}>} [topOutline] the top, as many corners; left out, the same outline
    * @param {{ floorScaleY?: number }} [options]
-   * @returns {this}
    */
-  addLevel(outline, bottom, top, topOutline = outline, { floorScaleY } = {}) {
+  static addLevel(i, ownMesh, outline, bottom, top, topOutline = outline, { floorScaleY } = {}) {
     _ringA = readRing(outline, _ringA);
     const n = ringCount;
     _ringB = readRing(topOutline, _ringB);
     if (n < 0 || ringCount < 0 || !Number.isFinite(bottom) || !Number.isFinite(top)) {
       warnShape('a level needs finite corners and heights');
-      return this;
+      return;
     }
     if (n < 3 || ringCount !== n) {
       warnShape('a level needs at least 3 corners, as many on its top');
-      return this;
+      return;
     }
     if (!(top > bottom)) {
       warnShape('a level needs its top above its bottom');
-      return this;
+      return;
     }
-    writeLevel(this.index, this.ownMesh, this._scaleFor(floorScaleY), _ringA, _ringB, n, bottom, top, true);
-    return this;
+    writeLevel(i, ownMesh, scaleFor(i, floorScaleY), _ringA, _ringB, n, bottom, top, true);
   }
 
   /**
-   * The convex volume around points: a house from an editor. It runs once, when called. Replaces the volume this entity had.
+   * The convex volume around points: a house from an editor. It runs once, when called. Replaces the volume entity i had.
+   * @param {number} i the entity
+   * @param {boolean} ownMesh its class lists MeshRenderer
    * @param {ArrayLike<number>|Array<{x:number,y:number,z:number}>} points flat x, y, z (z: height, screen px) or objects
    * @param {{ floorScaleY?: number }} [options]
-   * @returns {this}
    */
-  setHull(points, { floorScaleY } = {}) {
+  static setHull(i, ownMesh, points, { floorScaleY } = {}) {
     const objects = points?.[0] != null && typeof points[0] === 'object';
     const n = objects ? points.length | 0 : (points?.length | 0) / 3 | 0;
     if (n > MAX_HULL_POINTS) {
       warnShape(`setHull takes at most ${MAX_HULL_POINTS} points`);
-      return this;
+      return;
     }
     const x = new Float64Array(n);
     const y = new Float64Array(n);
@@ -394,16 +384,16 @@ export class VolumeShadowCaster extends Component {
       const h = objects ? +points[p].z : +points[p * 3 + 2];
       if (!Number.isFinite(x[p]) || !Number.isFinite(y[p]) || !Number.isFinite(h)) {
         warnShape('setHull needs finite points');
-        return this;
+        return;
       }
       z[p] = h > 0 ? h : 0;
     }
     const triangles = convexHull3D(x, y, z, n);
     if (triangles === null) {
       warnShape('setHull needs points that enclose a volume');
-      return this;
+      return;
     }
-    const scale = this._scaleFor(floorScaleY);
+    const scale = scaleFor(i, floorScaleY);
     const used = new Int32Array(n).fill(-1);
     const idx = MeshGeometry.scratchIdx(triangles.length);
     let vertN = 0;
@@ -421,7 +411,7 @@ export class VolumeShadowCaster extends Component {
     }
     if (indexN < 3) {
       warnShape('setHull needs points that enclose a volume');
-      return this;
+      return;
     }
     const xy = MeshGeometry.scratchXY(vertN * 2);
     const uv = MeshGeometry.scratchUV(vertN * 2);
@@ -433,14 +423,16 @@ export class VolumeShadowCaster extends Component {
       uv[v * 2] = z[p];
       uv[v * 2 + 1] = 0;
     }
-    publish(this.index, this.ownMesh, scale, xy, uv, idx, vertN, indexN);
-    return this;
+    publish(i, ownMesh, scale, xy, uv, idx, vertN, indexN);
   }
 
-  /** No volume: the entity casts nothing from one until it is given one again. */
-  clear() {
-    if (holdsVolume(this.index)) MeshGeometry.clearEntity(this.index);
-    VolumeShadowCaster.leaveLayer(this.index, this.ownMesh);
-    return this;
+  /**
+   * No volume: entity i casts nothing from one until it is given one again.
+   * @param {number} i the entity
+   * @param {boolean} ownMesh its class lists MeshRenderer
+   */
+  static clear(i, ownMesh) {
+    if (holdsVolume(i)) MeshGeometry.clearEntity(i);
+    VolumeShadowCaster.leaveLayer(i, ownMesh);
   }
 }

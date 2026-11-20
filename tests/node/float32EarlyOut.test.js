@@ -7,6 +7,7 @@ import { RigidBody } from '../../src/components/rigidBody.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
 import { createCommandRingSab, bindCommandRing, drainCommandRing } from '../../src/box2d/box2dCommandRing.js';
+import { noteEntityType , bitsOfFlags } from '../../src/core/entityTypes.js';
 
 // N-170: the setters' early-outs compared a Float32 column with the double the game passed, so they never fired for a
 // value float32 cannot hold exactly (0.3, a walker's speed x 0.00277): setting the same value again re-queued a teleport
@@ -20,6 +21,7 @@ function entity(index, components) {
   const go = Object.create(GameObject.prototype);
   go.index = index;
   go._hasComponents = components;
+  go._componentBits = bitsOfFlags(components);
   return go;
 }
 
@@ -162,13 +164,25 @@ test('a repeated alpha, scale or animation speed marks the sprite dirty once', (
     go.setAnimationSpeed(speed * 2);
     assert.equal(SpriteRenderer.renderDirty[3], 1, 'a new speed still marks the row');
 
-    // The same from code that holds an index (E-530: an FSM state working by index).
-    clear();
-    SpriteRenderer.setAnimationSpeed(3, speed * 2);
-    assert.equal(SpriteRenderer.renderDirty[3], 0, 'the static form: the same rate again marks nothing');
-    SpriteRenderer.setAnimationSpeed(3, speed);
-    assert.equal(SpriteRenderer.renderDirty[3], 1);
-    assert.equal(SpriteRenderer.animationSpeed[3], Math.fround(speed));
+    // The same from code that holds an index (E-530: an FSM state working by index). The static takes the entity's
+    // components from its type (E-533): row 3 is a sprite's.
+    class Sprite extends GameObject {
+      static components = [SpriteRenderer];
+    }
+    const SPRITE_TYPE = 1;
+    noteEntityType(SPRITE_TYPE, Sprite);
+    const savedTypes = Transform.entityType;
+    Transform.entityType = new Uint8Array(4).fill(SPRITE_TYPE);
+    try {
+      clear();
+      SpriteRenderer.setAnimationSpeed(3, speed * 2);
+      assert.equal(SpriteRenderer.renderDirty[3], 0, 'the static form: the same rate again marks nothing');
+      SpriteRenderer.setAnimationSpeed(3, speed);
+      assert.equal(SpriteRenderer.renderDirty[3], 1);
+      assert.equal(SpriteRenderer.animationSpeed[3], Math.fround(speed));
+    } finally {
+      Transform.entityType = savedTypes;
+    }
   });
 });
 

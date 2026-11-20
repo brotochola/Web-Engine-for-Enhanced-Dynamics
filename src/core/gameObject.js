@@ -1,7 +1,6 @@
 // GameObject.js - Base class for all game entities using component composition
 // Entities are composed of components (Transform, RigidBody, Collider, etc.)
 
-import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
 import { Camera } from './camera.js';
 import { Box2d } from './box2d.js';
 import { isEngineAccessor, markEngineAccessor } from './engineAccessors.js';
@@ -11,9 +10,48 @@ import {
   LINK_COUNT,
   hasParent,
 } from '../components/transform.js';
-import { RigidBody } from '../components/rigidBody.js';
+import {
+  RigidBody,
+  vxAt,
+  vyAt,
+  angularVelocityAt,
+  velocityAt,
+  addVelocityAt,
+  scaleVelocityAt,
+  accelerationAt,
+  accelerateTowardsAt,
+  fixedRotationAt,
+  bodyStaticAt,
+  awakeAt,
+} from '../components/rigidBody.js';
+import { poseMovedAt, positionAt, rotationAt, rotationCSAt } from '../components/transform.js';
+import { enterSpawnHere, leaveSpawnHere, isSpawningHere } from './spawningHere.js';
 import { Collider } from '../components/collider.js';
-import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRenderer.js';
+import {
+  SpriteRenderer,
+  DEFAULT_ANIMATION_SPEED,
+  markDirtyAt,
+  alphaAt,
+  tintAt,
+  visibleAt,
+  setScaleAt,
+  scaleXAt,
+  scaleYAt,
+  flipBitAt,
+  setFlipAt,
+  setTileWorldAt,
+  setTileLocalAt,
+  clearTileAt,
+  bakeWorldTileToLocalAt,
+  setDisplaySizeAt,
+  setAnchorAt,
+  setAnimationStateAt,
+  setAnimationSpeedAt,
+  setAnimationLoopAt,
+  setSpritesheetAt,
+  setAnimationAt,
+  setSpriteAt,
+} from '../components/spriteRenderer.js';
 import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
@@ -22,12 +60,12 @@ import { VolumeShadowCaster, holdsVolume } from '../components/volumeShadowCaste
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { DirectionalSprite } from '../components/directionalSprite.js';
-import { SpriteSheetRegistry, BIG_ATLAS_CHUNK, bigAtlasChunkName } from './spriteSheetRegistry.js';
+import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
 import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
-import { SETTER_ARGS } from './setterArgs.js';
-import { bitsOfClass, setEntityClassLookup } from './entityTypes.js';
+import { SETTER_ARGS, SETTER_ARGS64 } from './setterArgs.js';
+import { bitsOfClass, setEntityClassLookup, typeBitsOf, HAS_BODY, HAS_COLLIDER } from './entityTypes.js';
 import { Joint } from './joint.js';
 import { noteSpawned, setDevLookups, slotReleased } from './debug/devChecks.js';
 import { ColliderFixture } from './colliderFixture.js';
@@ -60,12 +98,6 @@ import { Decoration } from './decoration.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { SceneBridge } from './sceneBridge.js';
 import {
-  enqueueSetTransform,
-  enqueueSetVelocity,
-  enqueueSetRotCS,
-  enqueueSetAngularVelocity,
-  enqueueSetFixedRotation,
-  enqueueSetAwake,
   isCommandRingBound as isCommandRingBoundImport,
 } from '../box2d/box2dCommandRing.js';
 import {
@@ -105,28 +137,7 @@ const isCommandRingBound = isCommandRingBoundImport;
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
 
-/**
- * DX-CASTER: whether an entity's MeshRenderer row takes its alpha and visibility: its class lists MeshRenderer, or it is a
- * ShadowCaster's in a scene with room for volumes, whose volume (shadowCaster.setBox) that row draws. A car that fades takes
- * its volume's shadow along, whether it was given the volume before the fade or after.
- * @param {Record<string, boolean>} has the entity's _hasComponents
- */
-function meshRowFollows(has) {
-  return has.MeshRenderer === true || (has.ShadowCaster === true && VolumeShadowCaster.floorScaleY != null);
-}
-
 // SETTER_ARGS: why the setters hand their doubles over in a Float32Array (N-215, E-459, E-473), see setterArgs.js.
-
-/** A body moved by a position setter: its SET_TRANSFORM from the columns just written (the ring stores float32). */
-function enqueuePoseOf(i) {
-  enqueueSetTransform(
-    i,
-    Transform.x[i],
-    Transform.y[i],
-    Transform.rotC ? Transform.rotC[i] : 1,
-    Transform.rotS ? Transform.rotS[i] : 0,
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DX-PARENT: Transform.parent. What may link, the warnings (they name the class), and the links made while their
@@ -134,19 +145,11 @@ function enqueuePoseOf(i) {
 // pose after each step and finds the orphans, which logic0 despawns (childOrphaned, logicWorker).
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Entities in their spawn's config and onSpawned on this worker, innermost last: a link to one waits for it. */
-const spawningHere = new Int32Array(32);
-let spawningDepth = 0;
+// Entities in their spawn's config and onSpawned on this worker: spawningHere.js (Transform's setters read it too).
 /** Links held until their parent, spawning on this worker, activates (its generation moves then): child, parent. */
 let pendingLinkChild = new Int32Array(8);
 let pendingLinkParent = new Int32Array(8);
 let pendingLinkCount = 0;
-
-/** Whether entity p is in its spawn (config keys, onSpawned) on this worker. */
-function isSpawningHere(p) {
-  for (let k = 0; k < spawningDepth; k++) if (spawningHere[k] === p) return true;
-  return false;
-}
 
 /** The class name of entity i, for a warning. */
 function entityName(i) {
@@ -166,9 +169,8 @@ function slotHasBody(i) {
  */
 function childMayHaveBody(i) {
   if (slotHasBody(i)) return true;
-  const instance = GameObject._at(i);
-  const has = instance !== undefined && instance !== null ? instance._hasComponents : null;
-  return !!(has && (has.RigidBody || has.Collider));
+  // E-533: from its type's components, not an instance made to read them.
+  return (typeBitsOf(Transform.entityType[i]) & (HAS_BODY | HAS_COLLIDER)) !== 0;
 }
 
 function rememberPendingLink(c, p) {
@@ -343,14 +345,9 @@ export function relinkRestoredChild(i, hadParent) {
  * body): put back, said once.
  */
 function poseMoved(e) {
-  const i = e.index;
-  staticSceneryChangedAt(i);
-  if (isCommandRingBound() && e._hasBox2dBody()) {
-    // SST-20: in its spawn on this worker (its config keys, onSpawned) the entity is not active yet and its body is made
-    // after it, from the columns this setter wrote (the spawn publishes its lifecycle last): a SET_TRANSFORM now would
-    // move a body that is not there (Predator by night: two a spawned body, 36 496 at its start).
-    if (!isSpawningHere(i)) enqueuePoseOf(i);
-  } else if (anyChildLinked() && Transform.parent[i] < entityIdNone) childPoseWritten(i);
+  // E-533: Transform's work (the static scenery counter, a body's SET_TRANSFORM unless in its spawn here: SST-20; a
+  // child's pose put back), the same for Transform.setX(i, x).
+  poseMovedAt(e.index, e._componentBits);
 }
 
 /**
@@ -363,149 +360,49 @@ function anyChildLinked() {
   return Transform.links[LINK_COUNT] !== 0;
 }
 
-/** A set x or set y wrote child i's column: its pose put back from its parent, and the warning. */
-function childPoseWritten(i) {
-  Transform.composeChildPose(i);
-  ignoreChildPoseWrite(i);
-}
-
 /** setPosition's work, x and y in SETTER_ARGS. Returns the entity. */
 function setPositionFromArgs(e) {
-  const x = SETTER_ARGS[0];
-  const y = SETTER_ARGS[1];
-  const i = e.index;
-  if (Transform.x[i] === x && Transform.y[i] === y) return e;
-  if (anyChildLinked() && Transform.parent[i] < entityIdNone) {
-    ignoreChildPoseWrite(i);
-    return e;
-  }
-  Transform.x[i] = x;
-  Transform.y[i] = y;
-  if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
+  positionAt(e.index, e._componentBits);
   return e;
 }
 
 /** set vx's work, its value in SETTER_ARGS[0]. */
 function setVxFromArgs(e) {
-  const vx = SETTER_ARGS[0];
-  if (!e._hasComponents.RigidBody) return;
-  const i = e.index;
-  if (RigidBody.vx[i] === vx) return;
-  RigidBody.vx[i] = vx;
-  if (isCommandRingBound()) enqueueSetVelocity(i, vx, RigidBody.vy[i]);
+  vxAt(e.index, e._componentBits);
 }
 
 /** set vy's work, its value in SETTER_ARGS[0]. */
 function setVyFromArgs(e) {
-  const vy = SETTER_ARGS[0];
-  if (!e._hasComponents.RigidBody) return;
-  const i = e.index;
-  if (RigidBody.vy[i] === vy) return;
-  RigidBody.vy[i] = vy;
-  if (isCommandRingBound()) enqueueSetVelocity(i, RigidBody.vx[i], vy);
+  vyAt(e.index, e._componentBits);
 }
 
 /** set angularVelocity's work, its value in SETTER_ARGS[0]. */
 function setAngularVelocityFromArgs(e) {
-  const w = SETTER_ARGS[0];
-  if (!e._hasComponents.RigidBody) return;
-  const i = e.index;
-  if (RigidBody.angularVelocity[i] === w) return;
-  RigidBody.angularVelocity[i] = w;
-  if (isCommandRingBound()) enqueueSetAngularVelocity(i, w);
+  angularVelocityAt(e.index, e._componentBits);
 }
 
 /** setVelocity's work, vx and vy in SETTER_ARGS. Returns the entity. */
 function setVelocityFromArgs(e) {
-  const vx = SETTER_ARGS[0];
-  const vy = SETTER_ARGS[1];
-  if (!e._hasComponents.RigidBody) return e;
-  const i = e.index;
-  if (RigidBody.vx[i] === vx && RigidBody.vy[i] === vy) return e;
-  RigidBody.vx[i] = vx;
-  RigidBody.vy[i] = vy;
-  if (isCommandRingBound()) enqueueSetVelocity(i, vx, vy);
+  velocityAt(e.index, e._componentBits);
   return e;
 }
 
 /** set alpha's and setAlpha's work, the alpha in SETTER_ARGS[0]. Returns the entity. */
 function setAlphaFromArgs(e) {
-  const a = SETTER_ARGS[0];
-  const i = e.index;
-  const has = e._hasComponents;
-  if (has.SpriteRenderer && SpriteRenderer.alpha[i] !== a) {
-    SpriteRenderer.alpha[i] = a;
-    SpriteRenderer.renderDirty[i] = 1;
-    SpriteRenderer.keyedDirty[i] = 1;
-  }
-  if (has.adobeAnimComponent) AdobeAnimComponent.alpha[i] = a;
-  if (meshRowFollows(has) && MeshRenderer.alpha[i] !== a) {
-    MeshRenderer.alpha[i] = a;
-    MeshRenderer.renderDirty[i] = 1;
-  }
+  alphaAt(e.index, e._componentBits);
   return e;
 }
 
 /** setScale's work, x and y in SETTER_ARGS. Returns the entity. */
 function setScaleFromArgs(e) {
-  const x = SETTER_ARGS[0];
-  const y = SETTER_ARGS[1];
-  const i = e.index;
-  const has = e._hasComponents;
-  if (has.SpriteRenderer) {
-    // A flip stays on: it is the sign of the stored scale.
-    const flip = SpriteRenderer.flip[i];
-    const sx = flip & 1 ? -x : x;
-    const sy = flip & 2 ? -y : y;
-    let changed = false;
-    if (SpriteRenderer.scaleX[i] !== sx) {
-      SpriteRenderer.scaleX[i] = sx;
-      changed = true;
-    }
-    if (SpriteRenderer.scaleY[i] !== sy) {
-      SpriteRenderer.scaleY[i] = sy;
-      changed = true;
-    }
-    if (changed) {
-      SpriteRenderer.updateBounds(i);
-      SpriteRenderer.renderDirty[i] = 1;
-      SpriteRenderer.keyedDirty[i] = 1;
-    }
-  }
-  if (has.adobeAnimComponent) {
-    const flip = AdobeAnimComponent.flip[i];
-    AdobeAnimComponent.scaleX[i] = flip & 1 ? -x : x;
-    AdobeAnimComponent.scaleY[i] = flip & 2 ? -y : y;
-    AdobeAnimComponent.applyClipBounds(i);
-  }
+  setScaleAt(e.index, e._componentBits);
   return e;
 }
 
 /** setAnimationSpeed's work, the speed in SETTER_ARGS[0]. Returns the entity. */
 function setAnimationSpeedFromArgs(e) {
-  const speed = SETTER_ARGS[0];
-  if (!e._hasComponents.SpriteRenderer) return e;
-  const i = e.index;
-  if (SpriteRenderer.animationSpeed[i] !== speed) {
-    SpriteRenderer.animationSpeed[i] = speed;
-    // The clock's rate, not the statics (a frame it moves is a texture the emit sees move). Games set it every tick
-    // (Predator's walkers, from their speed): a keyed flag here rewrote thousands of store rows a frame (E-177).
-    SpriteRenderer.renderDirty[i] = 1;
-  }
+  setAnimationSpeedAt(e.index, e._componentBits);
   return e;
-}
-
-/** className → methods already warned about a missing sprite (one warning each). */
-const _warnedNoSprite = new Map();
-function warnNoSpriteOnce(className, method) {
-  let methods = _warnedNoSprite.get(className);
-  if (methods === undefined) {
-    methods = new Set();
-    _warnedNoSprite.set(className, methods);
-  }
-  if (methods.has(method)) return;
-  methods.add(method);
-  console.warn(`WeedJS: ${className}.${method} needs a sprite: call setSprite / setSpritesheet first.`);
 }
 
 /**
@@ -801,9 +698,6 @@ export class GameObject {
 
   /** @internal Reused by despawnAll to avoid Set allocation per call */
   static _despawnAllBuffer = new Set();
-
-  /** @internal setAnimation: per spritesheet id, a Map of animation name → index. */
-  static _animIndexBySheet = [];
 
   /**
    * The entity at a global index, on any thread: every logic worker and the
@@ -1458,22 +1352,9 @@ export class GameObject {
     return Transform.rotation[this.index];
   }
   set rotation(value) {
-    const i = this.index;
-    if (Transform.rotation && Transform.rotation[i] === Math.fround(value)) return;
-    // DX-PARENT: a child turns with its parent (localRotation).
-    if (anyChildLinked() && Transform.parent[i] < entityIdNone) {
-      ignoreChildPoseWrite(i);
-      return;
-    }
-    if (Transform.rotation) Transform.rotation[i] = value;
-    syncRotCSFromAngle(i, value);
-    if (isCommandRingBound() && this._hasBox2dBody()) {
-      enqueueSetRotCS(
-        i,
-        Transform.rotC ? Transform.rotC[i] : Math.cos(value),
-        Transform.rotS ? Transform.rotS[i] : Math.sin(value),
-      );
-    }
+    // E-533: Transform.setRotation's work (a double: its cos and sin are computed from it as given).
+    SETTER_ARGS64[0] = value;
+    rotationAt(this.index, this._componentBits);
   }
 
   /**
@@ -1484,22 +1365,10 @@ export class GameObject {
    * @param {number} s sin of the angle (unit vector y)
    */
   setRotationCS(c, s) {
-    const i = this.index;
-    // DX-PARENT: a child turns with its parent (localRotation).
-    if (anyChildLinked() && Transform.parent[i] < entityIdNone) {
-      ignoreChildPoseWrite(i);
-      return;
-    }
-    if (Transform.rotC) {
-      Transform.rotC[i] = c;
-      Transform.rotS[i] = s;
-    }
-    if (isCommandRingBound() && this._hasComponents.RigidBody) {
-      enqueueSetRotCS(i, c, s);
-      return;
-    }
-    if (Transform.rotation) Transform.rotation[i] = Math.atan2(s, c);
-    if (isCommandRingBound() && this._hasComponents.Collider) enqueueSetRotCS(i, c, s);
+    const a = SETTER_ARGS64;
+    a[0] = c;
+    a[1] = s;
+    rotationCSAt(this.index, this._componentBits);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1546,7 +1415,7 @@ export class GameObject {
     return RigidBody.fixedRotation[this.index];
   }
   set fixedRotation(value) {
-    this.setFixedRotation(value);
+    fixedRotationAt(this.index, this._componentBits, value);
   }
 
   /** Box2D body type. Prefer spawnConfig.isStatic or this property over raw SoA writes. */
@@ -1555,9 +1424,7 @@ export class GameObject {
     return RigidBody.static[this.index] !== 0;
   }
   set isStatic(value) {
-    if (this._hasComponents.RigidBody) {
-      this.rigidBody.static = value;
-    }
+    bodyStaticAt(this.index, this._componentBits, value);
   }
 
   /**
@@ -1632,21 +1499,7 @@ export class GameObject {
     return 0xffffff;
   }
   set tint(value) {
-    if (this._hasComponents.SpriteRenderer) {
-      SpriteRenderer.baseTint[this.index] = value;
-      if (SpriteRenderer.tint[this.index] !== value) {
-        SpriteRenderer.tint[this.index] = value;
-        SpriteRenderer.renderDirty[this.index] = 1;
-        SpriteRenderer.keyedDirty[this.index] = 1;
-      }
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      AdobeAnimComponent.tint[this.index] = value;
-    }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.tint[this.index] !== (value >>> 0)) {
-      MeshRenderer.tint[this.index] = value >>> 0;
-      MeshRenderer.renderDirty[this.index] = 1;
-    }
+    tintAt(this.index, this._componentBits, value);
   }
 
   /** Visibility flag */
@@ -1657,19 +1510,7 @@ export class GameObject {
     return false;
   }
   set visible(value) {
-    const v = value ? 1 : 0;
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
-      SpriteRenderer.renderVisible[this.index] = v;
-      // Which rows are drawn, not a row's statics (E-177: no keyed flag).
-      SpriteRenderer.renderDirty[this.index] = 1;
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      AdobeAnimComponent.renderVisible[this.index] = v;
-    }
-    if (meshRowFollows(this._hasComponents) && MeshRenderer.renderVisible[this.index] !== v) {
-      MeshRenderer.renderVisible[this.index] = v;
-      MeshRenderer.renderDirty[this.index] = 1;
-    }
+    visibleAt(this.index, this._componentBits, value);
   }
 
   // Flip lives in the sign of the stored scale (what the renderers read) and in
@@ -1690,22 +1531,8 @@ export class GameObject {
     return 1;
   }
   set scaleX(value) {
-    if (this._hasComponents.SpriteRenderer) {
-      const v = SpriteRenderer.flip[this.index] & 1 ? -value : value;
-      if (SpriteRenderer.scaleX[this.index] !== Math.fround(v)) {
-        SpriteRenderer.scaleX[this.index] = v;
-        SpriteRenderer.updateBounds(this.index);
-        SpriteRenderer.renderDirty[this.index] = 1;
-        SpriteRenderer.keyedDirty[this.index] = 1;
-      }
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      const v = AdobeAnimComponent.flip[this.index] & 1 ? -value : value;
-      if (AdobeAnimComponent.scaleX[this.index] !== Math.fround(v)) {
-        AdobeAnimComponent.scaleX[this.index] = v;
-        AdobeAnimComponent.applyClipBounds(this.index);
-      }
-    }
+    SETTER_ARGS[0] = value;
+    scaleXAt(this.index, this._componentBits);
   }
 
   /** Scale Y (as you set it; a flip is not part of it) */
@@ -1721,22 +1548,8 @@ export class GameObject {
     return 1;
   }
   set scaleY(value) {
-    if (this._hasComponents.SpriteRenderer) {
-      const v = SpriteRenderer.flip[this.index] & 2 ? -value : value;
-      if (SpriteRenderer.scaleY[this.index] !== Math.fround(v)) {
-        SpriteRenderer.scaleY[this.index] = v;
-        SpriteRenderer.updateBounds(this.index);
-        SpriteRenderer.renderDirty[this.index] = 1;
-        SpriteRenderer.keyedDirty[this.index] = 1;
-      }
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      const v = AdobeAnimComponent.flip[this.index] & 2 ? -value : value;
-      if (AdobeAnimComponent.scaleY[this.index] !== Math.fround(v)) {
-        AdobeAnimComponent.scaleY[this.index] = v;
-        AdobeAnimComponent.applyClipBounds(this.index);
-      }
-    }
+    SETTER_ARGS[0] = value;
+    scaleYAt(this.index, this._componentBits);
   }
 
   /** Mirror the sprite left-right (Adobe clips too). Independent of scale. */
@@ -1746,7 +1559,7 @@ export class GameObject {
     return false;
   }
   set flipX(on) {
-    this._setFlipBit(1, !!on);
+    flipBitAt(this.index, this._componentBits, 1, !!on);
   }
 
   /** Mirror the sprite top-bottom (Adobe clips too). Independent of scale. */
@@ -1756,7 +1569,7 @@ export class GameObject {
     return false;
   }
   set flipY(on) {
-    this._setFlipBit(2, !!on);
+    flipBitAt(this.index, this._componentBits, 2, !!on);
   }
 
   /**
@@ -1765,31 +1578,8 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setFlip(x, y) {
-    this._setFlipBit(1, !!x);
-    if (y !== undefined) this._setFlipBit(2, !!y);
+    setFlipAt(this.index, this._componentBits, x, y);
     return this;
-  }
-
-  _setFlipBit(bit, on) {
-    const i = this.index;
-    // DX-SPOT: a light that follows the flip mirrors its local x when the entity's flipX changes.
-    const followsFlip = bit === 1 && this._hasComponents.LightEmitter && LightEmitter.followFlip[i] !== 0;
-    const wasFlipped = followsFlip && LightEmitter.isFlippedX(i);
-    if (this._hasComponents.SpriteRenderer && ((SpriteRenderer.flip[i] & bit) !== 0) !== on) {
-      SpriteRenderer.flip[i] ^= bit;
-      if (bit === 1) SpriteRenderer.scaleX[i] = -SpriteRenderer.scaleX[i];
-      else SpriteRenderer.scaleY[i] = -SpriteRenderer.scaleY[i];
-      SpriteRenderer.updateBounds(i);
-      SpriteRenderer.renderDirty[i] = 1;
-      SpriteRenderer.keyedDirty[i] = 1;
-    }
-    if (this._hasComponents.adobeAnimComponent && ((AdobeAnimComponent.flip[i] & bit) !== 0) !== on) {
-      AdobeAnimComponent.flip[i] ^= bit;
-      if (bit === 1) AdobeAnimComponent.scaleX[i] = -AdobeAnimComponent.scaleX[i];
-      else AdobeAnimComponent.scaleY[i] = -AdobeAnimComponent.scaleY[i];
-      AdobeAnimComponent.applyClipBounds(i);
-    }
-    if (followsFlip && LightEmitter.isFlippedX(i) !== wasFlipped) LightEmitter.mirrorX(i);
   }
 
   /** Is this entity's position inside the camera box? */
@@ -1822,9 +1612,8 @@ export class GameObject {
   }
 
   set radius(value) {
-    // The Collider setter owns the rule: circle shape, mass sync, body dirty.
-    // (A copy here had lost the dirty mark; the accessor always exists once bound.)
-    if (this._hasComponents.Collider) this.collider.radius = value;
+    // Collider.setRadius owns the rule: circle shape, mass sync, body dirty.
+    if ((this._componentBits & HAS_COLLIDER) !== 0) Collider.setRadius(this.index, value);
   }
 
   /** Collider width - also syncs RigidBody mass from collider geometry */
@@ -1833,7 +1622,7 @@ export class GameObject {
     return Collider.width[this.index];
   }
   set width(value) {
-    if (this._hasComponents.Collider) this.collider.width = value;
+    if ((this._componentBits & HAS_COLLIDER) !== 0) Collider.setWidth(this.index, value);
   }
 
   /** Collider height - also syncs RigidBody mass from collider geometry */
@@ -1842,7 +1631,7 @@ export class GameObject {
     return Collider.height[this.index];
   }
   set height(value) {
-    if (this._hasComponents.Collider) this.collider.height = value;
+    if ((this._componentBits & HAS_COLLIDER) !== 0) Collider.setHeight(this.index, value);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1854,10 +1643,7 @@ export class GameObject {
    * Mark sprite as needing re-render
    */
   markDirty() {
-    if (this._hasComponents.SpriteRenderer) {
-      SpriteRenderer.renderDirty[this.index] = 1;
-      SpriteRenderer.keyedDirty[this.index] = 1;
-    }
+    markDirtyAt(this.index, this._componentBits);
   }
 
   /**
@@ -1876,21 +1662,7 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setTint(value) {
-    if (this._hasComponents.SpriteRenderer) {
-      SpriteRenderer.baseTint[this.index] = value;
-      if (SpriteRenderer.tint[this.index] !== value) {
-        SpriteRenderer.tint[this.index] = value;
-        SpriteRenderer.renderDirty[this.index] = 1;
-        SpriteRenderer.keyedDirty[this.index] = 1;
-      }
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      AdobeAnimComponent.tint[this.index] = value;
-    }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.tint[this.index] !== (value >>> 0)) {
-      MeshRenderer.tint[this.index] = value >>> 0;
-      MeshRenderer.renderDirty[this.index] = 1;
-    }
+    tintAt(this.index, this._componentBits, value);
     return this;
   }
 
@@ -1900,19 +1672,7 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setVisible(value) {
-    const v = value ? 1 : 0;
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
-      SpriteRenderer.renderVisible[this.index] = v;
-      // Which rows are drawn, not a row's statics (E-177: no keyed flag).
-      SpriteRenderer.renderDirty[this.index] = 1;
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      AdobeAnimComponent.renderVisible[this.index] = v;
-    }
-    if (meshRowFollows(this._hasComponents) && MeshRenderer.renderVisible[this.index] !== v) {
-      MeshRenderer.renderVisible[this.index] = v;
-      MeshRenderer.renderDirty[this.index] = 1;
-    }
+    visibleAt(this.index, this._componentBits, value);
     return this;
   }
 
@@ -2014,28 +1774,7 @@ export class GameObject {
    * @returns {this}
    */
   setTileWorld(periodX, periodY, u0 = 0, v0 = 0) {
-    const i = this.index;
-    const px = periodX | 0;
-    const py = (periodY == null ? periodX : periodY) | 0;
-    const rx = px < 0 ? 0 : px > 65535 ? 65535 : px;
-    const ry = py < 0 ? 0 : py > 65535 ? 65535 : py;
-    if (this._hasComponents.SpriteRenderer) {
-      SpriteRenderer.repeatX[i] = rx;
-      SpriteRenderer.repeatY[i] = ry;
-      SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.WORLD;
-      SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
-      SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
-      SpriteRenderer.renderDirty[i] = 1;
-      SpriteRenderer.keyedDirty[i] = 1;
-    }
-    if (this._hasComponents.MeshRenderer) {
-      MeshRenderer.repeatX[i] = rx;
-      MeshRenderer.repeatY[i] = ry;
-      MeshRenderer.tileMode[i] = SPRITE_TILE_MODE.WORLD;
-      MeshRenderer.tileOffsetU[i] = MeshRenderer.packTileOffset01(u0);
-      MeshRenderer.tileOffsetV[i] = MeshRenderer.packTileOffset01(v0);
-      MeshRenderer.renderDirty[i] = 1;
-    }
+    setTileWorldAt(this.index, this._componentBits, periodX, periodY, u0, v0);
     return this;
   }
 
@@ -2048,51 +1787,13 @@ export class GameObject {
    * @returns {this}
    */
   setTileLocal(periodX, periodY, u0 = 0, v0 = 0) {
-    const i = this.index;
-    const px = periodX | 0;
-    const py = (periodY == null ? periodX : periodY) | 0;
-    const rx = px < 0 ? 0 : px > 65535 ? 65535 : px;
-    const ry = py < 0 ? 0 : py > 65535 ? 65535 : py;
-    if (this._hasComponents.SpriteRenderer) {
-      SpriteRenderer.repeatX[i] = rx;
-      SpriteRenderer.repeatY[i] = ry;
-      SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
-      SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
-      SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
-      SpriteRenderer.renderDirty[i] = 1;
-      SpriteRenderer.keyedDirty[i] = 1;
-    }
-    if (this._hasComponents.MeshRenderer) {
-      MeshRenderer.repeatX[i] = rx;
-      MeshRenderer.repeatY[i] = ry;
-      MeshRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
-      MeshRenderer.tileOffsetU[i] = MeshRenderer.packTileOffset01(u0);
-      MeshRenderer.tileOffsetV[i] = MeshRenderer.packTileOffset01(v0);
-      MeshRenderer.renderDirty[i] = 1;
-    }
+    setTileLocalAt(this.index, this._componentBits, periodX, periodY, u0, v0);
     return this;
   }
 
   /** Stretch UV across the quad / mesh (default). */
   clearTile() {
-    const i = this.index;
-    if (this._hasComponents.SpriteRenderer) {
-      SpriteRenderer.repeatX[i] = 0;
-      SpriteRenderer.repeatY[i] = 0;
-      SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.STRETCH;
-      SpriteRenderer.tileOffsetU[i] = 0;
-      SpriteRenderer.tileOffsetV[i] = 0;
-      SpriteRenderer.renderDirty[i] = 1;
-      SpriteRenderer.keyedDirty[i] = 1;
-    }
-    if (this._hasComponents.MeshRenderer) {
-      MeshRenderer.repeatX[i] = 0;
-      MeshRenderer.repeatY[i] = 0;
-      MeshRenderer.tileMode[i] = SPRITE_TILE_MODE.STRETCH;
-      MeshRenderer.tileOffsetU[i] = 0;
-      MeshRenderer.tileOffsetV[i] = 0;
-      MeshRenderer.renderDirty[i] = 1;
-    }
+    clearTileAt(this.index, this._componentBits);
     return this;
   }
 
@@ -2102,48 +1803,7 @@ export class GameObject {
    * @returns {this}
    */
   bakeWorldTileToLocal() {
-    const i = this.index;
-    if (this._hasComponents.SpriteRenderer) {
-      const px = SpriteRenderer.repeatX[i];
-      const py = SpriteRenderer.repeatY[i];
-      if (px > 0 || py > 0) {
-        const visX = SpriteRenderer.boundsHalfW[i] * 2;
-        const visY = SpriteRenderer.boundsHalfH[i] * 2;
-        SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
-        if (px > 0) {
-          SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(
-            SpriteRenderer.bakeLocalOffsetFromWorld(this.x, px, visX)
-          );
-        }
-        if (py > 0) {
-          SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(
-            SpriteRenderer.bakeLocalOffsetFromWorld(this.y, py, visY)
-          );
-        }
-        SpriteRenderer.renderDirty[i] = 1;
-        SpriteRenderer.keyedDirty[i] = 1;
-      }
-    }
-    if (this._hasComponents.MeshRenderer) {
-      const px = MeshRenderer.repeatX[i];
-      const py = MeshRenderer.repeatY[i];
-      if (px > 0 || py > 0) {
-        const visX = Collider.width ? Collider.width[i] : 1;
-        const visY = Collider.height ? Collider.height[i] : 1;
-        MeshRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
-        if (px > 0) {
-          MeshRenderer.tileOffsetU[i] = MeshRenderer.packTileOffset01(
-            SpriteRenderer.bakeLocalOffsetFromWorld(this.x, px, visX || 1)
-          );
-        }
-        if (py > 0) {
-          MeshRenderer.tileOffsetV[i] = MeshRenderer.packTileOffset01(
-            SpriteRenderer.bakeLocalOffsetFromWorld(this.y, py, visY || 1)
-          );
-        }
-        MeshRenderer.renderDirty[i] = 1;
-      }
-    }
+    bakeWorldTileToLocalAt(this.index, this._componentBits);
     return this;
   }
 
@@ -2170,15 +1830,8 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setDisplaySize(width, height) {
-    if (!this._hasComponents.SpriteRenderer) return this;
-    const i = this.index;
-    const dims = SpriteSheetRegistry.frameSizeOf(SpriteRenderer.spritesheetId[i], SpriteRenderer.animationState[i]);
-    if (dims === null || !(dims.w > 0) || !(dims.h > 0)) {
-      warnNoSpriteOnce(this.constructor.name, 'setDisplaySize');
-      return this;
-    }
-    const sx = width / dims.w;
-    return this.setScale(sx, height === undefined ? sx : height / dims.h);
+    setDisplaySizeAt(this.index, this._componentBits, width, height);
+    return this;
   }
 
   /**
@@ -2188,19 +1841,10 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setAnchor(x, y) {
-    if (this._hasComponents.SpriteRenderer) {
-      SpriteRenderer.anchorX[this.index] = x;
-      SpriteRenderer.anchorY[this.index] = y;
-      SpriteRenderer.renderDirty[this.index] = 1;
-      SpriteRenderer.keyedDirty[this.index] = 1;
-      // N-140: the cull's reach is from the anchor, so a static sprite's extent in pre-render's grid moved.
-      staticSceneryChangedAt(this.index);
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      AdobeAnimComponent.anchorX[this.index] = x;
-      AdobeAnimComponent.anchorY[this.index] = y;
-      AdobeAnimComponent.applyClipBounds(this.index);
-    }
+    const a = SETTER_ARGS;
+    a[0] = x;
+    a[1] = y;
+    setAnchorAt(this.index, this._componentBits);
     return this;
   }
 
@@ -2210,13 +1854,7 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setAnimationState(state) {
-    if (!this._hasComponents.SpriteRenderer) return this;
-    if (SpriteRenderer.animationState[this.index] !== state) {
-      SpriteRenderer.animationState[this.index] = state;
-      SpriteRenderer.updateBounds(this.index);
-      SpriteRenderer.renderDirty[this.index] = 1;
-      SpriteRenderer.keyedDirty[this.index] = 1;
-    }
+    setAnimationStateAt(this.index, this._componentBits, state);
     return this;
   }
 
@@ -2268,28 +1906,17 @@ export class GameObject {
    * @returns {this}
    */
   setFixedRotation(flag) {
-    if (this._hasComponents.RigidBody) {
-      const i = this.index;
-      const v = flag ? 1 : 0;
-      RigidBody.fixedRotation[i] = v;
-      if (isCommandRingBound()) {
-        enqueueSetFixedRotation(i, v);
-      }
-    }
+    fixedRotationAt(this.index, this._componentBits, flag);
     return this;
   }
 
+  /** Accelerate toward (x, y) at `acc` px/s² for this tick (RigidBody.accelerateTowards' work). */
   accelerateTowards(x, y, acc) {
-    if (!this._hasComponents.RigidBody) return this;
-    const i = this.index;
-    const dx = x - Transform.x[i];
-    const dy = y - Transform.y[i];
-    const distSq = dx * dx + dy * dy;
-    // Guard: distSq must be > 1 to avoid division issues
-    if (distSq > 1) {
-      const factor = acc / Math.sqrt(distSq);
-      return this.addAcceleration(dx * factor, dy * factor);
-    }
+    const a = SETTER_ARGS64;
+    a[0] = x;
+    a[1] = y;
+    a[2] = acc;
+    accelerateTowardsAt(this.index, this._componentBits);
     return this;
   }
 
@@ -2300,14 +1927,10 @@ export class GameObject {
    * @returns {this} For chaining
    */
   addVelocity(dvx, dvy) {
-    if (this._hasComponents.RigidBody) {
-      const i = this.index;
-      RigidBody.vx[i] += dvx;
-      RigidBody.vy[i] += dvy;
-      if (isCommandRingBound()) {
-        enqueueSetVelocity(i, RigidBody.vx[i], RigidBody.vy[i]);
-      }
-    }
+    const a = SETTER_ARGS64;
+    a[0] = dvx;
+    a[1] = dvy;
+    addVelocityAt(this.index, this._componentBits);
     return this;
   }
 
@@ -2317,14 +1940,8 @@ export class GameObject {
    * @returns {this} For chaining
    */
   scaleVelocity(factor) {
-    if (this._hasComponents.RigidBody) {
-      const i = this.index;
-      RigidBody.vx[i] *= factor;
-      RigidBody.vy[i] *= factor;
-      if (isCommandRingBound()) {
-        enqueueSetVelocity(i, RigidBody.vx[i], RigidBody.vy[i]);
-      }
-    }
+    SETTER_ARGS64[0] = factor;
+    scaleVelocityAt(this.index, this._componentBits);
     return this;
   }
 
@@ -2337,14 +1954,11 @@ export class GameObject {
    * @returns {this} For chaining
    */
   addAcceleration(x, y) {
-    if (this._hasComponents.RigidBody) {
-      // N-290: RigidBody.sleeping is physics' paint of Box2D's sleep, not a request. Physics wakes a sleeping body that
-      // has an acceleration only where its paint still says asleep (bodies_apply_accelerations), so the 0 this stored
-      // before physics' turn kept the body asleep and its acceleration was lost. Physics paints and clears the byte
-      // every step on its own core, so the store also took the line from it every call (E-434).
-      RigidBody.ax[this.index] += x;
-      RigidBody.ay[this.index] += y;
-    }
+    // RigidBody.addAcceleration's work (N-290: no write to the sleeping paint).
+    const a = SETTER_ARGS64;
+    a[0] = x;
+    a[1] = y;
+    accelerationAt(this.index, this._componentBits);
     return this;
   }
 
@@ -2359,7 +1973,7 @@ export class GameObject {
    * @returns {this} For chaining
    */
   applyForce(fx, fy, atX, atY) {
-    if (this._hasComponents.RigidBody) RigidBody.applyForce(this.index, fx, fy, atX, atY);
+    if ((this._componentBits & HAS_BODY) !== 0) RigidBody.applyForce(this.index, fx, fy, atX, atY);
     return this;
   }
 
@@ -2369,7 +1983,7 @@ export class GameObject {
    * @returns {this} For chaining
    */
   applyTorque(torque) {
-    if (this._hasComponents.RigidBody) RigidBody.applyTorque(this.index, torque);
+    if ((this._componentBits & HAS_BODY) !== 0) RigidBody.applyTorque(this.index, torque);
     return this;
   }
 
@@ -2384,7 +1998,7 @@ export class GameObject {
    * @returns {this} For chaining
    */
   applyImpulse(ix, iy, atX, atY) {
-    if (this._hasComponents.RigidBody) RigidBody.applyImpulse(this.index, ix, iy, atX, atY);
+    if ((this._componentBits & HAS_BODY) !== 0) RigidBody.applyImpulse(this.index, ix, iy, atX, atY);
     return this;
   }
 
@@ -2394,7 +2008,7 @@ export class GameObject {
    * @returns {this} For chaining
    */
   applyAngularImpulse(impulse) {
-    if (this._hasComponents.RigidBody) RigidBody.applyAngularImpulse(this.index, impulse);
+    if ((this._componentBits & HAS_BODY) !== 0) RigidBody.applyAngularImpulse(this.index, impulse);
     return this;
   }
 
@@ -2405,11 +2019,7 @@ export class GameObject {
    * @returns {this}
    */
   setAwake(awake = true) {
-    if (!this._hasComponents.RigidBody) return this;
-    const i = this.index;
-    const on = awake ? 1 : 0;
-    if (RigidBody.sleeping) RigidBody.sleeping[i] = on ? 0 : 1;
-    if (isCommandRingBound()) enqueueSetAwake(i, on);
+    awakeAt(this.index, this._componentBits, awake);
     return this;
   }
 
@@ -2425,33 +2035,7 @@ export class GameObject {
    * this.setAnimation("idle_down");   // Uses civil1's idle_down animation
    */
   setSpritesheet(spritesheetName) {
-    if (!this.spriteRenderer) return;
-
-    // Verify the spritesheet exists
-    if (!SpriteSheetRegistry.spritesheets.has(spritesheetName)) {
-      console.error(
-        `❌ ${this.constructor.name}: Spritesheet "${spritesheetName}" not found. ` +
-        `Available: ${Array.from(SpriteSheetRegistry.spritesheets.keys()).join(', ')}`
-      );
-      return;
-    }
-
-    // Store which spritesheet to use (proxy sheet like civil1, civil2, etc.)
-    const spritesheetId = SpriteSheetRegistry.getSpritesheetId(spritesheetName);
-    if (spritesheetId === 0) {
-      console.error(`${this.constructor.name}: Spritesheet "${spritesheetName}" not registered`);
-      return;
-    }
-    this.spriteRenderer.spritesheetId = spritesheetId;
-    // DX-DIRSPRITE: the animation it asked for, from the new sheet's table.
-    if (this._hasComponents.DirectionalSprite) DirectionalSprite.resolve(this.index);
-
-    // Mark as animated
-    this.spriteRenderer.isAnimated = 1;
-    this.spriteRenderer.renderVisible = 1;
-
-    SpriteRenderer.updateBounds(this.index);
-    this.markDirty();
+    setSpritesheetAt(this.index, this._componentBits, spritesheetName);
   }
 
   /**
@@ -2467,91 +2051,10 @@ export class GameObject {
    * this.setAnimation("walk_right");  // Uses civil1's walk_right animation
    */
   setAnimation(animationName, loop = true) {
-    if (!this._hasComponents.SpriteRenderer) return;
-
-    // Get which spritesheet is currently set
-    const spritesheetId = SpriteRenderer.spritesheetId[this.index];
-    if (!spritesheetId) {
-      console.error(
-        `❌ ${this.constructor.name}: Call setSpritesheet() before setAnimation(). ` +
-        `Or use setSprite() for static sprites.`
-      );
-      return;
-    }
-
-    // DX-DIRSPRITE: a directionless name plays in the direction the entity faces; any other is shown as it is.
-    if (this._hasComponents.DirectionalSprite) {
-      this._setDirectionalAnimation(spritesheetId, animationName, loop);
-      return;
-    }
-
-    // Name → index per sheet id: no string is built per call, so a tick can
-    // call this every frame and pay only when the animation changes.
-    const byName = GameObject._animIndexBySheet[spritesheetId];
-    let animIndex = byName !== undefined ? byName.get(animationName) : undefined;
-    if (animIndex === undefined) {
-      animIndex = GameObject._lookUpAnimation(this.constructor.name, spritesheetId, animationName);
-      if (animIndex === undefined) return;
-    }
-
-    const loopFlag = loop ? 1 : 0;
-    if (
-      SpriteRenderer.animationState[this.index] === animIndex &&
-      SpriteRenderer.loop[this.index] === loopFlag
-    ) {
-      return;
-    }
-
-    // Set the animation and loop flag
-    this.setAnimationState(animIndex);
-    SpriteRenderer.loop[this.index] = loopFlag;
+    setAnimationAt(this.index, this._componentBits, animationName, loop);
   }
 
   /** setAnimation on an entity with a DirectionalSprite: its directionless animation, or a plain one pinned. */
-  _setDirectionalAnimation(spritesheetId, animationName, loop) {
-    const i = this.index;
-    SpriteRenderer.loop[i] = loop ? 1 : 0;
-    if (DirectionalSprite.setGroup(i, animationName)) return;
-    if (!SpriteSheetRegistry.hasAnimation(SpriteSheetRegistry.getSpritesheetName(spritesheetId), animationName)) {
-      DirectionalSprite.warnNoGroup(this.constructor.name, i, animationName);
-      return;
-    }
-    const byName = GameObject._animIndexBySheet[spritesheetId];
-    let animIndex = byName !== undefined ? byName.get(animationName) : undefined;
-    if (animIndex === undefined) {
-      animIndex = GameObject._lookUpAnimation(this.constructor.name, spritesheetId, animationName);
-      if (animIndex === undefined) return;
-    }
-    DirectionalSprite.pin(i, animIndex);
-  }
-
-  /**
-   * setAnimation's first call for a name on a sheet: find its index and keep it.
-   * @returns {number|undefined} undefined when there is none (reported)
-   */
-  static _lookUpAnimation(className, spritesheetId, animationName) {
-    const spritesheet = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
-    if (!spritesheet) {
-      console.error(`❌ ${className}: Invalid spritesheetId ${spritesheetId}`);
-      return undefined;
-    }
-    // Proxy sheets answer with their own index (the one animationState stores)
-    const animIndex = SpriteSheetRegistry.getAnimationIndex(spritesheet, animationName);
-    if (animIndex === undefined) {
-      const availableAnims = Object.keys(
-        SpriteSheetRegistry.spritesheets.get(spritesheet)?.animations || {}
-      );
-      console.error(
-        `❌ ${className}: Animation "${animationName}" not found in "${spritesheet}". ` +
-        `Available: ${availableAnims.slice(0, 10).join(', ')}${availableAnims.length > 10 ? '...' : ''}`
-      );
-      return undefined;
-    }
-    let byName = GameObject._animIndexBySheet[spritesheetId];
-    if (byName === undefined) GameObject._animIndexBySheet[spritesheetId] = byName = new Map();
-    byName.set(animationName, animIndex);
-    return animIndex;
-  }
 
   /**
    * Set animation loop behavior
@@ -2559,8 +2062,7 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setAnimationLoop(loop) {
-    if (!this._hasComponents.SpriteRenderer) return this;
-    SpriteRenderer.loop[this.index] = loop ? 1 : 0;
+    setAnimationLoopAt(this.index, this._componentBits, loop);
     return this;
   }
 
@@ -2623,78 +2125,7 @@ export class GameObject {
    * this.setSprite("civil1_hurt_5");
    */
   setSprite(spriteNameOrSheet, animation, frameIndex) {
-    if (!this.spriteRenderer) return this;
-
-    // Resolve the sprite name based on which parameters were provided
-    let spriteName;
-
-    if (animation !== undefined) {
-      // Parameters provided: (spritesheet, animation, frameIndex)
-      // Resolve to the actual frame name in bigAtlas
-      spriteName = SpriteSheetRegistry.getFrameName(spriteNameOrSheet, animation, frameIndex ?? 0);
-
-      if (!spriteName) {
-        console.error(
-          `❌ ${this.constructor.name}: Could not resolve frame for ` +
-          `spritesheet="${spriteNameOrSheet}", animation="${animation}", frameIndex=${frameIndex ?? 0}`
-        );
-        return this;
-      }
-    } else {
-      // Single parameter: direct sprite/frame name
-      spriteName = spriteNameOrSheet;
-    }
-
-    // Static sprites use bigAtlas directly
-    const sheetName = 'bigAtlas';
-
-    // PERFORMANCE: Global cache keyed by the sprite name alone: a "bigAtlas:name" key built per call was a
-    // new string per spawn (E-93). No prototype, so a sprite named "constructor" is an ordinary key. Its
-    // value is the sheet and the index setSprite stores, packed (sheet · 256 + index): bigAtlas for its
-    // first 256 animations, a chunk sheet bigAtlas@k past them (ED-74: both columns are bytes).
-    if (!GameObject._globalAnimationCache) {
-      GameObject._globalAnimationCache = Object.create(null);
-    }
-
-    let packed = GameObject._globalAnimationCache[spriteName];
-
-    if (packed === undefined) {
-      // First time this sprite is used - look it up in bigAtlas
-      const globalIndex = SpriteSheetRegistry.getAnimationIndex(sheetName, spriteName);
-
-      if (globalIndex === undefined) {
-        // Sprite not found - provide helpful error message
-        console.error(
-          `❌ ${this.constructor.name}: Sprite "${spriteName}" not found in bigAtlas. ` +
-          `Make sure it's included in your assets config (textures or spritesheets).`
-        );
-        return this;
-      }
-
-      const sheetId = SpriteSheetRegistry.getSpritesheetId(
-        globalIndex < BIG_ATLAS_CHUNK ? sheetName : bigAtlasChunkName((globalIndex / BIG_ATLAS_CHUNK) | 0),
-      );
-      if (sheetId === 0) {
-        console.error(`❌ ${this.constructor.name}: bigAtlas not loaded yet`);
-        return this;
-      }
-      packed = sheetId * BIG_ATLAS_CHUNK + (globalIndex % BIG_ATLAS_CHUNK);
-      // Cache it globally for future use
-      GameObject._globalAnimationCache[spriteName] = packed;
-    }
-
-    // Store which spritesheet to use (bigAtlas, or its chunk, for static sprites)
-    this.spriteRenderer.spritesheetId = (packed / BIG_ATLAS_CHUNK) | 0;
-    const animIndex = packed % BIG_ATLAS_CHUNK;
-
-    // Mark as NOT animated (static sprite - displays single frame)
-    this.spriteRenderer.isAnimated = 0;
-    this.spriteRenderer.active = 1;
-    this.spriteRenderer.renderVisible = 1;
-
-    // Set the sprite (as a single-frame "animation")
-    this.setAnimationState(animIndex); // This calls markDirty() internally
-
+    setSpriteAt(this.index, this._componentBits, spriteNameOrSheet, animation, frameIndex);
     return this;
   }
   /**
@@ -3687,8 +3118,7 @@ export class GameObject {
     beginBodyDirtyDeferred();
     // DX-PARENT: in its spawn on this worker; a link made to it now (its onSpawned spawning its children) waits for its
     // activation, where its generation moves.
-    const spawnSlot = spawningDepth < spawningHere.length;
-    if (spawnSlot) spawningHere[spawningDepth++] = i;
+    const spawnSlot = enterSpawnHere(i);
     let spawnSetUp = false;
     try {
       // Size before other spawnConfig keys (and before onSpawned damping/static).
@@ -3796,7 +3226,7 @@ export class GameObject {
       spawnSetUp = true;
     } finally {
       endBodyDirtyDeferred();
-      if (spawnSlot) spawningDepth--;
+      if (spawnSlot) leaveSpawnHere();
       // A throw out of the spawn (outside a worker): the links waiting for it end, their children orphans.
       if (!spawnSetUp && pendingLinkCount !== 0) endPendingLinks(i, false);
     }

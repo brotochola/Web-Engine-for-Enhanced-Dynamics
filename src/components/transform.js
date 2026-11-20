@@ -13,6 +13,34 @@
 
 import { Component } from '../core/component.js';
 import { EntityIdArray, entityIdNone } from '../util/entityIdWidth.js';
+import { SETTER_ARGS as SETTER_ARGSImport, SETTER_ARGS64 as SETTER_ARGS64Import } from '../core/setterArgs.js';
+import {
+  HAS_BODY as HAS_BODYImport,
+  HAS_COLLIDER as HAS_COLLIDERImport,
+  typeBitsOf as typeBitsOfImport,
+} from '../core/entityTypes.js';
+import { setSceneryTransform, staticSceneryChangedAt as staticSceneryChangedAtImport } from '../core/staticScenery.js';
+import { isSpawningHere as isSpawningHereImport } from '../core/spawningHere.js';
+import {
+  enqueueSetRotCS as enqueueSetRotCSImport,
+  enqueueSetTransform as enqueueSetTransformImport,
+  isCommandRingBound as isCommandRingBoundImport,
+} from '../box2d/box2dCommandRing.js';
+
+// E-474: the pose setters' imports as module consts, which TurboFan folds (an import is a cell it loads and hole-checks
+// at each use). Every one of these modules imports nothing that leads back here (importAliases.test.js).
+const SETTER_ARGS = SETTER_ARGSImport;
+const SETTER_ARGS64 = SETTER_ARGS64Import;
+const HAS_BODY = HAS_BODYImport;
+const HAS_COLLIDER = HAS_COLLIDERImport;
+const typeBitsOf = typeBitsOfImport;
+const staticSceneryChangedAt = staticSceneryChangedAtImport;
+const isSpawningHere = isSpawningHereImport;
+const enqueueSetRotCS = enqueueSetRotCSImport;
+const enqueueSetTransform = enqueueSetTransformImport;
+const isCommandRingBound = isCommandRingBoundImport;
+/** An entity with a Box2D body to tell of a pose: a RigidBody, or a Collider alone (an implicit static body). */
+const BODY_BITS = HAS_BODY | HAS_COLLIDER;
 
 /** Transform.active while the despawn that claimed the slot runs (GameObject.despawn): neither alive nor free. */
 export const ACTIVE_DESPAWNING = 2;
@@ -216,6 +244,90 @@ export class Transform extends Component {
     if (hook !== null) hook(i);
   }
 
+  // ─── Pose by index (E-533) ───────────────────────────────────────────────
+  // What entity.x = v, entity.setPosition(x, y), entity.rotation = r and entity.setRotationCS(c, s) do, without an
+  // instance (a static tickAll, a static hook): the columns, Box2D's body (RigidBody, or a Collider alone) on its next
+  // step, the static scenery counter. The entity's setters do the same work through the functions below the class.
+  // The same value again (as float32, the columns' type: N-170) sends nothing. A child (transform.parent) turns and
+  // moves with its parent: a write to it is put back or refused, with a warning, as the entity's is. Each stays at 75
+  // bytes of bytecode or less, so TurboFan inlines it wherever it is handed a heap number, and passes no double to a
+  // call (N-215): setX and setY compare and store inline, as the entity's set x does, the others hand their values
+  // over in SETTER_ARGS (SETTER_ARGS64 where the work computes with them).
+
+  /**
+   * entity.x = x by index.
+   * @param {number} i - entity index
+   * @param {number} x - px
+   */
+  static setX(i, x) {
+    const col = TransformClass.x;
+    if (col[i] !== Math.fround(x)) {
+      col[i] = x;
+      poseMovedAt(i, componentBitsAt(i));
+    }
+  }
+
+  /**
+   * entity.y = y by index.
+   * @param {number} i - entity index
+   * @param {number} y - px
+   */
+  static setY(i, y) {
+    const col = TransformClass.y;
+    if (col[i] !== Math.fround(y)) {
+      col[i] = y;
+      poseMovedAt(i, componentBitsAt(i));
+    }
+  }
+
+  /**
+   * entity.setPosition(x, y) by index: both at once, one SET_TRANSFORM for a body.
+   * @param {number} i - entity index
+   * @param {number} x - px
+   * @param {number} y - px
+   */
+  static setPosition(i, x, y) {
+    const a = SETTER_ARGS;
+    a[0] = x;
+    a[1] = y;
+    positionAt(i, componentBitsAt(i));
+  }
+
+  /**
+   * entity.rotation = r by index: the angle, its cos and sin, and the body's turn.
+   * @param {number} i - entity index
+   * @param {number} r - radians
+   */
+  static setRotation(i, r) {
+    SETTER_ARGS64[0] = r;
+    rotationAt(i, componentBitsAt(i));
+  }
+
+  /**
+   * entity.setRotationCS(c, s) by index: face along a unit direction with no trig. A RigidBody's angle follows after
+   * the next physics step; without one it is set here.
+   * @param {number} i - entity index
+   * @param {number} c - cos of the angle
+   * @param {number} s - sin of the angle
+   */
+  static setRotationCS(i, c, s) {
+    const a = SETTER_ARGS64;
+    a[0] = c;
+    a[1] = s;
+    rotationCSAt(i, componentBitsAt(i));
+  }
+
+  /**
+   * transform.parent = p by index (DX-PARENT): link entity i to p (an entity or its index), or unlink it with null (it
+   * stays where it is). The same checks and warnings as the setter.
+   * @param {number} i - entity index
+   * @param {object | number | null} p
+   */
+  static setParent(i, p) {
+    const policy = Transform._linkPolicy;
+    if (policy !== null) policy(i, p);
+  }
+
   // Pose views (HEAP or Weed SAB) — instance accessors for entity.transform.x etc. A child's pose is physics' (its
   // parent's plus its local offset): a write to it is ignored, with a warning.
   get x() {
@@ -272,8 +384,7 @@ export class Transform extends Component {
     return p < entityIdNone ? p : null;
   }
   set parent(value) {
-    const policy = Transform._linkPolicy;
-    if (policy !== null) policy(this.index, value);
+    Transform.setParent(this.index, value);
   }
   /** Its offset in the parent's frame (px, turned with the parent). Physics places it there after its next step. */
   get localX() {
@@ -295,4 +406,135 @@ export class Transform extends Component {
   set localRotation(value) {
     Transform.localRotation[this.index] = value;
   }
+}
+
+/**
+ * E-474: the class as a module const for the pose work below and the statics above. TurboFan folds a module const; a
+ * module function reads an exported class through its export cell, a load and a hole check at each use.
+ */
+const TransformClass = Transform;
+setSceneryTransform(Transform);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// E-533: the pose work, by entity index and the entity's component bits (entityTypes.js): what Transform.setX and its
+// siblings run, and what the entity's setters run (with the bits on their class's prototype, this._componentBits).
+// Ints only: the values come in SETTER_ARGS (or SETTER_ARGS64), or are in the columns already.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Entity i's component bits by its type (entityTypes.js), what a static hands the work below where an entity's method
+ * hands this._componentBits.
+ * @param {number} i - entity index
+ */
+export function componentBitsAt(i) {
+  return typeBitsOf(TransformClass.entityType[i]);
+}
+
+/** A body moved by a position setter: its SET_TRANSFORM from the columns just written (the ring stores float32). */
+function enqueuePoseOf(i) {
+  const T = TransformClass;
+  enqueueSetTransform(i, T.x[i], T.y[i], T.rotC ? T.rotC[i] : 1, T.rotS ? T.rotS[i] : 0);
+}
+
+/**
+ * N-218: whether child i (transform.parent) was written. The parent column is read only while some link exists: at
+ * 250 000 entities it missed the cache on every write. A plain read of the shared count: a link made on another worker
+ * this very frame may be seen a frame late, and physics puts that child back from its parent anyway.
+ */
+function isLinkedChild(i) {
+  const T = TransformClass;
+  return T.links[LINK_COUNT] !== 0 && T.parent[i] < entityIdNone;
+}
+
+/**
+ * The work of set x and set y once their column changed (entity.x = v, Transform.setX): the static scenery counter, a
+ * body's pose. SST-20: in its spawn on this worker (its config keys, onSpawned) the entity is not active yet and its
+ * body is made after it, from the columns the setter wrote: a SET_TRANSFORM then would move a body that is not there.
+ * DX-PARENT: a child's pose is physics' (body-less entities only, a child has no body): put back, said once.
+ * @param {number} i - entity index
+ * @param {number} bits - its component bits (entityTypes.js)
+ */
+export function poseMovedAt(i, bits) {
+  staticSceneryChangedAt(i);
+  if (isCommandRingBound() && (bits & BODY_BITS) !== 0) {
+    if (!isSpawningHere(i)) enqueuePoseOf(i);
+  } else if (isLinkedChild(i)) {
+    Transform.composeChildPose(i);
+    Transform._ignoredPoseWrite(i);
+  }
+}
+
+/**
+ * setPosition's work, x and y in SETTER_ARGS. Unlike set x and set y, it leaves the static scenery counter alone and
+ * refuses a child's write before it writes.
+ * @param {number} i - entity index
+ * @param {number} bits - its component bits
+ */
+export function positionAt(i, bits) {
+  const x = SETTER_ARGS[0];
+  const y = SETTER_ARGS[1];
+  const T = TransformClass;
+  if (T.x[i] === x && T.y[i] === y) return;
+  if (isLinkedChild(i)) {
+    Transform._ignoredPoseWrite(i);
+    return;
+  }
+  T.x[i] = x;
+  T.y[i] = y;
+  if (isCommandRingBound() && (bits & BODY_BITS) !== 0) enqueuePoseOf(i);
+}
+
+/**
+ * set rotation's work, the angle in SETTER_ARGS64[0] (a double: its cos and sin are of the angle given, not of its
+ * float32). The command goes to any body, an implicit static one too: set x and set y send the rotation they read, and
+ * physics exports it back, so a body that was never told would keep handing out an old rotation (N-118).
+ * @param {number} i - entity index
+ * @param {number} bits - its component bits
+ */
+export function rotationAt(i, bits) {
+  const r = SETTER_ARGS64[0];
+  const T = TransformClass;
+  const rotation = T.rotation;
+  if (rotation && rotation[i] === Math.fround(r)) return;
+  if (isLinkedChild(i)) {
+    Transform._ignoredPoseWrite(i);
+    return;
+  }
+  if (rotation) rotation[i] = r;
+  const rotC = T.rotC;
+  const rotS = T.rotS;
+  if (rotC && rotS) {
+    rotC[i] = Math.cos(r);
+    rotS[i] = Math.sin(r);
+  }
+  if (isCommandRingBound() && (bits & BODY_BITS) !== 0) {
+    enqueueSetRotCS(i, rotC ? rotC[i] : Math.cos(r), rotS ? rotS[i] : Math.sin(r));
+  }
+}
+
+/**
+ * setRotationCS's work, cos and sin in SETTER_ARGS64[0] and [1]. A RigidBody's angle comes back from physics after its
+ * next step; any other entity gets it here (atan2), and a Collider alone is told too.
+ * @param {number} i - entity index
+ * @param {number} bits - its component bits
+ */
+export function rotationCSAt(i, bits) {
+  const c = SETTER_ARGS64[0];
+  const s = SETTER_ARGS64[1];
+  const T = TransformClass;
+  if (isLinkedChild(i)) {
+    Transform._ignoredPoseWrite(i);
+    return;
+  }
+  const rotC = T.rotC;
+  if (rotC) {
+    rotC[i] = c;
+    T.rotS[i] = s;
+  }
+  if (isCommandRingBound() && (bits & HAS_BODY) !== 0) {
+    enqueueSetRotCS(i, c, s);
+    return;
+  }
+  if (T.rotation) T.rotation[i] = Math.atan2(s, c);
+  if (isCommandRingBound() && (bits & HAS_COLLIDER) !== 0) enqueueSetRotCS(i, c, s);
 }

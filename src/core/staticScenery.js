@@ -4,7 +4,17 @@
 // bin them again: a static entity spawned or despawned, or moved, resized or given another sprite through the
 // GameObject setters. Writing a static entity's Transform columns directly does not move the counter.
 
-import { Transform } from '../components/transform.js';
+/**
+ * The Transform class, which transform.js hands over as it loads (setSceneryTransform). Not an import: this module
+ * imports nothing, so transform.js's pose setters (Transform.setX, E-533) can alias staticSceneryChangedAt as a module
+ * const, which importAliases.test.js allows only from outside the importer's import cycle (E-474).
+ */
+let Transform = null;
+
+/** transform.js, as it loads. */
+export function setSceneryTransform(TransformClass) {
+  Transform = TransformClass;
+}
 
 let gen = null;
 /** 1 for each entity type that declares isStatic, by entityType. */
