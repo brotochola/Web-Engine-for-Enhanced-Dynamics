@@ -11695,7 +11695,8 @@
         "R-1588",
         "R-1598",
         "R-1620",
-        "R-1621"
+        "R-1621",
+        "R-1624"
       ]
     },
     {
@@ -40006,6 +40007,15 @@
       "title": "The four lighting levels on the HD 620: classic 10.2-11.3 ms GPU, + map shadows +12-19 %, cheap light3d +31-55 %, light3d 24-31 ms (+150 %); map shadows are the cheap step up on a weak GPU",
       "verdict": "note",
       "text": "ASUS lab job 0899y (00:37-00:55): the cheap-light3d study's four lighting levels (R-1573) on the HD 620. Predator at\nits default crowd and camera, 16 h and 22 h, glFrameRecorder --gpu-draws (the draws' timer total), 2 rounds\nalternated, main 9647eb9b (E-432's one-pass tilemap in), --src, 1920x1080, Intel 31.0.101.2145. Modes as R-1573:\n- A: classic, dayCycle=0.\n- B: classic + map shadows.\n- C: cheap light3d: lightingRes and shadowRes 0.25, selfShadow and pixelDepth off.\n- D: light3d.\n\n| mode | GPU 16 h (r1 / r2) | GPU 22 h (r1 / r2) | frames recorded in 3 s | GTX 1650, 16 h / 22 h (R-1573) |\n|---|---|---|---|---|\n| A | 11.44 / 11.17 | 10.16 / 10.15 | 139 to 166 | 3.67 / 3.26 |\n| B | 12.64 / 12.84 (+12 %) | 12.22 / 12.03 (+19 %) | 130 to 157 | 5.75 / 3.89 |\n| C | 14.42 / 15.19 (+31 %) | 15.57 / 16.04 (+55 %) | 102 to 131 | 4.74 / 4.63 |\n| D | 25.85 / 30.55 (+150 %) | 28.03 / 23.93 (+155 %) | 89 to 108 | 5.71 / 5.39 |\n\n- **On the HD 620, B is the cheap step up, not D's price.** Map shadows add 1.2 to 1.9 ms to classic (+12 to 19 %).\n  On the GTX 1650 they added 57 % by day. That is still not within E-531's 0.5 ms bar.\n- **Full light3d halves the HD 620's frame rate** (GPU 24 to 31 ms, about 30 to 36 fps). Cheap light3d (C) takes\n  that down to 14 to 16 ms, so the preset matters most on a weak GPU: -45 % here, -15 % on the GTX.\n- **What D pays on the HD 620** (by program, 16 h r1 / 22 h r1):\n  - The sprites' map draws [uTexLut,uMapsLut,uStatics,uPoses,uTexture,uMaps]: 8.3 / 9.7 ms.\n  - The light pass at lightingRes 0.5: 5.8 / 5.8 ms (C's 0.25: 1.6 ms).\n  - The lamps' shadow tiles at 4096x1536: 3.5 / 3.9 ms (C's 4096x384: 1.1 ms).\n  - [uLight]: 1.5 / 1.8 ms.\n- **A's frame** (by program, 16 h r1): the full-screen composites [uTextures] 4.0 ms, the entities 3.0, the tilemap\n  2.3 (one draw, E-432), the 960x540 pass 1.0."
+    },
+    {
+      "id": "R-1624",
+      "date": "2026-11-20",
+      "time": "01:27",
+      "timeFrom": "recorded",
+      "title": "A 10-minute drift soak on the ASUS (Predator 0.2, barrio 2 000, boids 27 000): nothing grows, Box2D's heap flat; every worker is cheaper at 10 min than at 20 s; the barrio's drawn frames -12 %",
+      "verdict": "note",
+      "text": "ASUS lab job 0899z (00:55-01:27): a drift soak on the 2-core laptop at main 9647eb9b. Each scene was measured 10 s\nafter a 10 s warm-up, then 10 s after a 600 s warm-up (two page loads), headed, --src, detailed stats off. Scenes at\ntheir capacity edges: Predator by day crowd 0.2 with dayCycle=0, the barrio at hour 22 with 2 000 people (time\nfrozen), boids 27 000. Per worker, own work (exact-frame step - wait) and p99, after 10 s -> after 600 s:\n\n| worker | Predator | barrio | boids |\n|---|---|---|---|\n| spatial0 | 2.24 -> 1.22 (p99 6.7 -> 3.6) | 7.97 -> 6.28 (p99 29.4 -> 11.4) | 5.58 -> 0.89 (11.6 -> 2.8); spatial1 5.73 -> 5.54 |\n| physics | 2.92 -> 1.05 (5.9 -> 2.9) | 6.81 -> 5.10 (20.8 -> 8.9) | 6.35 -> 5.69 (10.3 -> 7.4) |\n| logic0 | 1.64 -> 0.91 (6.4 -> 2.9) | 4.52 -> 3.28 (14.0 -> 8.6) | 1.90 -> 1.29 (6.7 -> 2.6) |\n| pre-render | 2.81 -> 1.47 (5.7 -> 3.6) | 8.50 -> 5.35 (25.2 -> 11.9) | 2.21 -> 0.62 (5.5 -> 1.1) |\n| renderer | 1.89 -> 1.31 (7.7 -> 3.2) | 6.23 -> 4.16 (15.4 -> 8.2) | 0.73 -> 0.12 (3.3 -> 0.3) |\n| Box2D heap (KB) | 339 515 -> 339 751 | 489 386 -> 489 678 | 104 827 -> 104 808 |\n\n- **No drift up: nothing grows over 10 minutes.**\n  - No worker's p99 rose by more than a bin, except boids' particle worker (0.4 -> 0.7 ms, under a millisecond).\n  - Box2D's heap is flat to 0.1 %. No leak in these three scenes.\n- **Everything is cheaper at 10 minutes than at 10 to 20 s:** often half, and p99 down 40 to 60 %. Part is the\n  engine warming (JIT and wasm tiers on a slow core), part is the scene settling: Predator's bodies fall asleep, and\n  boids' flock gathered into spatial1's half (spatial0 5.58 -> 0.89 ms, spatial1 level). These runs do not separate\n  the two.\n  - So the ASUS's capacity runs, with 9 s of warm-up, may measure a scene still warming. A warm-up ladder (10, 30,\n    60, 120 s) would tell how long this laptop needs; queued.\n- **The barrio drew fewer frames at 10 minutes:** 353 -> 311 in 10 s, -12 %, while every CPU worker got cheaper.\n  This is the GPU side, a laptop's GPU clock sinking as it heats (15 W shared) or the view changing as people walk.\n  A lead; the CPU frequency was not logged in this job."
     }
   ],
   "leads": [
