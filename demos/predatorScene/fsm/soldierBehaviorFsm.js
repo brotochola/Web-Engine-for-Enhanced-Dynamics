@@ -84,10 +84,13 @@ function findClosestCivilian(i) {
   // The soldier's collider position (Transform + Collider.offset)
   const ownerX = Transform.x[i] + (Collider.offsetX[i] || 0);
   const ownerY = Transform.y[i] + (Collider.offsetY[i] || 0);
-  const neighborCount = Grid.getNeighborCount(i);
+  // The neighbour row read straight (its count, then the ids): half the cost of Grid.getNeighbor per neighbour.
+  const rows = Grid.neighborData;
+  const row = Grid.getNeighborOffset(i);
+  const neighborCount = rows[row];
 
-  for (let n = 0; n < neighborCount; n++) {
-    const neighborIndex = Grid.getNeighbor(i, n);
+  for (let n = 1; n <= neighborCount; n++) {
+    const neighborIndex = rows[row + n];
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
     if (LootableComponent.health[neighborIndex] <= 0) continue;
 
@@ -119,10 +122,13 @@ function findACivilianToShoot(i) {
     _shootCandIndex[k] = -1;
   }
 
-  const neighborCount = Grid.getNeighborCount(i);
+  // The neighbour row read straight (its count, then the ids): half the cost of Grid.getNeighbor per neighbour.
+  const rows = Grid.neighborData;
+  const row = Grid.getNeighborOffset(i);
+  const neighborCount = rows[row];
 
-  for (let n = 0; n < neighborCount; n++) {
-    const neighborIndex = Grid.getNeighbor(i, n);
+  for (let n = 1; n <= neighborCount; n++) {
+    const neighborIndex = rows[row + n];
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
     if (LootableComponent.health[neighborIndex] <= 0) continue;
 

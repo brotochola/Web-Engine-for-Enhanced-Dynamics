@@ -46,10 +46,12 @@ class IdleCivilianBehaviorState extends FSMState {
   static onUpdate(owner, i, dt) {
     // const playerEntityType = Player.entityType;
     const mySoldierEntityType = MySoldier.entityType;
-    const neighborCount = Grid.getNeighborCount(i);
+    const rows = Grid.neighborData; // the neighbour row, read straight: its count, then the ids
+    const row = Grid.getNeighborOffset(i);
+    const neighborCount = rows[row];
 
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = Grid.getNeighbor(i, n);
+    for (let n = 1; n <= neighborCount; n++) {
+      const neighborIndex = rows[row + n];
       // Violence/panic wins over plain flee (same priority as old post-FSM scan)
       if (tryPanicFromAttackingSoldier(i, neighborIndex, mySoldierEntityType)) {
         return;
@@ -71,7 +73,9 @@ class FleeingCivilianBehaviorState extends FSMState {
   static onUpdate(owner, i, dt) {
     // const playerEntityType = Player.entityType;
     const mySoldierEntityType = MySoldier.entityType;
-    const neighborCount = Grid.getNeighborCount(i);
+    const rows = Grid.neighborData; // the neighbour row, read straight: its count, then the ids
+    const row = Grid.getNeighborOffset(i);
+    const neighborCount = rows[row];
     const floorSq = civilianClassOf(i).accelDistFloorSq;
 
     let fleeX = 0;
@@ -81,8 +85,8 @@ class FleeingCivilianBehaviorState extends FSMState {
     const myX = Transform.x[i];
     const myY = Transform.y[i];
 
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = Grid.getNeighbor(i, n);
+    for (let n = 1; n <= neighborCount; n++) {
+      const neighborIndex = rows[row + n];
 
       if (tryPanicFromAttackingSoldier(i, neighborIndex, mySoldierEntityType)) {
         return;
@@ -128,9 +132,11 @@ class PanicCivilianBehaviorState extends FSMState {
 
     // Refresh panic origin from nearby attackers (one walk; was separate violence scan)
     const mySoldierEntityType = MySoldier.entityType;
-    const neighborCount = Grid.getNeighborCount(i);
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = Grid.getNeighbor(i, n);
+    const rows = Grid.neighborData; // the neighbour row, read straight: its count, then the ids
+    const row = Grid.getNeighborOffset(i);
+    const neighborCount = rows[row];
+    for (let n = 1; n <= neighborCount; n++) {
+      const neighborIndex = rows[row + n];
       if (tryPanicFromAttackingSoldier(i, neighborIndex, mySoldierEntityType)) {
         break;
       }
