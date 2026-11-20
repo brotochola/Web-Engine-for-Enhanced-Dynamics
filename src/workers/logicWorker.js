@@ -109,10 +109,19 @@ import { addWaitMs } from '../util/waitMeter.js';
 /** DX-GUARDS E2: the instance devChecks audits for a class. */
 const firstActiveInstance = (EntityClass) => EntityClass.getFirstActiveInstance();
 
-/** This worker's instance of the entity at `index` (hot reload field carry). */
+/** This worker's instance of the entity at `index`, made if it has none (hot reload: the fields put back). */
 function instanceAtIndex(index) {
   const EntityClass = GameObject.classByType[Transform.entityType[index]];
   return EntityClass && EntityClass.instances ? GameObject._instanceOf(EntityClass, index) : undefined;
+}
+
+/**
+ * This worker's instance of the entity at `index` if it made one (hot reload: the fields collected). One never made
+ * holds only its class's initializers, which the reloaded class's instance gets anyway: none is made to look.
+ */
+function existingInstanceAt(index) {
+  const EntityClass = GameObject.classByType[Transform.entityType[index]];
+  return EntityClass && EntityClass.instances ? (EntityClass.instances[index - EntityClass.startIndex] ?? undefined) : undefined;
 }
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
@@ -3399,7 +3408,7 @@ class LogicWorker extends AbstractWorker {
       case 'collectInstanceFields': {
         let entries = [];
         try {
-          entries = collectInstanceFields(instanceAtIndex, Transform.active);
+          entries = collectInstanceFields(existingInstanceAt, Transform.active);
         } catch (err) {
           console.warn(`LOGIC WORKER ${this.workerIndex}: could not collect instance fields`, err);
         }
@@ -3584,8 +3593,9 @@ class LogicWorker extends AbstractWorker {
 
   _mainThreadDespawn(entityIndex) {
     if (entityIndex < 0 || entityIndex >= this.globalEntityCount) return;
-    const instance = this.gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
-    if (instance && instance.despawn) instance.despawn();
+    // The static despawn picks the form: the instance's when there is one or an onDespawned method needs one, else
+    // none made (a type whose onDespawned is static, or that has none).
+    GameObject.despawn(entityIndex);
   }
 
   /**

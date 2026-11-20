@@ -218,6 +218,20 @@ test('static onSpawned gets the index and the config, static onDespawned the ind
   heard = [];
   assert.equal(Gem.despawn(gem), true);
   assert.deepEqual(heard, [['onDespawned', Gem, gem.index]]);
+
+  // A despawn the page asked for (its ring command or message): the static form, no instance made to run it.
+  heard = [];
+  // An entity another thread spawned at a reused index: no instance on this worker (the free list hands back the gem's
+  // index, whose instance the despawn would rightly use).
+  const asked = popFreeIndex(top, links, 0);
+  lw.gameObjects[asked] = null;
+  GameObject.instances[asked] = null;
+  Gem.instances[asked - Gem.startIndex] = null;
+  Transform.active[asked] = 1;
+  lw._mainThreadDespawn(asked);
+  assert.deepEqual(heard, [['onDespawned', Gem, asked]]);
+  assert.equal(Transform.active[asked], 0);
+  assert.equal(lw.gameObjects[asked], null, 'no instance made for the page despawn');
   Transform.active.fill(0);
 });
 
