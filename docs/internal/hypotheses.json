@@ -20151,19 +20151,20 @@
     {
       "id": "N-237",
       "title": "setterMicrobench's second case runs on different code: its \"same\" case calls setupSetters again, which rebinds Transform's columns, so every setter deopts (dependent field type constness changed) and \"same\" runs with the columns no longer constant",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (c1f85e3b), on fix/n237-setter-bench-one-binding (R-1713)",
       "date": "2026-11-16",
       "area": "bench",
       "kind": "bug",
-      "result": "Seen by the d8 agent; every setter deopts at the second setup.",
-      "next": "One case per process (or set up once and reset the values instead of rebinding the columns); re-time the \"same\" case.",
+      "result": "Fixed 2026-11-20 (c1f85e3b): the columns bound once and reset between cases; 12 dependent-code deopts a run -> 0, checksums unchanged, 'same' re-timed 11 890 / 12 183 ops/s on the ASUS (base 10 977 / 12 114).",
+      "next": "Nothing left; records that timed the old \"same\" case read rebound, deoptimized setters.",
       "refs": [],
       "aliases": [
         "setterMicrobench rebind deopt"
       ],
       "records": [
-        "R-1222"
+        "R-1222",
+        "R-1713"
       ]
     },
     {
@@ -40206,6 +40207,15 @@
       "title": "N-243 fixed: glFrameRecorder keeps rates a frame unrounded, with totals and ms a draw",
       "verdict": "kept-hygiene",
       "text": "**N-243 fixed: glFrameRecorder's result holds unrounded rates a frame, their totals and ms a draw; only the printed table rounds.** Branch fix/n243-recorder-unrounded, 289933e0.\n\n- **Cause:** the recorder rounded draws a frame and segments a frame to 0.1, and ms a frame to 0.001, in the result itself. A layer that draws in fewer than every frame read about +-8 % per draw.\n- **Fix:** the rows carry drawsPerFrame, segmentsPerFrame, instancesPerFrame and msPerFrame unrounded, with the totals they come from (ns, draws, instances, segments). Each draw pass also carries msPerDraw. The printed tables round as they did. The header's ms a frame prints 3 decimals, so the lab's kmip.mjs regex reads it as before.\n- **Checked by a real recording**, since the recorder runs serialized in the Pixi worker and a node test would need a fake WebGL2 context: ballsScene, --gpu-draws, 120 frames on the HD 620. draws / frames equals drawsPerFrame exactly; msPerDraw is 1.45060 ms; the table prints 1.451 ms, 1.0 draws, 1981 inst. Node suite 3286 of 3287 (frameChainWait's \"logic waits ...\" flake, its file green alone).\n- **Left:** webgpuRecorderWorker.mjs rounds the same way (per(), drawsPerFrame). That is WebGPU work, for the main PC."
+    },
+    {
+      "id": "R-1713",
+      "date": "2026-11-20",
+      "time": "06:24",
+      "timeFrom": "recorded",
+      "title": "N-237 fixed: setterMicrobench binds its columns once, no rebind deopt between cases",
+      "verdict": "kept-hygiene",
+      "text": "**N-237 fixed: setterMicrobench binds its columns once; its \"same\" case times the code its \"moving\" case compiled.** Branch fix/n237-setter-bench-one-binding, c1f85e3b.\n\n- **Cause:** each case called setupSetters, which binds new arrays to Transform's, RigidBody's and SpriteRenderer's statics. The second binding marked every setter's TurboFan code for deoptimization (reason: code dependencies, the fields' constness): 12 marks a run (node --trace-deopt, Node 22.16), the setters, poseMoved and the frame loop among them.\n- **Fix:** setupSetters runs once. Each case starts from resetSetters, the same arrays filled back to setup's values.\n- **Checked:** 0 dependent-code marks in 2 runs, and the checksums are unchanged (moving 712077207, same 3157746663). \"same\" re-timed at 11 890 and 12 183 ops/s, against 10 977 and 12 114 on bugs/base (2 runs each on the ASUS: noise, no verdict). \"moving\" read 8 484 and 8 882 (base 8 264 and 8 846).\n- **Test:** setterMicrobenchReset.test.js checks that resetSetters keeps the bound arrays and restores setup's values. Node suite 3286 of 3288 (two frameChainWait timing flakes, its file green alone)."
     }
   ],
   "leads": [
