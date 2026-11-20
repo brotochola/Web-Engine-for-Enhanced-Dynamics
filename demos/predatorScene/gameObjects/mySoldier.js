@@ -32,12 +32,6 @@ export class MySoldier extends Person {
   static components = [...Person.components, SoldierBehaviorFSM];
   static behaviorFSM = SoldierBehaviorFSM;
   outQueryDecorationIndices = new Uint16Array(64);
-  /** The FSM's line-of-sight cache (canShootTarget): the target it holds, whether it was clear, until which frame. */
-  _losCacheTarget = -1;
-  _losCacheClear = 0;
-  _losCacheUntilFrame = 0;
-  /** The logic frame from which an idle soldier that found nobody scans its neighbours again (IdleSoldierState). */
-  _idleScanAt = 0;
 
   onSpawned(spawnConfig = {}) {
     // Set spritesheet and animation before super.onSpawned()

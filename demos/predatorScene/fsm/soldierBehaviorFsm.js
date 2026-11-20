@@ -1,15 +1,20 @@
 // SoldierBehaviorFSM.js - FSM component for soldier behavior
 // States: IDLE, GOING_TO_DESTINATION, GOING_TO_ENEMY, CLOSE_ATTACKING, RANGED_ATTACKING
+//
+// The states work by entity index (E-530: Predator written static): positions, velocities and neighbours come from the
+// columns and Grid's statics, the soldier's tuning from its class (GameObject.classByType). Only the actions (shoot,
+// punch) go through the instance, which the FSM still hands every state as `owner`.
 
 import WEED from '/src/index.js';
 import { SHOOT_DURATION_MS, WALK_SPEED_THRESHOLD } from './personAnimationFsm.js';
 import { Civilian } from '../gameObjects/civilian.js';
 import { Destination } from '../gameObjects/destination.js';
+import { Person } from '../gameObjects/person.js';
 import { PersonComponent } from '../components/personComponent.js';
 
 import { LootableComponent } from '../components/lootableComponent.js';
 
-const { distanceSq2D, Ray, DebugDraw, FSM, FSMState, Transform, GameObject, Collider, NavGrid } = WEED;
+const { distanceSq2D, Ray, DebugDraw, FSM, FSMState, Transform, GameObject, Collider, NavGrid, Grid, RigidBody } = WEED;
 
 // ==========================================
 // REUSABLE OBJECTS - Zero allocation
@@ -29,7 +34,7 @@ const LOS_CACHE_FRAMES = 4;
 /** An idle soldier whose scan found nobody scans again after this many logic frames (~67 ms at 60 fps). */
 const IDLE_RESCAN_FRAMES = 4;
 
-/** The frames MySoldier.tickAll ran on this worker: the clock of the caches above (each worker counts its own). */
+/** The frames MySoldier.tickAll ran on this worker: the clock of the caches below (each worker counts its own). */
 let soldierFrame = 0;
 
 /** Called by MySoldier.tickAll once a frame, before the soldiers tick. */
@@ -37,25 +42,54 @@ export function advanceSoldierFrame() {
   soldierFrame++;
 }
 
+/**
+ * Per soldier, by entity index, on this worker (scratch each logic worker keeps for the soldiers it ticks, as the
+ * instance fields they replace were): the target its last line-of-sight ray went to, whether that ray was clear, the
+ * frame until which that answer holds, and the frame from which an idle soldier that found nobody scans again.
+ */
+let losTarget = new Int32Array(0);
+let losClear = new Uint8Array(0);
+let losUntilFrame = new Int32Array(0);
+let idleScanAt = new Int32Array(0);
+
+/** Grows the caches above to hold entity index i (soldiers' indices come as their pool grows). */
+function ensureSoldierCaches(i) {
+  if (i < idleScanAt.length) return;
+  const size = Math.max(i + 1, idleScanAt.length * 2, 1024);
+  const grow = (old, Type) => {
+    const next = new Type(size);
+    next.set(old);
+    return next;
+  };
+  losTarget = grow(losTarget, Int32Array);
+  losClear = grow(losClear, Uint8Array);
+  losUntilFrame = grow(losUntilFrame, Int32Array);
+  idleScanAt = grow(idleScanAt, Int32Array);
+}
+
+/** The soldier's class (MySoldier or a subclass of it): its tuning statics (punch range, chase and follow strength). */
+function soldierClassOf(i) {
+  return GameObject.classByType[Transform.entityType[i]];
+}
+
 // ==========================================
 // HELPER: Find closest civilian in neighbors
 // ==========================================
 
-function findClosestCivilian(owner) {
+function findClosestCivilian(i) {
   const civilianType = Civilian.entityType;
   _closestResult.index = -1;
   _closestResult.distSq = Infinity;
 
-  // Get owner's collider position (Transform + Collider.offset)
-  const ownerX = Transform.x[owner.index] + (Collider.offsetX[owner.index] || 0);
-  const ownerY = Transform.y[owner.index] + (Collider.offsetY[owner.index] || 0);
-  const neighborCount = owner.neighborCount;
+  // The soldier's collider position (Transform + Collider.offset)
+  const ownerX = Transform.x[i] + (Collider.offsetX[i] || 0);
+  const ownerY = Transform.y[i] + (Collider.offsetY[i] || 0);
+  const neighborCount = Grid.getNeighborCount(i);
 
   for (let n = 0; n < neighborCount; n++) {
-    const neighborIndex = owner.getNeighbor(n);
+    const neighborIndex = Grid.getNeighbor(i, n);
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
     if (LootableComponent.health[neighborIndex] <= 0) continue;
-    // if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
 
     // Calculate distance on-the-fly (collider positions)
     const neighborX = Transform.x[neighborIndex] + (Collider.offsetX[neighborIndex] || 0);
@@ -73,10 +107,10 @@ function findClosestCivilian(owner) {
   return _closestResult.index === -1 ? null : _closestResult;
 }
 
-function findACivilianToShoot(owner) {
+function findACivilianToShoot(i) {
   const civilianType = Civilian.entityType;
-  const ownerX = Transform.x[owner.index] + (Collider.offsetX[owner.index] || 0);
-  const ownerY = Transform.y[owner.index] + (Collider.offsetY[owner.index] || 0);
+  const ownerX = Transform.x[i] + (Collider.offsetX[i] || 0);
+  const ownerY = Transform.y[i] + (Collider.offsetY[i] || 0);
 
   // Pass 1: keep K nearest living civilians (no LOS yet)
   let candCount = 0;
@@ -85,10 +119,10 @@ function findACivilianToShoot(owner) {
     _shootCandIndex[k] = -1;
   }
 
-  const neighborCount = owner.neighborCount;
+  const neighborCount = Grid.getNeighborCount(i);
 
   for (let n = 0; n < neighborCount; n++) {
-    const neighborIndex = owner.getNeighbor(n);
+    const neighborIndex = Grid.getNeighbor(i, n);
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
     if (LootableComponent.health[neighborIndex] <= 0) continue;
 
@@ -123,7 +157,7 @@ function findACivilianToShoot(owner) {
   // Pass 2: LOS only on closest-first shortlist (≤ K rays)
   for (let k = 0; k < candCount; k++) {
     const neighborIndex = _shootCandIndex[k];
-    if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
+    if (!Ray.hasLineOfSight(i, neighborIndex)) continue;
     _closestResult.index = neighborIndex;
     _closestResult.distSq = _shootCandDistSq[k];
     return _closestResult;
@@ -135,7 +169,7 @@ function findACivilianToShoot(owner) {
 // HELPER: Check if stored target is still valid
 // ==========================================
 
-function isStoredTargetValid(owner, i) {
+function isStoredTargetValid(i) {
   const targetIndex = PersonComponent.closestEnemyIndex[i];
   if (targetIndex < 0) return false;
   if (LootableComponent.health[targetIndex] <= 0) return false;
@@ -160,23 +194,21 @@ function clearTarget(i) {
 // HELPER: Check if soldier can shoot target
 // ==========================================
 
-function canShootTarget(owner, targetIndex, targetDistSq) {
-  if (!owner.hasGun()) return false;
-  const weapon = owner.getBestWeapon();
+function canShootTarget(i, targetIndex, targetDistSq) {
+  const weapon = Person.bestWeapon(i);
+  if (weapon === null) return false;
   if (targetDistSq > weapon.rangeSq) return false;
 
+  ensureSoldierCaches(i);
   const frame = soldierFrame;
-  if (
-    owner._losCacheTarget === targetIndex &&
-    frame < (owner._losCacheUntilFrame | 0)
-  ) {
-    return owner._losCacheClear === 1;
+  if (losTarget[i] === targetIndex && frame < losUntilFrame[i]) {
+    return losClear[i] === 1;
   }
 
-  const hasLOS = Ray.hasLineOfSight(owner.index, targetIndex);
-  owner._losCacheTarget = targetIndex;
-  owner._losCacheClear = hasLOS ? 1 : 0;
-  owner._losCacheUntilFrame = frame + LOS_CACHE_FRAMES;
+  const hasLOS = Ray.hasLineOfSight(i, targetIndex);
+  losTarget[i] = targetIndex;
+  losClear[i] = hasLOS ? 1 : 0;
+  losUntilFrame[i] = frame + LOS_CACHE_FRAMES;
   return hasLOS;
 }
 
@@ -195,30 +227,31 @@ function getDestination() {
 class IdleSoldierState extends FSMState {
   static onEnter(owner, i, fromState) {
     clearTarget(i);
-    owner._idleScanAt = 0;
+    ensureSoldierCaches(i);
+    idleScanAt[i] = 0;
   }
 
   static onUpdate(owner, i, dt) {
     // A scan walks every neighbour (and casts rays with a gun): when the last one found nobody, wait a few frames.
+    ensureSoldierCaches(i);
     const frame = soldierFrame;
-    if (frame < owner._idleScanAt) return;
+    if (frame < idleScanAt[i]) return;
 
     // Scan for civilians: gun → need LOS; no gun → closest (melee)
-    const closest = owner.hasGun() ? findACivilianToShoot(owner) : findClosestCivilian(owner);
+    const closest = Person.hasGun(i) ? findACivilianToShoot(i) : findClosestCivilian(i);
 
     if (closest) {
       // Store target in PersonComponent
       storeTarget(i, closest.index, closest.distSq);
 
       // Priority A: Can we shoot?
-      if (canShootTarget(owner, closest.index, closest.distSq)) {
+      if (canShootTarget(i, closest.index, closest.distSq)) {
         this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
         return;
       }
 
       // Priority B: Close enough to punch?
-      const punchRangeSq = owner.constructor.punchRangeSq;
-      if (closest.distSq <= punchRangeSq) {
+      if (closest.distSq <= soldierClassOf(i).punchRangeSq) {
         this.fsm.changeState(i, this.fsm.states.CLOSE_ATTACKING);
         return;
       }
@@ -228,7 +261,7 @@ class IdleSoldierState extends FSMState {
       return;
     }
 
-    owner._idleScanAt = frame + IDLE_RESCAN_FRAMES;
+    idleScanAt[i] = frame + IDLE_RESCAN_FRAMES;
   }
 
 }
@@ -247,18 +280,20 @@ class GoingToDestinationState extends FSMState {
     }
 
     // Check if reached destination
-    const distSqToDest = distanceSq2D(owner.x, owner.y, dest.x, dest.y);
+    const x = Transform.x[i];
+    const y = Transform.y[i];
+    const distSqToDest = distanceSq2D(x, y, dest.x, dest.y);
     if (distSqToDest < dest.collider.radius ** 2) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
 
     // Follow flowfield toward destination
-    NavGrid.requestVector(owner.x, owner.y, dest.x, dest.y, _navVec);
+    NavGrid.requestVector(x, y, dest.x, dest.y, _navVec);
 
-    const followStrength = owner.constructor.followDestinationStrength;
-
-    owner.addAcceleration(_navVec.x * followStrength, _navVec.y * followStrength);
+    const followStrength = soldierClassOf(i).followDestinationStrength;
+    RigidBody.ax[i] += _navVec.x * followStrength;
+    RigidBody.ay[i] += _navVec.y * followStrength;
   }
 }
 
@@ -270,19 +305,19 @@ class GoingToEnemyState extends FSMState {
   static onEnter(owner, i, fromState) { }
 
   static onUpdate(owner, i, dt) {
-    const punchRangeSq = owner.constructor.punchRangeSq;
-
     // 1. Try to use stored target first
-    if (isStoredTargetValid(owner, i)) {
+    if (isStoredTargetValid(i)) {
       const targetIndex = PersonComponent.closestEnemyIndex[i];
 
+      const x = Transform.x[i];
+      const y = Transform.y[i];
       const targetX = Transform.x[targetIndex];
       const targetY = Transform.y[targetIndex];
-      const distSq = distanceSq2D(owner.x, owner.y, targetX, targetY);
+      const distSq = distanceSq2D(x, y, targetX, targetY);
 
       //todo: optimizar esto
       const destinationInstance = Destination.getFirstActiveInstance()
-      if (distanceSq2D(owner.x, owner.y, destinationInstance.x, destinationInstance.y) > 600 ** 2) {
+      if (distanceSq2D(x, y, destinationInstance.x, destinationInstance.y) > 600 ** 2) {
         this.fsm.changeState(i, this.fsm.states.GOING_TO_DESTINATION);
         return
       }
@@ -291,32 +326,34 @@ class GoingToEnemyState extends FSMState {
       PersonComponent.closestEnemyDistanceSq[i] = distSq;
 
       // Can we shoot?
-      if (canShootTarget(owner, targetIndex, distSq)) {
+      if (canShootTarget(i, targetIndex, distSq)) {
         this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
         return;
       }
 
       // Can we punch?
+      const Soldier = soldierClassOf(i);
+      const punchRangeSq = Soldier.punchRangeSq;
       if (distSq <= punchRangeSq) {
         this.fsm.changeState(i, this.fsm.states.CLOSE_ATTACKING);
         return;
       }
 
       // Chase toward stored target
-      const chaseStrength = owner.constructor.chaseStrength;
       // 1/r, no sqrt: |a| = chaseStrength / dist. Floor distSq so close range can't rocket.
       if (distSq > 1) {
-        const dx = targetX - owner.x;
-        const dy = targetY - owner.y;
-        const floorSq = owner.constructor.punchRangeSq;
-        const d2 = distSq < floorSq ? floorSq : distSq;
-        owner.addAcceleration((dx / d2) * chaseStrength, (dy / d2) * chaseStrength);
+        const chaseStrength = Soldier.chaseStrength;
+        const dx = targetX - x;
+        const dy = targetY - y;
+        const d2 = distSq < punchRangeSq ? punchRangeSq : distSq;
+        RigidBody.ax[i] += (dx / d2) * chaseStrength;
+        RigidBody.ay[i] += (dy / d2) * chaseStrength;
       }
       return;
     }
 
     // 2. Stored target invalid - rescan
-    const closest = findClosestCivilian(owner);
+    const closest = findClosestCivilian(i);
 
     if (closest) {
       // Update stored target, stay in GOING_TO_ENEMY
@@ -337,7 +374,7 @@ class GoingToEnemyState extends FSMState {
 class RangedAttackingState extends FSMState {
   static onEnter(owner, i, fromState) {
     // Stop running momentum when entering shoot stance; allows external pushes afterward
-    owner.setVelocity(0, 0);
+    RigidBody.setVelocity(i, 0, 0);
   }
 
   static onUpdate(owner, i, dt, totalTime) {
@@ -347,12 +384,13 @@ class RangedAttackingState extends FSMState {
       return;
     }
 
-    const distSq = distanceSq2D(owner.x, owner.y, Transform.x[targetIndex], Transform.y[targetIndex]);
-    if (!canShootTarget(owner, targetIndex, distSq)) {
+    const distSq = distanceSq2D(Transform.x[i], Transform.y[i], Transform.x[targetIndex], Transform.y[targetIndex]);
+    if (!canShootTarget(i, targetIndex, distSq)) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
 
+    // The shot itself (bullet, flash, sound, particles) is the instance's action.
     owner.shoot(targetIndex);
 
     if (totalTime > SHOOT_DURATION_MS) {
@@ -376,7 +414,7 @@ class CloseAttackingState extends FSMState {
 
   static onUpdate(owner, i, dt) {
     // Wait for punch animation to finish
-    if (!owner.isPerformingAction()) {
+    if (!Person.isPerformingAction(i)) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
     }
   }

@@ -235,20 +235,20 @@ export class Person extends Lootable {
   // ==========================================
 
   /**
-   * Check if this person has any ranged weapon
+   * Whether the person at entity index i has any ranged weapon
+   * @param {number} i - entity index
    * @returns {boolean} True if has pistol or machine gun
    */
-  hasGun() {
-    const i = this.index;
+  static hasGun(i) {
     return LootableComponent.dropPistol[i] > 0 || LootableComponent.dropMachineGun[i] > 0;
   }
 
   /**
-   * Get the best weapon this person has (machine gun > pistol > null)
+   * The best weapon the person at entity index i has (machine gun > pistol > null)
+   * @param {number} i - entity index
    * @returns {Object|null} Weapon definition from Person.WEAPONS or null if unarmed
    */
-  getBestWeapon() {
-    const i = this.index;
+  static bestWeapon(i) {
     if (LootableComponent.dropMachineGun[i] > 0) return Person.WEAPONS.MACHINE_GUN;
     if (LootableComponent.dropPistol[i] > 0) return Person.WEAPONS.PISTOL;
     return null;
@@ -277,11 +277,11 @@ export class Person extends Lootable {
   shoot(targetEntityIndex) {
     if (PersonComponent.dead[this.index] === 1) return false;
 
-    const weapon = this.getBestWeapon();
+    const weapon = Person.bestWeapon(this.index);
     if (!weapon) return false;
 
     // Block if performing action (unless rapid-fire weapon + already in shooting animation)
-    if (this.isPerformingAction()) {
+    if (Person.isPerformingAction(this.index)) {
       const rapidFireInShooting = weapon.rapidFire && PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.SHOOTING);
       if (!rapidFireInShooting) return false;
     }
@@ -457,7 +457,7 @@ export class Person extends Lootable {
   punch(targetEntityIndex) {
     if (targetEntityIndex < 0) return false;
     if (PersonComponent.dead[this.index] === 1) return false;
-    if (this.isPerformingAction()) return false;
+    if (Person.isPerformingAction(this.index)) return false;
     PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.PUNCHING);
 
     // Face the target
@@ -479,17 +479,18 @@ export class Person extends Lootable {
    */
   hitWithStick() {
     if (PersonComponent.dead[this.index] === 1) return false;
-    if (this.isPerformingAction()) return false;
+    if (Person.isPerformingAction(this.index)) return false;
     PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.STICK_HIT);
     return true;
   }
 
   /**
-   * Check if currently performing a one-shot action
+   * Whether the person at entity index i is performing a one-shot action
+   * @param {number} i - entity index
    * @returns {boolean} True if busy with an action
    */
-  isPerformingAction() {
-    const state = PersonAnimationFSM.state[this.index];
+  static isPerformingAction(i) {
+    const state = PersonAnimationFSM.state[i];
     const idleIndex = PersonAnimationFSM.states.IDLE.stateIndex;
     const walkingIndex = PersonAnimationFSM.states.WALKING.stateIndex;
     const runningIndex = PersonAnimationFSM.states.RUNNING.stateIndex;
