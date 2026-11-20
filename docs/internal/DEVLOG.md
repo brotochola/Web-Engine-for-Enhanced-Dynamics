@@ -6,6 +6,44 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Friday 20 November 2026 (morning) — A Whole Game With No Objects
+
+The small hours ended with a list of what still made an object on the ECS way: a spawn returned one, an FSM handed
+one to its states, and some setters existed only on the instance. The owner wanted the whole of Predator written that
+way, every soldier, fire, house, tree and coin on the floor, and WeedJS usable either way, the developer's choice.
+
+**The FSMs lost their owner.** A state's hooks now get the entity's index: `onEnter(i, from)`, `onExit(i, to)`,
+`onUpdate(i, dt, timeInState)`. My first idea was to pass a null owner when a type ticks with `tickAll`; the owner
+called it a patch, and he was right. Code that wants the instance asks `GameObject.get(i)`.
+
+**The statics became the implementation.** Every entity method now lives in its component as a static by index
+(`SpriteRenderer.setAlpha(i, a)`, `Collider.setRadius(i, r)`, `RigidBody.setLinearDamping(i, d)`), and the
+instance's method calls the same core. That cost the object way 20 % on the first try, and the reason was not the
+extra call: TurboFan inlines a function's callees up to a budget, and the wrapper layer spent it, so `set y` was left
+out of the frame loop. With the instance calling the core directly and the rare work moved into functions of its own,
+the setters are back at parity with main.
+
+**spawnIndex was slower than spawn.** `Kind.spawnIndex(config)` spawns with no instance and returns the index. Its
+first version spawned 1.2 to 1.9 million entities a second, against 2.5 million for the spawn that makes an
+instance. A profile showed why: every spawn and every despawn walked the class's prototype chain to see whether its
+hooks were methods. Resolving that once per entity type took spawnIndex to 2.6 million: as fast as a spawn reusing an
+instance, and a third faster than one that builds it.
+
+**The engine still made objects behind the game's back.** Once Predator itself made none, an instance count per
+thread found the engine's own: a bullet hitting a type with no `onGotShot` of its own, a contact ending on a coin
+with no `onCollisionExit`, a despawn asked by the page, and hot reload, which made an instance for each of the 42 000
+entities on every logic worker only to find they had no fields. Each now checks first.
+
+After 40 seconds of Predator, main holds 106 627 entity objects across the page and its two logic workers. This
+version holds none. Its threads hold 32 MB of JavaScript heap instead of 50: the page went from 13.3 to 5.9 MB, the
+logic worker from 16.5 to 6.1. A repeating deopt in main's logic worker is gone too. With the whole logic on one
+worker, logic went from 7.8 to 7.1 ms a frame, but the spatial and physics workers dropped even more in the same
+sitting. Either the machine drifted, or 106 000 fewer objects freed the cores V8's garbage collector borrows. In the
+mixed battle the two versions stay within the fight's run-to-run spread.
+
+Still on the list: index forms for the last instance-only APIs (messages, decorations, Adobe animations, meshes),
+presets so a gunfight's particle configs stop being garbage, and saves written by columns (E-537 to E-540).
+
 ## Friday 20 November 2026 (small hours) — The Same Game, Written as Data
 
 I want WeedJS to be written two ways, and the developer picks. One is objects: an entity is an instance, with a
