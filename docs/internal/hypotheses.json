@@ -20673,19 +20673,20 @@
     {
       "id": "N-248",
       "title": "Predator's drawn camera jumps for one frame at startup: queue frame 1 at (4040, 1960), frame 2 at (1846, 727), frame 3 at (3631, 1732), and Pixi's first keyed draw is frame 2",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the N-238 agent (probe3: every sprite's enter, leave and mark frames, and Pixi's keyed draws)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (0711c2b8), on fix/n248-squad-camera-start (R-1710)",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "bug",
-      "result": "Seen in every probe run at crowd 2.5 and crowd 1 (main 9c40fda7 and the fix). The jump is what left N-238's keys unmarked.",
-      "next": "Find where frame 2's camera comes from (the scene's zoom or follow settling, a camera reset before the first follow): log the camera each of the first frames; the jump gone or explained.",
+      "result": "Fixed 2026-11-20 (0711c2b8): setZoom(pin) after the squad follow re-zoomed around the view's corner every frame; the first frame (dtRatio ~280) threw the view off the squad. The squad camera now targets the pinned zoom. Predator's view at zoom 0.216 moves ~585 px (now on the squad).",
+      "next": "When merged: Predator absolute numbers across this commit move (its view at zoom 0.216 follows the squad now).",
       "refs": [],
       "aliases": [
         "camera jump at startup"
       ],
       "records": [
-        "R-1232"
+        "R-1232",
+        "R-1710"
       ]
     },
     {
@@ -40176,6 +40177,15 @@
       "title": "N-166 fixed: four demos open on the floor their bodies land on",
       "verdict": "kept-hygiene",
       "text": "**N-166 fixed: Oriented Boxes, Constraint Boxes, Constraints and Burning Boxes open on their bodies.** Branch fix/n166-demo-first-view, 93f786af.\n\n- **Cause:** each centred the camera and the free camera's target on the middle of the world. Their bodies fall to a floor at the world's bottom (Constraints: 525 px above it; Burning Boxes: 0.72 of the height), out of view.\n- **Fix (public Camera API):**\n  - Oriented Boxes and Constraint Boxes put the view's bottom on the world's bottom, from Camera.canvasHeight / Camera.zoom.\n  - Constraints puts its floor 120 px above the view's bottom.\n  - Burning Boxes centres 250 px above its floor.\n  - Each sets the free target to the same point.\n- **Checked by picture** (compareCaptures --headless --save, 1280 x 720, 4 s in), before and after:\n  - Oriented Boxes: black before; after, the boxes piled on the floor.\n  - Constraint Boxes: the same.\n  - Constraints: the ring of balls on the floor after.\n  - Burning Boxes: the dark cave with the flames cut at the bottom edge before; after, the burning crates and a ledge.\n- **Test:** demos/tests/demoFirstView.test.js runs each scene's create() with its floor's spawns caught, at zoom 1. The floor's top must be in the first view and the free target at the view's centre. All 4 fail on bugs/base. Suites: demos 125 of 125, node 3285 of 3287 (two timing flakes, frameChainWait and physicsChainWait, green alone; the node suite cannot see demos).\n- **Note:** Burning Boxes is a measured scene (runHygieneSceneAb, profileSceneSweep, runHeadedMedian), so its first view, and with it the visible load, changes with this commit.\n- **Not done:** the item's \"look at every demo's first frames\". Destructible Terrain and the Procedural Tree start dark; whether that is their look is the owner's call."
+    },
+    {
+      "id": "R-1710",
+      "date": "2026-11-20",
+      "time": "06:10",
+      "timeFrom": "recorded",
+      "title": "N-248 fixed: Predator's squad camera takes the pinned zoom, no startup jump",
+      "verdict": "kept-hygiene",
+      "text": "**N-248 fixed: Predator's camera no longer jumps at startup with a pinned zoom.** Branch fix/n248-squad-camera-start, 0711c2b8.\n\n- **Cause (logged in the page, crowd 1, the ASUS):** with ?zoom= pinned, update() ran updateSquadCamera at its own fitted zoom (0.334), then Camera.setZoom(pin), which keeps the view's top-left corner, so every frame re-zoomed around the corner.\n  - **The jump:** the first update has a dtRatio of about 280 (the load time), so the follow runs at full strength. At zoom 1 it left the view centred at (3082, 1425) for a squad at (4996, 2502).\n  - **The crawl:** the next frames moved back toward the squad (3564, 3708, ... 4213 by frame 8) while the two zooms fought (0.686, 0.974 inside each frame).\n  - **Match with N-238's probe:** its queue camera (frame 1 at 4040,1960, frame 2 at 1846,727, frame 3 at 3631,1732) is this sequence at crowd 2.5. The soldiers' positions were all set from the first update (no zeros), so they were not the cause.\n- **Fix (demo):** updateSquadCamera(dtRatio, pinZoom) takes the pinned zoom as its target instead of fitting the squad. The free camera keeps the pin by setZoom.\n- **Logged after the fix:** zoom 1, centre (4996, 2502) from the first update to the 300th. At zoom 0.216 the centre is (4997, 2500), then 4971 by the 300th.\n- **Effect on measurements:** at ?zoom=0.216, the Predator sittings' view, bugs/base held the view off the squad (centre x 5556 every frame); it now follows the squad (x 4971 to 4997). Predator's measured view moves about 585 px left in a 5926 px wide view. A/B pairs take the scene from HEAD on both sides and stay comparable; absolute Predator numbers across this commit (the capacity history, older records) are not.\n- **Test:** demos/tests/predatorSquadCamera.test.js runs the real updateSquadCamera and PredatorScene.update on a stand-in squad, with a camera far away and a dtRatio of 280. Pinned at 1, the first frame is on the squad and stays; unpinned, it fits the squad. Both fail on bugs/base. Suites: demos 123 of 123, node 3286 of 3287 (frameChainWait's \"logic waits ...\" flake, its file green alone)."
     }
   ],
   "leads": [

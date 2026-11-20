@@ -18,7 +18,15 @@ export function resetSquadCameraHold() {
   holdReady = false;
 }
 
-export function updateSquadCamera(dtRatio) {
+/**
+ * The squad camera: the view follows the squad's (held) bounding box, zoomed to fit it.
+ * @param {number} dtRatio
+ * @param {number} [pinZoom] the page's ?zoom= (0: none): the view follows the squad at that zoom instead of fitting it.
+ *   N-248: the scene used to set the pinned zoom after this, which keeps the view's top-left corner, so every frame
+ *   re-zoomed around the corner: the first frame (dtRatio in the hundreds, the follow at full strength) jumped the view
+ *   thousands of pixels off the squad, and the next ones crawled back while the two zooms fought.
+ */
+export function updateSquadCamera(dtRatio, pinZoom = 0) {
   const indices = MySoldier.getAllActive();
   const n = indices ? indices.length : 0;
   if (n === 0) {
@@ -59,7 +67,7 @@ export function updateSquadCamera(dtRatio) {
   const spanY = Math.max(holdMaxY - holdMinY, 1);
   const zoomX = (Camera.canvasWidth * (1 - 2 * PAD)) / spanX;
   const zoomY = (Camera.canvasHeight * (1 - 2 * PAD)) / spanY;
-  let zoom = Math.min(zoomX, zoomY, 1);
+  let zoom = pinZoom > 0 ? pinZoom : Math.min(zoomX, zoomY, 1);
   if (zoom < Camera.minZoom) zoom = Camera.minZoom;
 
   Camera.targetZoom = zoom;
