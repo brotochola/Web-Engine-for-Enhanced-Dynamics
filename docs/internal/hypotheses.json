@@ -12870,7 +12870,8 @@
       "records": [
         "R-0951",
         "R-0952",
-        "R-1703"
+        "R-1703",
+        "R-1666"
       ]
     },
     {
@@ -40517,6 +40518,15 @@
       "title": "Mipmaps in Predator on the ASUS's HD 620: GPU −7 % zoomed out, flat by day and at night, blurrier pixel art; Predator keeps them off",
       "verdict": "rejected",
       "text": "**Mipmaps in Predator on the ASUS's Intel HD 620: −7 % GPU zoomed out, flat by day and at night, and blurrier pixel art. Predator keeps `autoGenerateMipmaps: false`.** The owner's question, asked on the ASUS (i7-7500U, HD 620, Chrome headed at 1920 × 1080). The probe flipped Predator's own `renderer.autoGenerateMipmaps` line in a lab tree at main 13b16c41, off against on, two rounds alternated, run twice (four pairs, 2026-11-20 03:31 to 04:08): glFrameRecorder `--gpu-draws` (the GPU time a frame, 3 s after 20 s) by day at the default zoom and at zoom 0.216, by night with light3d (hour 22), plus the frames drawn at crowd 0.2, and one picture a side.\n\n| GPU ms a frame, mean of 4 pairs | off | on | change | the 4 pairs |\n| --- | --- | --- | --- | --- |\n| day, default zoom | 10.95 | 11.02 | +0.6 % | −4.7, +7.7, +1.3, −1.0 % |\n| day, zoom 0.216 | 11.43 | 10.60 | −7.2 % | −8.3, −6.3, −8.9, −5.4 % |\n| night, light3d | 28.37 | 28.12 | −0.9 % | −3.9, (+32), +6.4, −5.9 % |\n| the sprite program [uTexLut,uStatics,uPoses,uTexture], zoom 0.216 | 3.36 | 2.43 | −28 % | |\n| the same, default zoom | 2.92 | 2.56 | −12 % | |\n| night: G-buffer sprites [… uTexture,uMaps] / lamps' map [uTexLut,uLampTiles,uTexture] | 9.43 / 3.97 | 8.56 / 4.43 | −9 % / +12 % | |\n\n- **Where it acts:** only on sprite draws. The tileset pass [uGid,uTileset] and the light pass (the control: mipmaps cannot reach it) stayed flat. At night the lamps' map got slower and ate most of the G-buffer's gain. By day the sprite gain (−0.36 ms) drowned in the other programs' noise.\n- **The outlier:** night off in the first run's second round read 21.4 ms, with every pass ~25 % faster, the light pass included (4.81 against ~6.2 ms). That is the GPU in another clock state, not mipmaps: the night mean leaves it out.\n- **Frames drawn:** 600 of 600 in 10 s on both sides (vsync bound at crowd 0.2).\n- **The pictures** (compareCaptures, zoom 0.216, crowd 0.2, enlarged ×4 to ×5): no colour bleeding between atlas frames and no 1 px halo. But mipmaps blur Predator's pixel art: houses, people, lamps and trees lose their detail (the crowd reads as brown dots), and tree shadows smear into soft grey smudges where off shows their dappled shape.\n- **Verdict:** rejected for Predator. The bar was −3 % in all three views. It cleared only zoomed out, and the look got worse. E-204 stays open for its BunnyMark and overdraw steps. Zoomed-out sprite fill rate is real on this GPU (−28 % on the sprite program), so a mip chain with a sharper filter (a LOD bias, or mips only below some zoom) could be revisited."
+    },
+    {
+      "id": "R-1666",
+      "date": "2026-11-20",
+      "time": "15:09",
+      "timeFrom": "recorded",
+      "title": "audioStorm's 48 000 plays on the main PC: logic0 7.16 ms of its own, past the 6 ms floor",
+      "verdict": "passed",
+      "text": "The ASUS handoff's check on the main PC (the Lenovo), after the asus/bugs-2026-11-20 merge 44b7b890: one headless run of audioStormScene at its default 48 000 plays a tick, `--src`, detailed stats off, 5 s warm-up, 10 s window.\n\n- logic0: STEP_MS 7.31 ms, WAIT_MS 0.15 ms, so 7.16 ms of its own work (p50 7.13, p95 7.82), past the 6 ms floor.\n- On the ASUS the same default read 9.3 to 9.5 ms (R-1703).\n- Every other worker is idle (physics 0.11 ms, BODY_COUNT 0).\n\nVerdict: the default stands on both machines and the catalog row can decide here, with about 1.2 ms of margin. If play() gets cheaper, raise `?plays`: the cost is linear."
     }
   ],
   "leads": [
