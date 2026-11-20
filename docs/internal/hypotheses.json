@@ -20647,19 +20647,20 @@
     {
       "id": "N-247",
       "title": "Keyboard.isPressed runs _normalizeKeyName's toLowerCase on every call (keyboard.js:144): 341 B a frame in burningBoxes",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (31cbc600), on fix/n247-keyboard-name-cache (R-1702)",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "bug",
-      "result": "Heap pass on the demos.",
-      "next": "Normalize once per key name (a cache) or at registration; heap pass before and after.",
+      "result": "Fixed 2026-11-20 (31cbc600): _getKeyIndex keeps each name asked for mapped to its index (a Map cleared by initialize, 512 names at most), so a read every frame makes no string.",
+      "next": "Nothing left; a heap pass on burningBoxes would show the site gone.",
       "refs": [],
       "aliases": [
         "keyboard key name garbage"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1702"
       ]
     },
     {
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1702",
+      "date": "2026-11-20",
+      "time": "04:30",
+      "timeFrom": "recorded",
+      "title": "N-247 fixed: Keyboard resolves each key name once, no toLowerCase per read",
+      "verdict": "kept-hygiene",
+      "text": "**N-247 fixed: Keyboard resolves each key name once instead of lower-casing it on every read.** Branch fix/n247-keyboard-name-cache, 31cbc600.\n\n- **Cause:** isPressed and isDown went through _getKeyIndex, which ran _normalizeKeyName's toLowerCase on every call: a new string a read (341 B a frame in burningBoxes, the heap pass of R-1229).\n- **Fix:** _getKeyIndex keeps each name it was asked for, as given, mapped to its index (-1: no key) in Keyboard._indexByName. initialize() clears it, and it is capped at 512 names. Only the first read of a name normalizes it. The lookup takes the map's own names only, so 'constructor' and 'tostring' no longer resolve to Object's functions. The debug build's unknown-key warning still fires (it says each name once).\n- **Test:** keyboard.test.js counts toLowerCase calls over three frames of five names: 4 (one a distinct name) where bugs/base made 15. The answers are unchanged, a new map resolves names again, and 'constructor' is not a key. No heap pass: the test shows that the per-read string is gone. Suites: node 3285 of 3288, the 3 failures frameChainWait's timing tests under the suite's concurrency (the file passed 3 of 3 alone); demos 121 of 121."
     }
   ],
   "leads": [
