@@ -11698,7 +11698,8 @@
         "R-1620",
         "R-1621",
         "R-1624",
-        "R-1626"
+        "R-1626",
+        "R-1627"
       ]
     },
     {
@@ -40052,6 +40053,15 @@
       "title": "The ASUS's warm-up ladder: Predator settles within about 60 s (physics 2.8-3.1 -> 1.3-1.4 ms), boids by 30 s; one Predator run fell into a slow state (spatial0 at ~10 Hz)",
       "verdict": "note",
       "text": "ASUS lab job 0899z3 (01:32-01:56): how long the 2-core laptop needs to warm up (R-1624 found the scenes about half as\ncostly after 10 minutes). Predator by day crowd 0.2 with dayCycle=0, and boids 27 000. Each was measured 10 s after a\nwarm-up of 30, 60 and 120 s, each paired with a 10 s warm-up run, 2 rounds, headed, --src, detailed stats off, main\n9647eb9b. Own work (exact-frame step - wait), the 10 s run -> the longer one:\n\n| Predator worker | 30 s (r1) | 60 s (r1 / r2) | 120 s (r1 / r2) |\n|---|---|---|---|\n| physics | 2.63 -> 1.56 | 2.82 -> 1.39 / 3.07 -> 1.28 | 2.83 -> 1.39 / 3.11 -> 1.63 |\n| spatial0 | 2.15 -> 1.76 | 2.26 -> 1.41 / 2.06 -> 1.37 | 2.36 -> 1.40 / 2.29 -> 1.76 |\n| logic0 | 1.58 -> 1.25 | 1.77 -> 1.22 / 1.45 -> 1.01 | 1.54 -> 1.08 / 1.65 -> 1.33 |\n| pre-render | 2.16 -> 1.81 | 2.54 -> 1.98 / 3.50 -> 1.98 | 3.22 -> 1.93 / 3.99 -> 1.95 |\n\n- **Predator settles within about 60 s, then stays.**\n  - Its physics halves between the 10 s and the 60 s warm-up (2.8 to 3.1 -> 1.3 to 1.4 ms), and pre-render loses a\n    third.\n  - 120 s reads like 60 s.\n  - The capacity runs' 9 s warm-up reads Predator 1.5 to 2 times dearer than it runs after a minute. Job 0899z4\n    measures its capacity with a 60 s warm-up.\n- **boids is near steady by 30 s:** spatial and physics -5 to -15 %. The renderer's 0.6 -> 0.3 ms is small. Its large\n  drop in the 10-minute soak (spatial0 5.58 -> 0.89 ms, R-1624) was the flock gathering on one side, not warm-up.\n- **One Predator run fell into a slow state** (round 2, the 30 s warm-up):\n  - spatial0 ran 101 frames in the 10 s window (about 10 Hz, its own time unreadable).\n  - physics p99 23 ms, pre-render p99 26 ms, the renderer drew 560 frames, pre-render ran 485.\n  - It is the second time today after 0899l2 (R-1587: physics 16.4 ms at 40 Hz): a rare state, about 2 runs in 30.\n  - Its report was overwritten, so it is a lead with no cause yet."
+    },
+    {
+      "id": "R-1627",
+      "date": "2026-11-20",
+      "time": "02:27",
+      "timeFrom": "recorded",
+      "title": "The ASUS's capacity with a 60 s warm-up: predator 0.2 -> 0.55 (x2.75), boids 29 000 -> 39 000, keyedPack 90 000 -> 100 000; the 9 s default measures unsettled scenes",
+      "verdict": "note",
+      "text": "ASUS lab job 0899z4 (01:56-02:27): the ASUS's capacity with a 60 s warm-up instead of runCapacity's default 9 s,\nafter R-1626 found Predator settling within about a minute. runCapacity --warmup-ms 60000, window 10 s, headed, --src,\nmain 9647eb9b. The CPU frequency averaged 86 % of the 2.7 GHz base, with 85 of 258 samples under 80 % (a hotter job than\nthe 9 s ones). The 9 s column is R-1620's same-night A/B.\n\n| scene | 9 s warm-up | 60 s warm-up | what breaks above it at 60 s |\n|---|---|---|---|\n| predator | crowd 0.2 (3 200) | crowd 0.55 (8 800), x2.75 | 0.6: physics p99 77.4 ms |\n| boids | 28 000 to 29 000 | 39 000, +35 % | 40 000: physics p99 16.75 ms |\n| keyedPack | 85 000 to 90 000 | 100 000, +11 to 18 % | 105 000: pre-render p99 18.5 ms (passed once, failed once) |\n\n- **The 9 s warm-up measures a scene that has not settled, and on this laptop that sets the capacity far too low.**\n  - Predator holds 2.75 times as many civilians and soldiers once it has run a minute. Its 9 s edge (drawn frames at\n    crowd 0.25) is gone: crowd 0.5 passed.\n  - Part is the engine warming on a slow core, part the scene settling: Predator's bodies sleep, the start's spawns\n    and effects die down. A player's minutes are the settled state.\n- **For the capacity metric (the strategy's nightly number):** the default warm-up should cover a scene's settling.\n  At least 60 s here.\n  - Whether the main PC's capacities (R-1452 to R-1460, at 9 s) are low too needs the same check there. A faster\n    core warms faster, but the scene's own settling takes the same game time.\n  - Every capacity figure on record for the ASUS (R-1498, R-1587, R-1588, R-1598, R-1620) is a 9 s figure. The\n    settled ones are these."
     }
   ],
   "leads": [
