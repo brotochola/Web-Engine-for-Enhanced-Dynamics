@@ -24093,7 +24093,8 @@
         "R-1593",
         "R-1594",
         "R-1567",
-        "R-1595"
+        "R-1595",
+        "R-1596"
       ],
       "refs": [],
       "id": "SST-21",
@@ -24316,7 +24317,8 @@
     },
     {
       "records": [
-        "R-1563"
+        "R-1563",
+        "R-1596"
       ],
       "refs": [],
       "id": "N-323",
@@ -39769,6 +39771,15 @@
       "title": "The ASUS's night scoreboard of 7ffea480: lockstep passes; the visualRange audit puts rayVsBox2d's spatial back at v0.14.0's (0.087 ms) and logic0 at -17.7 %; N-322 flags the spatial row's load",
       "verdict": "note",
       "text": "ASUS lab job 0899t (20:11-21:28): the night's scoreboard of local main 7ffea480 against v0.14.0, on the ASUS (i7-7500U\n2C/4T, HD 620 on Intel 31.0.101.2145), --full-rev --skip-node, lockstep on. 7ffea480 is the evening's merges plus\nE-378, 9003489e's visualRange audit and N-322's load gate; N-323 is not in. Read against 0899p (4bf02ffd, R-1590).\n\n- **Lockstep passes** (balls, liquidfun, lfstress, particles).\n- **The visualRange audit undoes R-1590's rayVsBox2d cost.** spatialMax 0.885 -> 0.087 ms (v0.14.0 0.077),\n  NEIGHBORS_REUSED 2 480 -> 0. logic0 4.58 -> 4.14 ms, -17.7 % against v0.14.0 (it was -8.2 % in R-1590, -22.0 % in\n  R-1580).\n- **N-322 works on the spatial row.** It now reads \"load not comparable\" (NEIGHBORS_REUSED 0 against 4 300). Its\n  spatialMax 0.680 ms with a cv of 88.6 % is R-1594's periodic rebuild, which N-323 (546c5afc) fixes after this build.\n- **Other flips are inside the ASUS's kernel swing (R-1580):**\n  - particleLists and particleListsZoomed TIE -> KEPT (kernel +12.6 % and +20.3 %).\n  - gpuQueuePack TIE -> KEPT, textureUpload TIE -> KEPT, tilemap KEPT -> TIE.\n  - liquidfunCouple WORSE -> TIE (kernel -0.2 %, physics -2.4 %): R-1590's WORSE was noise.\n- Scene rows held: box2d -29 %, bullets -17 %, ray -13 %, box2dRayJs -23 %, meshFillMoving's renderer -27 %,\n  decalBlit -5.9 %."
+    },
+    {
+      "id": "R-1596",
+      "date": "2026-11-19",
+      "time": "21:31",
+      "timeFrom": "recorded",
+      "title": "N-323's fix on the ASUS: stationarySpatialScene's spatial p95 about 8 -> 2.1-2.9 ms, max 11-16 -> 3.8-4.9; the mean +20 % (0.8 -> 1.0 ms), 2.5x v0.14.0's flat 0.39 in this setup",
+      "verdict": "note",
+      "text": "ASUS lab job 0899t3 (21:30-21:31): N-323's fix (546c5afc: a list's first build starts at an age set by its block of\nids) on the 2-core laptop. stationarySpatialScene (9 000 bodies, visualRange 170), headless, --src, detailed stats off,\n3 runs at main 9ddd959f. Each spatial worker's exact-frame step over 601 frames, against R-1594's main 7ffea480:\n\n| | step (mean) | p50 | p95 | p99 | max |\n|---|---|---|---|---|---|\n| 7ffea480 (R-1594) | 0.76 to 0.86 | 0.22 to 0.29 | 7.6 to 8.1 | 9.0 to 11.6 | 10.8 to 16.0 |\n| 9ddd959f | 0.95 to 1.04 | 0.62 to 0.85 | 2.1 to 2.9 | 2.9 to 3.7 | 3.8 to 4.9 |\n| v0.14.0 src (R-1594) | 0.39 to 0.40 | 0.35 to 0.38 | 0.53 to 0.57 | - | - |\n\n- **The tail is gone on 2 cores too:** p95 about 8 -> 2.1 to 2.9 ms, the longest step 11 to 16 -> 3.8 to 4.9 ms.\n- **The mean rose about 20 % here** (exact-frame step 0.76 to 0.86 -> 0.95 to 1.04 ms). The rebuild now happens in\n  every frame, a slice at a time, instead of all at once every 16th. The main PC read the mean as level.\n- **Against v0.14.0's flat 0.39 ms in this 9 000-body setup, main is now about 2.5 times dearer on this laptop.** The\n  main PC's 30 000-body comparison put main 15 % faster than v0.14.0. Whether v0.14.0's 9 000-body scene builds the\n  same lists (it counted ENTITIES_PROCESSED 9 000, main 0, NEIGHBORS_REUSED 0 against about 4 300) is the open\n  question before calling it a cost."
     }
   ],
   "leads": [
