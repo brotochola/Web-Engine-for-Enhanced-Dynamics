@@ -164,13 +164,15 @@ test('RigidBody.setVelocity writes the columns and sends Box2D the velocity once
     RigidBody.setVelocity(1, 30, -40);
     RigidBody.setVelocity(1, 30, -40); // the same again: nothing more
     RigidBody.setVelocity(3, 0, 0); // already still: nothing
+    RigidBody.setVelocity(2, 0.1, 0.2);
+    RigidBody.setVelocity(2, 0.1, 0.2); // not float32 numbers: the same once stored as float32
     assert.equal(RigidBody.vx[1], 30);
     assert.equal(RigidBody.vy[1], -40);
     const calls = [];
     drainCommandRing(new Int32Array(sab), new Float32Array(sab), {
       setVelocity: (e, vx, vy) => calls.push([e, vx, vy]),
     });
-    assert.deepEqual(calls, [[1, 30, -40]]);
+    assert.deepEqual(calls, [[1, 30, -40], [2, Math.fround(0.1), Math.fround(0.2)]]);
   } finally {
     bindCommandRing(null);
   }

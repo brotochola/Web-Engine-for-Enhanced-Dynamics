@@ -161,6 +161,14 @@ test('a repeated alpha, scale or animation speed marks the sprite dirty once', (
     assert.equal(SpriteRenderer.renderDirty[3], 0);
     go.setAnimationSpeed(speed * 2);
     assert.equal(SpriteRenderer.renderDirty[3], 1, 'a new speed still marks the row');
+
+    // The same from code that holds an index (E-530: an FSM state working by index).
+    clear();
+    SpriteRenderer.setAnimationSpeed(3, speed * 2);
+    assert.equal(SpriteRenderer.renderDirty[3], 0, 'the static form: the same rate again marks nothing');
+    SpriteRenderer.setAnimationSpeed(3, speed);
+    assert.equal(SpriteRenderer.renderDirty[3], 1);
+    assert.equal(SpriteRenderer.animationSpeed[3], Math.fround(speed));
   });
 });
 

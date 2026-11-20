@@ -129,6 +129,20 @@ export class SpriteRenderer extends Component {
   }
 
   /**
+   * The animation's rate (frames per 1/60 s), as entity.setAnimationSpeed(speed) sets it, without an instance (a static
+   * tickAll, an FSM state working by index). The same rate again (as float32, the column's type) marks nothing.
+   * @param {number} entityIndex
+   * @param {number} speed
+   */
+  static setAnimationSpeed(entityIndex, speed) {
+    const rate = Math.fround(speed);
+    if (SpriteRenderer.animationSpeed[entityIndex] === rate) return;
+    SpriteRenderer.animationSpeed[entityIndex] = rate;
+    // The clock's rate, not the statics: the row is drawn again, its keyed statics stay (E-177).
+    SpriteRenderer.renderDirty[entityIndex] = 1;
+  }
+
+  /**
    * Static method to get original (unscaled) width by entity index
    * @param {number} entityIndex - Entity index to look up
    * @returns {number} Original width in pixels, or 0 if not found

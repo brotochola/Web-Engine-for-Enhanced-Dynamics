@@ -4129,6 +4129,8 @@ export declare class SpriteRenderer extends Component {
    */
   get unshaded(): boolean;
   set unshaded(v: boolean);
+  /** The animation's rate (frames per 1/60 s), as entity.setAnimationSpeed sets it, without an instance. */
+  static setAnimationSpeed(entityIndex: number, speed: number): void;
   static getOriginalWidth(entityIndex: number): number;
   static getOriginalHeight(entityIndex: number): number;
   static updateBounds(entityIndex: number): void;
