@@ -246,6 +246,7 @@ Every entity can be written as objects (methods on the instance, `this` the enti
 
 | What | Objects | ECS |
 |---|---|---|
+| Spawn | `const e = Enemy.spawn({ x, y })` (the entity, or null) | `const i = Enemy.spawnIndex({ x, y })` (its index, or -1; no instance) |
 | Each frame | `tick(dtRatio)` | `static tickAll(list, count, dtRatio)` |
 | A hook | `onGotShot(damage, x, y)` | `static onGotShot(i, damage, x, y)` |
 | A component's value | `this.x`, `this.rigidBody.vx` | `Transform.x[i]`, `RigidBody.vx[i]` |
@@ -291,7 +292,7 @@ class Walker extends GameObject {
 }
 ```
 
-What still makes an instance on the ECS way: a spawn returns one (its config keys go through its setters, on the thread that spawns it); and the setters with no static form yet (`setAnimation`, `setSprite`, `setTint`, `setScale`, a DirectionalSprite's `facing`) go through `this.get(i)` in a static, which makes it where it is first used.
+What makes an instance on the ECS way: nothing it calls. `spawnIndex` sets the entity up by index (the config's engine keys through the component statics, a static `onSpawned(i, config)` for the rest; a class whose `onSpawned` is a method gets the instance that method runs on), FSM states get the index, every entity method has its component's static by index (`SpriteRenderer.setAlpha(i, a)`, `Collider.setRadius(i, r)`, `RigidBody.setVelocity(i, vx, vy)`, `Transform.setPosition(i, x, y)`), and `GameObject.get(i)` makes the instance where code asks for it.
 
 ### State machines (`FSM`)
 

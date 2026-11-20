@@ -221,6 +221,53 @@ test('static onSpawned gets the index and the config, static onDespawned the ind
   Transform.active.fill(0);
 });
 
+/** An object-style onSpawned: spawnIndex still makes the instance it runs on. */
+class Ruby extends GameObject {
+  static components = [CollisionListener];
+  onSpawned(config) {
+    heard.push(['onSpawned method', this.index, config.value]);
+  }
+}
+
+test('E-534: spawnIndex returns the index, applies the engine keys, runs static onSpawned, and makes no instance', { concurrency: false }, async () => {
+  const lw = await setup([Gem, Ruby]);
+  for (const C of [Gem, Ruby]) {
+    const top = new Int32Array(new SharedArrayBuffer(8));
+    const links = new (EntityIdArray())(PER_TYPE);
+    resetFreeList(top, links, PER_TYPE, 1);
+    C.freeList = links;
+    C.freeListTop = top;
+  }
+
+  const i = Gem.spawnIndex({ x: 4, value: 7 });
+  assert.equal(typeof i, 'number');
+  assert.ok(i >= Gem.startIndex && i < Gem.startIndex + PER_TYPE, 'an index of its pool');
+  assert.equal(Transform.active[i], 1, 'live');
+  assert.equal(Transform.x[i], 4, 'the x key, through Transform.setX');
+  assert.deepEqual(heard, [['onSpawned', Gem, i, 7]]);
+  assert.equal(made(lw), 0, 'no instance made');
+  assert.ok(Gem.instances.every((o) => o === null));
+
+  // A static onSpawned that despawns its own entity calls the spawn off, by index.
+  heard = [];
+  assert.equal(Gem.spawnIndex({ value: 1, callOff: true }), -1);
+  assert.equal(heard.length, 1);
+  assert.equal(Transform.active[heard[0][2]], 0, 'not live');
+  assert.equal(made(lw), 0, 'still no instance');
+
+  // An onSpawned method needs its instance: spawnIndex makes it, and still returns the index.
+  heard = [];
+  const r = Ruby.spawnIndex({ value: 3 });
+  assert.ok(r >= Ruby.startIndex && r < Ruby.startIndex + PER_TYPE);
+  assert.deepEqual(heard, [['onSpawned method', r, 3]]);
+  assert.ok(lw.gameObjects[r] instanceof Ruby || Ruby.instances[r - Ruby.startIndex] instanceof Ruby, 'its instance');
+
+  heard = [];
+  assert.equal(Gem.despawn(i), true);
+  assert.deepEqual(heard, [['onDespawned', Gem, i]]);
+  Transform.active.fill(0);
+});
+
 class Both extends GameObject {
   static components = [CollisionListener];
   static onCollisionEnter(i, other) {

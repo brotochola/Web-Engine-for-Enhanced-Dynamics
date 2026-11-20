@@ -25,7 +25,7 @@ import {
   awakeAt,
 } from '../components/rigidBody.js';
 import { poseMovedAt, positionAt, rotationAt, rotationCSAt } from '../components/transform.js';
-import { enterSpawnHere, leaveSpawnHere, isSpawningHere } from './spawningHere.js';
+import { enterSpawnHere, leaveSpawnHere, isSpawningHere, abortSpawnHere, innermostSpawnAborted } from './spawningHere.js';
 import { Collider } from '../components/collider.js';
 import {
   SpriteRenderer,
@@ -138,6 +138,96 @@ const isCommandRingBound = isCommandRingBoundImport;
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
 
 // SETTER_ARGS: why the setters hand their doubles over in a Float32Array (N-215, E-459, E-473), see setterArgs.js.
+
+/**
+ * An entity's layer mask by index (setLayer, setLayers, spawnIndex's layer keys): its sprite, Adobe and mesh rows and
+ * its collider's feed. `has` is its class's component flags.
+ * @param {number} i
+ * @param {Record<string, boolean>} has
+ * @param {number} mask
+ */
+function applyLayerMaskAt(i, has, mask) {
+  const m = mask & 0xffff;
+  if (has.SpriteRenderer && SpriteRenderer.layerMask) {
+    if (SpriteRenderer.layerMask[i] !== m) {
+      SpriteRenderer.layerMask[i] = m;
+      // The layer a sprite is drawn in, not its statics (E-177: no keyed flag).
+      SpriteRenderer.renderDirty[i] = 1;
+    }
+  }
+  if (has.adobeAnimComponent && AdobeAnimComponent.layerMask) {
+    AdobeAnimComponent.layerMask[i] = m;
+  }
+  if (has.MeshRenderer && MeshRenderer.layerMask) {
+    // A ShadowCaster's volume stays on its layer, wherever the entity's sprite goes; an entity with no volume stays off it.
+    const meshMask = has.ShadowCaster ? m | (MeshRenderer.layerMask[i] & VolumeShadowCaster.layerBit()) : m;
+    if (MeshRenderer.layerMask[i] !== meshMask) {
+      MeshRenderer.layerMask[i] = meshMask;
+      MeshRenderer.renderDirty[i] = 1;
+    }
+  }
+  if (has.Collider && Collider.layerMask) {
+    const old = Collider.layerMask[i] | 0;
+    if (old !== m) {
+      Collider.layerMask[i] = m;
+      syncColliderFeed(i, old, m);
+    }
+  }
+}
+
+/**
+ * E-534: spawnIndex's config keys with no instance: the entity's engine accessors, through their components' statics
+ * (what the instance's setters call). A key no accessor takes is the class's to read in its static onSpawned(i, config),
+ * as spawn leaves it.
+ */
+const SPAWN_KEY_STATICS = {
+  x: (i, v) => Transform.setX(i, v),
+  y: (i, v) => Transform.setY(i, v),
+  rotation: (i, v) => Transform.setRotation(i, v),
+  vx: (i, v) => RigidBody.setVx(i, v),
+  vy: (i, v) => RigidBody.setVy(i, v),
+  angularVelocity: (i, v) => RigidBody.setAngularVelocity(i, v),
+  fixedRotation: (i, v) => RigidBody.setFixedRotation(i, v),
+  isStatic: (i, v) => RigidBody.setStatic(i, v),
+  alpha: (i, v) => SpriteRenderer.setAlpha(i, v),
+  tint: (i, v) => SpriteRenderer.setTint(i, v),
+  visible: (i, v) => SpriteRenderer.setVisible(i, v),
+  scaleX: (i, v) => SpriteRenderer.setScaleX(i, v),
+  scaleY: (i, v) => SpriteRenderer.setScaleY(i, v),
+  flipX: (i, v) => SpriteRenderer.setFlipX(i, v),
+  flipY: (i, v) => SpriteRenderer.setFlipY(i, v),
+};
+
+/**
+ * spawnIndex's config keys by index: size first (a collider's, as spawn does), then the accessors' keys in order.
+ * Returns whether the config has DX-PARENT's keys (linked after).
+ */
+function applySpawnKeysAt(i, has, spawnConfig) {
+  if (has.Collider) {
+    if (spawnConfig.radius != null) Collider.setRadius(i, spawnConfig.radius);
+    if (spawnConfig.width != null) Collider.setWidth(i, spawnConfig.width);
+    if (spawnConfig.height != null) Collider.setHeight(i, spawnConfig.height);
+  }
+  let linkKeys = false;
+  for (const key in spawnConfig) {
+    if (key === 'parent' || key === 'localX' || key === 'localY' || key === 'localRotation') {
+      linkKeys = true;
+      continue;
+    }
+    const set = SPAWN_KEY_STATICS[key];
+    if (set !== undefined) set(i, spawnConfig[key]);
+  }
+  return linkKeys;
+}
+
+/** A spawn config's layer or layers, by index (both spawn paths). */
+function applySpawnLayers(i, has, spawnConfig) {
+  if (spawnConfig.layers) {
+    applyLayerMaskAt(i, has, Layer.resolveSubscriptions({ layers: spawnConfig.layers || [] }, LAYER_SUBSCRIBE_KIND.GAME_OBJECT));
+  } else if (spawnConfig.layer != null) {
+    applyLayerMaskAt(i, has, Layer.resolveOne(spawnConfig.layer, LAYER_SUBSCRIBE_KIND.GAME_OBJECT));
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DX-PARENT: Transform.parent. What may link, the warnings (they name the class), and the links made while their
@@ -652,6 +742,34 @@ export class GameObject {
    * @returns {GameObject|undefined}
    */
   /**
+   * A class's component flags, made once per class: on the class (_sharedHasComponents) and on its prototype
+   * (_hasComponents, E-167, and _componentBits, E-533). An instance binds them, and spawnIndex reads them with none
+   * made (E-534).
+   * @param {Function} Ctor
+   * @returns {Record<string, boolean>}
+   */
+  static _classFlags(Ctor) {
+    // One flag object per class. Composition does not vary per instance. Its own: a subclass that read the static it
+    // inherits took its parent's flags when a parent instance was made first, missing its own components (N-88).
+    let flags = Object.prototype.hasOwnProperty.call(Ctor, '_sharedHasComponents') ? Ctor._sharedHasComponents : null;
+    if (!flags) {
+      flags = {};
+      const entityComponents = collectComponents(Ctor, GameObject, Transform);
+      for (let c = 0; c < entityComponents.length; c++) {
+        const name = entityComponents[c].name;
+        flags[name] = true;
+        flags[name.charAt(0).toLowerCase() + name.slice(1)] = true;
+      }
+      Ctor._sharedHasComponents = flags;
+    }
+    if (!Object.prototype.hasOwnProperty.call(Ctor.prototype, '_hasComponents')) {
+      Ctor.prototype._hasComponents = flags;
+      Ctor.prototype._componentBits = bitsOfClass(Ctor);
+    }
+    return flags;
+  }
+
+  /**
    * The scene's config, for code that holds an index (a static tickAll or hook: `this.config.worldWidth`). The same
    * object an entity's `this.config` reads; bound when the realm registers its entity types.
    * @returns {Object}
@@ -1022,25 +1140,7 @@ export class GameObject {
     this._onPage = page;
     this._spawnAborted = false;
 
-    // One flag object per class. Composition does not vary per instance. Its own: a subclass that read the static it
-    // inherits took its parent's flags when a parent instance was made first, missing its own components (N-88).
-    let flags = Object.prototype.hasOwnProperty.call(Ctor, '_sharedHasComponents') ? Ctor._sharedHasComponents : null;
-    if (!flags) {
-      flags = {};
-      const entityComponents = collectComponents(Ctor, GameObject, Transform);
-      for (let c = 0; c < entityComponents.length; c++) {
-        const name = entityComponents[c].name;
-        flags[name] = true;
-        flags[name.charAt(0).toLowerCase() + name.slice(1)] = true;
-      }
-      Ctor._sharedHasComponents = flags;
-    }
-    // E-167: on the class's prototype, not in every entity. E-533: its components as bits too, what an entity's methods
-    // hand the component statics' work (entityTypes.js).
-    if (!Object.prototype.hasOwnProperty.call(Ctor.prototype, '_hasComponents')) {
-      Ctor.prototype._hasComponents = flags;
-      Ctor.prototype._componentBits = bitsOfClass(Ctor);
-    }
+    GameObject._classFlags(Ctor);
 
     if (!page) {
       if (!lazy) {
@@ -1685,33 +1785,7 @@ export class GameObject {
   }
 
   _applyLayerMask(mask) {
-    const i = this.index;
-    const m = mask & 0xffff;
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerMask) {
-      if (SpriteRenderer.layerMask[i] !== m) {
-        SpriteRenderer.layerMask[i] = m;
-        // The layer a sprite is drawn in, not its statics (E-177: no keyed flag).
-        SpriteRenderer.renderDirty[i] = 1;
-      }
-    }
-    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
-      AdobeAnimComponent.layerMask[i] = m;
-    }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.layerMask) {
-      // A ShadowCaster's volume stays on its layer, wherever the entity's sprite goes; an entity with no volume stays off it.
-      const meshMask = this._hasComponents.ShadowCaster ? m | (MeshRenderer.layerMask[i] & VolumeShadowCaster.layerBit()) : m;
-      if (MeshRenderer.layerMask[i] !== meshMask) {
-        MeshRenderer.layerMask[i] = meshMask;
-        MeshRenderer.renderDirty[i] = 1;
-      }
-    }
-    if (this._hasComponents.Collider && Collider.layerMask) {
-      const old = Collider.layerMask[i] | 0;
-      if (old !== m) {
-        Collider.layerMask[i] = m;
-        syncColliderFeed(i, old, m);
-      }
-    }
+    applyLayerMaskAt(this.index, this._hasComponents, mask);
   }
 
   /**
@@ -2365,7 +2439,7 @@ export class GameObject {
     // 0 = inactive: during spawn, onSpawned may reject before activate.
     const activeState = Atomics.compareExchange(Transform.active, i, 1, ACTIVE_DESPAWNING);
     if (activeState !== 1) {
-      if (activeState === 0 && instance !== null) instance._spawnAborted = true;
+      if (activeState === 0 && !abortSpawnHere(i) && instance !== null) instance._spawnAborted = true;
       return;
     }
 
@@ -2446,10 +2520,8 @@ export class GameObject {
       // E-528: in its own spawn on this worker (an onSpawned that despawns its entity by index: a static one has no
       // `this`), the spawn is called off, as this.despawn() calls it off.
       if (Transform.active[i] !== 0 || !isSpawningHere(i)) return false;
-      const spawning = GameObject._instanceOf(C, i);
-      if (spawning === undefined || spawning === null) return false;
-      spawning._spawnAborted = true;
-      return true;
+      // E-534: the spawning stack keeps the flag, by index: no instance made to carry it.
+      return abortSpawnHere(i);
     }
     // E-528: the instance despawns the entity when there is one, or when an onDespawned method needs one; a type
     // whose onDespawned is static, or that has none, makes none.
@@ -2791,21 +2863,52 @@ export class GameObject {
   }
 
   /**
+   * The ECS way's spawn (E-534): Enemy.spawnIndex({ x, y }) returns the entity's index, or -1 when the pool is full,
+   * and makes no instance. The config's engine keys (x, y, rotation, velocities, alpha, tint, scale, flips, a
+   * collider's radius or size, layers, a parent) go to the columns through the component statics; the class's
+   * static onSpawned(i, config) reads its own keys. A class whose onSpawned is a method gets its instance, which that
+   * method runs on. The same call in the scene and in entities; live at once when this thread sets it up.
+   * @param {Object} [spawnConfig]
+   * @returns {number} the entity's index, or -1
+   */
+  static spawnIndex(spawnConfig = {}) {
+    const EntityClass = this;
+    if (typeof spawnConfig === 'function' || EntityClass === GameObject) {
+      const name = typeof spawnConfig === 'function' ? spawnConfig.name : 'Enemy';
+      console.error(`WeedJS: spawnIndex on the entity class: ${name}.spawnIndex(config).`);
+      return -1;
+    }
+    if (spawnConfig === null) spawnConfig = {};
+    if (isMainThread()) {
+      const scene = window.scene;
+      if (!scene) {
+        console.error(`WeedJS: ${EntityClass.name}.spawnIndex(): no scene is running.`);
+        return -1;
+      }
+      return scene._spawnFromPage(EntityClass, spawnConfig);
+    }
+    return GameObject._spawnAt(EntityClass, spawnConfig, -1, false);
+  }
+
+  /**
    * @internal Spawn on this logic worker. preAssignedIndex ≥ 0 is an index
    * another thread already reserved (the page, the ring, an owner handoff);
    * −1 pops one here.
    * @param {Function} EntityClass
    * @param {Object} spawnConfig
    * @param {number} preAssignedIndex
-   * @returns {GameObject|null}
+   * @param {boolean} [wantInstance=true] - false: spawnIndex's spawn (E-534), which returns the index (-1 for none) and
+   *   makes no instance unless the class's onSpawned is a method
+   * @returns {GameObject|null|number}
    */
-  static _spawnAt(EntityClass, spawnConfig, preAssignedIndex) {
+  static _spawnAt(EntityClass, spawnConfig, preAssignedIndex, wantInstance = true) {
+    const fail = wantInstance ? null : -1;
     // Validate EntityClass has required metadata
     if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
       console.error(
         `Cannot spawn ${EntityClass.name}: missing startIndex/poolSize metadata. Was it registered with GameEngine?`
       );
-      return null;
+      return fail;
     }
 
     let i;
@@ -2823,7 +2926,7 @@ export class GameObject {
         console.error(
           `Cannot spawn ${EntityClass.name}: free list not initialized. Was scene properly initialized?`
         );
-        return null;
+        return fail;
       }
 
       // Lock-free CAS pop (Treiber stack) - safe against concurrent
@@ -2833,19 +2936,21 @@ export class GameObject {
       if (i < 0) {
         // Pool exhausted: one warning per type per scene, the rest are counted
         reportPoolExhausted(EntityClass);
-        return null;
+        return fail;
       }
     }
 
     // The slot's instance, made on its first use (E-209)
-    const instance = GameObject._instanceOf(EntityClass, i);
-
-    if (!instance) {
+    // E-534: the slot's instance (made on its first use, E-209) when the caller wants it back, or when the class's
+    // onSpawned is a method, which runs on it; spawnIndex makes none otherwise.
+    const methodOnSpawned =
+      typeof EntityClass.onSpawned !== 'function' && definesMethodBelow(EntityClass, GameObject, 'onSpawned');
+    const instance = wantInstance || methodOnSpawned ? GameObject._instanceOf(EntityClass, i) : null;
+    if ((wantInstance || methodOnSpawned) && !instance) {
       console.error(`No instance found at index ${i} for ${EntityClass.name}`);
-      return null;
+      return fail;
     }
-
-    instance._spawnAborted = false;
+    if (instance !== null) instance._spawnAborted = false;
 
     const requestedForceProcessOnLogicWorker =
       spawnConfig && typeof spawnConfig.forceProcessOnLogicWorker === 'number'
@@ -2886,7 +2991,7 @@ export class GameObject {
           spawnConfig,
           entityIndex: i,
         });
-      if (handedOff) return instance;
+      if (handedOff) return wantInstance ? instance : i;
     }
 
     // ========================================
@@ -2894,7 +2999,8 @@ export class GameObject {
     // ========================================
     // Reset component values to sensible defaults using direct array access (faster)
     // Check _hasComponents which is set in constructor based on entity's component list
-    const has = instance._hasComponents;
+    // The class's flags: its instance's (on its prototype), or the class's own with no instance (E-534).
+    const has = instance !== null ? instance._hasComponents : GameObject._classFlags(EntityClass);
 
     if (has.RigidBody) {
       RigidBody.active[i] = 1;
@@ -3091,62 +3197,65 @@ export class GameObject {
     // DX-PARENT: in its spawn on this worker; a link made to it now (its onSpawned spawning its children) waits for its
     // activation, where its generation moves.
     const spawnSlot = enterSpawnHere(i);
+    // E-534: whether a despawn called this spawn off, kept by the spawning stack (by index: no instance needed).
+    let abortedHere = false;
     let spawnSetUp = false;
     try {
-      // Size before other spawnConfig keys (and before onSpawned damping/static).
-      // Skip active — Transform.active stays 0 until the bump below.
-      if (has.Collider) {
-        if (spawnConfig.radius != null) instance.radius = spawnConfig.radius;
-        if (spawnConfig.width != null) instance.width = spawnConfig.width;
-        if (spawnConfig.height != null) instance.height = spawnConfig.height;
-      }
-      const skipKeys = readOnlySpawnKeys !== null ? readOnlySpawnKeys.get(EntityClass) ?? null : null;
+      // E-534: with no instance, the engine keys through the component statics.
       let linkKeys = false;
-      for (const key in spawnConfig) {
-        // E-169: the position, in nearly every config, by name and in its place in the config's order. A key read and
-        // written through `instance[key]` goes megamorphic over the names and classes this one loop sees, and the
-        // check below read it twice (two getter calls).
-        if (key === 'x') {
-          instance.x = spawnConfig.x;
-          continue;
+      if (instance === null) {
+        linkKeys = applySpawnKeysAt(i, has, spawnConfig);
+      } else {
+        // Size before other spawnConfig keys (and before onSpawned damping/static).
+        // Skip active — Transform.active stays 0 until the bump below.
+        if (has.Collider) {
+          if (spawnConfig.radius != null) instance.radius = spawnConfig.radius;
+          if (spawnConfig.width != null) instance.width = spawnConfig.width;
+          if (spawnConfig.height != null) instance.height = spawnConfig.height;
         }
-        if (key === 'y') {
-          instance.y = spawnConfig.y;
-          continue;
-        }
-        if (
-          key === 'active' ||
-          key === 'width' ||
-          key === 'height' ||
-          key === 'radius' ||
-          key === 'layer' ||
-          key === 'layers' ||
-          key === 'forceProcessOnLogicWorker'
-        ) {
-          continue;
-        }
-        // DX-PARENT's keys, taken after the loop (applySpawnLink).
-        if (key === 'parent' || key === 'localX' || key === 'localY' || key === 'localRotation') {
-          linkKeys = true;
-          continue;
-        }
-        const current = instance[key];
-        if (current !== undefined && typeof current !== 'function') {
-          if (skipKeys !== null && skipKeys.has(key)) continue;
-          try {
-            instance[key] = spawnConfig[key];
-          } catch (error) {
-            if (!isReadOnlyProperty(instance, key)) throw error;
-            skipReadOnlySpawnKey(EntityClass, key);
+        const skipKeys = readOnlySpawnKeys !== null ? readOnlySpawnKeys.get(EntityClass) ?? null : null;
+        for (const key in spawnConfig) {
+          // E-169: the position, in nearly every config, by name and in its place in the config's order. A key read and
+          // written through `instance[key]` goes megamorphic over the names and classes this one loop sees, and the
+          // check below read it twice (two getter calls).
+          if (key === 'x') {
+            instance.x = spawnConfig.x;
+            continue;
+          }
+          if (key === 'y') {
+            instance.y = spawnConfig.y;
+            continue;
+          }
+          if (
+            key === 'active' ||
+            key === 'width' ||
+            key === 'height' ||
+            key === 'radius' ||
+            key === 'layer' ||
+            key === 'layers' ||
+            key === 'forceProcessOnLogicWorker'
+          ) {
+            continue;
+          }
+          // DX-PARENT's keys, taken after the loop (applySpawnLink).
+          if (key === 'parent' || key === 'localX' || key === 'localY' || key === 'localRotation') {
+            linkKeys = true;
+            continue;
+          }
+          const current = instance[key];
+          if (current !== undefined && typeof current !== 'function') {
+            if (skipKeys !== null && skipKeys.has(key)) continue;
+            try {
+              instance[key] = spawnConfig[key];
+            } catch (error) {
+              if (!isReadOnlyProperty(instance, key)) throw error;
+              skipReadOnlySpawnKey(EntityClass, key);
+            }
           }
         }
       }
 
-      if (spawnConfig.layers) {
-        instance.setLayers(spawnConfig.layers);
-      } else if (spawnConfig.layer != null) {
-        instance.setLayer(spawnConfig.layer);
-      }
+      applySpawnLayers(i, has, spawnConfig);
 
       // DX-PARENT: linked after the other keys (an x or y key is not a write to a child) and before onSpawned, which
       // finds the entity where its parent puts it.
@@ -3159,7 +3268,7 @@ export class GameObject {
       if (spawnConfig._hotRestore !== true) {
         try {
           if (typeof onSpawned === 'function') onSpawned.call(EntityClass, i, spawnConfig);
-          else if (instance.onSpawned) instance.onSpawned(spawnConfig);
+          else if (instance !== null && instance.onSpawned) instance.onSpawned(spawnConfig);
         } catch (error) {
           // In a worker, report it and finish the spawn (Unity keeps an object
           // whose Awake threw); elsewhere (tests, tools) keep throwing.
@@ -3168,16 +3277,12 @@ export class GameObject {
         }
       }
       // DX-GUARDS E2 (debug build): what the instance holds now is its shape; a field first written later is named.
-      noteSpawned(instance);
+      if (instance !== null) noteSpawned(instance);
 
       if (has.RigidBody && RigidBody.active[i]) {
         RigidBody.syncMassFromCollider(i, true);
       }
-      if (spawnConfig.layers) {
-        instance.setLayers(spawnConfig.layers);
-      } else if (spawnConfig.layer != null) {
-        instance.setLayer(spawnConfig.layer);
-      }
+      applySpawnLayers(i, has, spawnConfig);
 
       const entityComponentMap = EntityClass._componentClassMap || {};
       for (const name in entityComponentMap) {
@@ -3198,7 +3303,10 @@ export class GameObject {
       spawnSetUp = true;
     } finally {
       endBodyDirtyDeferred();
-      if (spawnSlot) leaveSpawnHere();
+      if (spawnSlot) {
+        abortedHere = innermostSpawnAborted();
+        leaveSpawnHere();
+      }
       // A throw out of the spawn (outside a worker): the links waiting for it end, their children orphans.
       if (!spawnSetUp && pendingLinkCount !== 0) endPendingLinks(i, false);
     }
@@ -3215,8 +3323,8 @@ export class GameObject {
       }
     }
 
-    if (instance._spawnAborted) {
-      instance._spawnAborted = false;
+    if (abortedHere || (instance !== null && instance._spawnAborted)) {
+      if (instance !== null) instance._spawnAborted = false;
       // DX-PARENT: children it spawned are orphans (physics finds them and logic0 despawns them).
       if (pendingLinkCount !== 0) endPendingLinks(i, false);
       GameObject._releaseSlotResources(i);
@@ -3232,7 +3340,7 @@ export class GameObject {
       if (EntityClass.freeList && EntityClass.freeListTop) {
         pushEntity(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
       }
-      return null;
+      return fail;
     }
 
     // Activate the entity - this enables spatial_worker to add it to Grid
@@ -3267,7 +3375,7 @@ export class GameObject {
       logicWorker.queueSpawnListUpdate(i, EntityClass.entityType, EntityClass);
     }
 
-    return instance;
+    return wantInstance ? instance : i;
   }
 
   /**

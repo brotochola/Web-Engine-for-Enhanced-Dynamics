@@ -3136,14 +3136,15 @@ class LogicWorker extends AbstractWorker {
       }
       let at = -1;
       if (ownIndex !== null && ownIndex.delete(rec.entityIndex | 0)) at = rec.entityIndex | 0;
-      const instance = GameObject._spawnAt(EntityClass, spawnConfig, at);
-      if (!instance) {
+      // E-534: by index (no instance made for a restored entity; it is made on its first use).
+      const index = GameObject._spawnAt(EntityClass, spawnConfig, at, false);
+      if (index < 0) {
         noRoom.set(rec.typeName, (noRoom.get(rec.typeName) || 0) + 1);
         failed++;
       } else {
         restored++;
         if (rec.entityIndex != null && rec.entityIndex >= 0) {
-          oldToNew.set(rec.entityIndex | 0, instance.index | 0);
+          oldToNew.set(rec.entityIndex | 0, index | 0);
         }
       }
     }
@@ -3479,8 +3480,8 @@ class LogicWorker extends AbstractWorker {
       );
       return;
     }
-    const instance = GameObject._spawnAt(EntityClass, spawnConfig, entityIndex);
-    if (!instance) {
+    // E-534: by index: the page holds its own instance; this worker makes one on its first use, if ever.
+    if (GameObject._spawnAt(EntityClass, spawnConfig, entityIndex, false) < 0) {
       // The index was reserved on main (an empty pool is reported there), so a
       // null here is onSpawned despawning its own entity: a choice, not an error.
       debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: ${className}[${entityIndex}] spawn did not complete`);
@@ -3555,7 +3556,7 @@ class LogicWorker extends AbstractWorker {
       );
       return;
     }
-    if (!GameObject._spawnAt(EntityClass, cfg, entityIndex)) {
+    if (GameObject._spawnAt(EntityClass, cfg, entityIndex, false) < 0) {
       // The pusher reserved the index (an empty pool is reported there), so a
       // null here is onSpawned despawning its own entity: a choice, not an error.
       debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: ${EntityClass.name}[${entityIndex}] spawn did not complete`);

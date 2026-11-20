@@ -5,6 +5,8 @@
 // without importing gameObject.js, and can alias it as a module const (E-474).
 
 const spawning = new Int32Array(32);
+/** Per entry: a despawn called that spawn off (E-534: by index, where the flag lived on the instance). */
+const aborted = new Uint8Array(32);
 let depth = 0;
 
 /**
@@ -14,7 +16,9 @@ let depth = 0;
  */
 export function enterSpawnHere(i) {
   if (depth >= spawning.length) return false;
-  spawning[depth++] = i;
+  spawning[depth] = i;
+  aborted[depth] = 0;
+  depth++;
   return true;
 }
 
@@ -30,4 +34,23 @@ export function leaveSpawnHere() {
 export function isSpawningHere(p) {
   for (let k = 0; k < depth; k++) if (spawning[k] === p) return true;
   return false;
+}
+
+/**
+ * A despawn of entity p calls its spawn here off. False when p is not in its spawn here.
+ * @param {number} p
+ */
+export function abortSpawnHere(p) {
+  for (let k = depth - 1; k >= 0; k--) {
+    if (spawning[k] === p) {
+      aborted[k] = 1;
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether the innermost spawn was called off (read by the spawn before it leaves). */
+export function innermostSpawnAborted() {
+  return depth > 0 && aborted[depth - 1] === 1;
 }

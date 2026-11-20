@@ -1887,6 +1887,12 @@ export declare class GameObject {
    */
   static spawn<T extends typeof GameObject>(this: T, spawnConfig?: SpawnConfig): InstanceType<T> | null;
   /**
+   * The ECS way's spawn: Enemy.spawnIndex({ x, y }) returns the entity's index, or -1 when the pool is full, and makes
+   * no instance. The config's engine keys go to the columns; a static onSpawned(i, config) reads the rest. A class whose
+   * onSpawned is a method gets its instance, which that method runs on.
+   */
+  static spawnIndex(spawnConfig?: SpawnConfig): number;
+  /**
    * Enemy.despawn(enemy): despawn another entity, from the scene or an entity. Takes the entity or
    * its index (callbacks give indices). On a class, only its entities (subclasses count);
    * GameObject.despawn takes any. On the page it is sent to logic0 (true = sent). False when it is
