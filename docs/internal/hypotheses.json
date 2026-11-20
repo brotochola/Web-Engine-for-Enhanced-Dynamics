@@ -20650,19 +20650,20 @@
     {
       "id": "N-247",
       "title": "Keyboard.isPressed runs _normalizeKeyName's toLowerCase on every call (keyboard.js:144): 341 B a frame in burningBoxes",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (31cbc600), on fix/n247-keyboard-name-cache (R-1702)",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "bug",
-      "result": "Heap pass on the demos.",
-      "next": "Normalize once per key name (a cache) or at registration; heap pass before and after.",
+      "result": "Fixed 2026-11-20 (31cbc600): _getKeyIndex keeps each name asked for mapped to its index (a Map cleared by initialize, 512 names at most), so a read every frame makes no string.",
+      "next": "Nothing left; a heap pass on burningBoxes would show the site gone.",
       "refs": [],
       "aliases": [
         "keyboard key name garbage"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1702"
       ]
     },
     {
@@ -40094,6 +40095,15 @@
       "title": "N-81 fixed: a frame at time scale 0 syncs bodies, commands and joints into Box2D",
       "verdict": "kept-hygiene",
       "text": "**N-81 fixed: a frame at a time scale of 0 now syncs the paused world into Box2D.** Branch fix/n81-paused-world-sync, 21f915a0.\n\n- **Cause:** the physics host called weedjsDoStep only when the frame's scaled dt was above 0, so a hitstop's (or the editor's held world's) spawns, despawns, teleports, commands and joints waited for the next step. Box2D's queries missed them meanwhile, and the spatial grid's movers path missed the teleports.\n- **Fix:** on such a frame, gameLoop and stepOnce call weedjsSyncPaused (weedjsPost.js, marked as in a step so the query wake leaves the services to it). It runs syncBodies, drainCommands and syncJoints, then the six query services. When anything changed, it also publishes the previous pose, the children, the pose, and a moved list holding the teleports alone. A paused frame that changes nothing publishes nothing. The step path is untouched, so no speed verdict is needed: the paused path runs only at a time scale of 0.\n- **Test:** tests/node/pausedWorldSync.test.js runs the host's stepOnce, its paused frame and the paused sync as shipped, against stand-ins (5 tests; all fail on bugs/base). Suites: node 3291 of 3292, the one failure frameChainWait's \"Pixi waits …\" timing flake (its file passed twice alone); demos 121 of 121."
+    },
+    {
+      "id": "R-1702",
+      "date": "2026-11-20",
+      "time": "04:30",
+      "timeFrom": "recorded",
+      "title": "N-247 fixed: Keyboard resolves each key name once, no toLowerCase per read",
+      "verdict": "kept-hygiene",
+      "text": "**N-247 fixed: Keyboard resolves each key name once instead of lower-casing it on every read.** Branch fix/n247-keyboard-name-cache, 31cbc600.\n\n- **Cause:** isPressed and isDown went through _getKeyIndex, which ran _normalizeKeyName's toLowerCase on every call: a new string a read (341 B a frame in burningBoxes, the heap pass of R-1229).\n- **Fix:** _getKeyIndex keeps each name it was asked for, as given, mapped to its index (-1: no key) in Keyboard._indexByName. initialize() clears it, and it is capped at 512 names. Only the first read of a name normalizes it. The lookup takes the map's own names only, so 'constructor' and 'tostring' no longer resolve to Object's functions. The debug build's unknown-key warning still fires (it says each name once).\n- **Test:** keyboard.test.js counts toLowerCase calls over three frames of five names: 4 (one a distinct name) where bugs/base made 15. The answers are unchanged, a new map resolves names again, and 'constructor' is not a key. No heap pass: the test shows that the per-read string is gone. Suites: node 3285 of 3288, the 3 failures frameChainWait's timing tests under the suite's concurrency (the file passed 3 of 3 alone); demos 121 of 121."
     }
   ],
   "leads": [

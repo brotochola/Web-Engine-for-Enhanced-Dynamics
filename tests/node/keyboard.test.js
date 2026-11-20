@@ -63,3 +63,35 @@ test('updateEdgeFlags latches isPressed from press counters', () => {
 
   Keyboard.initialize(null);
 });
+
+// N-247: every isPressed / isDown ran _normalizeKeyName's toLowerCase, a new string per call (341 B a frame in
+// burningBoxes). A name is resolved once now; the reads after it normalize nothing and answer the same.
+test('a key name is normalized once, not on every read', () => {
+  const data = new Int32Array(16);
+  Keyboard.initialize(data, makeMap());
+  const lower = String.prototype.toLowerCase;
+  let calls = 0;
+  String.prototype.toLowerCase = function () {
+    calls++;
+    return lower.call(this);
+  };
+  try {
+    data[2] = 1;
+    data[3] = 1;
+    for (let frame = 0; frame < 3; frame++) {
+      assert.equal(Keyboard.isDown('ArrowUp'), true);
+      assert.equal(Keyboard.isDown('Space'), true);
+      assert.equal(Keyboard.isPressed('ArrowUp'), false);
+      assert.equal(Keyboard.isDown('m'), false);
+      assert.equal(Keyboard.isDown('nokey'), false);
+    }
+    assert.equal(calls, 4, 'one toLowerCase a name, on its first read');
+  } finally {
+    String.prototype.toLowerCase = lower;
+  }
+  assert.equal(Keyboard.isDown('constructor'), false, "a plain object's own names are not keys");
+  Keyboard.initialize(data, { arrowup: 7 });
+  data[7] = 1;
+  assert.equal(Keyboard.isDown('ArrowUp'), true, 'a new map resolves names again');
+  assert.equal(Keyboard.isDown('m'), false);
+});
