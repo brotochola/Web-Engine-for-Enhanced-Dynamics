@@ -3882,6 +3882,41 @@
     return changes;
   }
 
+  // paused-sync-start
+  /**
+   * N-81: a frame at a time scale of 0 (a game's hitstop, the editor's held world) steps nothing, and the host used to
+   * skip it whole: what logic spawned, despawned, teleported or joined in it reached Box2D only at the next step, so the
+   * ray, AABB and overlap queries missed it, and the spatial grid's movers path missed its teleports. This does what a
+   * step does around stepping, with no step: the bodies, commands and joints synced, then the queries answered. When
+   * any of them changed something, the previous pose (nothing moves while paused), the children, the pose and the moved
+   * list go out. The moved list holds the teleports only: no body moved by itself.
+   * @returns {number} the body changes, commands and joint changes made
+   */
+  function weedjsSyncPaused() {
+    if (!world) return 0;
+    const entityCount = hostEntityCount | 0;
+    const changes = syncBodies(entityCount) + drainCommands() + syncJoints();
+    serviceQueryAabb();
+    serviceOverlapCircle();
+    serviceRayCast();
+    serviceCastRayAll();
+    serviceLiquidFunQuery();
+    serviceLiquidFunExtract();
+    if (changes === 0 && pendingTeleportCount === 0) return 0;
+    snapshotPrevPose(entityCount);
+    writeChildPoses();
+    maybePublishPose(entityCount);
+    if (typeof publishMovedBodies === 'function') {
+      publishMovedBodies(null, null, 0, pendingTeleportList, pendingTeleportCount, pendingTeleportBits);
+    }
+    if (pendingTeleportCount > 0 && pendingTeleportBits) {
+      for (let i = 0; i < pendingTeleportCount; i++) pendingTeleportBits[pendingTeleportList[i]] = 0;
+      pendingTeleportCount = 0;
+    }
+    return changes;
+  }
+  // paused-sync-end
+
   function weedjsEnableHostMode() {
     hostMode = true;
   }
@@ -4120,6 +4155,7 @@
   globalThis.weedjsEnableHostMode = weedjsEnableHostMode;
   globalThis.weedjsDoStep = weedjsDoStep;
   globalThis.weedjsPrime = weedjsPrime;
+  globalThis.weedjsSyncPaused = weedjsSyncPaused;
   // Between steps (the physics host's wake, review N-24): every sync kind.
   globalThis.weedjsServiceQueries = function () {
     serviceQueryAabb();
