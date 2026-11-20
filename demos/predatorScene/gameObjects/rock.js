@@ -6,30 +6,31 @@ const {
   GameObject,
   Collider,
   SpriteRenderer,
-  LightEmitter,
   RigidBody,
   rng,
-  randomColor,
   ShadowCaster,
+  ParticleEmitter,
   SoundManager,
   enums,
 } = WEED;
 const { ShapeType } = enums;
 
+// Written ECS-style (E-530): every hook is static, takes the rock's index and writes its components' columns, so the
+// logic workers make no instance for a rock. Predator, carScene and bichosScene all use it.
 export class Rock extends GameObject {
   static serializable = true;
   static components = [Collider, SpriteRenderer, ShadowCaster, RigidBody];
 
-  onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+  /** A bullet hit rock i: a stony clang and yellow sparks, from anywhere up the rock's height. */
+  static onGotShot(i, damage, hitX, hitY, ownerId, shooterEntityType) {
     const impactSound = rng() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
     SoundManager.play(impactSound, 0.25, 0.85, 1.12, 0, 0, hitX, hitY, 'bullet_hits');
 
-    const radius = this.collider.radius;
     ParticleEmitter.emit({
       count: 10 + rng() * 10,
       x: hitX,
       y: hitY,
-      z: - rng() * this.spriteRenderer.originalHeight,
+      z: - rng() * SpriteRenderer.getOriginalHeight(i),
       angleXY: { min: 0, max: 360 },
       speed: { min: 2, max: 4 },
       rotation: { min: 0, max: 360 },
@@ -46,18 +47,19 @@ export class Rock extends GameObject {
 
   }
 
-  onSpawned(spawnConfig = {}) {
-    this.rigidBody.static = 1;
-    this.setSprite('rock' + Math.floor(rng() * 4 + 1));
-    this.scale = rng() * 0.5 + 1;
-    this.setScale(rng() > 0.5 ? this.scale : -this.scale, this.scale);
-    this.collider.shapeType = ShapeType.Circle;
-    this.collider.radius = this.spriteRenderer.originalWidth * 0.4 * this.scale;
-    this.collider.visualRange = 0;
+  /** Rock i spawned: one of the four rock sprites, a random size and facing, a static round body 0.4 of its width. */
+  static onSpawned(i, spawnConfig) {
+    RigidBody.setStatic(i, 1);
+    SpriteRenderer.setSprite(i, 'rock' + Math.floor(rng() * 4 + 1));
+    const scale = rng() * 0.5 + 1;
+    SpriteRenderer.setScale(i, rng() > 0.5 ? scale : -scale, scale);
+    Collider.setShapeType(i, ShapeType.Circle);
+    Collider.setRadius(i, SpriteRenderer.getOriginalWidth(i) * 0.4 * scale);
+    // Reads no neighbours: no visualRange (a visualRange gives an entity its neighbour list, SST-21).
+    Collider.visualRange[i] = 0;
     // The silhouette twice as long, its foot 0.17 of the sprite below the anchor. With ?light3d=1 the camera gives its
     // height and the engine measures its base: the ShadowCaster's default.
-    if (!LIGHT3D) this.shadowCaster.setSprite({ heightScale: 2, anchorY: 0.17 });
-    this.spriteRenderer.anchorY = 0.66;
-    this.spriteRenderer.anchorX = 0.5;
+    if (!LIGHT3D) ShadowCaster.setSprite(i, { heightScale: 2, anchorY: 0.17 });
+    SpriteRenderer.setAnchor(i, 0.5, 0.66);
   }
 }

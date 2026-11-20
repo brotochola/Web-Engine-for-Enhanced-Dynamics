@@ -44,7 +44,7 @@ export class Lootable extends GameObject {
     const amountOfMoney = LootableComponent.dropMoney[i];
     if (amountOfMoney > 0) {
       const radius = Collider.radius[i];
-      DropMoney.spawn({
+      DropMoney.spawnIndex({
         amount: amountOfMoney,
         x: Transform.x[i] + rng() * radius * 4 - radius * 2,
         y: Transform.y[i] + rng() * radius * 4 - radius * 2,

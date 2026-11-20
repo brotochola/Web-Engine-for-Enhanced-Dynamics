@@ -109,11 +109,13 @@ test('logic0 puts each entity back at its own index on a hot restore, and warns 
   GameObject.despawnAll = () => 0;
   GameObject._takeFreeIndices = (C, wanted) => new Set(wanted);
   let full = 0;
-  GameObject._spawnAt = (C, config, at = -1) => {
+  // E-534: the worker restores by index (wantInstance false): the index, or -1.
+  GameObject._spawnAt = (C, config, at = -1, wantInstance = true) => {
     spawns.push(at);
     hotFlags.push(config._hotRestore);
-    if (at < 0 && ++full > 1) return null; // pool full after one
-    return { index: at >= 0 ? at : 13 };
+    if (at < 0 && ++full > 1) return wantInstance ? null : -1; // pool full after one
+    const index = at >= 0 ? at : 13;
+    return wantInstance ? { index } : index;
   };
   worker.processListUpdates = () => {};
   console.warn = (...a) => warnings.push(a.join(' '));

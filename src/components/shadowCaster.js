@@ -7,12 +7,19 @@
 // sweep reads them, and a scene with config.lighting.walls pools them): ShadowCaster's setters drive both. The
 // last setter wins: the sprite rows, a volume or a wall an earlier setter gave the entity go when no light kind casts them any
 // more.
+//
+// E-533: each setter is a static that takes the entity's index (ShadowCaster.setBox(i, w, d, h), ShadowCaster.lamps.setWall(i)),
+// and the instance's methods call them. Nothing is kept per instance but the two CastSide objects of shadowCaster.sun and
+// .lamps: the volume's work takes the index (VolumeShadowCaster's statics), and whether the entity's class lists MeshRenderer
+// comes from its type's component bits.
 
 import { Component } from '../core/component.js';
+import { HAS_MESH, typeBitsOf } from '../core/entityTypes.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { LightOccluder } from './lightOccluder.js';
 import { MESH_NO_TEXTURE, resolveMeshTextureId } from './meshRenderer.js';
 import { SpriteRenderer } from './spriteRenderer.js';
+import { Transform } from './transform.js';
 import { VolumeShadowCaster, holdsVolume } from './volumeShadowCaster.js';
 
 
@@ -69,13 +76,14 @@ function wallsOn() {
   return LightOccluder.active != null;
 }
 
-/** The caster's volume, made on first use: its entity's MeshRenderer row draws it, its own when the class lists one. */
-function casterVolume(caster) {
-  const made = caster._volumeCaster;
-  if (made !== null) return made;
-  const owner = caster.owner;
-  const ownMesh = owner != null && owner._hasComponents != null && owner._hasComponents.MeshRenderer === true;
-  return (caster._volumeCaster = new VolumeShadowCaster(caster.index, ownMesh));
+/**
+ * Whether entity i's class lists MeshRenderer: the row its volume draws with is then its own (VolumeShadowCaster's ownMesh).
+ * From its type's component bits (entityTypes.js), so a static needs no instance.
+ * @param {number} i
+ */
+function ownsMesh(i) {
+  const types = Transform.entityType;
+  return types != null && (typeBitsOf(types[i]) & HAS_MESH) !== 0;
 }
 
 /**
@@ -84,8 +92,7 @@ function casterVolume(caster) {
  * that change alone, so a setter on a despawned entity does not wake it. The wall goes whenever no kind is a wall; setWall turns
  * it on.
  */
-function writeKinds(caster, sun, lamps, kind) {
-  const i = caster.index;
+function writeKinds(i, sun, lamps, kind) {
   const wasSun = ShadowCaster.sunKind[i];
   const wasLamp = ShadowCaster.lampKind[i];
   const nowSun = sun ? kind : wasSun;
@@ -95,10 +102,9 @@ function writeKinds(caster, sun, lamps, kind) {
   const sprite = castsSprite(nowSun) || castsSprite(nowLamp);
   if (sprite !== (castsSprite(wasSun) || castsSprite(wasLamp))) ShadowCaster.active[i] = sprite ? 1 : 0;
   if ((castsVolume(wasSun) || castsVolume(wasLamp)) && !castsVolume(nowSun) && !castsVolume(nowLamp) && holdsVolume(i)) {
-    casterVolume(caster).clear();
+    VolumeShadowCaster.clear(i, ownsMesh(i));
   }
   if (nowSun !== CAST_KIND.WALL && nowLamp !== CAST_KIND.WALL && wallsOn()) LightOccluder.active[i] = 0;
-  return caster;
 }
 
 /**
@@ -166,59 +172,56 @@ function writeSprite(i, { frame, anchorX, anchorY, scaleX = 0, scaleY = 0, heigh
 }
 
 /** The silhouette for the light kinds (CastSide.setSprite's options); options that warn leave everything as it was. */
-function castSprite(caster, sun, lamps, options) {
-  if (!writeSprite(caster.index, options)) return caster;
-  return writeKinds(caster, sun, lamps, CAST_KIND.SPRITE);
+function castSprite(i, sun, lamps, options) {
+  if (writeSprite(i, options)) writeKinds(i, sun, lamps, CAST_KIND.SPRITE);
 }
 
 /** Each pixel where it is in 3D, for the light kinds (needs the sheet's heightMap). */
-function castHeightMap(caster, sun, lamps) {
-  const i = caster.index;
+function castHeightMap(i, sun, lamps) {
   if (ShadowCaster.heightMultiplier[i] === 0) ShadowCaster.heightMultiplier[i] = 1;
-  return writeKinds(caster, sun, lamps, CAST_KIND.HEIGHT_MAP);
+  writeKinds(i, sun, lamps, CAST_KIND.HEIGHT_MAP);
 }
 
 /**
- * The caster's volume, or null (warned once): the lamps have no volume of their own, or the scene keeps no room for volumes
- * (config.lighting.maxVolumes: the layer and the mesh arena's share are made at load).
+ * Whether a volume setter may give the entity a volume; false warned once: the lamps have no volume of their own, or the scene
+ * keeps no room for volumes (config.lighting.maxVolumes: the layer and the mesh arena's share are made at load).
  */
-function volumeFor(caster, sun, method) {
+function volumeAllowed(sun, method) {
   if (!sun) {
     warnOnce(`shadowCaster.lamps.${method}: the lamps have no volume of their own; shadowCaster.${method} gives one to every light`);
-    return null;
+    return false;
   }
   if (VolumeShadowCaster.floorScaleY == null || VolumeShadowCaster.layerBit() === 0) {
     warnOnce(
       `shadowCaster.${method}: the scene keeps no room for volumes; set config.lighting.maxVolumes to the number of ` +
         'entities that hold one at once',
     );
-    return null;
+    return false;
   }
-  return casterVolume(caster);
+  return true;
 }
 
 /** After a volume setter: the kind, once the entity holds a volume (a refused shape warned and left it as it was). */
-function castVolume(caster, sun, lamps, volume, kind) {
-  if (volume === null || !holdsVolume(caster.index)) return caster;
-  return writeKinds(caster, sun, lamps, kind);
+function castVolume(i, sun, lamps, kind) {
+  if (holdsVolume(i)) writeKinds(i, sun, lamps, kind);
 }
 
-function castBox(caster, sun, lamps, width, depth, height, options) {
-  const volume = volumeFor(caster, sun, 'setBox');
-  if (volume !== null) volume.setBox(width, depth, height, options);
-  return castVolume(caster, sun, lamps, volume, CAST_KIND.BOX);
+function castBox(i, sun, lamps, width, depth, height, options) {
+  if (!volumeAllowed(sun, 'setBox')) return;
+  VolumeShadowCaster.setBox(i, ownsMesh(i), width, depth, height, options);
+  castVolume(i, sun, lamps, CAST_KIND.BOX);
 }
 
-function castLevel(caster, sun, lamps, outline, bottom, top, topOutline, options) {
-  const volume = volumeFor(caster, sun, 'addLevel');
-  if (volume !== null) volume.addLevel(outline, bottom, top, topOutline, options);
-  return castVolume(caster, sun, lamps, volume, CAST_KIND.BOX);
+function castLevel(i, sun, lamps, outline, bottom, top, topOutline, options) {
+  if (!volumeAllowed(sun, 'addLevel')) return;
+  VolumeShadowCaster.addLevel(i, ownsMesh(i), outline, bottom, top, topOutline, options);
+  castVolume(i, sun, lamps, CAST_KIND.BOX);
 }
 
-function castHull(caster, sun, lamps, points, options) {
-  const volume = volumeFor(caster, sun, 'setHull');
-  if (volume !== null) volume.setHull(points, options);
-  return castVolume(caster, sun, lamps, volume, CAST_KIND.HULL);
+function castHull(i, sun, lamps, points, options) {
+  if (!volumeAllowed(sun, 'setHull')) return;
+  VolumeShadowCaster.setHull(i, ownsMesh(i), points, options);
+  castVolume(i, sun, lamps, CAST_KIND.HULL);
 }
 
 /**
@@ -226,35 +229,81 @@ function castHull(caster, sun, lamps, points, options) {
  * as tall as the world, taking out the caster's opacity of the light; the wall's own sprite stays lit where the light
  * reaches its edge. A scene without walls warns once and changes nothing.
  */
-function castWall(caster, sun, lamps) {
+function castWall(i, sun, lamps) {
   if (!lamps) {
     warnOnce('shadowCaster.sun.setWall: the sun casts no wall (a wall stops lamps and headlights); shadowCaster.lamps.setWall');
-    return caster;
+    return;
   }
   if (!wallsOn()) {
     warnOnce(
       'shadowCaster.setWall: a wall stops lamps and headlights in a scene that asks for walls (config.lighting.walls: true, ' +
         'with lighting enabled), which this scene does not; the entity casts as it did',
     );
-    return caster;
+    return;
   }
-  const i = caster.index;
   LightOccluder.block[i] = ShadowCaster.opacity[i];
-  writeKinds(caster, sun, lamps, CAST_KIND.WALL);
+  writeKinds(i, sun, lamps, CAST_KIND.WALL);
   LightOccluder.active[i] = 1;
-  return caster;
 }
 
 /**
- * One light kind's setters (shadowCaster.sun, shadowCaster.lamps; the instance's own setters are both kinds', written
- * without one of these): they write that kind alone, and return the ShadowCaster. The sun casts no wall, and the lamps have
- * no volume of their own (shadowCaster.setBox gives one to every light): those warn.
+ * E-533: one light kind's setters by entity index, ShadowCaster.sun and ShadowCaster.lamps (ShadowCaster.lamps.setWall(i)):
+ * they write that kind alone. The sun casts no wall, and the lamps have no volume of their own (ShadowCaster.setBox gives one
+ * to every light): those warn. An instance's shadowCaster.sun and .lamps call them.
  */
-class CastSide {
-  constructor(caster, sun, lamps) {
-    this._caster = caster;
+class CastSideByIndex {
+  constructor(sun, lamps) {
     this._sun = sun;
     this._lamps = lamps;
+  }
+
+  /** The silhouette for this light kind (CastSide.setSprite's options). */
+  setSprite(i, options) {
+    castSprite(i, this._sun, this._lamps, options);
+  }
+
+  /** Each pixel where it is in 3D, for this light kind (needs the sheet's heightMap). */
+  setHeightMap(i) {
+    castHeightMap(i, this._sun, this._lamps);
+  }
+
+  /** A box for this light kind, which replaces the volume (ShadowCaster.setBox's arguments after the index). */
+  setBox(i, width, depth, height, options) {
+    castBox(i, this._sun, this._lamps, width, depth, height, options);
+  }
+
+  /** One more level on what the volume has (ShadowCaster.addLevel's arguments after the index). */
+  addLevel(i, outline, bottom, top, topOutline, options) {
+    castLevel(i, this._sun, this._lamps, outline, bottom, top, topOutline, options);
+  }
+
+  /** The convex volume around points, which replaces the volume (ShadowCaster.setHull's arguments after the index). */
+  setHull(i, points, options) {
+    castHull(i, this._sun, this._lamps, points, options);
+  }
+
+  /** A wall for this light kind (lamps.setWall; the sun casts none). */
+  setWall(i, options) {
+    castWall(i, this._sun, this._lamps, options);
+  }
+
+  /** No shadow from this light kind. */
+  clear(i) {
+    writeKinds(i, this._sun, this._lamps, CAST_KIND.NONE);
+  }
+}
+
+const SUN_BY_INDEX = new CastSideByIndex(true, false);
+const LAMPS_BY_INDEX = new CastSideByIndex(false, true);
+
+/**
+ * One light kind's setters on an instance (shadowCaster.sun, shadowCaster.lamps; the instance's own setters are both kinds',
+ * written without one of these): ShadowCaster.sun's or .lamps' with the caster's index, and they return the ShadowCaster.
+ */
+class CastSide {
+  constructor(caster, side) {
+    this._caster = caster;
+    this._side = side;
   }
 
   /**
@@ -267,27 +316,32 @@ class CastSide {
    *   orient 'fixed': the card along the object (a fence, a wall)
    */
   setSprite(options) {
-    return castSprite(this._caster, this._sun, this._lamps, options);
+    this._side.setSprite(this._caster.index, options);
+    return this._caster;
   }
 
   /** Each pixel where it is in 3D (needs the sheet's heightMap). */
   setHeightMap() {
-    return castHeightMap(this._caster, this._sun, this._lamps);
+    this._side.setHeightMap(this._caster.index);
+    return this._caster;
   }
 
   /** A box, which replaces the volume (ShadowCaster.setBox's arguments). */
   setBox(width, depth, height, options) {
-    return castBox(this._caster, this._sun, this._lamps, width, depth, height, options);
+    this._side.setBox(this._caster.index, width, depth, height, options);
+    return this._caster;
   }
 
   /** One more level on what the volume has (ShadowCaster.addLevel's arguments). */
   addLevel(outline, bottom, top, topOutline, options) {
-    return castLevel(this._caster, this._sun, this._lamps, outline, bottom, top, topOutline, options);
+    this._side.addLevel(this._caster.index, outline, bottom, top, topOutline, options);
+    return this._caster;
   }
 
   /** The convex volume around points, which replaces the volume (ShadowCaster.setHull's arguments). */
   setHull(points, options) {
-    return castHull(this._caster, this._sun, this._lamps, points, options);
+    this._side.setHull(this._caster.index, points, options);
+    return this._caster;
   }
 
   /**
@@ -295,12 +349,14 @@ class CastSide {
    * @param {{ shape?: 'collider'|'sprite' }} [options]
    */
   setWall(options) {
-    return castWall(this._caster, this._sun, this._lamps, options);
+    this._side.setWall(this._caster.index, options);
+    return this._caster;
   }
 
   /** No shadow from this light kind. */
   clear() {
-    return writeKinds(this._caster, this._sun, this._lamps, CAST_KIND.NONE);
+    this._side.clear(this._caster.index);
+    return this._caster;
   }
 }
 
@@ -334,13 +390,74 @@ export class ShadowCaster extends Component {
     // (both kinds') write without such an object: a crowd of 38 000 that sets a heightScale at spawn makes none.
     this._sunSide = null;
     this._lampSide = null;
-    // DX-CASTER: the internal VolumeShadowCaster that setBox, addLevel and setHull write through, made on first use.
-    this._volumeCaster = null;
   }
 
   // Static pool tracking (set during initialization)
   static shadowCount = 0;
 
+  /** E-533: the sun's setters by index (ShadowCaster.sun.setSprite(i)): shadowCaster.sun's. */
+  static sun = SUN_BY_INDEX;
+
+  /** E-533: the lamps' setters by index (ShadowCaster.lamps.setWall(i)): shadowCaster.lamps'. */
+  static lamps = LAMPS_BY_INDEX;
+
+  /**
+   * E-533: entity i's silhouette, for every light (shadowCaster.setSprite, by index; CastSide.setSprite's options).
+   * @param {number} i
+   * @param {object} [options]
+   */
+  static setSprite(i, options) {
+    castSprite(i, true, true, options);
+  }
+
+  /** E-533: entity i's solid, for every light (shadowCaster.setHeightMap, by index; needs the sheet's heightMap). */
+  static setHeightMap(i) {
+    castHeightMap(i, true, true);
+  }
+
+  /** E-533: a box for every light (shadowCaster.setBox, by index: its arguments after the index). */
+  static setBox(i, width, depth, height, options) {
+    castBox(i, true, true, width, depth, height, options);
+  }
+
+  /** E-533: one more level on entity i's volume (shadowCaster.addLevel, by index). */
+  static addLevel(i, outline, bottom, top, topOutline, options) {
+    castLevel(i, true, true, outline, bottom, top, topOutline, options);
+  }
+
+  /** E-533: the convex volume around points, for every light (shadowCaster.setHull, by index). */
+  static setHull(i, points, options) {
+    castHull(i, true, true, points, options);
+  }
+
+  /** E-533: entity i as a wall for the lamps, casting nothing for the sun (shadowCaster.setWall, by index). */
+  static setWall(i, options) {
+    castWall(i, true, true, options);
+  }
+
+  /** E-533: no shadow at all from entity i (shadowCaster.clear, by index). */
+  static clear(i) {
+    writeKinds(i, true, true, CAST_KIND.NONE);
+  }
+
+  /** E-533: entity i's opacity, 0 to 1 (shadowCaster.opacity, by index): its wall's block with it. */
+  static setOpacity(i, value) {
+    const o = Math.max(0, Math.min(1, +value || 0));
+    ShadowCaster.opacity[i] = o;
+    if (wallsOn()) LightOccluder.block[i] = o;
+  }
+
+  /** E-533: entity i's base radius in px (shadowCaster.baseRadius, by index); 0, or one that is not finite, the measured one. */
+  static setBaseRadius(i, value) {
+    const r = +value;
+    ShadowCaster.baseRadius[i] = Number.isFinite(r) && r > 0 ? r : 0;
+  }
+
+  /** E-533: whether entity i shades itself: true, false or 'auto' (shadowCaster.selfShadow, by index). */
+  static setSelfShadow(i, value) {
+    ShadowCaster.selfShadow[i] =
+      value === 'auto' || value == null ? SELF_SHADOW.AUTO : !value || value === 'off' ? SELF_SHADOW.OFF : SELF_SHADOW.ON;
+  }
 }
 
 /**
@@ -386,12 +503,14 @@ for (const [name, instead] of Object.entries(GONE_METHODS)) {
 export const CASTER_METHODS = {
   /** The silhouette, for every light: a card on its base (CastSide.setSprite's options). */
   setSprite(options) {
-    return castSprite(this, true, true, options);
+    ShadowCaster.setSprite(this.index, options);
+    return this;
   },
 
   /** Each pixel where it is in 3D, for every light (needs the sheet's heightMap). */
   setHeightMap() {
-    return castHeightMap(this, true, true);
+    ShadowCaster.setHeightMap(this.index);
+    return this;
   },
 
   /**
@@ -404,7 +523,8 @@ export const CASTER_METHODS = {
    *   the entity's frame; how much smaller its roof is about it (0: a pyramid); the floor's scale (config.camera's)
    */
   setBox(width, depth, height, options) {
-    return castBox(this, true, true, width, depth, height, options);
+    ShadowCaster.setBox(this.index, width, depth, height, options);
+    return this;
   },
 
   /**
@@ -416,7 +536,8 @@ export const CASTER_METHODS = {
    * @param {{ floorScaleY?: number }} [options]
    */
   addLevel(outline, bottom, top, topOutline, options) {
-    return castLevel(this, true, true, outline, bottom, top, topOutline, options);
+    ShadowCaster.addLevel(this.index, outline, bottom, top, topOutline, options);
+    return this;
   },
 
   /**
@@ -426,7 +547,8 @@ export const CASTER_METHODS = {
    * @param {{ floorScaleY?: number }} [options]
    */
   setHull(points, options) {
-    return castHull(this, true, true, points, options);
+    ShadowCaster.setHull(this.index, points, options);
+    return this;
   },
 
   /**
@@ -435,22 +557,24 @@ export const CASTER_METHODS = {
    * @param {{ shape?: 'collider'|'sprite' }} [options] what cuts the light: the Collider (default) or the sprite's alpha
    */
   setWall(options) {
-    return castWall(this, true, true, options);
+    ShadowCaster.setWall(this.index, options);
+    return this;
   },
 
   /** No shadow at all. */
   clear() {
-    return writeKinds(this, true, true, CAST_KIND.NONE);
+    ShadowCaster.clear(this.index);
+    return this;
   },
 
   get sun() {
     const side = this._sunSide;
-    return side != null ? side : (this._sunSide = new CastSide(this, true, false));
+    return side != null ? side : (this._sunSide = new CastSide(this, SUN_BY_INDEX));
   },
 
   get lamps() {
     const side = this._lampSide;
-    return side != null ? side : (this._lampSide = new CastSide(this, false, true));
+    return side != null ? side : (this._lampSide = new CastSide(this, LAMPS_BY_INDEX));
   },
 
   /** How much light it takes out, 0 to 1: the layer shadows read it, and a wall (setWall) takes that much out of a lamp. */
@@ -458,10 +582,7 @@ export const CASTER_METHODS = {
     return ShadowCaster.opacity[this.index];
   },
   set opacity(v) {
-    const i = this.index;
-    const o = Math.max(0, Math.min(1, +v || 0));
-    ShadowCaster.opacity[i] = o;
-    if (wallsOn()) LightOccluder.block[i] = o;
+    ShadowCaster.setOpacity(this.index, v);
   },
 
   /** The base's radius in px, correcting the measured one; 0 keeps the measured base. Stored: the 3D shadows will read it. */
@@ -469,8 +590,7 @@ export const CASTER_METHODS = {
     return ShadowCaster.baseRadius[this.index];
   },
   set baseRadius(v) {
-    const r = +v;
-    ShadowCaster.baseRadius[this.index] = Number.isFinite(r) && r > 0 ? r : 0;
+    ShadowCaster.setBaseRadius(this.index, v);
   },
 
   /**
@@ -482,8 +602,7 @@ export const CASTER_METHODS = {
     return s === SELF_SHADOW.ON ? true : s === SELF_SHADOW.OFF ? false : 'auto';
   },
   set selfShadow(v) {
-    ShadowCaster.selfShadow[this.index] =
-      v === 'auto' || v == null ? SELF_SHADOW.AUTO : !v || v === 'off' ? SELF_SHADOW.OFF : SELF_SHADOW.ON;
+    ShadowCaster.setSelfShadow(this.index, v);
   },
 
   /**

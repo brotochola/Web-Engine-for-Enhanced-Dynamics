@@ -1,5 +1,7 @@
-// PersonWithFSM.js - Example entity using the FSM system
-// Demonstrates civilian behavior with IDLE and FLEEING states
+// Destination.js - The soldiers' rally point: a target marker the player moves with a click
+// Clicking moves it under the mouse and sends every soldier walking to it (MySoldier.startFollowingDestination).
+//
+// ECS-style (E-530): its hook and its tick are statics that take entity indices; no instance is made for it.
 
 import WEED from '/src/index.js';
 
@@ -8,7 +10,7 @@ import { MySoldier } from './mySoldier.js';
 
 const {
   GameObject,
-
+  Transform,
   Collider,
   SpriteRenderer,
   Mouse,
@@ -17,39 +19,41 @@ const {
 export class Destination extends GameObject {
   // Auto-detected by GameEngine
   static serializable = true;
-  // Components: basic physics + rendering + our FSM
+  // Components: a trigger circle (the soldiers arrive when inside it) and its marker sprite
   static components = [Collider, SpriteRenderer];
 
-  onSpawned(spawnConfig = {}) {
-    // Collision/perception
-    this.collider.radius = 100;
-    this.collider.visualRange = 0;
-    this.collider.isTrigger = 1;
+  /** LIFECYCLE: each spawn of destination i: a 100 px trigger at the world's centre, drawn as the target marker. */
+  static onSpawned(i, spawnConfig = {}) {
+    // Collision/perception: a sensor nobody bumps into, with no neighbour list (it reads none)
+    Collider.setRadius(i, 100);
+    Collider.visualRange[i] = 0;
+    Collider.setIsTrigger(i, 1);
 
-    // Sprite setup
-    this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 0.5;
-    this.x = this.config.worldWidth * 0.5;
-    this.y = this.config.worldHeight * 0.5;
+    // Sprite setup: the marker centred on the point
+    SpriteRenderer.setAnchor(i, 0.5, 0.5);
+    Transform.setPosition(i, this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
 
-    this.setSprite('target');
-  
+    SpriteRenderer.setSprite(i, 'target');
   }
 
   /**
-   * LIFECYCLE: Main update loop
+   * Each frame, for the destinations this worker ticks (the scene has one): on a click it moves under the mouse, grows
+   * to hold every soldier, and orders them all there.
    */
-  tick(dt) {
+  static tickAll(list, count, dtRatio) {
+    if (count === 0 || !Mouse.isButton0Pressed) return;
 
-    if (Mouse.isButton0Pressed) {
+    // Big enough for the whole squad packed around the point, so they stop on arriving instead of crowding its centre.
+    const radius = containerRadius(MySoldier.activeCount, 12, 1);
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      Transform.setPosition(i, Mouse.x, Mouse.y);
+      Collider.setRadius(i, radius);
+    }
 
-      this.x = Mouse.x;
-      this.y = Mouse.y;
-      this.collider.radius = containerRadius(MySoldier.activeCount, 12, 1);
-      const allActiveSoldiers = MySoldier.getAllActiveInstances();
-      for (const soldier of allActiveSoldiers) {
-        soldier.startFollowingDestination();
-      }
+    const soldiers = MySoldier.getAllActive();
+    for (let s = 0; s < soldiers.length; s++) {
+      MySoldier.startFollowingDestination(soldiers[s]);
     }
   }
 }

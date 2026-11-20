@@ -2,6 +2,7 @@
 // <name>_<direction> sheets), the direction picked for a facing and its margin, and what the component draws: the
 // animation and flip of the direction its facing (manual, velocity, rotation) is nearest, a pinned animation, the
 // name a finished play-once animation is heard by, and the logic worker's pass with onDirectionChanged.
+import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -282,6 +283,10 @@ test('setAnimation on a directional entity: a group plays in its direction, a pl
   const w = Object.create(Walker.prototype);
   w.index = 0;
   w._hasComponents = { SpriteRenderer: true, DirectionalSprite: true };
+  w._componentBits = bitsOfFlags(w._hasComponents);
+  // Its class registered for its type: a warning names the type's class (E-533).
+  Transform.entityType[0] = 7;
+  GameObject.classByType[7] = Walker;
   w.setAnimation('walk');
   assert.equal(animOf(0), 'walk_right');
   w.setAnimation('slash', false);

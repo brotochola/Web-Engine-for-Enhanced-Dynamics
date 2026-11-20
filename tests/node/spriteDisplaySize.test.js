@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { HAS_SPRITE, HAS_COLLIDER } from '../../src/core/entityTypes.js';
 import assert from 'node:assert/strict';
 
 import { GameObject } from '../../src/core/gameObject.js';
@@ -53,6 +54,7 @@ function sprite(index) {
   const go = Object.create(GameObject.prototype);
   go.index = index;
   go._hasComponents = { SpriteRenderer: true, Collider: true };
+  go._componentBits = HAS_SPRITE | HAS_COLLIDER;
   return go;
 }
 
@@ -90,11 +92,15 @@ test('setDisplaySize without a sprite warns once per class and changes nothing',
   console.warn = (m) => lines.push(m);
   try {
     class Blank extends GameObject {}
-    const go = Object.assign(Object.create(Blank.prototype), { index: 1, _hasComponents: { SpriteRenderer: true } });
+    // Its class registered for its type: a warning names the entity's type's class (E-533).
+    Transform.entityType[1] = 9;
+    GameObject.classByType[9] = Blank;
+    const go = Object.assign(Object.create(Blank.prototype), { index: 1, _hasComponents: { SpriteRenderer: true }, _componentBits: HAS_SPRITE });
     go.setDisplaySize(10);
     go.setDisplaySize(20);
   } finally {
     console.warn = original;
+    GameObject.classByType[9] = undefined;
   }
   assert.equal(lines.length, 1);
   assert.match(lines[0], /Blank\.setDisplaySize needs a sprite/);

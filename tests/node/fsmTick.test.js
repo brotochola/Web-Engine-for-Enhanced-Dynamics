@@ -11,14 +11,14 @@ import { FSMState } from '../../src/core/fsmState.js';
 const seen = [];
 
 class WaitState extends FSMState {
-  static onUpdate(owner, i, dt, timeInState) {
+  static onUpdate(i, dt, timeInState) {
     seen.push(timeInState);
     if (timeInState >= 60) this.fsm.changeState(i, this.fsm.states.GO);
   }
 }
 
 class GoState extends FSMState {
-  static onUpdate(owner, i, dt, timeInState) {
+  static onUpdate(i, dt, timeInState) {
     seen.push(timeInState);
   }
 }
@@ -31,7 +31,7 @@ class TickTestFSM extends FSM {
 test('onUpdate gets the time in state in whole milliseconds, reset by a transition', () => {
   TickTestFSM.initializeArrays(new SharedArrayBuffer(TickTestFSM.getBufferSize(2)), 2);
   const fsm = new TickTestFSM(1);
-  const owner = { constructor: { tickInterval: 1 } };
+  fsm.owner = { constructor: { tickInterval: 1 } }; // the entity the engine's component getter records
   seen.length = 0;
   const expected = [];
   const time = new Float32Array(1); // the FSM's own column precision
@@ -39,7 +39,7 @@ test('onUpdate gets the time in state in whole milliseconds, reset by a transiti
     if (k === 4) time[0] = 0; // the WAIT state asked for GO at 66 ms; the transition resets the clock
     time[0] += 1 * 16.67 * 1;
     expected.push(time[0] | 0);
-    fsm.tick(1, owner);
+    fsm.tick(1);
   }
   assert.deepEqual(seen, expected);
   assert.deepEqual(seen, [16, 33, 50, 66, 16, 33, 50, 66]);
@@ -51,6 +51,7 @@ test('a decimated entity accumulates its tick interval', () => {
   TickTestFSM.initializeArrays(new SharedArrayBuffer(TickTestFSM.getBufferSize(1)), 1);
   const fsm = new TickTestFSM(0);
   seen.length = 0;
-  fsm.tick(1, { constructor: { tickInterval: 3 } });
+  fsm.owner = { constructor: { tickInterval: 3 } };
+  fsm.tick(1);
   assert.deepEqual(seen, [50]); // 16.67 * 3 = 50.01
 });

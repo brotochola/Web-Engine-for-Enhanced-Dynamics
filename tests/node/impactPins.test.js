@@ -17,7 +17,8 @@ const MAX_IMPACTS = 64;
 async function ringWorker() {
   const worker = await loadWorker('logicWorker.js', 'logicWorker');
   // E-528: an impact reads its target's entity type (a static onGotShot); every target here is type 0, with none.
-  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(16)), 16);
+  // Room for every target id the tests shoot (up to 50): an id past the columns reads no type, and hears nothing.
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(64)), 64);
   const buffer = new SharedArrayBuffer(impactRingBytes(MAX_IMPACTS));
   const ring = bindImpactRing(buffer, MAX_IMPACTS);
   worker._impactRing = bindImpactRing(buffer, MAX_IMPACTS);
@@ -43,6 +44,8 @@ function poll(worker, workerIndex, totalWorkers, ids) {
   const gameObjects = [];
   for (const id of ids) gameObjects[id] = { onGotShot: (damage) => shots.push([id, damage]) };
   worker.gameObjects = gameObjects;
+  // Their stand-in entities are type 0 with an onGotShot method of their own (a bullet makes the instance for it).
+  worker.gotShotMethodByType[0] = 1;
   worker._pollImpacts();
   return shots;
 }

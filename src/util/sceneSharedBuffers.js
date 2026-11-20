@@ -1,4 +1,6 @@
+import { resetSpriteLookups } from '../components/spriteRenderer.js';
 import { debugWorkerLog } from './debugLog.js';
+import { clearEntityTypes } from '../core/entityTypes.js';
 import { createSpatialPublishMemory, spatialPublishMemoryBytes } from './spatialPublishMemory.js';
 import { createParticleMemory, particleMemoryBytes } from './particleMemory.js';
 import { createRenderQueueMemory, renderQueueMemoryBytes } from './renderQueueMemory.js';
@@ -1461,6 +1463,7 @@ export function teardownSceneSharedState(scene) {
   }
 
   GameObject.classByType.length = 0;
+  clearEntityTypes();
   clearActiveFlags(Transform.active, scene.totalEntityCount);
   clearActiveFlags(RigidBody.active, scene.totalEntityCount);
   clearActiveFlags(Collider.active, scene.totalEntityCount);
@@ -1517,8 +1520,7 @@ export function teardownSceneSharedState(scene) {
   bindStaticSceneryGen(null);
   bindStaticTypes(null);
   GameObject.instances = [];
-  GameObject._globalAnimationCache = Object.create(null);
-  GameObject._animIndexBySheet = [];
+  resetSpriteLookups();
 
   Sun.unbind();
 

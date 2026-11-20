@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { Layer } from '../../src/core/layer.js';
+import { noteEntityType } from '../../src/core/entityTypes.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
@@ -55,8 +56,18 @@ function setup({ volumes = true, walls = false } = {}) {
   resetVolumeShadowCasterWarns();
 }
 
-/** The entity's ShadowCaster as the entity makes it: `has` its class's other components. */
+/** Entity types: one whose class lists MeshRenderer beside the ShadowCaster, one whose class lists the ShadowCaster alone. */
+const TYPE_WITH_MESH = 1;
+const TYPE_CASTER_ONLY = 2;
+noteEntityType(TYPE_WITH_MESH, class MeshCaster { static components = [ShadowCaster, MeshRenderer]; });
+noteEntityType(TYPE_CASTER_ONLY, class Caster { static components = [ShadowCaster]; });
+
+/**
+ * The entity's ShadowCaster as the entity makes it: `has.MeshRenderer` when its class lists one too (E-533: the caster reads
+ * that from the entity's type).
+ */
 function caster(index, has = {}) {
+  Transform.entityType[index] = has.MeshRenderer === true ? TYPE_WITH_MESH : TYPE_CASTER_ONLY;
   const c = new ShadowCaster(index);
   c.owner = { index, _hasComponents: { ShadowCaster: true, ...has } };
   return c;

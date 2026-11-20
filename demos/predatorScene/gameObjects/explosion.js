@@ -1,5 +1,6 @@
 import WEED from '/src/index.js';
 import { ExplosionComponent } from '../components/explosionComponent.js';
+import { Fire } from './fire.js';
 
 const {
   SoundManager,
@@ -10,131 +11,134 @@ const {
   Transform,
   SpriteRenderer,
   LightEmitter,
+  Grid,
   rng,
   randomColor,
-  ShadowCaster,
   enums,
 } = WEED;
 const { ShapeType, DECAL_STAMPS_BLEND_MODE } = enums;
 
+/** tickAll gets the frame's ratio to 60 fps, not its ms: the logic worker's dtRatio is deltaTime / 16.67. */
+const MS_PER_DT_RATIO = 16.67;
+/** The blast's animation rate, frames a second (animationSpeed counts frames per 1/60 s). */
+const ANIMATION_FPS = 40;
+/** How long after the blast its mark is stamped on the floor, ms. */
+const DECAL_DELAY_MS = 100;
+
+// A blast: its collider and light grow to their peak halfway through its animation and shrink to nothing, it hurts what
+// is near it each frame, and it leaves a fire and a mark on the floor. Everything here is static (E-530: Predator written
+// ECS-style): each call takes the entity's index and runs with its class as `this`, and no instance is made for it. Its
+// state is in ExplosionComponent's columns.
 export class Explosion extends GameObject {
-  // Add ExplosionComponent for explosion-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, ExplosionComponent];
 
-  onSpawned(spawnConfig = {}) {
-    const ec = this.explosionComponent;
+  /** LIFECYCLE: explosion i goes off. */
+  static onSpawned(i, spawnConfig = {}) {
+    ExplosionComponent.baseScale[i] = 2;
+    const baseScale = ExplosionComponent.baseScale[i];
+    SpriteRenderer.setScale(i, rng() > 0.5 ? baseScale : -baseScale, baseScale);
 
-    ec.baseScale = 2;
-    this.setScale(rng() > 0.5 ? ec.baseScale : -ec.baseScale, ec.baseScale);
-
-    this.setSpritesheet('explosions');
+    SpriteRenderer.setSpritesheet(i, 'explosions');
     // explosion1 has 10 frames, explosion2 has 12 frames
     const animationType = Math.floor(rng() * 2) + 1;
-    this.setAnimation('explosion' + animationType);
-    ec.frameCount = animationType === 1 ? 10 : 12;
+    SpriteRenderer.setAnimation(i, 'explosion' + animationType);
+    ExplosionComponent.frameCount[i] = animationType === 1 ? 10 : 12;
 
-    ec.originalWidth = this.spriteRenderer.originalWidth;
+    ExplosionComponent.originalWidth[i] = SpriteRenderer.getOriginalWidth(i);
 
-    // Base values for intensity and radius
-    ec.wantedIntensity = 50000;
-    ec.maxRadius = ec.originalWidth * ec.baseScale * 0.5;
+    // Its light's peak strength, and its collider's peak radius: half the sprite's width as drawn
+    ExplosionComponent.wantedIntensity[i] = 50000;
+    ExplosionComponent.maxRadius[i] = ExplosionComponent.originalWidth[i] * baseScale * 0.5;
 
-    ec.flipped = rng() > 0.5 ? 1 : 0;
-    this.collider.shapeType = ShapeType.Circle;
-    this.collider.radius = 1; // Start at 1px
+    ExplosionComponent.flipped[i] = rng() > 0.5 ? 1 : 0;
+    Collider.setShapeType(i, ShapeType.Circle);
+    Collider.setRadius(i, 1); // it starts at 1 px
 
-    this.collider.visualRange = 250; // its neighbours (the blast reads them)
-    this.lightEmitter.shadowRange = 250;
+    Collider.visualRange[i] = 250; // its neighbours (the blast reads them)
+    LightEmitter.shadowRange[i] = 250;
 
-    this.lightEmitter.color = randomColor({
+    LightEmitter.color[i] = randomColor({
       min: 0xffff00,
       max: 0xff9900,
     });
-    this.lightEmitter.radius = 0; // Start dark
-    this.lightEmitter.glow = 0;
-    this.lightEmitter.glowOffsetY = -this.collider.radius * 0.5 * ec.baseScale;
-    this.lightEmitter.active = 1;
-    this.setAlpha(0.6 + rng() * 0.2);
+    LightEmitter.radius[i] = 0; // it starts dark
+    LightEmitter.setGlow(i, 0);
+    LightEmitter.glowOffsetY[i] = -Collider.radius[i] * 0.5 * baseScale;
+    LightEmitter.active[i] = 1;
+    SpriteRenderer.setAlpha(i, 0.6 + rng() * 0.2);
 
-    // Animation at 30fps (animationSpeed is relative to 60fps base, so 30fps = 0.5)
-    const animationFPS = 40;
-    this.setAnimationSpeed(animationFPS / 60);
+    SpriteRenderer.setAnimationSpeed(i, ANIMATION_FPS / 60);
 
-    // Lifespan in ms: frameCount / fps * 1000
-    // explosion1: 10 frames / 30fps = 333.33ms
-    // explosion2: 12 frames / 30fps = 400ms
-    ec.lifespan = (ec.frameCount / animationFPS) * 1000;
-    ec.elapsedTime = 0;
-    ec.justSpawned = 1; // Flag to ensure clean state on first tick
-    SoundManager.play('explosion_corta', 1, 0.9, 1.1, 0, 0, this.x, this.y, 'sfx');
+    // It lasts its animation once: frameCount / fps, in ms (explosion1 250 ms, explosion2 300 ms)
+    ExplosionComponent.lifespan[i] = (ExplosionComponent.frameCount[i] / ANIMATION_FPS) * 1000;
+    ExplosionComponent.elapsedTime[i] = 0;
+    ExplosionComponent.justSpawned[i] = 1; // its first frame starts its time again (see blast)
+    const x = Transform.x[i];
+    const y = Transform.y[i];
+    SoundManager.play('explosion_corta', 1, 0.9, 1.1, 0, 0, x, y, 'sfx');
 
-    setTimeout(() => this.stampDecalToFloor(), 100);
+    // The mark goes down a little after the blast, where it went off: the timer keeps the place, not the index (an
+    // explosion does not move, and its slot may hold another entity by the time a late timer runs).
+    setTimeout(() => this.stampDecalToFloor(x, y), DECAL_DELAY_MS);
   }
 
-  tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
-    const ec = this.explosionComponent;
+  /** Each frame, for the whole type at once: each explosion runs one frame of its blast. */
+  static tickAll(list, count, dtRatio) {
+    const deltaTime = dtRatio * MS_PER_DT_RATIO;
+    for (let k = 0; k < count; k++) this.blast(list[k], deltaTime);
+  }
 
-    // Reset on first tick after spawn to handle pooled object reuse
-    if (ec.justSpawned) {
-      ec.elapsedTime = 0;
-      ec.justSpawned = 0;
+  /** One frame of explosion i, deltaTime ms long; at the end of its life it leaves a fire and goes. */
+  static blast(i, deltaTime) {
+    // A pooled slot's first frame starts from 0, whatever was left in its time
+    if (ExplosionComponent.justSpawned[i]) {
+      ExplosionComponent.elapsedTime[i] = 0;
+      ExplosionComponent.justSpawned[i] = 0;
     }
+    ExplosionComponent.elapsedTime[i] += deltaTime;
 
-    // Accumulate elapsed time in milliseconds (deltaTime is already in ms)
-    ec.elapsedTime += deltaTime;
-
-    // Calculate progress (0 to 1)
-    const progress = Math.min(ec.elapsedTime / ec.lifespan, 1);
-
-    // Use sine curve for smooth interpolation: 0 → 1 (at 50%) → 0
+    // Progress, 0 to 1, and a sine of it: 0 → 1 (at 50 %) → 0
+    const progress = Math.min(ExplosionComponent.elapsedTime[i] / ExplosionComponent.lifespan[i], 1);
     const factor = Math.sin(progress * Math.PI);
 
-    // Update collider radius: 1px → maxRadius (at 50%) → 0
-    // First half: lerp from 1 to maxRadius
-    // Second half: lerp from maxRadius to 0
-    if (progress < 0.5) {
-      // 0% to 50%: grow from 1 to maxRadius
-      const t = progress * 2; // 0 to 1 over first half
-      this.collider.radius = 1 + (ec.maxRadius - 1) * t;
-    } else {
-      // 50% to 100%: shrink from maxRadius to 0
-      const t = (progress - 0.5) * 2; // 0 to 1 over second half
-      this.collider.radius = ec.maxRadius * (1 - t);
-    }
+    // The collider's radius: 1 px → maxRadius (at 50 %) → 0
+    const maxRadius = ExplosionComponent.maxRadius[i];
+    const radius = progress < 0.5 ? 1 + (maxRadius - 1) * (progress * 2) : maxRadius * (1 - (progress - 0.5) * 2);
+    // Box2D's circle follows the blast, so this goes through setRadius (its body mark rebuilds the shape), but only
+    // when the radius changed: a frame that moves no time (a pause) rebuilds nothing.
+    if (Collider.radius[i] !== Math.fround(radius)) Collider.setRadius(i, radius);
 
     // The light's strength s goes 0 → wantedIntensity (at 50%) → 0: its reach is 10·√s, its glow s / 50000.
-    const strength = ec.wantedIntensity * factor;
-    this.lightEmitter.radius = 10 * Math.sqrt(strength);
-    this.lightEmitter.glow = strength / 50000;
+    const strength = ExplosionComponent.wantedIntensity[i] * factor;
+    LightEmitter.radius[i] = 10 * Math.sqrt(strength);
+    LightEmitter.setGlow(i, strength / 50000);
 
     // The glow rises with the blast
-    this.lightEmitter.glowOffsetY = -this.collider.radius * 0.5 * ec.baseScale;
-
-    // Despawn when animation is complete
+    LightEmitter.glowOffsetY[i] = -Collider.radius[i] * 0.5 * ExplosionComponent.baseScale[i];
 
     if (progress >= 1) {
-      Fire.spawn({
-        x: this.x,
-        y: this.y,
-        scale: this.explosionComponent.baseScale * 0.5,
+      Fire.spawnIndex({
+        x: Transform.x[i],
+        y: Transform.y[i],
+        scale: ExplosionComponent.baseScale[i] * 0.5,
       });
-      this.despawn();
-
+      this.despawn(i);
       return;
     }
 
-    // Mark dirty to keep animation advancing
-    this.markDirty();
-    this.emitSparks();
-    this.emitSmoke();
-    this.applyDamage();
+    // Marked dirty to keep its animation advancing
+    SpriteRenderer.markDirty(i);
+    this.emitSparks(i);
+    this.emitSmoke(i);
+    this.applyDamage(i);
   }
 
-  stampDecalToFloor() {
+  /** The blast's mark on the floor at (x, y), multiplied into it. */
+  static stampDecalToFloor(x, y) {
     Decal.stamp({
       texture: 'explosion_decal',
-      x: this.x,
-      y: this.y,
+      x,
+      y,
       alpha: 0.5,
       scaleY: 0.28 + rng() * 0.1,
       scaleX: 0.4 + rng() * 0.2,
@@ -144,38 +148,41 @@ export class Explosion extends GameObject {
     });
   }
 
-  applyDamage() {
-    this.explosionComponent.wantedIntensity;
-    const neighborCount = this.neighborCount;
-    for (let i = 0; i < neighborCount; i++) {
-      const neighbor = this.getNeighbor(i);
-      if (neighbor == -1) continue;
-      // The neighbour's class takes the damage (a Lootable's recieveDamage is static: index first).
+  /** This frame's damage from explosion i to each neighbour that takes damage, falling with the distance squared. */
+  static applyDamage(i) {
+    const wantedIntensity = ExplosionComponent.wantedIntensity[i];
+    // Measured between the colliders' centres
+    const myX = Transform.x[i] + (Collider.offsetX[i] || 0);
+    const myY = Transform.y[i] + (Collider.offsetY[i] || 0);
+    const neighborCount = Grid.getNeighborCount(i);
+    for (let k = 0; k < neighborCount; k++) {
+      const neighbor = Grid.getNeighbor(i, k);
+      // The neighbour's class takes the damage (recieveDamage is static: index first).
       const Neighbor = GameObject.classByType[Transform.entityType[neighbor]];
       if (!Neighbor || typeof Neighbor.recieveDamage !== 'function') continue;
 
-      // Calculate distance on-the-fly (collider positions)
-      const myX = Transform.x[this.index] + (Collider.offsetX[this.index] || 0);
-      const myY = Transform.y[this.index] + (Collider.offsetY[this.index] || 0);
       const neighborX = Transform.x[neighbor] + (Collider.offsetX[neighbor] || 0);
       const neighborY = Transform.y[neighbor] + (Collider.offsetY[neighbor] || 0);
       const dx = neighborX - myX;
       const dy = neighborY - myY;
-      const distSq = dx * dx + dy * dy;
+      // Closer than 1 px counts as 1 px: on the blast's centre the distance is 0, and the damage was infinite. So a
+      // frame does at most wantedIntensity / 50 (1000); from 1 px out it is what it was.
+      const distSq = Math.max(dx * dx + dy * dy, 1);
 
-      const damage = this.explosionComponent.wantedIntensity / (distSq * 50);
+      const damage = wantedIntensity / (distSq * 50);
 
       Neighbor.recieveDamage(neighbor, damage, myX, myY);
     }
   }
 
-  emitSparks() {
-    const radius = this.collider.radius;
+  /** Sparks thrown off explosion i, within its radius, on about 4 frames in 10. */
+  static emitSparks(i) {
+    const radius = Collider.radius[i];
     if (rng() > 0.4) return;
     ParticleEmitter.emit({
       count: Math.floor(rng() * 30) + 10,
-      x: this.x + (rng() * radius - radius * 0.5),
-      y: this.y + (rng() * radius - radius * 0.5),
+      x: Transform.x[i] + (rng() * radius - radius * 0.5),
+      y: Transform.y[i] + (rng() * radius - radius * 0.5),
       z: -radius - rng() * radius,
       angleXY: { min: 0, max: 360 },
       speed: { min: 10, max: 20 },
@@ -191,13 +198,14 @@ export class Explosion extends GameObject {
     });
   }
 
-  emitSmoke() {
+  /** Smoke rising off explosion i, above its radius, on about 3 frames in 10. */
+  static emitSmoke(i) {
     if (rng() > 0.3) return;
-    const radius = this.collider.radius;
+    const radius = Collider.radius[i];
     ParticleEmitter.emit({
       count: Math.floor(rng() * 2) + 1,
-      x: this.x,
-      y: this.y,
+      x: Transform.x[i],
+      y: Transform.y[i],
       angleXY: { min: 0, max: 360 },
       speed: { min: 0, max: 1 },
       vz: -rng() * 2 - 2,
@@ -211,7 +219,6 @@ export class Explosion extends GameObject {
       texture: 'smoke',
       tint: { min: 0xaaaaaa, max: 0x666666 },
       alpha: { from: { min: 0.15, max: 0.3 }, to: 0 },
-
     });
   }
 }

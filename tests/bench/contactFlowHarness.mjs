@@ -68,7 +68,8 @@ export async function createContactWorker(opts) {
     Transform.entityType[i] = t;
     if (t > maxType) maxType = t;
   }
-  worker.collisionListenerByType = new Uint8Array(maxType + 1).fill(1);
+  // Listens, with enter and exit methods of its own (1 | 16 | 32, as _collisionFlagOf sets it for ContactRecorder).
+  worker.collisionListenerByType = new Uint8Array(maxType + 1).fill(1 | 16 | 32);
   // The recorders define onCollisionStay: every type gets its stays (E-146).
   worker.collisionStayByType = new Uint8Array(maxType + 1).fill(1);
   const objects = worker.gameObjects;

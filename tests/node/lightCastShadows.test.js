@@ -26,6 +26,17 @@ function bind() {
   LightEmitter.castShadows.set([1, 0, 1, 0]);
 }
 
+
+/** Flash's static onSpawned on entity 1 (E-536: Flash is written the ECS way), its components' columns bound. */
+async function flashSpawned(config) {
+  const { Flash } = await import('../../src/core/flash.js');
+  const { FlashComponent } = await import('../../src/components/flashComponent.js');
+  const { Transform } = await import('../../src/components/transform.js');
+  if (!FlashComponent.lifespan) FlashComponent.initializeArrays(new SharedArrayBuffer(FlashComponent.getBufferSize(4)), 4);
+  if (!Transform.x || !Transform.entityType) Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(4)), 4);
+  Flash.onSpawned(1, config);
+}
+
 test('a light with castShadows 0 is not one of the shadow stamp\'s lights', async () => {
   bind();
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
@@ -117,58 +128,37 @@ test('E-518: a light off the view casts for the stamp only when its shadows reac
 });
 
 test('Flash.spawn({ castShadows: false }) writes LightEmitter.castShadows 0, and its default casts', async () => {
-  const { Flash } = await import('../../src/core/flash.js');
   bind();
-  const flash = Object.create(Flash.prototype);
-  Object.defineProperty(flash, 'index', { value: 1 });
   const le = new LightEmitter(1);
-  Object.defineProperty(flash, 'lightEmitter', { value: le });
-  Object.defineProperty(flash, 'flashComponent', { value: { set lifespan(v) {}, set currentLife(v) {}, set initialRadius(v) {}, set initialGlow(v) {}, set active(v) {} } });
-  Object.defineProperty(flash, 'x', { set() {}, configurable: true });
-  Object.defineProperty(flash, 'y', { set() {}, configurable: true });
   LightEmitter.castShadows[1] = 1;
-  flash.onSpawned({ x: 0, y: 0, castShadows: false });
+  await flashSpawned({ x: 0, y: 0, castShadows: false });
   assert.equal(LightEmitter.castShadows[1], 0);
-  flash.onSpawned({ x: 0, y: 0 });
+  await flashSpawned({ x: 0, y: 0 });
   assert.equal(LightEmitter.castShadows[1], 1);
 });
 
 test('DX-GLOWRADIUS: Flash.spawn({ glowRadius }) gives the flash a halo of its own size; a later spawn without one is the wide one', async () => {
-  const { Flash } = await import('../../src/core/flash.js');
   bind();
   LightEmitter.glowRadius = new Float32Array(4);
-  const flash = Object.create(Flash.prototype);
-  Object.defineProperty(flash, 'index', { value: 1 });
   const le = new LightEmitter(1);
-  Object.defineProperty(flash, 'lightEmitter', { value: le });
-  Object.defineProperty(flash, 'flashComponent', { value: { set lifespan(v) {}, set currentLife(v) {}, set initialRadius(v) {}, set initialGlow(v) {}, set active(v) {} } });
-  Object.defineProperty(flash, 'x', { set() {}, configurable: true });
-  Object.defineProperty(flash, 'y', { set() {}, configurable: true });
-  flash.onSpawned({ x: 0, y: 0, glowRadius: 24 });
+  await flashSpawned({ x: 0, y: 0, glowRadius: 24 });
   assert.equal(LightEmitter.glowRadius[1], 24);
-  flash.onSpawned({ x: 0, y: 0 });
+  await flashSpawned({ x: 0, y: 0 });
   assert.equal(LightEmitter.glowRadius[1], 0, 'a pooled flash does not keep the last one\'s halo');
 });
 
 test('DX-SPOT: Flash.spawn({ coneAngle, coneSoftness, direction }) gives the flash a cone; a later spawn without one is round', async () => {
-  const { Flash } = await import('../../src/core/flash.js');
   bind();
   for (const [k, T] of Object.entries({ dirC: Float32Array, dirS: Float32Array, coneHalf: Float32Array, coneSoftness: Float32Array, coneCos: Float32Array, coneInvSpan: Float32Array, followFlip: Uint8Array })) {
     LightEmitter[k] = new T(4);
   }
-  const flash = Object.create(Flash.prototype);
-  Object.defineProperty(flash, 'index', { value: 1 });
   const le = new LightEmitter(1);
-  Object.defineProperty(flash, 'lightEmitter', { value: le });
-  Object.defineProperty(flash, 'flashComponent', { value: { set lifespan(v) {}, set currentLife(v) {}, set initialRadius(v) {}, set initialGlow(v) {}, set active(v) {} } });
-  Object.defineProperty(flash, 'x', { set() {}, configurable: true });
-  Object.defineProperty(flash, 'y', { set() {}, configurable: true });
-  flash.onSpawned({ x: 0, y: 0, coneAngle: Math.PI / 2, coneSoftness: 0.5, direction: Math.PI / 3 });
+  await flashSpawned({ x: 0, y: 0, coneAngle: Math.PI / 2, coneSoftness: 0.5, direction: Math.PI / 3 });
   assert.equal(LightEmitter.coneCos[1], Math.fround(Math.cos(Math.PI / 4)));
   assert.equal(LightEmitter.dirC[1], Math.fround(Math.cos(Math.PI / 3)));
   assert.equal(LightEmitter.dirS[1], Math.fround(Math.sin(Math.PI / 3)));
   assert.ok(Math.abs(le.coneSoftness - 0.5) < 1e-7);
-  flash.onSpawned({ x: 0, y: 0 });
+  await flashSpawned({ x: 0, y: 0 });
   assert.equal(LightEmitter.coneCos[1], -2, 'round again');
   assert.equal(LightEmitter.dirC[1], 1);
   assert.equal(LightEmitter.dirS[1], 0);

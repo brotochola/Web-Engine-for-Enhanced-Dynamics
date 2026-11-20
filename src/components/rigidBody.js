@@ -6,11 +6,36 @@
 import { Component } from '../core/component.js';
 import { Collider } from './collider.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
-import { Transform } from './transform.js';
+import { Transform as TransformImport, componentBitsAt as componentBitsAtImport } from './transform.js';
 import { updateMassFromCircle, updateMassFromBox } from '../util/utils.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 import { lateBodyWrite, massFromCollider, massSetByHand } from '../core/debug/devChecks.js';
+import { SETTER_ARGS as SETTER_ARGSImport, SETTER_ARGS64 as SETTER_ARGS64Import } from '../core/setterArgs.js';
+import { HAS_BODY as HAS_BODYImport } from '../core/entityTypes.js';
+import {
+  enqueueSetAngularVelocity as enqueueSetAngularVelocityImport,
+  enqueueSetAwake as enqueueSetAwakeImport,
+  enqueueSetFixedRotation as enqueueSetFixedRotationImport,
+  enqueueSetSleepThreshold as enqueueSetSleepThresholdImport,
+  enqueueSetVelocity as enqueueSetVelocityImport,
+  isCommandRingBound as isCommandRingBoundImport,
+} from '../box2d/box2dCommandRing.js';
+
+// E-474: the setters' imports as module consts, which TurboFan folds (an import is a cell it loads and hole-checks at
+// each use). This module is in gameObject.js's import cycle (it imports utils.js, which imports gameObject.js); these
+// exporters are not (importAliases.test.js).
+const Transform = TransformImport;
+const componentBitsAt = componentBitsAtImport;
+const SETTER_ARGS = SETTER_ARGSImport;
+const SETTER_ARGS64 = SETTER_ARGS64Import;
+const HAS_BODY = HAS_BODYImport;
+const enqueueSetAngularVelocity = enqueueSetAngularVelocityImport;
+const enqueueSetAwake = enqueueSetAwakeImport;
+const enqueueSetFixedRotation = enqueueSetFixedRotationImport;
+const enqueueSetSleepThreshold = enqueueSetSleepThresholdImport;
+const enqueueSetVelocity = enqueueSetVelocityImport;
+const isCommandRingBound = isCommandRingBoundImport;
 
 let _warnedDynamicChain = false;
 /**
@@ -271,13 +296,7 @@ export class RigidBody extends Component {
     return RigidBody.active[this.index];
   }
   set active(value) {
-    const next = value ? 1 : 0;
-    if (RigidBody.active[this.index] === next) return;
-    RigidBody.active[this.index] = next;
-    markBodyDirty(
-      this.index,
-      BODY_DIRTY.LIFECYCLE | BODY_DIRTY.BODY_TYPE | BODY_DIRTY.MASS,
-    );
+    RigidBody.setActive(this.index, value);
   }
 
   /**
@@ -291,47 +310,34 @@ export class RigidBody extends Component {
     return RigidBody.static[this.index];
   }
   set static(value) {
-    // 1. Store the static value
-    RigidBody.static[this.index] = value ? 1 : 0;
-
-    // 2. Re-sync from collider geometry; static bodies preserve invMass = 0.
-    RigidBody.syncMassFromCollider(this.index);
-    markBodyDirty(this.index, BODY_DIRTY.BODY_TYPE);
+    // A RigidBody's own: no component check (RigidBody.setStatic, by type, checks).
+    bodyStaticAt(this.index, HAS_BODY, value);
   }
 
   get linearDamping() {
     return RigidBody.linearDamping[this.index];
   }
   set linearDamping(value) {
-    RigidBody.linearDamping[this.index] = Math.max(0, Number(value) || 0);
-    markBodyDirty(this.index, BODY_DIRTY.DAMPING);
+    RigidBody.setLinearDamping(this.index, value);
   }
 
   get angularDamping() {
     return RigidBody.angularDamping[this.index];
   }
   set angularDamping(value) {
-    RigidBody.angularDamping[this.index] = Math.max(0, Number(value) || 0);
-    markBodyDirty(this.index, BODY_DIRTY.DAMPING);
+    RigidBody.setAngularDamping(this.index, value);
   }
 
   get sleepThreshold() {
     return RigidBody.sleepThreshold[this.index];
   }
   set sleepThreshold(value) {
-    const v = Math.max(0, Number(value) || 0);
-    RigidBody.sleepThreshold[this.index] = v;
-    if (typeof globalThis.Box2dCommandRing?.enqueueSetSleepThreshold === 'function') {
-      globalThis.Box2dCommandRing.enqueueSetSleepThreshold(this.index, v);
-    }
+    RigidBody.setSleepThreshold(this.index, value);
   }
 
   /**
-   * Mass — keeps invMass + rotational inertia in sync when set at runtime.
-   */
-  /**
-   * The column only: once the body is made, GameObject.setFixedRotation (or this.fixedRotation = v on the entity) is
-   * what reaches Box2D (DX-GUARDS E3 names a write here then).
+   * The column only: once the body is made, GameObject.setFixedRotation (or this.fixedRotation = v on the entity, or
+   * RigidBody.setFixedRotation(i, on)) is what reaches Box2D (DX-GUARDS E3 names a write here then).
    */
   get fixedRotation() {
     return RigidBody.fixedRotation[this.index];
@@ -356,18 +362,12 @@ export class RigidBody extends Component {
     if (index < massByHand.length) massByHand[index] = 0;
   }
 
+  /** Mass: keeps invMass and the rotational inertia in sync when set at runtime (RigidBody.setMass). */
   get mass() {
     return RigidBody.mass[this.index];
   }
   set mass(value) {
-    const m = value > 0 ? value : 0;
-    RigidBody.mass[this.index] = m;
-    RigidBody.markMassByHand(this.index);
-    massSetByHand(this.index);
-    const isStatic = RigidBody.static[this.index] !== 0;
-    RigidBody.invMass[this.index] = isStatic || !(m > 0) ? 0 : 1 / m;
-    RigidBody.syncInertiaFromCollider(this.index, -1, isStatic);
-    markBodyDirty(this.index, BODY_DIRTY.MASS);
+    RigidBody.setMass(this.index, value);
   }
 
   get inertia() {
@@ -427,21 +427,161 @@ export class RigidBody extends Component {
     if (ring && ring.isCommandRingBound()) ring.enqueueApplyAngularImpulse(index, impulse);
   }
 
+  // ─── Motion and body settings by index (E-533) ───────────────────────────
+  // What the entity's methods and setters do (entity.setVelocity, entity.vx = v, entity.isStatic = on, ...), without an
+  // instance (a static tickAll, a static hook): the columns, and Box2D's body through the command ring or its dirty
+  // marks. The entity's methods do the same work through the functions below the class; an entity with no RigidBody
+  // is left alone, as by the entity's (its type's components, entityTypes.js). The doubles go through SETTER_ARGS
+  // (N-215; SETTER_ARGS64 where the work computes with them): each static stays small enough for TurboFan to inline it,
+  // and the work takes ints only. A velocity that is the same again (as float32, the columns' type: N-170) sends
+  // nothing.
+
   /**
-   * Set the velocity (px/s), as entity.setVelocity(vx, vy) does, without an instance (a static tickAll or hook): the
-   * columns, and Box2D's body on its next step. The same velocity again (as float32, the columns' type) sends nothing.
+   * entity.setVelocity(vx, vy) by index: the columns, and Box2D's body on its next step.
    * @param {number} index - entity index
-   * @param {number} vx
-   * @param {number} vy
+   * @param {number} vx - px/s
+   * @param {number} vy - px/s
    */
   static setVelocity(index, vx, vy) {
-    const fx = Math.fround(vx);
-    const fy = Math.fround(vy);
-    if (RigidBody.vx[index] === fx && RigidBody.vy[index] === fy) return;
-    RigidBody.vx[index] = fx;
-    RigidBody.vy[index] = fy;
-    const ring = globalThis.Box2dCommandRing;
-    if (ring && ring.isCommandRingBound()) ring.enqueueSetVelocity(index, fx, fy);
+    const a = SETTER_ARGS;
+    a[0] = vx;
+    a[1] = vy;
+    velocityAt(index, componentBitsAt(index));
+  }
+
+  /** entity.vx = vx by index (px/s). @param {number} index @param {number} vx */
+  static setVx(index, vx) {
+    SETTER_ARGS[0] = vx;
+    vxAt(index, componentBitsAt(index));
+  }
+
+  /** entity.vy = vy by index (px/s). @param {number} index @param {number} vy */
+  static setVy(index, vy) {
+    SETTER_ARGS[0] = vy;
+    vyAt(index, componentBitsAt(index));
+  }
+
+  /** entity.angularVelocity = w by index (rad/s). @param {number} index @param {number} w */
+  static setAngularVelocity(index, w) {
+    SETTER_ARGS[0] = w;
+    angularVelocityAt(index, componentBitsAt(index));
+  }
+
+  /**
+   * entity.addVelocity(dvx, dvy) by index: a kick that ignores mass (px/s).
+   * @param {number} index
+   * @param {number} dvx
+   * @param {number} dvy
+   */
+  static addVelocity(index, dvx, dvy) {
+    const a = SETTER_ARGS64;
+    a[0] = dvx;
+    a[1] = dvy;
+    addVelocityAt(index, componentBitsAt(index));
+  }
+
+  /** entity.scaleVelocity(factor) by index (0.95: 5 % slower). @param {number} index @param {number} factor */
+  static scaleVelocity(index, factor) {
+    SETTER_ARGS64[0] = factor;
+    scaleVelocityAt(index, componentBitsAt(index));
+  }
+
+  /**
+   * entity.addAcceleration(ax, ay) by index (px/s²): it holds until the body's next tick, as the entity's does.
+   * @param {number} index
+   * @param {number} ax
+   * @param {number} ay
+   */
+  static addAcceleration(index, ax, ay) {
+    const a = SETTER_ARGS64;
+    a[0] = ax;
+    a[1] = ay;
+    accelerationAt(index, componentBitsAt(index));
+  }
+
+  /**
+   * entity.accelerateTowards(x, y, acc) by index: acc px/s² towards the world point (x, y), nothing within 1 px of it.
+   * @param {number} index
+   * @param {number} x
+   * @param {number} y
+   * @param {number} acc
+   */
+  static accelerateTowards(index, x, y, acc) {
+    const a = SETTER_ARGS64;
+    a[0] = x;
+    a[1] = y;
+    a[2] = acc;
+    accelerateTowardsAt(index, componentBitsAt(index));
+  }
+
+  /**
+   * entity.setFixedRotation(on) by index: lock or unlock the body's turn (the column, and Box2D's body once made).
+   * @param {number} index
+   * @param {number | boolean} on
+   */
+  static setFixedRotation(index, on) {
+    fixedRotationAt(index, componentBitsAt(index), on);
+  }
+
+  /**
+   * entity.isStatic = on by index: the body's type (Box2D static or dynamic), its mass synced from the collider. Not the
+   * class's `static isStatic` (static scenery).
+   * @param {number} index
+   * @param {number | boolean} on
+   */
+  static setStatic(index, on) {
+    bodyStaticAt(index, componentBitsAt(index), on);
+  }
+
+  /** entity.setAwake(awake) by index: wake (or put to sleep) Box2D's body. @param {number} index @param {boolean} [awake] */
+  static setAwake(index, awake = true) {
+    awakeAt(index, componentBitsAt(index), awake);
+  }
+
+  /**
+   * rigidBody.active = on by index: off with a Collider still on leaves an implicit static body with the shape.
+   * @param {number} index
+   * @param {number | boolean} on
+   */
+  static setActive(index, on) {
+    const next = on ? 1 : 0;
+    if (RigidBody.active[index] === next) return;
+    RigidBody.active[index] = next;
+    markBodyDirty(index, BODY_DIRTY.LIFECYCLE | BODY_DIRTY.BODY_TYPE | BODY_DIRTY.MASS);
+  }
+
+  /** rigidBody.linearDamping = d by index (0 or more). @param {number} index @param {number} d */
+  static setLinearDamping(index, d) {
+    RigidBody.linearDamping[index] = Math.max(0, Number(d) || 0);
+    markBodyDirty(index, BODY_DIRTY.DAMPING);
+  }
+
+  /** rigidBody.angularDamping = d by index (0 or more). @param {number} index @param {number} d */
+  static setAngularDamping(index, d) {
+    RigidBody.angularDamping[index] = Math.max(0, Number(d) || 0);
+    markBodyDirty(index, BODY_DIRTY.DAMPING);
+  }
+
+  /**
+   * rigidBody.sleepThreshold = t by index: the speed (px/s) under which Box2D lets the body sleep, 0 its default.
+   * @param {number} index
+   * @param {number} t
+   */
+  static setSleepThreshold(index, t) {
+    const v = Math.max(0, Number(t) || 0);
+    RigidBody.sleepThreshold[index] = v;
+    enqueueSetSleepThreshold(index, v);
+  }
+
+  /**
+   * rigidBody.mass = m by index: invMass and the rotational inertia follow; the spawn's sync from the collider keeps a
+   * mass set by hand (N-132).
+   * @param {number} index
+   * @param {number} m
+   */
+  static setMass(index, m) {
+    SETTER_ARGS64[0] = m;
+    massAt(index);
   }
 
   applyForce(fx, fy, atX, atY) {
@@ -459,6 +599,175 @@ export class RigidBody extends Component {
   applyAngularImpulse(impulse) {
     RigidBody.applyAngularImpulse(this.index, impulse);
   }
+}
+
+/**
+ * E-474: the class as a module const for the work below and the statics above. TurboFan folds a module const; a module
+ * function reads an exported class through its export cell, a load and a hole check at each use.
+ */
+const RigidBodyClass = RigidBody;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// E-533: the motion work, by entity index and the entity's component bits (entityTypes.js): what RigidBody.setVx and
+// its siblings run, and what the entity's methods and setters run (with the bits on their class's prototype,
+// this._componentBits). Ints only: each reads its values from SETTER_ARGS (or SETTER_ARGS64) first, before it calls
+// anything. Nothing without a RigidBody (HAS_BODY).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** set vx's work, the velocity in SETTER_ARGS[0]. @param {number} i @param {number} bits */
+export function vxAt(i, bits) {
+  const vx = SETTER_ARGS[0];
+  if ((bits & HAS_BODY) === 0) return;
+  const B = RigidBodyClass;
+  if (B.vx[i] === vx) return;
+  B.vx[i] = vx;
+  if (isCommandRingBound()) enqueueSetVelocity(i, vx, B.vy[i]);
+}
+
+/** set vy's work, the velocity in SETTER_ARGS[0]. @param {number} i @param {number} bits */
+export function vyAt(i, bits) {
+  const vy = SETTER_ARGS[0];
+  if ((bits & HAS_BODY) === 0) return;
+  const B = RigidBodyClass;
+  if (B.vy[i] === vy) return;
+  B.vy[i] = vy;
+  if (isCommandRingBound()) enqueueSetVelocity(i, B.vx[i], vy);
+}
+
+/** set angularVelocity's work, the velocity in SETTER_ARGS[0]. @param {number} i @param {number} bits */
+export function angularVelocityAt(i, bits) {
+  const w = SETTER_ARGS[0];
+  if ((bits & HAS_BODY) === 0) return;
+  const B = RigidBodyClass;
+  if (B.angularVelocity[i] === w) return;
+  B.angularVelocity[i] = w;
+  if (isCommandRingBound()) enqueueSetAngularVelocity(i, w);
+}
+
+/** setVelocity's work, vx and vy in SETTER_ARGS. @param {number} i @param {number} bits */
+export function velocityAt(i, bits) {
+  const vx = SETTER_ARGS[0];
+  const vy = SETTER_ARGS[1];
+  if ((bits & HAS_BODY) === 0) return;
+  const B = RigidBodyClass;
+  if (B.vx[i] === vx && B.vy[i] === vy) return;
+  B.vx[i] = vx;
+  B.vy[i] = vy;
+  if (isCommandRingBound()) enqueueSetVelocity(i, vx, vy);
+}
+
+/** addVelocity's work, dvx and dvy in SETTER_ARGS64 (the sum of the column and the double given). */
+export function addVelocityAt(i, bits) {
+  const dvx = SETTER_ARGS64[0];
+  const dvy = SETTER_ARGS64[1];
+  if ((bits & HAS_BODY) === 0) return;
+  const vx = RigidBodyClass.vx;
+  const vy = RigidBodyClass.vy;
+  vx[i] += dvx;
+  vy[i] += dvy;
+  if (isCommandRingBound()) enqueueSetVelocity(i, vx[i], vy[i]);
+}
+
+/** scaleVelocity's work, the factor in SETTER_ARGS64[0]. @param {number} i @param {number} bits */
+export function scaleVelocityAt(i, bits) {
+  const factor = SETTER_ARGS64[0];
+  if ((bits & HAS_BODY) === 0) return;
+  const vx = RigidBodyClass.vx;
+  const vy = RigidBodyClass.vy;
+  vx[i] *= factor;
+  vy[i] *= factor;
+  if (isCommandRingBound()) enqueueSetVelocity(i, vx[i], vy[i]);
+}
+
+/**
+ * addAcceleration's work, ax and ay in SETTER_ARGS64. N-290: RigidBody.sleeping is physics' paint of Box2D's sleep,
+ * not a request: physics wakes a sleeping body that has an acceleration only where its paint still says asleep
+ * (bodies_apply_accelerations), so a 0 stored here before physics' turn kept the body asleep and lost the
+ * acceleration. Physics paints and clears that byte every step on its own core, so a store also took the line from it
+ * every call (E-434).
+ * @param {number} i
+ * @param {number} bits
+ */
+export function accelerationAt(i, bits) {
+  const ax = SETTER_ARGS64[0];
+  const ay = SETTER_ARGS64[1];
+  if ((bits & HAS_BODY) === 0) return;
+  RigidBodyClass.ax[i] += ax;
+  RigidBodyClass.ay[i] += ay;
+}
+
+/** accelerateTowards' work, x, y and acc in SETTER_ARGS64. @param {number} i @param {number} bits */
+export function accelerateTowardsAt(i, bits) {
+  const x = SETTER_ARGS64[0];
+  const y = SETTER_ARGS64[1];
+  const acc = SETTER_ARGS64[2];
+  if ((bits & HAS_BODY) === 0) return;
+  const dx = x - Transform.x[i];
+  const dy = y - Transform.y[i];
+  const distSq = dx * dx + dy * dy;
+  // Within 1 px: no direction worth the division.
+  if (distSq > 1) {
+    const factor = acc / Math.sqrt(distSq);
+    RigidBodyClass.ax[i] += dx * factor;
+    RigidBodyClass.ay[i] += dy * factor;
+  }
+}
+
+/**
+ * setFixedRotation's work: the column, and Box2D's body through the ring (a write to the column alone, as
+ * rigidBody.fixedRotation = v does, reaches Box2D only when the body is made).
+ * @param {number} i
+ * @param {number} bits
+ * @param {number | boolean} on
+ */
+export function fixedRotationAt(i, bits, on) {
+  if ((bits & HAS_BODY) === 0) return;
+  const v = on ? 1 : 0;
+  RigidBodyClass.fixedRotation[i] = v;
+  if (isCommandRingBound()) enqueueSetFixedRotation(i, v);
+}
+
+/**
+ * The body's type (entity.isStatic = on, rigidBody.static = on): static bodies keep invMass 0, and the mass is synced
+ * from the collider again.
+ * @param {number} i
+ * @param {number} bits
+ * @param {number | boolean} on
+ */
+export function bodyStaticAt(i, bits, on) {
+  if ((bits & HAS_BODY) === 0) return;
+  RigidBodyClass.static[i] = on ? 1 : 0;
+  RigidBody.syncMassFromCollider(i);
+  markBodyDirty(i, BODY_DIRTY.BODY_TYPE);
+}
+
+/**
+ * setAwake's work: the sleeping paint at once, and Box2D's body through the ring (writing RigidBody.sleeping alone
+ * does not change the solver).
+ * @param {number} i
+ * @param {number} bits
+ * @param {boolean} awake
+ */
+export function awakeAt(i, bits, awake) {
+  if ((bits & HAS_BODY) === 0) return;
+  const on = awake ? 1 : 0;
+  const sleeping = RigidBodyClass.sleeping;
+  if (sleeping) sleeping[i] = on ? 0 : 1;
+  if (isCommandRingBound()) enqueueSetAwake(i, on);
+}
+
+/** rigidBody.mass's work, the mass in SETTER_ARGS64[0] (its inverse is of the double given). @param {number} i */
+function massAt(i) {
+  const value = SETTER_ARGS64[0];
+  const m = value > 0 ? value : 0;
+  const B = RigidBodyClass;
+  B.mass[i] = m;
+  RigidBody.markMassByHand(i);
+  massSetByHand(i);
+  const isStatic = B.static[i] !== 0;
+  B.invMass[i] = isStatic || !(m > 0) ? 0 : 1 / m;
+  RigidBody.syncInertiaFromCollider(i, -1, isStatic);
+  markBodyDirty(i, BODY_DIRTY.MASS);
 }
 
 /** World centre of mass scratch for applyForce at a point (no allocation). */

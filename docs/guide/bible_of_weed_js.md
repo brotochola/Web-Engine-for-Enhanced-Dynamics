@@ -242,10 +242,11 @@ class Leaf extends GameObject {
 
 ### Objects or ECS: one entity, two ways to write it
 
-Every entity can be written as objects (methods on the instance, `this` the entity) or ECS-style (statics that take the entity's index, `this` the class, the state read and written in the components' columns). The engine runs both the same, and one class may mix them. The ECS way makes no instance for what it runs, and it walks the columns instead of one object per entity: Predator's people written that way (`tickAll`, FSM states by index, static damage hooks) cut its logic from 11.4 to 8.2 ms a frame (40 000 people on one logic worker, −28 %).
+Every entity can be written as objects (methods on the instance, `this` the entity) or ECS-style (statics that take the entity's index, `this` the class, the state read and written in the components' columns). The engine runs both the same, and one class may mix them. The ECS way makes no instance for what it runs, and it walks the columns instead of one object per entity: Predator's people written that way (`tickAll`, FSM states by index, static damage hooks) cut its logic from 11.4 to 8.2 ms a frame (40 000 people on one logic worker, −28 %). Written that way end to end (every entity, its spawns with `spawnIndex`), Predator makes no entity instance at all, and its threads hold 35 % less JS heap (49.6 → 32.1 MB).
 
 | What | Objects | ECS |
 |---|---|---|
+| Spawn | `const e = Enemy.spawn({ x, y })` (the entity, or null) | `const i = Enemy.spawnIndex({ x, y })` (its index, or -1; no instance) |
 | Each frame | `tick(dtRatio)` | `static tickAll(list, count, dtRatio)` |
 | A hook | `onGotShot(damage, x, y)` | `static onGotShot(i, damage, x, y)` |
 | A component's value | `this.x`, `this.rigidBody.vx` | `Transform.x[i]`, `RigidBody.vx[i]` |
@@ -253,10 +254,16 @@ Every entity can be written as objects (methods on the instance, `this` the enti
 | Set the velocity | `this.setVelocity(vx, vy)` | `RigidBody.setVelocity(i, vx, vy)` |
 | A force or an impulse | `this.applyForce(fx, fy)` | `RigidBody.applyForce(i, fx, fy)` |
 | The animation's rate | `this.setAnimationSpeed(s)` | `SpriteRenderer.setAnimationSpeed(i, s)` |
+| The sprite, its animation, its look | `this.setAnimation('walk')`, `this.setTint(c)`, `this.setAlpha(a)` | `SpriteRenderer.setAnimation(i, 'walk')`, `SpriteRenderer.setTint(i, c)`, `SpriteRenderer.setAlpha(i, a)` |
+| The collider's size | `this.collider.radius = r` | `Collider.setRadius(i, r)` (a write to `Collider.radius[i]` does not reach Box2D) |
+| Where it faces | `this.directionalSprite.facing = a` | `DirectionalSprite.setFacing(i, a)` |
+| A muzzle flash | `Flash.spawn({ x, y })` | `Flash.spawnIndex({ x, y })` |
+| Do something later | `setTimeout(() => this.open(), 500)` | a column with the time it is due, on the scene's clock (`Time.simNowMs`), checked in `tickAll` |
 | Neighbours | `this.neighborCount`, `this.getNeighbor(k)` | `Grid.getNeighborCount(i)`, `Grid.getNeighbor(i, k)`; in a hot loop the row itself (below) |
-| Its FSMs | `this.walkFSM.tick(dtRatio, this)` | `FSM.tickAll(list, count, dtRatio, this)` |
+| Its FSMs | `this.walkFSM.tick(dtRatio)` | `FSM.tickAll(list, count, dtRatio, this)` |
 | Ask an FSM for a state | `this.walkFSM.changeState(WalkFSM.states.RUN)` | `WalkFSM.changeState(i, WalkFSM.states.RUN)` |
 | The class's tuning | `this.constructor.speed` | `this.speed` (in a static), or `GameObject.classByType[Transform.entityType[i]].speed` |
+| The scene's config | `this.config` | `this.config` (in a static), `GameObject.config` |
 | End it | `this.despawn()` | `this.despawn(i)` (in a static) |
 
 ```javascript
@@ -266,8 +273,8 @@ const { GameObject, RigidBody, Collider, Transform, Grid } = WEED;
 class Walker extends GameObject {
   static components = [RigidBody, Collider];
   static repel = 200; // px/s², the class's tuning: `this.repel` in its statics
-  onSpawned() {
-    this.collider.visualRange = 60; // spawn makes the instance it returns: setup through it costs nothing more
+  static onSpawned(i) {
+    Collider.visualRange[i] = 60; // a static: spawnIndex makes no instance (a method onSpawned would make one)
   }
   static tickAll(list, count, dtRatio) {
     for (let k = 0; k < count; k++) {
@@ -290,27 +297,27 @@ class Walker extends GameObject {
 }
 ```
 
-What still makes an instance on the ECS way: a spawn returns one (its config keys go through its setters, on the thread that spawns it); an FSM hands its states the instance as `owner` (`FSM.tickAll` makes it on an entity's first tick; a state that works by `i` alone never touches it); and the setters with no static form yet (`setAnimation`, `setSprite`, `setTint`, `setScale`, a DirectionalSprite's `facing`) go through `this.get(i)` in a static, which makes it where it is first used.
+What makes an instance on the ECS way: nothing it calls. `spawnIndex` sets the entity up by index (the config's engine keys through the component statics, a static `onSpawned(i, config)` for the rest; a class whose `onSpawned` is a method gets the instance that method runs on), FSM states get the index, every entity method has its component's static by index (`SpriteRenderer.setAlpha(i, a)`, `Collider.setRadius(i, r)`, `RigidBody.setVelocity(i, vx, vy)`, `Transform.setPosition(i, x, y)`), and `GameObject.get(i)` makes the instance where code asks for it.
 
 ### State machines (`FSM`)
 
-An `FSM` is a component: its columns hold each entity's state, its time in that state and the state it asked to go to. Its states are classes of statics (`FSMState`): `onEnter(owner, i, fromState)`, `onExit(owner, i, toState)` and `onUpdate(owner, i, dt, timeInState)`, with `owner` the entity, `i` its index, `timeInState` in whole milliseconds and `this` the state class (`this.fsm` its FSM). A state asks for another with `this.fsm.changeState(i, this.fsm.states.NAME)`; the change happens at the start of that entity's next tick, which calls the old state's `onExit`, then the new one's `onEnter`, then its `onUpdate`. A spawn puts each FSM in its `initial` state and calls that state's `onEnter`.
+An `FSM` is a component: its columns hold each entity's state, its time in that state and the state it asked to go to. Its states are classes of statics (`FSMState`): `onEnter(i, fromState)`, `onExit(i, toState)` and `onUpdate(i, dt, timeInState)`, with `i` the entity's index, `timeInState` in whole milliseconds and `this` the state class (`this.fsm` its FSM). A state gets no instance: it reads and writes the entity's components by `i` (`Transform.x[i]`, `RigidBody.ax[i]`), and one that wants the instance asks `GameObject.get(i)`. So FSMs make no instance, whether their type is written as objects or ECS-style. A state asks for another with `this.fsm.changeState(i, this.fsm.states.NAME)`; the change happens at the start of that entity's next tick, which calls the old state's `onExit`, then the new one's `onEnter`, then its `onUpdate`. A spawn puts each FSM in its `initial` state and calls that state's `onEnter`.
 
-A type that lists FSMs and has no `tick()` (and no `static tickAll`) needs nothing more: the logic workers tick its FSMs each frame through `FSM.tickAll`, entity by entity, and an entity's FSMs in its components order. A type with more to do runs them itself, from `tick()` with `this.guardFSM.tick(dtRatio, this)`, or from its `static tickAll` with `FSM.tickAll(list, count, dtRatio, this)` (`GuardFSM.tickAll(…)` ticks that FSM alone). The calls are the same either way. Without a `tick()`, the type ticks as a `tickAll` type does (see Performance Notes): after the types with `tick()`, at its `tickInterval` with `logic.staggeredUpdates` (time in state counts the interval's frames), and its screen hooks run after the ticks.
+A type that lists FSMs and has no `tick()` (and no `static tickAll`) needs nothing more: the logic workers tick its FSMs each frame through `FSM.tickAll`, entity by entity, and an entity's FSMs in its components order. A type with more to do runs them itself, from `tick()` with `this.guardFSM.tick(dtRatio)`, or from its `static tickAll` with `FSM.tickAll(list, count, dtRatio, this)` (`GuardFSM.tickAll(…)` ticks that FSM alone). The calls are the same either way. Without a `tick()`, the type ticks as a `tickAll` type does (see Performance Notes): after the types with `tick()`, at its `tickInterval` with `logic.staggeredUpdates` (time in state counts the interval's frames), and its screen hooks run after the ticks.
 
 ```javascript
-const { GameObject, FSM, FSMState, SpriteRenderer } = WEED;
+const { GameObject, FSM, FSMState, SpriteRenderer, Transform } = WEED;
 
 // A guard rests 2 s, walks right for 3 s, and again.
 class Resting extends FSMState {
-  static onUpdate(owner, i, dt, timeInState) {
+  static onUpdate(i, dt, timeInState) {
     if (timeInState > 2000) this.fsm.changeState(i, this.fsm.states.WALKING);
   }
 }
 
 class Walking extends FSMState {
-  static onUpdate(owner, i, dt, timeInState) {
-    owner.x += 2 * dt;
+  static onUpdate(i, dt, timeInState) {
+    Transform.x[i] += 2 * dt;
     if (timeInState > 3000) this.fsm.changeState(i, this.fsm.states.RESTING);
   }
 }

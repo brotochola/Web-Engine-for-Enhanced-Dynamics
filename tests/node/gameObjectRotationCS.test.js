@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import assert from 'node:assert/strict';
 
 import { GameObject } from '../../src/core/gameObject.js';
@@ -16,6 +17,7 @@ function entity(index, hasBody, components = hasBody ? { RigidBody: true } : {})
   const go = Object.create(GameObject.prototype);
   go.index = index;
   go._hasComponents = components;
+  go._componentBits = bitsOfFlags(go._hasComponents);
   return go;
 }
 

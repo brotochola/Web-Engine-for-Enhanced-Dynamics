@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -14,6 +15,7 @@ import {
 } from '../../src/box2d/box2dCommandRing.js';
 import { bindPoseColumns } from '../bench/workerHarness.mjs';
 import { GameObject } from '../../src/core/gameObject.js';
+import { clearEntityTypes, noteEntityType } from '../../src/core/entityTypes.js';
 
 // DX 2: applyForce / applyTorque hold until the body's next tick, through the
 // ax / ay / angularAccel columns the physics worker already turns into a force
@@ -158,6 +160,17 @@ test('impulses are commands: point or centre, linear or angular, in order', () =
 
 test('RigidBody.setVelocity writes the columns and sends Box2D the velocity once, as entity.setVelocity does', () => {
   setup();
+  // E-533: the static reads the entity's components by its type, as entity.setVelocity reads its class's.
+  class Crate {
+    static components = [RigidBody, Collider];
+  }
+  class Marker {
+    static components = [];
+  }
+  noteEntityType(5, Crate);
+  noteEntityType(6, Marker);
+  Transform.entityType.fill(5);
+  Transform.entityType[0] = 6;
   const sab = createCommandRingSab(64);
   bindCommandRing(sab);
   try {
@@ -166,8 +179,10 @@ test('RigidBody.setVelocity writes the columns and sends Box2D the velocity once
     RigidBody.setVelocity(3, 0, 0); // already still: nothing
     RigidBody.setVelocity(2, 0.1, 0.2);
     RigidBody.setVelocity(2, 0.1, 0.2); // not float32 numbers: the same once stored as float32
+    RigidBody.setVelocity(0, 5, 5); // no RigidBody: nothing, as entity.setVelocity
     assert.equal(RigidBody.vx[1], 30);
     assert.equal(RigidBody.vy[1], -40);
+    assert.equal(RigidBody.vx[0], 0);
     const calls = [];
     drainCommandRing(new Int32Array(sab), new Float32Array(sab), {
       setVelocity: (e, vx, vy) => calls.push([e, vx, vy]),
@@ -175,6 +190,7 @@ test('RigidBody.setVelocity writes the columns and sends Box2D the velocity once
     assert.deepEqual(calls, [[1, 30, -40], [2, Math.fround(0.1), Math.fround(0.2)]]);
   } finally {
     bindCommandRing(null);
+    clearEntityTypes();
   }
 });
 
@@ -212,12 +228,14 @@ test('GameObject forwards the four calls and chains; a body without RigidBody ig
   const go = Object.create(GameObject.prototype);
   go.index = 1;
   go._hasComponents = { RigidBody: true };
+  go._componentBits = bitsOfFlags(go._hasComponents);
   assert.equal(go.applyForce(8, 0).applyTorque(10), go);
   assert.equal(RigidBody.ax[1], 2);
   assert.equal(RigidBody.angularAccel[1], 1);
   const ghost = Object.create(GameObject.prototype);
   ghost.index = 2;
   ghost._hasComponents = {};
+  ghost._componentBits = bitsOfFlags(ghost._hasComponents);
   ghost.applyForce(8, 0).applyImpulse(1, 1).applyAngularImpulse(1).applyTorque(1);
   assert.equal(RigidBody.ax[2], 0);
   assert.equal(RigidBody.angularAccel[2], 0);
@@ -243,6 +261,7 @@ test('addAcceleration adds the acceleration and leaves the sleeping paint unwrit
     const go = Object.create(GameObject.prototype);
     go.index = 1;
     go._hasComponents = { RigidBody: true };
+    go._componentBits = bitsOfFlags(go._hasComponents);
     bytes[1] = 1;
     go.addAcceleration(3, 4).addAcceleration(1, 1);
     assert.equal(bytes[1], 1, 'the paint stays as physics left it: physics wakes the body itself');

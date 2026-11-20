@@ -1,4 +1,5 @@
 import test, { afterEach } from 'node:test';
+import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import assert from 'node:assert/strict';
 
 import { GameObject } from '../../src/core/gameObject.js';
@@ -85,6 +86,7 @@ function makeView(index, has) {
   const go = Object.create(GameObject.prototype);
   go.index = index;
   go._hasComponents = has;
+  go._componentBits = bitsOfFlags(go._hasComponents);
   return go;
 }
 

@@ -1,13 +1,16 @@
 // MySoldier.js - Soldier entity with behavior FSM
 // Follows destination, then hunts civilians
+//
+// ECS-style, as Person (E-530): its hooks and actions are statics that take the soldier's entity index.
 
 import WEED from '/src/index.js';
 
 import { Person } from './person.js';
+import { LootableComponent } from '../components/lootableComponent.js';
 import { SoldierBehaviorFSM, advanceSoldierFrame } from '../fsm/soldierBehaviorFsm.js';
 import { PersonAnimationFSM } from '../fsm/personAnimationFsm.js';
 
-const { Transform, Keyboard, Decoration } = WEED;
+const { Collider, RigidBody, SpriteRenderer } = WEED;
 
 export class MySoldier extends Person {
 
@@ -31,23 +34,24 @@ export class MySoldier extends Person {
 
   static components = [...Person.components, SoldierBehaviorFSM];
   static behaviorFSM = SoldierBehaviorFSM;
-  outQueryDecorationIndices = new Uint16Array(64);
 
-  onSpawned(spawnConfig = {}) {
-    // Set spritesheet and animation before super.onSpawned()
-    this.setSpritesheet('poli');
-    this.setAnimation('idle');
+  /** LIFECYCLE: each spawn of soldier i: the police sheet, then Person's setup, then a soldier's loot, sight and weight. */
+  static onSpawned(i, spawnConfig = {}) {
+    // Set spritesheet and animation before Person's onSpawned
+    SpriteRenderer.setSpritesheet(i, 'poli');
+    SpriteRenderer.setAnimation(i, 'idle');
 
-    super.onSpawned(spawnConfig);
+    super.onSpawned(i, spawnConfig);
 
-    this.lootableComponent.health = 1;
-    // resistance now uses static class property (MySoldier.resistance)
-    this.lootableComponent.dropMoney = 100;
-    this.lootableComponent.dropMachineGun = 1;
+    LootableComponent.health[i] = 1;
+    // Its resistance is the class's static (MySoldier.resistance). It drops its money and its machine gun when it dies,
+    // and the gun is what it shoots with (Person.bestWeapon).
+    LootableComponent.dropMoney[i] = 100;
+    LootableComponent.dropMachineGun[i] = 1;
 
-    this.collider.visualRange = 250;
-    this.setFixedRotation(1);
-    this.rigidBody.linearDamping = 2
+    Collider.visualRange[i] = 250;
+    RigidBody.setFixedRotation(i, 1);
+    RigidBody.setLinearDamping(i, 2);
   }
 
   /** Each frame: Person's tick for the whole type, its behaviour FSM included; the FSM counts the frames it ran. */
@@ -56,29 +60,9 @@ export class MySoldier extends Person {
     super.tickAll(list, count, dtRatio);
   }
 
-  swayGrassAround() {
-    //this is heavy for 10k soldiers!
-    if (rng() > 0.9) return
-    this.countOfDecorationsHit = Decoration.queryCircle(
-      this.x,
-      this.y,
-      30,
-      this.outQueryDecorationIndices
-    );
-
-    for (let i = 0; i < this.countOfDecorationsHit; i++) {
-      const index = this.outQueryDecorationIndices[i];
-      const amplitude = this.vx > 0.5 ? rng() * 0.5 : rng() * -0.5;
-      const frequency = rng() * 2 + 1
-      const deco = Decoration.get(index);
-      if (!deco || !deco.active) continue
-      deco.impulseSway(amplitude, frequency);
-    }
-
-  }
-
-  startFollowingDestination() {
-    this.soldierBehaviorFSM.changeState(SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
-    this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE);
+  /** Soldier i drops what it was doing and walks to the destination (a click moved it: Destination's tickAll). */
+  static startFollowingDestination(i) {
+    SoldierBehaviorFSM.changeState(i, SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
+    PersonAnimationFSM.changeState(i, PersonAnimationFSM.states.IDLE);
   }
 }

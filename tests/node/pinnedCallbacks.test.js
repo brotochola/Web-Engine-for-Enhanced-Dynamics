@@ -66,7 +66,7 @@ test('collision callbacks run each entity on its pinned worker; an unpinned pair
     onCollisionHit(o) { log.push(`${this.index}>hit ${o}`); }
   }
   w.gameObjects = Array.from({ length: N }, (_, i) => new Body(i));
-  w.collisionListenerByType = Uint8Array.of(1);
+  w.collisionListenerByType = Uint8Array.of(1 | 16 | 32 | 64); // listens, with its own enter, exit and hit methods
   w.collisionStayByType = Uint8Array.of(1); // the class defines onCollisionStay
   w.totalLogicWorkers = 2;
   w.bodyGeneration = null;

@@ -1,5 +1,4 @@
 import WEED from '/src/index.js';
-import { ParticleEmitter } from '/src/index.js';
 import { FARM_TREES, LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
@@ -9,18 +8,21 @@ const {
   SpriteRenderer,
   RigidBody,
   ShadowCaster,
+  ParticleEmitter,
   enums, rng,
-  CameraInOutListener,
 } = WEED;
 const { ShapeType } = enums;
 
+// Written ECS-style (E-530): every hook is static, takes the tree's index and writes its components' columns, so the
+// logic workers make no instance for a tree.
 export class Tree extends GameObject {
   static serializable = true;
   static components = [Collider, SpriteRenderer, ShadowCaster, RigidBody];
 
-  onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+  /** A bullet hit tree i: bark and wood chips, as many as the trunk is wide, scattered around the hit. */
+  static onGotShot(i, damage, hitX, hitY, ownerId, shooterEntityType) {
     // const count = Math.floor(damage * 8) + 3;
-    const radius = this.collider.radius;
+    const radius = Collider.radius[i];
     ParticleEmitter.emit({
       count: Math.floor(rng() * radius) + radius * 0.5,
       x: hitX + (rng() * radius - radius * 0.5),
@@ -41,41 +43,40 @@ export class Tree extends GameObject {
     });
   }
 
-  onSpawned(spawnConfig = {}) {
+  /** Tree i spawned: one of the two tree sprites, a random size and facing, a static trunk for a body. */
+  static onSpawned(i, spawnConfig) {
     if (LIGHT3D) {
-      this.spawnFarmTree();
+      this.spawnFarmTree(i);
       return;
     }
-    this.rigidBody.static = 1;
+    RigidBody.setStatic(i, 1);
     const whichTree = rng() > 0.5 ? 1 : 2;
-    this.setSprite('tree' + whichTree);
+    SpriteRenderer.setSprite(i, 'tree' + whichTree);
     const scale = rng() * 0.5 + 1;
-    this.setScale(rng() > 0.5 ? scale : -scale, scale);
-    this.collider.shapeType = ShapeType.Circle;
-    this.collider.radius = 12 * scale;
-    this.spriteRenderer.anchorY = 0.95;
-    this.spriteRenderer.anchorX = 0.45;
+    SpriteRenderer.setScale(i, rng() > 0.5 ? scale : -scale, scale);
+    Collider.setShapeType(i, ShapeType.Circle);
+    Collider.setRadius(i, 12 * scale);
+    // The anchor at the trunk's foot.
+    SpriteRenderer.setAnchor(i, 0.45, 0.95);
     // Reads no neighbours: no visualRange (a visualRange gives an entity its neighbour list, SST-21).
-    this.collider.visualRange = 0;
+    Collider.visualRange[i] = 0;
   }
 
   /**
    * ?light3d=1: the light bench's trees, with their height and normal maps. One view each, so every light casts its
    * silhouette (the ShadowCaster's default for one view), standing on the base the engine measures.
    */
-  spawnFarmTree() {
-    this.rigidBody.static = 1;
+  static spawnFarmTree(i) {
+    RigidBody.setStatic(i, 1);
     const whichTree = rng() > 0.5 ? 1 : 2;
-    this.setSpritesheet('arboles');
-    this.setAnimation(whichTree === 1 ? 'arbol_verde' : 'arbol_jacaranda');
+    SpriteRenderer.setSpritesheet(i, 'arboles');
+    SpriteRenderer.setAnimation(i, whichTree === 1 ? 'arbol_verde' : 'arbol_jacaranda');
     const scale = rng() * 0.5 + 1;
-    this.setScale(rng() > 0.5 ? scale : -scale, scale);
-    this.collider.shapeType = ShapeType.Circle;
-    this.collider.radius = 12 * scale;
-    this.spriteRenderer.anchorY = FARM_TREES.anchorY;
-    this.spriteRenderer.anchorX = FARM_TREES.anchorX;
+    SpriteRenderer.setScale(i, rng() > 0.5 ? scale : -scale, scale);
+    Collider.setShapeType(i, ShapeType.Circle);
+    Collider.setRadius(i, 12 * scale);
+    SpriteRenderer.setAnchor(i, FARM_TREES.anchorX, FARM_TREES.anchorY);
     // Reads no neighbours: no visualRange (a visualRange gives an entity its neighbour list, SST-21).
-    this.collider.visualRange = 0;
+    Collider.visualRange[i] = 0;
   }
-
 }

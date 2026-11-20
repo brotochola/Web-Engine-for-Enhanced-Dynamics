@@ -29,9 +29,33 @@ function setup({ verts = 256, indices = 1024 } = {}) {
   resetVolumeShadowCasterWarns();
 }
 
-/** A volume as a ShadowCaster makes it: `ownMesh` when the entity's class lists MeshRenderer. */
+/**
+ * Entity `index`'s volume as a ShadowCaster drives it (E-533: VolumeShadowCaster's statics, by index): `ownMesh` when the
+ * entity's class lists MeshRenderer. Its setters chain, as the tests below write them.
+ */
 function volume(index, ownMesh = true) {
-  return new VolumeShadowCaster(index, ownMesh);
+  const v = {
+    get floorScaleY() {
+      return VolumeShadowCaster.floorScaleY[index];
+    },
+    setBox(...args) {
+      VolumeShadowCaster.setBox(index, ownMesh, ...args);
+      return v;
+    },
+    addLevel(...args) {
+      VolumeShadowCaster.addLevel(index, ownMesh, ...args);
+      return v;
+    },
+    setHull(...args) {
+      VolumeShadowCaster.setHull(index, ownMesh, ...args);
+      return v;
+    },
+    clear() {
+      VolumeShadowCaster.clear(index, ownMesh);
+      return v;
+    },
+  };
+  return v;
 }
 
 function renderer(index) {

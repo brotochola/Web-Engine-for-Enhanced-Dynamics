@@ -21,6 +21,14 @@ import { RigidBody } from '../../src/components/rigidBody.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { checksumFloats, checksumInts, isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 
+// E-533: an entity hands its class's component bits to the component cores; a tree from before has no entityTypes.js.
+let bitsOfFlags = null;
+try {
+  ({ bitsOfFlags } = await import('../../src/core/entityTypes.js'));
+} catch {
+  bitsOfFlags = null;
+}
+
 const CHECK_FRAMES = 64;
 
 /** Columns for n walkers, and n entities of `GameObject` over them (the way the engine's tests make one). */
@@ -47,6 +55,7 @@ export function setupSetters(GameObject, n) {
     const go = Object.create(GameObject.prototype);
     go.index = i;
     go._hasComponents = has;
+    if (bitsOfFlags !== null) go._componentBits = bitsOfFlags(has);
     entities.push(go);
   }
   return entities;

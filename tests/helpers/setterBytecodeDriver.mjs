@@ -1,6 +1,7 @@
 // Runs GameObject's per-frame setters, so `node --print-bytecode --print-bytecode-filter=set* <this file>` prints
 // their bytecode (V8 makes it on a function's first call). setterBytecodeSize.test.js reads the lengths.
 import { GameObject } from '../../src/core/gameObject.js';
+import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
@@ -28,6 +29,7 @@ MeshRenderer.renderDirty = new Uint8Array(N);
 const e = Object.create(GameObject.prototype);
 e.index = 1;
 e._hasComponents = { RigidBody: true, SpriteRenderer: true, adobeAnimComponent: true, MeshRenderer: true };
+e._componentBits = bitsOfFlags(e._hasComponents);
 e.x = 0.3;
 e.y = 0.3;
 e.vx = 0.3;

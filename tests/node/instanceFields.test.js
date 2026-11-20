@@ -136,11 +136,19 @@ test('a logic worker reports and applies its own instances’ fields', async () 
   Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(N)), N);
   class Chain {}
   Chain.startIndex = 0;
-  Chain.instances = [{ index: 0 }, { index: 1, _pts: new Float32Array([1, 2]), _drag: 2 }, { index: 2 }];
+  // Entity 2 is active with no instance on this worker (an ECS-style type, or one this worker never asked for).
+  Chain.instances = [{ index: 0 }, { index: 1, _pts: new Float32Array([1, 2]), _drag: 2 }, null];
+  const prevMakeAt = GameObject._makeAt;
+  const madeAt = [];
+  GameObject._makeAt = (i) => {
+    madeAt.push(i);
+    return null;
+  };
   const prevClasses = GameObject.classByType.slice();
   GameObject.classByType.length = 0;
   GameObject.classByType[0] = Chain;
   Transform.active[1] = 1;
+  Transform.active[2] = 1;
   const posted = [];
   const prevPost = self.postMessage;
   self.postMessage = (m) => posted.push(m);
@@ -149,6 +157,7 @@ test('a logic worker reports and applies its own instances’ fields', async () 
     const report = posted.find((m) => m.msg === 'instanceFields');
     assert.equal(report.workerIndex, 1);
     assert.deepEqual(report.entries.map((e) => e[0]), [1]);
+    assert.deepEqual(madeAt, [], 'no instance made to look for fields');
 
     Chain.instances[1] = { index: 1 }; // a new page: new instances
     worker.handleCustomMessage({ msg: 'applyInstanceFields', entries: report.entries });
@@ -157,6 +166,8 @@ test('a logic worker reports and applies its own instances’ fields', async () 
     assert.equal(Chain.instances[1]._drag, 2);
   } finally {
     self.postMessage = prevPost;
+    GameObject._makeAt = prevMakeAt;
+    Transform.active.fill(0);
     GameObject.classByType.length = 0;
     GameObject.classByType.push(...prevClasses);
   }

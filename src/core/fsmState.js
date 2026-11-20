@@ -2,11 +2,14 @@
 // States are pure static logic (graph nodes), NOT ECS components
 // Each state belongs to exactly ONE FSM (linked automatically)
 //
+// A state's hooks get the entity's index, not its instance (E-532): they read and write its components' columns, and
+// code that wants the instance asks GameObject.get(i). `this` is the state class, `this.fsm` its FSM.
+//
 // Usage:
 //   class IdleState extends FSMState {
-//     static onEnter(owner, i) { owner.setAnimation("idle"); }
-//     static onUpdate(owner, i, dt) {
-//       if (owner.canSeePlayer()) this.fsm.changeState(i, this.fsm.states.CHASE);
+//     static onEnter(i) { GameObject.get(i).setAnimation('idle'); }
+//     static onUpdate(i, dt) {
+//       if (Grid.getNeighborCount(i) > 0) this.fsm.changeState(i, this.fsm.states.CHASE);
 //     }
 //   }
 
@@ -17,32 +20,29 @@ export class FSMState {
 
   /**
    * Called when entering this state
-   * @param {GameObject} owner - The entity instance (stateless accessor)
-   * @param {number} i - Entity index for direct array access
+   * @param {number} i - The entity's index
    * @param {string|null} fromState - Previous state name (null if initial)
    */
-  static onEnter(owner, i, fromState) {
+  static onEnter(i, fromState) {
     // Override in subclass
   }
 
   /**
    * Called when exiting this state
-   * @param {GameObject} owner - The entity instance (stateless accessor)
-   * @param {number} i - Entity index for direct array access
+   * @param {number} i - The entity's index
    * @param {string} toState - Next state name
    */
-  static onExit(owner, i, toState) {
+  static onExit(i, toState) {
     // Override in subclass
   }
 
   /**
    * Called every tick while in this state
-   * @param {GameObject} owner - The entity instance (stateless accessor)
-   * @param {number} i - Entity index for direct array access
+   * @param {number} i - The entity's index
    * @param {number} dt - Delta time ratio (1.0 = 16.67ms frame)
    * @param {number} [timeInState] - Time in this state, in whole milliseconds
    */
-  static onUpdate(owner, i, dt, timeInState) {
+  static onUpdate(i, dt, timeInState) {
     // Override in subclass
   }
 }
