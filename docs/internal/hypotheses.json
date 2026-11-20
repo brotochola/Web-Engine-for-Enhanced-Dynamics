@@ -24327,7 +24327,8 @@
         "R-1563",
         "R-1596",
         "R-1569",
-        "R-1599"
+        "R-1599",
+        "R-1574"
       ],
       "refs": [],
       "id": "N-323",
@@ -39962,6 +39963,24 @@
       "title": "CPU profiles on the ASUS at the capacity edge (Predator 0.2, boids 27 000): the same hot functions as the main PC; Box2D's pool threads read busy only through Atomics.wait",
       "verdict": "note",
       "text": "ASUS lab job 0899x (00:34-00:35): profileSceneSweep's cpu pass on the 2-core laptop at main 832a99bf, at the scenes'\ncapacity edges. Predator by day crowd 0.2 and boids 27 000, headed, detailed stats off, 8 s traced after the warm-up.\nThe barrio did not run: buenosAiresScene is not in the sweep's scene list.\n\n- **Predator, crowd 0.2:**\n  - pre-render 126 ms/s busy: emit_rows 22 %, stamp_light_range 16 %, _collectStampLights 7 %,\n    pack_casters_keyed_scan_xy 6 %, lamp_frames 5.5 %, collect_sprites 5.4 %, _waitForPose 4.9 %.\n  - The renderer 101 ms/s: _waitForQueue 18 %, Pixi's own code 23 %.\n- **boids, 27 000:**\n  - pre-render 107 ms/s: _waitForPose 30 %, collect_sprites 25 %, emit_rows 25 %, pack_sprites_split 10 %.\n  - Each spatial worker about 70 ms/s: gather_batch 43 %, publish_batch 23 %, _findNeighbors 15 to 17 %,\n    rebuildOwnedRows 9 %.\n  - Box2D's step thread 222 ms/s.\n- **Box2D's pool threads read 1 000 ms/s busy in one wasm function in both scenes.** That is their Atomics.wait, which\n  the sampling profiler counts as busy. threadCpuProbe (R-1587) found no thread over 800 ms/s from the OS. So these\n  traces cannot say what physics costs on this CPU.\n- Nothing here that the main PC's profiles do not already name. The low-end cost is the same functions on a slower\n  core."
+    },
+    {
+      "id": "R-1622",
+      "date": "2026-11-20",
+      "time": "00:42",
+      "timeFrom": "recorded",
+      "title": "Scoreboard against `v0.14.0` (full, 1 rows)",
+      "verdict": "note",
+      "text": "spatial: FAIL.\n\nNo. No comparable rows. 1 row(s) are under the 3 ms floor (not a regression). A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (`tests/results/scoreboard/report.md`, not kept)."
+    },
+    {
+      "id": "R-1574",
+      "date": "2026-11-20",
+      "time": "00:30",
+      "timeFrom": "recorded",
+      "title": "The spatial row like for like on the main PC: main +24 % by exact-frame mean (STEP_MS +100 % hides v0.14.0's 5 ms spike); N-323's spread costs no more work in a kernel (mean level, p95 14.3 -> 1.5 ms)",
+      "verdict": "note",
+      "text": "**The spatial row against v0.14.0, like for like on the main PC, and N-323's cost in a kernel.** The ASUS read\nv0.14.0 0.434 ms against main 0.867 (+100 %, R-1599) by spatialMax's STEP_MS.\n\n- **Scoreboard row here** (runScoreboard --vs v0.14.0 --only spatial, stationarySpatialScene 9 000 with the reading tick\n  both sides, headless, 2 runs a side, 00:25): v0.14.0's spatial workers exact-frame mean 0.57-0.60 ms, p50 0.25-0.29,\n  p95 about 5 ms (its own all-at-once rebuild every 16 frames: STEP_MS 0.25-0.44 reads mostly the quiet frames); main\n  0.67-0.78, p50 0.54-0.65, p95 1.55-1.71 (STEP_MS 0.71-0.81). By the exact-frame mean main is about +24 %, across\n  every change since v0.14.0; by STEP_MS +100 %, which hides v0.14.0's spike.\n- **Kernel** (setupSpatialKernel, 12 000 still entities, cap 15, one worker; v0.14.0's cycle against main's blocks, both\n  patched alike, 3 runs, 8 cycles timed after 6): the same 623 rebuilds a frame; mean 1.19-1.34 against 1.20-1.40 ms\n  (level), p95 14.2-14.5 against 1.35-1.62. Spreading costs no more work.\n- **So** N-323's +20 % mean on the ASUS's 2 cores (R-1596) is not more work: a worker busy every frame on an\n  oversubscribed machine loses more to scheduling. Capacity reads the p99, where spreading wins tenfold; kept as it is.\n  A middle way (fewer, larger blocks) stays a possibility if a 2-core mean ever matters more than its tail."
     }
   ],
   "leads": [
