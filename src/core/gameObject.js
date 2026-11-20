@@ -180,27 +180,10 @@ function applyLayerMaskAt(i, has, mask) {
  * (what the instance's setters call). A key no accessor takes is the class's to read in its static onSpawned(i, config),
  * as spawn leaves it.
  */
-const SPAWN_KEY_STATICS = {
-  x: (i, v) => Transform.setX(i, v),
-  y: (i, v) => Transform.setY(i, v),
-  rotation: (i, v) => Transform.setRotation(i, v),
-  vx: (i, v) => RigidBody.setVx(i, v),
-  vy: (i, v) => RigidBody.setVy(i, v),
-  angularVelocity: (i, v) => RigidBody.setAngularVelocity(i, v),
-  fixedRotation: (i, v) => RigidBody.setFixedRotation(i, v),
-  isStatic: (i, v) => RigidBody.setStatic(i, v),
-  alpha: (i, v) => SpriteRenderer.setAlpha(i, v),
-  tint: (i, v) => SpriteRenderer.setTint(i, v),
-  visible: (i, v) => SpriteRenderer.setVisible(i, v),
-  scaleX: (i, v) => SpriteRenderer.setScaleX(i, v),
-  scaleY: (i, v) => SpriteRenderer.setScaleY(i, v),
-  flipX: (i, v) => SpriteRenderer.setFlipX(i, v),
-  flipY: (i, v) => SpriteRenderer.setFlipY(i, v),
-};
-
 /**
- * spawnIndex's config keys by index: size first (a collider's, as spawn does), then the accessors' keys in order.
- * Returns whether the config has DX-PARENT's keys (linked after).
+ * spawnIndex's config keys by index: size first (a collider's, as spawn does), then the accessors' keys in order, each
+ * through its component's static (a switch: no call through a table of closures per key). Returns whether the config
+ * has DX-PARENT's keys (linked after).
  */
 function applySpawnKeysAt(i, has, spawnConfig) {
   if (has.Collider) {
@@ -210,14 +193,96 @@ function applySpawnKeysAt(i, has, spawnConfig) {
   }
   let linkKeys = false;
   for (const key in spawnConfig) {
-    if (key === 'parent' || key === 'localX' || key === 'localY' || key === 'localRotation') {
-      linkKeys = true;
-      continue;
+    switch (key) {
+      case 'x':
+        Transform.setX(i, spawnConfig.x);
+        break;
+      case 'y':
+        Transform.setY(i, spawnConfig.y);
+        break;
+      case 'rotation':
+        Transform.setRotation(i, spawnConfig.rotation);
+        break;
+      case 'vx':
+        RigidBody.setVx(i, spawnConfig.vx);
+        break;
+      case 'vy':
+        RigidBody.setVy(i, spawnConfig.vy);
+        break;
+      case 'angularVelocity':
+        RigidBody.setAngularVelocity(i, spawnConfig.angularVelocity);
+        break;
+      case 'fixedRotation':
+        RigidBody.setFixedRotation(i, spawnConfig.fixedRotation);
+        break;
+      case 'isStatic':
+        RigidBody.setStatic(i, spawnConfig.isStatic);
+        break;
+      case 'alpha':
+        SpriteRenderer.setAlpha(i, spawnConfig.alpha);
+        break;
+      case 'tint':
+        SpriteRenderer.setTint(i, spawnConfig.tint);
+        break;
+      case 'visible':
+        SpriteRenderer.setVisible(i, spawnConfig.visible);
+        break;
+      case 'scaleX':
+        SpriteRenderer.setScaleX(i, spawnConfig.scaleX);
+        break;
+      case 'scaleY':
+        SpriteRenderer.setScaleY(i, spawnConfig.scaleY);
+        break;
+      case 'flipX':
+        SpriteRenderer.setFlipX(i, spawnConfig.flipX);
+        break;
+      case 'flipY':
+        SpriteRenderer.setFlipY(i, spawnConfig.flipY);
+        break;
+      case 'parent':
+      case 'localX':
+      case 'localY':
+      case 'localRotation':
+        linkKeys = true;
+        break;
     }
-    const set = SPAWN_KEY_STATICS[key];
-    if (set !== undefined) set(i, spawnConfig[key]);
   }
   return linkKeys;
+}
+
+/**
+ * E-534: what a spawn and a despawn need of an entity's class, by entity type, made on the type's first use: whether
+ * its onSpawned and its onDespawned are methods (they then run on the instance, made for them) and its component
+ * flags. A walk of the prototype chain per spawn and per despawn cost spawnIndex a third of spawn's rate. The class is
+ * kept: a reload's new class at the same type makes its own.
+ */
+class TypePlan {
+  constructor(EntityClass, methodOnSpawned, methodOnDespawned, has) {
+    this.EntityClass = EntityClass;
+    this.methodOnSpawned = methodOnSpawned;
+    this.methodOnDespawned = methodOnDespawned;
+    this.has = has;
+  }
+}
+const typePlans = [];
+
+/** EntityClass's plan (its type's, made now when the type has none or another class's). */
+function typePlanOf(EntityClass) {
+  const type = EntityClass.entityType | 0;
+  const plan = typePlans[type];
+  if (plan !== undefined && plan.EntityClass === EntityClass) return plan;
+  return makeTypePlan(EntityClass, type);
+}
+
+function makeTypePlan(EntityClass, type) {
+  const plan = new TypePlan(
+    EntityClass,
+    typeof EntityClass.onSpawned !== 'function' && definesMethodBelow(EntityClass, GameObject, 'onSpawned'),
+    typeof EntityClass.onDespawned !== 'function' && definesMethodBelow(EntityClass, GameObject, 'onDespawned'),
+    GameObject._classFlags(EntityClass),
+  );
+  typePlans[type] = plan;
+  return plan;
 }
 
 /** A spawn config's layer or layers, by index (both spawn paths). */
@@ -2526,8 +2591,7 @@ export class GameObject {
     // E-528: the instance despawns the entity when there is one, or when an onDespawned method needs one; a type
     // whose onDespawned is static, or that has none, makes none.
     let instance = C.instances[i - C.startIndex];
-    if ((instance === undefined || instance === null) && typeof C.onDespawned !== 'function' &&
-      definesMethodBelow(C, GameObject, 'onDespawned')) {
+    if ((instance === undefined || instance === null) && typePlanOf(C).methodOnDespawned) {
       instance = GameObject._instanceOf(C, i);
       if (instance === undefined || instance === null) return false;
     }
@@ -2943,8 +3007,8 @@ export class GameObject {
     // The slot's instance, made on its first use (E-209)
     // E-534: the slot's instance (made on its first use, E-209) when the caller wants it back, or when the class's
     // onSpawned is a method, which runs on it; spawnIndex makes none otherwise.
-    const methodOnSpawned =
-      typeof EntityClass.onSpawned !== 'function' && definesMethodBelow(EntityClass, GameObject, 'onSpawned');
+    const plan = typePlanOf(EntityClass);
+    const methodOnSpawned = plan.methodOnSpawned;
     const instance = wantInstance || methodOnSpawned ? GameObject._instanceOf(EntityClass, i) : null;
     if ((wantInstance || methodOnSpawned) && !instance) {
       console.error(`No instance found at index ${i} for ${EntityClass.name}`);
@@ -3000,7 +3064,7 @@ export class GameObject {
     // Reset component values to sensible defaults using direct array access (faster)
     // Check _hasComponents which is set in constructor based on entity's component list
     // The class's flags: its instance's (on its prototype), or the class's own with no instance (E-534).
-    const has = instance !== null ? instance._hasComponents : GameObject._classFlags(EntityClass);
+    const has = instance !== null ? instance._hasComponents : plan.has;
 
     if (has.RigidBody) {
       RigidBody.active[i] = 1;

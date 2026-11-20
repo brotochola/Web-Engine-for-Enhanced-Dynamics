@@ -304,6 +304,28 @@ test('E-534: spawnIndex returns the index, applies the engine keys, runs static 
   Transform.active.fill(0);
 });
 
+test('E-534: a class registered at a type another class held (a reload) gets its own spawn form, not the old one', { concurrency: false }, async () => {
+  // Ruby (an onSpawned method) at type 0, then Gem (a static one) at type 0: each spawn follows its own class.
+  for (const order of [[Ruby], [Gem], [Ruby]]) {
+    const lw = await setup(order);
+    const C = order[0];
+    const top = new Int32Array(new SharedArrayBuffer(8));
+    const links = new (EntityIdArray())(PER_TYPE);
+    resetFreeList(top, links, PER_TYPE, 1);
+    C.freeList = links;
+    C.freeListTop = top;
+    const i = C.spawnIndex({ value: 5 });
+    assert.ok(i >= 0);
+    if (C === Ruby) assert.deepEqual(heard, [['onSpawned method', i, 5]], 'the method, on the instance made for it');
+    else {
+      assert.deepEqual(heard, [['onSpawned', Gem, i, 5]], 'the static');
+      assert.equal(made(lw), 0, "no instance: the plan Ruby left at type 0 is not Gem's");
+    }
+    C.despawn(i);
+    Transform.active.fill(0);
+  }
+});
+
 class Both extends GameObject {
   static components = [CollisionListener];
   static onCollisionEnter(i, other) {
