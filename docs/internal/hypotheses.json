@@ -11406,7 +11406,8 @@
       "records": [
         "R-0854",
         "R-1174",
-        "R-1428"
+        "R-1428",
+        "R-1700"
       ]
     },
     {
@@ -40226,6 +40227,15 @@
       "title": "N-302 step 0: no seam on the HD 620 at zooms 1 to 1.5; nearest and linear captures identical, so the snap may not round in screen pixels",
       "verdict": "note",
       "text": "**N-302 step 0: not reproduced on the HD 620, and the probe suggests the snap does not move these sprites at all.** Probe scene on branch fix/n302-snap-seam-probe (e6f85a8b): tests/bench/stressScenes/snapSeamScene.js.\n\n- **The capture:** a white floor of 4 x 120 pieces of 16 px laid edge to edge on a black page, renderer.atlasScaleMode 'nearest'. compareCaptures, headed, 1280 x 720, 3 s in, rows 330 to 390 (inside the floor) scanned for dark pixels:\n  - zoom 1.3 and 1.5, camera offsets 0, 0.37 and 0.77: 0;\n  - zoom 1, 1.15 and 1.2: 0;\n  - zoom 1.2 with E-448's opaque pass off (?opaquePass=0): 0.\n  - The floor shows where expected (about 84 px tall at zoom 1.3).\n- **Why that is odd:** if the snap rounded each origin in screen pixels at zoom 1.2, a piece is 19.2 px wide and the origins' fractions cycle through .0, .2, .4, .6 and .8. Every fifth neighbour would leave a column uncovered (an origin with a fraction in [0.3, 0.5) rounds up while its neighbour's right edge stays at .2). Yet the nearest and linear captures at zoom 1.2 are byte-identical.\n- **Lead:** the snap's grid (uWorldTransformMatrix · uTransformMatrix in pixelSnap.js) may not include the camera's zoom, so it rounds in world pixels, where these pieces already sit. Or these sprites do not reach the snapped shader.\n- **Next (main PC, shader work):** check which grid weedSnapXY rounds to at a fractional zoom (pieces at fractional world positions with a patterned texture, or a readback of a snapped vertex). Only then judge the seam."
+    },
+    {
+      "id": "R-1700",
+      "date": "2026-11-20",
+      "time": "03:31",
+      "timeFrom": "recorded",
+      "title": "Mipmaps in Predator on the ASUS's HD 620: GPU −7 % zoomed out, flat by day and at night, blurrier pixel art; Predator keeps them off",
+      "verdict": "rejected",
+      "text": "**Mipmaps in Predator on the ASUS's Intel HD 620: −7 % GPU zoomed out, flat by day and at night, and blurrier pixel art. Predator keeps `autoGenerateMipmaps: false`.** The owner's question, asked on the ASUS (i7-7500U, HD 620, Chrome headed at 1920 × 1080). The probe flipped Predator's own `renderer.autoGenerateMipmaps` line in a lab tree at main 13b16c41, off against on, two rounds alternated, run twice (four pairs, 2026-11-20 03:31 to 04:08): glFrameRecorder `--gpu-draws` (the GPU time a frame, 3 s after 20 s) by day at the default zoom and at zoom 0.216, by night with light3d (hour 22), plus the frames drawn at crowd 0.2, and one picture a side.\n\n| GPU ms a frame, mean of 4 pairs | off | on | change | the 4 pairs |\n| --- | --- | --- | --- | --- |\n| day, default zoom | 10.95 | 11.02 | +0.6 % | −4.7, +7.7, +1.3, −1.0 % |\n| day, zoom 0.216 | 11.43 | 10.60 | −7.2 % | −8.3, −6.3, −8.9, −5.4 % |\n| night, light3d | 28.37 | 28.12 | −0.9 % | −3.9, (+32), +6.4, −5.9 % |\n| the sprite program [uTexLut,uStatics,uPoses,uTexture], zoom 0.216 | 3.36 | 2.43 | −28 % | |\n| the same, default zoom | 2.92 | 2.56 | −12 % | |\n| night: G-buffer sprites [… uTexture,uMaps] / lamps' map [uTexLut,uLampTiles,uTexture] | 9.43 / 3.97 | 8.56 / 4.43 | −9 % / +12 % | |\n\n- **Where it acts:** only on sprite draws. The tileset pass [uGid,uTileset] and the light pass (the control: mipmaps cannot reach it) stayed flat. At night the lamps' map got slower and ate most of the G-buffer's gain. By day the sprite gain (−0.36 ms) drowned in the other programs' noise.\n- **The outlier:** night off in the first run's second round read 21.4 ms, with every pass ~25 % faster, the light pass included (4.81 against ~6.2 ms). That is the GPU in another clock state, not mipmaps: the night mean leaves it out.\n- **Frames drawn:** 600 of 600 in 10 s on both sides (vsync bound at crowd 0.2).\n- **The pictures** (compareCaptures, zoom 0.216, crowd 0.2, enlarged ×4 to ×5): no colour bleeding between atlas frames and no 1 px halo. But mipmaps blur Predator's pixel art: houses, people, lamps and trees lose their detail (the crowd reads as brown dots), and tree shadows smear into soft grey smudges where off shows their dappled shape.\n- **Verdict:** rejected for Predator. The bar was −3 % in all three views. It cleared only zoomed out, and the look got worse. E-204 stays open for its BunnyMark and overdraw steps. Zoomed-out sprite fill rate is real on this GPU (−28 % on the sprite program), so a mip chain with a sharper filter (a LOD bias, or mips only below some zoom) could be revisited."
     }
   ],
   "leads": [
