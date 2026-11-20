@@ -11697,7 +11697,8 @@
         "R-1598",
         "R-1620",
         "R-1621",
-        "R-1624"
+        "R-1624",
+        "R-1626"
       ]
     },
     {
@@ -40042,6 +40043,15 @@
         "45a145d9",
         "127362ed"
       ]
+    },
+    {
+      "id": "R-1626",
+      "date": "2026-11-20",
+      "time": "01:56",
+      "timeFrom": "recorded",
+      "title": "The ASUS's warm-up ladder: Predator settles within about 60 s (physics 2.8-3.1 -> 1.3-1.4 ms), boids by 30 s; one Predator run fell into a slow state (spatial0 at ~10 Hz)",
+      "verdict": "note",
+      "text": "ASUS lab job 0899z3 (01:32-01:56): how long the 2-core laptop needs to warm up (R-1624 found the scenes about half as\ncostly after 10 minutes). Predator by day crowd 0.2 with dayCycle=0, and boids 27 000. Each was measured 10 s after a\nwarm-up of 30, 60 and 120 s, each paired with a 10 s warm-up run, 2 rounds, headed, --src, detailed stats off, main\n9647eb9b. Own work (exact-frame step - wait), the 10 s run -> the longer one:\n\n| Predator worker | 30 s (r1) | 60 s (r1 / r2) | 120 s (r1 / r2) |\n|---|---|---|---|\n| physics | 2.63 -> 1.56 | 2.82 -> 1.39 / 3.07 -> 1.28 | 2.83 -> 1.39 / 3.11 -> 1.63 |\n| spatial0 | 2.15 -> 1.76 | 2.26 -> 1.41 / 2.06 -> 1.37 | 2.36 -> 1.40 / 2.29 -> 1.76 |\n| logic0 | 1.58 -> 1.25 | 1.77 -> 1.22 / 1.45 -> 1.01 | 1.54 -> 1.08 / 1.65 -> 1.33 |\n| pre-render | 2.16 -> 1.81 | 2.54 -> 1.98 / 3.50 -> 1.98 | 3.22 -> 1.93 / 3.99 -> 1.95 |\n\n- **Predator settles within about 60 s, then stays.**\n  - Its physics halves between the 10 s and the 60 s warm-up (2.8 to 3.1 -> 1.3 to 1.4 ms), and pre-render loses a\n    third.\n  - 120 s reads like 60 s.\n  - The capacity runs' 9 s warm-up reads Predator 1.5 to 2 times dearer than it runs after a minute. Job 0899z4\n    measures its capacity with a 60 s warm-up.\n- **boids is near steady by 30 s:** spatial and physics -5 to -15 %. The renderer's 0.6 -> 0.3 ms is small. Its large\n  drop in the 10-minute soak (spatial0 5.58 -> 0.89 ms, R-1624) was the flock gathering on one side, not warm-up.\n- **One Predator run fell into a slow state** (round 2, the 30 s warm-up):\n  - spatial0 ran 101 frames in the 10 s window (about 10 Hz, its own time unreadable).\n  - physics p99 23 ms, pre-render p99 26 ms, the renderer drew 560 frames, pre-render ran 485.\n  - It is the second time today after 0899l2 (R-1587: physics 16.4 ms at 40 Hz): a rare state, about 2 runs in 30.\n  - Its report was overwritten, so it is a lead with no cause yet."
     }
   ],
   "leads": [
