@@ -83,13 +83,13 @@ export function gidPageHasTile(layerInt32, mapW, pageRect) {
 export const TILEMAP_GID_CHUNK_TILES = 8;
 
 /**
- * E-432: a layer's GID page drawn only where it has tiles: the page split into chunks of `chunk` tiles a side, each run of
- * chunks along a chunk row that holds a tile one quad (two triangles over four corners), in world px (`tileW` x `tileH` a
- * tile). Each layer drew a quad over its whole page, and every pixel under it fetched its GID and was discarded where the
- * layer has no tile: Predator's 7 layers, full-screen each, 0.74 to 1.07 ms of GPU a frame at 1920 x 1080. Its layers'
- * chunks of 8 hold 40 % of that area. The fragments drawn are the same (the page's UV comes from the position), so is the
- * picture. Load-only.
- * @param {ArrayLike<number>} layerInt32 row-major mapW * mapH
+ * E-432: a page drawn only where one of `layers` has tiles: the page split into chunks of `chunk` tiles a side, each run
+ * of chunks along a chunk row that holds a tile one quad (two triangles over four corners), in world px (`tileW` x
+ * `tileH` a tile). Each layer drew a quad over its whole page, and every pixel under it fetched its GID and was discarded
+ * where the layer has no tile: Predator's 7 layers, full-screen each, 0.74 to 1.07 ms of GPU a frame at 1920 x 1080. Its
+ * layers' chunks of 8 hold 40 % of that area. The fragments drawn are the same (the page's UV comes from the position),
+ * so is the picture. The layers one draw composites (packGidStacksRgba8) share its quads. Load-only.
+ * @param {ArrayLike<number>[]} layers row-major mapW * mapH each
  * @param {number} mapW
  * @param {{ minX: number, minY: number, maxX: number, maxY: number }} pageRect
  * @param {number} tileW
@@ -97,7 +97,7 @@ export const TILEMAP_GID_CHUNK_TILES = 8;
  * @param {number} [chunk]
  * @returns {{ positions: Float32Array, indices: Uint16Array|Uint32Array, quads: number }} no quad: the page has no tile
  */
-export function gidPageQuads(layerInt32, mapW, pageRect, tileW, tileH, chunk = TILEMAP_GID_CHUNK_TILES) {
+export function gidPageQuads(layers, mapW, pageRect, tileW, tileH, chunk = TILEMAP_GID_CHUNK_TILES) {
   const mw = mapW | 0;
   const minX = pageRect.minX | 0;
   const minY = pageRect.minY | 0;
@@ -107,11 +107,14 @@ export function gidPageQuads(layerInt32, mapW, pageRect, tileW, tileH, chunk = T
   const cw = maxX > minX ? Math.ceil((maxX - minX) / c) : 0;
   const ch = maxY > minY ? Math.ceil((maxY - minY) / c) : 0;
   const filled = new Uint8Array(cw * ch);
-  for (let y = minY; y < maxY; y++) {
-    const row = y * mw;
-    const cy = ((y - minY) / c) | 0;
-    for (let x = minX; x < maxX; x++) {
-      if (layerInt32[row + x]) filled[cy * cw + (((x - minX) / c) | 0)] = 1;
+  for (let l = 0; l < layers.length; l++) {
+    const layerInt32 = layers[l];
+    for (let y = minY; y < maxY; y++) {
+      const row = y * mw;
+      const cy = ((y - minY) / c) | 0;
+      for (let x = minX; x < maxX; x++) {
+        if (layerInt32[row + x]) filled[cy * cw + (((x - minX) / c) | 0)] = 1;
+      }
     }
   }
   // The runs: [x0, x1) in chunks along each chunk row.
@@ -187,6 +190,83 @@ export function packGidPageRgba8(layerInt32, mapW, pageRect, outUint8) {
     }
   }
   return o;
+}
+
+/**
+ * E-432: the most layers one draw composites over a page: a stack entry names its layer in 3 bits.
+ */
+export const TILEMAP_GID_LAYERS_PER_DRAW = 8;
+
+/** E-432: a stack entry's layer (0, the draw's bottom one, to 7) sits in GID bits 26 to 28, under Tiled's flip flags. */
+export const TILEMAP_GID_STACK_LAYER_SHIFT = 26;
+
+/** E-432: the largest GID a stack entry holds (below its layer's bits). */
+export const TILEMAP_GID_STACK_GID_MAX = (1 << TILEMAP_GID_STACK_LAYER_SHIFT) - 1;
+
+/**
+ * E-432: how many layers one draw takes over a page `pageH` tiles high: its stacks are at most that many entries deep,
+ * each entry `pageH` rows of one texture, which must fit within the GPU's `maxSide` rows; at most
+ * TILEMAP_GID_LAYERS_PER_DRAW, at least 1.
+ * @param {number} pageH
+ * @param {number} maxSide the GPU's largest texture side
+ */
+export function gidLayersPerDraw(pageH, maxSide) {
+  const h = pageH | 0;
+  if (h <= 0) return 1;
+  const fit = ((maxSide | 0) / h) | 0;
+  return fit < 1 ? 1 : fit > TILEMAP_GID_LAYERS_PER_DRAW ? TILEMAP_GID_LAYERS_PER_DRAW : fit;
+}
+
+/**
+ * E-432: one draw's GID texture: each tile's stack of the layers that have a tile there, the top one first. Entry s of
+ * the page's tile (x, y) is texel (x, s * pageH + y), RGBA8 as packGidPageRgba8 writes a GID, holding the GID with
+ * Tiled's flip flags and its layer's index in `layers` (0, the bottom one) at TILEMAP_GID_STACK_LAYER_SHIFT; a tile
+ * with fewer entries than the depth ends with a 0. The shader reads a pixel's stack until an opaque texel or its end,
+ * so a layer with no tile there costs it nothing (a texture with every layer's page in turn cost it a fetch a layer: on
+ * the GTX 1650 the one draw took what Predator's 7 took).
+ * @param {ArrayLike<number>[]} layers row-major mapW * mapH each, bottom first, at most TILEMAP_GID_LAYERS_PER_DRAW
+ * @param {number} mapW
+ * @param {{ minX: number, minY: number, maxX: number, maxY: number }} pageRect
+ * @returns {{ depth: number, bytes: Uint8Array }} depth: the deepest stack (0: no tile in the page); bytes:
+ *   pageW * pageH * depth texels
+ */
+export function packGidStacksRgba8(layers, mapW, pageRect) {
+  if (layers.length > TILEMAP_GID_LAYERS_PER_DRAW) {
+    throw new Error(`packGidStacksRgba8: ${layers.length} layers, at most ${TILEMAP_GID_LAYERS_PER_DRAW}`);
+  }
+  const mw = mapW | 0;
+  const minX = pageRect.minX | 0;
+  const minY = pageRect.minY | 0;
+  const { pageW, pageH } = gidPageSize(pageRect);
+  if (pageW <= 0 || pageH <= 0) return { depth: 0, bytes: new Uint8Array(0) };
+  let depth = 0;
+  for (let y = 0; y < pageH; y++) {
+    const row = (minY + y) * mw + minX;
+    for (let x = 0; x < pageW; x++) {
+      let n = 0;
+      for (let l = 0; l < layers.length; l++) if (layers[l][row + x]) n++;
+      if (n > depth) depth = n;
+    }
+  }
+  const out = new Uint32Array(pageW * pageH * depth);
+  const plane = pageW * pageH;
+  for (let y = 0; y < pageH; y++) {
+    const row = (minY + y) * mw + minX;
+    for (let x = 0; x < pageW; x++) {
+      let at = y * pageW + x;
+      for (let l = layers.length - 1; l >= 0; l--) {
+        const raw = layers[l][row + x] >>> 0;
+        if (raw === 0) continue;
+        const gid = raw & TILED_GID_MASK;
+        if (gid > TILEMAP_GID_STACK_GID_MAX) {
+          throw new Error(`WeedJS: tilemap GID ${gid} is over ${TILEMAP_GID_STACK_GID_MAX}, the most a tilemap layer can hold`);
+        }
+        out[at] = ((raw & ~TILED_GID_MASK) | gid | (l << TILEMAP_GID_STACK_LAYER_SHIFT)) >>> 0;
+        at += plane;
+      }
+    }
+  }
+  return { depth, bytes: new Uint8Array(out.buffer) };
 }
 
 /** @param {number} r @param {number} g @param {number} b @param {number} a */

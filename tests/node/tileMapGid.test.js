@@ -12,6 +12,11 @@ import {
   gidPageHasTile,
   gidPageQuads,
   packGidPageRgba8,
+  packGidStacksRgba8,
+  TILEMAP_GID_STACK_LAYER_SHIFT,
+  TILEMAP_GID_STACK_GID_MAX,
+  gidLayersPerDraw,
+  TILEMAP_GID_LAYERS_PER_DRAW,
   unpackGidRgba8,
   decodeTiledGid,
   applyTiledLocalUv,
@@ -174,7 +179,7 @@ test('E-432: a page is drawn over its chunks with tiles, a quad a run of them al
   put(19, 0);
   put(17, 11);
   const page = listGidPages(w, h)[0];
-  const q = gidPageQuads(data, w, page, 24, 16, 8);
+  const q = gidPageQuads([data], w, page, 24, 16, 8);
   assert.equal(q.quads, 2);
   // Row 0: chunks 0 to 2, x 0 to the map's 20 tiles; row 1: chunk 2, x 16 to 20, y 8 to the map's 12.
   assert.deepEqual(Array.from(q.positions.subarray(0, 8)), [0, 0, 480, 0, 480, 128, 0, 128]);
@@ -191,8 +196,8 @@ test('E-432: a page is drawn over its chunks with tiles, a quad a run of them al
   };
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[y * w + x]) assert.ok(inQuad(x, y), `tile ${x}, ${y}`);
   // An empty page: no quad; a page off the map's origin keeps its own place.
-  assert.equal(gidPageQuads(new Int32Array(w * h), w, page, 24, 16).quads, 0);
-  const second = gidPageQuads(data, w, { minX: 16, minY: 8, maxX: 20, maxY: 12 }, 24, 16, 8);
+  assert.equal(gidPageQuads([new Int32Array(w * h)], w, page, 24, 16).quads, 0);
+  const second = gidPageQuads([data], w, { minX: 16, minY: 8, maxX: 20, maxY: 12 }, 24, 16, 8);
   assert.deepEqual(Array.from(second.positions), [384, 128, 480, 128, 480, 192, 384, 192]);
 });
 
@@ -202,8 +207,60 @@ test('E-432: a page of more than 16 384 quads indexes them in 32 bits', () => {
   const data = new Int32Array(w * h);
   // A tile in every other chunk of 8: 128 runs a chunk row, 256 rows.
   for (let cy = 0; cy < 256; cy++) for (let cx = 0; cx < 256; cx += 2) data[cy * 8 * w + cx * 8] = 1;
-  const q = gidPageQuads(data, w, listGidPages(w, h)[0], 1, 1, 8);
+  const q = gidPageQuads([data], w, listGidPages(w, h)[0], 1, 1, 8);
   assert.equal(q.quads, 128 * 256);
   assert.ok(q.indices instanceof Uint32Array);
   assert.equal(Math.max(...q.indices.subarray(q.indices.length - 6)), q.quads * 4 - 1);
+});
+
+test('E-432: one draw takes as many layers as fit stacked in the GPU\'s largest texture, 1 to 8', () => {
+  assert.equal(TILEMAP_GID_LAYERS_PER_DRAW, 8);
+  assert.equal(gidLayersPerDraw(100, 2048), 8);
+  assert.equal(gidLayersPerDraw(700, 2048), 2);
+  assert.equal(gidLayersPerDraw(1024, 2048), 2);
+  assert.equal(gidLayersPerDraw(2048, 2048), 1);
+  assert.equal(gidLayersPerDraw(2048, 16384), 8);
+  assert.equal(gidLayersPerDraw(3000, 2048), 1);
+  assert.equal(gidLayersPerDraw(0, 2048), 1);
+});
+
+test('E-432: each tile\'s stack holds the layers with a tile there, top first, their index in bits 26 to 28', () => {
+  const w = 20;
+  const h = 12;
+  const bottom = new Int32Array(w * h);
+  const middle = new Int32Array(w * h);
+  const top = new Int32Array(w * h);
+  bottom[1 * w + 3] = 5;
+  bottom[9 * w + 18] = 6;
+  top[9 * w + 18] = 0x80000009 | 0;
+  middle[9 * w + 18] = 7;
+  const page = { minX: 2, minY: 0, maxX: 20, maxY: 12 };
+  const { depth, bytes } = packGidStacksRgba8([bottom, middle, top], w, page);
+  assert.equal(depth, 3);
+  assert.equal(bytes.length, 18 * 12 * 3 * 4);
+  const at = (x, y, s) => {
+    const i = ((s * 12 + y) * 18 + (x - 2)) * 4;
+    return unpackGidRgba8(bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]);
+  };
+  const shift = TILEMAP_GID_STACK_LAYER_SHIFT;
+  // (18, 9): the top layer (flipped H, layer 2), the middle, the bottom.
+  assert.equal(at(18, 9, 0), (0x80000009 | (2 << shift)) >>> 0);
+  assert.equal(at(18, 9, 1), (7 | (1 << shift)) >>> 0);
+  assert.equal(at(18, 9, 2), 6);
+  // (3, 1): the bottom layer alone, then the stack's end.
+  assert.equal(at(3, 1, 0), 5);
+  assert.equal(at(3, 1, 1), 0);
+  // An empty tile, an empty page, a GID too big to share its bits with the layer's.
+  assert.equal(at(4, 4, 0), 0);
+  assert.equal(packGidStacksRgba8([new Int32Array(w * h)], w, page).depth, 0);
+  const big = new Int32Array(w * h);
+  big[0] = TILEMAP_GID_STACK_GID_MAX + 1;
+  assert.throws(() => packGidStacksRgba8([big], w, listGidPages(w, h)[0]), /tilemap GID/);
+  assert.throws(() => packGidStacksRgba8(new Array(9).fill(bottom), w, page), /at most 8/);
+  // The quads cover the union of the layers' chunks: the top layer's (2, 1) alone is one quad; with the bottom layer's
+  // (0, 0) and (2, 1), two (each chunk row a quad), the shared chunk once.
+  const quadsOf = (layers) => gidPageQuads(layers, w, listGidPages(w, h)[0], 1, 1, 8).quads;
+  assert.equal(quadsOf([top]), 1);
+  assert.equal(quadsOf([bottom, top]), 2);
+  assert.equal(quadsOf([middle, top]), 1);
 });

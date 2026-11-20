@@ -20,7 +20,9 @@ struct TilemapUniforms {
   uFirstGid: f32,
   uColumns: f32,
   uAtlasSize: vec2<f32>,
-  uOpacity: f32,
+  uStackDepth: f32,
+  uOpacityLo: vec4<f32>,
+  uOpacityHi: vec4<f32>,
 }
 @group(2) @binding(0) var uGid: texture_2d<f32>;
 @group(2) @binding(1) var uTileset: texture_2d<f32>;
@@ -56,42 +58,51 @@ fn mainVert(@location(0) aPosition: vec2<f32>) -> VertexOut {
   return out;
 }
 
+// E-432: one draw composites up to 8 of a tilemap's layers over a page, each tile's stack front to back
+// (tilemapGid.frag.glsl says how).
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let tileSize = uniforms.uTileSize;
   if (tileSize.x <= 0.0 || tileSize.y <= 0.0) { discard; }
   let pageSize = uniforms.uPageSize;
   if (pageSize.x <= 0.0 || pageSize.y <= 0.0) { discard; }
+  let columns = i32(uniforms.uColumns);
+  if (columns <= 0) { discard; }
 
   let tileF = in.vPageUv * pageSize + vec2<f32>(1e-5);
   let local = vec2<i32>(floor(tileF));
   let page = vec2<i32>(pageSize);
   if (local.x < 0 || local.y < 0 || local.x >= page.x || local.y >= page.y) { discard; }
+  let tileUv = fract(tileF);
+  let firstGid = i32(uniforms.uFirstGid);
+  let depth = i32(uniforms.uStackDepth);
 
-  let raw = unpackGid(textureLoad(uGid, local, 0));
-  if (raw == 0u) { discard; }
+  var acc = vec4<f32>(0.0);
+  for (var s = 0; s < 8; s++) {
+    if (s >= depth) { break; }
+    let raw = unpackGid(textureLoad(uGid, vec2<i32>(local.x, local.y + s * page.y), 0));
+    // The tile's stack ends.
+    if (raw == 0u) { break; }
+    let l = i32((raw >> 26u) & 7u);
+    let tileId = i32(raw & 0x03ffffffu) - firstGid;
+    if (tileId < 0) { continue; }
 
-  let flipH = (raw & 0x80000000u) != 0u;
-  let flipV = (raw & 0x40000000u) != 0u;
-  let flipD = (raw & 0x20000000u) != 0u;
-  let gid = raw & 0x1fffffffu;
-  let tileId = i32(gid) - i32(uniforms.uFirstGid);
-  if (tileId < 0) { discard; }
+    var localUv = tileUv;
+    if ((raw & 0x20000000u) != 0u) { localUv = localUv.yx; }
+    if ((raw & 0x80000000u) != 0u) { localUv.x = 1.0 - localUv.x; }
+    if ((raw & 0x40000000u) != 0u) { localUv.y = 1.0 - localUv.y; }
 
-  var localUv = fract(tileF);
-  if (flipD) {
-    localUv = localUv.yx;
+    let col = tileId % columns;
+    let row = tileId / columns;
+    let atlasPx = vec2<f32>(f32(col), f32(row)) * tileSize + vec2<f32>(0.5) + localUv * (tileSize - vec2<f32>(1.0));
+    // Level 0: the tileset has no mipmaps, and textureSample is not allowed in this loop's non-uniform flow.
+    let tex = textureSampleLevel(uTileset, uTilesetSampler, atlasPx / uniforms.uAtlasSize, 0.0);
+    let opacity = select(uniforms.uOpacityHi[max(l - 4, 0)], uniforms.uOpacityLo[min(l, 3)], l < 4);
+    let a = tex.a * opacity;
+    if (a < 0.01) { continue; }
+    acc += (1.0 - acc.a) * vec4<f32>(tex.rgb * a, a);
+    if (acc.a >= 0.999) { break; }
   }
-  if (flipH) { localUv.x = 1.0 - localUv.x; }
-  if (flipV) { localUv.y = 1.0 - localUv.y; }
-
-  let columns = i32(uniforms.uColumns);
-  if (columns <= 0) { discard; }
-  let col = tileId % columns;
-  let row = tileId / columns;
-  let atlasPx = vec2<f32>(f32(col), f32(row)) * tileSize + vec2<f32>(0.5) + localUv * (tileSize - vec2<f32>(1.0));
-  let tex = textureSample(uTileset, uTilesetSampler, atlasPx / uniforms.uAtlasSize);
-  let a = tex.a * uniforms.uOpacity;
-  if (a < 0.01) { discard; }
-  return vec4<f32>(tex.rgb * a, a);
+  if (acc.a <= 0.0) { discard; }
+  return acc;
 }
