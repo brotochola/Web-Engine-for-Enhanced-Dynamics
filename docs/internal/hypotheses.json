@@ -20144,19 +20144,20 @@
     {
       "id": "N-237",
       "title": "setterMicrobench's second case runs on different code: its \"same\" case calls setupSetters again, which rebinds Transform's columns, so every setter deopts (dependent field type constness changed) and \"same\" runs with the columns no longer constant",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (c1f85e3b), on fix/n237-setter-bench-one-binding (R-1713)",
       "date": "2026-11-16",
       "area": "bench",
       "kind": "bug",
-      "result": "Seen by the d8 agent; every setter deopts at the second setup.",
-      "next": "One case per process (or set up once and reset the values instead of rebinding the columns); re-time the \"same\" case.",
+      "result": "Fixed 2026-11-20 (c1f85e3b): the columns bound once and reset between cases; 12 dependent-code deopts a run -> 0, checksums unchanged, 'same' re-timed 11 890 / 12 183 ops/s on the ASUS (base 10 977 / 12 114).",
+      "next": "Nothing left; records that timed the old \"same\" case read rebound, deoptimized setters.",
       "refs": [],
       "aliases": [
         "setterMicrobench rebind deopt"
       ],
       "records": [
-        "R-1222"
+        "R-1222",
+        "R-1713"
       ]
     },
     {
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1713",
+      "date": "2026-11-20",
+      "time": "06:24",
+      "timeFrom": "recorded",
+      "title": "N-237 fixed: setterMicrobench binds its columns once, no rebind deopt between cases",
+      "verdict": "kept-hygiene",
+      "text": "**N-237 fixed: setterMicrobench binds its columns once; its \"same\" case times the code its \"moving\" case compiled.** Branch fix/n237-setter-bench-one-binding, c1f85e3b.\n\n- **Cause:** each case called setupSetters, which binds new arrays to Transform's, RigidBody's and SpriteRenderer's statics. The second binding marked every setter's TurboFan code for deoptimization (reason: code dependencies, the fields' constness): 12 marks a run (node --trace-deopt, Node 22.16), the setters, poseMoved and the frame loop among them.\n- **Fix:** setupSetters runs once. Each case starts from resetSetters, the same arrays filled back to setup's values.\n- **Checked:** 0 dependent-code marks in 2 runs, and the checksums are unchanged (moving 712077207, same 3157746663). \"same\" re-timed at 11 890 and 12 183 ops/s, against 10 977 and 12 114 on bugs/base (2 runs each on the ASUS: noise, no verdict). \"moving\" read 8 484 and 8 882 (base 8 264 and 8 846).\n- **Test:** setterMicrobenchReset.test.js checks that resetSetters keeps the bound arrays and restores setup's values. Node suite 3286 of 3288 (two frameChainWait timing flakes, its file green alone)."
     }
   ],
   "leads": [
