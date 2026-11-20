@@ -10187,7 +10187,8 @@
       ],
       "next": "Nothing left: a game that queries what it spawns in a hitstop finds it. A scene check (no demo sets Time.scale 0 today) can come with the first game that does.",
       "records": [
-        "R-1701"
+        "R-1701",
+        "R-1667"
       ]
     },
     {
@@ -18889,7 +18890,8 @@
       "records": [
         "R-1182",
         "R-1207",
-        "R-1708"
+        "R-1708",
+        "R-1667"
       ]
     },
     {
@@ -20672,7 +20674,8 @@
       ],
       "records": [
         "R-1229",
-        "R-1702"
+        "R-1702",
+        "R-1667"
       ]
     },
     {
@@ -24417,7 +24420,8 @@
     {
       "records": [
         "R-1571",
-        "R-1707"
+        "R-1707",
+        "R-1667"
       ],
       "refs": [],
       "id": "N-325",
@@ -40527,6 +40531,15 @@
       "title": "audioStorm's 48 000 plays on the main PC: logic0 7.16 ms of its own, past the 6 ms floor",
       "verdict": "passed",
       "text": "The ASUS handoff's check on the main PC (the Lenovo), after the asus/bugs-2026-11-20 merge 44b7b890: one headless run of audioStormScene at its default 48 000 plays a tick, `--src`, detailed stats off, 5 s warm-up, 10 s window.\n\n- logic0: STEP_MS 7.31 ms, WAIT_MS 0.15 ms, so 7.16 ms of its own work (p50 7.13, p95 7.82), past the 6 ms floor.\n- On the ASUS the same default read 9.3 to 9.5 ms (R-1703).\n- Every other worker is idle (physics 0.11 ms, BODY_COUNT 0).\n\nVerdict: the default stands on both machines and the catalog row can decide here, with about 1.2 ms of margin. If play() gets cheaper, raise `?plays`: the cost is linear."
+    },
+    {
+      "id": "R-1667",
+      "date": "2026-11-20",
+      "time": "15:43",
+      "timeFrom": "recorded",
+      "title": "The ASUS bug merge on the main PC: Predator crowd 2.5 neutral (spatial +2.1 %, physics +1.7 %), the grid kernels within 1 %",
+      "verdict": "passed",
+      "text": "**The asus/bugs-2026-11-20 merge (44b7b890) slows nothing on the main PC (the Lenovo).** The engine's src/ alone was compared: A = d3e7896d (44b7b890's tree with 885d777b's src/, a scratch commit), B = 44b7b890. Two queues, 15:28 to 15:56, on AC, nothing else running, headed, `--pool`, detailed stats off. No A/A this session; Predator's known run-to-run spread is 8 to 13 % a worker.\n\n- **Predator crowd=2.5, 4 pairs: NEUTRAL.** spatial 9.670 → 9.648 ms (paired +2.1 %, worse 3/4, cv 10/5 %), physics 11.508 → 11.468 (+1.7 %, 2/4). Load keys equal (BODY_COUNT 38 346 → 38 357). logic (4.7 ms), pre-render, renderer and particle under the 6 ms floor, not judged. This is the case where N-325's count works hardest: the cells overflow there.\n- **Boids boids=80000 (owner spatial), 4 pairs: FAIL (load)** on VISIBLE_ENTITIES +12.4 % (cv 16/9 %), the flock's place on screen. The workers that do not depend on it read lower on B: spatial 12.248 → 10.590 ms (-4.6 %, worse 2/4, cv 22/13 %; ENTITIES_PROCESSED 40 021 → 40 036), physics -4.5 %. Boids at 60 000 (first queue) also failed on load, with two A runs at 26 000 visible against 44 000 to 50 000, and spatial was flat under the floor (5.699 → 5.662).\n- **Kernels (this PC, the scratch copies of both sides, 4 interleaved rounds, checksums equal everywhere):**\n  - rebuildOwnedRowsMicrobench `--case shipped --sample-ms 300`: point +0.6 % time (pairs +0.7, +0.6, +0.5, +3.4); circle -2.1 %.\n  - spatialGridMoversMicrobench with 100 ms samples (KERNEL_SAMPLE_MS raised in the copies; at the default 3 ms its 5 % case read -6 to +166 % between pairs): movers path 5 % +0.2 %, 35 % -5.0 %; auto 5 % -8.8 % (noisy), 35 % +1.3 % (pairs +1.3, +1.4, -0.3, +1.3).\n\nVerdict: the hygiene keep holds; no primary worker is 3 % worse. The grid passes may carry a cost under 1 % (rebuild point +0.6 % in every pair, auto 35 % +1.3 %), too small for a scene to see."
     }
   ],
   "leads": [
