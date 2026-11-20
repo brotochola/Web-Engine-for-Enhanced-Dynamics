@@ -218,3 +218,16 @@ test('box2dRayJs uses BoxBusy scene and Box2d.castRayClosest', () => {
   assert.match(post, /function serviceRayCastClosest\(/);
   assert.match(post, /castRayClosestBits/);
 });
+// N-161: audioStorm's load key was BODY_COUNT in a scene with no bodies, 0 on both sides, so the row could never
+// decide. Every row's load keys must be ones the measurement publishes, and audioStorm's counts its drivers.
+test('every load key is one extractMetrics publishes; audioStorm counts its drivers, not bodies', async () => {
+  const { extractMetrics } = await import('../bench/measureLib.mjs');
+  const published = new Set(Object.keys(extractMetrics({ workers: [] })));
+  for (const row of ENGINE_FEATURES) {
+    for (const key of row.load) assert.ok(published.has(key), `${row.id}: load key ${key} is not published`);
+  }
+  const row = getFeature('audioStorm');
+  assert.deepEqual(row.load, ['MARK_ACTIVE']);
+  const driver = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/audio/audioStormDriver.js'), 'utf8');
+  assert.match(driver, /static reportMarkActive = true;/, 'the drivers are what MARK_ACTIVE counts');
+});

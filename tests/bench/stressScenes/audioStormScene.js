@@ -1,6 +1,7 @@
 /**
- * Audio pipeline stress. One logic driver calls SoundManager.play every tick
- * across several compressed buses. Primary: logic0_STEP_MS. Load: BODY_COUNT.
+ * Audio pipeline stress. Logic drivers call SoundManager.play every tick
+ * across several compressed buses. Primary: logic0_STEP_MS. Load: logic0 MARK_ACTIVE, the drivers, one for each
+ * PLAYS_PER_DRIVER plays a tick (N-161: the scene has no bodies, so BODY_COUNT was 0 on both sides).
  *
  * Raise PLAYS_PER_TICK if logic0 stays under 3 ms. Freeze the knobs after that.
  */
@@ -20,6 +21,9 @@ export const PLAYS_PER_TICK = (() => {
   }
 })();
 export const ACTIVE_LOOPS = 128;
+/** The plays a tick of one driver: MARK_ACTIVE × this is the storm. */
+export const PLAYS_PER_DRIVER = 100;
+export const DRIVERS = Math.ceil(PLAYS_PER_TICK / PLAYS_PER_DRIVER);
 
 export const stressSceneConfig = {
   requested: { plays: PLAYS_PER_TICK },
@@ -99,13 +103,15 @@ export class AudioStormScene extends Scene {
     explosion_larga: '/demos/audios/explosion_larga.mp3',
   };
 
-  static entities = [[AudioStormDriver, 1]];
+  static entities = [[AudioStormDriver, DRIVERS]];
 
   create() {
-    AudioStormDriver.spawn({
-      playsPerTick: PLAYS_PER_TICK,
-      activeLoops: ACTIVE_LOOPS,
-    });
+    for (let d = 0; d < DRIVERS; d++) {
+      AudioStormDriver.spawn({
+        playsPerTick: Math.min(PLAYS_PER_DRIVER, PLAYS_PER_TICK - d * PLAYS_PER_DRIVER),
+        activeLoops: d === 0 ? ACTIVE_LOOPS : 0,
+      });
+    }
     Camera.centerOn(1000, 1000);
     Camera.setZoom(1);
   }
