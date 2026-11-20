@@ -18425,7 +18425,8 @@
         "R-1175",
         "R-1177",
         "R-1236",
-        "R-1573"
+        "R-1573",
+        "R-1623"
       ],
       "rank": 12
     },
@@ -24428,7 +24429,8 @@
     },
     {
       "records": [
-        "R-1573"
+        "R-1573",
+        "R-1623"
       ],
       "refs": [],
       "id": "E-531",
@@ -39995,6 +39997,15 @@
         "689aa094",
         "bd15fa0f"
       ]
+    },
+    {
+      "id": "R-1623",
+      "date": "2026-11-20",
+      "time": "00:55",
+      "timeFrom": "recorded",
+      "title": "The four lighting levels on the HD 620: classic 10.2-11.3 ms GPU, + map shadows +12-19 %, cheap light3d +31-55 %, light3d 24-31 ms (+150 %); map shadows are the cheap step up on a weak GPU",
+      "verdict": "note",
+      "text": "ASUS lab job 0899y (00:37-00:55): the cheap-light3d study's four lighting levels (R-1573) on the HD 620. Predator at\nits default crowd and camera, 16 h and 22 h, glFrameRecorder --gpu-draws (the draws' timer total), 2 rounds\nalternated, main 9647eb9b (E-432's one-pass tilemap in), --src, 1920x1080, Intel 31.0.101.2145. Modes as R-1573:\n- A: classic, dayCycle=0.\n- B: classic + map shadows.\n- C: cheap light3d: lightingRes and shadowRes 0.25, selfShadow and pixelDepth off.\n- D: light3d.\n\n| mode | GPU 16 h (r1 / r2) | GPU 22 h (r1 / r2) | frames recorded in 3 s | GTX 1650, 16 h / 22 h (R-1573) |\n|---|---|---|---|---|\n| A | 11.44 / 11.17 | 10.16 / 10.15 | 139 to 166 | 3.67 / 3.26 |\n| B | 12.64 / 12.84 (+12 %) | 12.22 / 12.03 (+19 %) | 130 to 157 | 5.75 / 3.89 |\n| C | 14.42 / 15.19 (+31 %) | 15.57 / 16.04 (+55 %) | 102 to 131 | 4.74 / 4.63 |\n| D | 25.85 / 30.55 (+150 %) | 28.03 / 23.93 (+155 %) | 89 to 108 | 5.71 / 5.39 |\n\n- **On the HD 620, B is the cheap step up, not D's price.** Map shadows add 1.2 to 1.9 ms to classic (+12 to 19 %).\n  On the GTX 1650 they added 57 % by day. That is still not within E-531's 0.5 ms bar.\n- **Full light3d halves the HD 620's frame rate** (GPU 24 to 31 ms, about 30 to 36 fps). Cheap light3d (C) takes\n  that down to 14 to 16 ms, so the preset matters most on a weak GPU: -45 % here, -15 % on the GTX.\n- **What D pays on the HD 620** (by program, 16 h r1 / 22 h r1):\n  - The sprites' map draws [uTexLut,uMapsLut,uStatics,uPoses,uTexture,uMaps]: 8.3 / 9.7 ms.\n  - The light pass at lightingRes 0.5: 5.8 / 5.8 ms (C's 0.25: 1.6 ms).\n  - The lamps' shadow tiles at 4096x1536: 3.5 / 3.9 ms (C's 4096x384: 1.1 ms).\n  - [uLight]: 1.5 / 1.8 ms.\n- **A's frame** (by program, 16 h r1): the full-screen composites [uTextures] 4.0 ms, the entities 3.0, the tilemap\n  2.3 (one draw, E-432), the 960x540 pass 1.0."
     }
   ],
   "leads": [
