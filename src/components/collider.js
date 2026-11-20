@@ -58,8 +58,9 @@ class Collider extends Component {
     // Opt-in contact hit events (impact above world hit threshold)
     enableHitEvents: Uint8Array,
 
-    // Perception / neighbor radius (spatial queries). With LightEmitter: also point-shadow
-    // caster search radius — spatial neighbors feed the shadow queue; soft alpha fades at this rim.
+    // Perception / neighbour radius: an entity with one gets a neighbour list (SST-21), which its code reads. The shadow
+    // stamp finds its casters itself (LightEmitter.shadowRange); under lighting.walls a casting light on an entity with a
+    // visualRange looks for its walls within it (E-529: the lists once fed the CPU shadows, no longer).
     visualRange: Float32Array,
 
     // Convex polygon (local space) — appended so Circle/AABB field offsets stay stable

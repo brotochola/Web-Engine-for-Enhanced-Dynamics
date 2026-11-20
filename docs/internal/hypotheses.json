@@ -24357,6 +24357,65 @@
         "inherited neighbour read cliff",
         "base class neighbour reads"
       ]
+    },
+    {
+      "records": [
+        "R-1570"
+      ],
+      "refs": [],
+      "id": "E-529",
+      "title": "The shadow stamp's candidates from each light's spatial neighbour list (lighting.walls' light rows) instead of pre-render's own caster grid",
+      "status": "rejected",
+      "kind": "hypothesis",
+      "area": "pre-render speed",
+      "date": "2026-11-19",
+      "statusText": "The owner's idea 2026-11-19; probed and measured the same night (R-1570), rejected",
+      "result": "Predator crowd 2.5: the lights' lists miss 14-16 % of the casters in reach (cell overflow, N-325); building them costs spatial 11.15 -> 12.12 ms (+7.6 %, 4/4) against a stamp of 1.32-1.37 ms",
+      "next": "None: E-458 and E-460 keep the reuse inside pre-render. Reopen only if spatial gets slack and lights a caster-only, nearest-first list.",
+      "aliases": [
+        "stamp from neighbour lists",
+        "lights spatial neighbours shadows",
+        "caster candidates from spatial"
+      ]
+    },
+    {
+      "records": [
+        "R-1571"
+      ],
+      "refs": [],
+      "id": "N-325",
+      "title": "Predator crowd 2.5's grid cells overflow maxEntitiesPerCell (32): about 2 600 entities (6.8 %) sit in no cell and in nobody's neighbour list, silently",
+      "status": "open",
+      "kind": "bug",
+      "area": "spatial",
+      "date": "2026-11-19",
+      "statusText": "Filed 2026-11-19 from E-529's probe (R-1571)",
+      "result": "",
+      "next": "A stat (entities past their cell's cap) and a development warning when it is not zero; then Predator's cap against its crowds (64 at crowd 2.5?) with spatial's cost measured (owner spatial), since the cap bounds every cell walk.",
+      "aliases": [
+        "grid cell overflow",
+        "maxEntitiesPerCell overflow",
+        "entities missing from neighbour lists"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-530",
+      "title": "Predator written static: Lootable/Person's onGotShot and collision hooks static (E-528), MySoldier and Civilian on tickAll with their FSMs through FSM.tickAll (E-526 layer 0, E-527), measured on Predator crowd 2.5's logic",
+      "status": "open",
+      "kind": "hypothesis",
+      "area": "logic speed",
+      "date": "2026-11-19",
+      "statusText": "The owner's ask 2026-11-19: everything static, the developer's choice of object or ECS style; the engine side is kept (E-526 layer 0, E-527, E-528), no demo converted yet",
+      "result": "",
+      "next": "First N-324 (Grid's static neighbour reads 6.7-7.3 ns against 2.7 for the inlined getter: static code reads through them). Then in steps, each measured with runPredatorAbab crowd=2.5&zoom=0.216, owner logic: (1) the hooks static, (2) Civilian and MySoldier on tickAll, (3) their FSMs through FSM.tickAll. Spawn still makes the instance (an instance-free spawn is its own API item).",
+      "rank": 11,
+      "aliases": [
+        "predator static",
+        "static soldiers civilians",
+        "tickAll predator"
+      ]
     }
   ],
   "records": [
@@ -39795,6 +39854,27 @@
         "2a1e2859",
         "820048fa"
       ]
+    },
+    {
+      "id": "R-1570",
+      "date": "2026-11-19",
+      "time": "22:17",
+      "timeFrom": "recorded",
+      "title": "E-529 rejected: lights' spatial lists miss 14-16 % of the casters in reach at Predator crowd 2.5 and cost spatial ~1 ms (+7.6 %) against a 1.3 ms stamp",
+      "verdict": "rejected",
+      "text": "**E-529 (the owner's idea, 2026-11-19): the shadow stamp's candidates from each light's spatial neighbour list instead\nof pre-render's own caster grid. Rejected on both counts: the lists miss 14 to 16 % of the casters in reach at crowd\n2.5, and building them costs spatial, the longer pole, about as much as the whole stamp costs pre-render.** Shadows were\nmade on the CPU from the neighbour lists once (the owner); the stamp grids its casters itself since. Related: R-0219\n(\"Caster ids per cell from spatial\", superseded), E-458, E-460.\n\n- **Tool (eb52b979):** Predator `?walls=1` turns lighting.walls on, so each casting light gets a list over its shadows'\n  reach (DX-LIGHTAPI).\n- **Quality (a probe from the page, which maps the grid and the components; Predator crowd=2.5&hour=22&walls=1, 12\n  samples then 8, 22:00 to 22:05):** 124 casting lights a sample, 38 277 casters; reaches 400 and 1030 px; casters in a\n  light's reach mean 352 (max 3 727); a list mean 319 entries (max 805), 99.6 % of them casters; no list at\n  maxNeighbors (1 024). Missing (in reach at that moment, not in the list): 15.3 % and 16.0 % of the casters, in 716 of\n  1 489 light-samples. By distance the misses spread over the whole reach (10 945 of them under half of it), so neither\n  the lists' two-frame age nor the edge explains them: Predator's grid cells hold at most 32 (maxEntitiesPerCell at\n  128 px) and 335 to 340 cells hold more, so about 2 600 entities (6.8 %) are in no cell and in nobody's list (N-325).\n  The rare 1030 px lights (transient) had no list at all.\n- **Cost (runPredatorAbab, the same revision eb52b979, crowd=2.5&hour=22 against +walls=1, owner spatial, 4 pairs,\n  22:09 to 22:16):** spatial 11.150 -> 12.121 ms (+7.6 %, 4/4): the lights' lists cost about 1 ms of spatial\n  (walls' sweep also lands on pre-render, +7.2 %). The stamp itself in that scene (captureStampInputs --frames 0, 2\n  runs): 1.37 and 1.32 ms a call, the ceiling of what pre-render could save.\n- **Verdict:** moving about 1 ms to spatial (11-12 ms) to save at most 1.3 ms of pre-render (7-8 ms), with 15 % of the\n  shadows lost, is worse on the critical path and wrong in the picture. E-458 (the stamp's own walk chosen by count) and\n  E-460 (each lamp's still casters cached in pre-render) keep the reuse without the lists' holes.",
+      "commits": [
+        "eb52b979"
+      ]
+    },
+    {
+      "id": "R-1571",
+      "date": "2026-11-19",
+      "time": "22:06",
+      "timeFrom": "recorded",
+      "title": "N-325 filed: 335-340 of Predator crowd 2.5's cells overflow their cap of 32, 6.8 % of the entities in no neighbour list",
+      "verdict": "note",
+      "text": "**N-325 filed: Predator crowd 2.5's grid cells overflow, leaving about 2 600 entities (6.8 %) in no cell and in\nnobody's neighbour list; the engine says nothing.** From the page at crowd=2.5&hour=22 (3 samples, 22:06): 38 289\nactive entities in 2 834 to 2 847 cells of 128 px; maxEntitiesPerCell is 32 in Predator (\"this is very important!!\",\nthe default 64); 335 to 340 cells hold more (at most 47 to 48), 2 595 to 2 644 entities past the caps. spatialWorker\nkeeps \"the first maxEntitiesPerCell\" of a cell, so the rest drop out of every list: civilians' and soldiers' flocking,\nboids, lights under walls (E-529's misses). No stat counts it and no warning fires."
     }
   ],
   "leads": [
