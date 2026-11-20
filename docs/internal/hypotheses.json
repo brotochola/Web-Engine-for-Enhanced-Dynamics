@@ -20665,19 +20665,20 @@
     {
       "id": "N-248",
       "title": "Predator's drawn camera jumps for one frame at startup: queue frame 1 at (4040, 1960), frame 2 at (1846, 727), frame 3 at (3631, 1732), and Pixi's first keyed draw is frame 2",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the N-238 agent (probe3: every sprite's enter, leave and mark frames, and Pixi's keyed draws)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (0711c2b8), on fix/n248-squad-camera-start (R-1710)",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "bug",
-      "result": "Seen in every probe run at crowd 2.5 and crowd 1 (main 9c40fda7 and the fix). The jump is what left N-238's keys unmarked.",
-      "next": "Find where frame 2's camera comes from (the scene's zoom or follow settling, a camera reset before the first follow): log the camera each of the first frames; the jump gone or explained.",
+      "result": "Fixed 2026-11-20 (0711c2b8): setZoom(pin) after the squad follow re-zoomed around the view's corner every frame; the first frame (dtRatio ~280) threw the view off the squad. The squad camera now targets the pinned zoom. Predator's view at zoom 0.216 moves ~585 px (now on the squad).",
+      "next": "When merged: Predator absolute numbers across this commit move (its view at zoom 0.216 follows the squad now).",
       "refs": [],
       "aliases": [
         "camera jump at startup"
       ],
       "records": [
-        "R-1232"
+        "R-1232",
+        "R-1710"
       ]
     },
     {
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1710",
+      "date": "2026-11-20",
+      "time": "06:10",
+      "timeFrom": "recorded",
+      "title": "N-248 fixed: Predator's squad camera takes the pinned zoom, no startup jump",
+      "verdict": "kept-hygiene",
+      "text": "**N-248 fixed: Predator's camera no longer jumps at startup with a pinned zoom.** Branch fix/n248-squad-camera-start, 0711c2b8.\n\n- **Cause (logged in the page, crowd 1, the ASUS):** with ?zoom= pinned, update() ran updateSquadCamera at its own fitted zoom (0.334), then Camera.setZoom(pin), which keeps the view's top-left corner, so every frame re-zoomed around the corner.\n  - **The jump:** the first update has a dtRatio of about 280 (the load time), so the follow runs at full strength. At zoom 1 it left the view centred at (3082, 1425) for a squad at (4996, 2502).\n  - **The crawl:** the next frames moved back toward the squad (3564, 3708, ... 4213 by frame 8) while the two zooms fought (0.686, 0.974 inside each frame).\n  - **Match with N-238's probe:** its queue camera (frame 1 at 4040,1960, frame 2 at 1846,727, frame 3 at 3631,1732) is this sequence at crowd 2.5. The soldiers' positions were all set from the first update (no zeros), so they were not the cause.\n- **Fix (demo):** updateSquadCamera(dtRatio, pinZoom) takes the pinned zoom as its target instead of fitting the squad. The free camera keeps the pin by setZoom.\n- **Logged after the fix:** zoom 1, centre (4996, 2502) from the first update to the 300th. At zoom 0.216 the centre is (4997, 2500), then 4971 by the 300th.\n- **Effect on measurements:** at ?zoom=0.216, the Predator sittings' view, bugs/base held the view off the squad (centre x 5556 every frame); it now follows the squad (x 4971 to 4997). Predator's measured view moves about 585 px left in a 5926 px wide view. A/B pairs take the scene from HEAD on both sides and stay comparable; absolute Predator numbers across this commit (the capacity history, older records) are not.\n- **Test:** demos/tests/predatorSquadCamera.test.js runs the real updateSquadCamera and PredatorScene.update on a stand-in squad, with a camera far away and a dtRatio of 280. Pinned at 1, the first frame is on the squad and stays; unpinned, it fits the squad. Both fail on bugs/base. Suites: demos 123 of 123, node 3286 of 3287 (frameChainWait's \"logic waits ...\" flake, its file green alone)."
     }
   ],
   "leads": [
