@@ -16869,12 +16869,12 @@
     {
       "id": "E-318",
       "title": "Logic's ticks read each entity's neighbour count at a row head T x 2 050 bytes from the last (8 KB for civilians): no prefetcher crosses the pages and the rows are two frames old (get neighborCount 12 % of Predator's logic)",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "screened",
+      "statusText": "Screened 2026-11-19 (R-1568): a probe shows at most 2 %; not built",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "result": "Read (R-1104): a tick bucket's ids rise by T and each tick needs the count at once. E-240's counters found the neighbour loops instruction-bound (R-0997): this targets only the head's miss, not the loop. Estimate logic -3 to -6 %.",
+      "result": "Probe (57 600 rows of 2 050 bytes, 14 400 bucket-order ticks): plain 2.28 ms, head 8 ahead 2.23-2.24, 16 ahead 2.27, 32 ahead 2.27-2.28 with work between the reads; 0.75-0.76 for all without",
       "next": "In a copy of the bucket loop used only for types that read neighbours (rule R8), load list[i+16]'s row head on each tick; neighborAccessMicrobench at 57 600 entities, stride 1025, bucket order; then Predator crowd 2.5 logic.",
       "refs": [
         "EXECUTION_PLAN.md#E-318"
@@ -16886,9 +16886,9 @@
       "records": [
         "R-1104",
         "R-1231",
-        "R-1236"
-      ],
-      "rank": 17
+        "R-1236",
+        "R-1568"
+      ]
     },
     {
       "id": "E-319",
@@ -39749,6 +39749,15 @@
       "title": "The start with N-318, SST-21 and N-323 against main before them: warm first draw +60 to 90 ms (the physics prime +70), spatial0's early hitch 80 -> 15 ms",
       "verdict": "note",
       "text": "**The start with N-318, SST-21 and N-323 together, against main before them: the first draw 60 to 90 ms later warm,\nspatial0's early hitch gone.** loadWaterfall --bundle --t0 prepare, Predator light3d=1&hour=22, each side served from its\nown worktree at a dist commit (c026f7e6 at 0.14.81 against 69fdead0 at 0.14.115), 2 rounds of 2 runs a side alternated,\ncold and warm visits (21:11 to 21:14), then an A/A of 69fdead0 from both worktrees (21:15 to 21:18).\n\n| | c026f7e6 | 69fdead0 | A/A (69fdead0, the two trees) |\n| --- | --- | --- | --- |\n| warm first draw, ms | 989, 990, 992, 1003 | 1266, 1089, 1083, 1054 | 1097, 1051, (2098), 1067 / 1082, 1072, 985, 1038 |\n| cold first draw, ms | 4767, 2074, 4825, 2015 | 7202, 2265, 5057, 2344 | 3747, 2123, 3599, 2058 / 4939, 2101, 3600, 2028 |\n\n- **Where it goes (warm, medians).** The physics prime ends 102 ms after the world spawns on 69fdead0 against 32 on\n  c026f7e6: N-318's cost (the prime builds every body after the spawns). The spatial prime ends 35 ms before the\n  physics one, so it is not on the critical path. The rest is spread over every phase from module load on (the\n  renderer ready 690 -> 789 ms).\n- **The first seconds (warm, round 1, longest own step after the start).** spatial0 80 -> 15 ms (SST-21), logic0 30 ->\n  47, logic1 34 -> 54 (the lists exist from frame 1, so the first ticks read neighbours), physics 17 -> 23, the\n  renderer 64 -> 75.\n- The ASUS read the first draws level within its spread (R-1593). N-318's next (prime between logic0's spawn batches)\n  would win back most of the 70 ms."
+    },
+    {
+      "id": "R-1568",
+      "date": "2026-11-19",
+      "time": "21:30",
+      "timeFrom": "recorded",
+      "title": "E-318 screened: a row-head touch-ahead gains at most 2 % in a probe of bucket-order ticks over 2 KB rows; not built",
+      "verdict": "screened",
+      "text": "**E-318 screened: touching the neighbour row head ahead does not pay.** A standalone probe (not the engine, Node): 57 600\nrows 2 050 bytes apart (stride 1025), one tick bucket (ids rising by 4, 14 400 ticks), 12 neighbours a row, the rows\nrewritten and an 8 MB walk between passes so they come from memory, 40 rounds each, median ms a pass:\n\n| loop | plain | head 8 ahead | 16 ahead | 32 ahead |\n| --- | --- | --- | --- | --- |\n| the reads alone | 0.755 / 0.762 | 0.759 / 0.762 | 0.754 / 0.758 | 0.753 / 0.758 |\n| with ~60 dependent float ops a tick | 2.281 / 2.282 | 2.237 / 2.231 | 2.275 / 2.268 | 2.271 / 2.283 |\n\nAt best 2 % (8 ahead with work between the reads), inside a probe's noise and far from the -3 to -6 % estimated: the\ncore already overlaps the head's miss with the work of the ticks before it. Not built in the engine (it would take a\ncopied bucket loop, rule R8, for that)."
     }
   ],
   "leads": [
