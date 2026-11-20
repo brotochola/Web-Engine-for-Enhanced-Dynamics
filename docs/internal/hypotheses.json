@@ -24460,46 +24460,135 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-1660"
+      ],
       "refs": [],
       "id": "E-532",
       "title": "FSM states without the instance: an ECS type's FSM.tickAll hands no owner and makes no instance; the states work by index",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "hypothesis",
       "area": "logic",
       "date": "2026-11-20",
-      "rank": 6,
-      "result": "",
-      "statusText": "Filed 2026-11-20 from E-530: FSM.tickAll makes each entity's instance on its first tick only to hand it to the states as owner, so a type written ECS-style still holds one instance per entity",
-      "next": "Decide the opt-in (an FSM or entity class flag, or owner null for a type with no instance methods), keep instance-style states working, measure Predator mix=1 with the instances counted."
+      "result": "States by index (onEnter(i, from), onExit(i, to), onUpdate(i, dt, t)); GameObject.get(i) where code wants the instance (e64f0be0)",
+      "statusText": "Done 2026-11-20 on dx/ecs-predator (e64f0be0): states by index in both ways of writing an entity; the owner turned down owner = null from tickAll as a patch",
+      "next": ""
     },
     {
-      "records": [],
+      "records": [
+        "R-1661"
+      ],
       "refs": [],
       "id": "E-533",
       "title": "Static forms of the per-entity setters that still need an instance: setAnimation, setSprite, setTint, setScale, setAlpha, a DirectionalSprite's facing, facingFrom and lookAt",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "dx",
       "area": "logic",
       "date": "2026-11-20",
-      "rank": 7,
-      "result": "",
-      "statusText": "Filed 2026-11-20 from E-530: the ECS way (static tickAll, static hooks) reaches these through this.get(i), which makes the instance",
-      "next": "Static forms by index next to each instance setter (one implementation each, the dirty flags shared), weed.d.ts and the guide's objects-or-ECS table; Predator's animation FSM onEnter states as the first user."
+      "result": "Statics by index for every setter, the instance calls the same core; setterMicrobench at parity with main after 4bf18701 (first cut -20 %)",
+      "statusText": "Done 2026-11-20 on dx/ecs-predator: SpriteRenderer, RigidBody, Transform, Collider, DirectionalSprite, LightEmitter, ShadowCaster and VolumeShadowCaster statics by index; the instance setters call the same cores",
+      "next": "AdobeAnimComponent and MeshRenderer have no statics yet (E-537)."
+    },
+    {
+      "records": [
+        "R-1662"
+      ],
+      "refs": [],
+      "id": "E-534",
+      "title": "A spawn without an instance: an ECS type's spawn returns the entity's index and writes its config keys to the columns",
+      "status": "kept-kernel",
+      "kind": "dx",
+      "area": "logic",
+      "date": "2026-11-20",
+      "result": "spawnIndex 2.6 M spawns/s, equal to spawn reusing an instance, +33 % over spawn making it (spawnPathMicrobench, 56e1df54)",
+      "statusText": "Done 2026-11-20 on dx/ecs-predator: Kind.spawnIndex(config), the workers' own spawns on it, a TypePlan per entity type",
+      "next": ""
+    },
+    {
+      "records": [
+        "R-1663"
+      ],
+      "refs": [],
+      "id": "E-535",
+      "title": "Predator written ECS-style end to end: no entity instance in its play, on the page or any logic worker",
+      "status": "kept-hygiene",
+      "kind": "dx",
+      "area": "logic",
+      "date": "2026-11-20",
+      "result": "0 entity instances in every realm (main 106 627), live heap -35 % (49.6 -> 32.1 MB), no worker worse; logic -7.5 % on one worker, not separated from drift",
+      "statusText": "Done on dx/ecs-predator 2026-11-20: people, fire, props and drops by index (statics, columns, spawnIndex), and the engine paths that still made instances: a bullet hit or a contact on a type with no hook of its own, hot reload's field carry, a despawn asked by the page",
+      "next": "A CPU profile pair of the one-worker logic, to separate its own gain from the drift every worker showed."
+    },
+    {
+      "records": [
+        "R-1664"
+      ],
+      "refs": [],
+      "id": "E-536",
+      "title": "Flash, the engine's own entity type, written the ECS way: Flash.spawnIndex, static onSpawned, onDespawned and tickAll",
+      "status": "kept-hygiene",
+      "kind": "dx",
+      "area": "logic",
+      "date": "2026-11-20",
+      "result": "Flash.spawnIndex makes no instance; Flash.spawn returns it for the object way (d9eff8fb)",
+      "statusText": "Done 2026-11-20 on dx/ecs-predator: a gunfight's muzzle flashes make no object (each made one, and its tick a second one on the worker owning its block)",
+      "next": ""
     },
     {
       "records": [],
       "refs": [],
-      "id": "E-534",
-      "title": "A spawn without an instance: an ECS type's spawn returns the entity's index and writes its config keys to the columns",
+      "id": "E-537",
+      "title": "Index statics for the APIs only an instance has: sendTo, emit, sendMessageToScene, isCollidingWith, addDecoration and Decoration's setters, AdobeAnimComponent, MeshRenderer, setLayer",
       "status": "open",
       "kind": "dx",
       "area": "logic",
       "date": "2026-11-20",
-      "rank": 8,
+      "rank": 9,
       "result": "",
-      "statusText": "Filed 2026-11-20 from E-530 (and E-528's note): Type.spawn returns the instance and its config keys go through its setters",
-      "next": "An index-returning form (or spawn returning the index for a type that opts in), config keys through the static setters (E-533), onSpawned static; measure spawn-heavy scenes."
+      "statusText": "Filed 2026-11-20 from the instance survey: each forces GameObject.get(i) from ECS code (Messages is not exported; SceneBridge needs a sender object; addDecoration makes a facade and a Map entry per decoration, read or not; AdobeAnimComponent's frameCount and currentFrame allocate an object per read)",
+      "next": "GameObject.sendTo(from, to, name, a, b, c, d), GameObject.emit(i, name, data), GameObject.isCollidingWith(i, other), GameObject.addDecoration(i, ...), Decoration.setAlpha(id, a) and the rest, AdobeAnimComponent.play(i, clip, loop), MeshRenderer.setTint(i, v); the instance forms delegate (E-533's pattern)."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-538",
+      "title": "Particle and flash presets: a firefight's per-emit config literals and their {min, max} ranges are garbage on the logic workers",
+      "status": "open",
+      "kind": "speed",
+      "area": "logic",
+      "date": "2026-11-20",
+      "rank": 11,
+      "result": "",
+      "statusText": "Filed 2026-11-20 from the instance survey: one Predator shot makes about 5 config literals and 10 range objects (3 emits, a flash, a bullet); the engine copies them into a scratch, but they escape (_spawn is too big to inline). BulletPool already avoids it (E-286)",
+      "next": "ParticleEmitter.define(cfg) -> id and emitPreset(id, x, y, z, dirX, dirY, count), the same for Flash; heap-sample the mixed battle (tests/bench/heapSampleWorkers.mjs) before and after."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-539",
+      "title": "Save and restore by columns: a save holds an object per entity and component, and the restore recomputes each component's schema fingerprint per entity",
+      "status": "open",
+      "kind": "speed",
+      "area": "logic",
+      "date": "2026-11-20",
+      "rank": 16,
+      "result": "",
+      "statusText": "Filed 2026-11-20 from the instance survey: at Predator's 42k entities about 1M objects to save; on restore about 0.4M fingerprint computations and 12M schema entries (entitySaveSnapshot.js, binarySaveCodec.js, worldBufferSave.js)",
+      "next": "First a per-load plan cache (fingerprint and field specs once per class); then a columnar ENTITIES section (per type, an index list and a gathered typed array per field, transferable)."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-540",
+      "title": "Instance housekeeping for ECS scenes: the instance tables allocated on first use, the facades' owner dropped, start() removed, debug checks that walk every spawn",
+      "status": "open",
+      "kind": "refactor",
+      "area": "logic",
+      "date": "2026-11-20",
+      "rank": 10,
+      "result": "",
+      "statusText": "Filed 2026-11-20 from the instance survey: three Array(N) per logic worker and two on the page stay all null in an ECS scene (about 1.8 MB at 57.6k slots; gameObjects and GameObject.instances hold the same); every facade gets .owner after construction (read only for the mesh bit and tickInterval); start() is unused and undocumented; noteSpawned walks ~27 keys per spawn in debug builds",
+      "next": "Alias gameObjects to GameObject.instances or allocate on the first _makeInstance; read the mesh bit and tickInterval from typeBitsOf and classByType, then drop owner; remove start(); note spawns by class."
     }
   ],
   "records": [
@@ -40169,6 +40258,75 @@
       "commits": [
         "1c51192b",
         "3f455ebc"
+      ]
+    },
+    {
+      "id": "R-1660",
+      "date": "2026-11-20",
+      "time": "03:58",
+      "timeFrom": "recorded",
+      "title": "FSMs without an owner: a state's hooks get the index, no FSM makes an instance",
+      "verdict": "kept-hygiene",
+      "text": "**FSMs have no owner (e64f0be0, dx/ecs-predator).** A state's hooks get the entity's index: `onEnter(i, from)`,\n`onExit(i, to)`, `onUpdate(i, dt, timeInState)`; `fsm.tick(dt)`, `FSM.forceChangeState(i, State)`,\n`initializeEntity(i)`. No FSM makes an instance, in either way of writing an entity: code that wants the instance asks\n`GameObject.get(i)` (the owner first proposed passing `owner = null` from tickAll and turned it down as a patch,\n2026-11-20). Predator's and carScene's states rewritten; the FSM tests and the two FSM kernels moved to the new hooks.\nMeasured with the whole branch (E-535's sittings).",
+      "commits": [
+        "e64f0be0"
+      ]
+    },
+    {
+      "id": "R-1661",
+      "date": "2026-11-20",
+      "time": "04:54",
+      "timeFrom": "recorded",
+      "title": "Static core: every entity method is its component's static by index; the object way at parity after the inlining fix",
+      "verdict": "kept-hygiene",
+      "text": "**Static core (03ccfd5a, e6752051, 996728f9, ff553938, 4bf18701).** Every entity method and component setter is a\nstatic of its component, by index (`SpriteRenderer.setAlpha(i, a)`, `Collider.setRadius(i, r)`,\n`RigidBody.setLinearDamping(i, d)`, `Transform.setPosition(i, x, y)`, `DirectionalSprite.setFacing(i, a)`,\nLightEmitter's and ShadowCaster's), and the instance's method calls the same core (`alphaAt(i, bits)`) with its\ncomponent bits. The statics read the type's bits (entityTypes.js, filled at registration), not `this`.\n\nFirst cut: the object way's per-frame setters lost 20 % in setterMicrobench (10.3k -> 8.3k ops/s): the wrapper layer\nspent the frame loop's 920-byte inlining budget and TurboFan left `set y` out (--trace-turbo-inlining). Fix\n(4bf18701): the instance calls the core directly, rare work in its own functions (a call that never ran is not\ninlined). setterMicrobench, main against the branch, alternating processes, checksums equal: moving 10 226 / 10 903 /\n9 861 against 10 433 / 11 148 / 9 279 ops/s; same 12 408 / 13 641 / 12 597 against 19 402 / 12 233 / 12 157: parity.",
+      "commits": [
+        "03ccfd5a",
+        "e6752051",
+        "996728f9",
+        "ff553938",
+        "4bf18701"
+      ]
+    },
+    {
+      "id": "R-1662",
+      "date": "2026-11-20",
+      "time": "06:50",
+      "timeFrom": "recorded",
+      "title": "spawnIndex: no instance, at spawn's rate after the per-type plan; a third faster than a spawn that makes its instance",
+      "verdict": "kept-kernel",
+      "text": "**spawnIndex (69d01842, 2f030b0c, 56e1df54).** `Kind.spawnIndex(config)` spawns with no instance and returns the\nentity's index (-1 when the pool is full): the config's engine keys through the component statics, a static\n`onSpawned(i, config)` for the rest (a class whose onSpawned is a method gets the instance it runs on), the spawn's\nabort flag by index (spawningHere.js), the workers' own spawns (page, ring, restore) on that path.\n\nFirst kernel (spawnPathMicrobench, 256 spawns and despawns an op, own process per case): spawnIndex was slower than\nspawn, 1.20 / 1.88 / 1.14 M spawns/s against the static class's spawn 2.32 / 2.58 / 2.49 M (reused instances). CPU\nprofile: definesMethodBelow's prototype walk per spawn and per despawn, _classFlags' hasOwnProperty, a closure per\nconfig key. Fix (56e1df54): a TypePlan per entity type (both method checks and the flags, remade when another class\ntakes the type), the keys through a switch. After: index 2.60 / 2.59 / 2.64 M, --fresh 2.56 / 2.51 / 2.61 M, against\nspawn on the same tree 2.54 / 2.51 / 2.49 M and --fresh 1.84 / 1.99 / 1.91 M: equal to spawn with an instance already\nmade, a third faster than spawn making it. The object way's spawn against main: 2.79 / 2.57 / 2.83 M on main, 2.50 /\n2.64 / 2.38 M on the branch, --fresh equal: inside the kernel's spread (spawn is not on the frame path; Predator pays it\nat its start).",
+      "commits": [
+        "69d01842",
+        "2f030b0c",
+        "56e1df54"
+      ]
+    },
+    {
+      "id": "R-1663",
+      "date": "2026-11-20",
+      "time": "06:25",
+      "timeFrom": "recorded",
+      "title": "Predator ECS end to end: 0 instances, heap 49.6 -> 32.1 MB; one logic worker -7.5 % with every worker lower; mixed battle inside its spread",
+      "verdict": "kept-hygiene",
+      "text": "**Predator written ECS-style end to end (2691ca14, with 7c6750ee, a75af356, f6adf5ef).** People, fire, props and\ndrops by index; the engine paths that still made instances fixed on the way: a bullet hit or a contact on a type with\nno hook of its own, hot reload's field carry, a despawn asked by the page. Instances after 40 s (crowd 2.5, headless):\npage 0, logic0 0, logic1 0 (main 42 240, 42 536, 21 851). Behaviour equal to main (FSM and animation states, deaths\nthrough DYING, drops, broken trash, no entity errors), calm and mix=1.\n\nLive JS heap after a full GC, 30 s of crowd 2.5 with one logic worker: page 13.3 -> 5.9 MB, logic0 16.5 -> 6.1 MB,\nall realms 49.6 -> 32.1 MB (-35 %). V8 logs (--log-deopt --log-ic, 10 + 10 s): main's logic worker deopted 76 times\nafter warm-up in the spawn batch sort (logicWorker.js, \"insufficient type feedback for generic named access\"); the\nbranch has no repeating deopt, and no megamorphic IC after warm-up on either side.\n\nSittings, main c01c6d51 against 2691ca14, whole trees, 4 pairs each (file times):\n- 06:21-06:25, crowd 2.5 one logic worker (ecs-total1w): KEPT (product): logic 7.78 -> 7.08 ms, -7.5 %, worse 0/4;\n  spatial -8.3 % (limit ±3.7 %), physics -13.3 % (limit ±5.3 %), limits from the A/A e530-aa. The other workers fell\n  more than logic (logic vs the others +3.9 %): the logic's own gain is not separated from a machine drift in this\n  sitting, or less garbage on the page and logic freed the cores V8's GC helpers used.\n- 06:06-06:11, crowd 2.5 two logic workers (ecs-total): NEUTRAL, logic 4.56 -> 4.76 ms below the 6 ms floor;\n  spatial -2.5 %, physics -2.8 %, preRender -1.2 %.\n- 06:13-06:18, the mixed battle restored from one save (ecs-mixr): FAIL (load): DECAL_TILES_DIRTY -13.7 %; logic\n  +1.8 % (worse 3/4), physics +5.2 % (worse 3/4), inside the battle's run-to-run spread (E-530's mixed sittings read\n  +6.1 % and -5.9 % for one change).\nVerdict: kept as hygiene (no worker 3 % worse where the load matched), with the memory and the instance counts as its\ngain; a speed claim of its own would need a sitting that separates logic from the drift.",
+      "commits": [
+        "2691ca14",
+        "7c6750ee",
+        "a75af356",
+        "f6adf5ef"
+      ]
+    },
+    {
+      "id": "R-1664",
+      "date": "2026-11-20",
+      "time": "05:42",
+      "timeFrom": "recorded",
+      "title": "Flash written the ECS way: spawnIndex and static hooks, no instance per muzzle flash",
+      "verdict": "kept-hygiene",
+      "text": "**Flash written the ECS way (d9eff8fb).** `Flash.spawnIndex(config)` spawns a flash with no instance (its index, or\n-1 off-screen, before initialization or with the pool full); `static onSpawned(i, cfg)`, `static onDespawned(i)` and\n`static tickAll(list, count, dtRatio)` (the fade, deltaTime = dtRatio x 16.67 ms) by index. `Flash.spawn` returns the\ninstance for the object way. Before, every muzzle flash made an instance and its tick a second one on the worker\nowning its block. Predator's shots, barrels, houses and lamps use spawnIndex; lightCastShadows' tests call the static\nonSpawned on real columns.",
+      "commits": [
+        "d9eff8fb"
       ]
     }
   ],
