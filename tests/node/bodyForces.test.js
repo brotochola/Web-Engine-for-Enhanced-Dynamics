@@ -156,6 +156,28 @@ test('impulses are commands: point or centre, linear or angular, in order', () =
   }
 });
 
+test('RigidBody.setVelocity writes the columns and sends Box2D the velocity once, as entity.setVelocity does', () => {
+  setup();
+  const sab = createCommandRingSab(64);
+  bindCommandRing(sab);
+  try {
+    RigidBody.setVelocity(1, 30, -40);
+    RigidBody.setVelocity(1, 30, -40); // the same again: nothing more
+    RigidBody.setVelocity(3, 0, 0); // already still: nothing
+    RigidBody.setVelocity(2, 0.1, 0.2);
+    RigidBody.setVelocity(2, 0.1, 0.2); // not float32 numbers: the same once stored as float32
+    assert.equal(RigidBody.vx[1], 30);
+    assert.equal(RigidBody.vy[1], -40);
+    const calls = [];
+    drainCommandRing(new Int32Array(sab), new Float32Array(sab), {
+      setVelocity: (e, vx, vy) => calls.push([e, vx, vy]),
+    });
+    assert.deepEqual(calls, [[1, 30, -40], [2, Math.fround(0.1), Math.fround(0.2)]]);
+  } finally {
+    bindCommandRing(null);
+  }
+});
+
 test('the physics host runs Box2D impulses: centre without a point, at the point with one', () => {
   const src = readFileSync(new URL('../../src/box2d/weedjsPost.js', import.meta.url), 'utf8');
   const s = src.indexOf('// body-impulse-start');

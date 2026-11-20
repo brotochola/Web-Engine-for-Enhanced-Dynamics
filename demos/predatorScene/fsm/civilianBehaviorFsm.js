@@ -1,5 +1,8 @@
 // CivilianBehaviorFSM.js - FSM component for civilian behavior
 // States: IDLE (do nothing) and FLEEING (run away from predators)
+//
+// The states work by entity index (E-530: Predator written static): positions and neighbours come from the columns and
+// Grid's statics, the civilian's tuning from its class (GameObject.classByType), and no state touches the instance.
 
 import WEED from '/src/index.js';
 
@@ -8,10 +11,15 @@ import { MySoldier } from '../gameObjects/mySoldier.js';
 import { CivilianComponent } from '../components/civilianComponent.js';
 import { SoldierBehaviorFSM } from './soldierBehaviorFsm.js';
 
-const { FSM, FSMState, Transform } = WEED;
+const { FSM, FSMState, Transform, GameObject, Grid, RigidBody } = WEED;
+
+/** The civilian's class (Civilian or a subclass of it): its tuning statics (accelDistFloorSq, panicFleeFactor). */
+function civilianClassOf(i) {
+  return GameObject.classByType[Transform.entityType[i]];
+}
 
 /** Attacking soldier → panic (updates origin). Returns true if panic handled. */
-function tryPanicFromAttackingSoldier(owner, i, neighborIndex, soldierType) {
+function tryPanicFromAttackingSoldier(i, neighborIndex, soldierType) {
   if (Transform.entityType[neighborIndex] !== soldierType) return false;
   const stateIndex = SoldierBehaviorFSM.state[neighborIndex];
   const ranged = SoldierBehaviorFSM.states.RANGED_ATTACKING.stateIndex;
@@ -23,7 +31,7 @@ function tryPanicFromAttackingSoldier(owner, i, neighborIndex, soldierType) {
 
   const PANIC = CivilianBehaviorFSM.states.PANIC;
   if (!CivilianBehaviorFSM.isInState(i, PANIC)) {
-    owner.civilianBehaviorFSM.changeState(PANIC);
+    CivilianBehaviorFSM.changeState(i, PANIC);
   }
   return true;
 }
@@ -38,12 +46,14 @@ class IdleCivilianBehaviorState extends FSMState {
   static onUpdate(owner, i, dt) {
     // const playerEntityType = Player.entityType;
     const mySoldierEntityType = MySoldier.entityType;
-    const neighborCount = owner.neighborCount;
+    const rows = Grid.neighborData; // the neighbour row, read straight: its count, then the ids
+    const row = Grid.getNeighborOffset(i);
+    const neighborCount = rows[row];
 
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = owner.getNeighbor(n);
+    for (let n = 1; n <= neighborCount; n++) {
+      const neighborIndex = rows[row + n];
       // Violence/panic wins over plain flee (same priority as old post-FSM scan)
-      if (tryPanicFromAttackingSoldier(owner, i, neighborIndex, mySoldierEntityType)) {
+      if (tryPanicFromAttackingSoldier(i, neighborIndex, mySoldierEntityType)) {
         return;
       }
       const neighBorEntityType = Transform.entityType[neighborIndex];
@@ -63,7 +73,10 @@ class FleeingCivilianBehaviorState extends FSMState {
   static onUpdate(owner, i, dt) {
     // const playerEntityType = Player.entityType;
     const mySoldierEntityType = MySoldier.entityType;
-    const neighborCount = owner.neighborCount;
+    const rows = Grid.neighborData; // the neighbour row, read straight: its count, then the ids
+    const row = Grid.getNeighborOffset(i);
+    const neighborCount = rows[row];
+    const floorSq = civilianClassOf(i).accelDistFloorSq;
 
     let fleeX = 0;
     let fleeY = 0;
@@ -72,10 +85,10 @@ class FleeingCivilianBehaviorState extends FSMState {
     const myX = Transform.x[i];
     const myY = Transform.y[i];
 
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = owner.getNeighbor(n);
+    for (let n = 1; n <= neighborCount; n++) {
+      const neighborIndex = rows[row + n];
 
-      if (tryPanicFromAttackingSoldier(owner, i, neighborIndex, mySoldierEntityType)) {
+      if (tryPanicFromAttackingSoldier(i, neighborIndex, mySoldierEntityType)) {
         return;
       }
 
@@ -86,7 +99,6 @@ class FleeingCivilianBehaviorState extends FSMState {
         const dist2 = dx * dx + dy * dy;
 
         if (dist2 > 1) {
-          const floorSq = owner.constructor.accelDistFloorSq;
           const d2 = dist2 < floorSq ? floorSq : dist2;
           fleeX += dx / d2;
           fleeY += dy / d2;
@@ -101,7 +113,8 @@ class FleeingCivilianBehaviorState extends FSMState {
     }
 
     const fleeFactor = 40500 / predatorCount;
-    owner.addAcceleration(fleeX * fleeFactor, fleeY * fleeFactor);
+    RigidBody.ax[i] += fleeX * fleeFactor;
+    RigidBody.ay[i] += fleeY * fleeFactor;
   }
 
   static onExit(owner, i, toState) {
@@ -119,28 +132,29 @@ class PanicCivilianBehaviorState extends FSMState {
 
     // Refresh panic origin from nearby attackers (one walk; was separate violence scan)
     const mySoldierEntityType = MySoldier.entityType;
-    const neighborCount = owner.neighborCount;
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = owner.getNeighbor(n);
-      if (tryPanicFromAttackingSoldier(owner, i, neighborIndex, mySoldierEntityType)) {
+    const rows = Grid.neighborData; // the neighbour row, read straight: its count, then the ids
+    const row = Grid.getNeighborOffset(i);
+    const neighborCount = rows[row];
+    for (let n = 1; n <= neighborCount; n++) {
+      const neighborIndex = rows[row + n];
+      if (tryPanicFromAttackingSoldier(i, neighborIndex, mySoldierEntityType)) {
         break;
       }
     }
 
     const ox = CivilianComponent.panicOriginX[i];
     const oy = CivilianComponent.panicOriginY[i];
-    const dx = owner.x - ox;
-    const dy = owner.y - oy;
+    const dx = Transform.x[i] - ox;
+    const dy = Transform.y[i] - oy;
     const dist2 = dx * dx + dy * dy;
 
     if (dist2 > 1) {
-      const floorSq = owner.constructor.accelDistFloorSq;
+      const Civilian = civilianClassOf(i);
+      const floorSq = Civilian.accelDistFloorSq;
       const d2 = dist2 < floorSq ? floorSq : dist2;
-      const panicFleeFactor = owner.constructor.panicFleeFactor;
-      owner.addAcceleration(
-        (dx / d2) * panicFleeFactor,
-        (dy / d2) * panicFleeFactor
-      );
+      const panicFleeFactor = Civilian.panicFleeFactor;
+      RigidBody.ax[i] += (dx / d2) * panicFleeFactor;
+      RigidBody.ay[i] += (dy / d2) * panicFleeFactor;
     }
   }
 

@@ -4,7 +4,7 @@ import { CivilianComponent } from '../components/civilianComponent.js';
 import { Person } from './person.js';
 import { PersonComponent } from '../components/personComponent.js';
 
-const { rng, Transform, GameObject } = WEED;
+const { rng, Transform, GameObject, Grid } = WEED;
 
 export class Civilian extends Person {
   /** Opt into sparse SaveGame (active instances only). */
@@ -12,6 +12,7 @@ export class Civilian extends Person {
   static tickInterval = 4;
 
   static components = [...Person.components, CivilianBehaviorFSM, CivilianComponent];
+  static behaviorFSM = CivilianBehaviorFSM;
 
   onSpawned(spawnConfig = {}) {
     // Random spritesheet for variety
@@ -27,53 +28,36 @@ export class Civilian extends Person {
     this.rigidBody.linearDamping = 2; // match MySoldier
   }
 
-  recieveDamage(damage, sourceX, sourceY) {
-    super.recieveDamage(damage, sourceX, sourceY);
+  /** Damage to civilian i: Person's, then panic, which spreads to the civilians around it. */
+  static recieveDamage(i, damage, sourceX, sourceY) {
+    super.recieveDamage(i, damage, sourceX, sourceY);
 
     if (damage < 0.1) return;
 
     // Store panic origin (where to flee from)
-    const i = this.index;
-
     const PANIC = CivilianBehaviorFSM.states.PANIC;
     const civilianEntityType = Civilian.entityType;
-    const panicX = sourceX != null ? sourceX : this.x - 1;
-    const panicY = sourceY != null ? sourceY : this.y;
-    if (!CivilianBehaviorFSM.isInState(this.index, PANIC)) {
-
+    const panicX = sourceX != null ? sourceX : Transform.x[i] - 1;
+    const panicY = sourceY != null ? sourceY : Transform.y[i];
+    if (!CivilianBehaviorFSM.isInState(i, PANIC)) {
       CivilianComponent.panicOriginX[i] = panicX;
       CivilianComponent.panicOriginY[i] = panicY;
-
-      // Already in panic: reset 20s timer
-      //   CivilianBehaviorFSM.forceChangeState(this.index, PANIC, this);
-      // } else {
-      this.civilianBehaviorFSM.changeState(PANIC);
+      CivilianBehaviorFSM.changeState(i, PANIC);
     }
 
     // Propagate panic to neighbor civilians
-    const neighborCount = this.neighborCount;
+    const neighborCount = Grid.getNeighborCount(i);
     for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = this.getNeighbor(n);
+      const neighborIndex = Grid.getNeighbor(i, n);
       if (neighborIndex === i) continue;
       if (Transform.entityType[neighborIndex] !== civilianEntityType) continue;
       if (PersonComponent.dead[neighborIndex] === 1) continue;
 
-      const neighborInstance = GameObject.get(neighborIndex);
       if (!CivilianBehaviorFSM.isInState(neighborIndex, PANIC)) {
-        //   CivilianBehaviorFSM.forceChangeState(neighborIndex, PANIC, neighborInstance);
-        // } else {
         CivilianComponent.panicOriginX[neighborIndex] = panicX;
         CivilianComponent.panicOriginY[neighborIndex] = panicY;
-        neighborInstance.civilianBehaviorFSM.changeState(PANIC);
+        CivilianBehaviorFSM.changeState(neighborIndex, PANIC);
       }
     }
-  }
-
-  tick(dt) {
-    super.tick(dt);
-
-    if (PersonComponent.dead[this.index] === 1) return;
-
-    this.civilianBehaviorFSM.tick(dt, this);
   }
 }

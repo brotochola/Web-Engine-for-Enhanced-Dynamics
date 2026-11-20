@@ -4,9 +4,8 @@
 import WEED from '/src/index.js';
 
 import { Person } from './person.js';
-import { SoldierBehaviorFSM } from '../fsm/soldierBehaviorFsm.js';
+import { SoldierBehaviorFSM, advanceSoldierFrame } from '../fsm/soldierBehaviorFsm.js';
 import { PersonAnimationFSM } from '../fsm/personAnimationFsm.js';
-import { PersonComponent } from '../components/personComponent.js';
 
 const { Transform, Keyboard, Decoration } = WEED;
 
@@ -31,15 +30,8 @@ export class MySoldier extends Person {
   static resistance = 0.6;
 
   static components = [...Person.components, SoldierBehaviorFSM];
+  static behaviorFSM = SoldierBehaviorFSM;
   outQueryDecorationIndices = new Uint16Array(64);
-  /** The logic frame of the tick running now (its FSM reads it); declared here so every soldier keeps one shape. */
-  _logicFrame = 0;
-  /** The FSM's line-of-sight cache (canShootTarget): the target it holds, whether it was clear, until which frame. */
-  _losCacheTarget = -1;
-  _losCacheClear = 0;
-  _losCacheUntilFrame = 0;
-  /** The logic frame from which an idle soldier that found nobody scans its neighbours again (IdleSoldierState). */
-  _idleScanAt = 0;
 
   onSpawned(spawnConfig = {}) {
     // Set spritesheet and animation before super.onSpawned()
@@ -58,18 +50,10 @@ export class MySoldier extends Person {
     this.rigidBody.linearDamping = 2
   }
 
-  /**
-   * LIFECYCLE: Main update loop
-   */
-  tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
-    this._logicFrame = frameNumber | 0;
-    super.tick(dtRatio);
-
-    if (PersonComponent.dead[this.index] === 1) return;
-
-    this.soldierBehaviorFSM.tick(dtRatio, this);
-
-    // this.swayGrassAround()
+  /** Each frame: Person's tick for the whole type, its behaviour FSM included; the FSM counts the frames it ran. */
+  static tickAll(list, count, dtRatio) {
+    advanceSoldierFrame();
+    super.tickAll(list, count, dtRatio);
   }
 
   swayGrassAround() {
@@ -96,11 +80,5 @@ export class MySoldier extends Person {
   startFollowingDestination() {
     this.soldierBehaviorFSM.changeState(SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
     this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE);
-  }
-
-  die() {
-    // this.sendMessageToScene('die');
-
-    super.die();
   }
 }

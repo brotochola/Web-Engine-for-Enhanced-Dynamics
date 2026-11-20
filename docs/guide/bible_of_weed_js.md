@@ -240,6 +240,58 @@ class Leaf extends GameObject {
 }
 ```
 
+### Objects or ECS: one entity, two ways to write it
+
+Every entity can be written as objects (methods on the instance, `this` the entity) or ECS-style (statics that take the entity's index, `this` the class, the state read and written in the components' columns). The engine runs both the same, and one class may mix them. The ECS way makes no instance for what it runs, and it walks the columns instead of one object per entity: Predator's people written that way (`tickAll`, FSM states by index, static damage hooks) cut its logic from 11.4 to 8.2 ms a frame (40 000 people on one logic worker, −28 %).
+
+| What | Objects | ECS |
+|---|---|---|
+| Each frame | `tick(dtRatio)` | `static tickAll(list, count, dtRatio)` |
+| A hook | `onGotShot(damage, x, y)` | `static onGotShot(i, damage, x, y)` |
+| A component's value | `this.x`, `this.rigidBody.vx` | `Transform.x[i]`, `RigidBody.vx[i]` |
+| Push this tick | `this.addAcceleration(ax, ay)` | `RigidBody.ax[i] += ax` |
+| Set the velocity | `this.setVelocity(vx, vy)` | `RigidBody.setVelocity(i, vx, vy)` |
+| A force or an impulse | `this.applyForce(fx, fy)` | `RigidBody.applyForce(i, fx, fy)` |
+| The animation's rate | `this.setAnimationSpeed(s)` | `SpriteRenderer.setAnimationSpeed(i, s)` |
+| Neighbours | `this.neighborCount`, `this.getNeighbor(k)` | `Grid.getNeighborCount(i)`, `Grid.getNeighbor(i, k)`; in a hot loop the row itself (below) |
+| Its FSMs | `this.walkFSM.tick(dtRatio, this)` | `FSM.tickAll(list, count, dtRatio, this)` |
+| Ask an FSM for a state | `this.walkFSM.changeState(WalkFSM.states.RUN)` | `WalkFSM.changeState(i, WalkFSM.states.RUN)` |
+| The class's tuning | `this.constructor.speed` | `this.speed` (in a static), or `GameObject.classByType[Transform.entityType[i]].speed` |
+| End it | `this.despawn()` | `this.despawn(i)` (in a static) |
+
+```javascript
+const { GameObject, RigidBody, Collider, Transform, Grid } = WEED;
+
+// A walker that steps away from its neighbours, written ECS-style: the whole type in one loop, by index.
+class Walker extends GameObject {
+  static components = [RigidBody, Collider];
+  static repel = 200; // px/s², the class's tuning: `this.repel` in its statics
+  onSpawned() {
+    this.collider.visualRange = 60; // spawn makes the instance it returns: setup through it costs nothing more
+  }
+  static tickAll(list, count, dtRatio) {
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      const x = Transform.x[i];
+      const y = Transform.y[i];
+      // The neighbour row, read straight: its count, then the ids (2.4 ns a neighbour; Grid.getNeighbor(i, k) 5).
+      const rows = Grid.neighborData;
+      const row = Grid.getNeighborOffset(i);
+      for (let n = 1, end = rows[row]; n <= end; n++) {
+        const j = rows[row + n];
+        const dx = x - Transform.x[j];
+        const dy = y - Transform.y[j];
+        const d2 = dx * dx + dy * dy + 1;
+        RigidBody.ax[i] += (dx / d2) * this.repel;
+        RigidBody.ay[i] += (dy / d2) * this.repel;
+      }
+    }
+  }
+}
+```
+
+What still makes an instance on the ECS way: a spawn returns one (its config keys go through its setters, on the thread that spawns it); an FSM hands its states the instance as `owner` (`FSM.tickAll` makes it on an entity's first tick; a state that works by `i` alone never touches it); and the setters with no static form yet (`setAnimation`, `setSprite`, `setTint`, `setScale`, a DirectionalSprite's `facing`) go through `this.get(i)` in a static, which makes it where it is first used.
+
 ### State machines (`FSM`)
 
 An `FSM` is a component: its columns hold each entity's state, its time in that state and the state it asked to go to. Its states are classes of statics (`FSMState`): `onEnter(owner, i, fromState)`, `onExit(owner, i, toState)` and `onUpdate(owner, i, dt, timeInState)`, with `owner` the entity, `i` its index, `timeInState` in whole milliseconds and `this` the state class (`this.fsm` its FSM). A state asks for another with `this.fsm.changeState(i, this.fsm.states.NAME)`; the change happens at the start of that entity's next tick, which calls the old state's `onExit`, then the new one's `onEnter`, then its `onUpdate`. A spawn puts each FSM in its `initial` state and calls that state's `onEnter`.
@@ -2284,7 +2336,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
   }
   ```
 - Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
-- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. A sprite whose statics you write that way (alpha, tint, scale, anchor, sprite, animation, tiles) needs `SpriteRenderer.renderDirty[i] = 1` and `SpriteRenderer.keyedDirty[i] = 1`, what `markDirty()` sets: without them, frames that reuse the last queue draw the old values. Positions need nothing. If both `tick` and `tickAll` exist, instance `tick` wins. A `tickAll` type that lists `CameraInOutListener` keeps `tickAll`: its `onScreenEnter` / `onScreenExit` run after the ticks, with no instance in their static form. `tickInterval` works as for `tick()`: with `static tickInterval = 4` and `logic.staggeredUpdates` on, each frame's `list` holds the quarter of the entities `tick()` would tick on that frame, so each one comes once in 4 frames. `dtRatio` is the frame's, as `tick()` gets it: scale by the interval what accumulates between calls. A type with FSM components and neither `tick()` nor `tickAll` ticks this way, its `tickAll` being `FSM.tickAll` (see State machines).
+- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. A sprite whose statics you write that way (alpha, tint, scale, anchor, sprite, animation, tiles) needs `SpriteRenderer.renderDirty[i] = 1` and `SpriteRenderer.keyedDirty[i] = 1`, what `markDirty()` sets: without them, frames that reuse the last queue draw the old values. The animation's rate has its call, `SpriteRenderer.setAnimationSpeed(i, speed)`, and a body's velocity `RigidBody.setVelocity(i, vx, vy)`. Positions need nothing. If both `tick` and `tickAll` exist, instance `tick` wins. A `tickAll` type that lists `CameraInOutListener` keeps `tickAll`: its `onScreenEnter` / `onScreenExit` run after the ticks, with no instance in their static form. `tickInterval` works as for `tick()`: with `static tickInterval = 4` and `logic.staggeredUpdates` on, each frame's `list` holds the quarter of the entities `tick()` would tick on that frame, so each one comes once in 4 frames. `dtRatio` is the frame's, as `tick()` gets it: scale by the interval what accumulates between calls. A type with FSM components and neither `tick()` nor `tickAll` ticks this way, its `tickAll` being `FSM.tickAll` (see State machines).
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Entity pools (`static entities`) and the joint pool are finite too. A spawn into a full pool returns `null` (a joint returns `-1`); the first one warns once per scene, from whichever thread hit it, and the rest are counted in `getPoolStats(Type).dropped`.

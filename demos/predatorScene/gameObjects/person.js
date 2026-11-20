@@ -23,6 +23,15 @@ import {
 
 const { ShadowCaster, RigidBody, Collider, DirectionalSprite, Transform, rng, NavGrid } = WEED;
 
+/** How close to the world's edge (px) a person starts to be pushed back in, and how hard (px/s²). */
+const EDGE_MARGIN = 50;
+const EDGE_PUSH = 360;
+/** Under this speed (px/s) a person that is not shooting stops: friction alone would leave it creeping. */
+const STOP_SPEED = 0.166;
+
+/** The living among the entities a tickAll got, for the behaviour FSMs (grown when a bigger list comes). */
+let living = new Int32Array(1024);
+
 export class Person extends Lootable {
   static deriveSpeed = true;
 
@@ -135,15 +144,16 @@ export class Person extends Lootable {
     this.setScale(scale, scale);
   }
 
-  recieveDamage(damage, sourceX, sourceY) {
+  /** Damage to person i: none once dead; a lethal one kills at once; a real one bleeds. */
+  static recieveDamage(i, damage, sourceX, sourceY) {
     // Don't process damage if already dead
-    if (PersonComponent.dead[this.index] === 1) return;
+    if (PersonComponent.dead[i] === 1) return;
 
-    super.recieveDamage(damage, sourceX, sourceY);
+    super.recieveDamage(i, damage, sourceX, sourceY);
 
     // Trigger death immediately on lethal damage (don't wait for next tick)
-    if (LootableComponent.health[this.index] <= 0) {
-      this.die();
+    if (LootableComponent.health[i] <= 0) {
+      this.die(i);
       return;
     }
 
@@ -152,8 +162,8 @@ export class Person extends Lootable {
     ParticleEmitter.emit({
       count: Math.floor(damage * (rng() * 10 + 4)),
       texture: 'blood',
-      x: this.x,
-      y: this.y,
+      x: Transform.x[i],
+      y: Transform.y[i],
       z: -30,
       angleXY: { min: 0, max: 360 },
       speed: { min: 0.7, max: 1.66 },
@@ -167,63 +177,78 @@ export class Person extends Lootable {
     });
   }
 
-  tick(dtRatio) {
-    const isDead = PersonComponent.dead[this.index] === 1;
-    const isShooting = PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.SHOOTING);
+  /**
+   * Each frame, for the whole type at once (E-530: Predator written static). Every person: a living one with no health
+   * left dies (Lootable's check); one that is not shooting is pushed back in near the world's edges and stops when too
+   * slow to walk (a shooter skips both, so knockback and collisions still move it). Then the animation FSM for all, and
+   * the type's behaviour FSM (static behaviorFSM) for the living. All from the columns, by index.
+   */
+  static tickAll(list, count, dtRatio) {
+    const dead = PersonComponent.dead;
+    const animationState = PersonAnimationFSM.state;
+    const shooting = PersonAnimationFSM.states.SHOOTING.stateIndex;
+    const health = LootableComponent.health;
+    const x = Transform.x;
+    const y = Transform.y;
+    const ax = RigidBody.ax;
+    const ay = RigidBody.ay;
+    const speed = RigidBody.speed;
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+    const config = this.prototype.config;
+    const maxX = (config.worldWidth || 1000) - EDGE_MARGIN;
+    const maxY = (config.worldHeight || 1000) - EDGE_MARGIN;
 
-    if (!isDead) {
-      super.tick(dtRatio);
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      const isShooting = animationState[i] === shooting;
+      if (dead[i] !== 1 && health[i] <= 0) this.die(i);
+      if (isShooting) continue;
+
+      const px = x[i];
+      const py = y[i];
+      if (px < EDGE_MARGIN) ax[i] += EDGE_PUSH;
+      if (px > maxX) ax[i] -= EDGE_PUSH;
+      if (py < EDGE_MARGIN) ay[i] += EDGE_PUSH;
+      if (py > maxY) ay[i] -= EDGE_PUSH;
+      if (speed[i] < STOP_SPEED && (vx[i] !== 0 || vy[i] !== 0)) RigidBody.setVelocity(i, 0, 0);
     }
 
-    // When shooting: don't run (no acceleration from behavior) but allow being pushed.
-    // We skip keepWithinBounds and low-speed zero so external pushes (knockback, collisions) work.
-    if (!isShooting) {
-      this.keepWithinBounds();
-      if (RigidBody.speed[this.index] < 0.166) {
-        const i = this.index;
-        if (RigidBody.vx[i] !== 0 || RigidBody.vy[i] !== 0) {
-          this.setVelocity(0, 0);
-        }
-      }
+    PersonAnimationFSM.tickAll(list, count, dtRatio, this);
+
+    const BehaviorFSM = this.behaviorFSM;
+    if (BehaviorFSM === null) return;
+    if (living.length < count) living = new Int32Array(count);
+    let alive = 0;
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      if (dead[i] !== 1) living[alive++] = i;
     }
-
-    // const animAfterDie = SpriteRenderer.animationState[this.index];
-
-    // Animation FSM handles all animation state
-    if (this.spriteRenderer?.spritesheetId) this.personAnimationFSM.tick(dtRatio, this);
-
-    // const animAfterFSM = SpriteRenderer.animationState[this.index];
-
-    // Debug: track animation state changes for dying entities
-    // if (isDead && animBefore !== animAfterFSM) {
-    //     console.log(`[Person ${this.index}] DYING - Anim changed! Before:${animBefore} AfterDie:${animAfterDie} AfterFSM:${animAfterFSM}`);
-    // }
-
-    // Check if dying animation finished (FSM transitioned to DEAD)
-    // if (PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD)) {
-    // this.onDeathAnimationComplete();
-    // }
+    BehaviorFSM.tickAll(living, alive, dtRatio, this);
   }
+
+  /** The FSM that decides what a person of this type does (its subclasses name theirs); null for none. */
+  static behaviorFSM = null;
 
   // ==========================================
   // WEAPON HELPERS - Check inventory and get best weapon
   // ==========================================
 
   /**
-   * Check if this person has any ranged weapon
+   * Whether the person at entity index i has any ranged weapon
+   * @param {number} i - entity index
    * @returns {boolean} True if has pistol or machine gun
    */
-  hasGun() {
-    const i = this.index;
+  static hasGun(i) {
     return LootableComponent.dropPistol[i] > 0 || LootableComponent.dropMachineGun[i] > 0;
   }
 
   /**
-   * Get the best weapon this person has (machine gun > pistol > null)
+   * The best weapon the person at entity index i has (machine gun > pistol > null)
+   * @param {number} i - entity index
    * @returns {Object|null} Weapon definition from Person.WEAPONS or null if unarmed
    */
-  getBestWeapon() {
-    const i = this.index;
+  static bestWeapon(i) {
     if (LootableComponent.dropMachineGun[i] > 0) return Person.WEAPONS.MACHINE_GUN;
     if (LootableComponent.dropPistol[i] > 0) return Person.WEAPONS.PISTOL;
     return null;
@@ -252,11 +277,11 @@ export class Person extends Lootable {
   shoot(targetEntityIndex) {
     if (PersonComponent.dead[this.index] === 1) return false;
 
-    const weapon = this.getBestWeapon();
+    const weapon = Person.bestWeapon(this.index);
     if (!weapon) return false;
 
     // Block if performing action (unless rapid-fire weapon + already in shooting animation)
-    if (this.isPerformingAction()) {
+    if (Person.isPerformingAction(this.index)) {
       const rapidFireInShooting = weapon.rapidFire && PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.SHOOTING);
       if (!rapidFireInShooting) return false;
     }
@@ -432,17 +457,17 @@ export class Person extends Lootable {
   punch(targetEntityIndex) {
     if (targetEntityIndex < 0) return false;
     if (PersonComponent.dead[this.index] === 1) return false;
-    if (this.isPerformingAction()) return false;
+    if (Person.isPerformingAction(this.index)) return false;
     PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.PUNCHING);
 
     // Face the target
     this.directionalSprite.facingFrom = 'manual';
     this.directionalSprite.lookAt(Transform.x[targetEntityIndex], Transform.y[targetEntityIndex]);
 
-    const target = GameObject.get(targetEntityIndex);
-    if (target && target.recieveDamage) {
-      const damage = this.constructor.punchDamage;
-      target.recieveDamage(damage, this.x, this.y);
+    // The target's class takes the damage (its recieveDamage is static, like this one's).
+    const Target = GameObject.classByType[Transform.entityType[targetEntityIndex]];
+    if (Target && typeof Target.recieveDamage === 'function') {
+      Target.recieveDamage(targetEntityIndex, this.constructor.punchDamage, this.x, this.y);
     }
 
     return true;
@@ -454,17 +479,18 @@ export class Person extends Lootable {
    */
   hitWithStick() {
     if (PersonComponent.dead[this.index] === 1) return false;
-    if (this.isPerformingAction()) return false;
+    if (Person.isPerformingAction(this.index)) return false;
     PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.STICK_HIT);
     return true;
   }
 
   /**
-   * Check if currently performing a one-shot action
+   * Whether the person at entity index i is performing a one-shot action
+   * @param {number} i - entity index
    * @returns {boolean} True if busy with an action
    */
-  isPerformingAction() {
-    const state = PersonAnimationFSM.state[this.index];
+  static isPerformingAction(i) {
+    const state = PersonAnimationFSM.state[i];
     const idleIndex = PersonAnimationFSM.states.IDLE.stateIndex;
     const walkingIndex = PersonAnimationFSM.states.WALKING.stateIndex;
     const runningIndex = PersonAnimationFSM.states.RUNNING.stateIndex;
@@ -482,50 +508,26 @@ export class Person extends Lootable {
     return PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD);
   }
 
-  /**
-   * Keep entity within world boundaries
-   */
-  keepWithinBounds() {
-    const margin = 50;
-    const turnFactor = 360; // px/s²
-    const i = this.index;
+  /** Person i dies: it stops fighting, falls (the dying animation) and bleeds; its loot drops when the fall ends. */
+  static die(i) {
+    // Already dead? Don't trigger again
+    if (PersonComponent.dead[i] === 1) return;
+    RigidBody.linearDamping[i] = 0.9;
+    // Mark as dead immediately - prevents firing and other actions
+    PersonComponent.dead[i] = 1;
 
     const x = Transform.x[i];
     const y = Transform.y[i];
-    const worldWidth = this.config.worldWidth || 1000;
-    const worldHeight = this.config.worldHeight || 1000;
-
-    if (x < margin) {
-      this.addAcceleration(turnFactor, 0);
-    }
-    if (x > worldWidth - margin) {
-      this.addAcceleration(-turnFactor, 0);
-    }
-    if (y < margin) {
-      this.addAcceleration(0, turnFactor);
-    }
-    if (y > worldHeight - margin) {
-      this.addAcceleration(0, -turnFactor);
-    }
-  }
-
-  die() {
-    // Already dead? Don't trigger again
-    if (PersonComponent.dead[this.index] === 1) return;
-    this.rigidBody.linearDamping = 0.9;
-    // Mark as dead immediately - prevents firing and other actions
-    PersonComponent.dead[this.index] = 1;
-
     const deathSounds = ['dolor1', 'dolor2', 'dolor3', 'dolor4'];
     const deathSound = deathSounds[(rng() * deathSounds.length) | 0];
-    SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, this.x, this.y, 'voice');
+    SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, x, y, 'voice');
 
     // Emit blood particles
     ParticleEmitter.emit({
       count: Math.floor(10 + rng() * 5),
       texture: 'blood',
-      x: this.x,
-      y: this.y,
+      x,
+      y,
       z: -10,
       angleXY: { min: 0, max: 360 },
       speed: { min: 0.7, max: 2 },
@@ -539,10 +541,9 @@ export class Person extends Lootable {
     });
 
     // Start dying animation IMMEDIATELY - forceChangeState executes transition now
-    // (changeState only queues for next tick, which can cause animation issues)
-    // console.log(`[Person ${this.index}] die() called, forcing DYING state. AnimState BEFORE:`, SpriteRenderer.animationState[this.index]);
-    this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.DYING);
-    // console.log(`[Person ${this.index}] After forceChangeState, FSM state:`, PersonAnimationFSM.getStateName(this.index), `AnimState AFTER:`, SpriteRenderer.animationState[this.index]);
+    // (changeState only queues for next tick, which can cause animation issues). The FSM's states get the instance as
+    // their owner (DYING's onEnter sets the animation through it): made here for the death alone.
+    PersonAnimationFSM.forceChangeState(i, PersonAnimationFSM.states.DYING, this.get(i));
   }
 
   /**
@@ -568,8 +569,8 @@ export class Person extends Lootable {
       alpha: 1,
     });
 
-    // Spawn loot drops (from Lootable.die())
-    super.die();
+    // Spawn loot drops
+    Lootable.dropLoot(this.index);
 
     // Remove the entity
     this.despawn();

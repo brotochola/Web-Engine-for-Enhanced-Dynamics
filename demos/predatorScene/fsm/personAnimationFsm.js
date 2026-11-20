@@ -4,7 +4,7 @@
 import WEED from '/src/index.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 
-const { FSM, FSMState, RigidBody } = WEED;
+const { FSM, FSMState, RigidBody, SpriteRenderer } = WEED;
 
 const ACTION_ANIM_SPEED = 0.25;
 const DYING_ANIM_SPEED = 0.5;
@@ -85,7 +85,7 @@ class WalkingState extends FSMState {
 
     const speed = RigidBody.speed[i];
 
-    owner.setAnimationSpeed(speed * WALK_ANIMATION_MULTIPLIER);
+    SpriteRenderer.setAnimationSpeed(i, speed * WALK_ANIMATION_MULTIPLIER);
 
     // Stopped moving? -> Idle immediately
     if (speed <= WALK_SPEED_THRESHOLD) {
@@ -124,7 +124,7 @@ class RunningState extends FSMState {
 
     const speed = RigidBody.speed[i];
 
-    owner.setAnimationSpeed(speed * RUN_ANIMATION_MULTIPLIER);
+    SpriteRenderer.setAnimationSpeed(i, speed * RUN_ANIMATION_MULTIPLIER);
 
     // Want to walk? Wait for one run cycle to complete
     if (speed < RUN_SPEED_THRESHOLD) {
