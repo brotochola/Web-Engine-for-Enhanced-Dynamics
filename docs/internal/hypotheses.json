@@ -11633,7 +11633,8 @@
         "R-1275",
         "R-1278",
         "R-1314",
-        "R-1588"
+        "R-1588",
+        "R-1625"
       ]
     },
     {
@@ -40016,6 +40017,15 @@
       "title": "A 10-minute drift soak on the ASUS (Predator 0.2, barrio 2 000, boids 27 000): nothing grows, Box2D's heap flat; every worker is cheaper at 10 min than at 20 s; the barrio's drawn frames -12 %",
       "verdict": "note",
       "text": "ASUS lab job 0899z (00:55-01:27): a drift soak on the 2-core laptop at main 9647eb9b. Each scene was measured 10 s\nafter a 10 s warm-up, then 10 s after a 600 s warm-up (two page loads), headed, --src, detailed stats off. Scenes at\ntheir capacity edges: Predator by day crowd 0.2 with dayCycle=0, the barrio at hour 22 with 2 000 people (time\nfrozen), boids 27 000. Per worker, own work (exact-frame step - wait) and p99, after 10 s -> after 600 s:\n\n| worker | Predator | barrio | boids |\n|---|---|---|---|\n| spatial0 | 2.24 -> 1.22 (p99 6.7 -> 3.6) | 7.97 -> 6.28 (p99 29.4 -> 11.4) | 5.58 -> 0.89 (11.6 -> 2.8); spatial1 5.73 -> 5.54 |\n| physics | 2.92 -> 1.05 (5.9 -> 2.9) | 6.81 -> 5.10 (20.8 -> 8.9) | 6.35 -> 5.69 (10.3 -> 7.4) |\n| logic0 | 1.64 -> 0.91 (6.4 -> 2.9) | 4.52 -> 3.28 (14.0 -> 8.6) | 1.90 -> 1.29 (6.7 -> 2.6) |\n| pre-render | 2.81 -> 1.47 (5.7 -> 3.6) | 8.50 -> 5.35 (25.2 -> 11.9) | 2.21 -> 0.62 (5.5 -> 1.1) |\n| renderer | 1.89 -> 1.31 (7.7 -> 3.2) | 6.23 -> 4.16 (15.4 -> 8.2) | 0.73 -> 0.12 (3.3 -> 0.3) |\n| Box2D heap (KB) | 339 515 -> 339 751 | 489 386 -> 489 678 | 104 827 -> 104 808 |\n\n- **No drift up: nothing grows over 10 minutes.**\n  - No worker's p99 rose by more than a bin, except boids' particle worker (0.4 -> 0.7 ms, under a millisecond).\n  - Box2D's heap is flat to 0.1 %. No leak in these three scenes.\n- **Everything is cheaper at 10 minutes than at 10 to 20 s:** often half, and p99 down 40 to 60 %. Part is the\n  engine warming (JIT and wasm tiers on a slow core), part is the scene settling: Predator's bodies fall asleep, and\n  boids' flock gathered into spatial1's half (spatial0 5.58 -> 0.89 ms, spatial1 level). These runs do not separate\n  the two.\n  - So the ASUS's capacity runs, with 9 s of warm-up, may measure a scene still warming. A warm-up ladder (10, 30,\n    60, 120 s) would tell how long this laptop needs; queued.\n- **The barrio drew fewer frames at 10 minutes:** 353 -> 311 in 10 s, -12 %, while every CPU worker got cheaper.\n  This is the GPU side, a laptop's GPU clock sinking as it heats (15 W shared) or the view changing as people walk.\n  A lead; the CPU frequency was not logged in this job."
+    },
+    {
+      "id": "R-1625",
+      "date": "2026-11-20",
+      "time": "01:32",
+      "timeFrom": "recorded",
+      "title": "Fewer pixels on the HD 620: at 1280x720, Predator's night light3d draws 26 -> 43 fps (+64 %) and bunnyMark 20 000 holds 60 (56 at 1080p); the engine has no render scale",
+      "verdict": "note",
+      "text": "ASUS lab job 0899z2 (01:27-01:32): is \"fewer pixels\" the lever on the HD 620? R-1584 found bunnyMark pixel-bound\nthere, and R-1623 found Predator's light3d at 24 to 31 ms of GPU. The engine has no render scale, so the canvas size\nstands in for one: 1280x720 (44 % of the pixels) against 1920x1080. 2 rounds alternated, headed, --src, detailed stats\noff, main 9647eb9b, Intel 31.0.101.2145. The renderer's drawn frames over 10 s:\n\n| scene | 1920x1080 (r1 / r2) | 1280x720 (r1 / r2) |\n|---|---|---|\n| bunnyMark 20 000 (its capacity is 15 000, R-1598) | 560 / 561 (56 fps) | 601 / 601 (60, the cap) |\n| Predator light3d at 22 h, crowd 0.2 | 259 / 260 (26 fps) | 426 / 427 (43 fps, +64 %) |\n\n- **On the weak GPU, pixels are the lever.**\n  - At 44 % of the pixels, Predator's night light3d draws 64 % more frames, though still not 60.\n  - bunnyMark at 20 000 holds 60 fps.\n  - The CPU side barely moves: Predator's pre-render own work 3.2 to 2.9 ms. So these scenes are GPU-bound on this\n    laptop at 1080p.\n- **For DX-AUTOQUALITY:** the engine has no render scale (an internal resolution under the canvas's, upscaled once).\n  On this class of GPU it would be the largest single knob measured so far: more than C's light3d settings (R-1623),\n  and without changing the art."
     }
   ],
   "leads": [
