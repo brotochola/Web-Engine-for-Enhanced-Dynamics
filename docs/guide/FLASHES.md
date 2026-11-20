@@ -41,7 +41,7 @@ Flash.spawn({
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `x`, `y` | required | World position. Off-screen spawns return `null` (`Camera.isOnScreen` + margin). |
+| `x`, `y` | required | World position. Off-screen spawns return `null` (`spawnIndex`: -1) (`Camera.isOnScreen` + margin). |
 | `z` | `0` | How far up the screen the flash is drawn, pool and glow (its `LightEmitter.offsetY` is `-z`). |
 | `lifespan` | `100` | Milliseconds until auto-despawn. |
 | `color` | `0xffffff` | Packed RGB. |
@@ -54,7 +54,7 @@ Flash.spawn({
 | `coneSoftness` | `0` | 0..1, how much of the cone's edge fades. |
 | `direction` | `0` | Radians, where the cone points, in the world's frame (a flash never turns). |
 
-Returns a `Flash` instance, or `null` if the pool is exhausted, not initialized, off-screen, or spawn was routed away.
+`Flash.spawn` returns the `Flash` instance, or `null` if the pool is exhausted, not initialized, off-screen, or spawn was routed away. `Flash.spawnIndex` (the same config) returns the flash's entity index, or -1, and makes no instance: a gunfight's flashes make no object.
 
 ### When to disable shadows
 

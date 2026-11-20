@@ -5380,10 +5380,11 @@ export declare class Flash extends GameObject {
   get flashComponent(): FlashComponent;
   static initialize(maxFlashes: number): void;
   static isOnScreen(worldX: number, worldY: number): boolean;
-  static create(config: FlashCreateConfig): Flash | null;
-  onSpawned(spawnConfig?: FlashCreateConfig): void;
-  onDespawned(): void;
-  tick(dtRatio: number, deltaTime: number): void;
+  /** A flash by index (no instance): its entity index, or -1 if not initialized, off-screen or the pool is full. */
+  static spawnIndex(config: FlashCreateConfig): number;
+  static onSpawned(i: number, spawnConfig: FlashCreateConfig): void;
+  static onDespawned(i: number): void;
+  static tickAll(list: ArrayLike<number>, count: number, dtRatio: number): void;
 }
 
 // --- Default namespace export ---

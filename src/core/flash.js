@@ -1,7 +1,8 @@
 // Flash.js - Short-lived light flashes (muzzle flashes, sparks, impacts, etc.)
 // Flashes are GameObjects with LightEmitter + FlashComponent
 // They fade out over their lifespan and auto-despawn when expired
-// Updated via tick() like any other GameObject
+// Written the ECS way (E-536): Flash.spawnIndex spawns one with no instance, and its hooks and its tick are statics by
+// index (tickAll), so the flashes of a gunfight make no object; Flash.spawn is the object way's form, the instance.
 //
 // NOT in the spatial grid: Flash has no Collider, so it is never inserted into grid cells and never receives
 // neighbor data. Its point shadows come from the shadow stamp, which grids the casters itself; castShadows: false
@@ -73,8 +74,8 @@ export class Flash extends GameObject {
   }
 
   /**
-   * Spawn a flash at the specified position.
-   * Calls GameObject.spawn (not this.spawn) so Flash.spawn does not recurse.
+   * Spawn a flash at the specified position, by index (no instance).
+   * Calls GameObject.spawnIndex (super) so Flash.spawnIndex does not recurse.
    *
    * @param {Object} config - Flash configuration
    * @param {number} config.x - X position in world coordinates
@@ -91,10 +92,10 @@ export class Flash extends GameObject {
    * @param {number} [config.coneAngle=2π] - A cone's whole aperture in radians (2π: round), as LightEmitter's
    * @param {number} [config.coneSoftness=0] - 0..1, how much of the cone's edge fades
    * @param {number} [config.direction=0] - Radians, where the cone points (a flash never turns: in the world's frame)
-   * @returns {Flash|null} - The spawned flash instance, or null if pool exhausted/off-screen
+   * @returns {number} - The flash's entity index, or -1 if not initialized, off-screen or the pool is full
    *
    * @example
-   * Flash.spawn({
+   * Flash.spawnIndex({
    *   x: gun.x + 20,
    *   y: gun.y,
    *   z: 30,
@@ -106,17 +107,17 @@ export class Flash extends GameObject {
    *
    * @example
    * // A muzzle flash that lights ahead of the barrel only.
-   * Flash.spawn({ x: muzzleX, y: muzzleY, radius: 900, coneAngle: Math.PI / 2, coneSoftness: 0.6, direction: aim });
+   * Flash.spawnIndex({ x: muzzleX, y: muzzleY, radius: 900, coneAngle: Math.PI / 2, coneSoftness: 0.6, direction: aim });
    */
-  static spawn(config) {
+  static spawnIndex(config) {
     if (!this.initialized) {
-      console.warn('Flash.spawn() called before initialization');
-      return null;
+      console.warn('Flash.spawnIndex() called before initialization');
+      return -1;
     }
 
     // Skip flashes that are off-screen (no point rendering them)
     if (!this.isOnScreen(config.x, config.y)) {
-      return null;
+      return -1;
     }
 
     const s = this._spawnScratch;
@@ -135,83 +136,94 @@ export class Flash extends GameObject {
     s.coneAngle = config.coneAngle ?? Math.PI * 2;
     s.coneSoftness = config.coneSoftness ?? 0;
 
-    return super.spawn(s);
+    return super.spawnIndex(s);
   }
 
   /**
-   * LIFECYCLE: Called when flash is spawned from pool
-   * @param {Object} spawnConfig - Spawn configuration from Flash.spawn()
+   * The object way's form of spawnIndex: the flash's instance, or null when none was spawned.
+   * @param {Object} config - as spawnIndex's
+   * @returns {Flash|null}
    */
-  onSpawned(spawnConfig = {}) {
-    // Set position
-    this.x = spawnConfig.x ?? 0;
-    this.y = spawnConfig.y ?? 0;
+  static spawn(config) {
+    const i = this.spawnIndex(config);
+    return i < 0 ? null : GameObject.get(i);
+  }
 
-    // Set light emitter properties: z lifts the pool and the glow together (offsetY is local, a flash never turns).
-    this.lightEmitter.offsetY = -(spawnConfig.z ?? 0);
-    this.lightEmitter.color = spawnConfig.color ?? 0xffffff;
-    this.lightEmitter.radius = spawnConfig.radius ?? 1000;
-    this.lightEmitter.brightness = spawnConfig.brightness ?? 1;
-    this.lightEmitter.glow = spawnConfig.glow ?? 0.2;
-    this.lightEmitter.glowRadius = spawnConfig.glowRadius ?? 0;
-    this.lightEmitter.active = 1;
+  /**
+   * LIFECYCLE: a flash spawned from the pool, by index (spawnIndex's config: Flash.spawnIndex fills every key).
+   * @param {number} i - its entity index
+   * @param {Object} spawnConfig
+   */
+  static onSpawned(i, spawnConfig) {
+    Transform.setPosition(i, spawnConfig.x ?? 0, spawnConfig.y ?? 0);
 
-    // Set flash component properties
-    this.flashComponent.lifespan = spawnConfig.lifespan ?? 100;
-    this.flashComponent.currentLife = 0;
-    this.flashComponent.initialRadius = this.lightEmitter.radius;
-    this.flashComponent.initialGlow = this.lightEmitter.glow;
-    this.lightEmitter.castShadows = spawnConfig.castShadows !== 0 && spawnConfig.castShadows !== false ? 1 : 0;
+    // Its light: z lifts the pool and the glow together (offsetY is local, a flash never turns).
+    LightEmitter.offsetY[i] = -(spawnConfig.z ?? 0);
+    LightEmitter.color[i] = spawnConfig.color ?? 0xffffff;
+    LightEmitter.radius[i] = spawnConfig.radius ?? 1000;
+    LightEmitter.brightness[i] = spawnConfig.brightness ?? 1;
+    LightEmitter.setGlow(i, spawnConfig.glow ?? 0.2);
+    LightEmitter.setGlowRadius(i, spawnConfig.glowRadius ?? 0);
+    LightEmitter.active[i] = 1;
+    LightEmitter.castShadows[i] = spawnConfig.castShadows !== 0 && spawnConfig.castShadows !== false ? 1 : 0;
     // DX-SPOT: its cone (2π, the default, is round); a flash never turns, so the direction is the world's.
-    this.lightEmitter.coneAngle = spawnConfig.coneAngle ?? Math.PI * 2;
-    this.lightEmitter.coneSoftness = spawnConfig.coneSoftness ?? 0;
-    this.lightEmitter.direction = spawnConfig.direction ?? 0;
-    this.flashComponent.active = 1;
+    LightEmitter.setConeAngle(i, spawnConfig.coneAngle ?? Math.PI * 2);
+    LightEmitter.setConeSoftness(i, spawnConfig.coneSoftness ?? 0);
+    LightEmitter.setDirection(i, spawnConfig.direction ?? 0);
+
+    // Its life, and the light it fades from.
+    FlashComponent.lifespan[i] = spawnConfig.lifespan ?? 100;
+    FlashComponent.currentLife[i] = 0;
+    FlashComponent.initialRadius[i] = LightEmitter.radius[i];
+    FlashComponent.initialGlow[i] = LightEmitter.glow[i];
+    FlashComponent.active[i] = 1;
+  }
+
+  /** LIFECYCLE: a flash despawned, by index: its light and its life off. */
+  static onDespawned(i) {
+    LightEmitter.active[i] = 0;
+    FlashComponent.active[i] = 0;
   }
 
   /**
-   * LIFECYCLE: Called when flash is despawned
+   * Each frame, every flash of this worker: fades its light over its lifespan, despawns it when expired.
+   * @param {ArrayLike<number>} list
+   * @param {number} count
+   * @param {number} dtRatio - the frame's (1 = 16.67 ms)
    */
-  onDespawned() {
-    this.lightEmitter.active = 0;
-    this.flashComponent.active = 0;
-  }
-
-  /**
-   * LIFECYCLE: Update flash each frame
-   * Fades intensity over lifespan, despawns when expired
-   */
-  tick(dtRatio, deltaTime) {
-    const i = this.index;
+  static tickAll(list, count, dtRatio) {
     const fc = FlashComponent;
+    const deltaTime = dtRatio * 16.67;
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      // Guard against stale ticks after despawn/list updates.
+      if (Transform.active[i] === 0 || fc.active[i] === 0) continue;
 
-    // Guard against stale ticks after despawn/list updates.
-    if (Transform.active[i] === 0 || fc.active[i] === 0) return;
+      const lifespan = fc.lifespan[i];
+      // Safety: if lifetime data is invalid, fail fast instead of leaking active flashes.
+      if (!Number.isFinite(lifespan) || lifespan <= 0) {
+        this.despawn(i);
+        continue;
+      }
 
-    const lifespan = fc.lifespan[i];
-    // Safety: if lifetime data is invalid, fail fast instead of leaking active flashes.
-    if (!Number.isFinite(lifespan) || lifespan <= 0) {
-      this.despawn();
-      return;
+      const nextLife = fc.currentLife[i] + deltaTime;
+      if (!Number.isFinite(nextLife)) {
+        this.despawn(i);
+        continue;
+      }
+      fc.currentLife[i] = nextLife;
+
+      if (nextLife >= lifespan) {
+        this.despawn(i);
+        continue;
+      }
+
+      // Fade: the reach as the square root of what is left, the glow linearly (the falloff's I = (radius / 10)²
+      // falls linearly).
+      const remaining = 1 - nextLife / lifespan;
+      const left = Number.isFinite(remaining) && remaining > 0 ? remaining : 0;
+      LightEmitter.radius[i] = fc.initialRadius[i] * Math.sqrt(left);
+      LightEmitter.glow[i] = fc.initialGlow[i] * left;
     }
-
-    const nextLife = fc.currentLife[i] + deltaTime;
-    if (!Number.isFinite(nextLife)) {
-      this.despawn();
-      return;
-    }
-    fc.currentLife[i] = nextLife;
-
-    if (nextLife >= lifespan) {
-      this.despawn();
-      return;
-    }
-
-    // Fade: the reach as the square root of what is left, the glow linearly (the falloff's I = (radius / 10)² falls
-    // linearly).
-    const remaining = 1 - (nextLife / lifespan);
-    const left = Number.isFinite(remaining) && remaining > 0 ? remaining : 0;
-    LightEmitter.radius[i] = fc.initialRadius[i] * Math.sqrt(left);
-    LightEmitter.glow[i] = fc.initialGlow[i] * left;
   }
 }
