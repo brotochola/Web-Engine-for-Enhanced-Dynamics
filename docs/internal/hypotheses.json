@@ -10171,10 +10171,10 @@
     {
       "id": "N-81",
       "title": "A paused world (time scale 0) makes no body: spawns and teleports wait for the next step to be in Box2D",
-      "status": "open",
-      "statusText": "found 2026-10-27, a bug: probed in Chromium, not visible today, a fix tried and not kept",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (21f915a0), on fix/n81-paused-world-sync (R-1701)",
       "date": "2026-10-27",
-      "result": "The physics host steps only when the scaled dt is above 0, and doStep at dt 0 only services queries: no syncBodies, command drain, joint sync, pose publish or moved list. A body spawned in a hitstop is missing from Box2D's queries until it ends (the editor's held world: until Play). Not visible: a reused slot's published pose has rotation (0, 0), read as not live, so the collect draws Transform.",
+      "result": "Fixed 2026-11-20 (21f915a0): on a frame whose scaled dt is 0 the host runs weedjsSyncPaused (bodies, commands, joints, queries; pose and the teleports' moved list when something changed), so a hitstop's spawns and teleports are in Box2D's queries at once.",
       "area": "physics",
       "kind": "bug",
       "refs": [
@@ -10185,7 +10185,10 @@
         "hitstop spawn",
         "dt 0 sync"
       ],
-      "next": "Take it up if a game queries what it spawns during a hitstop: at dt 0, syncBodies, drainCommands and syncJoints, then the moved list of the teleports and the pose when something changed (tried: the pose right 27 ms after an edit)."
+      "next": "Nothing left: a game that queries what it spawns in a hitstop finds it. A scene check (no demo sets Time.scale 0 today) can come with the first game that does.",
+      "records": [
+        "R-1701"
+      ]
     },
     {
       "id": "N-82",
@@ -40082,6 +40085,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1701",
+      "date": "2026-11-20",
+      "time": "04:25",
+      "timeFrom": "recorded",
+      "title": "N-81 fixed: a frame at time scale 0 syncs bodies, commands and joints into Box2D",
+      "verdict": "kept-hygiene",
+      "text": "**N-81 fixed: a frame at a time scale of 0 now syncs the paused world into Box2D.** Branch fix/n81-paused-world-sync, 21f915a0.\n\n- **Cause:** the physics host called weedjsDoStep only when the frame's scaled dt was above 0, so a hitstop's (or the editor's held world's) spawns, despawns, teleports, commands and joints waited for the next step. Box2D's queries missed them meanwhile, and the spatial grid's movers path missed the teleports.\n- **Fix:** on such a frame, gameLoop and stepOnce call weedjsSyncPaused (weedjsPost.js, marked as in a step so the query wake leaves the services to it). It runs syncBodies, drainCommands and syncJoints, then the six query services. When anything changed, it also publishes the previous pose, the children, the pose, and a moved list holding the teleports alone. A paused frame that changes nothing publishes nothing. The step path is untouched, so no speed verdict is needed: the paused path runs only at a time scale of 0.\n- **Test:** tests/node/pausedWorldSync.test.js runs the host's stepOnce, its paused frame and the paused sync as shipped, against stand-ins (5 tests; all fail on bugs/base). Suites: node 3291 of 3292, the one failure frameChainWait's \"Pixi waits …\" timing flake (its file passed twice alone); demos 121 of 121."
     }
   ],
   "leads": [
