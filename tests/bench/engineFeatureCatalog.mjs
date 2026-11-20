@@ -131,7 +131,9 @@ export const ENGINE_FEATURES = [
       kind: 'stress',
     },
     primary: ['spatialMax_STEP_MS'],
-    load: ['BODY_COUNT', 'NEIGHBORS_REUSED'],
+    // N-322: not NEIGHBORS_REUSED: how many lists the engine reuses is its own choice, not the scene's load (v0.14.0
+    // reads 0 there, so the row could never compare; a change that stopped reusing would read as load, not cost).
+    load: ['BODY_COUNT'],
   },
   {
     id: 'box2d',
