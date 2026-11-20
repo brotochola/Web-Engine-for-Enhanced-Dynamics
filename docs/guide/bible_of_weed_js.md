@@ -240,6 +240,58 @@ class Leaf extends GameObject {
 }
 ```
 
+### Objects or ECS: one entity, two ways to write it
+
+Every entity can be written as objects (methods on the instance, `this` the entity) or ECS-style (statics that take the entity's index, `this` the class, the state read and written in the components' columns). The engine runs both the same, and one class may mix them. The ECS way makes no instance for what it runs, and it walks the columns instead of one object per entity: Predator's people written that way (`tickAll`, FSM states by index, static damage hooks) cut its logic from 11.4 to 8.2 ms a frame (40 000 people on one logic worker, −28 %).
+
+| What | Objects | ECS |
+|---|---|---|
+| Each frame | `tick(dtRatio)` | `static tickAll(list, count, dtRatio)` |
+| A hook | `onGotShot(damage, x, y)` | `static onGotShot(i, damage, x, y)` |
+| A component's value | `this.x`, `this.rigidBody.vx` | `Transform.x[i]`, `RigidBody.vx[i]` |
+| Push this tick | `this.addAcceleration(ax, ay)` | `RigidBody.ax[i] += ax` |
+| Set the velocity | `this.setVelocity(vx, vy)` | `RigidBody.setVelocity(i, vx, vy)` |
+| A force or an impulse | `this.applyForce(fx, fy)` | `RigidBody.applyForce(i, fx, fy)` |
+| The animation's rate | `this.setAnimationSpeed(s)` | `SpriteRenderer.setAnimationSpeed(i, s)` |
+| Neighbours | `this.neighborCount`, `this.getNeighbor(k)` | `Grid.getNeighborCount(i)`, `Grid.getNeighbor(i, k)`; in a hot loop the row itself (below) |
+| Its FSMs | `this.walkFSM.tick(dtRatio, this)` | `FSM.tickAll(list, count, dtRatio, this)` |
+| Ask an FSM for a state | `this.walkFSM.changeState(WalkFSM.states.RUN)` | `WalkFSM.changeState(i, WalkFSM.states.RUN)` |
+| The class's tuning | `this.constructor.speed` | `this.speed` (in a static), or `GameObject.classByType[Transform.entityType[i]].speed` |
+| End it | `this.despawn()` | `this.despawn(i)` (in a static) |
+
+```javascript
+const { GameObject, RigidBody, Collider, Transform, Grid } = WEED;
+
+// A walker that steps away from its neighbours, written ECS-style: the whole type in one loop, by index.
+class Walker extends GameObject {
+  static components = [RigidBody, Collider];
+  static repel = 200; // px/s², the class's tuning: `this.repel` in its statics
+  onSpawned() {
+    this.collider.visualRange = 60; // spawn makes the instance it returns: setup through it costs nothing more
+  }
+  static tickAll(list, count, dtRatio) {
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      const x = Transform.x[i];
+      const y = Transform.y[i];
+      // The neighbour row, read straight: its count, then the ids (2.4 ns a neighbour; Grid.getNeighbor(i, k) 5).
+      const rows = Grid.neighborData;
+      const row = Grid.getNeighborOffset(i);
+      for (let n = 1, end = rows[row]; n <= end; n++) {
+        const j = rows[row + n];
+        const dx = x - Transform.x[j];
+        const dy = y - Transform.y[j];
+        const d2 = dx * dx + dy * dy + 1;
+        RigidBody.ax[i] += (dx / d2) * this.repel;
+        RigidBody.ay[i] += (dy / d2) * this.repel;
+      }
+    }
+  }
+}
+```
+
+What still makes an instance on the ECS way: a spawn returns one (its config keys go through its setters, on the thread that spawns it); an FSM hands its states the instance as `owner` (`FSM.tickAll` makes it on an entity's first tick; a state that works by `i` alone never touches it); and the setters with no static form yet (`setAnimation`, `setSprite`, `setTint`, `setScale`, a DirectionalSprite's `facing`) go through `this.get(i)` in a static, which makes it where it is first used.
+
 ### State machines (`FSM`)
 
 An `FSM` is a component: its columns hold each entity's state, its time in that state and the state it asked to go to. Its states are classes of statics (`FSMState`): `onEnter(owner, i, fromState)`, `onExit(owner, i, toState)` and `onUpdate(owner, i, dt, timeInState)`, with `owner` the entity, `i` its index, `timeInState` in whole milliseconds and `this` the state class (`this.fsm` its FSM). A state asks for another with `this.fsm.changeState(i, this.fsm.states.NAME)`; the change happens at the start of that entity's next tick, which calls the old state's `onExit`, then the new one's `onEnter`, then its `onUpdate`. A spawn puts each FSM in its `initial` state and calls that state's `onEnter`.
