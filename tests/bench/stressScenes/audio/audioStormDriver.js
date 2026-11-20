@@ -6,11 +6,13 @@ const ONESHOTS = ['golpe', 'pistola_disparo', 'explosion_corta', 'bala_golpea_me
 const BUSES = ['sfx', 'hits', 'voice'];
 
 /**
- * One logic object. Starts ACTIVE_LOOPS looping voices, then calls play()
- * PLAYS_PER_TICK times every tick so the slot table stays hot.
+ * One of the storm's logic objects. The first starts ACTIVE_LOOPS looping voices; each calls play() its share of
+ * PLAYS_PER_TICK times every tick, so the slot table stays hot. N-161: each is counted in logic's MARK_ACTIVE, the
+ * scene's load key (the drivers, one for each PLAYS_PER_DRIVER plays a tick).
  */
 export class AudioStormDriver extends GameObject {
   static components = [];
+  static reportMarkActive = true;
 
   onSpawned({ playsPerTick = 800, activeLoops = 128 } = {}) {
     this.x = 200;

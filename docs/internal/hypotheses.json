@@ -12851,13 +12851,13 @@
     {
       "id": "N-161",
       "title": "The catalog's audioStorm row cannot decide: its load key BODY_COUNT is 0 in a scene without bodies, and logic0 sits at 0.56 ms",
-      "status": "open",
-      "statusText": "found 2026-11-13 in the same scoreboard",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (752f2353, 703b8504), on fix/n161-audiostorm-load-key (R-1703)",
       "date": "2026-11-13",
       "area": "harness",
       "kind": "bug",
-      "result": "load not comparable (median 0 on both sides) and under the 3 ms floor at ?plays=1200.",
-      "next": "A load count the scene publishes (plays a tick or voices playing) as the load key, and ?plays= high enough for logic0 past 3 ms.",
+      "result": "Fixed 2026-11-20 (752f2353, 703b8504): one driver a 100 plays, counted in MARK_ACTIVE, the row's load key; the default 48 000 plays put logic0's own work at 9.3 to 9.5 ms on the ASUS (0.33 ms at the old 1200).",
+      "next": "Check the floor on the main PC at the next scoreboard: raise ?plays there if logic0 reads under 6 ms.",
       "refs": [
         "REVIEW_PLAN.md#N-161"
       ],
@@ -12868,7 +12868,8 @@
       ],
       "records": [
         "R-0951",
-        "R-0952"
+        "R-0952",
+        "R-1703"
       ]
     },
     {
@@ -40104,6 +40105,15 @@
       "title": "N-247 fixed: Keyboard resolves each key name once, no toLowerCase per read",
       "verdict": "kept-hygiene",
       "text": "**N-247 fixed: Keyboard resolves each key name once instead of lower-casing it on every read.** Branch fix/n247-keyboard-name-cache, 31cbc600.\n\n- **Cause:** isPressed and isDown went through _getKeyIndex, which ran _normalizeKeyName's toLowerCase on every call: a new string a read (341 B a frame in burningBoxes, the heap pass of R-1229).\n- **Fix:** _getKeyIndex keeps each name it was asked for, as given, mapped to its index (-1: no key) in Keyboard._indexByName. initialize() clears it, and it is capped at 512 names. Only the first read of a name normalizes it. The lookup takes the map's own names only, so 'constructor' and 'tostring' no longer resolve to Object's functions. The debug build's unknown-key warning still fires (it says each name once).\n- **Test:** keyboard.test.js counts toLowerCase calls over three frames of five names: 4 (one a distinct name) where bugs/base made 15. The answers are unchanged, a new map resolves names again, and 'constructor' is not a key. No heap pass: the test shows that the per-read string is gone. Suites: node 3285 of 3288, the 3 failures frameChainWait's timing tests under the suite's concurrency (the file passed 3 of 3 alone); demos 121 of 121."
+    },
+    {
+      "id": "R-1703",
+      "date": "2026-11-20",
+      "time": "04:43",
+      "timeFrom": "recorded",
+      "title": "N-161 fixed: audioStorm's catalog row reads MARK_ACTIVE (one driver a 100 plays) and runs 48 000 plays a tick",
+      "verdict": "kept-hygiene",
+      "text": "**N-161 fixed: the catalog's audioStorm row has a load key the scene publishes, and a knob past the floor.** Branch fix/n161-audiostorm-load-key, 752f2353 and 703b8504.\n\n- **Cause:** the row's load key was BODY_COUNT in a scene with no bodies (a median of 0 on both sides: \"load not comparable\"). Its primary, logic0, read 0.56 ms at ?plays=1200, under the floor (3 ms then, 6 ms now).\n- **Fix 1:** the storm runs on one AudioStormDriver for each 100 plays a tick, each marked reportMarkActive, so logic0's MARK_ACTIVE is the population (plays / 100, as bunnyMark's is). The row reads MARK_ACTIVE.\n- **Fix 2:** the default is now 48 000 plays a tick. play() got about 5x cheaper since E-46's 2400 for 3 ms. Headless on the ASUS, 2026-11-20, logic0's own work (step - wait), 10 s after 10 s, one run each: 1200 -> 0.33 ms, 6000 -> 1.31, 14 400 -> 2.71, 36 000 -> 7.17, 48 000 -> 9.49 (default run 9.31, MARK_ACTIVE 480, 60 fps held). Linear at about 0.19 ms a 1000 plays. On the main PC, a faster CPU may read under 9 ms. If the scoreboard's floor still trips there, raise ?plays (the cost stays linear).\n- **Test:** engineFeatureCatalog.test.js checks that every row's load keys are ones extractMetrics publishes, that audioStorm reads MARK_ACTIVE, and that its drivers report it. Node suite 3288 of 3288."
     }
   ],
   "leads": [
