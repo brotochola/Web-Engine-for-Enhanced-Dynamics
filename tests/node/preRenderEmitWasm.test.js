@@ -1971,3 +1971,30 @@ test('E-194: the emit keys a LiquidFun particle by its index past the keyed deco
   assert.ok(all(frame()), 'read again once physics announces a change');
   recs.set(saved);
 });
+
+// N-220: the gate slots of the bullets, glows, particles and LiquidFun (bActive, lColor, pcX, lfX) were written only by
+// their own column writers, and a frame whose table only writeEmitColumns wrote (the persist path's callers, the ASan
+// harness) read what an earlier frame left there: an address past the memory trapped emit_rows in trail_row. Every
+// table now starts its frame with the gates shut; a writer opens its own.
+test('N-220: a frame through writeEmitColumns alone reads no stale gate (bullets, glows, particles, LiquidFun)', async () => {
+  const GATES = ['bActive', 'lColor', 'pcX', 'lfX'];
+  const SLOT = Object.fromEntries(GATES.map((name) => [name, EMIT_SLOTS.indexOf(name)]));
+  const k = await setup({ ySort: true, bullets: true, lights: true, particles: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+  const frame = () => {
+    assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, source));
+    return b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand);
+  };
+  const start = k.snapshot();
+  for (const s of GATES) b.table[SLOT[s]] = 0;
+  const clean = frame();
+  const cleanQueue = k.snapshot().queue;
+  k.restore(start);
+  const past = (b.buffer.byteLength + 65536) >>> 0;
+  for (const s of GATES) b.table[SLOT[s]] = past;
+  const stale = frame();
+  for (const s of GATES) assert.equal(b.table[SLOT[s]], 0, `${s}: shut by writeEmitColumns`);
+  assert.equal(stale, clean);
+  assert.deepEqual(k.snapshot().queue, cleanQueue, 'the rows a frame with clean gates writes');
+});
