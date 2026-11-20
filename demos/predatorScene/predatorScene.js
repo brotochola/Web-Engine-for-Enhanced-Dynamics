@@ -550,6 +550,7 @@ export class PredatorScene extends WEED.Scene {
     const map = this.spawnRocksTreesAndHouses();
     this.spawnLights(100);
     this.spawnTrash(100);
+    // Every entity spawns by index (spawnIndex): the scene keeps no entity object, and the page makes no instance for them.
     const crowd = predatorCrowd();
     this.spawnCivilians(Math.round(10000 * crowd));
     this.spawnMySoldiers(Math.round(6000 * crowd));
@@ -565,7 +566,7 @@ export class PredatorScene extends WEED.Scene {
     for (let i = 0; i < count; i++) {
       const a = (i / count) * 2 * Math.PI + this.rng() * 0.4;
       const r = 1000 + this.rng() * 400;
-      Bonfire.spawn({
+      Bonfire.spawnIndex({
         x: cx + Math.cos(a) * r,
         y: cy + Math.sin(a) * r * ART_FLOOR_SCALE_Y,
         scale: 1 + this.rng() * 0.5,
@@ -575,7 +576,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnTrash(count) {
     for (let i = 0; i < count; i++) {
-      Trash.spawn({
+      Trash.spawnIndex({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -586,14 +587,14 @@ export class PredatorScene extends WEED.Scene {
       .then((response) => response.json())
       .then((data) => {
         data.rocks.forEach((rock) => {
-          Rock.spawn({
+          Rock.spawnIndex({
             x: rock.x,
             y: rock.y,
             radius: rock.radius,
           });
         });
         data.trees.forEach((tree) => {
-          Tree.spawn({
+          Tree.spawnIndex({
             x: tree.x,
             y: tree.y,
             radius: tree.radius,
@@ -601,7 +602,7 @@ export class PredatorScene extends WEED.Scene {
         });
         data.houses.forEach((house, i) => {
           if (i % 2 == 0) return;
-          House.spawn({
+          House.spawnIndex({
             x: house.x,
             y: house.y,
           });
@@ -712,7 +713,7 @@ export class PredatorScene extends WEED.Scene {
   // }
   spawnHouses(count) {
     for (let i = 0; i < count; i++) {
-      House.spawn({
+      House.spawnIndex({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -720,7 +721,7 @@ export class PredatorScene extends WEED.Scene {
   }
 
   spawnDestination() {
-    Destination.spawn({
+    Destination.spawnIndex({
       x: 0,
       y: 0,
     });
@@ -728,7 +729,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnBarrels(count) {
     for (let i = 0; i < count; i++) {
-      Barrel.spawn({
+      Barrel.spawnIndex({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -737,7 +738,7 @@ export class PredatorScene extends WEED.Scene {
   spawnMySoldiers(count, soldierRadius = 10) {
     if (PREDATOR_MIXED_CROWD) {
       for (let i = 0; i < count; i++) {
-        MySoldier.spawn({ x: this.config.worldWidth * this.rng(), y: this.config.worldHeight * this.rng() });
+        MySoldier.spawnIndex({ x: this.config.worldWidth * this.rng(), y: this.config.worldHeight * this.rng() });
       }
       return;
     }
@@ -749,7 +750,7 @@ export class PredatorScene extends WEED.Scene {
       // Uniform random distribution within a circle
       const angle = this.rng() * 2 * Math.PI;
       const r = Math.sqrt(this.rng()) * spawnRadius;
-      MySoldier.spawn({
+      MySoldier.spawnIndex({
         x: centerX + r * Math.cos(angle),
         y: centerY + r * Math.sin(angle),
       });
@@ -768,7 +769,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnRocks(count) {
     for (let i = 0; i < count; i++) {
-      Rock.spawn({
+      Rock.spawnIndex({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -776,7 +777,7 @@ export class PredatorScene extends WEED.Scene {
   }
   spawnLights(count) {
     for (let i = 0; i < count; i++) {
-      TallLight.spawn({
+      TallLight.spawnIndex({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -785,7 +786,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnCivilians(count) {
     for (let i = 0; i < count; i++) {
-      Civilian.spawn({
+      Civilian.spawnIndex({
         x: this.config.worldWidth * this.rng(),
         y: this.config.worldHeight * this.rng(),
       });
@@ -872,7 +873,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnTrees(count) {
     for (let i = 0; i < count; i++) {
-      Tree.spawn({
+      Tree.spawnIndex({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });

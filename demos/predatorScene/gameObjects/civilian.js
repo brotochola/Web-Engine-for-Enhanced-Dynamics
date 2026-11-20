@@ -1,10 +1,17 @@
+// Civilian.js - A civilian: stands about, flees the soldiers near it, and panics when hurt or when they attack.
+//
+// ECS-style, as Person (E-530): its hooks are statics that take the civilian's entity index.
+
 import WEED from '/src/index.js';
 import { CivilianBehaviorFSM } from '../fsm/civilianBehaviorFsm.js';
 import { CivilianComponent } from '../components/civilianComponent.js';
 import { Person } from './person.js';
 import { PersonComponent } from '../components/personComponent.js';
 
-const { rng, Transform, GameObject, Grid } = WEED;
+const { rng, Transform, Grid, Collider, RigidBody, SpriteRenderer } = WEED;
+
+/** The civilians' spritesheets: each spawn picks one, so the crowd is mixed. */
+const CIVILIAN_SPRITESHEETS = ['civil5', 'civil6', 'civil7'];
 
 export class Civilian extends Person {
   /** Opt into sparse SaveGame (active instances only). */
@@ -14,18 +21,17 @@ export class Civilian extends Person {
   static components = [...Person.components, CivilianBehaviorFSM, CivilianComponent];
   static behaviorFSM = CivilianBehaviorFSM;
 
-  onSpawned(spawnConfig = {}) {
-    // Random spritesheet for variety
-    const spritesheets = ['civil5', 'civil6', 'civil7'];
-    const randomSheet = spritesheets[Math.floor(rng() * spritesheets.length)];
-    this.setSpritesheet(randomSheet);
-    this.setAnimation('idle');
+  /** LIFECYCLE: each spawn of civilian i: a random civilian sheet, then Person's setup, then its sight and weight. */
+  static onSpawned(i, spawnConfig = {}) {
+    const randomSheet = CIVILIAN_SPRITESHEETS[Math.floor(rng() * CIVILIAN_SPRITESHEETS.length)];
+    SpriteRenderer.setSpritesheet(i, randomSheet);
+    SpriteRenderer.setAnimation(i, 'idle');
 
-    super.onSpawned(spawnConfig);
+    super.onSpawned(i, spawnConfig);
 
-    this.collider.visualRange = 150;
-    this.setFixedRotation(1);
-    this.rigidBody.linearDamping = 2; // match MySoldier
+    Collider.visualRange[i] = 150;
+    RigidBody.setFixedRotation(i, 1);
+    RigidBody.setLinearDamping(i, 2); // match MySoldier
   }
 
   /** Damage to civilian i: Person's, then panic, which spreads to the civilians around it. */

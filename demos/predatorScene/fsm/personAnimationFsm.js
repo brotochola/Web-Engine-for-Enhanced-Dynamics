@@ -1,10 +1,15 @@
 // PersonAnimationFSM.js - FSM for person animation states
 // Handles locomotion (idle/walk/run) and action animations (shoot, melee, hurt, die)
+//
+// The states work by entity index (E-530): the animation and the facing are set through SpriteRenderer's and
+// DirectionalSprite's statics, which work whether the entity is written as objects or ECS-style, and the end of a death
+// goes to the person's class (its static onDeathAnimationComplete), so no state makes an instance for Predator's people.
+// carScene's walkers share it too: they are written as objects, so their death ends on their instance (DEAD's fallback).
 
 import WEED from '/src/index.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 
-const { FSM, FSMState, RigidBody, SpriteRenderer, GameObject } = WEED;
+const { FSM, FSMState, RigidBody, SpriteRenderer, DirectionalSprite, Transform, GameObject } = WEED;
 
 const ACTION_ANIM_SPEED = 0.25;
 const DYING_ANIM_SPEED = 0.5;
@@ -19,7 +24,7 @@ const RUN_CYCLE_FRAMES = 8; // Run cycle frames
 export const SHOOT_DURATION_MS = (SHOOT_FRAMES * NATURAL_DURATION) / ACTION_ANIM_SPEED
 export const SLASH_DURATION_MS = (SLASH_FRAMES * NATURAL_DURATION)
 export const STICK_DURATION_MS = (STICK_FRAMES * NATURAL_DURATION) / ACTION_ANIM_SPEED;
-// const HURT_DURATION_MS = (2 * NATURAL_DURATION) / ACTION_ANIM_SPEED;
+export const HURT_DURATION_MS = (2 * NATURAL_DURATION) / ACTION_ANIM_SPEED;
 export const DYING_DURATION_MS = (HURT_FRAMES * NATURAL_DURATION) / DYING_ANIM_SPEED;
 
 // Speed thresholds / anim rates — RigidBody.speed is px/s (was frame-vel)
@@ -39,13 +44,12 @@ const IDLE_ANIMATION_MULTIPLIER = 0.05; // idle is not speed-scaled
 
 class IdleState extends FSMState {
   static onEnter(i, fromState) {
-    // Skip animation if no spritesheet set yet (FSM auto-init runs before onSpawned)
+    // Skip animation if no spritesheet set yet (nothing to play)
     if (SpriteRenderer.spritesheetId[i] === 0) return;
-    const owner = GameObject.get(i);
 
-    owner.directionalSprite.facingFrom = 'velocity';
-    owner.setAnimation('idle');
-    owner.setAnimationSpeed(IDLE_ANIMATION_MULTIPLIER);
+    DirectionalSprite.setFacingFrom(i, 'velocity');
+    SpriteRenderer.setAnimation(i, 'idle');
+    SpriteRenderer.setAnimationSpeed(i, IDLE_ANIMATION_MULTIPLIER);
   }
 
   static onUpdate(i, dt) {
@@ -72,10 +76,9 @@ class IdleState extends FSMState {
 class WalkingState extends FSMState {
   static onEnter(i, fromState) {
     if (SpriteRenderer.spritesheetId[i] === 0) return;
-    const owner = GameObject.get(i);
-    owner.directionalSprite.facingFrom = 'velocity';
-    owner.setAnimation('walk');
-    owner.setAnimationSpeed(RigidBody.speed[i] * WALK_ANIMATION_MULTIPLIER);
+    DirectionalSprite.setFacingFrom(i, 'velocity');
+    SpriteRenderer.setAnimation(i, 'walk');
+    SpriteRenderer.setAnimationSpeed(i, RigidBody.speed[i] * WALK_ANIMATION_MULTIPLIER);
   }
 
   static onUpdate(i, dt) {
@@ -112,10 +115,9 @@ class WalkingState extends FSMState {
 class RunningState extends FSMState {
   static onEnter(i, fromState) {
     if (SpriteRenderer.spritesheetId[i] === 0) return;
-    const owner = GameObject.get(i);
-    owner.directionalSprite.facingFrom = 'velocity';
-    owner.setAnimation('run');
-    owner.setAnimationSpeed(RigidBody.speed[i] * RUN_ANIMATION_MULTIPLIER);
+    DirectionalSprite.setFacingFrom(i, 'velocity');
+    SpriteRenderer.setAnimation(i, 'run');
+    SpriteRenderer.setAnimationSpeed(i, RigidBody.speed[i] * RUN_ANIMATION_MULTIPLIER);
   }
 
   static onUpdate(i, dt) {
@@ -145,9 +147,8 @@ class RunningState extends FSMState {
 
 class ShootingState extends FSMState {
   static onEnter(i, fromState) {
-    const owner = GameObject.get(i);
-    owner.setAnimation('shoot', false);
-    owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+    SpriteRenderer.setAnimation(i, 'shoot', false);
+    SpriteRenderer.setAnimationSpeed(i, ACTION_ANIM_SPEED);
   }
 
   static onUpdate(i, dt) {
@@ -169,9 +170,8 @@ class ShootingState extends FSMState {
 class PunchingState extends FSMState {
   static onEnter(i, fromState) {
     if (SpriteRenderer.spritesheetId[i] === 0) return;
-    const owner = GameObject.get(i);
-    owner.setAnimation('slash');
-    owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+    SpriteRenderer.setAnimation(i, 'slash');
+    SpriteRenderer.setAnimationSpeed(i, ACTION_ANIM_SPEED);
   }
 
   static onUpdate(i, dt) {
@@ -195,9 +195,8 @@ class PunchingState extends FSMState {
 class StickHitState extends FSMState {
   static onEnter(i, fromState) {
     if (SpriteRenderer.spritesheetId[i] === 0) return;
-    const owner = GameObject.get(i);
-    owner.setAnimation('1h_slash');
-    owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+    SpriteRenderer.setAnimation(i, '1h_slash');
+    SpriteRenderer.setAnimationSpeed(i, ACTION_ANIM_SPEED);
   }
 
   static onUpdate(i, dt) {
@@ -221,9 +220,8 @@ class StickHitState extends FSMState {
 class HurtState extends FSMState {
   static onEnter(i, fromState) {
     if (SpriteRenderer.spritesheetId[i] === 0) return;
-    const owner = GameObject.get(i);
-    owner.setAnimation('hurt'); // No direction for hurt
-    owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+    SpriteRenderer.setAnimation(i, 'hurt'); // No direction for hurt
+    SpriteRenderer.setAnimationSpeed(i, ACTION_ANIM_SPEED);
   }
 
   static onUpdate(i, dt) {
@@ -253,11 +251,9 @@ class DyingState extends FSMState {
 
   static onEnter(i, fromState) {
     if (SpriteRenderer.spritesheetId[i] === 0) return;
-    const owner = GameObject.get(i);
     // Use hurt animation for death (no direction variant) - don't loop
-
-    owner.setAnimation('hurt', false);
-    owner.setAnimationSpeed(DYING_ANIM_SPEED);
+    SpriteRenderer.setAnimation(i, 'hurt', false);
+    SpriteRenderer.setAnimationSpeed(i, DYING_ANIM_SPEED);
   }
 
   static onUpdate(i, dt) {
@@ -276,14 +272,21 @@ class DyingState extends FSMState {
 class DeadState extends FSMState {
   static onEnter(i, fromState) {
     if (SpriteRenderer.spritesheetId[i] === 0) return;
-    const owner = GameObject.get(i);
-    // Stop on final frame, fade out
-    owner.setAnimationSpeed(0);
-    owner.onDeathAnimationComplete();
+    // Stop on final frame
+    SpriteRenderer.setAnimationSpeed(i, 0);
+    // The person's class ends it, by index (Person's static stamps the corpse, drops the loot and despawns).
+    const PersonClass = GameObject.classByType[Transform.entityType[i]];
+    if (typeof PersonClass.onDeathAnimationComplete === 'function') {
+      PersonClass.onDeathAnimationComplete(i);
+    } else {
+      // Fallback for an object-style class that shares this FSM (carScene's PersonThatFollowsAFlowfield, whose
+      // onDeathAnimationComplete is an instance method), never Predator's people: their static form is above.
+      GameObject.get(i).onDeathAnimationComplete();
+    }
   }
 
   static onUpdate(i, dt) {
-    // Do nothing - Lootable.tick() handles despawn via die()
+    // Do nothing - onDeathAnimationComplete despawned the entity
   }
 }
 

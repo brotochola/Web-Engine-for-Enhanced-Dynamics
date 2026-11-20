@@ -1,21 +1,7 @@
-import WEED from '/src/index.js';
-
 import { Drop, DROP_TYPES } from './drop.js';
-import { DropComponent } from '../components/dropComponent.js';
-import { ShadowCaster } from '/src/index.js';
 
-const { GameObject, SpriteRenderer, Collider } = WEED;
-
+/** An AK-47 on the floor. */
 export class DropAk47 extends Drop {
-
-  static components = [...Drop.components, DropComponent];
-
-  onSpawned(config) {
-    super.onSpawned(config);
-    this.dropComponent.type = DROP_TYPES.AK47;
-    this.dropComponent.amount = 1;
-
-    this.setScale(0.2, 0.2);
-    this.setSprite('ak47');
-  }
+  static dropType = DROP_TYPES.AK47;
+  static spriteName = 'ak47';
 }

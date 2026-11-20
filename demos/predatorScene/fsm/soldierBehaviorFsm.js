@@ -3,7 +3,8 @@
 //
 // The states work by entity index (E-530: Predator written static): positions, velocities and neighbours come from the
 // columns and Grid's statics, the soldier's tuning from its class (GameObject.classByType). A state gets the index
-// alone; the actions (shoot, punch) go through the entity, GameObject.get(i).
+// alone; the actions (shoot, punch) are the soldier class's statics (Person.shoot(i, target)), called on its class so
+// its tuning (muzzle, punch damage) applies. No state makes an instance.
 
 import WEED from '/src/index.js';
 import { SHOOT_DURATION_MS, WALK_SPEED_THRESHOLD } from './personAnimationFsm.js';
@@ -222,8 +223,10 @@ function canShootTarget(i, targetIndex, targetDistSq) {
 // HELPER: Get destination
 // ==========================================
 
-function getDestination() {
-  return Destination.getFirstActiveInstance();
+/** The destination's entity index (the scene spawns one), or -1 while none is active. */
+function destinationIndex() {
+  const index = Destination.getFirstActiveIndex();
+  return index === null ? -1 : index;
 }
 
 // ==========================================
@@ -278,24 +281,26 @@ class IdleSoldierState extends FSMState {
 
 class GoingToDestinationState extends FSMState {
   static onUpdate(i, dt) {
-    const dest = getDestination();
+    const dest = destinationIndex();
 
-    if (!dest) {
+    if (dest < 0) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
 
-    // Check if reached destination
+    // Check if reached destination (inside its trigger circle)
     const x = Transform.x[i];
     const y = Transform.y[i];
-    const distSqToDest = distanceSq2D(x, y, dest.x, dest.y);
-    if (distSqToDest < dest.collider.radius ** 2) {
+    const destX = Transform.x[dest];
+    const destY = Transform.y[dest];
+    const distSqToDest = distanceSq2D(x, y, destX, destY);
+    if (distSqToDest < Collider.radius[dest] ** 2) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
 
     // Follow flowfield toward destination
-    NavGrid.requestVector(x, y, dest.x, dest.y, _navVec);
+    NavGrid.requestVector(x, y, destX, destY, _navVec);
 
     const followStrength = soldierClassOf(i).followDestinationStrength;
     RigidBody.ax[i] += _navVec.x * followStrength;
@@ -321,11 +326,11 @@ class GoingToEnemyState extends FSMState {
       const targetY = Transform.y[targetIndex];
       const distSq = distanceSq2D(x, y, targetX, targetY);
 
-      //todo: optimizar esto
-      const destinationInstance = Destination.getFirstActiveInstance()
-      if (distanceSq2D(x, y, destinationInstance.x, destinationInstance.y) > 600 ** 2) {
+      // A soldier that chased too far (600 px) from the destination goes back to it; with no destination, no leash.
+      const dest = destinationIndex();
+      if (dest >= 0 && distanceSq2D(x, y, Transform.x[dest], Transform.y[dest]) > 600 ** 2) {
         this.fsm.changeState(i, this.fsm.states.GOING_TO_DESTINATION);
-        return
+        return;
       }
 
       // Update stored distance
@@ -396,8 +401,8 @@ class RangedAttackingState extends FSMState {
       return;
     }
 
-    // The shot itself (bullet, flash, sound, particles) is the instance's action.
-    GameObject.get(i).shoot(targetIndex);
+    // The shot itself (bullet, flash, sound, particles): the soldier's class fires it, by index.
+    soldierClassOf(i).shoot(i, targetIndex);
 
     if (totalTime > SHOOT_DURATION_MS) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
@@ -414,8 +419,8 @@ class CloseAttackingState extends FSMState {
     const targetIndex = PersonComponent.closestEnemyIndex[i];
     if (targetIndex < 0) return;
 
-    GameObject.get(i).punch(targetIndex);
-
+    // The soldier's class throws the punch, with its punchDamage.
+    soldierClassOf(i).punch(i, targetIndex);
   }
 
   static onUpdate(i, dt) {
