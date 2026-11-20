@@ -38,9 +38,11 @@ export class Trash extends Lootable {
         this.collider.visualRange = 0;
         // this.collider.offsetY = -15;
 
-        // The silhouette 1.5 times as long, its foot 0.1 of the sprite above the anchor. With ?light3d=1 the camera gives
-        // its height and the engine measures its base: the ShadowCaster's default.
-        if (!LIGHT3D) this.shadowCaster.setSprite({ heightScale: 1.5, anchorY: -0.1 });
+        // The silhouette's foot at the wheels: the sprite is anchored at 0.66 of its 80 rows (row 53) and the wheels touch
+        // the ground at its last row, 0.34 of it lower. The foot 0.1 above the anchor (row 45, mid-bin) with a silhouette
+        // 1.5 times as tall threw a shadow from inside the bin, which the bin covered. With ?light3d=1 the camera gives its
+        // height and the engine measures its base: the ShadowCaster's default.
+        if (!LIGHT3D) this.shadowCaster.setSprite({ heightScale: 1, anchorY: 0.34 });
 
         this.lootableComponent.health = 1;
         this.lootableComponent.dropMoney = 100;
