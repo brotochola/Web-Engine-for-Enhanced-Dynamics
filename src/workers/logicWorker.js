@@ -145,11 +145,15 @@ const STAY_NONE = 0;
 const STAY_METHOD = 1;
 const STAY_STATIC = 2;
 // E-528: collisionListenerByType per type: bit 0, the type lists CollisionListener; the others, which of its enter,
-// exit and hit hooks are static forms. The flag a contact event already loads tells the dispatch which form to call.
+// exit and hit hooks are static forms, and which are methods of its own. The flag a contact event already loads tells
+// the dispatch which form to call, or that there is none (no instance made to call GameObject's empty method).
 const COLLISION_LISTENS = 1;
 const ENTER_STATIC = 2;
 const EXIT_STATIC = 4;
 const HIT_STATIC = 8;
+const ENTER_METHOD = 16;
+const EXIT_METHOD = 32;
+const HIT_METHOD = 64;
 
 /** Stale pairs owned by another logic worker are dropped at least this often. */
 const FOREIGN_SWEEP_FRAMES = 30;
@@ -568,11 +572,13 @@ class LogicWorker extends AbstractWorker {
   /** E-528: a listening type's collision flag: COLLISION_LISTENS, and a bit for each of its static enter, exit, hit. */
   _collisionFlagOf(entityType) {
     const hooks = this.staticHooks;
+    const C = this._entityClassByType[entityType];
+    const method = (name) => C !== undefined && definesMethodBelow(C, GameObject, name);
     return (
       COLLISION_LISTENS |
-      (hooks.onCollisionEnter[entityType] !== null ? ENTER_STATIC : 0) |
-      (hooks.onCollisionExit[entityType] !== null ? EXIT_STATIC : 0) |
-      (hooks.onCollisionHit[entityType] !== null ? HIT_STATIC : 0)
+      (hooks.onCollisionEnter[entityType] !== null ? ENTER_STATIC : method('onCollisionEnter') ? ENTER_METHOD : 0) |
+      (hooks.onCollisionExit[entityType] !== null ? EXIT_STATIC : method('onCollisionExit') ? EXIT_METHOD : 0) |
+      (hooks.onCollisionHit[entityType] !== null ? HIT_STATIC : method('onCollisionHit') ? HIT_METHOD : 0)
     );
   }
 
@@ -2356,7 +2362,7 @@ class LogicWorker extends AbstractWorker {
         if ((aFlags & HIT_STATIC) !== 0) {
           const type = entityType[a];
           this.staticHooks.onCollisionHit[type].call(this._entityClassByType[type], a, b, px, py, nx, ny, speed);
-        } else {
+        } else if ((aFlags & HIT_METHOD) !== 0) {
           (gameObjects[a] ?? this._makeInstance(a))?.onCollisionHit(b, px, py, nx, ny, speed);
         }
       } catch (error) {
@@ -2368,7 +2374,7 @@ class LogicWorker extends AbstractWorker {
         if ((bFlags & HIT_STATIC) !== 0) {
           const type = entityType[b];
           this.staticHooks.onCollisionHit[type].call(this._entityClassByType[type], b, a, px, py, -nx, -ny, speed);
-        } else {
+        } else if ((bFlags & HIT_METHOD) !== 0) {
           (gameObjects[b] ?? this._makeInstance(b))?.onCollisionHit(a, px, py, -nx, -ny, speed);
         }
       } catch (error) {
@@ -2830,7 +2836,7 @@ class LogicWorker extends AbstractWorker {
         if ((aFlags & EXIT_STATIC) !== 0) {
           const type = entityType[minE];
           this.staticHooks.onCollisionExit[type].call(this._entityClassByType[type], minE, maxE);
-        } else {
+        } else if ((aFlags & EXIT_METHOD) !== 0) {
           (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionExit(maxE);
         }
       } catch (error) {
@@ -2842,7 +2848,7 @@ class LogicWorker extends AbstractWorker {
         if ((bFlags & EXIT_STATIC) !== 0) {
           const type = entityType[maxE];
           this.staticHooks.onCollisionExit[type].call(this._entityClassByType[type], maxE, minE);
-        } else {
+        } else if ((bFlags & EXIT_METHOD) !== 0) {
           (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionExit(minE);
         }
       } catch (error) {
@@ -2909,7 +2915,7 @@ class LogicWorker extends AbstractWorker {
         if ((aFlags & ENTER_STATIC) !== 0) {
           const type = entityType[rawA];
           this.staticHooks.onCollisionEnter[type].call(this._entityClassByType[type], rawA, rawB);
-        } else {
+        } else if ((aFlags & ENTER_METHOD) !== 0) {
           (gameObjects[rawA] ?? this._makeInstance(rawA))?.onCollisionEnter(rawB);
         }
       } catch (error) {
@@ -2921,7 +2927,7 @@ class LogicWorker extends AbstractWorker {
         if ((bFlags & ENTER_STATIC) !== 0) {
           const type = entityType[rawB];
           this.staticHooks.onCollisionEnter[type].call(this._entityClassByType[type], rawB, rawA);
-        } else {
+        } else if ((bFlags & ENTER_METHOD) !== 0) {
           (gameObjects[rawB] ?? this._makeInstance(rawB))?.onCollisionEnter(rawA);
         }
       } catch (error) {

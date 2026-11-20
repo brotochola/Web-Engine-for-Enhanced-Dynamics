@@ -309,7 +309,7 @@ class Plain extends GameObject {
 
 test('the static form wins over a method of the same name; a method-only type next to it keeps its instance path', { concurrency: false }, async () => {
   const lw = await setup([Both, Plain]);
-  assert.deepEqual(Array.from(lw.collisionListenerByType), [1 | 2, 1], 'Both: a static enter; Plain: its methods');
+  assert.deepEqual(Array.from(lw.collisionListenerByType), [1 | 2, 1 | 16], 'Both: a static enter; Plain: an enter method of its own');
   Transform.active.fill(1, 0, 2 * PER_TYPE);
   begin(0, 1);
   begin(2, PER_TYPE);
@@ -323,6 +323,31 @@ test('the static form wins over a method of the same name; a method-only type ne
   assert.equal(lw.gameObjects[0], null, 'the static form made no instance');
   assert.equal(lw.gameObjects[2], null);
   assert.ok(lw.gameObjects[PER_TYPE] instanceof Plain, 'the method made its instance');
+  Transform.active.fill(0);
+});
+
+class Pickup extends GameObject {
+  static components = [CollisionListener];
+  static onCollisionEnter(i, other) {
+    heard.push(['pickup', i, other]);
+  }
+}
+
+test('a listener with no exit or hit of its own makes no instance when its contact ends or hits', { concurrency: false }, async () => {
+  const lw = await setup([Pickup]);
+  assert.equal(lw.collisionListenerByType[0], 1 | 2, 'listens, a static enter, no exit or hit in either form');
+  Transform.active.fill(1, 0, PER_TYPE);
+  // Pairs the tests before left untouched (the worker is the same one: its pair (0, 1) is still in contact).
+  begin(4, 5);
+  lw.processCollisionCallbacks();
+  end(4, 5);
+  lw.processCollisionCallbacks();
+  lw._onHitRingEvent(6, 7, 0, 0, 10, 20, 0.5, 0.25, 50);
+  assert.deepEqual(heard, [
+    ['pickup', 4, 5],
+    ['pickup', 5, 4],
+  ]);
+  assert.equal(made(lw), 0, "no instance made to call GameObject's empty exit or hit");
   Transform.active.fill(0);
 });
 
