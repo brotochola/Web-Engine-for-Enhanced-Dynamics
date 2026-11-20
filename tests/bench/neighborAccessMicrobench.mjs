@@ -11,6 +11,8 @@
  *           its own source), so every call site sees one class, as a game whose classes tick themselves.
  * row:      the call-free read of the entity's row of Grid's neighbour memory, in a local loop (count at the row's
  *           start, ids after it), with the engine's private fields.
+ * statics:  Grid.getNeighborCount(id) and Grid.getNeighbor(id, k) from the same methods (N-324): the read of code that
+ *           holds an index, not an instance (a static tickAll), or a base class many types share.
  * Each tick also does a little work per neighbour (a sum), as game code would. Reports ops/s (one op = every entity's
  * tick once) and a checksum (the sum of the ids read).
  */
@@ -39,6 +41,13 @@ return class extends Base {
     for (let j = o + 1, end = o + 1 + nd[o]; j < end; j++) s += nd[j];
     return s + 1;
   }
+  sumStatics() {
+    const id = this.index;
+    let s = 0;
+    const n = Grid.getNeighborCount(id);
+    for (let j = 0; j < n; j++) s += Grid.getNeighbor(id, j);
+    return s + 1;
+  }
 };`,
   )(Base, Grid);
 }
@@ -58,6 +67,13 @@ function makeClasses(count = 5, ownMethods = false) {
       for (let k = o + 1, end = o + 1 + nd[o]; k < end; k++) s += nd[k];
       return s + 1;
     }
+    sumStatics() {
+      const id = this.index;
+      let s = 0;
+      const n = Grid.getNeighborCount(id);
+      for (let k = 0; k < n; k++) s += Grid.getNeighbor(id, k);
+      return s + 1;
+    }
   }
   class Civilian extends Soldier {}
   class Boid extends GameObject {
@@ -71,6 +87,12 @@ function makeClasses(count = 5, ownMethods = false) {
       const o = this._neighborOffset;
       let s = 0;
       for (let k = o + 1, end = o + 1 + nd[o]; k < end; k++) s += nd[k] * 2;
+      return s;
+    }
+    sumStatics() {
+      const id = this.index;
+      let s = 0;
+      for (let k = 0; k < Grid.getNeighborCount(id); k++) s += Grid.getNeighbor(id, k) * 2;
       return s;
     }
   }
@@ -87,6 +109,13 @@ function makeClasses(count = 5, ownMethods = false) {
       const o = this._neighborOffset;
       let s = 0;
       for (let k = o + nd[o]; k > o; k--) s += nd[k];
+      return s;
+    }
+    sumStatics() {
+      const id = this.index;
+      let s = 0;
+      const n = Grid.getNeighborCount(id);
+      for (let k = n - 1; k >= 0; k--) s += Grid.getNeighbor(id, k);
       return s;
     }
   }
@@ -132,13 +161,21 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12, c
       for (let i = 0; i < list.length; i++) s += list[i].sumRow();
       return s;
     };
+    const statics = (list) => {
+      let s = 0;
+      for (let i = 0; i < list.length; i++) s += list[i].sumStatics();
+      return s;
+    };
     const checksum = shipped(ents);
     if (row(ents) !== checksum) throw new Error('the row read sees other neighbours');
+    if (statics(ents) !== checksum) throw new Error('the statics read sees other neighbours');
     warmNormalCompile(() => shipped(ents.slice(0, 40)));
     warmNormalCompile(() => row(ents.slice(0, 40)));
+    warmNormalCompile(() => statics(ents.slice(0, 40)));
     const cases = {
       shipped: timeIt('shipped', () => shipped(ents), { iterations: 200 }),
       row: timeIt('row', () => row(ents), { iterations: 200 }),
+      statics: timeIt('statics', () => statics(ents), { iterations: 200 }),
     };
     const nsPerRead = (c) => (c.ms / c.iterations / (entities * neighbors)) * 1e6;
     for (const [name, c] of Object.entries(cases)) console.log(`${name.padEnd(8)} ~${nsPerRead(c).toFixed(2)} ns a neighbour read`);
