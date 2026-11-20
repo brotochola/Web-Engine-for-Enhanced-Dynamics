@@ -40,6 +40,13 @@ export const BUILD_STAMP_FILE = '.build-version';
 /** Written by scripts/buildBundle.js: bundleInputsHash() at build time. Decides freshness. */
 export const BUILD_INPUTS_FILE = '.build-inputs';
 
+/**
+ * The version file the pre-commit hook rewrites on every commit (scripts/syncVersion.js): not an input. Its literal is
+ * display only (dist/.build-version records the version built), and with it every commit, a docs one or the dist commit
+ * itself, made dist/ "stale".
+ */
+const VERSION_FILE = 'src/version.js';
+
 /** What the bundles are built from. Generated files (src/index.bundle.js) are gitignored. */
 export const BUNDLE_INPUTS = [
   'src',
@@ -66,6 +73,7 @@ export function bundleInputsHash(repoRoot) {
   }
   const hash = crypto.createHash('sha256');
   for (const rel of [...new Set(listing.split('\0').filter(Boolean))].sort()) {
+    if (rel === VERSION_FILE) continue;
     const abs = path.join(repoRoot, rel);
     if (!fs.existsSync(abs)) continue; // deleted on disk, still in the index
     hash.update(`${rel}\0`);

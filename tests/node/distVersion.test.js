@@ -36,6 +36,8 @@ test('the input hash follows source edits and new files, not docs, line endings 
     assert.equal(hash(), first, 'CRLF and LF checkouts hash the same');
     write('src/index.bundle.js', 'generated\n');
     assert.equal(hash(), first, 'a gitignored generated file is not an input');
+    write('src/version.js', "export const VERSION = '1.0.1';\n");
+    assert.equal(hash(), first, "the version the pre-commit hook bumps on every commit is not an input");
     write('src/a.js', 'export const a = 2;\n');
     const edited = hash();
     assert.notEqual(edited, first, 'an uncommitted src/ edit changes it');
