@@ -11700,7 +11700,8 @@
         "R-1624",
         "R-1626",
         "R-1627",
-        "R-1628"
+        "R-1628",
+        "R-1629"
       ]
     },
     {
@@ -40072,6 +40073,15 @@
       "title": "Predator's slow state on the ASUS not caught in 14 runs at crowd 0.2 (every worker at 600 frames); 0 to 5 of 5 390 bodies awake after 30 s",
       "verdict": "note",
       "text": "ASUS lab job 0899z5 (02:27-02:39): an attempt to catch Predator's rare slow state on the ASUS with full reports. It had\nbeen seen in 0899l2 (R-1587: physics 16.4 ms at 40 Hz) and in 0899z3 (R-1626: spatial0 at about 10 Hz). 14 runs of\nPredator by day, crowd 0.2, dayCycle=0, a 30 s warm-up and a 10 s window each, headed, --src, detailed stats off, main\n9647eb9b, every report kept. CPU frequency: mean 89 % of the 2.7 GHz base, lowest 62 %, 9 of 124 samples under 70 %.\n\n- **Not caught: all 14 runs held every worker at 598 to 602 frames.**\n  - The highest per-worker p99 was 7 ms (spatial0), the highest own work 3.4 ms (pre-render, once).\n  - So the slow state comes in fewer than 1 run in 14 at crowd 0.2. Both sightings were at crowd 0.3 or a 30 s\n    warm-up; job 0899z7 tries crowd 0.3 with a 20 s warm-up.\n- **Predator is asleep by 30 s:** 0 to 5 awake bodies of about 5 390 in every run, with BODY_MOVED_COUNT matching.\n  That is the settling R-1626 and R-1627 measured: the first seconds' physics is the start's crowd falling still."
+    },
+    {
+      "id": "R-1629",
+      "date": "2026-11-20",
+      "time": "02:51",
+      "timeFrom": "recorded",
+      "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
+      "verdict": "note",
+      "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
     }
   ],
   "leads": [
