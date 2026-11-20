@@ -18421,7 +18421,8 @@
       "records": [
         "R-1175",
         "R-1177",
-        "R-1236"
+        "R-1236",
+        "R-1573"
       ],
       "rank": 12
     },
@@ -24419,6 +24420,27 @@
         "predator static",
         "static soldiers civilians",
         "tickAll predator"
+      ]
+    },
+    {
+      "records": [
+        "R-1573"
+      ],
+      "refs": [],
+      "id": "E-531",
+      "title": "Map shadows (sunShadows and lampShadows 'map') on art without maps cost Predator +57 % GPU by day against the classic layer (5.75 against 3.67 ms): bring them near it, then make them the default and drop the layer mode",
+      "status": "open",
+      "kind": "hypothesis",
+      "area": "render speed",
+      "date": "2026-11-20",
+      "statusText": "Filed 2026-11-20 from the cheap-light3d study (R-1573): the owner wants one shadow mode; B looks better than A without extra art",
+      "result": "",
+      "next": "glFrameRecorder --gpu-draws on B against A at 16 h, by pass: the sun map, the G-buffer map mode needs, the lamps' maps; then cut the largest (the sun map's casters to the view and its margin, a lower resolution, still casters cached). The HD 620 for all four modes. If B lands within about 0.5 ms of A, B becomes the default and the layer mode (~8-10k lines with its stamp) goes.",
+      "rank": 12,
+      "aliases": [
+        "cheap map shadows",
+        "one shadow mode",
+        "remove classic shadows"
       ]
     }
   ],
@@ -39906,6 +39928,20 @@
       "title": "The ASUS scoreboard of 832a99bf: the spatial row like for like reads main 0.867 ms against v0.14.0's 0.434 (+100 %, both 9 000 lists); decorations' logic0 +3.6 %; lockstep passes",
       "verdict": "note",
       "text": "ASUS lab job 0899v (22:49-00:15): the scoreboard of local main 832a99bf against v0.14.0 on the ASUS (i7-7500U 2C/4T,\nHD 620 on Intel 31.0.101.2145), --full-rev --skip-node, lockstep on. 832a99bf holds N-323 (spread list ages), 820048fa\n(the stationary spatial entities read their neighbour count, so v0.14.0 builds their lists too) and 2a1e2859 (that row's\nload is BODY_COUNT). Read against 0899t (7ffea480, R-1595).\n\n- **Lockstep passes.**\n- **The spatial row, now like for like, reads main at twice v0.14.0 on this laptop.**\n  - spatialMax_STEP_MS: v0.14.0 0.434 ms (cv 11 %), 832a99bf 0.867 ms (cv 18 %), +100 %.\n  - ENTITIES_PROCESSED is 9 000 on both sides now, BODY_COUNT 9 000. The kernel is +14.8 % for main.\n  - v0.14.0's row was 0.392 ms when it built no lists (R-1595's baseline), so its lists added only about 0.04 ms here.\n    Main's list path costs 0.87, about 1.0 in exact frames (R-1596).\n  - The main PC read the 30 000-body scene with main 15 % faster than v0.14.0 (R-1569). The two machines disagree.\n  - Both sides are far under the 6 ms floor, so FAIL.\n- **decorations reads WORSE:** logic0 12.66 -> 13.11 ms (+3.6 %, cv 5.4 and 0.2 %), and its kernel -16.7 %. It was a\n  TIE at -5.1 % in R-1595. The kernel is inside the ASUS's swing; the scene's +3.6 % is one sitting.\n- **Kernel-only flips, inside the ASUS's swing (R-1580):**\n  - gpuQueuePack KEPT -> WORSE (kernel -14.7 %), decorationCollect KEPT -> WORSE (-4.4 %).\n  - audioSlots, particleListsZoomed, attachedSway, textureUpload KEPT -> TIE. tweenPool, attachedWalls TIE -> KEPT.\n- **Scene rows held:** box2d -24.5 %, bullets -17.6 %, ray -26 %, rayVsBox2d -12.7 %, box2dRayJs -23 %,\n  meshFillMoving's renderer -26.7 %, decalBlit -5.2 %, queryAabb -12.9 %."
+    },
+    {
+      "id": "R-1573",
+      "date": "2026-11-20",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "The cheap-light3d study: classic 3.67 ms GPU by day, classic + map shadows 5.75, cheap light3d 4.74, light3d 5.71; B looks best without art but is not cheap; Trash's classic shadow fixed",
+      "verdict": "note",
+      "text": "**The cheap-light3d study (the owner's ask, 2026-11-19): four lighting levels of Predator measured and pictured.**\nTools: 0fba3fcb (Predator ?sunShadows, ?lampShadows, ?selfShadow=0, ?pixelDepth=0, ?dayCycle=0). Pictures: 16 captures (4\nmodes x 16 h, 22 h x two spots, the free camera placed by hand), published for the owner as a comparison page.\n\n- A classic: dayCycle=0 (the shadows' layer; Predator's classic sun shadows made as dark as light3d's in 266aae26).\n- B classic + map shadows: +sunShadows=map&lampShadows=map, the classic art without any maps and the 3/4 camera.\n- C cheap light3d: light3d=1&lightingRes=0.25&shadowRes=0.25&selfShadow=0&pixelDepth=0.\n- D light3d: light3d=1.\n\nPredator at its default crowd and camera, GTX 1650 1920x1080 headed Chrome, 2 rounds alternated (23:06 to 23:20); GPU =\nglFrameRecorder --gpu-draws, CPU = each worker's own ms (exact-frame step less wait), detailed stats off:\n\n| mode | GPU 16 h | GPU 22 h | renderer 16 h / 22 h | pre-render 16 h / 22 h |\n| --- | --- | --- | --- | --- |\n| A | 3.67 | 3.26 | 1.39 / 1.22 | 2.09 / 1.78 |\n| B | 5.75 (+57 %) | 3.89 (+19 %) | 2.16 / 1.60 | 2.75 / 2.22 |\n| C | 4.74 | 4.63 | 2.47 / 1.98 | 2.49 / 2.58 |\n| D | 5.71 | 5.39 | 2.90 / 2.00 | 2.73 / 2.36 |\n\nB looks clearly better than A on art with no maps (the sun's shadow takes out the sun alone, the lamps light inside it)\nbut costs by day about what full light3d does on the GPU. C looks nearly like D for 15 to 17 % less GPU and renderer.\nNot run on the HD 620 yet. The owner's question (remove A if B costs the same): they do not cost the same; A stays the\ncheap preset until B's day cost comes down (E-531).\n\nAlso found and fixed: Predator's Trash threw its classic shadow from mid-bin (foot 0.1 above its 0.66 anchor, 1.5\ntimes as tall), so it showed below the bin, detached; now its foot is at the wheels (ca241e16). light3d measures its\nbase and was right.",
+      "commits": [
+        "0fba3fcb",
+        "266aae26",
+        "ca241e16"
+      ]
     }
   ],
   "leads": [
