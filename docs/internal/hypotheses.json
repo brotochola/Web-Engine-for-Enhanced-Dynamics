@@ -23806,10 +23806,10 @@
       "id": "N-302",
       "title": "Pixel snap (atlasScaleMode nearest) rounds each sprite's origin on its own at any zoom: at a fractional zoom two sprites placed edge to edge may open a 1 px seam or cover a column of each other (to confirm)",
       "status": "open",
-      "statusText": "suspected 2026-11-18 from Phaser's history (3.86 snaps only at an integer zoom, against 'black lines between tightly grouped sprites or tiles', 79de922e) (R-1422); not reproduced",
+      "statusText": "suspected 2026-11-18 (R-1422); step 0 on the ASUS 2026-11-20 (R-1714): not reproduced, probe snapSeamScene on fix/n302-snap-seam-probe",
       "date": "2026-11-18",
       "result": "",
-      "next": "A capture of edge-to-edge pieces at zoom 1.3 and 1.5, the camera panning slowly, counting background pixels between them. If they show: snap only at an integer zoom, or round the quad's edges so neighbours share theirs; aInstXY keeps the true place (N-271). REVIEW_PLAN.md#N-302.",
+      "next": "Check which grid weedSnapXY rounds to at a fractional zoom (the probe's nearest and linear captures were identical at zoom 1.2, where a screen-pixel snap must leave a seam every fifth piece); then judge the seam. Shader work: main PC.",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -23821,7 +23821,8 @@
         "fractional zoom seams"
       ],
       "records": [
-        "R-1422"
+        "R-1422",
+        "R-1714"
       ]
     },
     {
@@ -40216,6 +40217,15 @@
       "title": "N-237 fixed: setterMicrobench binds its columns once, no rebind deopt between cases",
       "verdict": "kept-hygiene",
       "text": "**N-237 fixed: setterMicrobench binds its columns once; its \"same\" case times the code its \"moving\" case compiled.** Branch fix/n237-setter-bench-one-binding, c1f85e3b.\n\n- **Cause:** each case called setupSetters, which binds new arrays to Transform's, RigidBody's and SpriteRenderer's statics. The second binding marked every setter's TurboFan code for deoptimization (reason: code dependencies, the fields' constness): 12 marks a run (node --trace-deopt, Node 22.16), the setters, poseMoved and the frame loop among them.\n- **Fix:** setupSetters runs once. Each case starts from resetSetters, the same arrays filled back to setup's values.\n- **Checked:** 0 dependent-code marks in 2 runs, and the checksums are unchanged (moving 712077207, same 3157746663). \"same\" re-timed at 11 890 and 12 183 ops/s, against 10 977 and 12 114 on bugs/base (2 runs each on the ASUS: noise, no verdict). \"moving\" read 8 484 and 8 882 (base 8 264 and 8 846).\n- **Test:** setterMicrobenchReset.test.js checks that resetSetters keeps the bound arrays and restores setup's values. Node suite 3286 of 3288 (two frameChainWait timing flakes, its file green alone)."
+    },
+    {
+      "id": "R-1714",
+      "date": "2026-11-20",
+      "time": "06:37",
+      "timeFrom": "recorded",
+      "title": "N-302 step 0: no seam on the HD 620 at zooms 1 to 1.5; nearest and linear captures identical, so the snap may not round in screen pixels",
+      "verdict": "note",
+      "text": "**N-302 step 0: not reproduced on the HD 620, and the probe suggests the snap does not move these sprites at all.** Probe scene on branch fix/n302-snap-seam-probe (e6f85a8b): tests/bench/stressScenes/snapSeamScene.js.\n\n- **The capture:** a white floor of 4 x 120 pieces of 16 px laid edge to edge on a black page, renderer.atlasScaleMode 'nearest'. compareCaptures, headed, 1280 x 720, 3 s in, rows 330 to 390 (inside the floor) scanned for dark pixels:\n  - zoom 1.3 and 1.5, camera offsets 0, 0.37 and 0.77: 0;\n  - zoom 1, 1.15 and 1.2: 0;\n  - zoom 1.2 with E-448's opaque pass off (?opaquePass=0): 0.\n  - The floor shows where expected (about 84 px tall at zoom 1.3).\n- **Why that is odd:** if the snap rounded each origin in screen pixels at zoom 1.2, a piece is 19.2 px wide and the origins' fractions cycle through .0, .2, .4, .6 and .8. Every fifth neighbour would leave a column uncovered (an origin with a fraction in [0.3, 0.5) rounds up while its neighbour's right edge stays at .2). Yet the nearest and linear captures at zoom 1.2 are byte-identical.\n- **Lead:** the snap's grid (uWorldTransformMatrix · uTransformMatrix in pixelSnap.js) may not include the camera's zoom, so it rounds in world pixels, where these pieces already sit. Or these sprites do not reach the snapped shader.\n- **Next (main PC, shader work):** check which grid weedSnapXY rounds to at a fractional zoom (pieces at fractional world positions with a patterned texture, or a readback of a snapped vertex). Only then judge the seam."
     }
   ],
   "leads": [
