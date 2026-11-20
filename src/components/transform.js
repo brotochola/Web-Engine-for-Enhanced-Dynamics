@@ -456,12 +456,20 @@ function isLinkedChild(i) {
  */
 export function poseMovedAt(i, bits) {
   staticSceneryChangedAt(i);
-  if (isCommandRingBound() && (bits & BODY_BITS) !== 0) {
-    if (!isSpawningHere(i)) enqueuePoseOf(i);
-  } else if (isLinkedChild(i)) {
-    Transform.composeChildPose(i);
-    Transform._ignoredPoseWrite(i);
-  }
+  // The two rarer cases in functions of their own: a caller's inlining budget pays for the common path only.
+  if (isCommandRingBound() && (bits & BODY_BITS) !== 0) bodyPoseMovedAt(i);
+  else if (isLinkedChild(i)) childPoseWrittenAt(i);
+}
+
+/** A body moved by a pose setter: its SET_TRANSFORM, unless in its spawn here (SST-20: its body is made after it). */
+function bodyPoseMovedAt(i) {
+  if (!isSpawningHere(i)) enqueuePoseOf(i);
+}
+
+/** A pose setter wrote child i's column: its pose put back from its parent, and the warning. */
+function childPoseWrittenAt(i) {
+  Transform.composeChildPose(i);
+  Transform._ignoredPoseWrite(i);
 }
 
 /**

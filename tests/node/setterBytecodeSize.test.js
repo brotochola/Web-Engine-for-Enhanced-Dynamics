@@ -22,9 +22,12 @@ const DRIVER = fileURLToPath(new URL('../helpers/setterBytecodeDriver.mjs', impo
 const COMPARE_INLINE_MAX = 75 - 2 * 4;
 const COMPARE_INLINE = ['set x', 'set y'];
 const ONE_VALUE = ['set vx', 'set vy', 'set angularVelocity', 'set alpha', 'setAlpha', 'setAnimationSpeed'];
-const ONE_VALUE_MAX = 27;
+// E-533: these call their component's core directly (SETTER_ARGS, then alphaAt(i, bits)): a wrapper between them took a
+// caller's inlining budget (setterMicrobench moving -19 %, set y left out of the frame). Under the heap-number rule
+// with a bundle's margin, as set x.
+const ONE_VALUE_MAX = COMPARE_INLINE_MAX;
 const TWO_VALUES = ['setPosition', 'setVelocity', 'setScale'];
-const TWO_VALUES_MAX = 45;
+const TWO_VALUES_MAX = COMPARE_INLINE_MAX;
 
 /** name → bytecode lengths of the functions of that name the driver ran (V8 prints one per function). */
 function bytecodeLengths() {
@@ -46,8 +49,8 @@ test('the per-frame setters stay small enough for V8 to inline them whenever the
   const lengths = bytecodeLengths();
   for (const [names, max, why] of [
     [COMPARE_INLINE, COMPARE_INLINE_MAX, 'a bundle can take it past 75, where a caller out of budget leaves it out'],
-    [ONE_VALUE, ONE_VALUE_MAX, 'keep its work in its FromArgs function'],
-    [TWO_VALUES, TWO_VALUES_MAX, 'keep its work in its FromArgs function'],
+    [ONE_VALUE, ONE_VALUE_MAX, 'keep its work in its component core'],
+    [TWO_VALUES, TWO_VALUES_MAX, 'keep its work in its component core'],
   ]) {
     for (const name of names) {
       const found = lengths.get(name);

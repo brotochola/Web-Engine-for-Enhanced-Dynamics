@@ -338,17 +338,8 @@ export function relinkRestoredChild(i, hadParent) {
   }
 }
 
-/**
- * set x's and set y's work once their column changed: the static scenery counter, a body's pose. (The bundle build
- * keeps one-caller functions functions since E-469, terser's reduce_funcs off; scripts/checkBundleSetters.mjs checks
- * the shipped setters make no closure.) DX-PARENT: a child's pose is physics' (body-less entities only, a child has no
- * body): put back, said once.
- */
-function poseMoved(e) {
-  // E-533: Transform's work (the static scenery counter, a body's SET_TRANSFORM unless in its spawn here: SST-20; a
-  // child's pose put back), the same for Transform.setX(i, x).
-  poseMovedAt(e.index, e._componentBits);
-}
+// set x and set y: Transform's poseMovedAt (the static scenery counter, a body's SET_TRANSFORM unless in its spawn
+// here: SST-20; a child's pose put back), called straight: a wrapper between them took the caller's inlining budget.
 
 /**
  * N-218: whether any entity has a parent (transform.parent). The pose writes read Transform.parent[i] only then: at
@@ -358,51 +349,6 @@ function poseMoved(e) {
  */
 function anyChildLinked() {
   return Transform.links[LINK_COUNT] !== 0;
-}
-
-/** setPosition's work, x and y in SETTER_ARGS. Returns the entity. */
-function setPositionFromArgs(e) {
-  positionAt(e.index, e._componentBits);
-  return e;
-}
-
-/** set vx's work, its value in SETTER_ARGS[0]. */
-function setVxFromArgs(e) {
-  vxAt(e.index, e._componentBits);
-}
-
-/** set vy's work, its value in SETTER_ARGS[0]. */
-function setVyFromArgs(e) {
-  vyAt(e.index, e._componentBits);
-}
-
-/** set angularVelocity's work, its value in SETTER_ARGS[0]. */
-function setAngularVelocityFromArgs(e) {
-  angularVelocityAt(e.index, e._componentBits);
-}
-
-/** setVelocity's work, vx and vy in SETTER_ARGS. Returns the entity. */
-function setVelocityFromArgs(e) {
-  velocityAt(e.index, e._componentBits);
-  return e;
-}
-
-/** set alpha's and setAlpha's work, the alpha in SETTER_ARGS[0]. Returns the entity. */
-function setAlphaFromArgs(e) {
-  alphaAt(e.index, e._componentBits);
-  return e;
-}
-
-/** setScale's work, x and y in SETTER_ARGS. Returns the entity. */
-function setScaleFromArgs(e) {
-  setScaleAt(e.index, e._componentBits);
-  return e;
-}
-
-/** setAnimationSpeed's work, the speed in SETTER_ARGS[0]. Returns the entity. */
-function setAnimationSpeedFromArgs(e) {
-  setAnimationSpeedAt(e.index, e._componentBits);
-  return e;
 }
 
 /**
@@ -1324,7 +1270,7 @@ export class GameObject {
     const col = Transform.x;
     if (col[i] !== Math.fround(value)) {
       col[i] = value;
-      poseMoved(this);
+      poseMovedAt(i, this._componentBits);
     }
   }
 
@@ -1339,7 +1285,7 @@ export class GameObject {
     const col = Transform.y;
     if (col[i] !== Math.fround(value)) {
       col[i] = value;
-      poseMoved(this);
+      poseMovedAt(i, this._componentBits);
     }
   }
 
@@ -1382,7 +1328,7 @@ export class GameObject {
   }
   set vx(value) {
     SETTER_ARGS[0] = value;
-    setVxFromArgs(this);
+    vxAt(this.index, this._componentBits);
   }
 
   /** Velocity Y - returns 0 if entity has no RigidBody */
@@ -1392,7 +1338,7 @@ export class GameObject {
   }
   set vy(value) {
     SETTER_ARGS[0] = value;
-    setVyFromArgs(this);
+    vyAt(this.index, this._componentBits);
   }
 
   /** Angular velocity (rad/s) */
@@ -1402,7 +1348,7 @@ export class GameObject {
   }
   set angularVelocity(value) {
     SETTER_ARGS[0] = value;
-    setAngularVelocityFromArgs(this);
+    angularVelocityAt(this.index, this._componentBits);
   }
 
   /**
@@ -1488,7 +1434,7 @@ export class GameObject {
   }
   set alpha(value) {
     SETTER_ARGS[0] = value;
-    setAlphaFromArgs(this);
+    alphaAt(this.index, this._componentBits);
   }
 
   /** Tint color (0xRRGGBB) */
@@ -1653,7 +1599,8 @@ export class GameObject {
    */
   setAlpha(value) {
     SETTER_ARGS[0] = value;
-    return setAlphaFromArgs(this);
+    alphaAt(this.index, this._componentBits);
+    return this;
   }
 
   /**
@@ -1817,7 +1764,8 @@ export class GameObject {
     const a = SETTER_ARGS;
     a[0] = x;
     a[1] = y !== undefined ? y : x;
-    return setScaleFromArgs(this);
+    setScaleAt(this.index, this._componentBits);
+    return this;
   }
 
   /**
@@ -1866,7 +1814,8 @@ export class GameObject {
    */
   setAnimationSpeed(speed) {
     SETTER_ARGS[0] = speed;
-    return setAnimationSpeedFromArgs(this);
+    setAnimationSpeedAt(this.index, this._componentBits);
+    return this;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1883,7 +1832,8 @@ export class GameObject {
     const a = SETTER_ARGS;
     a[0] = x;
     a[1] = y;
-    return setPositionFromArgs(this);
+    positionAt(this.index, this._componentBits);
+    return this;
   }
 
   /**
@@ -1896,7 +1846,8 @@ export class GameObject {
     const a = SETTER_ARGS;
     a[0] = vx;
     a[1] = vy;
-    return setVelocityFromArgs(this);
+    velocityAt(this.index, this._componentBits);
+    return this;
   }
 
   /**

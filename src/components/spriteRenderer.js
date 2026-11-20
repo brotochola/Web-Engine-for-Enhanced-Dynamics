@@ -782,6 +782,14 @@ export function alphaAt(i, bits) {
     SpriteRenderer.renderDirty[i] = 1;
     SpriteRenderer.keyedDirty[i] = 1;
   }
+  // An Adobe clip, a mesh row or a shadow volume's row: in a function of its own, so a sprite's caller pays its inlining
+  // budget for the sprite alone.
+  if ((bits & (HAS_ADOBE | HAS_MESH | HAS_SHADOW)) !== 0) otherAlphaAt(i, bits);
+}
+
+/** alphaAt's Adobe clip and mesh row, the alpha still in SETTER_ARGS[0]. */
+function otherAlphaAt(i, bits) {
+  const a = SETTER_ARGS[0];
   if ((bits & HAS_ADOBE) !== 0) AdobeAnimComponent.alpha[i] = a;
   if (meshRowFollows(bits) && MeshRenderer.alpha[i] !== a) {
     MeshRenderer.alpha[i] = a;
