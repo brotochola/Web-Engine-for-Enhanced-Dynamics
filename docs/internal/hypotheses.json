@@ -20344,19 +20344,20 @@
     {
       "id": "N-243",
       "title": "glFrameRecorder rounds draws a frame to 0.1, so per-draw times of layers that redraw in fewer than every frame read about +-8 %",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (289933e0), on fix/n243-recorder-unrounded (R-1712)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "E-453 agent normalised the row draws by their instance counts instead.",
-      "next": "Report draws a frame and ms a draw unrounded (or ms a draw from the totals), the table rounded only when printed.",
+      "result": "Fixed 2026-11-20 (289933e0): the result's rows hold unrounded rates, their totals and msPerDraw; only the printed table rounds. The WebGPU recorder rounds the same way (left to the main PC).",
+      "next": "webgpuRecorderWorker.mjs rounds draws a frame the same way (WebGPU: the main PC).",
       "refs": [],
       "aliases": [
         "recorder draw rounding"
       ],
       "records": [
-        "R-1228"
+        "R-1228",
+        "R-1712"
       ]
     },
     {
@@ -40196,6 +40197,15 @@
       "title": "N-246 fixed: profileSceneSweep's passes take --cpu-from for the cpu pass's files",
       "verdict": "kept-hygiene",
       "text": "**N-246 fixed: profileSceneSweep's passes take --cpu-from <dir> for the cpu pass's files.** Branch fix/n246-sweep-cpu-from, 4e585b8e.\n\n- **Cause:** the code pass read <out>/<scene>/cpu-summary.json and the inventory the cpu pass's results.json, both from --out. A pass run into its own folder ranked nothing and wrote an empty inventory, silently.\n- **Fix:** both read from --cpu-from <dir>, by default --out, so a sweep into one folder runs as before. The cpu pass always uses its own --out. One helper (cpuPassPaths) names the files, and each place warns when it finds none. The header says so.\n- **Test:** profileSceneSweepCpuFrom.test.js builds an inventory into one folder from a cpu pass's files in another: the scene gets its worker row. Without the folder it reads --out, as before. Node suite 3287 of 3289: the two failures were frameChainWait timing tests, green alone. The CLI run was not repeated."
+    },
+    {
+      "id": "R-1712",
+      "date": "2026-11-20",
+      "time": "06:20",
+      "timeFrom": "recorded",
+      "title": "N-243 fixed: glFrameRecorder keeps rates a frame unrounded, with totals and ms a draw",
+      "verdict": "kept-hygiene",
+      "text": "**N-243 fixed: glFrameRecorder's result holds unrounded rates a frame, their totals and ms a draw; only the printed table rounds.** Branch fix/n243-recorder-unrounded, 289933e0.\n\n- **Cause:** the recorder rounded draws a frame and segments a frame to 0.1, and ms a frame to 0.001, in the result itself. A layer that draws in fewer than every frame read about +-8 % per draw.\n- **Fix:** the rows carry drawsPerFrame, segmentsPerFrame, instancesPerFrame and msPerFrame unrounded, with the totals they come from (ns, draws, instances, segments). Each draw pass also carries msPerDraw. The printed tables round as they did. The header's ms a frame prints 3 decimals, so the lab's kmip.mjs regex reads it as before.\n- **Checked by a real recording**, since the recorder runs serialized in the Pixi worker and a node test would need a fake WebGL2 context: ballsScene, --gpu-draws, 120 frames on the HD 620. draws / frames equals drawsPerFrame exactly; msPerDraw is 1.45060 ms; the table prints 1.451 ms, 1.0 draws, 1981 inst. Node suite 3286 of 3287 (frameChainWait's \"logic waits ...\" flake, its file green alone).\n- **Left:** webgpuRecorderWorker.mjs rounds the same way (per(), drawsPerFrame). That is WebGPU work, for the main PC."
     }
   ],
   "leads": [
