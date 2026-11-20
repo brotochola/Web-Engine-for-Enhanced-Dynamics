@@ -1,6 +1,7 @@
 // Columns, a command ring and a static scenery counter for tests of GameObject's per-frame setters
 // (setterSameValue.test.js, setterParity.test.js).
 import { GameObject } from '../../src/core/gameObject.js';
+import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
@@ -101,10 +102,11 @@ export function withWorld(fn) {
   }
 }
 
-/** An entity at `index` with the given _hasComponents flags (the way the engine's tests make one). */
+/** An entity at `index` with the given _hasComponents flags (the way the engine's tests make one), and their bits. */
 export function entity(index, components) {
   const go = Object.create(GameObject.prototype);
   go.index = index;
   go._hasComponents = components;
+  go._componentBits = bitsOfFlags(components);
   return go;
 }

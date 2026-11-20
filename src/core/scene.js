@@ -2,6 +2,7 @@
 // Handles workers, SharedArrayBuffers, entity registration, and scene lifecycle
 // GameEngine owns canvas / page lifecycle; Scene owns the running world.
 
+import { noteEntityType } from './entityTypes.js';
 import { cameraFloorScaleY, resolveCamera } from '../util/cameraView.js';
 import { GameObject } from './gameObject.js';
 import { popEntity } from '../util/atomicFreeList.js';
@@ -754,6 +755,7 @@ class Scene {
     const entityTypeId = this.registeredClasses.length;
     EntityClass.entityType = entityTypeId;
     GameObject.classByType[entityTypeId] = EntityClass;
+    noteEntityType(entityTypeId, EntityClass);
     if (EntityClass.deriveSpeed === true) this._anyDeriveSpeed = true;
 
     // Register custom components and assign componentId IDs
@@ -1175,6 +1177,7 @@ class Scene {
         const entityTypeId = this.registeredClasses.length;
         ParentClass.entityType = entityTypeId;
         GameObject.classByType[entityTypeId] = ParentClass;
+        noteEntityType(entityTypeId, ParentClass);
         if (ParentClass.deriveSpeed === true) this._anyDeriveSpeed = true;
 
         // Auto-detect script path from parent class (for worker script loading)

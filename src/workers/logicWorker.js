@@ -17,6 +17,7 @@ import { drainMessages } from '../util/messageRing.js';
 import { clearStaticHookTables, createStaticHookTables, definesHook, resolveStaticHooks } from '../core/entityHooks.js';
 import { Joint } from '../core/joint.js';
 import { FSM } from '../core/fsm.js';
+import { noteEntityType } from '../core/entityTypes.js';
 import { Mouse } from '../core/mouse.js';
 import {
   Transform,
@@ -629,6 +630,7 @@ class LogicWorker extends AbstractWorker {
         EntityClass.entityType = entityType; // Auto-assigned entity type ID
         this._entityClassByType[entityType] = EntityClass;
         GameObject.classByType[entityType] = EntityClass;
+        noteEntityType(entityType, EntityClass);
         resolveStaticHooks(this.staticHooks, EntityClass, entityType, GameObject);
 
         // Pre-computed typed array of all entity indices for this class
