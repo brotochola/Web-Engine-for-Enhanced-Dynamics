@@ -11692,7 +11692,8 @@
         "R-1252",
         "R-1498",
         "R-1587",
-        "R-1588"
+        "R-1588",
+        "R-1598"
       ]
     },
     {
@@ -19055,7 +19056,8 @@
         "R-1195",
         "R-1205",
         "R-1206",
-        "R-1589"
+        "R-1589",
+        "R-1597"
       ]
     },
     {
@@ -39875,6 +39877,24 @@
       "title": "N-325 filed: 335-340 of Predator crowd 2.5's cells overflow their cap of 32, 6.8 % of the entities in no neighbour list",
       "verdict": "note",
       "text": "**N-325 filed: Predator crowd 2.5's grid cells overflow, leaving about 2 600 entities (6.8 %) in no cell and in\nnobody's neighbour list; the engine says nothing.** From the page at crowd=2.5&hour=22 (3 samples, 22:06): 38 289\nactive entities in 2 834 to 2 847 cells of 128 px; maxEntitiesPerCell is 32 in Predator (\"this is very important!!\",\nthe default 64); 335 to 340 cells hold more (at most 47 to 48), 2 595 to 2 644 entities past the caps. spatialWorker\nkeeps \"the first maxEntitiesPerCell\" of a cell, so the rest drop out of every list: civilians' and soldiers' flocking,\nboids, lights under walls (E-529's misses). No stat counts it and no warning fires."
+    },
+    {
+      "id": "R-1597",
+      "date": "2026-11-19",
+      "time": "21:47",
+      "timeFrom": "recorded",
+      "title": "E-432's one-pass tilemap on the HD 620: the tilemap 4.09 -> 2.52 ms a frame (7 draws -> 1), the renderer's CPU -15 %; drawn frames level at 60 fps (599 vs 601)",
+      "verdict": "note",
+      "text": "ASUS lab jobs 0899t2 (21:28-21:30) and 0899t4 (21:42-21:47): E-432's next on the HD 620. The tilemap draws all\nlayers of a page in one draw, each tile's stack front to back. A = main 0b88037d (pool-a), B = perf/e432-layers-one-pass\n1782c78f (pool-b), --src. Predator by day, crowd 0.25, zoom 0.216: R-1588's capacity edge, R-1589's setup. Intel\n31.0.101.2145.\n\n**(1) glFrameRecorder --gpu-draws, ABAB** (the [uGid,uTileset] draws summed from gpu.passes):\n\n| | A r1 / r2 | B r1 / r2 |\n|---|---|---|\n| tilemap ms a frame | 4.292 (7 draws) / 3.885 (6.3) | 2.525 (1) / 2.508 (1) |\n| the frame's draws | 12.182 / 12.154 | 11.516 / 11.675 |\n| visible instances | 9 556 / 13 059 | 14 206 / 14 152 |\n\n- The tilemap's medians fall 4.09 -> 2.52 ms (-1.57 ms, -38 %) and its draws 7 -> 1.\n- The frame's draws fall only 0.57 ms, because B's runs had more of the crowd in view.\n\n**(2) Drawn frames over 10 s, 4 rounds alternated (kdrawn):**\n- The renderer drew 599 [599 593 598 600] frames on A and 601 [601 600 600 601] on B.\n- The renderer's own work: 3.69 -> 3.13 ms.\n- pre-render's own work: 4.24 -> 3.65 ms.\n\n- **The tilemap is clearly cheaper on the weak GPU.** About 1.6 ms of a 12 ms GPU frame, 38 % of the ground's cost.\n- **The drawn frames cannot show it at this load:** both sides held 60 fps here, B missing at most one frame in 10 s\n  and A up to 8. In R-1588's sitting the same load drew 55.9 to 57.6 fps on main: that edge moves between sittings.\n- The renderer's CPU fell 15 % with 6 fewer draws, in 3 of 4 pairs."
+    },
+    {
+      "id": "R-1598",
+      "date": "2026-11-19",
+      "time": "21:42",
+      "timeFrom": "recorded",
+      "title": "The night's low-end capacity at 9ddd959f: predator 0.15, boids 27 000, bunnyMark 15 000, keyedPack 85 000, each within a step of the morning's; Predator by night under 0.05 (GPU, ~26 fps)",
+      "verdict": "note",
+      "text": "ASUS lab job 0899u (21:31-21:42): the night's low-end capacity at main 9ddd959f (the evening's merges, E-378, the\nvisualRange audit, N-322, N-323). runCapacity on the five capacity scenes, headed, --src, starts near the morning's\nedges with floors under them. i7-7500U 2C/4T, HD 620 on Intel 31.0.101.2145. The CPU frequency was logged every 5 s:\nmean 95 % of the 2.7 GHz base, 17 of 117 samples under 80 %.\n\n| scene | capacity at 9ddd959f | what breaks above it | the morning (R-1498 at 8c310e43, R-1587/R-1588 at b190651d) |\n|---|---|---|---|\n| predator | crowd 0.15 (2 400) | crowd 0.2: drawn 58.18 fps | 0.2 (3 200) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | drawn 25.6 fps at 0.15, 27.0 at 0.05: the GPU | under 0.25 (drawn 24.2) |\n| boids | 27 000 | 28 000: physics p99 16.75 ms | 28 000 |\n| bunnyMark | 15 000 | 20 000: drawn 52.1 fps | 15 000 |\n| keyedPack | 85 000 | 90 000: pre-render p99 18.88 ms | 90 000 |\n\n- **Every edge is within one search step of the morning's, by a hair:** Predator's crowd 0.2 drew 58.2 fps against the\n  59 bar, and boids' p99 missed by 0.05 ms. Three scenes landing a step lower is worth watching, not a regression: each\n  edge is a single run, and R-1588 saw 0.2 pass or fail between thread counts.\n- **Predator by night cannot reach 60 fps on the HD 620 at any crowd:** about 26 fps drawn even at crowd 0.05. That is\n  the GPU: the light pass costs 11 to 12.5 ms an execution there (R-1499)."
     }
   ],
   "leads": [
