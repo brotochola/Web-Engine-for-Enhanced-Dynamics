@@ -20809,19 +20809,20 @@
     {
       "id": "N-254",
       "title": "A scene that fails while booting makes runIntegratedWorkerBenchmark wait out its 318 s watchdog instead of exiting, and measureLib retries once: about 5 minutes of the bench queue lost per failed boot",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the capacity agent",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-20 (cb0b5621, 2eca13c3), on fix/n254-boot-failure-exit (R-1705)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Seen at bunnyMark ?bunnies=500000 (500 001 entities with the spawner) and boids past 65 535 with physics.",
-      "next": "Exit as soon as the page reports a boot error (pageerror or the scene failing to start), with the error in the result; no retry on a boot error.",
+      "result": "Fixed 2026-11-20 (cb0b5621, 2eca13c3): the page's boot watch also fails the boot 10 s after an uncaught error or unhandled rejection with no ready; the runner exits 4 and measureLib does not run it again (bootFailureScene: 15 s, was the 302 s watchdog).",
+      "next": "runCapacity could read exit 4 as \"over capacity\" at once; it fails the step today, as any failed run.",
       "refs": [],
       "aliases": [
         "bench boot failure watchdog"
       ],
       "records": [
-        "R-1240"
+        "R-1240",
+        "R-1705"
       ]
     },
     {
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1705",
+      "date": "2026-11-20",
+      "time": "05:30",
+      "timeFrom": "recorded",
+      "title": "N-254 fixed: a scene that fails while booting ends the run at once (exit 4), no retry",
+      "verdict": "kept-hygiene",
+      "text": "**N-254 fixed: a scene that fails while booting ends the integrated run at once (exit 4) and is not run again.** Branch fix/n254-boot-failure-exit, cb0b5621 (the fixture) and 2eca13c3.\n\n- **Cause:** the page raced loadScene only with the engine's fatal overlay, which shows a worker's error only when the worker reports it. A worker that dies outside the engine's handlers (sceneWorkerBootstrap's worker.onerror only logs) reaches the page as an uncaught error and nowhere else. The scene never reported ready, the run waited out its watchdog (warm-up + window + 5 min), and measureLib ran it again. The original case (500 001 entities, over the old ceiling) no longer fails since DX-ENT1M, so a fixture stands in for it: bootFailureScene, whose entity module never finishes loading in a worker and throws uncaught.\n- **Fix:** tests/bench/bootWatch.mjs, raced with loadScene by the page. It fails the boot at once on the fatal overlay, as before. It also fails the boot 10 s after the page's first uncaught error or unhandled rejection when the scene has still not booted, so a scene that boots through a stray error is not failed. The runner exits 4 on a boot failure, and measureLib's runIntegratedWithRetry returns it without a second run (bootFailure: true).\n- **Checked on the ASUS:** bootFailureScene on bugs/base was still running when cut at 60 s (its watchdog: 302 s); with the fix it exits 4 in 15 s and measureLib returns after one run (15 s). A normal run (audioStorm, plays 1200) is unchanged.\n- **Test:** bootWatch.test.js covers four cases with mocked timers: an uncaught error past the grace, the overlay at once, an unhandled rejection, and a boot that finishes and is never failed. Node suite 3291 of 3291."
     }
   ],
   "leads": [
