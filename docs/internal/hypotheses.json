@@ -11403,7 +11403,8 @@
       "records": [
         "R-0854",
         "R-1174",
-        "R-1428"
+        "R-1428",
+        "R-1700"
       ]
     },
     {
@@ -40082,6 +40083,15 @@
       "title": "The settled ASUS baseline completed: bunnyMark 15 000 -> 30 000 with a 60 s warm-up; Predator by night still under 0.05 (GPU, 26-28 fps)",
       "verdict": "note",
       "text": "ASUS lab job 0899z6 (02:39-02:51): the settled low-end baseline completed (R-1627 measured predator, boids and keyedPack\nwith a 60 s warm-up). runCapacity --warmup-ms 60000 for Predator by night and bunnyMark, main 9647eb9b, headed, --src.\n\n| scene | 9 s warm-up (R-1598) | 60 s warm-up | what breaks above it |\n|---|---|---|---|\n| bunnyMark | 15 000 | 30 000 (x2) | 35 000: drawn 58.98 fps (passed once, failed once) |\n| predatorNight (light3d, hour 22) | under its 0.05 floor | under its 0.05 floor | drawn 26.0 fps at 0.15, 28.3 at 0.05: the GPU |\n\n- **bunnyMark holds twice as many bunnies once settled.** It is GPU-bound (R-1584): in its first seconds the bunnies\n  spread over more of the screen, or the GPU is still warming, and both settle.\n- **Predator by night stays out of reach of 60 fps on the HD 620 at any crowd.** About 26 to 28 fps settled too: the\n  light3d GPU cost R-1623 broke down.\n- **The settled ASUS baseline at 9647eb9b:**\n  - predator crowd 0.55 (8 800), boids 39 000, keyedPack 100 000, bunnyMark 30 000.\n  - predatorNight under 0.05."
+    },
+    {
+      "id": "R-1700",
+      "date": "2026-11-20",
+      "time": "03:31",
+      "timeFrom": "recorded",
+      "title": "Mipmaps in Predator on the ASUS's HD 620: GPU −7 % zoomed out, flat by day and at night, blurrier pixel art; Predator keeps them off",
+      "verdict": "rejected",
+      "text": "**Mipmaps in Predator on the ASUS's Intel HD 620: −7 % GPU zoomed out, flat by day and at night, and blurrier pixel art. Predator keeps `autoGenerateMipmaps: false`.** The owner's question, asked on the ASUS (i7-7500U, HD 620, Chrome headed at 1920 × 1080). The probe flipped Predator's own `renderer.autoGenerateMipmaps` line in a lab tree at main 13b16c41, off against on, two rounds alternated, run twice (four pairs, 2026-11-20 03:31 to 04:08): glFrameRecorder `--gpu-draws` (the GPU time a frame, 3 s after 20 s) by day at the default zoom and at zoom 0.216, by night with light3d (hour 22), plus the frames drawn at crowd 0.2, and one picture a side.\n\n| GPU ms a frame, mean of 4 pairs | off | on | change | the 4 pairs |\n| --- | --- | --- | --- | --- |\n| day, default zoom | 10.95 | 11.02 | +0.6 % | −4.7, +7.7, +1.3, −1.0 % |\n| day, zoom 0.216 | 11.43 | 10.60 | −7.2 % | −8.3, −6.3, −8.9, −5.4 % |\n| night, light3d | 28.37 | 28.12 | −0.9 % | −3.9, (+32), +6.4, −5.9 % |\n| the sprite program [uTexLut,uStatics,uPoses,uTexture], zoom 0.216 | 3.36 | 2.43 | −28 % | |\n| the same, default zoom | 2.92 | 2.56 | −12 % | |\n| night: G-buffer sprites [… uTexture,uMaps] / lamps' map [uTexLut,uLampTiles,uTexture] | 9.43 / 3.97 | 8.56 / 4.43 | −9 % / +12 % | |\n\n- **Where it acts:** only on sprite draws. The tileset pass [uGid,uTileset] and the light pass (the control: mipmaps cannot reach it) stayed flat. At night the lamps' map got slower and ate most of the G-buffer's gain. By day the sprite gain (−0.36 ms) drowned in the other programs' noise.\n- **The outlier:** night off in the first run's second round read 21.4 ms, with every pass ~25 % faster, the light pass included (4.81 against ~6.2 ms). That is the GPU in another clock state, not mipmaps: the night mean leaves it out.\n- **Frames drawn:** 600 of 600 in 10 s on both sides (vsync bound at crowd 0.2).\n- **The pictures** (compareCaptures, zoom 0.216, crowd 0.2, enlarged ×4 to ×5): no colour bleeding between atlas frames and no 1 px halo. But mipmaps blur Predator's pixel art: houses, people, lamps and trees lose their detail (the crowd reads as brown dots), and tree shadows smear into soft grey smudges where off shows their dappled shape.\n- **Verdict:** rejected for Predator. The bar was −3 % in all three views. It cleared only zoomed out, and the look got worse. E-204 stays open for its BunnyMark and overdraw steps. Zoomed-out sprite fill rate is real on this GPU (−28 % on the sprite program), so a mip chain with a sharper filter (a LOD bias, or mips only below some zoom) could be revisited."
     }
   ],
   "leads": [
