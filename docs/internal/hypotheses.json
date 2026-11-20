@@ -11699,7 +11699,8 @@
         "R-1621",
         "R-1624",
         "R-1626",
-        "R-1627"
+        "R-1627",
+        "R-1628"
       ]
     },
     {
@@ -40062,6 +40063,15 @@
       "title": "The ASUS's capacity with a 60 s warm-up: predator 0.2 -> 0.55 (x2.75), boids 29 000 -> 39 000, keyedPack 90 000 -> 100 000; the 9 s default measures unsettled scenes",
       "verdict": "note",
       "text": "ASUS lab job 0899z4 (01:56-02:27): the ASUS's capacity with a 60 s warm-up instead of runCapacity's default 9 s,\nafter R-1626 found Predator settling within about a minute. runCapacity --warmup-ms 60000, window 10 s, headed, --src,\nmain 9647eb9b. The CPU frequency averaged 86 % of the 2.7 GHz base, with 85 of 258 samples under 80 % (a hotter job than\nthe 9 s ones). The 9 s column is R-1620's same-night A/B.\n\n| scene | 9 s warm-up | 60 s warm-up | what breaks above it at 60 s |\n|---|---|---|---|\n| predator | crowd 0.2 (3 200) | crowd 0.55 (8 800), x2.75 | 0.6: physics p99 77.4 ms |\n| boids | 28 000 to 29 000 | 39 000, +35 % | 40 000: physics p99 16.75 ms |\n| keyedPack | 85 000 to 90 000 | 100 000, +11 to 18 % | 105 000: pre-render p99 18.5 ms (passed once, failed once) |\n\n- **The 9 s warm-up measures a scene that has not settled, and on this laptop that sets the capacity far too low.**\n  - Predator holds 2.75 times as many civilians and soldiers once it has run a minute. Its 9 s edge (drawn frames at\n    crowd 0.25) is gone: crowd 0.5 passed.\n  - Part is the engine warming on a slow core, part the scene settling: Predator's bodies sleep, the start's spawns\n    and effects die down. A player's minutes are the settled state.\n- **For the capacity metric (the strategy's nightly number):** the default warm-up should cover a scene's settling.\n  At least 60 s here.\n  - Whether the main PC's capacities (R-1452 to R-1460, at 9 s) are low too needs the same check there. A faster\n    core warms faster, but the scene's own settling takes the same game time.\n  - Every capacity figure on record for the ASUS (R-1498, R-1587, R-1588, R-1598, R-1620) is a 9 s figure. The\n    settled ones are these."
+    },
+    {
+      "id": "R-1628",
+      "date": "2026-11-20",
+      "time": "02:39",
+      "timeFrom": "recorded",
+      "title": "Predator's slow state on the ASUS not caught in 14 runs at crowd 0.2 (every worker at 600 frames); 0 to 5 of 5 390 bodies awake after 30 s",
+      "verdict": "note",
+      "text": "ASUS lab job 0899z5 (02:27-02:39): an attempt to catch Predator's rare slow state on the ASUS with full reports. It had\nbeen seen in 0899l2 (R-1587: physics 16.4 ms at 40 Hz) and in 0899z3 (R-1626: spatial0 at about 10 Hz). 14 runs of\nPredator by day, crowd 0.2, dayCycle=0, a 30 s warm-up and a 10 s window each, headed, --src, detailed stats off, main\n9647eb9b, every report kept. CPU frequency: mean 89 % of the 2.7 GHz base, lowest 62 %, 9 of 124 samples under 70 %.\n\n- **Not caught: all 14 runs held every worker at 598 to 602 frames.**\n  - The highest per-worker p99 was 7 ms (spatial0), the highest own work 3.4 ms (pre-render, once).\n  - So the slow state comes in fewer than 1 run in 14 at crowd 0.2. Both sightings were at crowd 0.3 or a 30 s\n    warm-up; job 0899z7 tries crowd 0.3 with a 20 s warm-up.\n- **Predator is asleep by 30 s:** 0 to 5 awake bodies of about 5 390 in every run, with BODY_MOVED_COUNT matching.\n  That is the settling R-1626 and R-1627 measured: the first seconds' physics is the start's crowd falling still."
     }
   ],
   "leads": [
