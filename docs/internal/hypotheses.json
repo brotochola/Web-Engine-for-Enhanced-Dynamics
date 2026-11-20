@@ -11694,7 +11694,8 @@
         "R-1587",
         "R-1588",
         "R-1598",
-        "R-1620"
+        "R-1620",
+        "R-1621"
       ]
     },
     {
@@ -39952,6 +39953,15 @@
       "title": "Morning against night capacity on the ASUS, one sitting: predator 0.2 both, keyedPack 85 000 -> 90 000, boids 28 000 -> 29 000; no regression, R-1598's steps were edge noise",
       "verdict": "note",
       "text": "ASUS lab job 0899w (00:15-00:34): R-1598's recheck as a same-sitting A/B. The night's capacity had landed one step under\nthe morning's for predator, boids and keyedPack. runCapacity on each, alternated: main b190651d (the morning's, pool-b)\nagainst main 832a99bf (the night's, pool-a), headed, --src. CPU frequency mean 95 % of the 2.7 GHz base, 21 of 183\nsamples under 80 %.\n\n| scene | morning b190651d | night 832a99bf | what breaks first |\n|---|---|---|---|\n| predator | crowd 0.2 (3 200) | crowd 0.2 (3 200) | 0.25: drawn 58.58 (morning) and 58.77 fps (night) |\n| keyedPack | 85 000 | 90 000 | morning 90 000: drawn 58.77 fps; night 95 000: pre-render p99 20.27 ms |\n| boids | 28 000 | 29 000 | morning 29 000: physics p99 23.6 ms, after 30 000 and 31 000 had passed once; night 30 000: 16.88 ms |\n\n- **No regression: the night's main holds as much as the morning's or more,** in one sitting. R-1598's step-lower\n  readings were the sitting's edge noise, not the code.\n- **These edges move about a search step between runs on this laptop.** boids' morning side passed 30 000 and 31 000,\n  then failed both on retest. keyedPack's 90 000 failed on drawn frames on one side and passed on the other. A\n  capacity change of one step on the ASUS needs this A/B before it means anything."
+    },
+    {
+      "id": "R-1621",
+      "date": "2026-11-20",
+      "time": "00:35",
+      "timeFrom": "recorded",
+      "title": "CPU profiles on the ASUS at the capacity edge (Predator 0.2, boids 27 000): the same hot functions as the main PC; Box2D's pool threads read busy only through Atomics.wait",
+      "verdict": "note",
+      "text": "ASUS lab job 0899x (00:34-00:35): profileSceneSweep's cpu pass on the 2-core laptop at main 832a99bf, at the scenes'\ncapacity edges. Predator by day crowd 0.2 and boids 27 000, headed, detailed stats off, 8 s traced after the warm-up.\nThe barrio did not run: buenosAiresScene is not in the sweep's scene list.\n\n- **Predator, crowd 0.2:**\n  - pre-render 126 ms/s busy: emit_rows 22 %, stamp_light_range 16 %, _collectStampLights 7 %,\n    pack_casters_keyed_scan_xy 6 %, lamp_frames 5.5 %, collect_sprites 5.4 %, _waitForPose 4.9 %.\n  - The renderer 101 ms/s: _waitForQueue 18 %, Pixi's own code 23 %.\n- **boids, 27 000:**\n  - pre-render 107 ms/s: _waitForPose 30 %, collect_sprites 25 %, emit_rows 25 %, pack_sprites_split 10 %.\n  - Each spatial worker about 70 ms/s: gather_batch 43 %, publish_batch 23 %, _findNeighbors 15 to 17 %,\n    rebuildOwnedRows 9 %.\n  - Box2D's step thread 222 ms/s.\n- **Box2D's pool threads read 1 000 ms/s busy in one wasm function in both scenes.** That is their Atomics.wait, which\n  the sampling profiler counts as busy. threadCpuProbe (R-1587) found no thread over 800 ms/s from the OS. So these\n  traces cannot say what physics costs on this CPU.\n- Nothing here that the main PC's profiles do not already name. The low-end cost is the same functions on a slower\n  core."
     }
   ],
   "leads": [
