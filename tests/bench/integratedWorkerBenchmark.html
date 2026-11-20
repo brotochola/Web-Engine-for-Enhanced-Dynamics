@@ -152,25 +152,28 @@
         import('/tests/bench/workerBenchmarkMetrics.js'),
       ]);
       // In-page half of the distVersion guard. Without ?src=1 the importmap above
-      // resolves /src/index.js to the committed dist/ bundle, which can be an
-      // older engine than the tree the harness is reading schemas from. This
-      // compares the version the engine actually reports against src/version.js.
-      // Node-side scripts/distVersion.js blocks most entry points earlier; this
-      // covers the ones that navigate straight to this page.
+      // resolves /src/index.js to the committed dist/ bundle. This checks the page
+      // loaded the dist/ on disk (not a cached or other bundle): the version the
+      // engine reports against dist/.build-version, the version dist/ was built as.
+      // Whether dist/ holds the working tree's code is the input hash's question
+      // (scripts/distVersion.js), asked by the runners before they start: the
+      // pre-commit hook bumps src/version.js on every commit, so comparing with it
+      // failed every bundle run after the dist commit itself.
       if (!new URLSearchParams(location.search).get('src')) {
         try {
-          const { VERSION: srcVersion } = await import('/src/version.js');
+          const res = await fetch('/dist/.build-version', { cache: 'no-store' });
+          const built = res.ok ? (await res.text()).trim() : '';
           const loaded = WEED && WEED.VERSION;
-          if (loaded && srcVersion && loaded !== srcVersion) {
+          if (loaded && built && loaded !== built) {
             throw new Error(
               `Engine version mismatch: the page loaded ${loaded} (dist bundle) but ` +
-              `src/version.js is ${srcVersion}. This run would measure ${loaded}, not ` +
-              `the working tree. Reload with ?src=1, or run: npm run make_bundle`,
+              `dist/ was built as ${built}. This run would measure another bundle than ` +
+              `dist/ holds. Reload, or run: npm run make_bundle`,
             );
           }
         } catch (err) {
           if (err && /Engine version mismatch/.test(err.message)) throw err;
-          // /src/version.js unreachable (static server without src mounted):
+          // dist/.build-version unreachable (static server without dist mounted):
           // nothing to compare, let the run proceed.
         }
       }
