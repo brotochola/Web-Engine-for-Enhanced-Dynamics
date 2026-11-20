@@ -196,6 +196,7 @@ async preload() {
   - `this.neighborCount`
   - `this.getNeighbor(i)`
   - `this.getAllNeighborIds()`
+  - Code that holds an index, not an instance (a `static tickAll`, a static hook), reads `Grid.getNeighborCount(i)` and `Grid.getNeighbor(i, k)` (`import { Grid } from '@weed.js/engine'`). A base class whose method more than four entity types inherit reads them too: past four types V8 stops inlining that method's `this.neighborCount` and `this.getNeighbor(k)`, about 20 ns a neighbour against Grid's 5 (2 to 4 ns while four types or fewer share it).
   - An entity gets its list when it has a visualRange (`this.collider.visualRange > 0`): that is what a visualRange says, that its code reads its neighbours. Without one its `neighborCount` is 0. The lists exist from the game's first frame: the spatial workers build them before the start. Each list costs spatial time, so give a visualRange only to entities that read their neighbours, and keep it tight. (In a scene with walls, a light that casts gets a list too: its walls.)
 
 Lifecycle hooks: `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` each frame, or `static tickAll(list, count, dtRatio)` for the whole type (see Workers), or neither for a type whose FSMs are all it runs (see State machines), and the hooks below. `isCollidingWith(other)` needs at least one entity type in the scene with `CollisionListener` (see Collision Filtering).
