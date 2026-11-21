@@ -173,7 +173,7 @@ await game.loadScene(MyScene, { restorePayload: payload });
 import { saveGame, loadGame, SaveStore, encodeSave, decodeSave } from '/src/index.js';
 ```
 
-Load remounts the scene: `create()` builds statics, then logic worker `restoreSave` despawns serializable types and re-spawns from records (Box2D bodies via normal spawn dirty path), flushes active lists, acks `restoreSaveComplete`, then `onLoadGame(payload)`, then play starts.
+Load remounts the scene: `create()` builds statics, then logic worker `restoreSave` despawns serializable types and re-spawns the saved entities, type by type, writing each one's saved columns as it spawns (Box2D bodies via normal spawn dirty path), flushes active lists, acks `restoreSaveComplete`, then `onLoadGame(payload)`, then play starts.
 
 ## Hot reload (debug)
 
