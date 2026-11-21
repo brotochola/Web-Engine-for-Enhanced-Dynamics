@@ -528,7 +528,7 @@ class GameEngine {
       allEntities: true,
       instanceFields: true,
       staysPaused: true,
-      decalsAsPng: false,
+      decalsCompressed: false,
     });
     if (payload.custom !== undefined) payload.custom = JSON.parse(JSON.stringify(payload.custom));
     if (payload.instanceFields) payload.instanceFields = JSON.parse(JSON.stringify(payload.instanceFields));

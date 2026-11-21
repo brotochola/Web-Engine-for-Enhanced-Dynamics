@@ -172,9 +172,9 @@ export async function saveGame(scene, slotId, options = {}) {
  * The save of a running scene, built in memory: what saveGame encodes and stores, and what a lost GPU restarts the
  * scene from (N-301).
  * @param {object} scene
- * @param {{ allEntities?: boolean, instanceFields?: boolean, staysPaused?: boolean, decalsAsPng?: boolean }} [options]
- *   staysPaused: leave the world paused after the capture (the scene is about to be replaced); decalsAsPng false: the
- *   decal tiles raw, for a save kept in memory (their PNG encode takes seconds in a crowd scene)
+ * @param {{ allEntities?: boolean, instanceFields?: boolean, staysPaused?: boolean, decalsCompressed?: boolean }} [options]
+ *   staysPaused: leave the world paused after the capture (the scene is about to be replaced); decalsCompressed false:
+ *   the decal tiles raw, for a save kept in memory (no deflate per tile)
  * @returns {Promise<object>} the payload
  */
 export async function captureSavePayload(scene, options = {}) {
@@ -202,7 +202,7 @@ export async function captureSavePayload(scene, options = {}) {
     loadMark('save liquidFun');
     let decals = null;
     try {
-      decals = await Decal.packSnapshot(scene, { png: options.decalsAsPng !== false });
+      decals = await Decal.packSnapshot(scene, { compress: options.decalsCompressed !== false });
     } catch (err) {
       console.warn('[SaveGame] Decal snapshot failed:', err);
     }

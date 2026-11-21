@@ -24,8 +24,9 @@ import {
 } from './worldBufferSave.js';
 
 export const SAVE_MAGIC = 'WEEDSAVE1';
-/** 6: entities by columns, one table per type (E-539). A save of any other version does not load. */
-export const SAVE_FORMAT_VERSION = 6;
+/** 7: decal tiles deflated, not PNG (N-314); 6: entities by columns, one table per type (E-539). A save of any other
+ * version does not load. */
+export const SAVE_FORMAT_VERSION = 7;
 
 /** @param {Function} EntityClass */
 export function isEntityClassSerializable(EntityClass) {

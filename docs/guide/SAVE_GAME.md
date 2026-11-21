@@ -119,7 +119,7 @@ repeat:
 | 4 | ENTITIES | u8 layout, then one table per entity type: its indices, then per component its fingerprint and per field its kind, elements per entity, entity-id flag and values (see below) |
 | 5 | JOINTS | packed joint records |
 | 6 | LIQUIDFUN | typed particle/group/pair/render buffers |
-| 7 | DECALS | sparse tiles as raw PNG or RGBA bytes |
+| 7 | DECALS | sparse tiles, each its RGBA bytes deflated (deflate-raw) or raw |
 | 12 | NAV | walkability bytes plus grid width, height, and cell size |
 | 13 | TIME | `Time.scale` |
 | 15 | TWEENS2 | u8 layout version, then active tween slots with a u32 entity (entityIdWidth 32) |
@@ -221,7 +221,7 @@ Logical payload (after decode) includes:
 - `entities[]` — one table per entity type: `typeName`, `indices` (a Uint32Array of the entities' indices when saved, which joints, entity-id fields and camera follow are remapped from) and `components[]`, each with its `name`, `fingerprint` and `fields[]` (`name`, `length` elements per entity, `entityId`, and `values`, a typed array of the field's own kind). Plain data: a table crosses `postMessage` as it is, and its arrays are transferable (a load copies them, so the payload stays whole and can be loaded again)
 - `joints[]` — full SoA dump via `Joint.serializeActive()`, recreated after entity spawn
 - `liquidFun` — optional typed-array snapshot from the physics worker
-- `decals` — optional sparse DECALS tilemap (`tiles[]` with `fmt: 'png'|'raw'` + `bytes: Uint8Array`)
+- `decals` — optional sparse DECALS tilemap (`tiles[]` with `fmt: 'deflate'|'raw'` + `bytes: Uint8Array`)
 
 LiquidFun WASM source: the sibling `Box2d_3.2_C_-_liquidfun` tree (`wasm_wrapper.c` + `lf_particle_system.c`). Rebuild with `weedjs\build_for_weed.bat`.
 
@@ -229,7 +229,7 @@ LiquidFun WASM source: the sibling `Box2d_3.2_C_-_liquidfun` tree (`wasm_wrapper
 
 - **Joints:** the active Weed joint pool is saved and restored (distance, revolute, prismatic, weld) with entity-index remapping. A Box2D contact manifold dump is not saved.
 - **LiquidFun:** particle pos/vel/flags, render tint/texture/scale/alpha, plus group slots, per-particle `groupIndex` / elastic `restOffset`, and spring/barrier pair graphs.
-- **Decals:** sparse non-empty DECALS tiles (PNG in browser, raw RGBA in Node); layout mismatch skips restore.
+- **Decals:** sparse non-empty DECALS tiles, each tile's RGBA bytes deflated (the browser's CompressionStream, exact, several tiles at a time); a save kept in memory (`decalsCompressed: false`) keeps them raw; layout mismatch skips restore.
 - **Shared resources:** the whole SAB for each bound class. A missing name or a different byte length skips that resource. Applied before logic0 restores the entities (so restore-time `onDespawned` / `onSpawned` hooks read the saved values) and again after it, so the load ends on exactly the saved bytes whatever those hooks wrote (a kill counter in `onDespawned` does not drift on every load).
 - **Chains, extra fixtures, custom meshes:** only for entities that are in the save. Restore writes them onto the new entity index. A saved entity with no chain, no extra fixtures, or no custom mesh has that data cleared, so an `onSpawned` default does not survive a save that removed it.
 - **Nav:** walkability only. Flow fields and paths are caches and are invalidated. A width, height, or cell-size mismatch skips the grid. Applied before and again after the entity restore, like shared resources. A `REBUILD_FROM_INDICES` posted from `create()` has already run; one posted from `onLoadGame` replaces the restored grid.
