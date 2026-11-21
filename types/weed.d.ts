@@ -4077,6 +4077,29 @@ export declare class MeshRenderer extends Component {
   static tileOffsetU: Uint16Array;
   static tileOffsetV: Uint16Array;
   static visualOutset: Float32Array;
+  /**
+   * E-537: the mesh's setters and methods by entity index (MeshRenderer.setTint(i, v) is meshRenderer.tint = v), for
+   * code that holds an index. The same work as the component's; they return nothing.
+   */
+  static setTint(index: number, tint: number): void;
+  /** Clamped to 0-1. */
+  static setAlpha(index: number, alpha: number): void;
+  static setTextureId(index: number, textureId: number): void;
+  /** By name; a falsy name clears it to a solid tint. */
+  static setTexture(index: number, name: string | null | undefined): void;
+  static setTileMode(index: number, mode: number): void;
+  static setRepeatX(index: number, value: number): void;
+  static setRepeatY(index: number, value: number): void;
+  static setTileOffsetU(index: number, value: number): void;
+  static setTileOffsetV(index: number, value: number): void;
+  static setVisualOutset(index: number, value: number): void;
+  static setMesh(index: number, positions: ArrayLike<number>, indices?: ArrayLike<number> | null, uvs?: ArrayLike<number> | null): void;
+  static setVertices(index: number, positions: ArrayLike<number>): void;
+  static setHeights(index: number, heights: ArrayLike<number>): void;
+  static clearMesh(index: number): void;
+  static setPlane(index: number, width: number, height: number, segX: number, segY: number): void;
+  static setRope(index: number, points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>, halfWidth: number): void;
+  static setPolygon(index: number, points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>): void;
   get tint(): number;
   set tint(value: number);
   get alpha(): number;
@@ -4085,6 +4108,14 @@ export declare class MeshRenderer extends Component {
   set textureId(value: number);
   get tileMode(): number;
   set tileMode(value: number);
+  get repeatX(): number;
+  set repeatX(value: number);
+  get repeatY(): number;
+  set repeatY(value: number);
+  get tileOffsetU(): number;
+  set tileOffsetU(value: number);
+  get tileOffsetV(): number;
+  set tileOffsetV(value: number);
   get visualOutset(): number;
   set visualOutset(value: number);
   setTexture(name: string | null | undefined): this;
