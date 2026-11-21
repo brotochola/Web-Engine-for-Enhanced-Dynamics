@@ -124,9 +124,11 @@ export class PredatorScene extends WEED.Scene {
 
     // Spatial hash grid configuration
     spatial: {
-      cellSize: 128,
+      // N-325: `?cellSize=<px>` and `?maxEntitiesPerCell=<n>` weigh the grid against the crowds (a cell past its cap
+      // leaves the rest of its entities out of every neighbour list; spatial's CELL_OVERFLOW counts them).
+      cellSize: Math.trunc(predatorPositiveParam('cellSize', 128)),
       maxNeighbors: 1024,
-      maxEntitiesPerCell: 32, //this is very important!!
+      maxEntitiesPerCell: Math.trunc(predatorPositiveParam('maxEntitiesPerCell', 32)), //this is very important!!
       // E-310: `?spatialWorkers=<n>` (1 to 4) splits the neighbour search over n workers, for scaling runs past crowd 1.5.
       numberOfSpatialWorkers: Math.min(4, Math.max(1, Math.trunc(predatorNumberParam('spatialWorkers', 1)))),
       noLimitFPS: predatorNoLimitFPS,
