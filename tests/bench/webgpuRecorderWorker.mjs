@@ -825,7 +825,10 @@ export async function recordInWorker({ ms, mode }) {
 
   const fr = Math.max(1, frames);
   const per = (v) => Math.round((v / fr) * 10) / 10;
-  const perMs = (ns) => Math.round((ns / 1e6 / fr) * 1000) / 1000;
+  // N-243: the GPU rows carry rates a frame unrounded, with the totals they come from: a pass that runs in fewer than
+  // every frame read about +-8 % per draw from a draws-a-frame rounded to 0.1. Only the printed table rounds.
+  const rate = (v) => v / fr;
+  const perMs = (ns) => ns / 1e6 / fr;
   const median = (xs) => {
     const v = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
     return v.length ? v[v.length >> 1] : NaN;
@@ -838,8 +841,8 @@ export async function recordInWorker({ ms, mode }) {
       split,
       insidePasses: inside,
       msPerFrame: perMs([...passRows.values()].reduce((s, p) => s + p.ns, 0)),
-      spanMsMedian: Math.round(median(spans.map((f) => Number(f.max - f.min) / 1e6)) * 1000) / 1000,
-      passSumMsMedian: Math.round(median(spans.map((f) => f.sum / 1e6)) * 1000) / 1000,
+      spanMsMedian: median(spans.map((f) => Number(f.max - f.min) / 1e6)),
+      passSumMsMedian: median(spans.map((f) => f.sum / 1e6)),
       framesTimed: spans.length,
       invalid,
       lost,
@@ -850,19 +853,22 @@ export async function recordInWorker({ ms, mode }) {
       passes: [...passRows.values()].sort((x, y) => y.ns - x.ns).map((p) => ({
         label: p.label,
         msPerFrame: perMs(p.ns),
-        passesPerFrame: per(p.n),
-        drawsPerFrame: per(p.draws),
-        instancesPerFrame: Math.round(p.instances / fr),
+        passesPerFrame: rate(p.n),
+        drawsPerFrame: rate(p.draws),
+        instancesPerFrame: rate(p.instances),
         drawsMsPerFrame: perMs(p.drawNs),
         preMsPerFrame: perMs(p.pre),
         postMsPerFrame: perMs(p.post),
+        msPerDraw: p.draws > 0 ? p.drawNs / 1e6 / p.draws : 0,
         // The totals (ns) and the count of passes timed: a pass's mean is ns / n.
-        ns: p.ns, n: p.n, drawCount: p.draws, drawNs: p.drawNs, preNs: p.pre, postNs: p.post, emptyPassNs: p.cal, emptyPasses: p.calN,
+        ns: p.ns, n: p.n, drawCount: p.draws, instances: p.instances, drawNs: p.drawNs, preNs: p.pre, postNs: p.post,
+        emptyPassNs: p.cal, emptyPasses: p.calN,
       })),
     };
     if (perDraw || split) {
       gpu.draws = [...drawRows.values()].sort((x, y) => y.ns - x.ns).map((r) => ({
-        label: r.label, msPerFrame: perMs(r.ns), perFrame: per(r.n), instancesPerFrame: Math.round(r.instances / fr), pass: r.pass, ns: r.ns, n: r.n,
+        label: r.label, msPerFrame: perMs(r.ns), perFrame: rate(r.n), instancesPerFrame: rate(r.instances), pass: r.pass, ns: r.ns, n: r.n,
+        instances: r.instances,
       }));
     }
   }
