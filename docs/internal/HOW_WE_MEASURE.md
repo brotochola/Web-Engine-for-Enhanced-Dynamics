@@ -58,7 +58,12 @@ the incident that paid for it and the rule it replaces.
    sitting but an A/A in ballsHeavy then read a false −8.7 % (cv 10/7 % against 3/2 % at 10 s, 2026-11-14), so by
    rule 7 they are not used.
 5. **The load must match:** every load key within 5 % and a coefficient of variation under 50 %, or the
-   pair does not exist.
+   pair does not exist. A count that is the battle's own chance has its own band (DECAL_TILES_DIRTY 25 %: two
+   runs of identical code read it -24 % fresh and -11 % from one save, E-210). **Predator starts from a save**
+   (E-210, the runner's default `--restore auto`): every run plays the same moment of one battle. Two A/As of the
+   mixed battle on 2026-11-21 read up to 7.0 % and 3.6 % on a worker from fresh battles, 1.6 % from one save (the
+   load matched: NEUTRAL). `--fresh` is for a change to the scene's start or to spawning; the save is a later
+   phase of the fight, lighter than its first seconds.
 6. **Speed keep:** the owner's median paired delta at least 3 % cheaper, at least 75 % of the pairs on that
    side, nothing regressed. **Tie:** under 3 %, on a sitting that could have seen 3 %. **Worse:** at least
    3 % more expensive: revert. **Hygiene keep:** a fix or dead-code removal stays unless a primary worker
