@@ -24689,15 +24689,17 @@
       "result": "kept (hygiene) 2026-11-21: play a 64-byte front over PLAY_F, worldToScreenInPlace, rngInto; Predator mix=1 logic garbage 19.5-23.2 -> 6.5-7.1 KB a frame; gate with E-541 nothing worse."
     },
     {
-      "records": [],
+      "records": [
+        "R-1677"
+      ],
       "refs": [],
       "id": "E-543",
       "title": "Predator's soldier states box the target's squared distance: findClosestCivilian and findACivilianToShoot write it into the _closestResult object's field, and canShootTarget takes it as a double argument (about 5.3 KB a frame on each logic worker in the mixed battle)",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "speed",
       "area": "demo",
       "date": "2026-11-21",
-      "statusText": "Filed 2026-11-21 from E-542's Chrome heap sample (Predator ?mix=1, after E-541 and E-542): what is left on the logic worker is Predator's soldier FSM, RangedAttackingState.onUpdate (soldierBehaviorFsm.js:391, 3.9 KB a frame) and IdleSoldierState.onUpdate (:243, 1.3 KB). Demo code, public APIs only.",
+      "statusText": "Kept 2026-11-21 (R-1677), hygiene (demo): the target's squared distance through a module Float64Array; Chrome heap, Predator ?mix=1: the soldier states' 5.5 KB a frame gone, the logic worker 6.9-7.7 -> 1.1-1.3 KB a frame.",
       "next": "The distance through a module Float64Array (the finders return the index, or -1, and write it there; canShootTarget and storeTarget read it), the scan's best distance in a local seeded with a module INF; the same Chrome heap sample before and after; test:demos."
     }
   ],
@@ -40688,6 +40690,15 @@
       "commits": [
         "964a4e23"
       ]
+    },
+    {
+      "id": "R-1677",
+      "date": "2026-11-21",
+      "time": "19:42",
+      "timeFrom": "recorded",
+      "title": "Predator's soldier states box no distance: the logic worker 6.9-7.7 -> 1.1-1.3 KB a frame in the mixed battle (440 KB before E-538)",
+      "verdict": "kept-hygiene",
+      "text": "**Predator's soldier states without boxed distances: kept (hygiene, demo).** findClosestCivilian and findACivilianToShoot return the index (or -1) and write the squared distance into a module Float64Array (TARGET_DIST_SQ); canShootTarget and storeTarget read it there; the scan's best distance is a local seeded with a module INF. Same comparisons, same choices (commit 9d710dd8, merged 42200ab6).\n\n- Chrome heap sampling, Predator `?mix=1`, 601 frames a side, base main 0c1fe5db (19:41–19:42): the soldier's onUpdate (RangedAttacking at :391, Idle at :243) 5.5 KB a frame -> none sampled; the logic worker 6.9 / 7.7 KB a frame (logic0 / logic1) -> 1.3 / 1.1 KB (-81 % / -86 %). The day's line: 440 KB a frame before E-538, 49 after the ECS finish, 20-23 after E-541, 7 after E-542, about 1 now (what is left: civilianBehaviorFsm onUpdate at :127, 0.1-0.2 KB, subarray in the spawn and despawn queues, flash.tickAll).\n- Demo suite 143/143. No sitting: demo code off the engine, the same arithmetic; it joins the next batch's Predator gate."
     }
   ],
   "leads": [
