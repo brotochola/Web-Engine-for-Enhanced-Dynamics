@@ -37,6 +37,14 @@
  * --keep-worktrees: the --vs and --hyp-rev worktrees stay after the sitting (by default each is removed once no live
  * process holds it: revWorktree.mjs).
  *
+ * Predator's sittings start from a save by default (E-210, `--restore auto`): every run plays the same moment of one
+ * battle instead of a battle of its own, so the load keys match and the workers' run-to-run spread is the code's, not
+ * the fight's (N-232). The save is tests/results/restore/predator-<key>.weedsave, one per scene, shared query and save
+ * format, made once by sceneSaveMaker (the runner's tree, AUTO_SAVE_SECONDS into the scene) and reused by every later
+ * sitting with the same key; `--restore-new` makes it again. `--fresh` plays fresh battles (the scene's start, which a
+ * change to the start or to spawning needs). When the two sides read different save formats, the sitting warns and
+ * plays fresh battles.
+ *
  * --restore <file>: both sides start the scene from that save (E-210; tests/bench/sceneSaveMaker.mjs makes one in
  * mid-play), copied into each side's tree and named to the page as ?restore=, so the two measure the same moment of
  * an emergent scene instead of two runs that drifted apart.
@@ -402,6 +410,50 @@ function parseOverrides(raw) {
 // Review M9. What a sitting's pairs were measured with. --append pools new
 // pairs with old ones, which is only a median of one measurement when the
 // metric set, scene, protocol, baseline and both trees are the same.
+/** E-210: how far into the scene --restore auto's save is taken (Predator's battle has started by then). */
+export const AUTO_SAVE_SECONDS = 20;
+
+/** The save format a tree reads (src/core/save/entitySaveSnapshot.js), or null. */
+function saveFormatOf(root) {
+  try {
+    const m = /export const SAVE_FORMAT_VERSION = (\d+)/.exec(fs.readFileSync(path.join(root, 'src/core/save/entitySaveSnapshot.js'), 'utf8'));
+    return m ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * E-210: --restore auto's save for a sitting of `scene` with this shared query: made by sceneSaveMaker when missing
+ * (or with remake), reused otherwise. null when the trees read different save formats: fresh battles then.
+ * @param {{ key: string, path: string, exportName: string }} scene
+ * @param {string} query the sitting's shared query (no restore= in it)
+ * @param {string[]} roots the sides' trees
+ * @param {boolean} [remake]
+ * @returns {string | null}
+ */
+export function autoRestoreSave(scene, query, roots, remake = false) {
+  const formats = [...new Set([repoRoot, ...roots].map(saveFormatOf))];
+  if (formats.length !== 1 || formats[0] == null) {
+    console.warn(`--restore auto: the trees read save formats ${formats.join(', ')}: fresh battles, no save`);
+    return null;
+  }
+  const key = createHash('sha1').update(`${scene.path}|${scene.exportName}|${query}|format ${formats[0]}`).digest('hex').slice(0, 12);
+  const file = path.join(repoRoot, 'tests/results/restore', `${scene.key}-${key}.weedsave`);
+  if (remake || !fs.existsSync(file)) {
+    console.log(`--restore auto: making ${file} (${scene.exportName} after ${AUTO_SAVE_SECONDS} s, query "${query}")`);
+    execFileSync(process.execPath, [
+      path.join(repoRoot, 'tests/bench/sceneSaveMaker.mjs'), '--scene', scene.path, '--export', scene.exportName,
+      '--seconds', String(AUTO_SAVE_SECONDS), '--query', query, '--output', file,
+    ], { stdio: 'inherit', env: { ...process.env, MSYS_NO_PATHCONV: '1' } });
+  } else {
+    // A save in use is not a stale result (pruneTestResults removes what a week did not touch).
+    const now = new Date();
+    fs.utimesSync(file, now, now);
+  }
+  return file;
+}
+
 function sittingStamp(scene, opts, args, baseline, hypSide = null) {
   const git = (argv, encoding) => execFileSync('git', argv, { cwd: repoRoot, encoding, maxBuffer: 1 << 28 });
   return {
@@ -945,8 +997,15 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   const hypRoot = hypSide ? hypSide.root : perSide ? baseline.root : repoRoot;
   if (hypSide) console.log(`hypothesis worktree ${hypSide.root}`);
   // E-210: the save each side starts from, in its own tree (the page fetches it from the tree it is served from).
-  if (typeof args.restore === 'string' && args.restore) {
-    const source = path.resolve(args.restore);
+  // Predator's sittings take --restore auto unless --fresh or --restore <file> says otherwise.
+  const restoreArg = typeof args.restore === 'string' && args.restore
+    ? args.restore
+    : scene.path === PREDATOR_SCENE.path && !args.fresh ? 'auto' : null;
+  const restoreFile = restoreArg === 'auto'
+    ? autoRestoreSave(scene, opts.query || '', [baseline.root, hypRoot], Boolean(args['restore-new']))
+    : restoreArg;
+  if (restoreFile) {
+    const source = path.resolve(restoreFile);
     if (!fs.existsSync(source)) throw new Error(`--restore: no such file ${source}`);
     const served = `tests/results/restore/${path.basename(source)}`;
     for (const root of new Set([baseline.root, hypRoot])) {
