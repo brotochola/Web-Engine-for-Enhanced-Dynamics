@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { FSM } from '../../src/core/fsm.js';
 import { FSMState } from '../../src/core/fsmState.js';
+import { GameObject } from '../../src/core/gameObject.js';
+import { Transform } from '../../src/components/transform.js';
 
 // FSM.tick hands each state its time in state. A fractional double crossing that call (a different
 // onUpdate per state, which TurboFan does not inline) was a heap number per tick in Chrome, so the
@@ -31,7 +33,6 @@ class TickTestFSM extends FSM {
 test('onUpdate gets the time in state in whole milliseconds, reset by a transition', () => {
   TickTestFSM.initializeArrays(new SharedArrayBuffer(TickTestFSM.getBufferSize(2)), 2);
   const fsm = new TickTestFSM(1);
-  fsm.owner = { constructor: { tickInterval: 1 } }; // the entity the engine's component getter records
   seen.length = 0;
   const expected = [];
   const time = new Float32Array(1); // the FSM's own column precision
@@ -47,11 +48,17 @@ test('onUpdate gets the time in state in whole milliseconds, reset by a transiti
   assert.equal(TickTestFSM.getStateName(1), 'GO');
 });
 
-test('a decimated entity accumulates its tick interval', () => {
+test('a decimated entity accumulates its tick interval, its class read from its type', () => {
   TickTestFSM.initializeArrays(new SharedArrayBuffer(TickTestFSM.getBufferSize(1)), 1);
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(1)), 1);
+  class EveryThird extends GameObject {
+    static tickInterval = 3;
+  }
+  GameObject.classByType[7] = EveryThird;
+  Transform.entityType[0] = 7;
   const fsm = new TickTestFSM(0);
   seen.length = 0;
-  fsm.owner = { constructor: { tickInterval: 3 } };
   fsm.tick(1);
   assert.deepEqual(seen, [50]); // 16.67 * 3 = 50.01
+  assert.equal('owner' in fsm, false, 'E-540: the component holds no reference to its entity');
 });

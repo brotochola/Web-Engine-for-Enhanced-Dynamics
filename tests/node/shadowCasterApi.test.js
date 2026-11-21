@@ -64,13 +64,11 @@ noteEntityType(TYPE_CASTER_ONLY, class Caster { static components = [ShadowCaste
 
 /**
  * The entity's ShadowCaster as the entity makes it: `has.MeshRenderer` when its class lists one too (E-533: the caster reads
- * that from the entity's type).
+ * that from the entity's type; E-540: it holds no owner).
  */
 function caster(index, has = {}) {
   Transform.entityType[index] = has.MeshRenderer === true ? TYPE_WITH_MESH : TYPE_CASTER_ONLY;
-  const c = new ShadowCaster(index);
-  c.owner = { index, _hasComponents: { ShadowCaster: true, ...has } };
-  return c;
+  return new ShadowCaster(index);
 }
 
 function warnings(run) {

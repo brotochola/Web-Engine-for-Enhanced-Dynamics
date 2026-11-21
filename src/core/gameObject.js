@@ -1412,8 +1412,8 @@ export class GameObject {
     }
     const spec = this.constructor._componentSlotSpecs[slot];
     if (!this._hasComponents[spec.name]) return null;
+    // E-540: a component knows its entity by index only (what it needs of the entity's class, it reads by type).
     const instance = new spec.Class(this.index);
-    instance.owner = this;
     if (onPage) {
       this._components[slot] = instance;
       return instance;
@@ -1569,7 +1569,6 @@ export class GameObject {
           // DENSE ALLOCATION: entityIndex === componentIndex
           // Create and cache the component instance using entity index directly
           const instance = new ComponentClass(this.index);
-          instance.owner = this; // Store owner reference for instance methods
           this._components[slot] = instance;
           return instance;
         }),

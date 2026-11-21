@@ -88,7 +88,6 @@ function makeOwner(name, i) {
   const owner = { name, goTo: null };
   ents[i] = owner;
   const fsm = new GuardFSM(i);
-  fsm.owner = { constructor: { tickInterval: 1 } }; // the entity the engine's component getter records
   return { owner, fsm };
 }
 

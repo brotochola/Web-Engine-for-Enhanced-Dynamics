@@ -93,6 +93,15 @@ export function typeBitsOf(entityType) {
 }
 
 /**
+ * E-540: the class registered for entity type `entityType` (GameObject.classByType), or undefined: for code that does
+ * not import GameObject (an FSM reads its entity's tickInterval from it).
+ * @param {number} entityType
+ */
+export function entityClassOfType(entityType) {
+  return classOfType !== null ? classOfType(entityType) : undefined;
+}
+
+/**
  * The name of entity type `entityType`'s class, for a warning a static gives (an entity's method names this.constructor).
  * @param {number} entityType
  */
