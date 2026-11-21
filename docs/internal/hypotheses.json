@@ -11541,11 +11541,11 @@
     {
       "id": "E-210",
       "title": "Predator's gate from a save",
-      "status": "open",
-      "statusText": "Unblocked 2026-11-21 (triage, R-1678): Predator's state lives in components since E-530 and E-535 (written static, no instance), and R-1663's ecs-mixr sitting ran the mixed battle from one save. Next: check that a restored Predator fights as a fresh one does (every worker's load over the window), then the gate from a save as the default for Predator's emergent rows.",
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1682): runPredatorAbab starts Predator from a save by default (--restore auto, one cached save per scene, query and format; --fresh for the start); an A/A worker spread 3.6-7.0 % fresh -> 1.6 % from one save.",
       "date": "2026-11-10",
       "result": "step 0 (R-0908): the save keeps components, not the FSMs' plain fields; restored, Predator goes quiet (every worker under 3 ms)",
-      "next": "Needs a scene whose behaviour survives a save (Predator's AI state in components: demo work). The tools (?restore=, --restore, sceneSaveMaker) are in.",
+      "next": "",
       "area": "harness",
       "kind": "js",
       "refs": [
@@ -11561,7 +11561,8 @@
       "records": [
         "R-0854",
         "R-0908",
-        "R-1678"
+        "R-1678",
+        "R-1682"
       ]
     },
     {
@@ -19852,19 +19853,21 @@
     {
       "id": "N-232",
       "title": "Leave-one-out Predator sittings of small builds read 4/4 shifts on workers the change cannot reach (spatial +7.5 %, physics +5.8 %, logic +9 %) while the A/A reads ±0.3 %: the two builds play different battles from one seed (BODY_MOVED_COUNT differs 4/4), so such verdicts need --restore (E-210) or the unreachable workers fitted against their load key",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the PR #12 sittings agent",
+      "status": "answered",
+      "statusText": "Answered 2026-11-21 by E-210 (R-1682): Predator sittings start both builds from one save by default, so they play the same battle; DECAL_TILES_DIRTY has its own 25 % band.",
       "date": "2026-11-16",
       "area": "bench",
       "kind": "bug",
       "result": "E-330's first sitting: REGRESSION on spatial +7.5 % and physics +5.8 % (4/4) with moved bodies +1.2 to +2.5 % on B, gone with the sides swapped; E-331's: logic +9 % 4/4 with 12.8 % more moved bodies in one pair. Today's A/A: every worker within ±1 %.",
-      "next": "Default leave-one-out sittings of a build to --restore (the same world each run), or make the runner fit spatial and physics against BODY_MOVED_COUNT before it calls a regression on them (HOW_WE_MEASURE says so for emergent scenes); and note the floor: on a quiet machine Predator crowd 2.5's pre-render and logic run 5.4 to 6.1 ms, so pre-render owners need shadowLights=96 and logic has no knob there.",
+      "next": "",
       "refs": [],
       "aliases": [
         "battle drift in leave-one-out",
         "predator floor quiet"
       ],
-      "records": []
+      "records": [
+        "R-1682"
+      ]
     },
     {
       "id": "E-463",
@@ -40780,6 +40783,15 @@
       "title": "DX-LIGHT3D closed: DX-DIRSPRITE, DX-SHADOW3D, DX-DEPTH, DX-SELFSHADOW, DX-EMISSIVE and DX-CASTER kept, each leftover on its own row (E-544 filed)",
       "verdict": "kept",
       "text": "**DX-LIGHT3D closed (the owner, 2026-11-21: \"quiero que cierres dx-light3d, que tiene cosas abiertas\").** Its six rows had read \"running\" since the merge (R-1160, 2026-11-15) with lists written before it. A read-only audit of each list against main (c1f13b64) found nearly every item done, and each one left already has its own row:\n\n- DX-DIRSPRITE: gates neutral (R-1058, R-1120, R-1162); left: the people's frames in pre-render (E-371, E-395). The owner's ABAB of directionalSpriteStressScene is dropped: the scene's own 4-pair sitting (R-1162) read neutral.\n- DX-SHADOW3D: volumes on WebGPU, opacity, footprint solids, keyed frames, lampShadowStressScene, Predator at night; left: the static casters (E-460, E-517), the sun's map cache (E-544, filed now), keyed rows with kinds (E-395), N-192.\n- DX-DEPTH: WebGPU, opaque-only writes, zIndex bands, depthSortCheck; left: E-378, N-189.\n- DX-SELFSHADOW: the entity id, 1/2/4 rays; left: the owner's look at the car and the bed (asked again), N-185.\n- DX-EMISSIVE: v2, per entity, the stress scene (since renamed unshaded); left: N-187, N-229.\n- DX-CASTER: the whole API, every scene migrated, CAST_KIND; left: E-395.\n\nThe campaign's open follow-ups, all their own rows: E-371, E-373, E-378, E-386, E-395, E-460, E-517, E-544, N-185, N-187, N-189, N-192, N-212, N-229, and the light3d GPU studies (E-400 to E-417, E-463 to E-467)."
+    },
+    {
+      "id": "R-1682",
+      "date": "2026-11-21",
+      "time": "20:35",
+      "timeFrom": "recorded",
+      "title": "Predator's sittings start from a save: an A/A's worker spread 3.6-7.0 % fresh -> 1.6 % from one save, the load matched (NEUTRAL)",
+      "verdict": "kept",
+      "text": "**E-210 kept: Predator's ABAB sittings start from a save by default.** `runPredatorAbab` takes `--restore auto` for Predator unless `--fresh` or `--restore <file>`: one save per scene, shared query and save format (tests/results/restore/predator-<key>.weedsave), made once by sceneSaveMaker 20 s into the scene (about 40 s) and reused by every later sitting with the same key; sides that read different save formats play fresh battles with a warning; `--restore-new` remakes it (c1f13b64). DECAL_TILES_DIRTY, the battle's own count of blood and hit stamps, is gated at a 25 % band (67dfbf99); HOW_WE_MEASURE rule 5 says both (a9fa1344).\n\nA/As of main 0a0570a8 against itself, Predator `crowd=2.5&logicWorkers=1&mix=1&dayCycle=0`, 4 pairs, owner logic:\n- fresh (20:19–20:22, an audit agent reading files during its first 1.5 min): logic +7.0 % (3/4), spatial +4.5 % (4/4), physics +6.7 %, renderer +0.5 %, pre-render +1.0 %; DECAL_TILES_DIRTY -24.1 % cv 81 %: FAIL (load).\n- fresh again, the machine quiet (20:31–20:35): logic -3.6 %, spatial -3.4 %, physics -2.4 % (0/4 worse), renderer -2.5 %, pre-render -2.4 %: the battle's drift on identical code; DECAL_TILES_DIRTY +25.1 % cv 82 %: FAIL (load).\n- from one save (20:22–20:26, the save made first): logic -1.5 %, spatial +0.6 %, physics +0.7 %, renderer -1.6 %, pre-render -1.6 %; BODY_COUNT -0.0 %, ACTIVE_PARTICLES -3.9 %, DECAL_TILES_DIRTY -11.1 % cv 19/8 %: NEUTRAL with the key's own band.\nSo a worker's A/A spread falls from 3.6-7.0 % to 1.6 %: a 3 % change can be called in 4 pairs, which fresh battles could not do.\n\nThe restored battle is a later phase of the fight, lighter than a fresh one's first seconds: logic 29.5 against 40.8-44.7 ms, physics 19.0 against 22.8-25.1, ACTIVE_PARTICLES 1 961 against 7 240-7 540 (fewer civilians left at 30-40 s); it still fights (28 flash lights at noon, 60-68 decal tiles stamped a frame). Every judged worker stays above the 6 ms floor at this query (renderer 6.1-6.3 ms, the closest). A change to the scene's start or to spawning runs `--fresh`. N-232 (leave-one-out sittings of two builds playing two battles) is answered by the default."
     }
   ],
   "leads": [
