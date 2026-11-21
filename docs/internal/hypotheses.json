@@ -24659,30 +24659,46 @@
       "next": "A test first: a player's load (not exact indices) of a scene with a forceProcessOnLogicWorker class holding entity-id fields and a parent; then remap those rows on the receiving worker too (the old -> new table travels with the hand-off), or remap after every worker acked its spawns."
     },
     {
-      "records": [],
+      "records": [
+        "R-1675"
+      ],
       "refs": [],
       "id": "E-541",
       "title": "Bullet presets: Predator's shot still makes its BulletPool.spawn literal (34 KB a frame on each logic worker in the mixed battle), because shoot's inline budget is spent before the spawn front",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "speed",
       "area": "logic",
       "date": "2026-11-21",
-      "rank": 8,
-      "statusText": "Filed 2026-11-21 from the ECS-finish final pass (Chrome heap sampling, Predator ?mix=1): after E-538 the logic worker allocates 48.9 KB a frame (439.9 before), 34.4 KB of it in Person.shoot: the BulletPool.spawn({...}) literal, which E-286's front removes only where TurboFan inlines it, and shoot calls many fronts (two emitPreset, spawnPreset, SoundManager.play).",
-      "next": "BulletPool.define(config) -> id and spawnPreset(id, x, y, offsetY, vx, vy, damage, ownerId, shooterType) through a Float64Array, as E-538 did for particles and flashes; Predator's shot moved to it; a Node allocation test and the same Chrome heap sample before and after."
+      "statusText": "Kept 2026-11-21 (R-1675), hygiene: BulletPool.define once per weapon and BulletPool.spawnPreset per shot (a 69-byte front over the spawn scratch, the same core as spawn()); Predator's weapons use it. Chrome heap, Predator ?mix=1: Person.shoot 34 -> 5-8 KB a frame, the logic worker 49 -> 20-23 KB. The batch's Predator gate with E-542: nothing worse.",
+      "next": "",
+      "result": "kept (hygiene) 2026-11-21: BulletPool.define/spawnPreset (69-byte front); Predator mix=1 logic garbage 49 -> 20-23 KB a frame; gate with E-542 nothing worse (logic -4.6 %, a reading)."
+    },
+    {
+      "records": [
+        "R-1676"
+      ],
+      "refs": [],
+      "id": "E-542",
+      "title": "SoundManager.play boxes its doubles: gain and pan written into the shared _spatialResult object and passed to _writeSlot, which TurboFan does not inline (7.7 KB a frame on each logic worker in Predator's mixed battle)",
+      "status": "kept-hygiene",
+      "kind": "speed",
+      "area": "audio",
+      "date": "2026-11-21",
+      "statusText": "Kept 2026-11-21 (R-1676), hygiene: SoundManager.play is a 64-byte front over PLAY_F (volume and world point), _playIn passes only integers and the name; Camera.worldToScreenInPlace and rngInto keep the projection and the pitch draw in the array. Chrome heap, Predator ?mix=1: play and the shot's own garbage gone, the logic worker 19.5-23.2 -> 6.5-7.1 KB a frame.",
+      "next": "",
+      "result": "kept (hygiene) 2026-11-21: play a 64-byte front over PLAY_F, worldToScreenInPlace, rngInto; Predator mix=1 logic garbage 19.5-23.2 -> 6.5-7.1 KB a frame; gate with E-541 nothing worse."
     },
     {
       "records": [],
       "refs": [],
-      "id": "E-542",
-      "title": "SoundManager.play boxes its doubles: gain and pan written into the shared _spatialResult object and passed to _writeSlot, which TurboFan does not inline (7.7 KB a frame on each logic worker in Predator's mixed battle)",
+      "id": "E-543",
+      "title": "Predator's soldier states box the target's squared distance: findClosestCivilian and findACivilianToShoot write it into the _closestResult object's field, and canShootTarget takes it as a double argument (about 5.3 KB a frame on each logic worker in the mixed battle)",
       "status": "open",
       "kind": "speed",
-      "area": "audio",
+      "area": "demo",
       "date": "2026-11-21",
-      "rank": 9,
-      "statusText": "Filed 2026-11-21 from the ECS-finish final pass (Chrome heap sampling, Predator ?mix=1): play allocates 7.7 KB a frame on each logic worker, the second allocator after the shot's literal (E-541).",
-      "next": "The spatial result and the slot's doubles through a module Float64Array, integers across the calls (CLAUDE.md, E-85, E-66); a heap sample before and after, audioStormScene for the cost."
+      "statusText": "Filed 2026-11-21 from E-542's Chrome heap sample (Predator ?mix=1, after E-541 and E-542): what is left on the logic worker is Predator's soldier FSM, RangedAttackingState.onUpdate (soldierBehaviorFsm.js:391, 3.9 KB a frame) and IdleSoldierState.onUpdate (:243, 1.3 KB). Demo code, public APIs only.",
+      "next": "The distance through a module Float64Array (the finders return the index, or -1, and write it there; canShootTarget and storeTarget read it), the scan's best distance in a local seeded with a module INF; the same Chrome heap sample before and after; test:demos."
     }
   ],
   "records": [
@@ -40647,6 +40663,31 @@
       "title": "Predator's load in the page 4.7 -> 2.0 s at crowd 1 and 8.5 -> 2.4 s at crowd 2.5; save 3.6 -> 2.9 s and 5.7 -> 3.7 s (decal tiles left)",
       "verdict": "kept",
       "text": "**Predator's save and load in the page, before and after E-539** (tests/bench/saveLoadTimer.mjs 351c95d1, `--root` for the base): headed, `dayCycle=0`, 20 s of play, then 3 rounds of `scene.saveGame` and `scene.loadGame` with 3 s of play between them, 16:45 to 16:49.\n\n| crowd (entities) | save before | save after | load before | load after | fresh scene load |\n| --- | --- | --- | --- | --- | --- |\n| 1 (16 400) | 3509 to 3638 ms | 2921 to 2951 | 4709 to 4775 | 2016 to 2104 | 2067 / 2147 |\n| 2.5 (35 000) | 5624 to 5726 | 3656 to 3687 | 8388 to 8513 | 2371 to 2484 | 2377 / 2393 |\n\n- **Load:** a load now costs about what a fresh start of the scene costs. The restore itself fell from about 2.7 s at crowd 1 and 6.1 s at crowd 2.5 to about nothing.\n- **Size:** a stored save 3.69 -> 2.44 MB at crowd 1, 8.83 -> 5.92 MB at crowd 2.5.\n- **Save:** still 2.9 s at crowd 1 and 3.7 s at crowd 2.5. Its largest known part is Decal.packSnapshot's PNG tiles, encoded one after another (2.56 s in R-1528). That is N-314's next step: every tile's convertToBlob issued before any is awaited, timed with this tool."
+    },
+    {
+      "id": "R-1675",
+      "date": "2026-11-21",
+      "time": "19:39",
+      "timeFrom": "recorded",
+      "title": "Bullet presets: Predator's shot 34 -> 5-8 KB a frame, the logic worker 49 -> 20-23 KB (-59 % / -53 %); the batch's Predator gate nothing worse",
+      "verdict": "kept-hygiene",
+      "text": "**Bullet presets: kept (hygiene).** `BulletPool.define({...})` once per weapon (look, trail, damage), `BulletPool.spawnPreset(preset, x, y, offsetY, vx, vy, ownerId)` per shot: the front writes the shot into the spawn scratch and calls `_spawnIn`, the core `spawn()` shares (merged at fb6df905, commits 6e32991e and 0bde77f0).\n\n- The front is 69 bytes of bytecode (fronts test bar 71), so it inlines into Person.shoot, which is out of budget.\n- Parity: 200 shots over 8 looks write every BulletComponent column `spawn({...})` writes (bulletPreset.test.js).\n- Node driver (the whole preset shot with its bullet): 200 B over 10 000 shots; the literal shot 3093 B.\n- Chrome heap sampling, Predator `?mix=1`, 601 frames a side, base main f84db76d (19:15–19:16): Person.shoot 34.1 / 34.7 KB a frame (logic0 / logic1) -> 5.3 / 8.3 KB; the logic worker 48.8 / 49.1 -> 19.8 / 23.1 KB a frame (-59 % / -53 %). SoundManager.play unchanged at 7.6 / 7.9 KB (E-542).\n- Node suite 3427/3427, demos 143/143. No speed claim: the Predator gate covers it with E-542 (one gate for the batch).\n- **Predator gate for E-541 and E-542 together** (19:36–19:39), `crowd=2.5&logicWorkers=1&mix=1&dayCycle=0`, 4 pairs, base f84db76d, B 964a4e23, `--full-rev`: nothing worse. Logic 44.91 -> 43.08 ms (-4.6 %, lower in 3/4, -3.2 % against the others), physics -2.0 %, renderer -2.2 %, pre-render -0.9 %, spatial -0.1 %, presented 60 = 60. FAIL (load) only from DECAL_TILES_DIRTY (20.1 -> 17.6, cv 59/52 %: blood and hit decals, emergent); BODY_COUNT -0.1 %, ACTIVE_PARTICLES +0.2 %. Logic's -4.6 % is a reading, not a speed claim (a key past rule 5, no A/A this session, logic over its frame at 23 fps): kept as hygiene.",
+      "commits": [
+        "6e32991e",
+        "0bde77f0"
+      ]
+    },
+    {
+      "id": "R-1676",
+      "date": "2026-11-21",
+      "time": "19:39",
+      "timeFrom": "recorded",
+      "title": "SoundManager.play boxes no double: play and the shot's garbage gone, the logic worker 19.5-23.2 -> 6.5-7.1 KB a frame (-67 % / -69 %); the batch's Predator gate nothing worse",
+      "verdict": "kept-hygiene",
+      "text": "**SoundManager.play without boxed doubles: kept (hygiene).** play() is a front (64 bytes of bytecode): it writes the volume and the world point into PLAY_F and calls `_playIn` with the name, rates, loop, mute and channel. `_computeSpatial` reads the point there and writes gain and pan back (no result object); the projection is `Camera.worldToScreenInPlace` (worldToScreen's math over a Float64Array, bit-identical: soundPlayDoubles.test.js); the pitch draw is `rngInto` (rng()'s draw into the array, any generator). The slot writers and `_fillSlot` read volume, pitch and pan from PLAY_F; `_rememberVoice` and `_retuneStolen` read the slot's volume themselves (commit 964a4e23).\n\n- Chrome heap sampling, Predator `?mix=1`, ~600 frames a side, base main fb6df905 (19:32–19:33): play 7.6 / 7.9 KB a frame (logic0 / logic1) -> none sampled; Person.shoot 5.1 / 8.4 KB -> none (play inlines now, so the muzzle point is no longer boxed at the call); rng's 307 B a frame -> none; the logic worker 19.5 / 23.2 -> 6.5 / 7.1 KB a frame (-67 % / -69 %). With E-541, 49 -> 7 KB a frame since the ECS finish's final pass. What is left is Predator's soldier FSM (onUpdate at soldierBehaviorFsm.js:391 and :243, about 5.3 KB a frame).\n- Node driver (Predator's shot with its spatial sound): 0.02 B a shot once `_writeSlotListed` (736 bytes, one call a shot) is in TurboFan; at 6000 warm-up shots it was not yet (25 B a shot), so the alloc test warms 20 000.\n- The slot kernel's storm checksum equals main's (1945379294).\n- A non-number volume, rate or point now converts as a number does (null reads 0, not the default).\n- Node 3429/3429, demos 143/143.\n- **Predator gate for E-541 and E-542 together** (19:36–19:39), `crowd=2.5&logicWorkers=1&mix=1&dayCycle=0`, 4 pairs, base f84db76d, B 964a4e23, `--full-rev`: nothing worse. Logic 44.91 -> 43.08 ms (-4.6 %, lower in 3/4, -3.2 % against the others), physics -2.0 %, renderer -2.2 %, pre-render -0.9 %, spatial -0.1 %, presented 60 = 60. FAIL (load) only from DECAL_TILES_DIRTY (20.1 -> 17.6, cv 59/52 %: blood and hit decals, emergent); BODY_COUNT -0.1 %, ACTIVE_PARTICLES +0.2 %. Logic's -4.6 % is a reading, not a speed claim (a key past rule 5, no A/A this session, logic over its frame at 23 fps): kept as hygiene.",
+      "commits": [
+        "964a4e23"
+      ]
     }
   ],
   "leads": [
