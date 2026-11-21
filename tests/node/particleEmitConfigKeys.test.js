@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ParticleComponent } from '../../src/components/particleComponent.js';
-import { ParticleEmitter } from '../../src/core/particleEmitter.js';
+import { PARTICLE_EMIT_KEYS, ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { Layer } from '../../src/core/layer.js';
 
-// Every public emit path merges the caller's config into a reusable scratch through
-// ParticleEmitter._cfgFieldList (emit and emitZenithal pass mode overrides, emitFlat
-// and emitAlongLine too). A key missing from that list never reaches the spawn loop.
+// Every public emit path compiles the caller's config into the emit's row (compileEmit: emit, emitZenithal, emitFlat
+// and emitAlongLine on every call, define once for a preset). PARTICLE_EMIT_KEYS lists the keys it reads; define
+// refuses any other, so a key the compile reads but the list lacks could not be put in a preset.
 
 const BUILT_IN_LAYERS = { decals: {}, castedShadows: {}, entities: {}, lighting: {} };
 
@@ -66,19 +66,27 @@ test('without layer or layers a particle stays on the entities layer', () => {
   assert.equal(ParticleComponent.layerMask[i], Layer.entitiesMask());
 });
 
-// Structural guard for this bug class: a key read by the spawn loop but missing from the
-// field list is dropped on every public path. The read count floor keeps the scan from
-// passing vacuously if `cfg` is ever renamed.
-test('every config key the spawn loop reads is in _cfgFieldList', async () => {
+// Structural guard for this bug class: a key the compile (cfg) or the emit (spec, by name: textures and layers) reads
+// must be in PARTICLE_EMIT_KEYS, and every listed key must be read. The read count floor keeps the scan from passing
+// vacuously if `cfg` is ever renamed.
+test('every config key the compile and the emit read is in PARTICLE_EMIT_KEYS, and every listed key is read', async () => {
   const { readFile } = await import('node:fs/promises');
   const src = await readFile(new URL('../../src/core/particleEmitter.js', import.meta.url), 'utf8');
-  const reads = new Set([...src.matchAll(/\bcfg\.([A-Za-z0-9_]+)/g)].map((m) => m[1]));
-  assert.ok(reads.size >= 20, `only ${reads.size} cfg reads found; did cfg get renamed?`);
+  const compileAt = src.indexOf('function compileEmit(');
+  const compile = src.slice(compileAt, src.indexOf('\n}\n', compileAt));
+  const emit = src.slice(src.indexOf('static _emitRow('), src.indexOf('static reset()'));
+  const reads = new Set([
+    ...[...compile.matchAll(/\bcfg\.([A-Za-z0-9_]+)/g)].map((m) => m[1]),
+    ...[...emit.matchAll(/\bspec\.([A-Za-z0-9_]+)/g)].map((m) => m[1]),
+  ]);
+  assert.ok(reads.size >= 30, `only ${reads.size} cfg reads found; did cfg get renamed?`);
   reads.add('layer');
   reads.add('layers');
-  const list = new Set(ParticleEmitter._cfgFieldList);
+  const list = new Set(PARTICLE_EMIT_KEYS);
   const missing = [...reads].filter((k) => !list.has(k));
-  assert.deepEqual(missing, [], `read but never copied: ${missing.join(', ')}`);
+  assert.deepEqual(missing, [], `read but not listed: ${missing.join(', ')}`);
+  const unread = [...list].filter((k) => !reads.has(k));
+  assert.deepEqual(unread, [], `listed but never read: ${unread.join(', ')}`);
 });
 
 test('angularVelocity in config reaches the particle (degrees per ms)', () => {
@@ -89,19 +97,11 @@ test('angularVelocity in config reaches the particle (degrees per ms)', () => {
   assert.ok(Math.abs(ParticleComponent.angularVelFrom[i] - Math.PI / 2) < 1e-6);
 });
 
-// E-173: the merge copies the keys by name (copyEmitFields) into a scratch that declares them all (emitScratch), so
-// the copy, the scratch and _cfgFieldList are three lists of the same keys.
-test('the merge copies every listed key, the mode overrides over them, into a scratch of exactly those keys', () => {
+// E-538: define takes every emit key, and refuses anything else (a typo in a preset shows once, at load).
+test('define accepts a config of every emit key and refuses one it does not know', () => {
   const config = {};
-  ParticleEmitter._cfgFieldList.forEach((key, i) => {
-    config[key] = { key, i };
-  });
-  const merged = ParticleEmitter._mergeCfg(config, { flat: 7 });
-  for (const key of ParticleEmitter._cfgFieldList) {
-    if (key !== 'flat') assert.equal(merged[key], config[key], key);
-  }
-  assert.equal(merged.flat, 7, 'the override wins');
-  assert.deepEqual(Object.keys(merged).sort(), [...ParticleEmitter._cfgFieldList].sort(), 'the scratch\'s keys');
-  const line = ParticleEmitter._alongLineScratch;
-  assert.deepEqual(Object.keys(line).sort(), [...ParticleEmitter._cfgFieldList].sort(), 'emitAlongLine\'s too');
+  for (const key of PARTICLE_EMIT_KEYS) config[key] = undefined;
+  assert.equal(typeof ParticleEmitter.define(config), 'number');
+  assert.throws(() => ParticleEmitter.define({ ...base, speeed: 2 }), /"speeed" is not an emit key/);
+  assert.throws(() => ParticleEmitter.defineFlat({ ...base, x0: 0 }), /defineFlat: "x0"/);
 });
