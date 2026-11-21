@@ -5,7 +5,7 @@ const { GameObject, ParticleEmitter, PARTICLE_EASE: E } = WEED;
 // Big initial burst + a steady trickle top-up so a large heighted population
 // stays airborne (falling under gravity) for most of the measurement window,
 // stressing PARTICLE_PHYSICS_MS / BUILD_ACTIVE_VISIBLE_MS / ACTIVE_PARTICLES.
-// NOTE: ParticleEmitter._spawn treats `gravity` as a plain scalar (cfg.gravity ?? 0.15,
+// NOTE: ParticleEmitter's compile treats `gravity` as a plain scalar (cfg.gravity ?? 0.15,
 // see src/core/particleEmitter.js), NOT a {min,max} range like x/y/z/vx/vy/vz/lifespan/scale.
 const INITIAL_BURST = 60000;
 const TOPUP_PER_TICK = 4000;

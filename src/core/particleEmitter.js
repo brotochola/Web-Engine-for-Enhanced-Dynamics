@@ -1280,7 +1280,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     const subMask = Layer.resolveSubscriptions(spec);
     if (!ParticleComponent.flat || !ParticleComponent.viewMode) {
       console.error(
-        'ParticleEmitter._spawn: ParticleComponent schema missing — hard-reload after schema change'
+        'ParticleEmitter._emitRow: ParticleComponent schema missing — hard-reload after schema change'
       );
       return 0;
     }
