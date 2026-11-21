@@ -259,7 +259,15 @@ test('a player\'s load hands a pinned class\'s spawns to its worker with a row o
   const sent = [];
   const prev = { total: logic.totalLogicWorkers, send: logic.sendDataToWorker };
   logic.totalLogicWorkers = 2;
-  logic.sendDataToWorker = (to, msg) => (sent.push({ to, msg: structuredClone(msg) }), true);
+  // N-327: the load waits on a barrier to logic1, after the spawns, before its remaps; this test answers it.
+  logic.sendDataToWorker = (to, msg) => {
+    const m = structuredClone(msg);
+    if (m.msg === 'restoreBarrier') {
+      assert.equal(to, 'logic1');
+      setImmediate(() => logic.handleCustomMessage({ msg: 'restoreBarrierAck', id: m.id, _fromWorker: to }));
+    } else sent.push({ to, msg: m });
+    return true;
+  };
   let result;
   try {
     result = await applySavePayloadToScene(scene, decoded);

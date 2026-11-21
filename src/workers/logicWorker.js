@@ -186,6 +186,8 @@ const FOREIGN_SWEEP_FRAMES = 30;
  */
 const LIST_UPDATE_MAX_BATCHES = 64;
 const LIST_UPDATE_MAX_BATCH_PENDING = 2048;
+/** N-327: how long a load waits for a worker that took a pinned class's spawns to answer its barrier. */
+const RESTORE_BARRIER_MS = 10000;
 
 class LogicWorker extends AbstractWorker {
   constructor(selfRef) {
@@ -410,6 +412,9 @@ class LogicWorker extends AbstractWorker {
      */
     this.listUpdatesDropped = 0;
     this.listUpdatesCoalesced = 0;
+    /** N-327: the load's barriers this worker waits on, by "id:worker" (logic0), and the last id it gave. */
+    this._restoreBarrierWaits = new Map();
+    this._restoreBarrierSeq = 0;
     /** @internal Reused by sendListUpdatesToLogic0 to avoid .map() allocation */
     this._spawnSerializedBuffer = [];
     this._despawnSerializedBuffer = [];
@@ -3106,10 +3111,23 @@ class LogicWorker extends AbstractWorker {
    *
    * E-539: the entities come as one table per type (entitySaveSnapshot.js); each type's EntityRestorePlan matches its
    * saved columns to the live ones once for this load, and each spawn writes its row through it.
+   *
+   * N-327: the message runs the two halves with a barrier between them when a pinned class's spawns went to another
+   * worker (_restoreSpawn, _restoreBarrier, _restoreFinish); this composition runs them back to back.
    * @param {object} data restoreSave message
    * @returns {object}
    */
   _restoreSave(data) {
+    return this._restoreFinish(this._restoreSpawn(data));
+  }
+
+  /**
+   * The load's first half: despawn the serializable types, spawn the saved entities. A spawn pinned to another
+   * logic worker goes there with its row; `handedTo` names those workers.
+   * @param {object} data restoreSave message
+   * @returns {object} the state _restoreFinish takes
+   */
+  _restoreSpawn(data) {
     const {
       serializableClassNames = [],
       entities = [],
@@ -3151,6 +3169,7 @@ class LogicWorker extends AbstractWorker {
     const restoredOld = new Int32Array(saved);
     const restoredNew = new Int32Array(saved);
     const plans = [];
+    const handedTo = new Set();
 
     for (let t = 0; t < entities.length; t++) {
       const table = entities[t];
@@ -3173,6 +3192,7 @@ class LogicWorker extends AbstractWorker {
           this.totalLogicWorkers,
         );
       const handOff = owner >= 0 && owner !== this.workerIndex;
+      if (handOff && count > 0) handedTo.add(owner);
       const xs = plan.x;
       const ys = plan.y;
       for (let r = 0; r < count; r++) {
@@ -3211,6 +3231,56 @@ class LogicWorker extends AbstractWorker {
       console.warn(`LOGIC WORKER ${this.workerIndex}: restoreSave could not spawn ${n} ${typeName} (pool full?)`);
     }
 
+    return {
+      restored, failed, known, newIndexOf, restoredOld, restoredNew, plans, handedTo,
+      joints, chains, fixtures, meshes, tweens,
+    };
+  }
+
+  /**
+   * N-327: resolves once every worker in `workers` has read the spawns this load sent it. The barrier goes on the same
+   * port, after them, and a worker reads its port in order, so its answer says each saved row it was handed is
+   * written; the load's remaps run after that, and no saved row overwrites them. A worker this one has no port to took
+   * no spawn (they were set up here). An answer that never comes ends the wait after RESTORE_BARRIER_MS, with an error.
+   * @param {Set<number>} workers
+   * @returns {Promise<void>}
+   */
+  _restoreBarrier(workers) {
+    const id = ++this._restoreBarrierSeq;
+    const waits = [];
+    for (const w of workers) {
+      waits.push(new Promise((resolve) => {
+        const key = `${id}:${w}`;
+        const timer = setTimeout(() => {
+          if (!this._restoreBarrierWaits.delete(key)) return;
+          console.error(`LOGIC WORKER ${this.workerIndex}: logic${w} did not answer the load's barrier in ${RESTORE_BARRIER_MS} ms; its entities' ids may be unmapped`);
+          resolve();
+        }, RESTORE_BARRIER_MS);
+        this._restoreBarrierWaits.set(key, () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        if (!this.sendDataToWorker(`logic${w}`, { msg: 'restoreBarrier', id })) {
+          this._restoreBarrierWaits.delete(key);
+          clearTimeout(timer);
+          resolve();
+        }
+      }));
+    }
+    return Promise.all(waits).then(() => {});
+  }
+
+  /**
+   * The load's second half: chains, fixtures, meshes, tweens, id remaps, parents and joints on every restored entity,
+   * the handed-off ones included. Returns the restoreSaveComplete reply.
+   * @param {object} state what _restoreSpawn returned
+   * @returns {object}
+   */
+  _restoreFinish(state) {
+    const {
+      restored, failed, known, newIndexOf, restoredOld, restoredNew, plans,
+      joints, chains, fixtures, meshes, tweens,
+    } = state;
     const restoredPairs = new Array(restored);
     for (let k = 0; k < restored; k++) restoredPairs[k] = { old: restoredOld[k], neu: restoredNew[k] };
     const mapGet = (old) => {
@@ -3409,12 +3479,9 @@ class LogicWorker extends AbstractWorker {
         if (this.workerIndex !== 0) break;
         // Always answer: main awaits this reply, and a throw that skipped it
         // left the load waiting forever.
-        let reply;
-        try {
-          reply = this._restoreSave(data);
-        } catch (err) {
+        const failed = (err) => {
           console.error(`LOGIC WORKER ${this.workerIndex}: restoreSave failed`, err);
-          reply = {
+          return {
             msg: 'restoreSaveComplete',
             error: String((err && err.stack) || err),
             restored: 0,
@@ -3422,8 +3489,43 @@ class LogicWorker extends AbstractWorker {
             jointsRestored: 0,
             idPairs: [],
           };
+        };
+        let state;
+        try {
+          state = this._restoreSpawn(data);
+        } catch (err) {
+          self.postMessage(failed(err));
+          break;
         }
-        self.postMessage(reply);
+        // N-327: the workers a pinned class's spawns went to write their rows first (the world is paused meanwhile).
+        const finish = () => {
+          let reply;
+          try {
+            reply = this._restoreFinish(state);
+          } catch (err) {
+            reply = failed(err);
+          }
+          self.postMessage(reply);
+        };
+        if (state.handedTo.size === 0) finish();
+        else this._restoreBarrier(state.handedTo).then(finish);
+        break;
+      }
+
+      // N-327: every spawn logic0 sent on this port before the barrier is set up (a port is read in order).
+      case 'restoreBarrier': {
+        this.sendDataToWorker('logic0', { msg: 'restoreBarrierAck', id: data.id });
+        break;
+      }
+
+      case 'restoreBarrierAck': {
+        const from = String(data._fromWorker || '');
+        const key = `${data.id}:${from.startsWith('logic') ? Number(from.slice(5)) : -1}`;
+        const done = this._restoreBarrierWaits.get(key);
+        if (done) {
+          this._restoreBarrierWaits.delete(key);
+          done();
+        }
         break;
       }
 
