@@ -258,6 +258,15 @@ Every entity can be written as objects (methods on the instance, `this` the enti
 | The collider's size | `this.collider.radius = r` | `Collider.setRadius(i, r)` (a write to `Collider.radius[i]` does not reach Box2D) |
 | Where it faces | `this.directionalSprite.facing = a` | `DirectionalSprite.setFacing(i, a)` |
 | A muzzle flash | `Flash.spawn({ x, y })` | `Flash.spawnIndex({ x, y })` |
+| A message to another entity | `this.sendTo(other, 'hit', 10)` | `GameObject.sendTo(i, other, 'hit', 10)` |
+| Tell the page | `this.emit('died', data)`, `this.sendMessageToScene(data)` | `GameObject.emit(i, 'died', data)`, `GameObject.sendMessageToScene(i, data)` |
+| Touching another one now? | `this.isCollidingWith(other)` | `GameObject.isCollidingWith(i, other)` |
+| Its layers | `this.setLayer('fx')`, `this.setLayers(names)`, `this.layerName` | `GameObject.setLayer(i, 'fx')`, `GameObject.setLayers(i, names)`, `GameObject.layerName(i)` |
+| Attach a decoration | `this.addDecoration('hat', 0, -20, 1, 1, 1)` | `GameObject.addDecoration(i, 'hat', 0, -20, 1, 1, 1)` (its pool id; no facade made) |
+| Its attached decorations | `this.getAttachedDecorationCount()`, `this.getAttachedDecorationIndex(k)` | `GameObject.getAttachedDecorationCount(i)`, `GameObject.getAttachedDecorationIndex(i, k)` |
+| A decoration's look | `Decoration.get(id).alpha = a`, `.setSkew(x, y)`, `.impulseSway(a, f)` | `Decoration.setAlpha(id, a)`, `Decoration.setSkew(id, x, y)`, `Decoration.impulseSway(id, a, f)` |
+| An Adobe clip | `this.adobeAnimComponent.play('run')`, `.gotoAndStop(5)`, `.currentFrame` | `AdobeAnimComponent.play(i, 'run')`, `AdobeAnimComponent.gotoAndStop(i, 5)`, `AdobeAnimComponent.currentFrame(i)` |
+| A mesh | `this.meshRenderer.tint = c`, `.setPlane(w, h, 4, 4)` | `MeshRenderer.setTint(i, c)`, `MeshRenderer.setPlane(i, w, h, 4, 4)` |
 | Do something later | `setTimeout(() => this.open(), 500)` | a column with the time it is due, on the scene's clock (`Time.simNowMs`), checked in `tickAll` |
 | Neighbours | `this.neighborCount`, `this.getNeighbor(k)` | `Grid.getNeighborCount(i)`, `Grid.getNeighbor(i, k)`; in a hot loop the row itself (below) |
 | Its FSMs | `this.walkFSM.tick(dtRatio)` | `FSM.tickAll(list, count, dtRatio, this)` |
@@ -297,7 +306,45 @@ class Walker extends GameObject {
 }
 ```
 
-What makes an instance on the ECS way: nothing it calls. `spawnIndex` sets the entity up by index (the config's engine keys through the component statics, a static `onSpawned(i, config)` for the rest; a class whose `onSpawned` is a method gets the instance that method runs on), FSM states get the index, every entity method has its component's static by index (`SpriteRenderer.setAlpha(i, a)`, `Collider.setRadius(i, r)`, `RigidBody.setVelocity(i, vx, vy)`, `Transform.setPosition(i, x, y)`), and `GameObject.get(i)` makes the instance where code asks for it.
+What makes an instance on the ECS way: nothing it calls. `spawnIndex` sets the entity up by index (the config's engine keys through the component statics, a static `onSpawned(i, config)` for the rest; a class whose `onSpawned` is a method gets the instance that method runs on), FSM states get the index, every entity method has its component's static by index (`SpriteRenderer.setAlpha(i, a)`, `Collider.setRadius(i, r)`, `RigidBody.setVelocity(i, vx, vy)`, `Transform.setPosition(i, x, y)`, `AdobeAnimComponent.play(i, clip)`, `MeshRenderer.setTint(i, c)`) or GameObject's (`GameObject.sendTo(i, other, name)`, `GameObject.emit(i, name, data)`, `GameObject.setLayer(i, name)`, `GameObject.addDecoration(i, ...)`), a decoration's setters take its pool id (`Decoration.setAlpha(id, a)`), and `GameObject.get(i)` makes the instance where code asks for it. The statics and the methods do the same work and write the same columns, and the class of entity `i` comes from its type, so a static needs no instance to know which renderers or body the entity has. A decoration's pool id is a raw slot: `Decoration.setAlpha(id, a)` writes whatever decoration the slot holds now, where a facade kept from `Decoration.get(id)` stops writing once its decoration despawns.
+
+```javascript
+const { GameObject, SpriteRenderer, Collider, CollisionListener, Transform, Decoration, Time } = WEED;
+
+// A lantern written ECS-style: it hangs a glow decoration, flickers it, and tells the player who touches it. Its own
+// state is a column of the class (one slot per entity of its pool), its work statics by index: no instance is made.
+class Lantern extends GameObject {
+  static components = [SpriteRenderer, Collider, CollisionListener];
+  static glow = new Int32Array(0); // each lantern's glow decoration, by i - startIndex
+  static onSpawned(i) {
+    if (this.glow.length !== this.poolSize) this.glow = new Int32Array(this.poolSize);
+    this.glow[i - this.startIndex] = GameObject.addDecoration(i, '_whiteCircle', 0, -24, 0.5, 0.5, 1, {
+      tint: 0xffcc66,
+      alpha: 0.6,
+    });
+  }
+  static tickAll(list, count) {
+    const t = Time.simNowMs;
+    for (let k = 0; k < count; k++) {
+      const i = list[k];
+      const id = this.glow[i - this.startIndex];
+      if (id >= 0) Decoration.setAlpha(id, 0.5 + 0.1 * Math.sin(t * 0.01 + i));
+    }
+  }
+  static onCollisionEnter(i, other) {
+    if (!GameObject.is(other, Player)) return;
+    GameObject.sendTo(i, other, 'lit'); // the scene lists 'lit' in its static messages
+    GameObject.emit(i, 'lanternLit', { x: Transform.x[i], y: Transform.y[i] }); // the page: scene.on('lanternLit', fn)
+  }
+}
+
+class Player extends GameObject {
+  static components = [SpriteRenderer, Collider];
+  static onMessage(i, name) {
+    if (name === 'lit') SpriteRenderer.setTint(i, 0xffe0a0);
+  }
+}
+```
 
 ### State machines (`FSM`)
 
@@ -658,6 +705,7 @@ scene.sendToEntity(heroIndex, 'heal', 25);          // from the scene: from = -1
 - A message to an entity that despawns before delivery is dropped, even if a new entity took its index.
 - The inboxes exist only when some type defines `onMessage` (or `onAnimationEnd`); otherwise `sendTo` warns once and does nothing.
 - `emit(name, data)` goes to the main thread by `postMessage` (`data` is structured-cloned): for rare events (died, level won), not every frame. `scene.on` returns a function that removes the listener.
+- By index, with no instance: `GameObject.sendTo(from, to, name, a, b, c, d)`, `GameObject.emit(i, name, data)` and `GameObject.sendMessageToScene(i, data)` send what the methods send (the listener gets entity `i` and its class's name).
 
 ### When a play-once animation ends (`onAnimationEnd`)
 
