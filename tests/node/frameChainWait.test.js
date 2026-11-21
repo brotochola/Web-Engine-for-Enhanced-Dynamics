@@ -4,6 +4,7 @@ import { Worker } from 'node:worker_threads';
 
 import { resetWaitMeter, waitMeterMs } from '../../src/util/waitMeter.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { wallMs, waitedUntil } from '../helpers/wallClockWait.mjs';
 
 // E-198: every worker wakes on the vsync together (runFramePhase: within 0.2 ms), so what a stage finds at its frame's
 // start is its upstream's output of a vsync earlier, and an input took 3 frames to reach the screen. Pixi now waits for
@@ -23,38 +24,9 @@ test.after(() => {
   globalThis.postMessage = previousPostMessage;
 });
 
-const PUBLISHER = `
-const { workerData, parentPort } = require('node:worker_threads');
-const a = new Int32Array(workerData.sab);
-const go = new Int32Array(workerData.go);
-parentPort.postMessage('ready');
-Atomics.wait(go, 0, 0);
-// A spin, not a timer: Windows rounds timers to about 15 ms.
-const until = performance.now() + workerData.ms;
-while (performance.now() < until);
-Atomics.store(a, workerData.index, workerData.value);
-Atomics.notify(a, workerData.index);
-`;
-
-/**
- * A thread that stores `value` at `index` of `sab` `ms` after go(), and notifies. Started and waiting before the stage
- * under test waits (a Node worker takes tens of ms to start).
- */
-async function publisher(sab, index, value, ms) {
-  const go = new Int32Array(new SharedArrayBuffer(4));
-  const w = new Worker(PUBLISHER, { eval: true, workerData: { sab, index, value, ms, go: go.buffer } });
-  await new Promise((resolve) => w.once('message', resolve));
-  return {
-    go() {
-      Atomics.store(go, 0, 1);
-      Atomics.notify(go, 0);
-    },
-    stop: () => w.terminate(),
-  };
-}
-
 // A thread that stores `value` at `index` at a wall-clock time it is given, and notifies. The time is given 2 ms
-// ahead: a hand-off between threads here can take over a millisecond, longer than logic's sub-ms budget.
+// ahead: a hand-off between threads here can take over a millisecond, longer than logic's sub-ms budget. Each test
+// reads its tries against that time (N-326, waitedUntil): a loaded machine runs either thread late.
 const AT_PUBLISHER = `
 const { workerData, parentPort } = require('node:worker_threads');
 const a = new Int32Array(workerData.sab);
@@ -66,18 +38,17 @@ Atomics.store(a, workerData.index, workerData.value);
 Atomics.notify(a, workerData.index);
 `;
 
-const wallMs = () => performance.timeOrigin + performance.now();
-
 async function publisherAt(sab, index, value) {
   const at = new Float64Array(new SharedArrayBuffer(8));
   const w = new Worker(AT_PUBLISHER, { eval: true, workerData: { sab, index, value, at: at.buffer } });
   await new Promise((resolve) => w.once('message', resolve));
   return {
-    /** The store `ms` after the call returns, which itself returns 2 ms after it was made. */
+    /** The store `ms` after the call returns, which itself returns 2 ms after it was made; returns the store's time. */
     publishIn(ms) {
       const d = wallMs() + 2;
       at[0] = d + ms;
       while (wallMs() < d);
+      return d + ms;
     },
     stop: () => w.terminate(),
   };
@@ -95,15 +66,25 @@ function pixi() {
 }
 
 test('Pixi waits for the queue pre-render publishes this vsync, and counts the wait', async () => {
-  const r = pixi();
-  Atomics.store(r.renderQueueSync, 0, 7);
-  const p = await publisher(r.renderQueueSync.buffer, 0, 8, 4);
-  resetWaitMeter();
-  p.go();
-  const ready = r._waitForQueue(7);
-  await p.stop();
+  let r = null;
+  let ready = 0;
+  let waited = 0;
+  let untilPublish = false;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    r = pixi();
+    Atomics.store(r.renderQueueSync, 0, 7);
+    const p = await publisherAt(r.renderQueueSync.buffer, 0, 8);
+    resetWaitMeter();
+    const at = p.publishIn(4);
+    const begun = wallMs();
+    ready = r._waitForQueue(7);
+    await p.stop();
+    waited = waitMeterMs();
+    untilPublish = waitedUntil(at, begun, waited);
+    if (ready === 8 && untilPublish) break;
+  }
   assert.equal(ready, 8, 'the queue published during the wait');
-  assert.ok(waitMeterMs() >= 2, `the wait is in WAIT_MS (${waitMeterMs().toFixed(2)} ms)`);
+  assert.ok(untilPublish, `the wait is in WAIT_MS (${waited.toFixed(2)} ms)`);
   assert.equal(r._queueWaitOffUntil, 0, 'not turned off');
 });
 
@@ -129,23 +110,32 @@ test('no budget (Pixi\'s own step fills the frame): no wait', () => {
 
 test('pre-render waits for this vsync\'s pose, marking the one out consumed so physics may publish', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-  pre.poseSync = new Int32Array(new SharedArrayBuffer(16));
-  Atomics.store(pre.poseSync, 0, 5);
-  Atomics.store(pre.poseSync, 1, 4); // physics holds its next publish until 5 is consumed
-  pre.frameNumber = 3;
-  pre._poseWaitLatched = 4;
-  pre._poseWaitOffUntil = 0;
-  pre._poseWaitStepMs = 1;
-  pre._poseWaitPeriodMs = 40; // a long frame: room for a slow test machine
-  pre._poseWaitLastStart = NaN;
-  const p = await publisher(pre.poseSync.buffer, 0, 6, 1);
-  resetWaitMeter();
-  p.go();
-  pre._waitForPose();
-  await p.stop();
+  let waited = 0;
+  let untilPublish = false;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    pre.poseSync = new Int32Array(new SharedArrayBuffer(16));
+    Atomics.store(pre.poseSync, 0, 5);
+    Atomics.store(pre.poseSync, 1, 4); // physics holds its next publish until 5 is consumed
+    pre.frameNumber = 3;
+    pre._poseWaitLatched = 4;
+    pre._poseWaitOffUntil = 0;
+    pre._poseWaitStepMs = 1;
+    pre._poseWaitPeriodMs = 40; // a long frame: room for a slow test machine
+    pre._poseWaitLastStart = NaN;
+    const p = await publisherAt(pre.poseSync.buffer, 0, 6);
+    resetWaitMeter();
+    // 4 ms of room within a budget of about 39: this thread must begin the wait before the publish for the try to count.
+    const at = p.publishIn(4);
+    const begun = wallMs();
+    pre._waitForPose();
+    await p.stop();
+    waited = waitMeterMs();
+    untilPublish = waitedUntil(at, begun, waited);
+    if (Atomics.load(pre.poseSync, 1) === 5 && Atomics.load(pre.poseSync, 0) === 6 && untilPublish) break;
+  }
   assert.equal(Atomics.load(pre.poseSync, 1), 5, 'the pose out at the start marked consumed');
   assert.equal(Atomics.load(pre.poseSync, 0), 6);
-  assert.ok(waitMeterMs() >= 0.5, `the wait is in WAIT_MS (${waitMeterMs().toFixed(2)} ms)`);
+  assert.ok(untilPublish, `the wait is in WAIT_MS (${waited.toFixed(2)} ms)`);
   assert.equal(pre._poseWaitOffUntil, 0);
   // Nothing published: the wait runs out and the waits go off.
   pre.frameNumber = 4;
@@ -174,21 +164,26 @@ function logicAt(w, gen, mainAgo = 40) {
 
 test('logic waits for main\'s frame of this vsync before it reads inputs, and counts the wait', async () => {
   const w = await loadWorker('logicWorker.js', 'logicWorker');
-  // A loaded machine may run the publisher late: a few tries (each a miss at most; under four the waits stay on).
+  // A loaded machine may run the publisher late (past logic's 0.95 ms budget), or keep this thread off a core until
+  // main's frame is already out (no wait at all): a few tries, each read against the publish's time (N-326,
+  // waitedUntil; each a miss at most, and logicAt clears the misses, so the waits stay on).
   let chain = null;
   let waited = 0;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  let untilPublish = false;
+  for (let attempt = 0; attempt < 8; attempt++) {
     chain = logicAt(w, 7);
     const p = await publisherAt(chain.buffer, 1, 8);
     resetWaitMeter();
-    p.publishIn(0.3);
+    const at = p.publishIn(0.3);
+    const begun = wallMs();
     w.beforeUpdate();
     await p.stop();
     waited = waitMeterMs();
-    if (Atomics.load(chain, 1) === 8 && waited < 0.95) break;
+    untilPublish = waitedUntil(at, begun, waited);
+    if (Atomics.load(chain, 1) === 8 && untilPublish && waited < 0.95) break;
   }
   assert.equal(Atomics.load(chain, 1), 8, 'main\'s frame published during the wait');
-  assert.ok(waited > 0.02, `the wait is in WAIT_MS (${waited.toFixed(2)} ms)`);
+  assert.ok(untilPublish, `the wait is in WAIT_MS (${waited.toFixed(2)} ms)`);
   assert.ok(waited < 0.95, 'within the budget');
   assert.equal(w._inputWaitOffUntil, 0, 'not turned off');
   // Main's frame of this vsync out before this frame began (its animation frame 0.2 ms earlier): no wait.
@@ -201,13 +196,18 @@ test('logic waits for main\'s frame of this vsync before it reads inputs, and co
 test('four waits in a row that run out turn logic\'s waits off for 120 frames; lockstep frames never wait', async () => {
   const w = await loadWorker('logicWorker.js', 'logicWorker');
   logicAt(w, 7);
+  // A miss costs about its 0.95 ms budget, not Windows's timer period (about 15 ms). Load only stretches a miss, so
+  // the cheapest of the three is read (N-326: one ran over 2 ms under the suite's parallel files): a wait that slept to
+  // the timer period would cost 10 ms or more every time.
+  const misses = [];
   for (let k = 0; k < 3; k++) {
     resetWaitMeter();
     w.beforeUpdate();
-    assert.ok(waitMeterMs() < 2, `a miss costs under a millisecond, not Windows's timer period (${waitMeterMs().toFixed(2)} ms)`);
+    misses.push(waitMeterMs());
     assert.equal(w._inputWaitOffUntil, 0, `miss ${k + 1}: still on`);
     w.frameNumber++;
   }
+  assert.ok(Math.min(...misses) < 3, `a miss costs under a millisecond, not Windows's timer period (${misses.map((m) => m.toFixed(2)).join(', ')} ms)`);
   w.beforeUpdate();
   assert.equal(w._inputWaitOffUntil, w.frameNumber + 120, 'the fourth miss in a row');
   resetWaitMeter();
