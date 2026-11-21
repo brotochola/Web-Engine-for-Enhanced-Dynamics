@@ -20358,19 +20358,19 @@
       "id": "N-243",
       "title": "glFrameRecorder rounds draws a frame to 0.1, so per-draw times of layers that redraw in fewer than every frame read about +-8 %",
       "status": "kept-hygiene",
-      "statusText": "fixed 2026-11-20 (289933e0), on fix/n243-recorder-unrounded (R-1712)",
+      "statusText": "fixed 2026-11-20 (289933e0, R-1712); its WebGPU half 2026-11-21 (dff643d5, R-1715), on fix/n243-webgpu-unrounded",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Fixed 2026-11-20 (289933e0): the result's rows hold unrounded rates, their totals and msPerDraw; only the printed table rounds. The WebGPU recorder rounds the same way (left to the main PC).",
-      "next": "webgpuRecorderWorker.mjs rounds draws a frame the same way (WebGPU: the main PC).",
+      "result": "Fixed: glFrameRecorder (289933e0) and webgpuFrameRecorder (dff643d5) keep rates a frame unrounded, with their totals and ms a draw; only the printed tables round.",
       "refs": [],
       "aliases": [
         "recorder draw rounding"
       ],
       "records": [
         "R-1228",
-        "R-1712"
+        "R-1712",
+        "R-1715"
       ]
     },
     {
@@ -23080,10 +23080,10 @@
       "id": "DX-DEBUGUI",
       "title": "The debug UI catches up with the engine: the Layers panel's Vis, blend and alpha work on every render path (they do not today), render views of the buffers the frame is made of (G-buffer normals and heights, light buffer, shadow maps), a sheet's height and normal maps, the lighting grid (light tiles), and panels for the sun, the light pass, the camera and the renderer's counters",
       "status": "open",
-      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed",
+      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed. DBG-1 to DBG-3 fixed 2026-11-21 on the ASUS (R-1716, R-1717, R-1718)",
       "date": "2026-11-18",
       "result": "",
-      "next": "DBG-1 to DBG-3 (the bugs the owner hit) first, then DBG-4 (the same panel); DBG-5 builds the render views that DBG-7 uses; DBG-6 is main-thread only and can run beside them. Estimate: about 15 to 23 h in a row (re-estimated: the first 25 to 36 h summed every range's top). The owner's decisions are in the plan's section 6.",
+      "next": "DBG-4 (the Layers panel lists every layer and says what it is), then DBG-5 (render views) before DBG-7; DBG-6 beside them. DBG-3 left the worldRect stage mesh (3.3.3).",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23097,18 +23097,20 @@
       ],
       "records": [
         "R-1347",
-        "R-1348"
+        "R-1348",
+        "R-1716",
+        "R-1717",
+        "R-1718"
       ],
       "rank": 21
     },
     {
       "id": "DBG-1",
       "title": "The debug UI's Layers panel: unticking Vis does not hide what the layer draws: castedShadows in map mode leaves the sun and lamp maps frozen in the light pass, hidden entities still cast, hidden lighting leaves the unshaded composite, a MESH layer's uvFill mesh ignores it (read, not yet confirmed)",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-21 (b131532c), on fix/dbg1-layer-vis (R-1716)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Confirm each suspect of the plan's section 3.1 (workerHarness or the browser, both backends), then apply visibility to every object that draws the layer's pixels; node test: a hidden castedShadows leaves _sunMapK[3] at 0.",
+      "result": "Fixed: hidden castedShadows clears the shadow maps; hidden entities cast nothing; the unshaded composite and a MESH layer's uvFill mesh follow Vis. Light bench, HD 620: castedShadows hidden 0.00 % -> 10.76 % of the picture.",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -23119,17 +23121,17 @@
         "layers vis"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1716"
       ]
     },
     {
       "id": "DBG-2",
       "title": "The debug UI's Layers panel: the blend selects do nothing: the entities' meshes and the lightEdges meshes set their own blend (nothing inherits the container's), Cont Blend reaches custom layers only, a re-registration restores the config's value, and about 22 of the 33 names draw as normal (no advanced blend modes registered); blendMode becomes a layer setter (SAB plus dirty flag, as alpha and visible)",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-21 (893571c1), on fix/dbg2-layer-blend (R-1718)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Confirm section 3.2; layer.blendMode / containerBlendMode setters applied to every object of the layer; setLayerProps loses its blend fields (no aliases); the list is trimmed to the modes that draw (BLEND_MODES and _BLEND_MODE_STRINGS together; the owner, 2026-11-18; nothing used a removed mode); test:demos too, games see the Layer API.",
+      "result": "Fixed: layer.blendMode, containerBlendMode and zIndex setters (SAB plus a dirty flag) applied to every object of the layer and kept on re-registration; setLayerProps lost its blend fields; BLEND_MODES trimmed to the 11 modes that draw.",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -23141,17 +23143,18 @@
       ],
       "records": [
         "R-1347",
-        "R-1348"
+        "R-1348",
+        "R-1718"
       ]
     },
     {
       "id": "DBG-3",
       "title": "The debug UI's Layers panel: alpha acts as on or off: the entities' opaque pass (E-448/E-502) is dropped for a blend other than normal but not for alpha below 1, so solid pixels stay opaque until alpha 0; the lightEdges and lightingMesh shaders never read uColor; worldRect stage meshes ignore it while the camera moves",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-21 (43d6b7ac), on fix/dbg3-layer-alpha (R-1717); worldRect stage meshes left",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Confirm section 3.3; drop the opaque pass while the layer's alpha is below 1 (a per-frame test); the light's meshes mix by uColor.a (GLSL and WGSL); check by eye that entities under lighting fade with no jump at 0.5; hygiene keep, the suites decide unless the lightEdges scene's drawn frames move.",
+      "result": "Fixed: the light's meshes (lightEdges, the canvas light pass) and the unshaded pixels fade by the layer's alpha; the entities' opaque pass is off while they fade. lightEdges, alpha 0.5: 0.00 % -> 99.84 % of the picture.",
+      "next": "worldRect layers' stage mesh (plan 3.3.3): a GLSL wrapper round the game's fragment so it fades while the camera moves; the lightEdges owner scene's drawn frames on the GTX 1650 (one mix a pixel at alpha 1).",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -23162,7 +23165,8 @@
         "alpha slider"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1717"
       ]
     },
     {
@@ -40716,6 +40720,56 @@
       "title": "Backlog triage: 6 items closed as dropped or superseded (E-171, E-238, E-321, E-352, E-382, E-383), E-210 unblocked; 192 active items read",
       "verdict": "note",
       "text": "**Backlog triage, 2026-11-21 evening: the 192 active items (178 open, 9 running, 5 blocked) read one by one against the register and the code they name.** Most are real and current: 184 of them were filed from 2026-11-10 on, from the trace harvests.\n\nClosed or changed:\n- E-171 dropped: its own record (R-0733) dropped it on 2026-10-29; the status had stayed open.\n- E-238, E-321, E-352 superseded by E-538: Predator's emits are presets, an emit from a preset allocates nothing, and the draws come in batches. The heap samples of E-541 to E-543 show no emit allocation left.\n- E-382, E-383 superseded: they compared DirectionalSprite against main's hand-picked directions, which are gone since DX-LIGHT3D merged.\n- E-210 unblocked: a restored Predator now keeps its state (E-530, E-535; R-1663 ran the mixed battle from a save).\n\nGroups worth one owner each, so the count overstates the work:\n- Chrome's GPU process on light3d: E-407, E-412, E-414, E-415, E-416, E-417, E-428 (and E-340): one trace of GL commands answers most of them.\n- The 3D light pass's shader: E-405, E-406, E-408, E-409, E-410 (register count, divisions, taps): one shader rewrite.\n- The debug UI: DX-DEBUGUI and DBG-1 to DBG-12, one plan.\n- WebGL against WebGPU gaps: E-373, E-465, E-466, E-467, N-155.\n\nStatuses to check with the owner, not changed here: DX-DIRSPRITE, DX-SHADOW3D, DX-DEPTH, DX-SELFSHADOW, DX-EMISSIVE and DX-CASTER have read \"running\" since 2026-11-15, but DX-LIGHT3D merged that day; what is left of each (emissive v2, the casters' second part, the static cache) would be clearer as its own row."
+    },
+    {
+      "id": "R-1715",
+      "date": "2026-11-21",
+      "time": "20:04",
+      "timeFrom": "recorded",
+      "title": "N-243's WebGPU half fixed: webgpuFrameRecorder keeps rates a frame unrounded, with totals and ms a draw",
+      "verdict": "kept-hygiene",
+      "text": "**N-243's WebGPU half fixed: webgpuFrameRecorder's result holds unrounded rates a frame, their totals and ms a draw; only the printed table rounds.** Branch fix/n243-webgpu-unrounded, dff643d5, made on the ASUS by the main PC's session over ssh.\n\n- **Cause:** webgpuRecorderWorker.mjs rounded passes and draws a frame to 0.1, instances to a whole number and ms to 0.001 in the result, as glFrameRecorder did before 289933e0 (R-1712).\n- **Fix:** the GPU pass rows carry passesPerFrame, drawsPerFrame, instancesPerFrame and the ms rates unrounded, with the instance total and, per pass, msPerDraw; the draw rows the same. The frame-span medians are unrounded too. The printed tables round as before.\n- **Checked by a real recording** on the ASUS (Intel HD 620, Chrome 158, bunnyMark ?backend=webgpu, --gpu-draws, 3 s): 18 draws in 69 frames; drawsPerFrame 0.26087 = 18 / 69 (the old result said 0.3, +15 %); msPerDraw 157.7.",
+      "commits": [
+        "dff643d5"
+      ]
+    },
+    {
+      "id": "R-1716",
+      "date": "2026-11-21",
+      "time": "20:22",
+      "timeFrom": "recorded",
+      "title": "DBG-1 fixed: a hidden layer hides all it draws (map shadows cleared, hidden entities cast nothing, unshaded and uvFill follow)",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-1 fixed: the Layers panel's Vis box now hides everything a layer draws.** Branch fix/dbg1-layer-vis (b131532c, on the ASUS, by the main PC's session over ssh), after the probe's commit daafa628.\n\n- **Confirmed on screen before fixing** (layerPropsProbe on the light bench, ?still=1, Intel HD 620): hiding castedShadows changed 0.00 % of the picture in shadow-map mode, so the shadows stood.\n- **Causes and fixes (pixiWorker.js):**\n  - castedShadows in map mode: hiding it stopped the shadow pass, the only code that draws or clears the sun's and the lamps' maps, and the light pass kept sampling them. Hidden, the maps are cleared once; the tick restarts, so the first frame shown again draws them whatever shadowUpdateInterval is.\n  - Hidden entities still cast: the sun and stamp rows are the entities' (pre-render takes them from the render queue). A hidden entities layer now casts nothing, its cookies go too, and volumes still cast. One per-frame check.\n  - Hidden lighting left the unshaded composite on screen with last frame's pixels: hidden with it now.\n  - A MESH layer's uvFill mesh on the stage ignored Vis: it follows it (its instanceCount still says whether it has triangles).\n  - The plan's suspect 3.1.5, confirmed by reading only: in Pixi's own pack mode, entities hidden with their glows shown were packed and shown again with the glows. Hidden again after the pack.\n  - The castedShadows row's tip in map mode says it stands for the maps' shadows.\n- **On screen, old -> new** (light bench ?still=1, HD 620, WebGL and WebGPU gave the same numbers, different pictures): castedShadows hidden 0.00 % -> 10.76 % of the picture (the shadows go); entities hidden 17.82 % -> 28.57 % (their shadows go too); lighting hidden 99.83 % both. Shown again, each step gave the first picture back exactly (0.00 %). The pictures show no shadow left with castedShadows hidden, and bare grass with entities hidden.\n- **dxCaptureScene ?shadowMaps=1 showed nothing either way:** a flat top-down scene, whose casters throw no map shadow at 12 h, 16 h or 22 h. The light bench is the scene for map shadows.\n- **Test:** layerVisibilityPaths.test.js, the real Pixi worker in Node, its passes stubbed: 4 of its 5 tests fail on the old code. Node suite on the ASUS 3434 of 3434.\n- **Not measured:** a bug fix off the hot path (one visibility read a frame), hygiene keep; nothing timed.",
+      "commits": [
+        "daafa628",
+        "b131532c"
+      ]
+    },
+    {
+      "id": "R-1717",
+      "date": "2026-11-21",
+      "time": "20:31",
+      "timeFrom": "recorded",
+      "title": "DBG-3 fixed: a layer's alpha fades the light's meshes, the unshaded pixels and the entities' solid pixels",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-3 fixed: a layer's alpha fades the light's meshes, the unshaded pixels and the entities' solid pixels.** Branch fix/dbg3-layer-alpha (on top of fix/dbg1-layer-vis), on the ASUS, by the main PC's session over ssh.\n\n- **Confirmed on screen before fixing** (layerPropsProbe, Intel HD 620): with lightEdges (light bench ?res=0.5&depth=1) lighting alpha 0.5 and 0.25 changed 0.00 % of the picture, WebGL and WebGPU; the light pass drawn on the canvas (dxCaptureScene, no render target) also 0.00 % at alpha 0.5. The plain light sprite (light bench at res 1) already faded.\n- **Fixes:**\n  - lightEdges.js (GLSL and WGSL): the multiplied halves mix the light toward white by uColor.a (alpha 0 applies no light), the unshaded halves scale by it.\n  - lightingBasic (GLSL and WGSL), the !EDGES output: the same mix, which only matters when the pass is drawn on the canvas (a render target's pass draws at alpha 1).\n  - unshadedComposite.js: scales by uColor.a; the worker gives the unshaded composite the lighting layer's alpha (at creation and on each change), since it makes up for that light.\n  - The entities' opaque pass (E-448) is not allowed while the entities root's alpha is under 1 (a per-frame test in updateSpritesFromRenderQueue); alpha 1 is unchanged.\n- **On screen, before -> after:** lightEdges, lighting alpha 0.5: 0.00 % -> 99.84 % (max 88), alpha 0.25: 0.00 % -> 99.84 % (max 132), WebGL and WebGPU; the canvas pass, alpha 0.5: 0.00 % -> 21.29 % (max 22). Each step gave the first picture back on restore. At lighting 0.5 the shadows show at half strength; at entities 0.5 the grass shows through the entities with no jump.\n- **Not shown on screen:** the opaque pass's gate. That pass is off on Intel's integrated GPUs (E-502), and with ?opaquePass=1 it did not pay in dxCaptureScene (small sprites), so entities alpha read the same before and after there. layerAlphaPaths.test.js covers it on the real worker.\n- **Left:** worldRect layers' stage mesh (plan 3.3.3) still runs the game's own fragment without uColor, so such a layer fades only while its cached picture is shown; a fix needs a GLSL wrapper round the game's shader.\n- **Test:** layerAlphaPaths.test.js (3 tests, all fail on the old code; the shaders by source, as the plan allows for a GPU blend).\n- **Not measured:** the lightEdges halves gain one mix a pixel at alpha 1; a hygiene keep unless the owner scene's drawn frames move on the GTX 1650 (not run: this session's runs are on the ASUS).",
+      "commits": [
+        "43d6b7ac"
+      ]
+    },
+    {
+      "id": "R-1718",
+      "date": "2026-11-21",
+      "time": "20:45",
+      "timeFrom": "recorded",
+      "title": "DBG-2 fixed: layer blendMode, containerBlendMode and zIndex setters, applied to every object of the layer; the blend list trimmed",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-2 fixed: a layer's blend modes and z change at run time and stay changed.** Branch fix/dbg2-layer-blend (on top of fix/dbg3-layer-alpha), on the ASUS, by the main PC's session over ssh.\n\n- **Causes (the plan's section 3.2, all read in the code before fixing):** the panel posted setLayerProps, which set the blend on the layer's display object only; the entities' meshes and the light's meshes set their own, so nothing inherited it; Cont Blend reached custom layers only; the panel never wrote the Layer SAB, so registering a layer's object again (a shader swap, a look composite, the light pass rebuilt) put the config's value back; about 22 of the 33 names drew as normal (Pixi's advanced modes are not registered in this build).\n- **Fix:**\n  - Layer setters for blendMode and containerBlendMode (by name) and zIndex: the config SAB plus a presentation dirty flag (a new Int32 view at the config SAB's end), as alpha and visible. An unknown name throws with the list; a config id out of range throws at registration.\n  - The Pixi worker's syncLayerPresentationFromSharedState applies a dirty layer each frame to every object that draws it: the display object; the entities' batch mesh and edge pass (InstancedSpriteBatch.setLayerBlend; the opaque pass drops itself off 'normal'); a custom layer's pieces drawn into its RT take the container blend; a MESH layer's uvFill mesh on the stage follows the fill mesh (blend and z); the unshaded composite's z follows the light's. _applyLayerPresentation reads the same SAB, so a re-registration keeps them.\n  - setLayerProps keeps only the shader swap and the splat radius (one API, no aliases).\n  - The list is trimmed (the owner's decision 4, 2026-11-18): normal, add, multiply, screen, erase, normal-npm, add-npm, screen-npm, none, min, max; BLEND_MODES renumbered 0 to 10. Nothing in src, demos, tests or the guide used a removed mode (the code names modes, never numbers).\n  - The panel calls the setters. The lighting layer's blend select is off with a tip (its meshes multiply and add by themselves, so a blend on the host would break or do nothing); Cont Blend is off on built-in layers.\n  - types/weed.d.ts and the guide's blend paragraph follow.\n- **Test:** layerBlendPaths.test.js (4 tests: the list, the setters, the worker on run-time changes and a re-registration, setLayerProps without blend fields) and layerBlendSinglePass.test.js's run-time case through the setter: 5 fail on the old code.\n- **Not measured:** off the hot path (a dirty-flag loop over the layers a frame); hygiene keep.\n- **On screen** (layerPropsProbe, dxCaptureScene ?hour=16&deco=1&shade=1, Intel HD 620, WebGL and WebGPU alike; the old code had no setter to probe): entities blendMode add changed 1.21 % of the picture (max 70: white balls over the floor), multiply 3.70 % (max 255); the overlay decorations' layer add 6.08 % (the black squares vanish); the MESH layer's add 11.17 % and zIndex -1 11.17 % (under the ground). Each step gave the first picture back on restore (0.00 %).",
+      "commits": [
+        "830450f4",
+        "893571c1"
+      ]
     }
   ],
   "leads": [
