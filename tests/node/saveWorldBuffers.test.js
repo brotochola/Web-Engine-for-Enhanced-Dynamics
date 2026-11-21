@@ -366,10 +366,10 @@ describe('world buffer apply', { concurrency: false }, () => {
     const Host = { name: 'Host', _componentClassMap: { Marked } };
     Marked.initializeArrays(new SharedArrayBuffer(Marked.getBufferSize(4)), 4);
     Marked.note[1] = 5;
-    // E-539: the saved entities 11 and 12 came back at 1 and 2; 5 at 2 and 0 at 4; 9 did not come back.
+    // E-539: the saved entities 11 and 12 came back at 1 and 2; 5 at 2 and 0 at 4; 9 did not come back. The live
+    // schema says which fields hold ids (the save's flags are not asked: this save was made before they were marked).
     const table = entityTable('Host', [11, 12], {
       TargetComp: {
-        entityId: ['target', 'targets'],
         fields: {
           target: Uint16Array.of(5, 9),
           targets: Uint16Array.of(0, entityIdNone, entityIdNone, entityIdNone),

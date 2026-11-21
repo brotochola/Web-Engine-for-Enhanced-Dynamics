@@ -222,15 +222,19 @@ function warnDrift(EntityClass, ComponentClass) {
   console.warn(`[SaveGame] schema drift for ${ComponentClass.name} on ${EntityClass.name}; applying best-effort`);
 }
 
-/** The live array a saved field of ComponentClass goes to, or null: a schema field, or a Box2D heap column. */
+/**
+ * The live array a saved field of ComponentClass goes to, or null: a schema field (with its length and whether it holds
+ * entity ids now, which decides the remap), or a Box2D heap column.
+ */
 function liveColumnOf(ComponentClass, fieldName) {
   const schema = ComponentClass.ARRAY_SCHEMA;
   if (Object.prototype.hasOwnProperty.call(schema, fieldName)) {
-    return { arr: ComponentClass[fieldName] || null, length: Component._schemaEntry(schema[fieldName]).length };
+    const spec = Component._schemaEntry(schema[fieldName]);
+    return { arr: ComponentClass[fieldName] || null, length: spec.length, entityId: spec.entityId };
   }
   if ((ComponentClass === Transform && POSE_FIELDS.includes(fieldName)) ||
     (ComponentClass === RigidBody && VELOCITY_FIELDS.includes(fieldName))) {
-    return { arr: ComponentClass[fieldName] || null, length: 1 };
+    return { arr: ComponentClass[fieldName] || null, length: 1, entityId: false };
   }
   return null;
 }
@@ -309,7 +313,7 @@ export class EntityRestorePlan {
         }
         const live = liveColumnOf(ComponentClass, field.name);
         if (live === null || live.arr === null) continue;
-        if (field.entityId === true) {
+        if (live.entityId) {
           this.idLive.push(live.arr);
           this.idSaved.push(values);
           this.idLiveLength.push(live.length);
