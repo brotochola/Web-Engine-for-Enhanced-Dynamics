@@ -6,6 +6,29 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 21 November 2026 (night) — A Battle That Leaves Almost Nothing Behind
+
+The ECS pass ended with two leftovers in Predator's shot: the bullet's own config object and the sound's numbers. Both
+are gone, and so is most of what the logic worker still threw away.
+
+**Bullets from presets.** A weapon's bullet is now defined once, with its look, its trail and its damage, and each shot
+passes only its place, its velocity and its shooter (E-541). The call is small enough for V8 to inline even into a
+function that has used up its inlining budget, which is exactly where the shot lives. In Predator's mixed battle the
+shot went from 34 KB of garbage a frame to 5–8 KB.
+
+**A sound without heap numbers.** Every sound played wrote its gain and pan into a shared object, and passed doubles to
+calls V8 did not inline. Each of those doubles became a small heap object (E-542). `play` now writes its numbers into a
+typed array and passes only integers along. The camera has a form of `worldToScreen` that works in place, and the pitch
+draw writes into the array too. Because `play` is now small enough to inline, the shot stopped boxing the muzzle
+position it passes to it, so the rest of the shot's garbage disappeared with it.
+
+**The soldiers' own code.** What was left came from the demo: the soldier's states kept the target's distance in an
+object field and passed it as a double. It travels in a typed array now, with the same comparisons (E-543).
+
+**All together:** in Predator's mixed battle the logic worker went from 49 KB of garbage a frame to about 1 KB, after
+starting the day at 440 KB. The Predator gate for the engine changes found no worker slower. Logic read 4.6 % cheaper,
+but that is not claimed: one load key, the decal tiles dirtied by blood, varied too much between runs.
+
 ## Saturday 21 November 2026 (evening) — The ECS Way, Finished
 
 Friday morning ended with a list of what still made an object on the ECS way. The owner approved the order, and the
