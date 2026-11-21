@@ -56,6 +56,35 @@ Flash.spawn({
 
 `Flash.spawn` returns the `Flash` instance, or `null` if the pool is exhausted, not initialized, off-screen, or spawn was routed away. `Flash.spawnIndex` (the same config) returns the flash's entity index, or -1, and makes no instance: a gunfight's flashes make no object.
 
+### Presets
+
+A flash fired on every shot or hit is a preset: its config compiled once, at module level, and spawned with only what
+varies. A spawn from a preset allocates nothing (no config object per shot); `spawnIndex(config)` is the one-off form,
+and writes the same light from the same keys.
+
+```javascript
+const { Flash } = WEED;
+
+// Once, when the module loads.
+const IMPACT_FLASH = Flash.define({ lifespan: 18, color: 0xffee00, radius: 707, glow: 0.1 });
+const SPARK_FLASH = Flash.define({ lifespan: 18, color: 0xffee00, castShadows: false });
+
+function flashTheHit(hitX, hitY) {
+  Flash.spawnPreset(IMPACT_FLASH, hitX, hitY);
+  // A spark of random strength: its reach and its halo for this spawn only.
+  const strength = 1000 + WEED.rng() * 1000;
+  Flash.withRadius(10 * Math.sqrt(strength)).withGlow(strength / 50000).spawnPreset(SPARK_FLASH, hitX, hitY);
+}
+```
+
+- **`Flash.define(config)`** takes `spawnIndex`'s keys, with its defaults; the position may be left out. A key a flash
+  does not have throws a `TypeError` when the module loads. It returns the preset's id, which belongs to the thread
+  that defined it (define it in the module that uses it).
+- **`Flash.spawnPreset(preset, x, y, z, direction)`** returns the flash's entity index, or -1 (as `spawnIndex`). Each
+  argument left `undefined` keeps the preset's value.
+- **`Flash.withRadius(px)`, `Flash.withGlow(alpha)`** set the next flash's starting reach and halo, whatever its preset
+  or config says, then clear.
+
 ### When to disable shadows
 
 Short muzzle flashes burn shadow budget for almost no visible benefit. Prefer lighting-only:
@@ -76,8 +105,10 @@ Keep `castShadows: true` (default) for longer / dramatic flashes (explosions, li
 
 ## Lifecycle
 
-1. `Flash.spawn` fills an internal spawn scratch and calls `GameObject.spawn` (not `this.spawn`, which would recurse).
-2. `onSpawned` writes `LightEmitter` (including `castShadows`) + `FlashComponent`.
+1. `Flash.spawnIndex` compiles its config into the spawn's row of numbers (`spawnPreset` copies its preset's row and
+   its arguments over it) and calls `GameObject.spawnIndex` (not `this.spawnIndex`, which would recurse) with a config
+   of no keys; from the page it posts a full config, which the worker compiles again.
+2. `onSpawned` writes `LightEmitter` (including `castShadows`) + `FlashComponent` from the row.
 3. Logic `tick` advances `currentLife`, fades the light (`radius = initialRadius * sqrt(left)`, `glow = initialGlow * left`, with `left = 1 - life/lifespan`), despawns when expired.
 4. `onDespawned` clears light/flash active flags; the pool's reset puts the light's defaults back (`castShadows` → `1`).
 

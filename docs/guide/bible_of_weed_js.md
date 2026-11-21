@@ -257,7 +257,7 @@ Every entity can be written as objects (methods on the instance, `this` the enti
 | The sprite, its animation, its look | `this.setAnimation('walk')`, `this.setTint(c)`, `this.setAlpha(a)` | `SpriteRenderer.setAnimation(i, 'walk')`, `SpriteRenderer.setTint(i, c)`, `SpriteRenderer.setAlpha(i, a)` |
 | The collider's size | `this.collider.radius = r` | `Collider.setRadius(i, r)` (a write to `Collider.radius[i]` does not reach Box2D) |
 | Where it faces | `this.directionalSprite.facing = a` | `DirectionalSprite.setFacing(i, a)` |
-| A muzzle flash | `Flash.spawn({ x, y })` | `Flash.spawnIndex({ x, y })` |
+| A muzzle flash | `Flash.spawn({ x, y })` | `Flash.spawnIndex({ x, y })`, or a preset: `Flash.spawnPreset(MUZZLE_FLASH, x, y)` |
 | Do something later | `setTimeout(() => this.open(), 500)` | a column with the time it is due, on the scene's clock (`Time.simNowMs`), checked in `tickAll` |
 | Neighbours | `this.neighborCount`, `this.getNeighbor(k)` | `Grid.getNeighborCount(i)`, `Grid.getNeighbor(i, k)`; in a hot loop the row itself (below) |
 | Its FSMs | `this.walkFSM.tick(dtRatio)` | `FSM.tickAll(list, count, dtRatio, this)` |
@@ -1422,6 +1422,12 @@ WEED.ParticleEmitter.emitZenithal({
   speed: { min: 2, max: 10 },
   stayOnTheFloor: true,
 });
+// A burst fired again and again (a shot's sparks) is a preset: defined once, at module level, then emitted with what
+// varies (x, y, z, count, dirX, dirY; undefined keeps the preset's). The same particles as the literal emit, nothing
+// allocated per shot. withVz / withFlip / withScaleFactor / withAlphaFactor / withSpeedFactor chain before it for the
+// next emit only. See docs/guide/PARTICLES.md, "Presets".
+const SPARKS = WEED.ParticleEmitter.define({ texture: 'spark', spread: 0.2, speed: { min: 2, max: 8 }, lifespan: 150 });
+WEED.ParticleEmitter.emitPreset(SPARKS, this.x, this.y, -20, 12, aimX, aimY);
 
 // Flashes — pooled LightEmitter + FlashComponent (see docs/guide/FLASHES.md)
 // Needs lighting.maxFlashes > 0. Shares lighting.maxLights with persistent lights.
@@ -1434,6 +1440,9 @@ WEED.Flash.spawn({
   radius: 1000,
   castShadows: false, // default true; false = lighting only (cheap muzzle)
 });
+// Fired on every shot: a preset (module level), spawned with x, y, z, direction (withRadius / withGlow for one spawn).
+const MUZZLE_FLASH = WEED.Flash.define({ lifespan: 50, color: 0xffaa00, radius: 1000, castShadows: false });
+WEED.Flash.spawnPreset(MUZZLE_FLASH, this.x, this.y, 30);
 
 // Query (same call from Scene and GameObject). Box2d.queryAABB is fixtures; Query.query is ECS.
 const all = Query.query([WEED.Transform, WEED.Collider]); // all matching slots, active or inactive
@@ -1516,7 +1525,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A flashlight that turns with the hero's flip | `followFlip = 1` (mirrors `offsetX` and `direction` with `flipX`) |
 | A light that casts no shadow (cheaper) | `castShadows = false` |
 | Shadows that stop short (cheaper) | `shadowRange = 400` (px; default 0: the radius) |
-| A short burst (a shot, a spark) | `Flash.spawn({ x, y, radius, color, glow, lifespan, castShadows })` (needs `lighting.maxFlashes`) |
+| A short burst (a shot, a spark) | `Flash.spawn({ x, y, radius, color, glow, lifespan, castShadows })` (needs `lighting.maxFlashes`); one fired on every shot: `Flash.define(config)` once, `Flash.spawnPreset(preset, x, y)` per shot |
 | A sprite that casts a shadow | `ShadowCaster` in its components: its silhouette, from the sun and the lamps (`setSprite()` says it again) |
 | A longer or a shorter shadow | `this.shadowCaster.setSprite({ heightScale: 1.5 })` |
 | Another silhouette than the sprite (a tree whose branches are decorations) | `this.shadowCaster.setSprite({ frame: 'treeSilhouette' })` |
