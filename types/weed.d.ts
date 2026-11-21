@@ -1632,7 +1632,11 @@ export declare class GameObject {
   ): void;
   static entityType: number | null;
   static scene: Scene | null;
-  static instances: GameObject[];
+  /**
+   * The realm's instances by entity index (on a class: its own, by index - startIndex). Empty until the realm's first
+   * instance, which allocates the table whole (null where a slot has none yet): a scene written ECS-style allocates none.
+   */
+  static instances: Array<GameObject | null>;
   /** The scene's config, for code that holds an index (a static tickAll or hook): what an entity's `this.config` reads. */
   static readonly config: SceneConfig;
   index: number;

@@ -42,8 +42,10 @@ async function bootLogic() {
 test('a logic worker makes no instance at boot, and writes every slot\'s type and "not active"', { concurrency: false }, async () => {
   const lw = await bootLogic();
   assert.equal(lw.gameObjects.filter((o) => o !== null).length, 0, 'no instance made');
-  assert.equal(Walker.instances.length, N);
-  assert.ok(Walker.instances.every((o) => o === null));
+  // E-540: nor a table for them: the first instance allocates it.
+  assert.equal(lw.gameObjects.length, 0);
+  assert.equal(lw.gameObjects, GameObject.instances, 'the worker\'s table is the realm\'s');
+  assert.equal(Walker.instances.length, 0);
   assert.ok(Transform.active.subarray(0, N).every((a) => a === 0), 'every slot not active');
   assert.ok(Transform.entityType.subarray(0, N).every((t) => t === 0), 'every slot typed');
 });

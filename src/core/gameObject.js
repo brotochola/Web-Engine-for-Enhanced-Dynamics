@@ -677,6 +677,23 @@ function inheritsEngineMember(proto, key) {
 const EMPTY_CONFIG = Object.freeze({});
 
 /**
+ * E-540: an instance table before its realm's first instance: empty, and of the elements kind a full one has
+ * (HOLEY_ELEMENTS, as `new Array(n).fill(null)` makes), so the tick loops' loads from either see one map. An empty
+ * literal is PACKED_SMI_ELEMENTS: another map, and a polymorphic load.
+ * @returns {Array<GameObject|null>}
+ */
+export function emptyInstanceTable() {
+  const table = new Array(1).fill(null);
+  table.length = 0;
+  return table;
+}
+
+/** E-540: an instance table of `slots` nulls, allocated by the first instance it holds. */
+function fullInstanceTable(slots) {
+  return new Array(slots).fill(null);
+}
+
+/**
  * E-165: this realm's LogicWorker, which binds itself when it is made. `self.logicWorker` is a load through the
  * worker's global proxy that V8 leaves slow: in spawnStormScene the spawn and despawn lines that read it were about a
  * third of logic (Wave 9's map). Null on the page and in the other workers, which read the global as before.
@@ -866,7 +883,16 @@ export class GameObject {
 
   static globalEntityCount = 0;
 
-  static instances = [];
+  /**
+   * This realm's instances by entity index (a logic worker's this.gameObjects is the same array), and each class's by
+   * its slot (EntityClass.instances[i - startIndex]). E-540: empty until the realm's first instance, which allocates the
+   * table whole (_instanceTable, _classInstanceTable): an ECS scene, which makes none, allocates none. A missing entry
+   * reads undefined, a slot not made yet null.
+   */
+  static instances = emptyInstanceTable();
+
+  /** E-540: the slots GameObject.instances takes when the realm's first instance allocates it (the realm's entities). */
+  static _instanceSlots = 0;
 
   /**
    * E-209: this realm's maker of the instance at an entity index on its first use (a logic worker's, the page's), or
@@ -874,6 +900,37 @@ export class GameObject {
    * @type {((entityIndex: number) => GameObject|null)|null}
    */
   static _makeAt = null;
+
+  /**
+   * E-540: a realm's instance tables, empty until its first instance: GameObject.instances for `slots` entities, and
+   * each class's own (the realm's registration gives each class an empty one).
+   * @param {number} slots
+   */
+  static _useInstanceTables(slots) {
+    GameObject.instances = emptyInstanceTable();
+    GameObject._instanceSlots = slots | 0;
+  }
+
+  /** E-540: GameObject.instances, allocated whole (nulls) on the realm's first instance. */
+  static _instanceTable() {
+    let table = GameObject.instances;
+    if (table.length === 0 && GameObject._instanceSlots > 0) {
+      table = GameObject.instances = fullInstanceTable(GameObject._instanceSlots);
+    }
+    return table;
+  }
+
+  /**
+   * E-540: class C's own instance table (C.instances, by i - C.startIndex), allocated whole on its first instance; an
+   * own empty one for a class whose registration gave it none (it would read its parent's).
+   * @param {Function} C
+   * @param {number} [slots] its pool's size (C.poolSize)
+   */
+  static _classInstanceTable(C, slots = C.poolSize) {
+    let table = Object.prototype.hasOwnProperty.call(C, 'instances') ? C.instances : (C.instances = emptyInstanceTable());
+    if (table.length === 0 && (slots | 0) > 0) table = C.instances = fullInstanceTable(slots | 0);
+    return table;
+  }
 
   /**
    * Main thread only: current `Scene` reference, set in `Scene.exposeGlobalReferences()`.
@@ -1304,10 +1361,12 @@ export class GameObject {
         Transform.entityType[index] = Ctor.entityType || 0;
         Transform.active[index] = 0;
       }
-      // E-209: at its index (instances are made on first use, in any order).
-      GameObject.instances[index] = this;
-      if (Ctor.startIndex === undefined || Ctor.startIndex === null) Ctor.instances.push(this);
-      else Ctor.instances[index - Ctor.startIndex] = this;
+      // E-209: at its index (instances are made on first use, in any order). E-540: the realm's first instance, and a
+      // class's, allocate their tables.
+      GameObject._instanceTable()[index] = this;
+      const own = GameObject._classInstanceTable(Ctor);
+      if (Ctor.startIndex === undefined || Ctor.startIndex === null) own.push(this);
+      else own[index - Ctor.startIndex] = this;
     }
 
     if (Grid._stride && Grid.neighborData) {
