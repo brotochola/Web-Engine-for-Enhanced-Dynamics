@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// E-538, E-541: the preset fronts a game calls per shot stay small enough for V8 to inline them whatever the caller's budget
+// E-538, E-541, E-542: the preset fronts and SoundManager.play, which a game calls per shot, stay small enough for V8 to inline them whatever the caller's budget
 // when they are passed a heap number (75 bytes of bytecode or less: setterBytecodeSize.test.js has the rule). Inlined,
 // they write their doubles into a Float64Array and call a core with the preset's id; left out, the caller boxes every
 // double it passes them. The cores (ParticleEmitter._emitRow, Flash._spawnRow, BulletPool._spawnIn) are past TurboFan's 460-byte inline
@@ -45,6 +45,7 @@ test('the preset fronts stay under V8\'s inline size for a callee passed a heap 
   const fronts = [
     ['emitPreset', ['emitPreset']],
     ['spawnPreset', ['spawnPreset']],
+    ['play', ['play']],
     ['with*', ['withVz', 'withFlip', 'withScaleFactor', 'withAlphaFactor', 'withSpeedFactor', 'withRadius', 'withGlow']],
   ];
   for (const [filter, names] of fronts) {

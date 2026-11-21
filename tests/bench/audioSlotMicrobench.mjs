@@ -16,6 +16,15 @@ import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchH
 // Shipped claim. `buslist` keeps a per-bus slot list and the two quietest
 // voices so a full bus does not walk every other bus's slots.
 const originalWriteSlot = SoundManager._writeSlot.bind(SoundManager);
+
+/** A claim for a play of (volume, pitch, pan): _writeSlot reads them from SoundManager._playArgs, which play() fills (E-542). */
+function writeSlot(audioId, volume, pitch, pan, loop, bus = 0) {
+  const f = SoundManager._playArgs;
+  f[0] = volume;
+  f[1] = pitch;
+  f[2] = pan;
+  return SoundManager._writeSlot(audioId, loop, bus);
+}
 let busListOn = false;
 let busLists = null;
 let busCount = null;
@@ -158,12 +167,13 @@ function retuneStolen(bus, slot, volume) {
   secondVol[bus] = Infinity;
 }
 
-function writeSlotBusList(audioId, volume, pitch, pan, loop, channelIndex = 0) {
+function writeSlotBusList(audioId, loop, channelIndex = 0) {
+  const volume = SoundManager._playArgs[0];
   const i32 = SoundManager._i32;
   const f32 = SoundManager._f32;
   if (!i32 || !f32) return -1;
   const chI = SoundManager._channelI32;
-  if (!chI) return originalWriteSlot(audioId, volume, pitch, pan, loop, channelIndex);
+  if (!chI) return originalWriteSlot(audioId, loop, channelIndex);
 
   const H = SoundManager.HEADER_SIZE;
   const S = SoundManager.SLOT_SIZE;
@@ -177,7 +187,7 @@ function writeSlotBusList(audioId, volume, pitch, pan, loop, channelIndex = 0) {
   const claim = (slot, from) => {
     const b = H + slot * S;
     if (Atomics.compareExchange(i32, b, from, SoundManager.STATE_CLAIMING) !== from) return -1;
-    SoundManager._fillSlot(b, audioId, volume, pitch, pan, loop, bus);
+    SoundManager._fillSlot(b, audioId, loop, bus);
     const stored = f32[b + 4];
     if (from === FREE) {
       const idx = busCount[bus];
@@ -295,10 +305,10 @@ async function contenderMain(data) {
   VARIANTS[data.variant]();
   SoundManager.initializeSlotSAB({ sab: data.sab, maxSlots: data.maxSlots });
   const go = new Int32Array(data.go);
-  for (let i = 0; i < 200; i++) SoundManager._writeSlot(7, 0.5, 1, 0, false);
+  for (let i = 0; i < 200; i++) writeSlot(7, 0.5, 1, 0, false);
   Atomics.add(go, 1, 1);
   Atomics.wait(go, 0, 0);
-  for (let i = 0; i < data.calls; i++) SoundManager._writeSlot(7, 0.5, 1, 0, false);
+  for (let i = 0; i < data.calls; i++) writeSlot(7, 0.5, 1, 0, false);
   parentPort.postMessage('done');
 }
 
@@ -349,7 +359,7 @@ function setupStorm() {
   if (busListOn) resetBusList();
   for (let bus = 0; bus < STORM_CAPS.length; bus++) {
     for (let i = 0; i < STORM_CAPS[bus]; i++) {
-      const slot = SoundManager._writeSlot(i + 1, STORM_VOLS[i & 3], 1, 0, 0, bus);
+      const slot = writeSlot(i + 1, STORM_VOLS[i & 3], 1, 0, 0, bus);
       if (slot < 0) throw new Error(`storm fill failed bus ${bus} at ${i}`);
     }
   }
@@ -397,7 +407,7 @@ function stormScript() {
   for (let n = 0; n < 240; n++) {
     const bus = STORM_BUSES[n % 3];
     const vol = STORM_VOLS[n & 3];
-    const slot = SoundManager._writeSlot(1000 + n, vol, 1, 0, 0, bus);
+    const slot = writeSlot(1000 + n, vol, 1, 0, 0, bus);
     if (slot < 0) drops++;
     let freed = -1;
     if ((n & 7) === 7) {
@@ -419,7 +429,7 @@ function stormScript() {
 
 function stormHot() {
   for (let i = 0; i < 8; i++) {
-    SoundManager._writeSlot(7, STORM_VOLS[i & 3], 1, 0, 0, STORM_BUSES[i % 3]);
+    writeSlot(7, STORM_VOLS[i & 3], 1, 0, 0, STORM_BUSES[i % 3]);
   }
   const victim = lowestPlaying(STORM_BUSES[0]);
   if (victim >= 0) releaseSlot(victim);
@@ -443,7 +453,7 @@ async function main() {
     let claimed = 0;
     let dropped = 0;
     const call = () => {
-      const s = SoundManager._writeSlot(7, 0.5, 1, 0, false);
+      const s = writeSlot(7, 0.5, 1, 0, false);
       if (s >= 0) {
         claimed++;
         Atomics.store(i32, H + s * S, SoundManager.STATE_FREE);

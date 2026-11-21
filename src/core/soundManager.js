@@ -17,13 +17,16 @@
 //     +7 channel (Int32)   bus in bits 0..7, per-bus list index in bits 8..23
 
 import { AUDIO_DEFAULTS } from '../util/configDefaults.js';
-import { rng } from '../util/utils.js';
+import { rngInto } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { fetchAssetRead } from '../util/fetchAsset.js';
 
-// E-285: the play being written (volume, pitch, pan), for _claimListed and _claimScanned: the slot writers once built a
-// closure over their arguments per play (a context, the arrow, the doubles boxed: audioStorm's logic 7.3 MB/s).
-const PLAY_F = new Float64Array(3);
+// E-285, E-542: the play being written. 0 volume, 1 pitch, 2 pan: what _fillSlot stores. 3 the volume asked, 6 and 7
+// the world point (then its screen point): what play() was given; 4 rateMin, 5 rateMax (_playIn writes them), 8 the
+// spatial gain. No double crosses a call on play's path: the slot writers once built a closure over their arguments per
+// play (audioStorm's logic 7.3 MB/s), and TurboFan boxes a double passed to a callee it leaves out or stored in a
+// scratch object's field (Predator's battle: 7.7 KB a frame on each logic worker).
+const PLAY_F = new Float64Array(9);
 
 export class SoundManager {
   static _enabled = true;
@@ -120,9 +123,8 @@ export class SoundManager {
   static _muted = false;
   static _savedMasterVolume = 1.0;
 
-  // Spatial culling / panning
-  static _spatialResult = { audible: 1, gain: 1, pan: 0 };
-  static _spatialScreen = { x: 0, y: 0 };
+  /** PLAY_F, for tests and kernels: the slot writers read the play's volume, pitch and pan from [0..2] (E-542). */
+  static _playArgs = PLAY_F;
 
   // Autoplay gate
   static _audioUnlocked = false;
@@ -618,17 +620,25 @@ export class SoundManager {
 
   // ─── Playback (works from both workers and main thread) ────────────────────
 
-  static play(
-    nameOrId,
-    volume = 1,
-    rateMin = 1,
-    rateMax = rateMin,
-    loop = 0,
-    mute = 0,
-    worldX = Number.NaN,
-    worldY = Number.NaN,
-    channel
-  ) {
+  /**
+   * Play a sound; its slot, or -1 (disabled, unknown, inaudible, or dropped by a full bus). volume defaults to 1, rateMin
+   * to 1, rateMax to rateMin, and worldX/worldY to none (not spatial): a number left out or not finite takes its default.
+   *
+   * E-542: a front, so a caller out of inlining budget (a game object's shot) still inlines it. It writes what a game
+   * computes, the volume and the world point, into PLAY_F and passes the rest to _playIn: a double computed by the
+   * caller and passed to a call TurboFan leaves out is boxed, and the rates are constants in every caller here (each
+   * stored number costs 9 bytes of bytecode, an argument 3: keep it under the fronts test's size).
+   */
+  static play(nameOrId, volume, rateMin, rateMax, loop, mute, worldX, worldY, channel) {
+    const f = this._playArgs; // through the class: a bundle's module context would widen the operand
+    f[3] = volume;
+    f[6] = worldX;
+    f[7] = worldY;
+    return this._playIn(nameOrId, rateMin, rateMax, loop, mute, channel);
+  }
+
+  /** play()'s core: the volume and world point in PLAY_F[3], [6], [7]; integers and the name across every call it makes. */
+  static _playIn(nameOrId, rateMin, rateMax, loop, mute, channel) {
     if (!this._enabled) return -1;
 
     const soundDefId = this._resolveSoundId(nameOrId);
@@ -637,14 +647,18 @@ export class SoundManager {
     const channelIndex = this._resolveChannel(channel);
     if (channelIndex < 0) return -1;
 
-    const spatial = this._computeSpatial(worldX, worldY);
-    if (!spatial.audible) return -1;
+    if (!this._computeSpatial()) return -1;
 
-    const finalVolume = mute ? 0 : (Number.isFinite(volume) ? volume : 1) * spatial.gain;
+    const f = PLAY_F;
+    const volume = f[3];
+    const finalVolume = mute ? 0 : (Number.isFinite(volume) ? volume : 1) * f[8];
     if (!mute && !(finalVolume > 0)) return -1;
 
-    const playbackRate = this._resolveRateRange(rateMin, rateMax);
-    return this._writeSlot(soundDefId, finalVolume, playbackRate, spatial.pan, !!loop, channelIndex);
+    f[0] = finalVolume;
+    f[4] = rateMin;
+    f[5] = rateMax;
+    this._resolveRateRange();
+    return this._writeSlot(soundDefId, !!loop, channelIndex);
   }
 
   static stop(nameOrId) {
@@ -991,13 +1005,14 @@ export class SoundManager {
 
   // ─── Private ──────────────────────────────────────────────────────────────
 
-  static _fillSlot(b, audioId, volume, pitch, pan, loop, channelIndex) {
+  /** Fill slot word `b` with the play in PLAY_F[0..2] (volume, pitch, pan) and publish it PLAYING. */
+  static _fillSlot(b, audioId, loop, channelIndex) {
     const i32 = this._i32;
     const f32 = this._f32;
     i32[b + 1] = audioId;
-    f32[b + 2] = pitch;
-    f32[b + 3] = pan;
-    f32[b + 4] = volume;
+    f32[b + 2] = PLAY_F[1];
+    f32[b + 3] = PLAY_F[2];
+    f32[b + 4] = PLAY_F[0];
     i32[b + 5] = loop ? 1 : 0;
     f32[b + 6] = 0;
     i32[b + 7] = channelIndex | 0;
@@ -1067,9 +1082,11 @@ export class SoundManager {
     this._channelF32[tail + 5] = sV;
   }
 
-  static _rememberVoice(bus, tail, slot, volume) {
+  /** Note `slot`, just claimed on the bus, among its two quietest voices (its volume read from the slot: E-542). */
+  static _rememberVoice(bus, tail, slot) {
     const chI = this._channelI32;
     const chF = this._channelF32;
+    const volume = this._f32[this.HEADER_SIZE + slot * this.SLOT_SIZE + 4];
     const count = chI[tail + 1] | 0;
     const qS = chI[tail + 2] | 0;
     if (qS < 0) {
@@ -1101,9 +1118,11 @@ export class SoundManager {
     }
   }
 
-  static _retuneStolen(tail, slot, volume) {
+  /** The bus's quietest pair after `slot` was stolen and refilled (its volume read from the slot: E-542). */
+  static _retuneStolen(tail, slot) {
     const chI = this._channelI32;
     const chF = this._channelF32;
+    const volume = this._f32[this.HEADER_SIZE + slot * this.SLOT_SIZE + 4];
     const sS = chI[tail + 4] | 0;
     const sV = chF[tail + 5];
     if (sS >= 0 && volume < sV) {
@@ -1146,27 +1165,28 @@ export class SoundManager {
     }
   }
 
-  static _writeSlot(audioId, volume, pitch, pan, loop, channelIndex = 0) {
+  /** Claim a slot for the play in PLAY_F[0..2] (volume, pitch, pan) on bus `channelIndex`; the slot or -1. */
+  static _writeSlot(audioId, loop, channelIndex = 0) {
     const chI = this._channelI32;
     if (!chI || chI.length < this._tailBase() + this._tailWords()) {
-      return this._writeSlotScan(audioId, volume, pitch, pan, loop, channelIndex);
+      return this._writeSlotScan(audioId, loop, channelIndex);
     }
     const bus = channelIndex | 0;
     let maxV = chI[this.CHANNEL_HEADER + bus * this.CHANNEL_STRIDE + 2] >> 8;
     if (maxV < 1) maxV = this.maxVoicesPerChannel;
     if (maxV > this.LIST_CAP) {
-      return this._writeSlotScan(audioId, volume, pitch, pan, loop, channelIndex);
+      return this._writeSlotScan(audioId, loop, channelIndex);
     }
     const tail = this._tail(bus);
     this._lockBus(chI, tail);
     try {
-      return this._writeSlotListed(audioId, volume, pitch, pan, loop, bus, tail, maxV);
+      return this._writeSlotListed(audioId, loop, bus, tail, maxV);
     } finally {
       this._unlockBus(chI, tail);
     }
   }
 
-  static _writeSlotListed(audioId, volume, pitch, pan, loop, bus, tail, maxV) {
+  static _writeSlotListed(audioId, loop, bus, tail, maxV) {
     const i32 = this._i32;
     const chI = this._channelI32;
     const chF = this._channelF32;
@@ -1177,9 +1197,7 @@ export class SoundManager {
     const PLAYING = this.STATE_PLAYING;
 
     this._reclaimDeadVoices(bus, tail);
-    PLAY_F[0] = volume;
-    PLAY_F[1] = pitch;
-    PLAY_F[2] = pan;
+    const volume = PLAY_F[0];
 
     const count = chI[tail + 1] | 0;
     if (count >= maxV) {
@@ -1246,7 +1264,6 @@ export class SoundManager {
   static _claimListed(slot, from, audioId, loop, bus, tail) {
     if (slot < 0) return -1;
     const i32 = this._i32;
-    const f32 = this._f32;
     const chI = this._channelI32;
     const b = this.HEADER_SIZE + slot * this.SLOT_SIZE;
     let idx;
@@ -1270,14 +1287,13 @@ export class SoundManager {
       return -1;
     }
     // Word 7 is final before _fillSlot publishes PLAYING.
-    this._fillSlot(b, audioId, PLAY_F[0], PLAY_F[1], PLAY_F[2], loop, bus | (idx << 8));
-    const stored = f32[b + 4];
+    this._fillSlot(b, audioId, loop, bus | (idx << 8));
     if (from === this.STATE_FREE) {
       chI[tail + this.TAIL_META + idx] = slot;
       chI[tail + 1] = idx + 1;
-      this._rememberVoice(bus, tail, slot, stored);
+      this._rememberVoice(bus, tail, slot);
     } else {
-      this._retuneStolen(tail, slot, stored);
+      this._retuneStolen(tail, slot);
     }
     this._raiseHighWater(slot);
     return slot;
@@ -1302,15 +1318,16 @@ export class SoundManager {
       Atomics.store(i32, b, this.STATE_PLAYING);
       return -1;
     }
-    this._fillSlot(b, audioId, PLAY_F[0], PLAY_F[1], PLAY_F[2], loop, bus);
+    this._fillSlot(b, audioId, loop, bus);
     this._raiseHighWater(slot);
     return slot;
   }
 
-  static _writeSlotScan(audioId, volume, pitch, pan, loop, channelIndex = 0) {
+  static _writeSlotScan(audioId, loop, channelIndex = 0) {
     const i32 = this._i32;
     const f32 = this._f32;
     if (!i32 || !f32) return -1;
+    const volume = PLAY_F[0];
 
     const H = this.HEADER_SIZE;
     const S = this.SLOT_SIZE;
@@ -1326,7 +1343,7 @@ export class SoundManager {
       for (let s = 0; s < max; s++) {
         const b = H + s * S;
         if (Atomics.load(i32, b) === FREE && Atomics.compareExchange(i32, b, FREE, CLAIMING) === FREE) {
-          this._fillSlot(b, audioId, volume, pitch, pan, loop, bus);
+          this._fillSlot(b, audioId, loop, bus);
           return s;
         }
       }
@@ -1361,9 +1378,6 @@ export class SoundManager {
       }
     }
 
-    PLAY_F[0] = volume;
-    PLAY_F[1] = pitch;
-    PLAY_F[2] = pan;
     if (onBus < maxV) {
       if (free >= 0) {
         const got = this._claimScanned(free, FREE, audioId, loop, bus);
@@ -1492,14 +1506,18 @@ export class SoundManager {
     this._touchAssets();
   }
 
-  static _resolveRateRange(rateMin, rateMax) {
+  /** The play's pitch into PLAY_F[1]: a draw between rateMin and rateMax (PLAY_F[4], [5]), clamped to 0.25..4. */
+  static _resolveRateRange() {
+    const f = PLAY_F;
+    const rateMin = f[4];
+    const rateMax = f[5];
     const min = Number.isFinite(rateMin) ? rateMin : 1;
     const max = Number.isFinite(rateMax) ? rateMax : min;
     const low = min <= max ? min : max;
     const high = min <= max ? max : min;
-    const result = low + rng() * (high - low);
-    if (!Number.isFinite(result)) return 1;
-    return Math.max(0.25, Math.min(4, result));
+    rngInto(f, 1);
+    const result = low + f[1] * (high - low);
+    f[1] = Number.isFinite(result) ? Math.max(0.25, Math.min(4, result)) : 1;
   }
 
   static _resolveSoundId(nameOrId) {
@@ -1558,19 +1576,23 @@ export class SoundManager {
     return result;
   }
 
-  static _computeSpatial(worldX, worldY) {
-    const out = this._spatialResult;
-    out.audible = 1;
-    out.gain = 1;
-    out.pan = 0;
+  /**
+   * The play's place on screen: 1 when audible, 0 when not. Reads the world point at PLAY_F[6], [7] (not finite: not
+   * spatial, gain 1 and pan 0); writes the gain into PLAY_F[8] and the pan into PLAY_F[2] (E-542: no result object, no
+   * double across a call).
+   */
+  static _computeSpatial() {
+    const f = PLAY_F;
+    f[8] = 1;
+    f[2] = 0;
 
-    if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) return out;
+    if (!Number.isFinite(f[6]) || !Number.isFinite(f[7])) return 1;
 
     const Camera = globalThis.Camera;
-    if (!Camera || typeof Camera.worldToScreen !== 'function') return out;
+    if (!Camera || typeof Camera.worldToScreenInPlace !== 'function') return 1;
     const cw = Camera.canvasWidth;
     const ch = Camera.canvasHeight;
-    if (!(cw > 0 && ch > 0)) return out;
+    if (!(cw > 0 && ch > 0)) return 1;
 
     const zoom = Camera.zoom;
     const zoomGain = (zoom > 0 && zoom < 1) ? zoom : 1;
@@ -1578,27 +1600,28 @@ export class SoundManager {
     // Screen space through the drawn camera, so pan follows screen x and the
     // falloff is the same at any camera angle. Unturned, this equals the old
     // world-space form: pan over 1.5 view widths, silent one width outside.
-    const s = Camera.worldToScreen(worldX, worldY, this._spatialScreen);
-    out.pan = Math.max(-1, Math.min(1, (s.x - cw * 0.5) / (cw * 1.5)));
+    Camera.worldToScreenInPlace(f, 6);
+    const sx = f[6];
+    const sy = f[7];
+    f[2] = Math.max(-1, Math.min(1, (sx - cw * 0.5) / (cw * 1.5)));
 
-    const dxOut = s.x < 0 ? -s.x : s.x > cw ? s.x - cw : 0;
-    const dyOut = s.y < 0 ? -s.y : s.y > ch ? s.y - ch : 0;
+    const dxOut = sx < 0 ? -sx : sx > cw ? sx - cw : 0;
+    const dyOut = sy < 0 ? -sy : sy > ch ? sy - ch : 0;
     const outsideDistance = Math.sqrt(dxOut * dxOut + dyOut * dyOut);
 
     if (outsideDistance <= 0) {
-      out.gain = zoomGain;
-      return out;
+      f[8] = zoomGain;
+      return 1;
     }
 
     const gain = 1 - outsideDistance / cw;
     if (gain <= 0) {
-      out.audible = 0;
-      out.gain = 0;
-      return out;
+      f[8] = 0;
+      return 0;
     }
 
-    out.gain = gain * zoomGain;
-    return out;
+    f[8] = gain * zoomGain;
+    return 1;
   }
 
   static _hasUserActivation() {

@@ -1084,6 +1084,26 @@ export function rng() {
   return rngCallGenerator();
 }
 
+/**
+ * rng() written into out[at], for a caller out of inlining budget: no double comes back from a call (TurboFan boxes a
+ * double a callee it did not inline returns). The same draw as rng(): the seeded generator's step, or any other
+ * generator's own call (E-542: SoundManager's pitch). rngFill draws batches but takes a seededRandom generator only.
+ * @param {Float64Array} out
+ * @param {number} at
+ */
+export function rngInto(out, at) {
+  const state = rngState;
+  if (state !== null) {
+    const t = (state[0] + 0x6d2b79f5) | 0;
+    state[0] = t;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    out[at] = ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    return;
+  }
+  out[at] = rngCallGenerator();
+}
+
 /** rng() for a generator that is not a seededRandom one, or none yet: its own call. Off rng()'s inlined path. */
 function rngCallGenerator() {
   let generator = currentRngGenerator();

@@ -23,17 +23,26 @@ function bootCamera(rot) {
   globalThis.Camera = Camera;
 }
 
+/** SoundManager._computeSpatial at a world point (E-542: it reads PLAY_F[6], [7] and writes gain and pan there). */
+function spatialAt(x, y) {
+  const f = SoundManager._playArgs;
+  f[6] = x;
+  f[7] = y;
+  const audible = SoundManager._computeSpatial();
+  return { audible, gain: f[8], pan: f[2] };
+}
+
 test('pan follows screen x under a turned camera', () => {
   bootCamera(Math.PI / 2);
   try {
     // At 90 degrees, screen right is world up: 300 px above the focus.
-    const s = SoundManager._computeSpatial(1000, 500 - 300);
+    const s = spatialAt(1000, 500 - 300);
     assert.ok(s.pan > 0.1, `pan ${s.pan}`);
     assert.equal(s.audible, 1);
     assert.equal(s.gain, 1, 'on screen');
 
     // World right of the focus is screen down at 90 degrees: centered pan.
-    const d = SoundManager._computeSpatial(1000 + 300, 500);
+    const d = spatialAt(1000 + 300, 500);
     assert.ok(Math.abs(d.pan) < 1e-6, `pan ${d.pan}`);
   } finally {
     delete globalThis.Camera;
@@ -44,7 +53,7 @@ test('the off-screen falloff is measured from the turned screen', () => {
   bootCamera(Math.PI / 2);
   try {
     // Screen x = W/2 + 740 -> 100 px past the right edge of the turned screen.
-    const s = SoundManager._computeSpatial(1000, 500 - 740);
+    const s = spatialAt(1000, 500 - 740);
     assert.ok(Math.abs(s.gain - (1 - 100 / W)) < 1e-4, `gain ${s.gain}`);
   } finally {
     delete globalThis.Camera;
@@ -55,7 +64,7 @@ test('an unturned camera gives the same pan and gain as before', () => {
   bootCamera(0);
   try {
     for (const [x, y] of [[1000, 500], [1300, 400], [-400, 500], [2000, 2000], [1000, 500 + H]]) {
-      const s = SoundManager._computeSpatial(x, y);
+      const s = spatialAt(x, y);
       const left = 1000 - W / 2;
       const top = 500 - H / 2;
       const right = left + W;
