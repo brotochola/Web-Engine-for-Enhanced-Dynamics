@@ -13,6 +13,7 @@ import {
   componentSchemaFingerprint,
 } from '../../src/core/save/entitySaveSnapshot.js';
 import { Component } from '../../src/core/component.js';
+import { entityTable, tableField } from '../helpers/saveTable.mjs';
 
 class FakeSerializable extends Component {
   static ARRAY_SCHEMA = {
@@ -50,16 +51,9 @@ function samplePayload(overrides = {}) {
     camera: [1, 2, 3, 4, 5, 6],
     sun: null,
     entities: [
-      {
-        typeName: 'FakeEntity',
-        entityIndex: 7,
-        components: {
-          FakeSerializable: {
-            fingerprint: 1,
-            fields: { active: 1, hp: 42.5 },
-          },
-        },
-      },
+      entityTable('FakeEntity', [7], {
+        FakeSerializable: { fingerprint: 1, fields: { active: Uint8Array.of(1), hp: Float32Array.of(42.5) } },
+      }),
     ],
     joints: [],
     liquidFun: null,
@@ -93,8 +87,8 @@ test('a serializable class can leave some of its entities out of a save (N-5)', 
   assert.equal(shouldSaveEntity(Chunk, 2, { active }), true);
 });
 
-test('SAVE_FORMAT_VERSION is 5', () => {
-  assert.equal(SAVE_FORMAT_VERSION, 5);
+test('SAVE_FORMAT_VERSION is 6 (E-539: entities by columns)', () => {
+  assert.equal(SAVE_FORMAT_VERSION, 6);
 });
 
 test('binary uncompressed roundtrip', () => {
@@ -102,17 +96,20 @@ test('binary uncompressed roundtrip', () => {
   const bytes = encodeSaveUncompressed(payload);
   const decoded = decodeSaveUncompressed(bytes);
   assert.equal(decoded.magic, SAVE_MAGIC);
-  assert.equal(decoded.formatVersion, 5);
+  assert.equal(decoded.formatVersion, 6);
   assert.equal(decoded.sceneName, 'TestScene');
   assert.equal(decoded.entities.length, 1);
-  assert.equal(decoded.entities[0].entityIndex, 7);
-  assert.equal(decoded.entities[0].components.FakeSerializable.fields.hp, 42.5);
+  assert.deepEqual([...decoded.entities[0].indices], [7]);
+  const hp = tableField(decoded.entities[0], 'FakeSerializable', 'hp');
+  assert.ok(hp instanceof Float32Array, 'a column comes back as its own kind');
+  assert.equal(hp[0], 42.5);
+  assert.equal(decoded.entities[0].components[0].fingerprint, 1);
   assert.deepEqual(decoded.camera, [1, 2, 3, 4, 5, 6]);
 });
 
 test('binary deflate roundtrip', async () => {
   const payload = samplePayload({
-    entities: [{ typeName: 'A', entityIndex: 0, components: {} }],
+    entities: [entityTable('A', [0])],
     camera: null,
     layout: { types: [], totalEntityCount: 0 },
   });
@@ -120,21 +117,22 @@ test('binary deflate roundtrip', async () => {
   assert.ok(compressed.byteLength > 0);
   const decoded = await decodeSave(compressed);
   assert.equal(decoded.entities[0].typeName, 'A');
-  assert.equal(decoded.formatVersion, 5);
+  assert.equal(decoded.formatVersion, 6);
 });
 
-test('applyEntitySaveRestore writes SoA fields', () => {
+test('applyEntitySaveRestore writes a row of SoA fields', () => {
   const sab = new SharedArrayBuffer(FakeSerializable.getBufferSize(4));
   FakeSerializable.initializeArrays(sab, 4);
   FakeSerializable.active[2] = 0;
   FakeSerializable.hp[2] = 0;
 
-  applyEntitySaveRestore(2, FakeEntity, {
+  const table = entityTable('FakeEntity', [5, 6], {
     FakeSerializable: {
       fingerprint: componentSchemaFingerprint(FakeSerializable),
-      fields: { active: 1, hp: 99 },
+      fields: { active: Uint8Array.of(0, 1), hp: Float32Array.of(7, 99) },
     },
   });
+  applyEntitySaveRestore(2, FakeEntity, { table, row: 1 });
 
   assert.equal(FakeSerializable.active[2], 1);
   assert.equal(FakeSerializable.hp[2], 99);
@@ -168,10 +166,7 @@ test('joints + entityIndex binary roundtrip', () => {
   const payload = samplePayload({
     layout: { types: [], totalEntityCount: 0 },
     camera: null,
-    entities: [
-      { typeName: 'MachineBox', entityIndex: 7, components: {} },
-      { typeName: 'MachineWheel', entityIndex: 9, components: {} },
-    ],
+    entities: [entityTable('MachineBox', [7]), entityTable('MachineWheel', [9])],
     joints: [
       {
         type: 4,
@@ -191,8 +186,8 @@ test('joints + entityIndex binary roundtrip', () => {
   });
   const bytes = encodeSaveUncompressed(payload);
   const decoded = decodeSaveUncompressed(bytes);
-  assert.equal(decoded.formatVersion, 5);
-  assert.equal(decoded.entities[0].entityIndex, 7);
+  assert.equal(decoded.formatVersion, 6);
+  assert.deepEqual([...decoded.entities[0].indices], [7]);
   assert.equal(decoded.joints.length, 1);
   assert.equal(decoded.joints[0].entityA, 7);
   assert.equal(decoded.joints[0].type, 4);

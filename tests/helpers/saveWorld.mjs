@@ -181,7 +181,7 @@ export function fillSavedColumns(scene, seed = 0x5a7e) {
 /**
  * Build the world.
  * @param {Array<{ class: Function, pool: number, live: number }>} entries each class, its pool and how many are live
- * @param {{ seed?: number }} [opts]
+ * @param {{ seed?: number, config?: object }} [opts] config: keys merged over the world's (decals, joints)
  * @returns {Promise<{ scene: object, logic: object, entries: Array, posts: object[], replies: object[] }>}
  */
 export async function buildSaveWorld(entries, opts = {}) {
@@ -217,6 +217,10 @@ export async function buildSaveWorld(entries, opts = {}) {
     Object.defineProperty(scene, 'constructor', { value: { name: 'SaveWorld', queries: [] } });
     for (const e of entries) scene.registerEntityClass(e.class, e.pool);
     scene.config = sceneConfig(scene.totalEntityCount);
+    for (const [key, value] of Object.entries(opts.config || {})) {
+      const base = scene.config[key];
+      scene.config[key] = base && typeof base === 'object' && !Array.isArray(base) ? { ...base, ...value } : value;
+    }
     bindEntityIdWidth(scene.config.entityIdWidth);
     createSceneSharedBuffers(scene);
   } finally {

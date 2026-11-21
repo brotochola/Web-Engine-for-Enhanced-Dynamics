@@ -18,6 +18,15 @@ function boot(count = 8) {
 /** An entity class with a SpriteRenderer, as the restore reads it. */
 const Entity = { name: 'Lantern', _componentClassMap: { SpriteRenderer } };
 
+/** A saved row of SpriteRenderer's zIndex and gbufFlags (E-539: a one-row table), in the live columns' kinds. */
+function savedRow(zIndex, gbufFlags) {
+  const fields = [
+    { name: 'zIndex', length: 1, entityId: false, values: new SpriteRenderer.zIndex.constructor([zIndex]) },
+    { name: 'gbufFlags', length: 1, entityId: false, values: new SpriteRenderer.gbufFlags.constructor([gbufFlags]) },
+  ];
+  return { table: { typeName: 'Lantern', indices: Uint32Array.of(0), components: [{ name: 'SpriteRenderer', fingerprint: null, fields }] }, row: 0 };
+}
+
 test('a restored unshaded sprite with a zIndex counts in both counters; one restored without them leaves them', () => {
   boot();
   assert.equal(SpriteRenderer.unshadedUsers(), 0);
@@ -32,14 +41,14 @@ test('a restored unshaded sprite with a zIndex counts in both counters; one rest
   assert.equal(SpriteRenderer.unshadedUsers(), 0);
 
   const before = SpriteRenderer.usersOfRow(5);
-  applyEntitySaveRestore(5, Entity, { SpriteRenderer: { fields: { zIndex: 3, gbufFlags: flags } } });
+  applyEntitySaveRestore(5, Entity, savedRow(3, flags));
   assert.equal(SpriteRenderer.unshadedUsers(), 0, 'the restore alone does not count (the bug)');
   SpriteRenderer.recountRow(5, before);
   assert.equal(SpriteRenderer.unshadedUsers(), 1);
   assert.equal(SpriteRenderer.zIndexUsers(), 1);
 
   const plain = SpriteRenderer.usersOfRow(6);
-  applyEntitySaveRestore(6, Entity, { SpriteRenderer: { fields: { zIndex: 0, gbufFlags: 0 } } });
+  applyEntitySaveRestore(6, Entity, savedRow(0, 0));
   SpriteRenderer.recountRow(6, plain);
   assert.equal(SpriteRenderer.unshadedUsers(), 1);
   assert.equal(SpriteRenderer.zIndexUsers(), 1);
@@ -54,7 +63,7 @@ test('a slot restored over an unshaded one that the save brings back shaded leav
   assert.equal(SpriteRenderer.unshadedUsers(), 1);
   assert.equal(SpriteRenderer.zIndexUsers(), 1);
   const before = SpriteRenderer.usersOfRow(1);
-  applyEntitySaveRestore(1, Entity, { SpriteRenderer: { fields: { zIndex: 0, gbufFlags: 0 } } });
+  applyEntitySaveRestore(1, Entity, savedRow(0, 0));
   SpriteRenderer.recountRow(1, before);
   assert.equal(SpriteRenderer.unshadedUsers(), 0);
   assert.equal(SpriteRenderer.zIndexUsers(), 0);

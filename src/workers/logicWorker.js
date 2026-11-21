@@ -36,13 +36,8 @@ import { RigidBody } from '../components/rigidBody.js';
 import { DirectionalSprite, NO_DIRECTION } from '../components/directionalSprite.js';
 import { Camera } from '../core/camera.js';
 import { Tween } from '../core/tween.js';
-import {
-  applyChains,
-  applyFixtures,
-  applyMeshes,
-  applyTweens,
-  remapEntityIdFields,
-} from '../core/save/worldBufferSave.js';
+import { applyChains, applyFixtures, applyMeshes, applyTweens } from '../core/save/worldBufferSave.js';
+import { EntityRestorePlan, rowRestore } from '../core/save/entitySaveSnapshot.js';
 
 import { CameraInOutListener, noteScreenVisibility } from '../components/cameraInOutListener.js';
 import { CollisionListener } from '../components/collisionListener.js';
@@ -51,7 +46,12 @@ import { JointBreakListener } from '../components/jointBreakListener.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
 import { AbstractWorker } from './abstractWorker.js';
-import { logicBlockRange, logicWorkerThatShouldTick, tickBucketPhase } from '../util/logicOwner.js';
+import {
+  logicBlockRange,
+  logicWorkerThatShouldTick,
+  resolveForceProcessOnLogicWorker,
+  tickBucketPhase,
+} from '../util/logicOwner.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
@@ -3082,23 +3082,23 @@ class LogicWorker extends AbstractWorker {
   /**
    * Hot reload restore: take each saved entity's own index out of its class's
    * free list, when the index is still that class's. Returns the taken indices.
-   * @param {object[]} entities save records
+   * @param {object[]} entities the save's entity tables
    * @returns {Set<number>}
    */
   _takeSavedIndices(entities) {
-    const byClass = new Map();
-    for (let r = 0; r < entities.length; r++) {
-      const rec = entities[r];
-      const EntityClass = self[rec.typeName];
-      const index = rec.entityIndex;
-      if (!EntityClass || index == null) continue;
-      if (index < EntityClass.startIndex || index >= EntityClass.startIndex + EntityClass.poolSize) continue;
-      let wanted = byClass.get(EntityClass);
-      if (!wanted) byClass.set(EntityClass, (wanted = new Set()));
-      wanted.add(index | 0);
-    }
     const taken = new Set();
-    for (const [EntityClass, wanted] of byClass) {
+    for (let t = 0; t < entities.length; t++) {
+      const table = entities[t];
+      const EntityClass = self[table.typeName];
+      if (!EntityClass) continue;
+      const start = EntityClass.startIndex;
+      const end = start + EntityClass.poolSize;
+      const wanted = new Set();
+      const indices = table.indices;
+      for (let r = 0; r < indices.length; r++) {
+        const index = indices[r];
+        if (index >= start && index < end) wanted.add(index);
+      }
       for (const index of GameObject._takeFreeIndices(EntityClass, wanted)) taken.add(index);
     }
     return taken;
@@ -3109,6 +3109,9 @@ class LogicWorker extends AbstractWorker {
    * saved entities, then chains, fixtures, meshes, tweens, id remaps and
    * joints. Returns the restoreSaveComplete reply. With exactIndices (hot
    * reload) each entity goes back to its own index when it can.
+   *
+   * E-539: the entities come as one table per type (entitySaveSnapshot.js); each type's EntityRestorePlan matches its
+   * saved columns to the live ones once for this load, and each spawn writes its row through it.
    * @param {object} data restoreSave message
    * @returns {object}
    */
@@ -3126,7 +3129,6 @@ class LogicWorker extends AbstractWorker {
     } = data;
     let restored = 0;
     let failed = 0;
-    const oldToNew = new Map();
 
     for (let i = 0; i < serializableClassNames.length; i++) {
       const EntityClass = self[serializableClassNames[i]];
@@ -3143,36 +3145,67 @@ class LogicWorker extends AbstractWorker {
     const missingClass = new Map(); // one warning per type, not per entity
     const noRoom = new Map();
 
-    for (let i = 0; i < entities.length; i++) {
-      const rec = entities[i];
-      const EntityClass = self[rec.typeName];
+    // Each saved index's new one (-1: not restored), and the restored pairs in spawn order.
+    let saved = 0;
+    let known = 0;
+    for (let t = 0; t < entities.length; t++) {
+      const indices = entities[t].indices;
+      saved += indices.length;
+      for (let r = 0; r < indices.length; r++) if (indices[r] >= known) known = indices[r] + 1;
+    }
+    const newIndexOf = new Int32Array(known).fill(-1);
+    const restoredOld = new Int32Array(saved);
+    const restoredNew = new Int32Array(saved);
+    const plans = [];
+
+    for (let t = 0; t < entities.length; t++) {
+      const table = entities[t];
+      const indices = table.indices;
+      const count = indices.length;
+      const EntityClass = self[table.typeName];
       if (!EntityClass) {
-        missingClass.set(rec.typeName, (missingClass.get(rec.typeName) || 0) + 1);
-        failed++;
+        missingClass.set(table.typeName, (missingClass.get(table.typeName) || 0) + count);
+        failed += count;
         continue;
       }
-      const fields = rec.components?.Transform?.fields || {};
-      const spawnConfig = {
-        x: fields.x ?? 0,
-        y: fields.y ?? 0,
-        _saveRestore: rec.components,
-        _hotRestore: exactIndices, // no onSpawned: the entity comes back as it was
-      };
-      if (pinned !== null) {
-        const worker = pinned.get(rec.entityIndex | 0);
-        spawnConfig.forceProcessOnLogicWorker = worker === undefined ? -1 : worker;
-      }
-      let at = -1;
-      if (ownIndex !== null && ownIndex.delete(rec.entityIndex | 0)) at = rec.entityIndex | 0;
-      // E-534: by index (no instance made for a restored entity; it is made on its first use).
-      const index = GameObject._spawnAt(EntityClass, spawnConfig, at, false);
-      if (index < 0) {
-        noRoom.set(rec.typeName, (noRoom.get(rec.typeName) || 0) + 1);
-        failed++;
-      } else {
-        restored++;
-        if (rec.entityIndex != null && rec.entityIndex >= 0) {
-          oldToNew.set(rec.entityIndex | 0, index | 0);
+      const plan = new EntityRestorePlan(EntityClass, table);
+      plans.push(plan);
+      // A spawn handed to the logic worker its class is pinned to is set up there, later: it carries its own row (a
+      // plain copy), not this load's plan. A hot restore spawns every entity here.
+      const owner = exactIndices
+        ? -1
+        : resolveForceProcessOnLogicWorker(
+          typeof EntityClass.forceProcessOnLogicWorker === 'number' ? EntityClass.forceProcessOnLogicWorker : -1,
+          this.totalLogicWorkers,
+        );
+      const handOff = owner >= 0 && owner !== this.workerIndex;
+      const xs = plan.x;
+      const ys = plan.y;
+      for (let r = 0; r < count; r++) {
+        const old = indices[r];
+        plan.row = r;
+        const spawnConfig = {
+          x: xs !== null ? xs[r] : 0,
+          y: ys !== null ? ys[r] : 0,
+          _saveRestore: handOff ? rowRestore(table, r) : plan,
+          _hotRestore: exactIndices, // no onSpawned: the entity comes back as it was
+        };
+        if (pinned !== null) {
+          const worker = pinned.get(old);
+          spawnConfig.forceProcessOnLogicWorker = worker === undefined ? -1 : worker;
+        }
+        let at = -1;
+        if (ownIndex !== null && ownIndex.delete(old)) at = old;
+        // E-534: by index (no instance made for a restored entity; it is made on its first use).
+        const index = GameObject._spawnAt(EntityClass, spawnConfig, at, false);
+        if (index < 0) {
+          noRoom.set(table.typeName, (noRoom.get(table.typeName) || 0) + 1);
+          failed++;
+        } else {
+          restoredOld[restored] = old;
+          restoredNew[restored] = index;
+          restored++;
+          newIndexOf[old] = index;
         }
       }
     }
@@ -3184,45 +3217,41 @@ class LogicWorker extends AbstractWorker {
       console.warn(`LOGIC WORKER ${this.workerIndex}: restoreSave could not spawn ${n} ${typeName} (pool full?)`);
     }
 
-    const restoredPairs = [];
+    const restoredPairs = new Array(restored);
+    for (let k = 0; k < restored; k++) restoredPairs[k] = { old: restoredOld[k], neu: restoredNew[k] };
     const mapGet = (old) => {
       const key = old | 0;
-      return oldToNew.has(key) ? oldToNew.get(key) | 0 : null;
+      return key >= 0 && key < known && newIndexOf[key] >= 0 ? newIndexOf[key] : null;
     };
-    for (const [old, neu] of oldToNew) {
-      restoredPairs.push({ old, neu });
-    }
     applyChains(chains, restoredPairs);
     applyFixtures(fixtures, restoredPairs);
     applyMeshes(meshes, restoredPairs);
     applyTweens(tweens, mapGet, restoredPairs);
-    for (let r = 0; r < entities.length; r++) {
-      const rec = entities[r];
-      if (rec.entityIndex == null) continue;
-      const neu = mapGet(rec.entityIndex);
-      if (neu == null) continue;
-      const EntityClass = self[rec.typeName];
-      if (!EntityClass) continue;
-      remapEntityIdFields(EntityClass, neu, rec.components, mapGet);
-    }
+    for (let p = 0; p < plans.length; p++) plans[p].remapIds(newIndexOf);
     // DX-PARENT: the children, linked again to their remapped parents (whose body generations are this load's).
-    for (let r = 0; r < entities.length; r++) {
-      const rec = entities[r];
-      const saved = rec.components?.Transform?.fields?.parent;
-      // Unlinked in the save: 0xffff or 0xffffffff, whatever id width it was made with.
-      if (typeof saved !== 'number' || saved === 0xffff || saved === 0xffffffff || rec.entityIndex == null) continue;
-      const neu = mapGet(rec.entityIndex);
-      if (neu == null) continue;
-      relinkRestoredChild(neu, true);
+    for (let p = 0; p < plans.length; p++) {
+      const parent = plans[p].parent;
+      if (parent === null) continue;
+      const indices = plans[p].table.indices;
+      for (let r = 0; r < indices.length; r++) {
+        // Unlinked in the save: 0xffff or 0xffffffff, whatever id width it was made with.
+        const was = parent[r];
+        if (was === 0xffff || was === 0xffffffff) continue;
+        const neu = newIndexOf[indices[r]];
+        if (neu >= 0) relinkRestoredChild(neu, true);
+      }
     }
 
     if (joints.length && typeof Joint.restoreFromSave === 'function') {
+      const oldToNew = new Map();
+      for (let k = 0; k < restored; k++) oldToNew.set(restoredOld[k], restoredNew[k]);
       Joint.restoreFromSave(joints, oldToNew);
     }
 
-    const idPairs = [];
-    for (let p = 0; p < restoredPairs.length; p++) {
-      idPairs.push(restoredPairs[p].old | 0, restoredPairs[p].neu | 0);
+    const idPairs = new Int32Array(restored * 2);
+    for (let k = 0; k < restored; k++) {
+      idPairs[2 * k] = restoredOld[k];
+      idPairs[2 * k + 1] = restoredNew[k];
     }
 
     // Flush active lists before ack so entities are fully in the scene.

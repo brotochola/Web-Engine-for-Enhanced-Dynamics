@@ -1,9 +1,8 @@
 // Pack and apply the world buffers that sit outside entity SoA:
 // shared resources, chains, extra fixtures, custom meshes, nav walkability,
-// Time.scale, and in-flight tweens. Entity-id fields and camera follow
-// are remapped here after spawn builds oldToNew.
+// Time.scale, and in-flight tweens. Camera follow is remapped here after the
+// spawns build oldToNew (entity-id fields: EntityRestorePlan.remapIds).
 
-import { Component } from '../component.js';
 import { Collider } from '../../components/collider.js';
 import { ShapeType } from '../../util/configDefaults.js';
 import { Camera } from '../camera.js';
@@ -16,7 +15,6 @@ import { Time } from '../timeScale.js';
 import { Tween, TWEEN_KIND_ZOOM } from '../tween.js';
 import { TWEEN_RECORD_FIELDS, tweenFieldValue } from './tweenRecord.js';
 import { Transform } from '../../components/transform.js';
-import { entityIdNone } from '../../util/entityIdWidth.js';
 import { fnv1a32 } from './schemaHash.js';
 
 function copyInto(dst, src, n) {
@@ -367,51 +365,6 @@ export function applyTweens(slots, mapGet, restored) {
   }
   // Slots were written and cleared directly: recount live tweens per entity.
   Tween.rebuildEntityCounts();
-}
-
-function remapOne(value, mapGet) {
-  if (value == null) return entityIdNone;
-  const id = value >>> 0;
-  if (id === (entityIdNone >>> 0)) return entityIdNone;
-  const next = mapGet(id);
-  if (next == null) return entityIdNone;
-  return next >>> 0;
-}
-
-/**
- * Rewrite saved entity-id fields onto the restored slot.
- * Fields absent from the save are left as spawn wrote them.
- * @param {Function} EntityClass
- * @param {number} entityIndex new slot
- * @param {object} components saved component map
- * @param {(oldId:number) => number|null} mapGet
- */
-export function remapEntityIdFields(EntityClass, entityIndex, components, mapGet) {
-  if (!components || !EntityClass) return;
-  const map = EntityClass._componentClassMap || {};
-  const index = entityIndex | 0;
-  for (const name in map) {
-    const ComponentClass = map[name];
-    if (!ComponentClass?.ARRAY_SCHEMA) continue;
-    const saved = components[ComponentClass.name] || components[name];
-    if (!saved?.fields) continue;
-    const fields = saved.fields;
-    for (const [fieldName, typeOrSpec] of Object.entries(ComponentClass.ARRAY_SCHEMA)) {
-      const spec = Component._schemaEntry(typeOrSpec);
-      if (!spec.entityId || !(fieldName in fields)) continue;
-      const arr = ComponentClass[fieldName];
-      if (!arr) continue;
-      const value = fields[fieldName];
-      if (spec.length === 1) {
-        arr[index] = remapOne(value, mapGet);
-        continue;
-      }
-      if (!Array.isArray(value)) continue;
-      const base = index * spec.length;
-      const n = Math.min(spec.length, value.length);
-      for (let k = 0; k < n; k++) arr[base + k] = remapOne(value[k], mapGet);
-    }
-  }
 }
 
 /**

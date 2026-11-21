@@ -33,7 +33,7 @@ export class TerrainIsland extends GameObject {
 }
 ```
 
-Per entity, the snapshot packs SoA component fields (plus Transform pose and RigidBody velocity/sleeping from Box2D HEAP views). JS-only FSM locals that are not in an `ARRAY_SCHEMA` are not saved.
+The save holds the entities by columns: for each entity type, the saved entities' indices and, for each of its components' `ARRAY_SCHEMA` fields (plus Transform's pose and RigidBody's velocity and sleeping, which live on Box2D's heap), one typed array with every saved entity's values. A load writes each value back as the same bits, a NaN's included. JS-only FSM locals that are not in an `ARRAY_SCHEMA` are not saved.
 
 A component field that stores another entity's index must say so, or restore writes the pre-restore slot:
 
@@ -91,9 +91,9 @@ Save code lives under `src/core/save/`:
 | IndexedDB (`weed-saves`) | Compressed save blobs |
 | `localStorage` (`weed.save.catalog`) | Slot metadata only (`id`, `scene`, `savedAt`, `bytes`, `engineVersion`, `entityCount`) |
 
-## Wire format (`SAVE_FORMAT_VERSION = 5`)
+## Wire format (`SAVE_FORMAT_VERSION = 6`)
 
-`SAVE_FORMAT_VERSION` lives in `src/core/save/entitySaveSnapshot.js`. The current value is **5**. Decode throws on any other version.
+`SAVE_FORMAT_VERSION` lives in `src/core/save/entitySaveSnapshot.js`. The current value is **6** (entities by columns). Decode throws on any other version: a save made by an older build does not load.
 
 Outer file (little-endian):
 
@@ -116,7 +116,7 @@ repeat:
 | 1 | META | sceneName, engineVersion, layout hint |
 | 2 | CAMERA | raw camera floats |
 | 3 | SUN | enabled + f32[] + color |
-| 4 | ENTITIES | active serializable entities (grouped by typeName) |
+| 4 | ENTITIES | u8 layout, then one table per entity type: its indices, then per component its fingerprint and per field its kind, elements per entity, entity-id flag and values (see below) |
 | 5 | JOINTS | packed joint records |
 | 6 | LIQUIDFUN | typed particle/group/pair/render buffers |
 | 7 | DECALS | sparse tiles as raw PNG or RGBA bytes |
@@ -133,9 +133,11 @@ repeat:
 | 18 | FIXTURES2 | u8 layout, then extra convex pieces for saved entities |
 | 19 | MESHES2 | u8 layout, then custom mesh verts, optional UVs, optional indices |
 
+ENTITIES, per type: the type's name, the count n, n u32 indices, then each component's name, u32 schema fingerprint and fields; each field's name, u8 kind (Int8, Uint8, Uint8Clamped, Int16, Uint16, Int32, Uint32, Float32 or Float64), u16 elements per entity, u8 flags (1: entity ids) and its n × length values. Every array's bytes are as in memory, starting 8-byte aligned from the section's start, so a decode makes views of them, not copies.
+
 Every section added since TWEENS2 starts with a layout byte: a record change bumps it instead of needing a new tag, and a layout newer than the build reads as an absent section (with a warning). A shared resource whose schema fingerprint (name, then each field name, type, length and atomic flag in layout order) differs from the bound class is skipped: raw bytes cannot be applied best-effort, and two schemas can share a byte size.
 
-Version stays **5**. CHAINS, FIXTURES and MESHES are written whenever that pool is bound, even with no records: on load, a present section clears geometry the saved entities did not have, while an absent one (a save older than these tags, or a pool that was unbound) leaves whatever `onSpawned` built. Other empty optional sections are omitted. A load keeps tweens on entities the save does not own (`create()` runs again on a load); it replaces zoom tweens and tweens on restored or despawned entities. There is no JSON payload and no base64 on the wire.
+CHAINS, FIXTURES and MESHES are written whenever that pool is bound, even with no records: on load, a present section clears geometry the saved entities did not have, while an absent one (a save older than these tags, or a pool that was unbound) leaves whatever `onSpawned` built. Other empty optional sections are omitted. A load keeps tweens on entities the save does not own (`create()` runs again on a load); it replaces zoom tweens and tweens on restored or despawned entities. There is no JSON payload and no base64 on the wire.
 
 Helpers: `SaveStore.put/get/list/listForScene/remove`, `downloadSave`, `parseUploadedFile`.
 
@@ -221,7 +223,7 @@ Debug overlay, **Saves** tab:
 
 Logical payload (after decode) includes:
 
-- `entities[]` — each record includes `entityIndex` (pre-restore free-list index) for joint remapping
+- `entities[]` — one table per entity type: `typeName`, `indices` (a Uint32Array of the entities' indices when saved, which joints, entity-id fields and camera follow are remapped from) and `components[]`, each with its `name`, `fingerprint` and `fields[]` (`name`, `length` elements per entity, `entityId`, and `values`, a typed array of the field's own kind). Plain data: a table crosses `postMessage` as it is, and its arrays are transferable (a load copies them, so the payload stays whole and can be loaded again)
 - `joints[]` — full SoA dump via `Joint.serializeActive()`, recreated after entity spawn
 - `liquidFun` — optional typed-array snapshot from the physics worker
 - `decals` — optional sparse DECALS tilemap (`tiles[]` with `fmt: 'png'|'raw'` + `bytes: Uint8Array`)
@@ -239,6 +241,6 @@ LiquidFun WASM source: the sibling `Box2d_3.2_C_-_liquidfun` tree (`wasm_wrapper
 - **Time:** `Time.scale`, including `0`. An old save with no TIME section leaves the new scene clock at `1`.
 - **Tweens:** active slots. Paint and xy slots remap their entity. Zoom slots do not. A paint or xy target that was not restored is dropped.
 - No decoration / CPU particle / bullet / playing-sound dumps.
-- Schema fingerprint mismatch warns and applies best-effort. Adding `entityId: true` changes the fingerprint.
+- Schema fingerprint mismatch warns once per type and component and applies best-effort: each saved field goes to the live field of the same name, as bits when its kind and length did not change, value by value (as far as both go) when they did. Adding `entityId: true` changes the fingerprint.
 - Cross-scene load is rejected (`payload.sceneName` must match).
-- Only format version `5` is accepted; other versions throw.
+- Only format version `6` is accepted; other versions throw.

@@ -17,6 +17,7 @@ import {
   componentSchemaFingerprint,
   encodeSaveUncompressed,
   decodeSaveUncompressed,
+  EntityRestorePlan,
 } from '../../src/core/save/entitySaveSnapshot.js';
 import {
   packSharedResources,
@@ -33,9 +34,9 @@ import {
   applyTime,
   packTweens,
   applyTweens,
-  remapEntityIdFields,
   remapCameraFollow,
 } from '../../src/core/save/worldBufferSave.js';
+import { entityTable } from '../helpers/saveTable.mjs';
 import { entityIdNone } from '../../src/util/entityIdWidth.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
 
@@ -64,7 +65,7 @@ function silenceWarn(fn) {
   return warns;
 }
 
-test('world-buffer sections round-trip and old saves leave them empty', () => {
+test('world-buffer sections round-trip, and a save without them leaves them empty', () => {
   const payload = {
     sharedResources: [{ name: 'Grid', bytes: Uint8Array.from([1, 2, 3, 4]) }],
     chains: [{
@@ -111,8 +112,8 @@ test('world-buffer sections round-trip and old saves leave them empty', () => {
     }],
   };
   const decoded = roundtrip(payload);
-  assert.equal(decoded.formatVersion, 5);
-  assert.equal(SAVE_FORMAT_VERSION, 5);
+  assert.equal(decoded.formatVersion, 6);
+  assert.equal(SAVE_FORMAT_VERSION, 6);
   assert.equal(decoded.sharedResources[0].name, 'Grid');
   assert.deepEqual([...decoded.sharedResources[0].bytes], [1, 2, 3, 4]);
   assert.equal(decoded.chains[0].entityIndex, 2);
@@ -132,7 +133,7 @@ test('world-buffer sections round-trip and old saves leave them empty', () => {
   assert.equal(decoded.tweens[0].from0, 0.25);
 
   const old = roundtrip({});
-  assert.equal(old.formatVersion, 5);
+  assert.equal(old.formatVersion, 6);
   assert.equal(old.sharedResources, null);
   assert.equal(old.chains, null);
   assert.equal(old.fixtures, null);
@@ -362,26 +363,33 @@ describe('world buffer apply', { concurrency: false }, () => {
     assert.equal(Marked.name, Plain.name);
     assert.notEqual(componentSchemaFingerprint(Marked), componentSchemaFingerprint(Plain));
 
-    const Host = { _componentClassMap: { Marked } };
+    const Host = { name: 'Host', _componentClassMap: { Marked } };
     Marked.initializeArrays(new SharedArrayBuffer(Marked.getBufferSize(4)), 4);
     Marked.note[1] = 5;
-    const mapGet = (id) => {
-      if (id === 5) return 2;
-      if (id === 0) return 4;
-      return null;
-    };
-    remapEntityIdFields(Host, 1, {
-      Marked: { fields: { target: 5, targets: [0, entityIdNone], note: 5 } },
-    }, mapGet);
-    remapEntityIdFields(Host, 2, {
-      Marked: { fields: { target: 9 } },
-    }, mapGet);
+    // E-539: the saved entities 11 and 12 came back at 1 and 2; 5 at 2 and 0 at 4; 9 did not come back.
+    const table = entityTable('Host', [11, 12], {
+      TargetComp: {
+        entityId: ['target', 'targets'],
+        fields: {
+          target: Uint16Array.of(5, 9),
+          targets: Uint16Array.of(0, entityIdNone, entityIdNone, entityIdNone),
+          note: Uint16Array.of(5, 6),
+        },
+      },
+    });
+    const newIndexOf = new Int32Array(13).fill(-1);
+    newIndexOf[11] = 1;
+    newIndexOf[12] = 2;
+    newIndexOf[5] = 2;
+    newIndexOf[0] = 4;
+    new EntityRestorePlan(Host, table).remapIds(newIndexOf);
 
     assert.equal(Marked.target[1], 2);
     assert.equal(Marked.targets[2], 4);
     assert.equal(Marked.targets[3], entityIdNone);
     assert.equal(Marked.note[1], 5);
     assert.equal(Marked.target[2], entityIdNone);
+    assert.equal(Marked.targets[4], entityIdNone);
 
     const cam = new Array(16).fill(0);
     cam[Camera.IDX_FOLLOW_ENTITY] = 6;
