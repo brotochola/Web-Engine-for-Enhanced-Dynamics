@@ -2036,7 +2036,8 @@ class PixiRenderer extends AbstractWorker {
       this._renderCameraY || 0,
       this.canvasHeight / (this._renderZoom || 1),
     );
-    if (!layerIsVisible(Layer.entitiesId)) {
+    const entitiesShown = layerIsVisible(Layer.entitiesId);
+    if (!entitiesShown) {
       this.entitiesBatch.hide();
       this.visibleEntityCount = 0;
       this.visibleParticleCount = 0;
@@ -2205,6 +2206,11 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesBatch.gbuf && packed.sprite > 0) this._commitPixiGbuf(packed.spriteIndices, packed.sprite);
     if (this._proxiesOn) this._applyLocalProxies(packed.spriteIndices, packed.sprite);
     if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;
+    // DBG-1: entities hidden with their glows shown come here for the glows: the pack wrote (and showed) the entities too.
+    if (!entitiesShown) {
+      this.entitiesBatch.hide();
+      this.visibleEntityCount = 0;
+    }
   }
 
   /**
@@ -3415,6 +3421,9 @@ class PixiRenderer extends AbstractWorker {
       this._renderLiquidFunLightingField();
       this._renderParticleLightingField();
       if (this._unshadedOn) this._renderUnshaded();
+    } else if (this._unshadedComposite !== null && this._unshadedComposite.visible) {
+      // DBG-1: the unshaded pixels go with the lighting layer: hidden, it would keep adding the last frame's.
+      this._unshadedComposite.visible = false;
     }
     if (started) this.lightsTimeThisFrame += performance.now() - started;
   }
@@ -5579,6 +5588,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!this.shadowBatch || !this.shadowRT) return;
     if (!layerIsVisible(Layer.castedShadows?.id)) {
       this._setKeyedSunStream(false);
+      this._clearShadowMapsWhileHidden();
       return;
     }
     const interval = this.shadowUpdateInterval | 0;
@@ -5591,6 +5601,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // would draw them.
     const nextSkip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
     this._setKeyedSunStream(this._keyedSunWanted && !nextSkip);
+  }
+
+  /**
+   * DBG-1: the casted-shadows layer hidden means no shadows. In map mode the light pass samples the sun's and the lamps'
+   * maps, and only the shadow pass draws or clears them: left alone they would stand on screen, frozen. They are cleared
+   * once, and the tick restarts so the first frame shown again draws them whatever shadowUpdateInterval is.
+   */
+  _clearShadowMapsWhileHidden() {
+    this._shadowUpdateTick = 0;
+    if (this._sunMapOn) {
+      this._sunMapDrew = false;
+      this._clearSunMapIfEmpty();
+    }
+    if (this._lampMapOn) {
+      this._lampMapDrew = false;
+      this._clearLampMapIfEmpty();
+    }
   }
 
   /** E-211: whether the entity batch's next keyed packs write its instances' shadow terms (once it has them). */
@@ -6957,9 +6984,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     this._ensureKeyedCasters(shader);
     const gpu = this._gpuQueueRead;
-    const sunN = gpu && gpu.header ? (gpu.header[GPU_HDR_SUN] | 0) : 0;
-    const stampN = gpu && gpu.header ? (gpu.header[GPU_HDR_STAMP] | 0) : 0;
-    const cookieN = gpu && gpu.header ? (gpu.header[GPU_HDR_COOKIE] | 0) : 0;
+    // DBG-1: the sun and stamp rows are the entities' (pre-render takes them from the render queue), so a hidden entities
+    // layer casts nothing, and its cookies (they only lighten what casters drew) go with them. Volumes cast on their own.
+    const castersShown = !!(gpu && gpu.header) && layerIsVisible(Layer.entitiesId);
+    const sunN = castersShown ? (gpu.header[GPU_HDR_SUN] | 0) : 0;
+    const stampN = castersShown ? (gpu.header[GPU_HDR_STAMP] | 0) : 0;
+    const cookieN = castersShown ? (gpu.header[GPU_HDR_COOKIE] | 0) : 0;
     // E-191 step 2: pre-render's sun and stamp rows are keyed caster rows (a pose, a key, the shadow terms; a stamp's
     // light) when it found Pixi's statics recent.
     const keyedRows = gpu && gpu.header ? ((gpu.header[GPU_HDR_FLAGS] | 0) & GPU_FLAG_KEYED_CASTERS) !== 0 : false;
@@ -8242,6 +8272,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         (name !== 'lightGlows' || this._lightGlowAdd) &&
         (name !== 'castedShadows' || this.shadowSpritesEnabled);
       if (displayObj) setDisplayVisible(displayObj, show);
+      // DBG-1: on the stage a MESH layer's textured rows are a mesh of their own beside the fill mesh (through an RT the
+      // layer's sprite holds both). Its geometry's instanceCount says whether it has triangles (setDisplayVisible).
+      const cl = this._customLayers[i];
+      if (cl !== undefined && cl.uvFillBatch && !cl.rt && !cl.meshLook) setDisplayVisible(cl.uvFillBatch.mesh, show);
     }
   }
 
