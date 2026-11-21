@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// E-538: the preset fronts a game calls per shot stay small enough for V8 to inline them whatever the caller's budget
+// E-538, E-541: the preset fronts a game calls per shot stay small enough for V8 to inline them whatever the caller's budget
 // when they are passed a heap number (75 bytes of bytecode or less: setterBytecodeSize.test.js has the rule). Inlined,
 // they write their doubles into a Float64Array and call a core with the preset's id; left out, the caller boxes every
-// double it passes them. The cores (ParticleEmitter._emitRow, Flash._spawnRow) are past TurboFan's 460-byte inline
+// double it passes them. The cores (ParticleEmitter._emitRow, Flash._spawnRow, BulletPool._spawnIn) are past TurboFan's 460-byte inline
 // size on purpose: a caller spends no more of its own inlining budget than a front's bytes (a front that inlined a
 // mid-sized core took a caller past its budget, and the caller then boxed what it passed: the E-538 driver, 114 bytes
 // a shot). The fronts read their scratch through the class, so a bundle (a module past its 255th context slot) does
@@ -50,14 +50,18 @@ test('the preset fronts stay under V8\'s inline size for a callee passed a heap 
   for (const [filter, names] of fronts) {
     const lengths = bytecodeLengths(filter);
     for (const name of names) {
-      const n = lengthOf(lengths, name);
-      assert.ok(n <= FRONT_MAX, `${name} is ${n} bytes of bytecode, over ${FRONT_MAX}: keep its work in its core`);
+      // Flash.spawnPreset and BulletPool.spawnPreset share a name: each function of it is a front.
+      const found = lengths.get(name);
+      assert.ok(found, `${name}: no bytecode printed (renamed, or the driver no longer calls it?)`);
+      for (const n of found) {
+        assert.ok(n <= FRONT_MAX, `${name} is ${n} bytes of bytecode, over ${FRONT_MAX}: keep its work in its core`);
+      }
     }
   }
 });
 
 test('the cores the fronts call are too big to inline, so a caller pays only for the front', () => {
-  for (const name of ['_emitRow', '_spawnRow']) {
+  for (const name of ['_emitRow', '_spawnRow', '_spawnIn']) {
     const n = lengthOf(bytecodeLengths(name), name);
     assert.ok(n > INLINE_MAX, `${name} is ${n} bytes: TurboFan may inline it into a caller (over ${INLINE_MAX} it never does)`);
   }

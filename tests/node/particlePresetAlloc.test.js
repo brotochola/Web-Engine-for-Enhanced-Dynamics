@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// E-538: an emit and a flash from presets allocate nothing. tests/helpers/particlePresetDriver.mjs fires Predator's
-// shot (two muzzle sprites, the sparks, the muzzle's flash) and a hit with every with* override, from presets, then
+// E-538, E-541: an emit, a flash and a bullet from presets allocate nothing. tests/helpers/particlePresetDriver.mjs
+// fires Predator's shot (two muzzle sprites, the sparks, the muzzle's flash, the bullet) and a hit with every with* override, from presets, then
 // counts what 10 000 more of them allocate with V8's sampling heap profiler (a sample every 32 bytes on average,
 // objects a GC already collected included), in the engine's frames and the driver's.
 //

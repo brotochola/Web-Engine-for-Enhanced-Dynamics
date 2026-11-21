@@ -1,4 +1,4 @@
-// E-538: Predator's shot through particle and flash presets, for the tests that read V8 itself: the bytecode lengths
+// E-538, E-541: Predator's shot through particle, flash and bullet presets, for the tests that read V8 itself: the bytecode lengths
 // of the preset fronts (particlePresetFronts.test.js, run with --print-bytecode) and the bytes the shot allocates
 // once V8 has optimized it (particlePresetAlloc.test.js: it prints one JSON line).
 //
@@ -11,10 +11,13 @@ import inspector from 'node:inspector/promises';
 
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { FlashComponent } from '../../src/components/flashComponent.js';
+import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { Transform } from '../../src/components/transform.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { Flash } from '../../src/core/flash.js';
+import { BulletPool } from '../../src/core/bulletPool.js';
+import { resetFreeList } from '../../src/util/atomicFreeList.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Layer } from '../../src/core/layer.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
@@ -22,6 +25,7 @@ import { seededRandom, rng } from '../../src/util/utils.js';
 
 const POOL = 4096;
 const FLASHES = 64;
+const BULLETS = 256;
 
 function argOf(name, fallback) {
   const k = process.argv.indexOf(`--${name}`);
@@ -37,7 +41,7 @@ ParticleEmitter.initialize(POOL);
 ParticleEmitter.initializeFreeList(new SharedArrayBuffer(POOL * 2), new SharedArrayBuffer(8));
 ParticleEmitter.resetFreeListInterleaved(1);
 SpriteSheetRegistry.register('bigAtlas', {
-  animations: { _whiteCircle: ['_whiteCircle'], muzzle1: ['muzzle1'], muzzle2: ['muzzle2'], muzzle3: ['muzzle3'] },
+  animations: { _whiteCircle: ['_whiteCircle'], muzzle1: ['muzzle1'], muzzle2: ['muzzle2'], muzzle3: ['muzzle3'], bullet: ['bullet'] },
 });
 globalThis.rng = seededRandom(538, 'presetDriver');
 
@@ -49,6 +53,14 @@ Transform.y = new Float32Array(FLASHES);
 LightEmitter.initializeArrays(new SharedArrayBuffer(LightEmitter.getBufferSize(FLASHES)), FLASHES);
 FlashComponent.initializeArrays(new SharedArrayBuffer(FlashComponent.getBufferSize(FLASHES)), FLASHES);
 Flash.initialize(FLASHES);
+// E-541: the bullet pool, its slots recycled by the driver.
+BulletComponent.initializeArrays(new SharedArrayBuffer(BulletComponent.getBufferSize(BULLETS)), BULLETS);
+BulletComponent.bulletCount = BULLETS;
+const bulletFreeList = new Uint16Array(new SharedArrayBuffer(BULLETS * 2));
+const bulletTop = new Int32Array(new SharedArrayBuffer(8));
+resetFreeList(bulletTop, bulletFreeList, BULLETS, 1);
+BulletPool.initialize(BULLETS);
+BulletPool.initializeFreeList(bulletFreeList.buffer, bulletTop.buffer);
 let nextFlash = 0;
 GameObject._spawnAt = function spawnAtForTheDriver(EntityClass, spawnConfig) {
   const i = nextFlash;
@@ -82,6 +94,7 @@ const SPARKS = ParticleEmitter.define({
   despawnOnGroundContact: true,
 });
 const MUZZLE_FLASH = Flash.define({ lifespan: 18, color: 0xffaa00, radius: 1000, glow: 0 });
+const BULLET = BulletPool.define({ damage: 1, texture: 'bullet', scale: 1, anchorX: 1, anchorY: 0.5, trailWidth: 4 });
 
 // What varies per shot, drawn ahead into typed arrays, so the driver's own code allocates nothing: a game's random
 // draws and arithmetic are the game's (a double it passes to a call TurboFan leaves out is boxed), and this measures
@@ -128,6 +141,7 @@ function presetShot(s) {
   sink += ParticleEmitter.emitPreset(MUZZLE, x, y + 1, h, 1, dx, dy);
   sink += Flash.spawnPreset(MUZZLE_FLASH, x, y, -h);
   sink += ParticleEmitter.emitPreset(SPARKS, x, y + 1, h, SPARK_COUNT[s], dx, dy);
+  sink += BulletPool.spawnPreset(BULLET, x, y, h, dx * 800, dy * 800, s & 15);
 }
 
 /** A hit from presets: every with* override (a fire's smoke, a barrel's sparks), and a flash with its own light. */
@@ -160,6 +174,10 @@ function literalShot(s) {
     lifespan: { min: 33, max: 100 }, scale: { min: 0.15, max: 0.5 }, texture: '_whiteCircle',
     tint: { min: 0xffff00, max: 0xffffff }, alpha: { min: 0.5, max: 0.8 }, despawnOnGroundContact: true,
   });
+  sink += BulletPool.spawn({
+    x, y, offsetY: h, vx: DX[s] * 800, vy: DY[s] * 800, damage: 1, ownerId: s & 15, shooterEntityType: 0,
+    texture: 'bullet', scale: 1, anchorX: 1, anchorY: 0.5, trailWidth: 4,
+  });
 }
 
 function literalHit(s) {
@@ -183,6 +201,11 @@ function recycle() {
   }
 }
 
+function recycleBullets() {
+  const active = BulletComponent.active;
+  for (let i = 0; i < BULLETS; i++) if (active[i]) BulletPool.despawn(i);
+}
+
 const literal = argOf('form', 'preset') === 'literal';
 
 /** A shot and a hit, the pool recycled when it runs low. */
@@ -196,6 +219,7 @@ function step() {
     presetHit(s);
   }
   if (ParticleEmitter.getFreeCount() < 256) recycle();
+  if ((slot & 127) === 0) recycleBullets();
 }
 
 // Warm-up: the same calls until V8 has tiered the driver and the engine up (the interpreter and the lower tiers box
