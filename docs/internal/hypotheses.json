@@ -9391,11 +9391,12 @@
       "aliases": [],
       "records": [
         "R-0733",
-        "R-0991"
+        "R-0991",
+        "R-1678"
       ],
       "date": "2026-10-29",
-      "status": "open",
-      "statusText": "dropped 2026-10-29 (R-0733)",
+      "status": "dropped",
+      "statusText": "Dropped 2026-10-29 (R-0733: +8.3 % at 3 000 owners, a tie at 20 000); the status had stayed open (triage 2026-11-21, R-1678).",
       "result": "Dropped: fsmTickMicrobench +8.3 % at 3 000 owners, -2.4 % (tie) at 20 000; 1-2 % of Predator's logic at best.",
       "next": "Only if a scene shows the FSM tick bound by that read.",
       "id": "E-171",
@@ -11540,8 +11541,8 @@
     {
       "id": "E-210",
       "title": "Predator's gate from a save",
-      "status": "blocked",
-      "statusText": "blocked 2026-11-11 (R-0908): a restored Predator does not fight (its AI state is not saved)",
+      "status": "open",
+      "statusText": "Unblocked 2026-11-21 (triage, R-1678): Predator's state lives in components since E-530 and E-535 (written static, no instance), and R-1663's ecs-mixr sitting ran the mixed battle from one save. Next: check that a restored Predator fights as a fresh one does (every worker's load over the window), then the gate from a save as the default for Predator's emergent rows.",
       "date": "2026-11-10",
       "result": "step 0 (R-0908): the save keeps components, not the FSMs' plain fields; restored, Predator goes quiet (every worker under 3 ms)",
       "next": "Needs a scene whose behaviour survives a save (Predator's AI state in components: demo work). The tools (?restore=, --restore, sceneSaveMaker) are in.",
@@ -11559,7 +11560,8 @@
       ],
       "records": [
         "R-0854",
-        "R-0908"
+        "R-0908",
+        "R-1678"
       ]
     },
     {
@@ -13460,8 +13462,8 @@
     {
       "id": "E-238",
       "title": "The particle emit path from game code allocates about 30 KB/s in Predator's logic",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "status": "superseded",
+      "statusText": "Superseded 2026-11-21 by E-538 (triage, R-1678): Predator's emits are presets, and an emit from a preset allocates nothing (R-1673); the heap samples of E-541 to E-543 show no emit allocation left on the logic workers.",
       "date": "2026-11-13",
       "area": "particle",
       "kind": "speed",
@@ -13478,7 +13480,8 @@
       ],
       "records": [
         "R-0960",
-        "R-0994"
+        "R-0994",
+        "R-1678"
       ]
     },
     {
@@ -16610,8 +16613,8 @@
     {
       "id": "E-382",
       "title": "Predator's people (MySoldier, Civilian) on DirectionalSprite against main's hand-picked directions: what the branch charges Predator's logic and pre-render",
-      "status": "open",
-      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "status": "superseded",
+      "statusText": "Superseded 2026-11-21 (triage, R-1678): DX-LIGHT3D merged 2026-11-15 and main no longer has the hand-picked directions to compare against; DirectionalSprite's cost is read in the traces like any other code.",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
@@ -16621,13 +16624,15 @@
         "DX_LIGHT3D_PLAN.md"
       ],
       "aliases": [],
-      "records": []
+      "records": [
+        "R-1678"
+      ]
     },
     {
       "id": "E-383",
       "title": "carScene's and littleCity's cars on DirectionalSprite against main",
-      "status": "open",
-      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "status": "superseded",
+      "statusText": "Superseded 2026-11-21 (triage, R-1678): as E-382, the cars' hand-picked directions are gone from main since DX-LIGHT3D merged; nothing left to compare against.",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
@@ -16638,7 +16643,8 @@
       ],
       "aliases": [],
       "records": [
-        "R-1153"
+        "R-1153",
+        "R-1678"
       ]
     },
     {
@@ -16999,8 +17005,8 @@
     {
       "id": "E-321",
       "title": "The CPU particle emit makes about half of logic's garbage: _spawn (4 733 bytes) leaves randomRange and rng out, and every random double it draws is boxed (Predator crowd 2.5: 1.1-1.3 MB/s a logic worker)",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "superseded",
+      "statusText": "Superseded 2026-11-21 by E-538 (triage, R-1678): a preset resolves its fields once into a row and the emit draws its randoms in batches (rngFill), so no draw is boxed. The wasm fill of count slots would be a new item if the emit shows in a CPU trace.",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
@@ -17016,7 +17022,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1103"
+        "R-1103",
+        "R-1678"
       ]
     },
     {
@@ -17798,8 +17805,8 @@
     {
       "id": "E-352",
       "title": "copyEmitFields reads 43 names from each call site's emit literal (megamorphic) and boxes each double into the tagged scratch (51-78 KB/s a logic worker at crowd 2.5)",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "superseded",
+      "statusText": "Superseded 2026-11-21 by E-538 (triage, R-1678): presets skip copyEmitFields; the literal emit stays the one-off form (one literal particle 3-6 % slower in the kernel, no scene reads it).",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
@@ -17814,7 +17821,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1103"
+        "R-1103",
+        "R-1678"
       ]
     },
     {
@@ -40699,6 +40707,15 @@
       "title": "Predator's soldier states box no distance: the logic worker 6.9-7.7 -> 1.1-1.3 KB a frame in the mixed battle (440 KB before E-538)",
       "verdict": "kept-hygiene",
       "text": "**Predator's soldier states without boxed distances: kept (hygiene, demo).** findClosestCivilian and findACivilianToShoot return the index (or -1) and write the squared distance into a module Float64Array (TARGET_DIST_SQ); canShootTarget and storeTarget read it there; the scan's best distance is a local seeded with a module INF. Same comparisons, same choices (commit 9d710dd8, merged 42200ab6).\n\n- Chrome heap sampling, Predator `?mix=1`, 601 frames a side, base main 0c1fe5db (19:41–19:42): the soldier's onUpdate (RangedAttacking at :391, Idle at :243) 5.5 KB a frame -> none sampled; the logic worker 6.9 / 7.7 KB a frame (logic0 / logic1) -> 1.3 / 1.1 KB (-81 % / -86 %). The day's line: 440 KB a frame before E-538, 49 after the ECS finish, 20-23 after E-541, 7 after E-542, about 1 now (what is left: civilianBehaviorFsm onUpdate at :127, 0.1-0.2 KB, subarray in the spawn and despawn queues, flash.tickAll).\n- Demo suite 143/143. No sitting: demo code off the engine, the same arithmetic; it joins the next batch's Predator gate."
+    },
+    {
+      "id": "R-1678",
+      "date": "2026-11-21",
+      "time": "20:05",
+      "timeFrom": "recorded",
+      "title": "Backlog triage: 6 items closed as dropped or superseded (E-171, E-238, E-321, E-352, E-382, E-383), E-210 unblocked; 192 active items read",
+      "verdict": "note",
+      "text": "**Backlog triage, 2026-11-21 evening: the 192 active items (178 open, 9 running, 5 blocked) read one by one against the register and the code they name.** Most are real and current: 184 of them were filed from 2026-11-10 on, from the trace harvests.\n\nClosed or changed:\n- E-171 dropped: its own record (R-0733) dropped it on 2026-10-29; the status had stayed open.\n- E-238, E-321, E-352 superseded by E-538: Predator's emits are presets, an emit from a preset allocates nothing, and the draws come in batches. The heap samples of E-541 to E-543 show no emit allocation left.\n- E-382, E-383 superseded: they compared DirectionalSprite against main's hand-picked directions, which are gone since DX-LIGHT3D merged.\n- E-210 unblocked: a restored Predator now keeps its state (E-530, E-535; R-1663 ran the mixed battle from a save).\n\nGroups worth one owner each, so the count overstates the work:\n- Chrome's GPU process on light3d: E-407, E-412, E-414, E-415, E-416, E-417, E-428 (and E-340): one trace of GL commands answers most of them.\n- The 3D light pass's shader: E-405, E-406, E-408, E-409, E-410 (register count, divisions, taps): one shader rewrite.\n- The debug UI: DX-DEBUGUI and DBG-1 to DBG-12, one plan.\n- WebGL against WebGPU gaps: E-373, E-465, E-466, E-467, N-155.\n\nStatuses to check with the owner, not changed here: DX-DIRSPRITE, DX-SHADOW3D, DX-DEPTH, DX-SELFSHADOW, DX-EMISSIVE and DX-CASTER have read \"running\" since 2026-11-15, but DX-LIGHT3D merged that day; what is left of each (emissive v2, the casters' second part, the static cache) would be clearer as its own row."
     }
   ],
   "leads": [
