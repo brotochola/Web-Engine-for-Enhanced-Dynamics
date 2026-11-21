@@ -27,11 +27,6 @@ export class Decoration {
     return ensureDecorationFacade(Decoration, id);
   }
 
-  /** Create facade when a parented decoration is spawned (lazy map). */
-  static ensureForParented(id) {
-    return ensureDecorationFacade(Decoration, id);
-  }
-
   static evictFacade(id) {
     evictDecorationFacade(id);
   }

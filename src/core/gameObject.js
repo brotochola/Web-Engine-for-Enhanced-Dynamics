@@ -175,6 +175,62 @@ function applyLayerMaskAt(i, has, mask) {
   }
 }
 
+/** setLayers' mask of a list of layer names. */
+function layersMaskOf(names) {
+  return Layer.resolveSubscriptions({ layers: names || [] }, LAYER_SUBSCRIBE_KIND.GAME_OBJECT);
+}
+
+/**
+ * layerName by index: the first sprite layer in entity i's mask (its sprite's, else its Adobe clip's, else its mesh's),
+ * ENTITIES when it has none. `has` is its class's component flags.
+ */
+function layerNameAt(i, has) {
+  let mask = 0;
+  if (has.SpriteRenderer && SpriteRenderer.layerMask) {
+    mask = SpriteRenderer.layerMask[i] | 0;
+  } else if (has.adobeAnimComponent && AdobeAnimComponent.layerMask) {
+    mask = AdobeAnimComponent.layerMask[i] | 0;
+  } else if (has.MeshRenderer && MeshRenderer.layerMask) {
+    mask = MeshRenderer.layerMask[i] | 0;
+  }
+  if (!mask) return Layer.getName(Layer.entitiesId);
+  for (let id = 0; id < Layer.MAX_LAYERS; id++) {
+    if (!(mask & (1 << id))) continue;
+    if (Layer.feederKind(id) === LAYER_FEEDER_KIND.SPRITES) return Layer.getName(id);
+  }
+  return Layer.getName(Layer.entitiesId);
+}
+
+/**
+ * addDecoration's work: a decoration attached to entity i (`who` names its class in the warning a full row gives), its
+ * pool index or -1. No facade is made (E-537): Decoration.get(id) makes one on demand.
+ */
+function addDecorationAt(i, who, texture, localX, localY, scaleX, scaleY, zIndex, extra) {
+  // A full attachment row says so (once) before a pool slot is spent on it.
+  if (!DecorationPool.canAttach(i, who)) return -1;
+  const decoIndex = DecorationPool.spawn({
+    parent: i,
+    localX,
+    localY,
+    scaleX,
+    scaleY,
+    innerZ: zIndex,
+    texture,
+    ...extra,
+  });
+  if (decoIndex < 0) return -1;
+  if (!DecorationPool.pushAttached(i, decoIndex)) {
+    DecorationPool.despawn(decoIndex);
+    return -1;
+  }
+  return decoIndex;
+}
+
+/** setFeedBits by index, for an entity with a Collider. */
+function feedBitsAt(i, bits) {
+  if (Collider.feedBits) Collider.feedBits[i] = bits & 0xff;
+}
+
 /**
  * E-534: spawnIndex's config keys with no instance: the entity's engine accessors, through their components' statics
  * (what the instance's setters call). A key no accessor takes is the class's to read in its static onSpawned(i, config),
@@ -308,9 +364,45 @@ let pendingLinkCount = 0;
 
 /** The class name of entity i, for a warning. */
 function entityName(i) {
+  const name = classNameAt(i);
+  return name !== null ? name : 'An entity';
+}
+
+/** E-537: the class of entity i from its type (a static's: no instance read), or undefined. */
+function classAt(i) {
   const types = Transform.entityType;
   const C = types && i >= 0 && i < types.length ? GameObject.classByType[types[i]] : undefined;
-  return C !== undefined && C !== null ? C.name : 'An entity';
+  return C !== undefined && C !== null ? C : undefined;
+}
+
+/** E-537: the name of entity i's class (what an entity's method sends as this.constructor.name), or null. */
+function classNameAt(i) {
+  const C = classAt(i);
+  return C !== undefined ? C.name : null;
+}
+
+/** isCollidingWith's work: whether entities a and b touch in the latest completed frame, on this logic worker. */
+function collidingAt(a, b) {
+  // The LogicWorker of this realm (currentLogicWorker, E-165): it keeps the frame's pair set.
+  const logicWorker = currentLogicWorker();
+  if (!logicWorker || !logicWorker.frameCollisions) return false;
+  // Collision keys are stored ONCE per pair, normalized as (min, max).
+  const minE = a < b ? a : b;
+  const maxE = a < b ? b : a;
+  // frameCollisions always points at the latest completed frame's pair set
+  return logicWorker.frameCollisions.has(collisionPairKey(minE, maxE));
+}
+
+/** E-537: no component flags (an index no registered type holds). */
+const NO_FLAGS = Object.freeze({});
+
+/**
+ * E-537: entity i's component flags from its type, for a static whose work takes them (setLayer): its class's
+ * (typePlanOf), as an entity's method passes this._hasComponents.
+ */
+function flagsAt(i) {
+  const C = classAt(i);
+  return C !== undefined ? typePlanOf(C).has : NO_FLAGS;
 }
 
 /** Whether entity i has a body now (RigidBody or Collider on: dynamic, static or chain). */
@@ -1298,6 +1390,18 @@ export class GameObject {
   }
 
   /**
+   * E-537: entity.sendTo(to, name, ...) by index: entity `to` runs onMessage(name, from, a, b, c, d) next frame, before
+   * its tick, on the logic worker that owns it. No allocation, no instance.
+   * @param {number} from the sender's index (-1: the scene)
+   * @param {number} to the target's index
+   * @param {string} name one of the scene's static messages
+   * @returns {boolean} false when not sent (no listener in the scene, inbox full)
+   */
+  static sendTo(from, to, name, a = 0, b = 0, c = 0, d = 0) {
+    return Messages.send(to, name, from, a, b, c, d);
+  }
+
+  /**
    * Tell the main thread something happened: scene.on(name, fn) gets
    * fn(data, entityIndex, className). `data` is structured-cloned (allocates):
    * for rare events (died, won, picked up), not every frame.
@@ -1305,7 +1409,18 @@ export class GameObject {
    * @param {*} [data]
    */
   emit(name, data) {
-    return SceneBridge.emitToScene(name, data, this);
+    return SceneBridge.emitToScene(name, data, this.index, this.constructor.name);
+  }
+
+  /**
+   * E-537: entity.emit(name, data) by index: scene.on(name, fn) gets fn(data, i, className), the class's name from
+   * entity i's type. `data` is structured-cloned: for rare events, not every frame.
+   * @param {number} i
+   * @param {string} name
+   * @param {*} [data]
+   */
+  static emit(i, name, data) {
+    return SceneBridge.emitToScene(name, data, i, classNameAt(i));
   }
 
   /** Worker→Scene postMessage helper (`SceneBridge`). */
@@ -1318,7 +1433,16 @@ export class GameObject {
    * @param {*} data
    */
   sendMessageToScene(data) {
-    return SceneBridge.sendMessageToScene(data, this);
+    return SceneBridge.sendMessageToScene(data, this.index, this.constructor.name);
+  }
+
+  /**
+   * E-537: entity.sendMessageToScene(data) by index (Scene.onMessageFromGameObject gets entity i and its class's name).
+   * @param {number} i
+   * @param {*} data
+   */
+  static sendMessageToScene(i, data) {
+    return SceneBridge.sendMessageToScene(data, i, classNameAt(i));
   }
 
   /**
@@ -1811,20 +1935,16 @@ export class GameObject {
 
   /** First sprite-queue layer name in the subscription mask. */
   get layerName() {
-    let mask = 0;
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerMask) {
-      mask = SpriteRenderer.layerMask[this.index] | 0;
-    } else if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
-      mask = AdobeAnimComponent.layerMask[this.index] | 0;
-    } else if (this._hasComponents.MeshRenderer && MeshRenderer.layerMask) {
-      mask = MeshRenderer.layerMask[this.index] | 0;
-    }
-    if (!mask) return Layer.getName(Layer.entitiesId);
-    for (let id = 0; id < Layer.MAX_LAYERS; id++) {
-      if (!(mask & (1 << id))) continue;
-      if (Layer.feederKind(id) === LAYER_FEEDER_KIND.SPRITES) return Layer.getName(id);
-    }
-    return Layer.getName(Layer.entitiesId);
+    return layerNameAt(this.index, this._hasComponents);
+  }
+
+  /**
+   * E-537: entity.layerName by index: the first sprite layer entity i is subscribed to.
+   * @param {number} i
+   * @returns {string}
+   */
+  static layerName(i) {
+    return layerNameAt(i, flagsAt(i));
   }
 
   /**
@@ -1833,8 +1953,18 @@ export class GameObject {
    * @returns {this}
    */
   setLayer(layerName) {
-    this._applyLayerMask(Layer.resolveOne(layerName, LAYER_SUBSCRIBE_KIND.GAME_OBJECT));
+    applyLayerMaskAt(this.index, this._hasComponents, Layer.resolveOne(layerName, LAYER_SUBSCRIBE_KIND.GAME_OBJECT));
     return this;
+  }
+
+  /**
+   * E-537: entity.setLayer(name) by index: entity i subscribed to one layer (its sprite, Adobe and mesh rows and its
+   * collider's feed, as its type has them).
+   * @param {number} i
+   * @param {string} layerName
+   */
+  static setLayer(i, layerName) {
+    applyLayerMaskAt(i, flagsAt(i), Layer.resolveOne(layerName, LAYER_SUBSCRIBE_KIND.GAME_OBJECT));
   }
 
   /**
@@ -1844,9 +1974,17 @@ export class GameObject {
    * @returns {this}
    */
   setLayers(names) {
-    const mask = Layer.resolveSubscriptions({ layers: names || [] }, LAYER_SUBSCRIBE_KIND.GAME_OBJECT);
-    this._applyLayerMask(mask);
+    applyLayerMaskAt(this.index, this._hasComponents, layersMaskOf(names));
     return this;
+  }
+
+  /**
+   * E-537: entity.setLayers(names) by index.
+   * @param {number} i
+   * @param {Array<string|number>} names
+   */
+  static setLayers(i, names) {
+    applyLayerMaskAt(i, flagsAt(i), layersMaskOf(names));
   }
 
   _applyLayerMask(mask) {
@@ -1859,15 +1997,33 @@ export class GameObject {
    * @returns {this}
    */
   setFeedBits(bits) {
-    if (!this._hasComponents.Collider || !Collider.feedBits) return this;
-    Collider.feedBits[this.index] = bits & 0xff;
+    if (this._hasComponents.Collider) feedBitsAt(this.index, bits);
     return this;
+  }
+
+  /**
+   * E-537: entity.setFeedBits(bits) by index (an entity whose type has no Collider keeps none).
+   * @param {number} i
+   * @param {number} bits
+   */
+  static setFeedBits(i, bits) {
+    if (flagsAt(i).Collider) feedBitsAt(i, bits);
   }
 
   /** @returns {number} */
   getFeedBits() {
     if (!this._hasComponents.Collider || !Collider.feedBits) return 0;
     return Collider.feedBits[this.index] | 0;
+  }
+
+  /**
+   * E-537: entity.getFeedBits() by index.
+   * @param {number} i
+   * @returns {number}
+   */
+  static getFeedBits(i) {
+    if (!flagsAt(i).Collider || !Collider.feedBits) return 0;
+    return Collider.feedBits[i] | 0;
   }
 
   /**
@@ -2319,24 +2475,18 @@ export class GameObject {
    *   }
    */
   isCollidingWith(other) {
-    // Get the other entity's index
-    const otherIndex = typeof other === 'number' ? other : other.index;
+    return collidingAt(this.index, typeof other === 'number' ? other : other.index);
+  }
 
-    // Access collision tracking from logic worker context
-    // The LogicWorker of this realm (currentLogicWorker, E-165)
-    const logicWorker = currentLogicWorker();
-    if (!logicWorker || !logicWorker.frameCollisions) {
-      return false;
-    }
-
-    // Collision keys are stored ONCE per pair, normalized as (min, max).
-    const a = this.index;
-    const minE = a < otherIndex ? a : otherIndex;
-    const maxE = a < otherIndex ? otherIndex : a;
-    const key = collisionPairKey(minE, maxE);
-
-    // frameCollisions always points at the latest completed frame's pair set
-    return logicWorker.frameCollisions.has(key);
+  /**
+   * E-537: entity.isCollidingWith(other) by index: whether entities i and other touch in the latest completed frame
+   * (logic workers only; a CollisionListener type in the scene).
+   * @param {number} i
+   * @param {number} other
+   * @returns {boolean}
+   */
+  static isCollidingWith(i, other) {
+    return collidingAt(i, other);
   }
 
   /**
@@ -2351,26 +2501,25 @@ export class GameObject {
    *   entity's sort line (a wall piece drawn at localY sorts at its foot), not where it draws or culls
    * @returns {number} decoration index or -1
    */
-  addDecoration(texture, localX, localY, scaleX, scaleY, zIndex, extra = {}) {
-    // A full attachment row says so (once) before a pool slot is spent on it.
-    if (!DecorationPool.canAttach(this.index, this.constructor.name)) return -1;
-    const decoIndex = DecorationPool.spawn({
-      parent: this.index,
-      localX,
-      localY,
-      scaleX,
-      scaleY,
-      innerZ: zIndex,
-      texture,
-      ...extra,
-    });
-    if (decoIndex < 0) return -1;
-    if (!DecorationPool.pushAttached(this.index, decoIndex)) {
-      DecorationPool.despawn(decoIndex);
-      return -1;
-    }
-    Decoration.ensureForParented(decoIndex);
-    return decoIndex;
+  addDecoration(texture, localX, localY, scaleX, scaleY, zIndex, extra) {
+    return addDecorationAt(this.index, this.constructor.name, texture, localX, localY, scaleX, scaleY, zIndex, extra);
+  }
+
+  /**
+   * E-537: entity.addDecoration(...) by index: a decoration attached to entity i, its pool index or -1. It makes no
+   * facade: Decoration.get(id) makes one when code asks for it, and Decoration's statics take the id.
+   * @param {number} i
+   * @param {string} texture - bigAtlas texture name
+   * @param {number} localX
+   * @param {number} localY
+   * @param {number} scaleX
+   * @param {number} scaleY
+   * @param {number} zIndex - signed inner sort; negative draws behind the entity's sprite
+   * @param {Object} [extra] - optional DecorationPool.spawn fields
+   * @returns {number} decoration index or -1
+   */
+  static addDecoration(i, texture, localX, localY, scaleX, scaleY, zIndex, extra) {
+    return addDecorationAt(i, entityName(i), texture, localX, localY, scaleX, scaleY, zIndex, extra);
   }
 
   /**
@@ -2383,12 +2532,31 @@ export class GameObject {
   }
 
   /**
+   * E-537: entity.getAttachedDecorationCount() by index.
+   * @param {number} i
+   * @returns {number}
+   */
+  static getAttachedDecorationCount(i) {
+    return DecorationPool.getAttachedCount(i);
+  }
+
+  /**
    * Decoration pool index at attachment slot `slot` (0 .. getAttachedDecorationCount() - 1).
    * @param {number} slot
    * @returns {number} pool index, or -1
    */
   getAttachedDecorationIndex(slot) {
     return DecorationPool.getAttachedDecorationIndex(this.index, slot);
+  }
+
+  /**
+   * E-537: entity.getAttachedDecorationIndex(slot) by index: the pool index at entity i's attachment slot, or -1.
+   * @param {number} i
+   * @param {number} slot
+   * @returns {number}
+   */
+  static getAttachedDecorationIndex(i, slot) {
+    return DecorationPool.getAttachedDecorationIndex(i, slot);
   }
 
   /**

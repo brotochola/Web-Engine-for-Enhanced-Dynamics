@@ -1651,6 +1651,8 @@ export declare class GameObject {
   get shadowCaster(): ShadowCaster | null;
   get sceneBridge(): typeof SceneBridge;
   sendMessageToScene(data: unknown): boolean;
+  /** E-537: entity.sendMessageToScene(data) by index: Scene.onMessageFromGameObject gets entity i and its class's name. */
+  static sendMessageToScene(i: number, data: unknown): boolean;
   get active(): number;
   set active(value: number);
   get entityType(): number;
@@ -1813,6 +1815,8 @@ export declare class GameObject {
   setAwake(awake?: boolean): this;
   /** Poll: touching `other` this frame? Needs a CollisionListener type in the scene. */
   isCollidingWith(other: number | GameObject): boolean;
+  /** E-537: entity.isCollidingWith by index: entities i and other touch in the latest completed frame (logic workers). */
+  static isCollidingWith(i: number, other: number): boolean;
 
   // Sprite and animation
   setSprite(spriteNameOrSheet: string, animation?: string, frameIndex?: number): this;
@@ -1832,6 +1836,13 @@ export declare class GameObject {
   setLayers(names: string[]): this;
   setFeedBits(bits: number): this;
   getFeedBits(): number;
+  /** E-537: the layer methods by index: entity i's sprite, Adobe and mesh rows and collider feed, as its type has them. */
+  static setLayer(i: number, layerName: string): void;
+  static setLayers(i: number, names: Array<string | number>): void;
+  /** The first sprite layer entity i is subscribed to (entity.layerName). */
+  static layerName(i: number): string;
+  static setFeedBits(i: number, bits: number): void;
+  static getFeedBits(i: number): number;
 
   // Neighbors (spatial grid; filled by the spatial workers)
   getNeighbor(i: number): number;
@@ -1856,6 +1867,22 @@ export declare class GameObject {
   getAttachedDecorationCount(): number;
   getAttachedDecorationIndex(slot: number): number;
   getAttachedDecoration(slot: number): Decoration | null;
+  /**
+   * E-537: entity.addDecoration by index: a decoration attached to entity i, its pool index or -1. No facade is made
+   * (Decoration.get(id) makes one; Decoration's statics take the id).
+   */
+  static addDecoration(
+    i: number,
+    texture: string,
+    localX: number,
+    localY: number,
+    scaleX?: number,
+    scaleY?: number,
+    zIndex?: number,
+    extra?: Record<string, unknown>
+  ): number;
+  static getAttachedDecorationCount(i: number): number;
+  static getAttachedDecorationIndex(i: number, slot: number): number;
   /** Mirror left-right / top-bottom (sprite or Adobe clip), independent of scale: setScale keeps it. */
   get flipX(): boolean;
   set flipX(on: boolean);
@@ -1927,8 +1954,15 @@ export declare class GameObject {
    * on the logic worker that owns it. name must be in the scene's static messages. Numbers only.
    */
   sendTo(other: number | GameObject, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
+  /**
+   * E-537: entity.sendTo by index: entity `to` runs onMessage(name, from, a, b, c, d) next frame (from -1: the scene).
+   * No allocation, no instance.
+   */
+  static sendTo(from: number, to: number, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
   /** Tell the main thread: scene.on(name, fn) gets fn(data, entityIndex, className). Structured-cloned. */
   emit(name: string, data?: unknown): boolean;
+  /** E-537: entity.emit by index: scene.on(name, fn) gets fn(data, i, className), the class's from i's type. */
+  static emit(i: number, name: string, data?: unknown): boolean;
   /** Is this entity an EntityClass or a subclass? Another entity: GameObject.is(index, EntityClass). */
   is(EntityClass: Function): boolean;
   /** Does this entity's type list ComponentClass? Another entity: GameObject.hasComponent(index, ComponentClass). */
@@ -3739,8 +3773,10 @@ export declare class Keyboard {
   static updateEdgeFlags(): void;
 }
 
+/** Worker → page messages of an entity, by its index and its class's name (E-537): no instance needed. */
 export declare class SceneBridge {
-  static sendMessageToScene(data: unknown, sender?: GameObject | null): boolean;
+  static emitToScene(name: string, data: unknown, entityIndex?: number, className?: string | null): boolean;
+  static sendMessageToScene(data: unknown, entityIndex?: number, className?: string | null): boolean;
 }
 
 // --- Components ---
@@ -5197,7 +5233,6 @@ export declare class Decoration {
   /** Despawn by pool index. */
   static despawn(index: number): boolean;
   static despawnAll(): void;
-  static ensureForParented(id: number): Decoration;
   static evictFacade(id: number): void;
   /** World-owned decorations only; fills out with pool indices (a Uint32Array past 65 535 decorations); returns count. */
   static queryCircle(x: number, y: number, radius: number, out: Uint16Array | Uint32Array): number;
