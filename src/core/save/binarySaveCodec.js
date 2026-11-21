@@ -1,27 +1,21 @@
 // Binary save body codec — sectioned little-endian payload (sole wire format).
 
-import { Layer } from '../layer.js';
 import { TWEEN_RECORD_FIELDS, tweenFieldValue } from './tweenRecord.js';
 
 export const SECTION = Object.freeze({
   META: 1,
   CAMERA: 2,
   SUN: 3,
+  /** u8 layout, then one table per entity type: its indices and a typed array per field (E-539). */
   ENTITIES: 4,
   JOINTS: 5,
   LIQUIDFUN: 6,
   DECALS: 7,
-  /** Legacy (no schema fingerprint). Read only; writes use SHARED_RESOURCES2. */
-  SHARED_RESOURCES: 8,
-  /** Legacy (no layout byte). Read only; writes use CHAINS2, FIXTURES2, MESHES2. */
-  CHAINS: 9,
-  FIXTURES: 10,
-  MESHES: 11,
+  // 8 to 11 and 14 were the forms format 5 replaced (SHARED_RESOURCES, CHAINS, FIXTURES, MESHES, TWEENS): no
+  // format 6 save holds them, and they are not reused.
   NAV: 12,
   TIME: 13,
-  /** Legacy (u16 entity). Read only; writes use TWEENS2. */
-  TWEENS: 14,
-  /** u8 layout version, then the TWEENS records with a u32 entity. */
+  /** u8 layout version, then the tween records with a u32 entity. */
   TWEENS2: 15,
   /** u8 layout, then records of name, u32 schema fingerprint (0 = unknown), bytes. */
   SHARED_RESOURCES2: 16,
@@ -35,7 +29,7 @@ export const SECTION = Object.freeze({
   INSTANCE_FIELDS: 21,
 });
 
-/** 2: repeat, doneMsg, flags (DX 4.2). Layout 1 saves still read. */
+/** 2: repeat, doneMsg, flags (DX 4.2). */
 const TWEENS2_LAYOUT = 2;
 /** Record layout of SHARED_RESOURCES2, CHAINS2, FIXTURES2, MESHES2. Bump on any change. */
 const SECTION_LAYOUT = 1;
@@ -53,7 +47,18 @@ const TYPED = Object.freeze({
   U16: 3,
   I32: 4,
   U8: 5,
+  I8: 6,
+  I16: 7,
+  F64: 8,
+  U8C: 9,
 });
+
+/** A typed array kind by its TYPED code. */
+const TYPED_KIND = [null, Float32Array, Uint32Array, Uint16Array, Int32Array, Uint8Array, Int8Array, Int16Array,
+  Float64Array, Uint8ClampedArray];
+
+/** Record layout of ENTITIES. Bump on any change. */
+const ENTITIES_LAYOUT = 1;
 
 const DECAL_FMT = Object.freeze({
   raw: 0,
@@ -140,6 +145,15 @@ class Writer {
     this.bytes(nameBytes(s));
   }
 
+  /** Zero bytes up to a multiple of n from the section's start (a typed column's bytes start aligned). */
+  align(n) {
+    const pad = (n - (this.o % n)) % n;
+    if (pad === 0) return;
+    this._grow(pad);
+    this.buf.fill(0, this.o, this.o + pad);
+    this.o += pad;
+  }
+
   /** Raw bytes without length prefix */
   raw(u8) {
     const src = u8 instanceof Uint8Array ? u8 : new Uint8Array(u8 || []);
@@ -215,6 +229,26 @@ class Reader {
     this.o += len;
     return slice.slice();
   }
+
+  /** Skip the writer's align(n) padding. */
+  align(n) {
+    this.o += (n - (this.o % n)) % n;
+  }
+
+  /**
+   * `count` elements of kind Kind at the read position: a view of the body's own bytes when they sit aligned for
+   * Kind (a decoded section's bytes are its own buffer), a copy otherwise.
+   */
+  typed(Kind, count) {
+    const len = count * Kind.BYTES_PER_ELEMENT;
+    this._need(len);
+    const at = this.buf.byteOffset + this.o;
+    this.o += len;
+    if (at % Kind.BYTES_PER_ELEMENT === 0) return new Kind(this.buf.buffer, at, count);
+    const out = new Kind(count);
+    new Uint8Array(out.buffer).set(new Uint8Array(this.buf.buffer, at, len));
+    return out;
+  }
 }
 
 function writeValue(w, value) {
@@ -253,6 +287,13 @@ function typedCode(arr) {
   if (arr instanceof Int32Array) return TYPED.I32;
   if (arr instanceof Uint8Array || arr instanceof Uint8ClampedArray) return TYPED.U8;
   throw new Error(`SaveGame: unsupported typed array ${arr.constructor?.name}`);
+}
+
+/** An entity column's kind, exactly (a column restores into an array of its own kind). */
+function columnCode(arr) {
+  const code = TYPED_KIND.indexOf(arr.constructor);
+  if (code <= 0) throw new Error(`SaveGame: unsupported column kind ${arr.constructor?.name}`);
+  return code;
 }
 
 function writeTyped(w, arr) {
@@ -363,70 +404,81 @@ function readSun(r) {
   return { enabled, f32, color: r.u32() };
 }
 
-function writeEntities(w, entities) {
-  const list = entities || [];
-  const byType = new Map();
-  for (let i = 0; i < list.length; i++) {
-    const rec = list[i];
-    const key = rec.typeName || '';
-    let arr = byType.get(key);
-    if (!arr) {
-      arr = [];
-      byType.set(key, arr);
-    }
-    arr.push(rec);
-  }
-  w.u16(byType.size);
-  for (const [typeName, recs] of byType) {
-    w.str(typeName);
-    w.u32(recs.length);
-    for (let e = 0; e < recs.length; e++) {
-      const rec = recs[e];
-      w.u32(rec.entityIndex | 0);
-      const components = rec.components || {};
-      const names = Object.keys(components);
-      w.u16(names.length);
-      for (let c = 0; c < names.length; c++) {
-        const name = names[c];
-        const comp = components[name] || {};
-        w.name(name);
-        w.u32(comp.fingerprint >>> 0);
-        const fields = comp.fields || {};
-        const fieldNames = Object.keys(fields);
-        w.u16(fieldNames.length);
-        for (let f = 0; f < fieldNames.length; f++) {
-          w.name(fieldNames[f]);
-          writeValue(w, fields[fieldNames[f]]);
+// ENTITIES (E-539): per type, the saved entities' indices and every field's values for all of them, each array's
+// bytes as they are in memory, aligned to 8 from the section's start, so a decode makes views of them, not copies.
+//   u8 layout, u16 types; per type: str name, u32 count, u32[count] indices, u16 components;
+//   per component: name, u32 fingerprint, u16 fields; per field: name, u8 kind, u16 length, u8 flags (1: entity id),
+//   kind[count × length] values
+function writeEntities(w, tables) {
+  const list = tables || [];
+  w.u8(ENTITIES_LAYOUT);
+  w.u16(list.length);
+  for (let t = 0; t < list.length; t++) {
+    const table = list[t];
+    const indices = table.indices;
+    const count = indices.length;
+    w.str(table.typeName || '');
+    w.u32(count);
+    w.align(8);
+    w.raw(new Uint8Array(indices.buffer, indices.byteOffset, count * 4));
+    const components = table.components || [];
+    w.u16(components.length);
+    for (let c = 0; c < components.length; c++) {
+      const comp = components[c];
+      w.name(comp.name);
+      w.u32(comp.fingerprint >>> 0);
+      const fields = comp.fields || [];
+      w.u16(fields.length);
+      for (let f = 0; f < fields.length; f++) {
+        const field = fields[f];
+        const values = field.values;
+        const length = field.length | 0 || 1;
+        if (values.length !== count * length) {
+          throw new Error(`SaveGame: ${table.typeName}.${comp.name}.${field.name} holds ${values.length} values, not ${count * length}`);
         }
+        w.name(field.name);
+        w.u8(columnCode(values));
+        w.u16(length);
+        w.u8(field.entityId ? 1 : 0);
+        w.align(8);
+        w.raw(new Uint8Array(values.buffer, values.byteOffset, values.byteLength));
       }
     }
   }
 }
 
 function readEntities(r) {
+  const layout = r.u8();
+  if (layout !== ENTITIES_LAYOUT) throw new Error(`SaveGame: entity section layout ${layout} is not this build's`);
   const typeCount = r.u16();
-  const entities = [];
+  const tables = new Array(typeCount);
   for (let t = 0; t < typeCount; t++) {
     const typeName = r.str();
-    const entityCount = r.u32();
-    for (let e = 0; e < entityCount; e++) {
-      const entityIndex = r.u32();
-      const componentCount = r.u16();
-      const components = {};
-      for (let c = 0; c < componentCount; c++) {
-        const name = r.str();
-        const fingerprint = r.u32();
-        const fieldCount = r.u16();
-        const fields = {};
-        for (let f = 0; f < fieldCount; f++) {
-          fields[r.str()] = readValue(r);
-        }
-        components[name] = { fingerprint, fields };
+    const count = r.u32();
+    r.align(8);
+    const indices = r.typed(Uint32Array, count);
+    const componentCount = r.u16();
+    const components = new Array(componentCount);
+    for (let c = 0; c < componentCount; c++) {
+      const name = r.str();
+      const fingerprint = r.u32();
+      const fieldCount = r.u16();
+      const fields = new Array(fieldCount);
+      for (let f = 0; f < fieldCount; f++) {
+        const fieldName = r.str();
+        const code = r.u8();
+        const length = r.u16();
+        const flags = r.u8();
+        const Kind = TYPED_KIND[code];
+        if (!Kind) throw new Error(`SaveGame: bad column kind ${code}`);
+        r.align(8);
+        fields[f] = { name: fieldName, length, entityId: (flags & 1) !== 0, values: r.typed(Kind, count * length) };
       }
-      entities.push({ typeName, entityIndex, components });
+      components[c] = { name, fingerprint, fields };
     }
+    tables[t] = { typeName, indices, components };
   }
-  return entities;
+  return tables;
 }
 
 function writeJoints(w, joints) {
@@ -517,10 +569,8 @@ function writeLiquidFun(w, lf) {
     if (render.layerMask) writeTyped(w, render.layerMask);
   }
 
-  // Appended after v4 render block; readers skip if the section ends here.
   w.u8(lf.groupsLightIntensity ? 1 : 0);
   if (lf.groupsLightIntensity) writeTyped(w, lf.groupsLightIntensity);
-  w.u8(0); // no legacy feedLayerId
   w.u8(lf.userData ? 1 : 0);
   if (lf.userData) writeTyped(w, lf.userData);
   w.u8(lf.color ? 1 : 0);
@@ -575,31 +625,13 @@ function readLiquidFun(r) {
       alpha: readTyped(r),
       rotC: r.u8() ? readTyped(r) : null,
       rotS: r.u8() ? readTyped(r) : null,
-      layerField: r.u8() ? readTyped(r) : null,
+      layerMask: r.u8() ? readTyped(r) : null,
     };
   }
 
-  let groupsLightIntensity = null;
-  if (r.o < r.buf.byteLength) {
-    groupsLightIntensity = r.u8() ? readTyped(r) : null;
-  }
-  let feedLayerId = null;
-  if (r.o < r.buf.byteLength) {
-    feedLayerId = r.u8() ? readTyped(r) : null;
-  }
-  if (render) {
-    render.layerMask = Layer.maskFromLegacy(render.layerField, feedLayerId);
-    delete render.layerField;
-  }
-
-  let userData = null;
-  let color = null;
-  if (r.o < r.buf.byteLength) {
-    userData = r.u8() ? readTyped(r) : null;
-  }
-  if (r.o < r.buf.byteLength) {
-    color = r.u8() ? readTyped(r) : null;
-  }
+  const groupsLightIntensity = r.u8() ? readTyped(r) : null;
+  const userData = r.u8() ? readTyped(r) : null;
+  const color = r.u8() ? readTyped(r) : null;
 
   return {
     count,
@@ -670,13 +702,12 @@ function writeSharedResources(w, records) {
   }
 }
 
-/** @param {boolean} legacy SHARED_RESOURCES (tag 8): no fingerprint. */
-function readSharedResources(r, legacy) {
+function readSharedResources(r) {
   const n = r.u32();
   const out = [];
   for (let i = 0; i < n; i++) {
     const name = r.str();
-    const fingerprint = legacy ? 0 : r.u32();
+    const fingerprint = r.u32();
     out.push({ name, fingerprint: fingerprint || null, bytes: r.bytes() });
   }
   return out;
@@ -825,18 +856,12 @@ function writeTweens(w, slots) {
   }
 }
 
-/**
- * @param {Reader} r
- * @param {boolean} legacy TWEENS (tag 14): no layout byte, u16 entity.
- */
-function readTweens(r, legacy) {
-  let layout = 1;
-  if (!legacy) {
-    layout = r.u8();
-    if (layout > TWEENS2_LAYOUT) {
-      console.warn(`[SaveGame] tween section layout ${layout} is newer than this build; tweens skipped`);
-      return null;
-    }
+/** @param {Reader} r */
+function readTweens(r) {
+  const layout = r.u8();
+  if (layout !== TWEENS2_LAYOUT) {
+    console.warn(`[SaveGame] tween section layout ${layout} is not this build's; tweens skipped`);
+    return null;
   }
   const n = r.u32();
   const out = [];
@@ -845,10 +870,8 @@ function readTweens(r, legacy) {
     for (let f = 0; f < TWEEN_RECORD_FIELDS.length; f++) {
       const name = TWEEN_RECORD_FIELDS[f][0];
       const type = TWEEN_RECORD_FIELDS[f][1];
-      const since = TWEEN_RECORD_FIELDS[f][2] || 1;
-      if (since > layout) rec[name] = 0;
-      else if (type === 'f32') rec[name] = r.f32();
-      else if (type === 'u32') rec[name] = legacy && name === 'entity' ? r.u16() : r.u32();
+      if (type === 'f32') rec[name] = r.f32();
+      else if (type === 'u32') rec[name] = r.u32();
       else rec[name] = r.u8();
     }
     out.push(rec);
@@ -916,21 +939,18 @@ export function encodeBinarySaveBody(payload) {
 }
 
 /**
- * A section written with a leading layout byte (tag) or its older form
- * without one (legacyTag). A layout newer than this build reads as absent.
- * @returns {*} read(reader, legacy), or null
+ * A section written with a leading layout byte. A layout other than this build's reads as absent, with a warning.
+ * @returns {*} read(reader), or null
  */
-function readVersioned(map, tag, legacyTag, what, read) {
-  if (map[tag]) {
-    const r = new Reader(map[tag]);
-    const layout = r.u8();
-    if (layout !== SECTION_LAYOUT) {
-      console.warn(`[SaveGame] ${what} section layout ${layout} is newer than this build; skipped`);
-      return null;
-    }
-    return read(r, false);
+function readVersioned(map, tag, what, read) {
+  if (!map[tag]) return null;
+  const r = new Reader(map[tag]);
+  const layout = r.u8();
+  if (layout !== SECTION_LAYOUT) {
+    console.warn(`[SaveGame] ${what} section layout ${layout} is not this build's; skipped`);
+    return null;
   }
-  return map[legacyTag] ? read(new Reader(map[legacyTag]), true) : null;
+  return read(r);
 }
 
 /**
@@ -962,21 +982,15 @@ export function decodeBinarySaveBody(bytes) {
       ? readLiquidFun(new Reader(map[SECTION.LIQUIDFUN]))
       : null,
     decals: map[SECTION.DECALS] ? readDecals(new Reader(map[SECTION.DECALS])) : null,
-    sharedResources: readVersioned(
-      map, SECTION.SHARED_RESOURCES2, SECTION.SHARED_RESOURCES, 'shared resource', readSharedResources,
-    ),
-    chains: readVersioned(map, SECTION.CHAINS2, SECTION.CHAINS, 'chain', readChains),
-    fixtures: readVersioned(map, SECTION.FIXTURES2, SECTION.FIXTURES, 'fixture', readFixtures),
-    meshes: readVersioned(map, SECTION.MESHES2, SECTION.MESHES, 'mesh', readMeshes),
+    sharedResources: readVersioned(map, SECTION.SHARED_RESOURCES2, 'shared resource', readSharedResources),
+    chains: readVersioned(map, SECTION.CHAINS2, 'chain', readChains),
+    fixtures: readVersioned(map, SECTION.FIXTURES2, 'fixture', readFixtures),
+    meshes: readVersioned(map, SECTION.MESHES2, 'mesh', readMeshes),
     nav: map[SECTION.NAV] ? readNav(new Reader(map[SECTION.NAV])) : null,
     timeScale: map[SECTION.TIME] ? readTime(new Reader(map[SECTION.TIME])) : null,
-    tweens: map[SECTION.TWEENS2]
-      ? readTweens(new Reader(map[SECTION.TWEENS2]), false)
-      : map[SECTION.TWEENS]
-        ? readTweens(new Reader(map[SECTION.TWEENS]), true)
-        : null,
-    // Older saves have no CUSTOM section: null, not an error.
-    custom: readVersioned(map, SECTION.CUSTOM, -1, 'custom', readCustom),
-    instanceFields: readVersioned(map, SECTION.INSTANCE_FIELDS, -1, 'instance fields', readCustom),
+    tweens: map[SECTION.TWEENS2] ? readTweens(new Reader(map[SECTION.TWEENS2])) : null,
+    // A save whose scene had no onSaveGame has no CUSTOM section: null, not an error.
+    custom: readVersioned(map, SECTION.CUSTOM, 'custom', readCustom),
+    instanceFields: readVersioned(map, SECTION.INSTANCE_FIELDS, 'instance fields', readCustom),
   };
 }

@@ -9,7 +9,8 @@ import { encodeBinarySaveBody, decodeBinarySaveBody } from '../../src/core/save/
 // this payload's body was hashed with the four hand-written lists.
 // DX 4.2 bumped the section to layout 2 (repeat u32, doneMsg u32, flags u8 per
 // record: +9 bytes each, 190 -> 208); size and hash re-taken. The
-// layout 1 bytes still decode (tweenOptions.test.js).
+// layout 1 bytes still decode (tweenOptions.test.js). E-539 gave the ENTITIES
+// section a layout byte (208 -> 209); size and hash re-taken.
 
 const TWEENS = [
   { kind: 2, ease: 5, mask: 9, entity: 70000, duration: 1.5, elapsed: 0.25, from0: 0.1, to0: 0.9, from1: 2, to1: 3, from2: -4, to2: 4.5, from3: 0, to3: 0, tintFrom: 0xff8800, tintTo: 0x00ffaa },
@@ -32,10 +33,10 @@ function payload() {
 
 test('a save with tweens encodes to the same bytes as before the record table', () => {
   const bytes = encodeBinarySaveBody(payload());
-  assert.equal(bytes.length, 208);
+  assert.equal(bytes.length, 209);
   assert.equal(
     crypto.createHash('sha256').update(bytes).digest('hex'),
-    '00ebf015e8e048c4c274820861f4315bdc4b76fd6e32ef90adfc5df1df466ed9',
+    '9006ff0ccf30f85dfb5378de61e6bc28d4756b6c869f5ea36a0775526b02f2b0',
   );
 });
 

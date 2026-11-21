@@ -8,6 +8,7 @@ import { applySavePayloadToScene } from '../../src/core/save/saveGame.js';
 import { GameObject, bindLogicWorkerRef } from '../../src/core/gameObject.js';
 import { resetEntity, popEntity } from '../../src/util/atomicFreeList.js';
 import { savePopulation } from '../bench/saveEncodeMicrobench.mjs';
+import { entityTable } from '../helpers/saveTable.mjs';
 
 // A hot reload must bring the whole scene back: every entity, serializable or
 // not (Boids lost all 40000 boids, Predator its barrels), each at its own index.
@@ -39,12 +40,7 @@ test('an allTypes restore replaces every type, asks for own indices, and skips a
   const payload = {
     magic: SAVE_MAGIC,
     sceneName: 'Hot',
-    entities: [
-      { typeName: 'Kept', entityIndex: 1, components: {} },
-      { typeName: 'Plain', entityIndex: 5, components: {} },
-      { typeName: 'Gone', entityIndex: 8, components: {} },
-      { typeName: 'Gone', entityIndex: 9, components: {} },
-    ],
+    entities: [entityTable('Kept', [1]), entityTable('Plain', [5]), entityTable('Gone', [8, 9])],
     joints: [],
   };
   const warnings = [];
@@ -120,7 +116,7 @@ test('logic0 puts each entity back at its own index on a hot restore, and warns 
   worker.processListUpdates = () => {};
   console.warn = (...a) => warnings.push(a.join(' '));
   try {
-    const records = [11, 12, 99, 98, 97].map((entityIndex) => ({ typeName: 'Boid', entityIndex, components: {} }));
+    const records = [entityTable('Boid', [11, 12, 99, 98, 97])];
     const reply = worker._restoreSave({ serializableClassNames: ['Boid'], entities: records, exactIndices: true });
     assert.deepEqual(spawns, [11, 12, -1, -1, -1], 'own index when it is the class’s, else from the pool');
     assert.equal(reply.restored, 3);
@@ -129,7 +125,7 @@ test('logic0 puts each entity back at its own index on a hot restore, and warns 
 
     spawns.length = 0;
     full = -10;
-    worker._restoreSave({ serializableClassNames: ['Boid'], entities: records.slice(0, 2) });
+    worker._restoreSave({ serializableClassNames: ['Boid'], entities: [entityTable('Boid', [11, 12])] });
     assert.deepEqual(spawns, [-1, -1], 'a player save lets the pool choose');
     assert.deepEqual(hotFlags, [true, true, true, true, true, false, false], 'onSpawned is skipped on a hot restore only');
   } finally {
@@ -175,7 +171,8 @@ test('a schema drift warns once per class and component, not once per entity', (
   const realWarn = console.warn;
   console.warn = (...a) => warnings.push(a.join(' '));
   try {
-    for (let i = 0; i < N; i++) applyEntitySaveRestore(i, Drifty, { Transform: { fingerprint: 1, fields: {} } });
+    const table = entityTable('Drifty', [0, 1, 2], { Transform: { fingerprint: 1 } });
+    for (let i = 0; i < N; i++) applyEntitySaveRestore(i, Drifty, { table, row: i });
   } finally {
     console.warn = realWarn;
   }
@@ -221,7 +218,7 @@ test('a hot restore pins each entity to its saved worker; unpinned ones are unpi
   GameObject._spawnAt = (C, config, at) => (configs.push(config), { index: at });
   worker.processListUpdates = () => {};
   try {
-    const entities = [0, 1].map((entityIndex) => ({ typeName: 'Manager', entityIndex, components: {} }));
+    const entities = [entityTable('Manager', [0, 1])];
     worker._restoreSave({ serializableClassNames: ['Manager'], entities, exactIndices: true, forcedWorkers: [[0, 1]] });
     assert.deepEqual(configs.map((c) => c.forceProcessOnLogicWorker), [1, -1]);
     configs.length = 0;

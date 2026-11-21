@@ -119,7 +119,7 @@ test('a finished tween freed by a racing cancel is only counted down once', () =
   assert.equal(Tween.entityTweens[0], 0);
 });
 
-test('tweens save repeat / yoyo / onComplete, and a layout 1 save still loads', () => {
+test('tweens save repeat / yoyo / onComplete, and a section of another layout reads as no tweens', () => {
   setup();
   Tween.to(0, { alpha: 0 }, 100, PARTICLE_EASE.LERP, { repeat: 3, yoyo: true });
   const slots = [];
@@ -170,8 +170,15 @@ test('tweens save repeat / yoyo / onComplete, and a layout 1 save still loads', 
     legacy.set(body, w + 6);
     w += 6 + body.length;
   }
-  const old = decodeBinarySaveBody(legacy);
-  assert.equal(old.tweens.length, 1);
-  assert.equal(old.tweens[0].duration, 100);
-  assert.deepEqual([old.tweens[0].repeat, old.tweens[0].doneMsg, old.tweens[0].flags], [0, 0, 0]);
+  const warn = console.warn;
+  const warns = [];
+  console.warn = (m) => warns.push(String(m));
+  let old;
+  try {
+    old = decodeBinarySaveBody(legacy);
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(old.tweens, null);
+  assert.ok(warns.some((m) => /tween section layout 1 is not this build's/.test(m)));
 });

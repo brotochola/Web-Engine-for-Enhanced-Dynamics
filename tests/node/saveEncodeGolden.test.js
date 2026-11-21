@@ -5,23 +5,17 @@ import { createHash } from 'node:crypto';
 import { collectSerializableEntities } from '../../src/core/save/entitySaveSnapshot.js';
 import { encodeBinarySaveBody, decodeBinarySaveBody } from '../../src/core/save/binarySaveCodec.js';
 import { savePopulation } from '../bench/saveEncodeMicrobench.mjs';
+import { entityTable, tableField } from '../helpers/saveTable.mjs';
 
-// E-49. Saving built a schema fingerprint and lists per entity and encoded
-// every component and field name again for every entity. Both are done once
-// per save now; the bytes on disk must not change. The hash below was taken
-// from the code before the change (and matches it after).
-// DX 3.3 added SpriteRenderer.flip (one Uint8 per entity, saved like any
-// field): +17 bytes per entity here (24 × 17 = 408), size and hash re-taken. E-177 added SpriteRenderer.keyedDirty
-// (one Uint8, saved like the other flags): +23 bytes per entity (24 × 23 = 552), size and hash re-taken. DX-GBUF added
-// SpriteRenderer.gbufFlags (normals, surface, unshaded; one Uint8): +22 bytes per entity (24 × 22 = 528), re-taken.
-// DX-PARENT added Transform.parent, localX, localY and localRotation (saved like any field): +83 bytes per entity
-// (24 × 83 = 1992), size and hash re-taken.
+// The bytes a fixed population saves to: a change that means to keep the format must keep them.
+// E-539 (format 6) saves the entities by columns, one table per type: the 24 entities' body went from 55 388 bytes
+// (format 5: every value an f64 behind its field's name, entity by entity) to 16 988; size and hash re-taken.
 
 function payloadOf(entities) {
   return {
     sceneName: 'Golden',
     engineVersion: '0',
-    layout: { types: [], totalEntityCount: entities.length },
+    layout: { types: [], totalEntityCount: 24 },
     camera: null,
     sun: null,
     entities,
@@ -32,24 +26,22 @@ function payloadOf(entities) {
 test('a fixed population saves to the same bytes as before', () => {
   const entities = collectSerializableEntities(savePopulation(24, 0x5a7e));
   const bytes = encodeBinarySaveBody(payloadOf(entities));
-  assert.equal(bytes.length, 55388);
+  assert.equal(bytes.length, 16988);
   assert.equal(
     createHash('sha256').update(bytes).digest('hex'),
-    '0c3182a4c20c680783fed4dec636284b7630e30d2c0383a63f59fd7fd4130806',
+    '9c280d7a418444dfa7503aaecef944246f689996650b83146b3b0812bcac5d2a',
   );
 });
 
 test('more distinct names than the name cache holds still round-trip', () => {
   const fields = {};
-  for (let i = 0; i < 5000; i++) fields[`field${i}`] = i * 0.5;
-  const entities = [
-    { typeName: 'Wide', entityIndex: 3, components: { Wide: { fingerprint: 7, fields } } },
-    { typeName: 'Wide', entityIndex: 4, components: { Wide: { fingerprint: 7, fields } } },
-  ];
+  for (let i = 0; i < 5000; i++) fields[`field${i}`] = Float64Array.of(i * 0.5, i * 0.25);
+  const entities = [entityTable('Wide', [3, 4], { Wide: { fingerprint: 7, fields } })];
   const back = decodeBinarySaveBody(encodeBinarySaveBody(payloadOf(entities)));
-  assert.equal(back.entities.length, 2);
-  for (const e of back.entities) {
-    assert.deepEqual(e.components.Wide.fields, fields);
-    assert.equal(e.components.Wide.fingerprint, 7);
+  assert.equal(back.entities.length, 1);
+  assert.deepEqual([...back.entities[0].indices], [3, 4]);
+  assert.equal(back.entities[0].components[0].fingerprint, 7);
+  for (let i = 0; i < 5000; i++) {
+    assert.deepEqual([...tableField(back.entities[0], 'Wide', `field${i}`)], [i * 0.5, i * 0.25]);
   }
 });

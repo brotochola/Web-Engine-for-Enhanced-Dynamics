@@ -1,5 +1,5 @@
-// Sparse entity save snapshot: pack/unpack SoA fields for serializable active entities.
-// Used by SaveGame encode/decode and by GameObject._spawnAt (_saveRestore).
+// Sparse entity save snapshot: the live entities' SoA columns, one table per type (E-539), and the outer
+// encode/decode. Used by SaveGame and by GameObject._spawnAt (_saveRestore).
 
 import { Component } from '../component.js';
 import { Transform } from '../../components/transform.js';
@@ -10,6 +10,7 @@ import { Sun } from '../sun.js';
 import { VERSION } from '../../version.js';
 import { BODY_DIRTY, markBodyDirty } from '../../box2d/box2dBodySync.js';
 import { Joint } from '../joint.js';
+import { entityIdNone } from '../../util/entityIdWidth.js';
 import { encodeBinarySaveBody, decodeBinarySaveBody } from './binarySaveCodec.js';
 import { fnv1a32 } from './schemaHash.js';
 import {
@@ -23,7 +24,8 @@ import {
 } from './worldBufferSave.js';
 
 export const SAVE_MAGIC = 'WEEDSAVE1';
-export const SAVE_FORMAT_VERSION = 5;
+/** 6: entities by columns, one table per type (E-539). A save of any other version does not load. */
+export const SAVE_FORMAT_VERSION = 6;
 
 /** @param {Function} EntityClass */
 export function isEntityClassSerializable(EntityClass) {
@@ -57,155 +59,403 @@ export function componentSchemaFingerprint(ComponentClass) {
   return fnv1a32(parts.join('|'));
 }
 
+// --- Entities by columns (E-539) ---
+//
+// A save holds its entities as one table per entity type: the saved entities' indices (a Uint32Array) and, for each
+// component, one typed array per field with that field's values for every saved entity, in the indices' order, of
+// the live column's own kind. Transform's pose (x, y, rotC, rotS) and RigidBody's velocities and sleeping, which live
+// on Box2D's heap and not in an ARRAY_SCHEMA, are fields of those two components like the others.
+//
+//   { typeName, indices: Uint32Array(n), components: [{ name, fingerprint, fields: [{ name, length, entityId, values }] }] }
+//
+// `length` is the field's elements per entity (values.length = n × length). A table is plain data: it crosses
+// postMessage as it is, and each values array is transferable. Copies are bit for bit: they go through unsigned
+// integer views of the column's element width, so a float's every bit, a NaN's payload included, comes back.
+
 /**
- * A component's saved fields, in schema order, and its fingerprint. Built once
- * per save for each class: per entity it cost a fingerprint string, an entries
- * array and a schema object per field (E-49). Per save, not global: a schema
- * can change between scenes (entity-id width).
+ * The bits of a typed array, as unsigned integers of its element width: 1 and 2 bytes as themselves, 4 bytes as one
+ * Uint32, 8 bytes as two.
+ * @param {ArrayBufferView} arr
+ * @returns {Uint8Array|Uint16Array|Uint32Array}
  */
-function componentPlan(ComponentClass, plans) {
-  let plan = plans.get(ComponentClass);
-  if (plan) return plan;
-  const names = [];
-  const lengths = [];
-  for (const [fieldName, typeOrSpec] of Object.entries(ComponentClass.ARRAY_SCHEMA)) {
-    names.push(fieldName);
-    lengths.push(Component._schemaEntry(typeOrSpec).length);
+function bitsView(arr) {
+  const bpe = arr.BYTES_PER_ELEMENT;
+  if (bpe === 1) return arr instanceof Uint8Array ? arr : new Uint8Array(arr.buffer, arr.byteOffset, arr.length);
+  if (bpe === 2) return arr instanceof Uint16Array ? arr : new Uint16Array(arr.buffer, arr.byteOffset, arr.length);
+  return arr instanceof Uint32Array ? arr : new Uint32Array(arr.buffer, arr.byteOffset, (arr.length * bpe) >>> 2);
+}
+
+/** Words of bitsView(arr) per element of arr: 2 for an 8-byte kind, 1 otherwise. */
+function wordsPerElement(arr) {
+  return arr.BYTES_PER_ELEMENT === 8 ? 2 : 1;
+}
+
+// The gathers: dst[k] = src[idx[k]], one copy per element width so each loop sees one array kind (review R8).
+function gather8(dst, src, idx, n) {
+  for (let k = 0; k < n; k++) dst[k] = src[idx[k]];
+}
+function gather16(dst, src, idx, n) {
+  for (let k = 0; k < n; k++) dst[k] = src[idx[k]];
+}
+function gather32(dst, src, idx, n) {
+  for (let k = 0; k < n; k++) dst[k] = src[idx[k]];
+}
+/** w words per entity: a field of several elements, or an 8-byte kind. */
+function gatherWide(dst, src, idx, n, w) {
+  for (let k = 0; k < n; k++) {
+    const s = idx[k] * w;
+    const d = k * w;
+    for (let e = 0; e < w; e++) dst[d + e] = src[s + e];
   }
-  plan = { fingerprint: componentSchemaFingerprint(ComponentClass), names, lengths };
-  plans.set(ComponentClass, plan);
-  return plan;
+}
+
+/** One saved column of a class: where it lives now, and how a save names it. */
+function saveColumn(name, live, length, entityId) {
+  return { name, live, length, entityId };
 }
 
 /**
- * Read one entity's component fields into a plain object map.
+ * What a save reads of an entity class: its components (each with its fingerprint) and their columns, each column's
+ * live array bound now. Built once per save for each class (E-49, E-539): per entity it cost a fingerprint string, an
+ * entries array and a schema object per field. Per save, not global: a schema can change between scenes (entity-id
+ * width), and so can the arrays.
  * @param {Function} EntityClass
- * @param {number} entityIndex
- * @param {Map} [plans] per-save cache of componentPlan; omitted, one is made for this call
- * @returns {Record<string, { fingerprint: number, fields: Record<string, number|number[]> }>|null}
+ * @returns {Array<{ name: string, fingerprint: number, columns: object[] }>}
  */
-export function readEntityComponents(EntityClass, entityIndex, plans = new Map()) {
+function entitySavePlan(EntityClass) {
   const map = EntityClass._componentClassMap || {};
-  const out = {};
-
-  for (const name in map) {
-    const ComponentClass = map[name];
-    if (!ComponentClass?.ARRAY_SCHEMA) continue;
-    const plan = componentPlan(ComponentClass, plans);
-    // Skip empty schemas
-    if (plan.names.length === 0 && ComponentClass !== Transform) {
-      continue;
-    }
-
-    const fields = {};
-    for (let p = 0; p < plan.names.length; p++) {
-      const fieldName = plan.names[p];
-      const length = plan.lengths[p];
+  const components = [];
+  const seen = new Set();
+  for (const key in map) {
+    const ComponentClass = map[key];
+    if (!ComponentClass?.ARRAY_SCHEMA || seen.has(ComponentClass)) continue;
+    seen.add(ComponentClass);
+    const columns = [];
+    for (const [fieldName, typeOrSpec] of Object.entries(ComponentClass.ARRAY_SCHEMA)) {
       const arr = ComponentClass[fieldName];
       if (!arr) continue;
-      if (length === 1) {
-        fields[fieldName] = arr[entityIndex];
-      } else {
-        const base = entityIndex * length;
-        const slice = new Array(length);
-        for (let k = 0; k < length; k++) slice[k] = arr[base + k];
-        fields[fieldName] = slice;
-      }
+      const spec = Component._schemaEntry(typeOrSpec);
+      columns.push(saveColumn(fieldName, arr, spec.length, spec.entityId));
     }
-
-    // Transform pose lives on Box2D HEAP views, not ARRAY_SCHEMA
-    if (ComponentClass === Transform || name === 'Transform') {
-      if (Transform.x) fields.x = Transform.x[entityIndex];
-      if (Transform.y) fields.y = Transform.y[entityIndex];
-      if (Transform.rotC) fields.rotC = Transform.rotC[entityIndex];
-      if (Transform.rotS) fields.rotS = Transform.rotS[entityIndex];
+    // Transform's pose and RigidBody's velocities live on Box2D's heap views, not in ARRAY_SCHEMA.
+    if (ComponentClass === Transform) {
+      for (const f of POSE_FIELDS) if (Transform[f]) columns.push(saveColumn(f, Transform[f], 1, false));
+    } else if (ComponentClass === RigidBody) {
+      for (const f of VELOCITY_FIELDS) if (RigidBody[f]) columns.push(saveColumn(f, RigidBody[f], 1, false));
+    } else if (columns.length === 0) {
+      continue; // a component with no columns has nothing to save
     }
-
-    // RigidBody velocities / sleeping also live on HEAP
-    if (ComponentClass === RigidBody || name === 'RigidBody') {
-      if (RigidBody.vx) fields.vx = RigidBody.vx[entityIndex];
-      if (RigidBody.vy) fields.vy = RigidBody.vy[entityIndex];
-      if (RigidBody.angularVelocity) {
-        fields.angularVelocity = RigidBody.angularVelocity[entityIndex];
-      }
-      if (RigidBody.sleeping) fields.sleeping = RigidBody.sleeping[entityIndex];
-    }
-
-    out[ComponentClass.name] = {
-      fingerprint: plan.fingerprint,
-      fields,
-    };
+    components.push({ name: ComponentClass.name, fingerprint: componentSchemaFingerprint(ComponentClass), columns });
   }
-
-  return out;
+  return components;
 }
 
+const POSE_FIELDS = ['x', 'y', 'rotC', 'rotS'];
+const VELOCITY_FIELDS = ['vx', 'vy', 'angularVelocity', 'sleeping'];
+
 /**
- * Apply saved component fields onto an entity index (after onSpawned / FSM init).
- * @param {number} entityIndex
+ * The table of `indices`, entities of EntityClass: every saved column gathered for them. One buffer holds every
+ * column of the table (each aligned to 8 bytes), so it crosses postMessage as one transferable.
  * @param {Function} EntityClass
- * @param {Record<string, { fingerprint?: number, fields: Record<string, number|number[]> }>} components
+ * @param {ArrayLike<number>} indices the entities, in the table's order
+ * @param {Map} [plans] per-save cache of entitySavePlan by class; omitted, one is made for this call
+ * @returns {{ typeName: string, indices: Uint32Array, components: object[] }}
  */
+export function gatherEntityTable(EntityClass, indices, plans = new Map()) {
+  let plan = plans.get(EntityClass);
+  if (plan === undefined) {
+    plan = entitySavePlan(EntityClass);
+    plans.set(EntityClass, plan);
+  }
+  const n = indices.length;
+  let bytes = n * 4;
+  for (let c = 0; c < plan.length; c++) {
+    const cols = plan[c].columns;
+    for (let f = 0; f < cols.length; f++) {
+      bytes = (bytes + 7) & ~7;
+      bytes += n * cols[f].length * cols[f].live.BYTES_PER_ELEMENT;
+    }
+  }
+  const buffer = new ArrayBuffer(bytes);
+  const idx = new Uint32Array(buffer, 0, n);
+  for (let k = 0; k < n; k++) idx[k] = indices[k];
+  let offset = n * 4;
+  const components = new Array(plan.length);
+  for (let c = 0; c < plan.length; c++) {
+    const cols = plan[c].columns;
+    const fields = new Array(cols.length);
+    for (let f = 0; f < cols.length; f++) {
+      const col = cols[f];
+      const live = col.live;
+      offset = (offset + 7) & ~7;
+      const values = new live.constructor(buffer, offset, n * col.length);
+      offset += values.byteLength;
+      const w = wordsPerElement(live) * col.length;
+      const dst = bitsView(values);
+      const src = bitsView(live);
+      if (w !== 1) gatherWide(dst, src, idx, n, w);
+      else if (live.BYTES_PER_ELEMENT === 1) gather8(dst, src, idx, n);
+      else if (live.BYTES_PER_ELEMENT === 2) gather16(dst, src, idx, n);
+      else gather32(dst, src, idx, n);
+      fields[f] = { name: col.name, length: col.length, entityId: col.entityId, values };
+    }
+    components[c] = { name: plan[c].name, fingerprint: plan[c].fingerprint, fields };
+  }
+  return { typeName: EntityClass.name, indices: idx, components };
+}
+
+/** Saved entities in a payload: the sum of its tables' rows. */
+export function savedEntityCount(payload) {
+  const tables = payload?.entities || [];
+  let n = 0;
+  for (let t = 0; t < tables.length; t++) n += tables[t].indices.length;
+  return n;
+}
+
 /** "Class|Component" pairs already warned about: one schema-drift warning each, not one per entity. */
 const driftWarned = new Set();
 
-export function applyEntitySaveRestore(entityIndex, EntityClass, components) {
-  if (!components) return;
-  const map = EntityClass._componentClassMap || {};
+function warnDrift(EntityClass, ComponentClass) {
+  const key = EntityClass.name + '|' + ComponentClass.name;
+  if (driftWarned.has(key)) return;
+  driftWarned.add(key);
+  console.warn(`[SaveGame] schema drift for ${ComponentClass.name} on ${EntityClass.name}; applying best-effort`);
+}
 
-  for (const name in map) {
-    const ComponentClass = map[name];
-    if (!ComponentClass?.ARRAY_SCHEMA) continue;
-    const saved = components[ComponentClass.name] || components[name];
-    if (!saved?.fields) continue;
+/**
+ * The live array a saved field of ComponentClass goes to, or null: a schema field (with its length and whether it holds
+ * entity ids now, which decides the remap), or a Box2D heap column.
+ */
+function liveColumnOf(ComponentClass, fieldName) {
+  const schema = ComponentClass.ARRAY_SCHEMA;
+  if (Object.prototype.hasOwnProperty.call(schema, fieldName)) {
+    const spec = Component._schemaEntry(schema[fieldName]);
+    return { arr: ComponentClass[fieldName] || null, length: spec.length, entityId: spec.entityId };
+  }
+  if ((ComponentClass === Transform && POSE_FIELDS.includes(fieldName)) ||
+    (ComponentClass === RigidBody && VELOCITY_FIELDS.includes(fieldName))) {
+    return { arr: ComponentClass[fieldName] || null, length: 1, entityId: false };
+  }
+  return null;
+}
 
-    if (
-      saved.fingerprint != null &&
-      saved.fingerprint !== componentSchemaFingerprint(ComponentClass)
-    ) {
-      const key = EntityClass.name + '|' + ComponentClass.name;
-      if (!driftWarned.has(key)) {
-        driftWarned.add(key);
-        console.warn(
-          `[SaveGame] schema drift for ${ComponentClass.name} on ${EntityClass.name}; applying best-effort`
-        );
-      }
+/**
+ * How one load writes a saved table onto the entities it spawns (E-539): every saved field matched once to the live
+ * column it restores, the fingerprints compared once, not per entity. A column of the same kind and length is copied
+ * as bits; one whose kind or length changed since the save (schema drift) is copied value by value, as far as both
+ * go. The restore sets `row` to the table row of the entity it spawns next; GameObject's spawn calls apply (through
+ * applyEntitySaveRestore) for it, after onSpawned and the FSM's initialization, before the entity goes live.
+ */
+export class EntityRestorePlan {
+  /**
+   * @param {Function} EntityClass
+   * @param {{ typeName: string, indices: Uint32Array, components: object[] }} table
+   */
+  constructor(EntityClass, table) {
+    this.table = table;
+    this.row = 0;
+    // Bit copies of one element per entity, by width: the live columns and the saved ones.
+    this.live8 = [];
+    this.saved8 = [];
+    this.live16 = [];
+    this.saved16 = [];
+    this.live32 = [];
+    this.saved32 = [];
+    // Bit copies of several words per entity (a field of several elements, or an 8-byte kind).
+    this.liveWide = [];
+    this.savedWide = [];
+    this.wordsWide = [];
+    // Value copies (the kind or the length changed since the save): live, saved, and elements per entity of each.
+    this.liveDrift = [];
+    this.savedDrift = [];
+    this.liveDriftLength = [];
+    this.savedDriftLength = [];
+    // Entity-id fields, remapped once every entity is placed (remapIds).
+    this.idLive = [];
+    this.idSaved = [];
+    this.idLiveLength = [];
+    this.idSavedLength = [];
+    // The saved Transform.parent (DX-PARENT's relink), x and y (the spawn's position), when the save has them.
+    this.parent = null;
+    this.x = null;
+    this.y = null;
+    this._build(EntityClass, table);
+  }
+
+  _build(EntityClass, table) {
+    const map = EntityClass._componentClassMap || {};
+    const byName = new Map();
+    for (const key in map) {
+      const ComponentClass = map[key];
+      if (!ComponentClass?.ARRAY_SCHEMA) continue;
+      byName.set(ComponentClass.name, ComponentClass);
+      if (!byName.has(key)) byName.set(key, ComponentClass);
     }
-
-    const fields = saved.fields;
-    for (const [fieldName, typeOrSpec] of Object.entries(ComponentClass.ARRAY_SCHEMA)) {
-      if (!(fieldName in fields)) continue;
-      const { length } = Component._schemaEntry(typeOrSpec);
-      const arr = ComponentClass[fieldName];
-      if (!arr) continue;
-      const value = fields[fieldName];
-      if (length === 1) {
-        arr[entityIndex] = value;
-      } else if (Array.isArray(value)) {
-        const base = entityIndex * length;
-        const n = Math.min(length, value.length);
-        for (let k = 0; k < n; k++) arr[base + k] = value[k];
+    const n = table.indices.length;
+    const components = table.components || [];
+    for (let c = 0; c < components.length; c++) {
+      const saved = components[c];
+      const ComponentClass = byName.get(saved.name);
+      if (!ComponentClass) continue;
+      if (saved.fingerprint != null && saved.fingerprint !== componentSchemaFingerprint(ComponentClass)) {
+        warnDrift(EntityClass, ComponentClass);
       }
-    }
-
-    if ((ComponentClass === Transform || name === 'Transform') && Transform.x) {
-      if ('x' in fields) Transform.x[entityIndex] = fields.x;
-      if ('y' in fields) Transform.y[entityIndex] = fields.y;
-      if ('rotC' in fields && Transform.rotC) Transform.rotC[entityIndex] = fields.rotC;
-      if ('rotS' in fields && Transform.rotS) Transform.rotS[entityIndex] = fields.rotS;
-    }
-
-    if ((ComponentClass === RigidBody || name === 'RigidBody') && RigidBody.vx) {
-      if ('vx' in fields) RigidBody.vx[entityIndex] = fields.vx;
-      if ('vy' in fields) RigidBody.vy[entityIndex] = fields.vy;
-      if ('angularVelocity' in fields && RigidBody.angularVelocity) {
-        RigidBody.angularVelocity[entityIndex] = fields.angularVelocity;
-      }
-      if ('sleeping' in fields && RigidBody.sleeping) {
-        RigidBody.sleeping[entityIndex] = fields.sleeping;
+      const fields = saved.fields || [];
+      for (let f = 0; f < fields.length; f++) {
+        const field = fields[f];
+        const values = field.values;
+        const length = field.length | 0 || 1;
+        if (!values || values.length < n * length) continue;
+        if (ComponentClass === Transform) {
+          if (field.name === 'x') this.x = values;
+          else if (field.name === 'y') this.y = values;
+          else if (field.name === 'parent') this.parent = values;
+        }
+        const live = liveColumnOf(ComponentClass, field.name);
+        if (live === null || live.arr === null) continue;
+        if (live.entityId) {
+          this.idLive.push(live.arr);
+          this.idSaved.push(values);
+          this.idLiveLength.push(live.length);
+          this.idSavedLength.push(length);
+        }
+        if (live.arr.constructor === values.constructor && live.length === length) {
+          const w = wordsPerElement(values) * length;
+          const lv = bitsView(live.arr);
+          const sv = bitsView(values);
+          if (w !== 1) {
+            this.liveWide.push(lv);
+            this.savedWide.push(sv);
+            this.wordsWide.push(w);
+          } else if (values.BYTES_PER_ELEMENT === 1) {
+            this.live8.push(lv);
+            this.saved8.push(sv);
+          } else if (values.BYTES_PER_ELEMENT === 2) {
+            this.live16.push(lv);
+            this.saved16.push(sv);
+          } else {
+            this.live32.push(lv);
+            this.saved32.push(sv);
+          }
+        } else {
+          this.liveDrift.push(live.arr);
+          this.savedDrift.push(values);
+          this.liveDriftLength.push(live.length);
+          this.savedDriftLength.push(length);
+        }
       }
     }
   }
+
+  /**
+   * Write the saved row `this.row` onto entity i.
+   * @param {number} i
+   */
+  apply(i) {
+    const r = this.row;
+    const l8 = this.live8;
+    const s8 = this.saved8;
+    for (let c = 0; c < l8.length; c++) l8[c][i] = s8[c][r];
+    const l16 = this.live16;
+    const s16 = this.saved16;
+    for (let c = 0; c < l16.length; c++) l16[c][i] = s16[c][r];
+    const l32 = this.live32;
+    const s32 = this.saved32;
+    for (let c = 0; c < l32.length; c++) l32[c][i] = s32[c][r];
+    const lw = this.liveWide;
+    if (lw.length !== 0) this._applyWide(i, r);
+    if (this.liveDrift.length !== 0) this._applyDrift(i, r);
+  }
+
+  _applyWide(i, r) {
+    const lw = this.liveWide;
+    const sw = this.savedWide;
+    const ww = this.wordsWide;
+    for (let c = 0; c < lw.length; c++) {
+      const w = ww[c];
+      const live = lw[c];
+      const saved = sw[c];
+      const d = i * w;
+      const s = r * w;
+      for (let e = 0; e < w; e++) live[d + e] = saved[s + e];
+    }
+  }
+
+  _applyDrift(i, r) {
+    const ld = this.liveDrift;
+    for (let c = 0; c < ld.length; c++) {
+      const live = ld[c];
+      const saved = this.savedDrift[c];
+      const ll = this.liveDriftLength[c];
+      const sl = this.savedDriftLength[c];
+      const n = ll < sl ? ll : sl;
+      for (let e = 0; e < n; e++) live[i * ll + e] = saved[r * sl + e];
+    }
+  }
+
+  /**
+   * Every entity is placed: write its entity-id fields again, each id mapped to the index its entity has now (an id
+   * whose entity was not restored, or entityIdNone, becomes entityIdNone).
+   * @param {Int32Array} newIndexOf new index by saved index, -1 for one not restored
+   */
+  remapIds(newIndexOf) {
+    const idx = this.table.indices;
+    const n = idx.length;
+    const none = entityIdNone >>> 0;
+    const known = newIndexOf.length;
+    for (let c = 0; c < this.idLive.length; c++) {
+      const live = this.idLive[c];
+      const saved = this.idSaved[c];
+      const ll = this.idLiveLength[c];
+      const sl = this.idSavedLength[c];
+      const m = ll < sl ? ll : sl;
+      for (let r = 0; r < n; r++) {
+        const old = idx[r];
+        const neu = old < known ? newIndexOf[old] : -1;
+        if (neu < 0) continue;
+        for (let e = 0; e < m; e++) {
+          const id = saved[r * sl + e] >>> 0;
+          const next = id !== none && id < known ? newIndexOf[id] : -1;
+          live[neu * ll + e] = next >= 0 ? next : none;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * A table of one row, `row` of `table`: what a spawn handed to another logic worker carries (a copy, cheap to clone),
+ * where that worker builds its own plan.
+ * @returns {{ table: object, row: 0 }}
+ */
+export function rowRestore(table, row) {
+  const components = table.components.map((c) => ({
+    name: c.name,
+    fingerprint: c.fingerprint,
+    fields: c.fields.map((f) => {
+      const length = f.length | 0 || 1;
+      return { name: f.name, length, entityId: f.entityId, values: f.values.slice(row * length, (row + 1) * length) };
+    }),
+  }));
+  return { table: { typeName: table.typeName, indices: Uint32Array.of(table.indices[row]), components }, row: 0 };
+}
+
+/**
+ * Write a saved entity's columns onto entity `entityIndex` (GameObject's spawn calls it after onSpawned and the FSM's
+ * initialization): row `saveRestore.row` of its table, through the load's EntityRestorePlan for its type, or through a
+ * plan made here for a restore that crossed to another worker as plain data (rowRestore).
+ * @param {number} entityIndex
+ * @param {Function} EntityClass
+ * @param {EntityRestorePlan|{ table: object, row: number }} saveRestore
+ */
+export function applyEntitySaveRestore(entityIndex, EntityClass, saveRestore) {
+  if (!saveRestore || !saveRestore.table) return;
+  let plan = saveRestore;
+  if (!(saveRestore instanceof EntityRestorePlan)) {
+    plan = new EntityRestorePlan(EntityClass, saveRestore.table);
+    plan.row = saveRestore.row | 0;
+  }
+  plan.apply(entityIndex);
 
   // Ensure entity stays active after restore overwrite
   if (Transform.active) Transform.active[entityIndex] = 1;
@@ -216,41 +466,41 @@ export function applyEntitySaveRestore(entityIndex, EntityClass, components) {
 }
 
 /**
- * Collect active serializable entity records from a scene.
+ * Collect the live serializable entities of a scene, one table per type.
  * @param {{ registeredClasses: Array<{ class: Function, name?: string }> }} scene
  * @param {{ allEntities?: boolean }} [options] allEntities: every registered type,
  *   serializable or not (hot reload keeps the whole scene)
- * @returns {{ typeName: string, components: object }[]}
+ * @returns {Array<{ typeName: string, indices: Uint32Array, components: object[] }>}
  */
 export function collectSerializableEntities(scene, options = {}) {
   const allEntities = options.allEntities === true;
-  const records = [];
+  const tables = [];
   const registered = scene.registeredClasses || [];
   const plans = new Map();
+  const alive = Transform.active;
 
   for (let r = 0; r < registered.length; r++) {
     const EntityClass = registered[r].class;
     if (!EntityClass || (!allEntities && !isEntityClassSerializable(EntityClass))) continue;
 
-    const typeName = EntityClass.name;
     const active = EntityClass.getAllActive?.();
     if (!active || active.length === 0) continue;
 
     // A hot reload keeps everything; shouldSaveEntity trims what a player's save holds.
     const filter = !allEntities && typeof EntityClass.shouldSaveEntity === 'function' ? EntityClass : null;
+    const indices = new Uint32Array(active.length);
+    let n = 0;
     for (let a = 0; a < active.length; a++) {
       const entityIndex = active[a];
-      if (Transform.active && Transform.active[entityIndex] !== 1) continue;
+      if (alive && alive[entityIndex] !== 1) continue;
       if (filter && !filter.shouldSaveEntity(entityIndex)) continue;
-      records.push({
-        typeName,
-        entityIndex,
-        components: readEntityComponents(EntityClass, entityIndex, plans),
-      });
+      indices[n++] = entityIndex;
     }
+    if (n === 0) continue;
+    tables.push(gatherEntityTable(EntityClass, n === indices.length ? indices : indices.subarray(0, n), plans));
   }
 
-  return records;
+  return tables;
 }
 
 /**
@@ -337,8 +587,11 @@ export function buildSavePayload(scene, globals = {}, options = {}) {
   if (globals.decals !== undefined) {
     payload.decals = globals.decals;
   }
-  const savedIndices = new Array(entities.length);
-  for (let i = 0; i < entities.length; i++) savedIndices[i] = entities[i].entityIndex | 0;
+  const savedIndices = new Uint32Array(savedEntityCount({ entities }));
+  for (let t = 0, o = 0; t < entities.length; t++) {
+    savedIndices.set(entities[t].indices, o);
+    o += entities[t].indices.length;
+  }
   const sharedResources = packSharedResources();
   if (sharedResources.length) payload.sharedResources = sharedResources;
   // null: that pool is unbound, write no section (a load leaves onSpawned geometry).

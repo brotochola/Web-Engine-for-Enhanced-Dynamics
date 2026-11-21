@@ -20,7 +20,8 @@ import {
 import { RigidBody } from '../../src/components/rigidBody.js';
 import { Collider } from '../../src/components/collider.js';
 import { bindBodySyncBuffers } from '../../src/box2d/box2dBodySync.js';
-import { readEntityComponents } from '../../src/core/save/entitySaveSnapshot.js';
+import { gatherEntityTable } from '../../src/core/save/entitySaveSnapshot.js';
+import { tableField } from '../helpers/saveTable.mjs';
 import { resetFreeList, getFreeListCount, popFreeIndex } from '../../src/util/atomicFreeList.js';
 import { bindEntityIdWidth } from '../../src/util/entityIdWidth.js';
 import { resetWarnOnce } from '../../src/util/dxWarn.js';
@@ -602,12 +603,9 @@ test('a saved game remaps parent: the child follows its parent at their new indi
   const car = Car.spawn({ x: 100, y: 0, width: 40, height: 20 });
   const light = Light.spawn({ parent: car, localX: 25, localY: 5 });
   assert.notEqual(other.index, car.index);
-  const records = [
-    { typeName: 'Car', entityIndex: car.index, components: readEntityComponents(Car, car.index) },
-    { typeName: 'Light', entityIndex: light.index, components: readEntityComponents(Light, light.index) },
-  ];
-  assert.equal(records[1].components.Transform.fields.parent, car.index, 'the save holds the parent');
-  assert.equal(records[1].components.Transform.fields.localX, 25);
+  const records = [gatherEntityTable(Car, [car.index]), gatherEntityTable(Light, [light.index])];
+  assert.equal(tableField(records[1], 'Transform', 'parent')[0], car.index, 'the save holds the parent');
+  assert.equal(tableField(records[1], 'Transform', 'localX')[0], 25);
 
   const saved = { self: globalThis.self.Car, light: globalThis.self.Light, process: logic.processListUpdates };
   globalThis.self.Car = Car;

@@ -13,6 +13,7 @@ import {
   decodeSaveUncompressed,
   SAVE_MAGIC,
   SAVE_FORMAT_VERSION,
+  savedEntityCount,
 } from './entitySaveSnapshot.js';
 import { applyEntitySaveRestore } from './entitySaveSnapshot.js';
 import { SaveStore } from './saveStore.js';
@@ -48,6 +49,7 @@ export {
   decodeSaveUncompressed,
   SAVE_MAGIC,
   SAVE_FORMAT_VERSION,
+  savedEntityCount,
 };
 
 /**
@@ -152,7 +154,7 @@ export async function saveGame(scene, slotId, options = {}) {
   const id =
     slotId ||
     `${payload.sceneName}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
-  const entityCount = payload.entities.length;
+  const entityCount = savedEntityCount(payload);
   const particleCount = payload.liquidFun?.count | 0;
 
   const meta = await SaveStore.put(id, compressed, {
@@ -236,13 +238,13 @@ export function assertPayloadCompatible(scene, payload) {
     );
   }
   const registered = new Set((scene.registeredClasses || []).map((r) => r.class.name));
-  for (const rec of payload.entities || []) {
-    if (!registered.has(rec.typeName)) {
-      throw new Error(`SaveGame: missing entity type ${rec.typeName}`);
+  for (const table of payload.entities || []) {
+    if (!registered.has(table.typeName)) {
+      throw new Error(`SaveGame: missing entity type ${table.typeName}`);
     }
-    const reg = scene.registeredClasses.find((r) => r.class.name === rec.typeName);
+    const reg = scene.registeredClasses.find((r) => r.class.name === table.typeName);
     if (reg && !isEntityClassSerializable(reg.class)) {
-      throw new Error(`SaveGame: ${rec.typeName} is not serializable in this build`);
+      throw new Error(`SaveGame: ${table.typeName} is not serializable in this build`);
     }
   }
 }
@@ -252,7 +254,7 @@ export function assertPayloadCompatible(scene, payload) {
  * saved entities are left out, with one warning, instead of failing the load.
  * @param {object} scene
  * @param {object} payload
- * @returns {object[]} the records of types the scene still registers
+ * @returns {object[]} the tables of types the scene still registers
  */
 function entitiesOfRegisteredTypes(scene, payload) {
   if (!payload || payload.magic !== SAVE_MAGIC) {
@@ -261,9 +263,9 @@ function entitiesOfRegisteredTypes(scene, payload) {
   const registered = new Set((scene.registeredClasses || []).map((r) => r.class.name));
   const kept = [];
   const dropped = new Map();
-  for (const rec of payload.entities || []) {
-    if (registered.has(rec.typeName)) kept.push(rec);
-    else dropped.set(rec.typeName, (dropped.get(rec.typeName) || 0) + 1);
+  for (const table of payload.entities || []) {
+    if (registered.has(table.typeName)) kept.push(table);
+    else dropped.set(table.typeName, (dropped.get(table.typeName) || 0) + table.indices.length);
   }
   if (dropped.size > 0) {
     const list = [...dropped].map(([name, n]) => `${name} (${n})`).join(', ');
@@ -318,7 +320,7 @@ export function applySavePayloadToScene(scene, payload, options = {}) {
     // [index, worker] pins from a hot reload save; absent: classes and configs decide.
     forcedWorkers: allTypes && payload.instanceFields ? payload.instanceFields.forced || [] : null,
     joints: payload.joints || [],
-    // null = section absent (older save): the worker leaves onSpawned geometry alone.
+    // null = section absent (that pool was unbound): the worker leaves onSpawned geometry alone.
     chains: payload.chains ?? null,
     fixtures: payload.fixtures ?? null,
     meshes: payload.meshes ?? null,

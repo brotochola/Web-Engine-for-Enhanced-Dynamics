@@ -1,9 +1,8 @@
 // Pack and apply the world buffers that sit outside entity SoA:
 // shared resources, chains, extra fixtures, custom meshes, nav walkability,
-// Time.scale, and in-flight tweens. Entity-id fields and camera follow
-// are remapped here after spawn builds oldToNew.
+// Time.scale, and in-flight tweens. Camera follow is remapped here after the
+// spawns build oldToNew (entity-id fields: EntityRestorePlan.remapIds).
 
-import { Component } from '../component.js';
 import { Collider } from '../../components/collider.js';
 import { ShapeType } from '../../util/configDefaults.js';
 import { Camera } from '../camera.js';
@@ -16,7 +15,6 @@ import { Time } from '../timeScale.js';
 import { Tween, TWEEN_KIND_ZOOM } from '../tween.js';
 import { TWEEN_RECORD_FIELDS, tweenFieldValue } from './tweenRecord.js';
 import { Transform } from '../../components/transform.js';
-import { entityIdNone } from '../../util/entityIdWidth.js';
 import { fnv1a32 } from './schemaHash.js';
 
 function copyInto(dst, src, n) {
@@ -74,8 +72,8 @@ export function applySharedResources(records) {
       continue;
     }
     // Raw bytes cannot be applied best-effort: a different layout at the same
-    // size would land values in the wrong fields. Saves older than the
-    // fingerprint carry none and keep the size check alone.
+    // size would land values in the wrong fields. A record without one (0 on the
+    // wire) keeps the size check alone.
     if (rec.fingerprint != null && rec.fingerprint !== sharedResourceFingerprint(ResourceClass)) {
       console.warn(`[SaveGame] shared resource ${rec.name} schema changed since the save; skipped`);
       continue;
@@ -118,7 +116,7 @@ export function packChains(entityIndices) {
  * @param {Array<{old:number, neu:number}>} restored
  */
 export function applyChains(records, restored) {
-  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // null: the save has no such section (the pool was unbound):
   // leave what onSpawned built. [] means none of the saved entities had one.
   if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);
@@ -165,7 +163,7 @@ export function packFixtures(entityIndices) {
 }
 
 export function applyFixtures(records, restored) {
-  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // null: the save has no such section (the pool was unbound):
   // leave what onSpawned built. [] means none of the saved entities had one.
   if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);
@@ -224,7 +222,7 @@ export function packMeshes(entityIndices) {
 }
 
 export function applyMeshes(records, restored) {
-  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // null: the save has no such section (the pool was unbound):
   // leave what onSpawned built. [] means none of the saved entities had one.
   if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);
@@ -369,51 +367,6 @@ export function applyTweens(slots, mapGet, restored) {
   Tween.rebuildEntityCounts();
 }
 
-function remapOne(value, mapGet) {
-  if (value == null) return entityIdNone;
-  const id = value >>> 0;
-  if (id === (entityIdNone >>> 0)) return entityIdNone;
-  const next = mapGet(id);
-  if (next == null) return entityIdNone;
-  return next >>> 0;
-}
-
-/**
- * Rewrite saved entity-id fields onto the restored slot.
- * Fields absent from the save are left as spawn wrote them.
- * @param {Function} EntityClass
- * @param {number} entityIndex new slot
- * @param {object} components saved component map
- * @param {(oldId:number) => number|null} mapGet
- */
-export function remapEntityIdFields(EntityClass, entityIndex, components, mapGet) {
-  if (!components || !EntityClass) return;
-  const map = EntityClass._componentClassMap || {};
-  const index = entityIndex | 0;
-  for (const name in map) {
-    const ComponentClass = map[name];
-    if (!ComponentClass?.ARRAY_SCHEMA) continue;
-    const saved = components[ComponentClass.name] || components[name];
-    if (!saved?.fields) continue;
-    const fields = saved.fields;
-    for (const [fieldName, typeOrSpec] of Object.entries(ComponentClass.ARRAY_SCHEMA)) {
-      const spec = Component._schemaEntry(typeOrSpec);
-      if (!spec.entityId || !(fieldName in fields)) continue;
-      const arr = ComponentClass[fieldName];
-      if (!arr) continue;
-      const value = fields[fieldName];
-      if (spec.length === 1) {
-        arr[index] = remapOne(value, mapGet);
-        continue;
-      }
-      if (!Array.isArray(value)) continue;
-      const base = index * spec.length;
-      const n = Math.min(spec.length, value.length);
-      for (let k = 0; k < n; k++) arr[base + k] = remapOne(value[k], mapGet);
-    }
-  }
-}
-
 /**
  * Camera follow is 0 for none, otherwise entityIndex + 1.
  * @param {ArrayLike<number>|null} camera
@@ -438,17 +391,26 @@ export function remapCameraFollow(camera, mapGet) {
   return out;
 }
 
-/** @param {number[]|null|undefined} pairs flat [old, neu, ...] */
+/**
+ * A lookup of the restore's pairs: old index -> new, or null for an entity the load did not restore. By a table over
+ * the saved indices, not a Map: a crowd's 42 000 pairs took 3.5 ms as a Map.
+ * @param {ArrayLike<number>|null|undefined} pairs flat [old, neu, ...]
+ */
 export function idMapGetter(pairs) {
-  const map = new Map();
-  if (pairs) {
-    for (let i = 0; i + 1 < pairs.length; i += 2) {
-      map.set(pairs[i] | 0, pairs[i + 1] | 0);
-    }
+  const n = pairs ? pairs.length - (pairs.length & 1) : 0;
+  let known = 0;
+  for (let i = 0; i < n; i += 2) {
+    const old = pairs[i] | 0;
+    if (old >= known) known = old + 1;
+  }
+  const neu = new Int32Array(known).fill(-1);
+  for (let i = 0; i < n; i += 2) {
+    const old = pairs[i] | 0;
+    if (old >= 0) neu[old] = pairs[i + 1] | 0;
   }
   return (old) => {
     const key = old | 0;
-    return map.has(key) ? map.get(key) | 0 : null;
+    return key >= 0 && key < known && neu[key] >= 0 ? neu[key] : null;
   };
 }
 

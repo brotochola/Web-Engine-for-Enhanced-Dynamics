@@ -558,7 +558,7 @@ class GameEngine {
         restorePayload: payload,
       });
       console.info(
-        `[WeedJS] the game restarted after a GPU loss: ${payload.entities?.length | 0} entities, the save ready ` +
+        `[WeedJS] the game restarted after a GPU loss: ${(payload.entities || []).reduce((n, t) => n + t.indices.length, 0)} entities, the save ready ` +
           `${Math.round(t1 - t0)} ms after the restart began, the scene back ${Math.round(performance.now() - t1)} ms later`
       );
     } catch (error) {

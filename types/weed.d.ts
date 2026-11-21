@@ -2270,6 +2270,8 @@ export declare class Scene {
     custom: unknown;
     allEntitiesRestored?: boolean;
     restartReason?: 'hotReload' | 'gpuLost';
+    /** The saved entities, one table per type (already restored when this runs). */
+    entities?: SavedEntityTable[];
     [key: string]: unknown;
   }): void | Promise<void>;
   /** While a save is built: scene state outside entities (score, flags, level), as JSON data. */
@@ -3714,6 +3716,38 @@ export function loadGame(
   SceneClass: typeof Scene,
   slotId: string,
 ): Promise<unknown>;
+/**
+ * One entity type's saved entities (save format 6, E-539): their indices when saved, and for each component one typed
+ * array per field with every saved entity's values, in the indices' order, of the live column's kind. Transform's pose
+ * (x, y, rotC, rotS) and RigidBody's vx, vy, angularVelocity and sleeping are fields of those components.
+ */
+export interface SavedEntityTable {
+  typeName: string;
+  indices: Uint32Array;
+  components: Array<{
+    name: string;
+    /** The component's schema fingerprint when saved; a load that finds another one warns and applies best-effort. */
+    fingerprint: number | null;
+    fields: Array<{
+      name: string;
+      /** Elements per entity: values.length is indices.length × length. */
+      length: number;
+      /** The field holds entity indices, which a load maps to the entities' new ones. */
+      entityId: boolean;
+      values:
+        | Int8Array
+        | Uint8Array
+        | Uint8ClampedArray
+        | Int16Array
+        | Uint16Array
+        | Int32Array
+        | Uint32Array
+        | Float32Array
+        | Float64Array;
+    }>;
+  }>;
+}
+
 export function buildSavePayload(scene: Scene, globals?: Record<string, unknown>): unknown;
 export function encodeSave(payload: unknown): Promise<Uint8Array>;
 export function decodeSave(blob: Uint8Array): Promise<unknown>;

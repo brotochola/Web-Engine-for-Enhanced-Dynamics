@@ -287,18 +287,18 @@ test('validateSceneSharedBufferConfig: past 65535 only with entityIdWidth 32, up
   assert.equal(MAX_ENTITIES_U32, 1048575);
 });
 
-test('save codec already stores entityIndex as u32 (70000 survives)', () => {
+test('save codec stores the entity indices as u32 (70000 survives)', () => {
   const body = encodeBinarySaveBody({
     sceneName: 'Wrap',
     engineVersion: '0.0.0-test',
     layout: { types: [{ name: 'WrapEntity', poolSize: 80000 }], totalEntityCount: 80000 },
     camera: null,
     sun: null,
-    entities: [{ typeName: 'WrapEntity', entityIndex: 70000, components: {} }],
+    entities: [{ typeName: 'WrapEntity', indices: Uint32Array.of(70000), components: [] }],
     joints: [],
   });
   const decoded = decodeBinarySaveBody(body);
-  assert.equal(decoded.entities[0].entityIndex, 70000);
+  assert.equal(decoded.entities[0].indices[0], 70000);
 });
 
 test('packed joint leftover aliases; width 32 two-column stores 65536', () => {
