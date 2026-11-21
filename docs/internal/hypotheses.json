@@ -18096,19 +18096,20 @@
       "id": "E-390",
       "title": "With light3d by day Pixi uploads 2.3 MB of buffers a frame against 0.73 MB without it: two bufferSubData of 1196 KB and 844 KB a frame",
       "status": "open",
-      "statusText": "Proposed 2026-11-16; the words-in-statics version built and rejected 2026-11-20 (R-1575, a small saving for much plumbing); the big uploads still to identify",
+      "statusText": "Identified 2026-11-21 (R-1687): the map arm's extra uploads are the caster batch's instance rows, sent whole every frame (about 1.14 MB) because casters with a kind turn the keyed caster path off; the fix is E-395's.",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
       "result": "Predator light3d uploads 2.7 MB a frame against 0.73 MB plain: two buffers of 1.2 MB and 0.83 MB a frame (not the G-buffer words, 85 KB; not the shadow maps; not pixel depth). The words in the statics: -151 KB a frame, not kept.",
-      "next": "Identify the two buffers light3d adds (1.2 MB and 0.83 MB a frame, one bufferSubData each in Predator light3d=1&hour=12&zoom=0.3): not the G-buffer words, not the lamps’ or the sun’s map, not pixel depth (R-1575). Next suspects: the sprite path light3d’s packed atlas with maps sends its frames down (instance rows instead of keyed poses), the farm trees’ and houses’ decorations, the volumes. glFrameRecorder with each piece off, or a stack at bufferSubData in the Pixi worker. 2026-11-20 probe: a stack at the Pixi worker’s gl.bufferSubData shows the 1.2 MB call made lazily by Pixi’s geometry system when a mesh binds (GlGeometrySystem.bind -> updateBuffers), so it is one of the engine’s instanced batches’ Buffer.update(); the stage’s 800 plain Pixi Sprites (156 visible) are not it. Next: tag each batch’s buffers (a label per stream) and read which one the 1.2 MB and 0.83 MB are (light3d’s frames may leave the keyed poses for full instance rows).",
+      "next": "E-395 (keyed caster rows that carry their kind); then the same glFrameRecorder pair: the map arm's buffers a frame against the classic's 518 KB.",
       "refs": [],
       "aliases": [
         "light3d buffer uploads"
       ],
       "records": [
         "R-1173",
-        "R-1575"
+        "R-1575",
+        "R-1687"
       ]
     },
     {
@@ -18209,7 +18210,8 @@
         "keyed rows caster kinds"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1687"
       ]
     },
     {
@@ -24492,7 +24494,8 @@
     {
       "records": [
         "R-1573",
-        "R-1623"
+        "R-1623",
+        "R-1687"
       ],
       "refs": [],
       "id": "E-531",
@@ -40837,6 +40840,15 @@
       "title": "N-227 closed: fixed 2026-11-18 by OL-5 (13c69176, R-1356: volumes cast lamp shadows with no stamp row), its row left open",
       "verdict": "kept",
       "text": "**N-227 was fixed on 2026-11-18 by OL-5 and its row left open: closed now.** 13c69176 (R-1356, merged with dx/one-light 85ca7900): with lampShadows 'map', pre-render names the casting lamps without a stamp row (_writeStampLightIds, _lampMapCasts) and Pixi gives them tiles for a stamp row or a casting volume and draws the volumes alone when no stamp row ran (_drawLampMapVolumes). R-1356 checked it: visPolyStressScene ?arm=maps before against after 139 473 px (no lamp shadow before), WebGL against WebGPU 0 px. Not measured again (on record)."
+    },
+    {
+      "id": "R-1687",
+      "date": "2026-11-21",
+      "time": "20:58",
+      "timeFrom": "recorded",
+      "title": "E-390's uploads found: the caster rows sent whole (about 1.14 MB a frame) since Predator's casters ask for a kind (E-395); by day the map arm's extra is the sun's map and the face map passes",
+      "verdict": "note",
+      "text": "**E-390's big uploads identified, and where E-531 stands by day with Predator's lamps off (2026-11-21, main bac85aa1, glFrameRecorder --gpu-passes, GTX 1650, Predator `dayCycle=0` against `dayCycle=0&sunShadows=map&lampShadows=map`, 3 s windows).**\n\n- Uploads: the map arm sends 1 413.7 KB of buffers a frame against the classic's 517.9: two 570.9 KB-a-frame buffers taking turns (buffer#12 and #22, a call every other frame each, about 1.14 MB a call), the caster batch's instance rows (13 287 instances; the sun's map draws with that batch's geometry, _drawSunMap). They go whole every frame because Predator's casters ask for a kind, which turns the keyed caster path off for the whole scene (_casterKindsOn): E-395 is the lever (keyed caster rows that carry their kind).\n- GPU by pass, the map arm: the sun's map 576x366 0.426 ms (13 287 instances), the face map 478x268 0.423 ms (13 467 instances, prog with uMaps), the 3072x178 strip 0.555, the light pass 0.156; the lamps' map is gone by day (the lamps are off). The classic: the shadows' layer 480x270 0.481, the strip 0.341, the light pass 0.063. The GPU was 27-29 % busy at mid clocks (P3/P5 675 MHz against P0/P5 900 MHz): the shape, not a ruler.\n- So at Predator's light resolution the light pass is cheap (0.16 ms) and E-408 to E-410 (its shader) would move Predator little; the extra is the two passes that draw every sprite again (the sun's map and the face map) and the caster rows sent whole."
     }
   ],
   "leads": [
