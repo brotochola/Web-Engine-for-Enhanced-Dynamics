@@ -24171,16 +24171,17 @@
         "R-1528",
         "R-1586",
         "R-1670",
-        "R-1674"
+        "R-1674",
+        "R-1680"
       ],
       "refs": [],
       "id": "N-314",
       "title": "Saving and loading a crowd scene is slow: Predator's 17 500 entities take 3.7 to 5.5 s to save (captureSavePayload) and 3.8 to 8.6 s to load back, which is most of a restart after a GPU loss (N-301) and of a hot reload",
-      "status": "open",
+      "status": "kept",
       "kind": "bug",
       "area": "save",
       "date": "2026-11-19",
-      "statusText": "in part 2026-11-19 (R-1528): the restart 3.6 s. 2026-11-21 (E-539, R-1674): the load 4.7 -> 2.0 s at crowd 1 and 8.5 -> 2.4 s at crowd 2.5 in the page, as fast as a fresh start; the save 2.9 and 3.7 s left.",
+      "statusText": "Fixed 2026-11-21 (R-1680, after E-539's load in R-1674): decal tiles deflated by the browser 16 at a time, save format 7; Predator crowd 2.5 save 3.7 -> 0.6 s, load 2.3 -> 2.0 s, as fast as a fresh start.",
       "next": "The save: Decal.packSnapshot encodes its PNG tiles one after another (2.56 s in R-1528); issue every convertToBlob before awaiting any, and time it with tests/bench/saveLoadTimer.mjs at crowd 1 and 2.5."
     },
     {
@@ -40741,6 +40742,15 @@
       "title": "The object way across the ECS campaign: per-frame instance ticks -16.6 % (painterMove), instance spawns +2.7 % on every pair (spawnStorm 6000, N-328), carScene under the floor",
       "verdict": "note",
       "text": "**The object way across the whole ECS campaign, in scenes (the owner's question, 2026-11-21: did games written with GameObject instances get slower?).** ABAB, 4 pairs each, `--full-rev`, A = c01c6d51 (the register commit before E-532), B = main 0b260fd7 (E-532 to E-543 and the day's other merges), owner logic. The three scenes are unchanged between the two revisions and still use instances.\n\n- **painterMoveStressScene** (PainterMoveReinsertScene: 300 000 entities, an instance `tick()` writing `this.y` every frame), 19:55–19:58: KEPT (product) for B. Logic 6.446 -> 5.371 ms (-16.6 %, worse 0/4, cv 3/4 %); pre-render +0.9 %, presented 60 = 60. The object way's per-frame path is faster than before the campaign.\n- **spawnStormScene ?storm=6000** (6000 spawns and despawns of instances a tick), 20:05–20:08: FAIL (load). Logic 6.271 -> 6.390 ms (+2.7 %, worse 4/4, cv 2/2 %), BODY_COUNT 1583 -> 1502 (-5.2 %). Under the 3 % bar, but on every pair: the object way's spawn is a little dearer, as E-534's kernel read (2.73 -> 2.51 M spawns/s, called inside its spread). Filed as N-328. At the default storm (1800), 19:58–20:01: logic 2.12 -> 2.24 ms, under the floor.\n- **carScene** (the demo's walkers), 20:01–20:04: every worker under the floor (logic 0.308 -> 0.310 ms); FAIL (load) on a key at that size.\n\nTests: every index static has a twin test against its instance form (columns compared), suites green (Node 3429, demos 143, bundle 8/8 and 358)."
+    },
+    {
+      "id": "R-1680",
+      "date": "2026-11-21",
+      "time": "20:16",
+      "timeFrom": "recorded",
+      "title": "Decal tiles deflated in a save: Predator's save 3.7 -> 0.6 s at crowd 2.5 and 2.7 -> 0.3 s at crowd 1, the load -11 %, the tiles exact",
+      "verdict": "kept",
+      "text": "**N-314 closed: a save's decal tiles are deflated by the browser, not PNG-encoded through a canvas (7d145d74, merged 47faa049).** packSnapshot deflates each tile with content (CompressionStream 'deflate-raw', the tile copied off the shared buffer when its turn comes, 16 in flight); applySnapshot inflates them the same way; save format 7. The first try (PNG 16 at a time) read the pack 25 % slower in its kernel and the apply 13 % faster; decalCodecProbe (ec1219d8) then showed the browser's deflate ahead on every count: 77 tiles of 256 px, encode 140-150 ms at once (PNG 235-507 one by one), decode 34-38 ms (PNG 158-230), 114 KB (PNG 244), every tile exact (PNG none: the canvas premultiplies).\n\n- Predator in the page (saveLoadTimer, 3 rounds a side, main 0b260fd7 against the branch, 20:13–20:16): crowd 1 save 2.63-2.68 s -> 0.27-0.31 s (-89 %), load 1.92-1.96 -> 1.72-1.77 s (-11 %), 2.50 -> 1.91 MB; crowd 2.5 save 3.68-3.70 -> 0.52-0.60 s (-85 %), load 2.19-2.40 -> 1.98-2.07 s (-12 %), 5.86 -> 4.82 MB. With E-539's load (R-1674), saving and loading a crowd scene now costs about what starting it does.\n- Chrome parity check (decalSnapshotParity): 77 of 77 tiles back exactly, empty tiles empty, dirty marks set.\n- Node 3429/3429, demos 143/143."
     }
   ],
   "leads": [
