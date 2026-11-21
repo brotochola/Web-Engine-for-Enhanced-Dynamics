@@ -5236,6 +5236,44 @@ export declare class Decoration {
   static evictFacade(id: number): void;
   /** World-owned decorations only; fills out with pool indices (a Uint32Array past 65 535 decorations); returns count. */
   static queryCircle(x: number, y: number, radius: number, out: Uint16Array | Uint32Array): number;
+  /**
+   * E-537: the facade's setters by pool id, for code that keeps ids and wants no object per decoration. Each writes an
+   * active slot only. An id is a raw slot: no generation is checked, so once its decoration despawns and the pool
+   * reuses the slot, the id names the new decoration (a facade kept that long writes nothing).
+   */
+  static isActive(id: number): boolean;
+  /** World-owned only (an attached one is placed by its parent); the spatial hash follows. */
+  static setPosition(id: number, x: number, y: number): void;
+  static setX(id: number, x: number): void;
+  static setY(id: number, y: number): void;
+  static setScaleX(id: number, v: number): void;
+  static setScaleY(id: number, v: number): void;
+  /** Both scales (y = x when omitted). */
+  static setScale(id: number, x: number, y?: number): void;
+  static setAlpha(id: number, alpha: number): void;
+  static setTint(id: number, tint: number): void;
+  static setLocalX(id: number, v: number): void;
+  static setLocalY(id: number, v: number): void;
+  static setLocalPosition(id: number, x: number, y: number): void;
+  static setAnchorX(id: number, v: number): void;
+  static setAnchorY(id: number, v: number): void;
+  static setInnerZ(id: number, z: number): void;
+  static setFaceNormal(id: number, x: number, y: number, z: number): void;
+  static setFaceHeight(id: number, height: number): void;
+  static setTextureId(id: number, textureId: number): void;
+  static setOffsetX(id: number, v: number): void;
+  static setOffsetY(id: number, v: number): void;
+  static setSortOffsetY(id: number, v: number): void;
+  static setSkew(id: number, skewX: number, skewY: number): void;
+  static setSkewX(id: number, v: number): void;
+  static setSkewY(id: number, v: number): void;
+  static setSway(id: number, on: boolean): void;
+  static setSwayAmplitude(id: number, radians: number): void;
+  static setSwayFrequency(id: number, v: number): void;
+  static impulseSway(id: number, amplitude: number, frequency: number): void;
+  static setRotation(id: number, radians: number): void;
+  static setBaseRotation(id: number, radians: number): void;
+  static setBaseRotCS(id: number, c: number, s: number): void;
   get active(): boolean;
   get x(): number;
   set x(v: number);
@@ -5257,6 +5295,8 @@ export declare class Decoration {
   set localY(v: number);
   get anchorX(): number;
   set anchorX(v: number);
+  get anchorY(): number;
+  set anchorY(v: number);
   /** Its order among decorations on the same sort line; for a face also its depth's tie on a shared plane (0 to 7). */
   get innerZ(): number;
   set innerZ(v: number);
@@ -5301,6 +5341,8 @@ export declare class Decoration {
   set rotation(v: number);
   get baseRotation(): number;
   set baseRotation(v: number);
+  /** Its facing as a unit complex (no atan2, cos or sin); not when sheared. */
+  setBaseRotCS(c: number, s: number): void;
 }
 
 export declare class DecorationSpatial {
