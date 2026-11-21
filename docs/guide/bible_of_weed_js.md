@@ -1492,6 +1492,11 @@ WEED.Flash.spawn({
 const MUZZLE_FLASH = WEED.Flash.define({ lifespan: 50, color: 0xffaa00, radius: 1000, castShadows: false });
 WEED.Flash.spawnPreset(MUZZLE_FLASH, this.x, this.y, 30);
 
+// Bullets fired again and again: a preset a weapon (its look and its damage), spawned with x, y, offsetY, vx, vy and
+// the shooter's index (its entity type is read from it): nothing allocated per shot. spawn({...}) stays the one-off form.
+const RIFLE_BULLET = WEED.BulletPool.define({ texture: 'bullet', damage: 1, anchorX: 1, anchorY: 0.5, trailWidth: 4 });
+WEED.BulletPool.spawnPreset(RIFLE_BULLET, this.x, this.y, -30, aimX * 800, aimY * 800, this.index);
+
 // Query (same call from Scene and GameObject). Box2d.queryAABB is fixtures; Query.query is ECS.
 const all = Query.query([WEED.Transform, WEED.Collider]); // all matching slots, active or inactive
 const activeSprites = Query.queryActiveEntities([WEED.SpriteRenderer]); // active precomputed query

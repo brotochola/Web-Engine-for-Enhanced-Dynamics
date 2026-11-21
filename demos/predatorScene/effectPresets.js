@@ -4,7 +4,7 @@
 // object, no {min, max} objects, no texture name built per shot. The values are the ones the game objects wrote in
 // every emit's config before; what a call site still draws itself (a count, a height, a burst's vz or flip, a fire's
 // fade) it passes per emit, in the order it drew them before, so the game draws what it drew.
-import { Flash, ParticleEmitter } from '/src/index.js';
+import { BulletPool, Flash, ParticleEmitter } from '/src/index.js';
 
 const ALL_AROUND = { min: 0, max: 360 };
 const ANY_TURN = { min: 0, max: 360 };
@@ -24,6 +24,13 @@ export const MUZZLE_SPRITE = ParticleEmitter.define({
   gravity: 0,
   lifespan: 50,
 });
+
+// The weapons' bullets (E-541), one preset a weapon (Person.WEAPONS names its own): the bullet sprite, its tip at the
+// muzzle (anchorX 1), a trail 4 px wide, and the weapon's damage. The shot passes its place, the muzzle's height, its
+// velocity and its shooter.
+const BULLET_LOOK = { texture: 'bullet', scale: 1, anchorX: 1, anchorY: 0.5, trailWidth: 4 };
+export const PISTOL_BULLET = BulletPool.define({ ...BULLET_LOOK, damage: 0.66 });
+export const MACHINE_GUN_BULLET = BulletPool.define({ ...BULLET_LOOK, damage: 0.2 });
 
 /** The muzzle's flash: orange, 18 ms, no halo. */
 export const MUZZLE_FLASH = Flash.define({ lifespan: 18, color: 0xffaa00, radius: 1000, glow: 0 });

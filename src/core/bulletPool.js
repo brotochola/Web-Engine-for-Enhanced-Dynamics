@@ -20,6 +20,24 @@ const SPAWN_IN = new Float64Array(17);
 // The layer subscription for Layer.resolveSubscriptions, which reads `layers` and `layer`; cleared after each spawn.
 const SPAWN_SUBSCRIPTION = { layers: undefined, layer: undefined };
 
+// E-541: presets. A preset holds what is the same for every shot of a weapon (its look); a shot passes only what
+// varies. Its numbers sit in a row of presetRows (SPAWN_IN's trailWidth, scale, alpha, tint, anchorX, anchorY, then
+// the sprite's facing: cos, sin, angle, then the offsetY a shot that passes none takes, then the damage), its facing kind in
+// presetFacing, its texture name and layer subscription in arrays by id. Per thread, like every preset: each logic
+// worker defines its own at module load.
+const PRESET_STRIDE = 11;
+const PRESET_KEYS = Object.freeze([
+  'damage', 'texture', 'trailWidth', 'scale', 'alpha', 'tint', 'anchorX', 'anchorY', 'offsetY',
+  'rotation', 'spriteRotation', 'spriteRotC', 'spriteRotS', 'layer', 'layers',
+]);
+const PRESET_KEY_SET = new Set(PRESET_KEYS);
+let presetRows = new Float64Array(PRESET_STRIDE * 8);
+let presetFacing = new Uint8Array(8);
+const presetTexture = [];
+const presetLayers = [];
+const presetLayer = [];
+let presetCount = 0;
+
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
   // E-129: 32-bit slot ids past 65 535 bullets.
@@ -98,15 +116,144 @@ export class BulletPool extends SharedAtomicPool {
         facing = 2;
       }
     }
-    return this._spawnIn(config.texture, config.layers, config.layer, facing);
+    return this._spawnIn(undefined, config.texture, config.layers, config.layer, facing);
+  }
+
+  /** E-541: SPAWN_IN, read by spawnPreset through the class (a bundle's module slots do not widen its operands). */
+  static _spawnArgs = SPAWN_IN;
+
+  /**
+   * E-541: a bullet preset, defined once (at module load, per thread), for spawnPreset: what is the same for every shot
+   * of a weapon. Its keys are spawn()'s that are not the shot's own: damage (1 by default), texture, trailWidth, scale,
+   * alpha, tint, anchorX, anchorY, offsetY (the default when a shot passes none), the sprite's facing (spriteRotation or
+   * rotation in radians, or spriteRotC and spriteRotS; none: the velocity's) and layer or layers. A shot's position,
+   * velocity and shooter are spawnPreset's arguments: a weapon is a preset. An unknown key throws.
+   * @param {Object} config
+   * @returns {number} the preset's id
+   */
+  static define(config) {
+    if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+      throw new TypeError('BulletPool.define(config): config must be an object');
+    }
+    for (const key of Object.keys(config)) {
+      if (!PRESET_KEY_SET.has(key)) {
+        throw new TypeError(
+          `BulletPool.define: "${key}" is not a preset key (${PRESET_KEYS.join(', ')}); a shot's own values are spawnPreset's arguments`
+        );
+      }
+    }
+    const id = presetCount;
+    if ((id + 1) * PRESET_STRIDE > presetRows.length) {
+      const grown = new Float64Array(presetRows.length * 2);
+      grown.set(presetRows);
+      presetRows = grown;
+      const facing = new Uint8Array(presetFacing.length * 2);
+      facing.set(presetFacing);
+      presetFacing = facing;
+    }
+    // spawn()'s defaults, so a preset and a literal spawn with the same keys write the same bullet.
+    const r = id * PRESET_STRIDE;
+    presetRows[r] = config.trailWidth ?? 0;
+    presetRows[r + 1] = config.scale ?? 1;
+    presetRows[r + 2] = config.alpha ?? 1;
+    presetRows[r + 3] = config.tint ?? 0xffffff;
+    presetRows[r + 4] = config.anchorX ?? 0;
+    presetRows[r + 5] = config.anchorY ?? 0.5;
+    let facing = 0;
+    const rotC = config.spriteRotC;
+    const rotS = config.spriteRotS;
+    if (rotC != null && rotS != null) {
+      presetRows[r + 6] = rotC;
+      presetRows[r + 7] = rotS;
+      facing = 1;
+    } else {
+      const angle = config.spriteRotation ?? config.rotation;
+      if (angle != null) {
+        presetRows[r + 8] = angle;
+        facing = 2;
+      }
+    }
+    presetRows[r + 9] = config.offsetY ?? 0;
+    presetRows[r + 10] = config.damage ?? 1;
+    presetFacing[id] = facing;
+    presetTexture[id] = config.texture;
+    presetLayers[id] = config.layers;
+    presetLayer[id] = config.layer;
+    presetCount = id + 1;
+    return id;
+  }
+
+  /**
+   * E-541: a bullet from a preset, with what varies per shot. The same bullet as spawn() given the preset's keys and
+   * these; nothing allocated. A front small enough for V8 to inline whatever its caller's budget (it writes the doubles
+   * into SPAWN_IN and calls a core with the preset's id), where spawn()'s literal escapes in a caller that has spent
+   * its budget (Predator's shot: 34 KB a frame on a logic worker before this).
+   * @param {number} preset - BulletPool.define's id
+   * @param {number} x - start x
+   * @param {number} y - start y
+   * @param {number} offsetY - the visual y offset (a muzzle's height); undefined: the preset's
+   * @param {number} vx - velocity x (px/s)
+   * @param {number} vy - velocity y (px/s)
+   * @param {number} ownerId - the shooter's entity index (its entity type is read from it), or -1
+   * @returns {number} the bullet's index, or -1 when the pool is full
+   */
+  static spawnPreset(preset, x, y, offsetY, vx, vy, ownerId) {
+    const f = this._spawnArgs;
+    f[0] = x;
+    f[1] = y;
+    f[2] = vx;
+    f[3] = vy;
+    f[5] = ownerId;
+    f[13] = offsetY;
+    // spawn()'s body, too big to inline, reads the preset's row, so a caller pays only for this front's bytes (a
+    // mid-sized core inlined with a front spends the caller's budget: E-538).
+    return this._spawnIn(preset);
+  }
+
+  /**
+   * E-541: a preset's numbers into SPAWN_IN beside the shot's (an offsetY the shot did not pass, NaN, is the
+   * preset's), and the shooter's entity type from its index. Called by spawn()'s body for a preset's spawn.
+   * @param {number} preset
+   * @private
+   */
+  static _fillPresetArgs(preset) {
+    if (!(preset >= 0 && preset < presetCount)) {
+      throw new RangeError(`BulletPool.spawnPreset: ${preset} is not a preset (BulletPool.define returns one)`);
+    }
+    const f = SPAWN_IN;
+    const rows = presetRows;
+    const r = preset * PRESET_STRIDE;
+    const owner = f[5];
+    const types = Transform.entityType;
+    f[6] = owner >= 0 && types && owner < types.length ? types[owner] : 0;
+    f[4] = rows[r + 10];
+    f[7] = rows[r];
+    f[8] = rows[r + 1];
+    f[9] = rows[r + 2];
+    f[10] = rows[r + 3];
+    f[11] = rows[r + 4];
+    f[12] = rows[r + 5];
+    f[14] = rows[r + 6];
+    f[15] = rows[r + 7];
+    f[16] = rows[r + 8];
+    if (f[13] !== f[13]) f[13] = rows[r + 9];
   }
 
   /**
    * spawn()'s body (E-286): the numbers in SPAWN_IN; the texture name, the layer subscription (`layers`, `layer`) and
-   * the facing's kind as arguments.
+   * the facing's kind as arguments, after an undefined preset. From spawnPreset (E-541), the preset's id alone: its row
+   * supplies the look and the damage.
    * @private
    */
-  static _spawnIn(texture, layers, layer, facing) {
+  static _spawnIn(preset, texture, layers, layer, facing) {
+    // E-541: a preset's spawn (spawnPreset passes its id; spawn() passes none) takes its look from the preset's row.
+    if (preset !== undefined) {
+      this._fillPresetArgs(preset);
+      texture = presetTexture[preset];
+      layers = presetLayers[preset];
+      layer = presetLayer[preset];
+      facing = presetFacing[preset];
+    }
     const i = this.acquireIndex();
     if (i < 0) {
       if (!this._warnedPoolExhausted) {

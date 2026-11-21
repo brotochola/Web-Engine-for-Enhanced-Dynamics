@@ -1459,6 +1459,30 @@ export interface BulletSpawnConfig {
   trailWidth?: number;
 }
 
+/**
+ * E-541: a bullet preset (BulletPool.define): what is the same for every shot of a weapon. A shot's position,
+ * velocity and shooter are BulletPool.spawnPreset's arguments.
+ */
+export interface BulletPresetConfig {
+  /** 1 by default. */
+  damage?: number;
+  texture?: string;
+  scale?: number;
+  alpha?: number;
+  tint?: number;
+  rotation?: number;
+  spriteRotation?: number;
+  spriteRotC?: number;
+  spriteRotS?: number;
+  anchorX?: number;
+  anchorY?: number;
+  /** The offsetY a shot that passes none takes. */
+  offsetY?: number;
+  layer?: string | number;
+  layers?: string | number | Array<string | number>;
+  trailWidth?: number;
+}
+
 export interface JointDistanceOpts {
   entityA: number;
   entityB: number;
@@ -5515,6 +5539,13 @@ export declare class BulletPool extends SharedAtomicPool {
   static get maxBullets(): number;
   static initialize(maxBullets: number): void;
   static spawn(config: BulletSpawnConfig): number;
+  /** E-541: a bullet preset, defined once per thread (at module load); returns its id. An unknown key throws. */
+  static define(config: BulletPresetConfig): number;
+  /**
+   * E-541: a bullet from a preset, nothing allocated: the bullet spawn() writes from the preset's keys and these. The
+   * shooter's entity type is read from `ownerId`; `offsetY` undefined is the preset's. Returns the bullet's index or -1.
+   */
+  static spawnPreset(preset: number, x: number, y: number, offsetY: number | undefined, vx: number, vy: number, ownerId: number): number;
   static despawn(i: number): void;
   static reset(): void;
 }
