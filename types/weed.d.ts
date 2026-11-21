@@ -2854,6 +2854,11 @@ export declare class Camera {
   static isOnScreen(worldX: number, worldY: number, margin?: number): boolean;
   /** Without `out` the result is a shared scratch object; consume it before the next call. */
   static worldToScreen(worldX: number, worldY: number, out?: Partial<Vec2Mutable> | null): Vec2Mutable;
+  /**
+   * worldToScreen in place, for hot code: reads the world point at f[at], f[at + 1] and writes its screen point there.
+   * No double crosses a call, so a caller out of inlining budget boxes nothing.
+   */
+  static worldToScreenInPlace(f: Float64Array, at: number): void;
   static screenToWorld(screenX: number, screenY: number, out?: Partial<Vec2Mutable> | null): Vec2Mutable;
   /** World box around the drawn view; with a turned camera, the box around the turned view. */
   static getViewportBounds(out?: CameraViewportBounds): CameraViewportBounds;
@@ -3725,15 +3730,21 @@ export declare class SoundManager {
   static exportSoundIdMap(): Record<string, number>;
   static getSoundId(name: string): number;
   static loadManifest(manifest: SoundManifest | null | undefined): Promise<void>;
+  /**
+   * Play a sound; its slot, or -1 (disabled, unknown, inaudible, or dropped by a full bus). volume defaults to 1,
+   * rateMin to 1, rateMax to rateMin, worldX/worldY to none (not spatial): a number left out or not finite takes its
+   * default. channel is a bus name or index (default bus 0).
+   */
   static play(
     nameOrId: string | number,
     volume?: number,
     rateMin?: number,
     rateMax?: number,
-    loop?: number,
-    mute?: number,
+    loop?: number | boolean,
+    mute?: number | boolean,
     worldX?: number,
-    worldY?: number
+    worldY?: number,
+    channel?: string | number
   ): number;
   static stop(nameOrId: string | number): void;
   static stopAll(): void;

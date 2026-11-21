@@ -1351,6 +1351,34 @@ export class Camera {
   }
 
   /**
+   * worldToScreen in place over a Float64Array, for hot callers: reads the world point at f[at], f[at + 1] and writes
+   * its screen point there. No double crosses a call and no object field holds one (E-542: SoundManager's spatial
+   * play), so a caller out of inlining budget boxes nothing. Same math as viewWorldToScreen.
+   * @param {Float64Array} f
+   * @param {number} at
+   */
+  static worldToScreenInPlace(f, at) {
+    const v = this._drawnView();
+    const zoom = v.zoom;
+    const rotation = v.rotation;
+    const cw = this._canvasWidth;
+    const ch = this._canvasHeight;
+    const worldX = f[at];
+    const worldY = f[at + 1];
+    if (!rotation || !(cw > 0 && ch > 0 && zoom > 0)) {
+      f[at] = (worldX - v.x) * zoom;
+      f[at + 1] = (worldY - v.y) * zoom;
+      return;
+    }
+    const dx = worldX - (v.x + cw / (2 * zoom));
+    const dy = worldY - (v.y + ch / (2 * zoom));
+    const c = Math.cos(rotation);
+    const s = Math.sin(rotation);
+    f[at] = (c * dx - s * dy) * zoom + cw * 0.5;
+    f[at + 1] = (s * dx + c * dy) * zoom + ch * 0.5;
+  }
+
+  /**
    * Convert screen coordinates to world coordinates
    * @param {number} screenX - X in screen space
    * @param {number} screenY - Y in screen space

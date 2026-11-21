@@ -1,4 +1,4 @@
-// E-538, E-541: Predator's shot through particle, flash and bullet presets, for the tests that read V8 itself: the bytecode lengths
+// E-538, E-541, E-542: Predator's shot through particle, flash and bullet presets and its spatial sound, for the tests that read V8 itself: the bytecode lengths
 // of the preset fronts (particlePresetFronts.test.js, run with --print-bytecode) and the bytes the shot allocates
 // once V8 has optimized it (particlePresetAlloc.test.js: it prints one JSON line).
 //
@@ -21,11 +21,14 @@ import { resetFreeList } from '../../src/util/atomicFreeList.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Layer } from '../../src/core/layer.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
+import { SoundManager } from '../../src/core/soundManager.js';
+import { Camera } from '../../src/core/camera.js';
 import { seededRandom, rng } from '../../src/util/utils.js';
 
 const POOL = 4096;
 const FLASHES = 64;
 const BULLETS = 256;
+const SOUND_SLOTS = 64;
 
 function argOf(name, fallback) {
   const k = process.argv.indexOf(`--${name}`);
@@ -61,6 +64,22 @@ const bulletTop = new Int32Array(new SharedArrayBuffer(8));
 resetFreeList(bulletTop, bulletFreeList, BULLETS, 1);
 BulletPool.initialize(BULLETS);
 BulletPool.initializeFreeList(bulletFreeList.buffer, bulletTop.buffer);
+// E-542: the sound's slots and Predator's bus, and a camera over the shots (play's spatial path: pan and falloff).
+SoundManager.setEnabled(true);
+SoundManager.initializeSlotSAB({
+  sab: new SharedArrayBuffer((SoundManager.HEADER_SIZE + SOUND_SLOTS * SoundManager.SLOT_SIZE) * 4),
+  maxSlots: SOUND_SLOTS,
+});
+SoundManager.configureChannels({ sfx: { volume: 1, pan: 0, maxVoices: 32 } });
+SoundManager._assignId('ametralladora_disparo');
+const cameraData = new Float32Array(new SharedArrayBuffer(Camera.FLOAT_COUNT * 4));
+Camera.initialize(cameraData, 1280, 720);
+Camera.setWorldBounds(Infinity, Infinity);
+cameraData[0] = 1;
+cameraData[5] = 1;
+cameraData[1] = 300;
+cameraData[2] = 100;
+globalThis.Camera = Camera;
 let nextFlash = 0;
 GameObject._spawnAt = function spawnAtForTheDriver(EntityClass, spawnConfig) {
   const i = nextFlash;
@@ -142,6 +161,7 @@ function presetShot(s) {
   sink += Flash.spawnPreset(MUZZLE_FLASH, x, y, -h);
   sink += ParticleEmitter.emitPreset(SPARKS, x, y + 1, h, SPARK_COUNT[s], dx, dy);
   sink += BulletPool.spawnPreset(BULLET, x, y, h, dx * 800, dy * 800, s & 15);
+  sink += SoundManager.play('ametralladora_disparo', 0.33, 0.9, 1.1, 0, 0, x, y, 'sfx');
 }
 
 /** A hit from presets: every with* override (a fire's smoke, a barrel's sparks), and a flash with its own light. */
@@ -178,6 +198,7 @@ function literalShot(s) {
     x, y, offsetY: h, vx: DX[s] * 800, vy: DY[s] * 800, damage: 1, ownerId: s & 15, shooterEntityType: 0,
     texture: 'bullet', scale: 1, anchorX: 1, anchorY: 0.5, trailWidth: 4,
   });
+  sink += SoundManager.play('ametralladora_disparo', 0.33, 0.9, 1.1, 0, 0, x, y, 'sfx');
 }
 
 function literalHit(s) {
@@ -201,6 +222,12 @@ function recycle() {
   }
 }
 
+/** The worklet's part: every sound slot ends (play() reclaims them from its bus list). */
+function endSounds() {
+  const i32 = SoundManager._i32;
+  for (let s = 0; s < SOUND_SLOTS; s++) Atomics.store(i32, SoundManager.HEADER_SIZE + s * SoundManager.SLOT_SIZE, SoundManager.STATE_FREE);
+}
+
 function recycleBullets() {
   const active = BulletComponent.active;
   for (let i = 0; i < BULLETS; i++) if (active[i]) BulletPool.despawn(i);
@@ -220,6 +247,7 @@ function step() {
   }
   if (ParticleEmitter.getFreeCount() < 256) recycle();
   if ((slot & 127) === 0) recycleBullets();
+  if ((slot & 15) === 0) endSounds();
 }
 
 // Warm-up: the same calls until V8 has tiered the driver and the engine up (the interpreter and the lower tiers box

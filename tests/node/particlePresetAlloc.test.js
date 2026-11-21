@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// E-538, E-541: an emit, a flash and a bullet from presets allocate nothing. tests/helpers/particlePresetDriver.mjs
-// fires Predator's shot (two muzzle sprites, the sparks, the muzzle's flash, the bullet) and a hit with every with* override, from presets, then
+// E-538, E-541, E-542: an emit, a flash, a bullet from presets and a spatial play() allocate nothing. tests/helpers/particlePresetDriver.mjs
+// fires Predator's shot (two muzzle sprites, the sparks, the muzzle's flash, the bullet, its sound) and a hit with every with* override, from presets, then
 // counts what 10 000 more of them allocate with V8's sampling heap profiler (a sample every 32 bytes on average,
 // objects a GC already collected included), in the engine's frames and the driver's.
 //
@@ -30,7 +30,9 @@ function runDriver(args) {
 }
 
 test('a shot from particle and flash presets allocates nothing once optimized', () => {
-  const result = runDriver(['--form', 'preset', '--warm', '6000', '--ops', '10000']);
+  // 20 000 shots of warm-up: SoundManager._writeSlotListed (736 bytes of bytecode, one call a shot) is not yet in
+  // TurboFan after 6000 of them, and the lower tiers box every double (E-542: 25 bytes a shot until it is).
+  const result = runDriver(['--form', 'preset', '--warm', '20000', '--ops', '10000']);
   const engine = result.top.filter((t) => t.site.includes(' src/'));
   assert.deepEqual(engine, [], `the engine's frames allocate: ${JSON.stringify(engine)}`);
   assert.ok(result.bytesPerOp < 1, `${result.bytesPerOp.toFixed(2)} bytes a shot: ${JSON.stringify(result.top)}`);

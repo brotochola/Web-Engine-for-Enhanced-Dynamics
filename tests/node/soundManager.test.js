@@ -275,11 +275,7 @@ test('a sound far outside the camera takes no slot', { concurrency: false }, () 
     zoom: 1,
     canvasWidth: 100,
     canvasHeight: 100,
-    worldToScreen(x, y, out) {
-      out.x = x;
-      out.y = y;
-      return out;
-    },
+    worldToScreenInPlace() {}, // screen = world
   };
   const slot = SoundManager.play('hit', 1, 1, 1, 0, 0, 10000, 10000, 'sfx');
   assert.equal(slot, -1);
