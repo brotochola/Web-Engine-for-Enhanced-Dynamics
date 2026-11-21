@@ -21,7 +21,12 @@ const { distanceSq2D, Ray, DebugDraw, FSM, FSMState, Transform, GameObject, Coll
 // REUSABLE OBJECTS - Zero allocation
 // ==========================================
 
-const _closestResult = { index: -1, distSq: Infinity };
+// E-543: the target's squared distance travels in a Float64Array. A double stored in a scratch object's field, or
+// passed to a call TurboFan leaves out (canShootTarget, in a state that also inlines the shot), is boxed: the soldier
+// states made about 5 KB of heap numbers a frame on each logic worker in the mixed battle.
+const INF = Infinity;
+/** [0]: the squared distance to the target the last scan found, or the one the shot check is asked about. */
+const TARGET_DIST_SQ = new Float64Array(1);
 const _navVec = { x: 0, y: 0 };
 
 /** Max LOS rays per findACivilianToShoot scan (closest-first). */
@@ -77,10 +82,11 @@ function soldierClassOf(i) {
 // HELPER: Find closest civilian in neighbors
 // ==========================================
 
+/** The closest living civilian among the soldier's neighbours, or -1; its squared distance in TARGET_DIST_SQ[0]. */
 function findClosestCivilian(i) {
   const civilianType = Civilian.entityType;
-  _closestResult.index = -1;
-  _closestResult.distSq = Infinity;
+  let bestIndex = -1;
+  let bestDistSq = INF;
 
   // The soldier's collider position (Transform + Collider.offset)
   const ownerX = Transform.x[i] + (Collider.offsetX[i] || 0);
@@ -102,15 +108,17 @@ function findClosestCivilian(i) {
     const dy = neighborY - ownerY;
     const distSq = dx * dx + dy * dy;
 
-    if (distSq < _closestResult.distSq) {
-      _closestResult.distSq = distSq;
-      _closestResult.index = neighborIndex;
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      bestIndex = neighborIndex;
     }
   }
 
-  return _closestResult.index === -1 ? null : _closestResult;
+  TARGET_DIST_SQ[0] = bestDistSq;
+  return bestIndex;
 }
 
+/** The closest living civilian in line of sight (of the K nearest), or -1; its squared distance in TARGET_DIST_SQ[0]. */
 function findACivilianToShoot(i) {
   const civilianType = Civilian.entityType;
   const ownerX = Transform.x[i] + (Collider.offsetX[i] || 0);
@@ -165,11 +173,10 @@ function findACivilianToShoot(i) {
   for (let k = 0; k < candCount; k++) {
     const neighborIndex = _shootCandIndex[k];
     if (!Ray.hasLineOfSight(i, neighborIndex)) continue;
-    _closestResult.index = neighborIndex;
-    _closestResult.distSq = _shootCandDistSq[k];
-    return _closestResult;
+    TARGET_DIST_SQ[0] = _shootCandDistSq[k];
+    return neighborIndex;
   }
-  return null;
+  return -1;
 }
 
 // ==========================================
@@ -187,9 +194,10 @@ function isStoredTargetValid(i) {
 // HELPER: Store target in PersonComponent
 // ==========================================
 
-function storeTarget(i, targetIndex, distSq) {
+/** The scan's target and its squared distance (TARGET_DIST_SQ[0]) into the soldier's PersonComponent row. */
+function storeTarget(i, targetIndex) {
   PersonComponent.closestEnemyIndex[i] = targetIndex;
-  PersonComponent.closestEnemyDistanceSq[i] = distSq;
+  PersonComponent.closestEnemyDistanceSq[i] = TARGET_DIST_SQ[0];
 }
 
 function clearTarget(i) {
@@ -201,7 +209,9 @@ function clearTarget(i) {
 // HELPER: Check if soldier can shoot target
 // ==========================================
 
-function canShootTarget(i, targetIndex, targetDistSq) {
+/** Whether soldier i can shoot targetIndex, at the squared distance in TARGET_DIST_SQ[0]: in range and in sight. */
+function canShootTarget(i, targetIndex) {
+  const targetDistSq = TARGET_DIST_SQ[0];
   const weapon = Person.bestWeapon(i);
   if (weapon === null) return false;
   if (targetDistSq > weapon.rangeSq) return false;
@@ -249,18 +259,18 @@ class IdleSoldierState extends FSMState {
     // Scan for civilians: gun → need LOS; no gun → closest (melee)
     const closest = Person.hasGun(i) ? findACivilianToShoot(i) : findClosestCivilian(i);
 
-    if (closest) {
+    if (closest >= 0) {
       // Store target in PersonComponent
-      storeTarget(i, closest.index, closest.distSq);
+      storeTarget(i, closest);
 
       // Priority A: Can we shoot?
-      if (canShootTarget(i, closest.index, closest.distSq)) {
+      if (canShootTarget(i, closest)) {
         this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
         return;
       }
 
       // Priority B: Close enough to punch?
-      if (closest.distSq <= soldierClassOf(i).punchRangeSq) {
+      if (TARGET_DIST_SQ[0] <= soldierClassOf(i).punchRangeSq) {
         this.fsm.changeState(i, this.fsm.states.CLOSE_ATTACKING);
         return;
       }
@@ -337,7 +347,8 @@ class GoingToEnemyState extends FSMState {
       PersonComponent.closestEnemyDistanceSq[i] = distSq;
 
       // Can we shoot?
-      if (canShootTarget(i, targetIndex, distSq)) {
+      TARGET_DIST_SQ[0] = distSq;
+      if (canShootTarget(i, targetIndex)) {
         this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
         return;
       }
@@ -366,9 +377,9 @@ class GoingToEnemyState extends FSMState {
     // 2. Stored target invalid - rescan
     const closest = findClosestCivilian(i);
 
-    if (closest) {
+    if (closest >= 0) {
       // Update stored target, stay in GOING_TO_ENEMY
-      storeTarget(i, closest.index, closest.distSq);
+      storeTarget(i, closest);
       // Next tick will use new target
     } else {
       // No enemies found
@@ -395,8 +406,8 @@ class RangedAttackingState extends FSMState {
       return;
     }
 
-    const distSq = distanceSq2D(Transform.x[i], Transform.y[i], Transform.x[targetIndex], Transform.y[targetIndex]);
-    if (!canShootTarget(i, targetIndex, distSq)) {
+    TARGET_DIST_SQ[0] = distanceSq2D(Transform.x[i], Transform.y[i], Transform.x[targetIndex], Transform.y[targetIndex]);
+    if (!canShootTarget(i, targetIndex)) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
