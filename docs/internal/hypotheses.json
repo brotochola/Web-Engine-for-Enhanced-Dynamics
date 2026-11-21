@@ -24161,7 +24161,8 @@
     {
       "records": [
         "R-1528",
-        "R-1586"
+        "R-1586",
+        "R-1670"
       ],
       "refs": [],
       "id": "N-314",
@@ -24561,11 +24562,13 @@
       "next": ""
     },
     {
-      "records": [],
+      "records": [
+        "R-1671"
+      ],
       "refs": [],
       "id": "E-537",
       "title": "Index statics for the APIs only an instance has: sendTo, emit, sendMessageToScene, isCollidingWith, addDecoration and Decoration's setters, AdobeAnimComponent, MeshRenderer, setLayer",
-      "status": "open",
+      "status": "running",
       "kind": "dx",
       "area": "logic",
       "date": "2026-11-20",
@@ -24589,11 +24592,13 @@
       "next": "ParticleEmitter.define(cfg) -> id and emitPreset(id, x, y, z, dirX, dirY, count), the same for Flash; heap-sample the mixed battle (tests/bench/heapSampleWorkers.mjs) before and after."
     },
     {
-      "records": [],
+      "records": [
+        "R-1670"
+      ],
       "refs": [],
       "id": "E-539",
       "title": "Save and restore by columns: a save holds an object per entity and component, and the restore recomputes each component's schema fingerprint per entity",
-      "status": "open",
+      "status": "running",
       "kind": "speed",
       "area": "logic",
       "date": "2026-11-20",
@@ -24603,11 +24608,13 @@
       "next": "First a per-load plan cache (fingerprint and field specs once per class); then a columnar ENTITIES section (per type, an index list and a gathered typed array per field, transferable)."
     },
     {
-      "records": [],
+      "records": [
+        "R-1672"
+      ],
       "refs": [],
       "id": "E-540",
       "title": "Instance housekeeping for ECS scenes: the instance tables allocated on first use, the facades' owner dropped, start() removed, debug checks that walk every spawn",
-      "status": "open",
+      "status": "running",
       "kind": "refactor",
       "area": "logic",
       "date": "2026-11-20",
@@ -40560,6 +40567,27 @@
       "title": "N-326 fixed: the wait tests read each try against wall-clock times given ahead; 20 and 32 of 192 stressed runs failed before, 0 after",
       "verdict": "kept-hygiene",
       "text": "**N-326 fixed: the frame chain's wait tests read each try against wall-clock times given ahead (adee393e).** Branch fix/n326-wall-clock-tests.\n\n- **Cause:** spatialTailStartOn.test.js and frameChainWait.test.js asserted how long a wait lasted (floors of 5, 2, 0.5 and 0.02 ms, and a 2 ms cap on a miss). Under load either thread ran late. The publish or the logic frame's end landed before the waiting thread began (0.68 ms of a 3 ms end, 2026-11-20), and the tries retried only the late case.\n- **Fix:**\n  - The publishers return their event's wall-clock time. A try counts when the wait began before the event and lasted until it: `tests/helpers/wallClockWait.mjs` waitedUntil, since load only stretches a wait. Other tries run again, 6 to 8 of them.\n  - A miss's cost is the cheapest of three (under 3 ms, against Windows's 15 ms timer period).\n  - The pre-render case got 4 ms of room.\n- **Checked:** 16 copies at once, beside three agents' suites, 192 runs of each file. Before: frameChainWait 20 failed, spatialTailStartOn 32. After: 0 and 0. The full suite 3371 of 3371."
+    },
+    {
+      "id": "R-1670",
+      "date": "2026-11-21",
+      "title": "E-539 merged: saves by columns (format 6); Predator-sized load 5.9 s -> 0.23 s and save 0.8 -> 0.04 s in the Node kernel, every column bit for bit",
+      "verdict": "note",
+      "text": "**E-539 built and merged (88a510fe): saves by columns, one table per entity type, format 6.** Agent C, branch ecs/e539-save-columns, 6 commits (82fad598 the kernel first).\n\n- **Format:** `payload.entities` is one table per type: `{ typeName, indices: Uint32Array, components: [{ name, fingerprint, fields: [{ name, length, entityId, values }] }] }`.\n  - `values` is a typed array of the live column's own kind, one ArrayBuffer per table, so it can be transferred.\n  - ENTITIES (tag 4) carries a layout byte, and its arrays are written 8-byte aligned: a decode views them, no copy.\n  - Format 5 no longer loads (owner's rule: no old saves), and its readers are deleted.\n- **Restore:** one `EntityRestorePlan` per type and load matches the saved columns to the live ones once. A spawn writes its row through it, after onSpawned and the FSM's start, before activation. Copies are bit exact through unsigned views, one loop per width. The ids are remapped per column through an Int32Array old -> new.\n- **Kernel** (saveRestoreMicrobench, Predator crowd 2.5's 42 240 entities, 6.95 M values; cold / warm ms; it ran beside two other agents):\n\n  | phase | before | after |\n  | --- | --- | --- |\n  | save (captureSavePayload) | 797 / 484 | 40 / 22 |\n  | entity snapshot | 653 / 486 | 16 / 21 |\n  | encode | 636 / 1127 | 19 / 19 |\n  | decode | 3033 / 3148 | 7 / 6 |\n  | load | 5869 / 5777 | 239 / 160 |\n  | restoreSave's message clone | 2442 / 2284 | 13 / 13 |\n  | logic0's _restoreSave | 3414 / 3487 | 222 / 141 |\n\n  - Stored body 146.8 -> 21.6 MB.\n  - JS heap: save 270 -> 0.8 MB, decode 2289 -> 0.5, load 3287 -> 22 (v8.GCProfiler).\n  - The payload's objects 1 125 837 -> 2 092.\n  - Deflate stays the largest piece (1019 ms on the kernel's random columns; about 350 ms with 70 % constant columns).\n- **Bug found and fixed on the way:** format 5 stored NaN as null, which a load wrote back as 0 (unset anchors and other NaN-default columns). Every saved column now restores bit for bit.\n- **Tests:** saveColumnsRoundTrip.test.js (9: GPU-loss path, stored save through the codec, a player's save with ids and joints remapped, NaN / sNaN / -0, instance fields, decals, schema drift, a pinned class's hand-off); 11 save tests updated where the format changed. Suites on the merge: node 3379 of 3379, demos 127 of 127.\n- **Left:** Predator's save and load in the page (N-314); the PNG decal tiles encoded one after another (Decal.packSnapshot, 2.56 s in R-1528). A pinned class's saved row lands after logic0's id remap on a player's load (an older bug, filed apart). Old `.weedsave` files for `runPredatorAbab --restore` must be made again."
+    },
+    {
+      "id": "R-1671",
+      "date": "2026-11-21",
+      "title": "E-537 merged: GameObject, Decoration, AdobeAnim and MeshRenderer statics by index; Adobe's frameCount reads make no object",
+      "verdict": "note",
+      "text": "**E-537 built and merged (5856f012): index statics for the APIs only an instance had.** Agent A, branch ecs/e537-e540, commits c6993021, 01dd5273, 9dea87a0, 7a99fcbb, 038ddae4.\n\n- **GameObject:**\n  - `sendTo(from, to, name, a, b, c, d)`, `emit(i, name, data)`, `sendMessageToScene(i, data)` and `isCollidingWith(i, other)`.\n  - `setLayer(i, name)`, `setLayers(i, names)`, `layerName(i)`, `setFeedBits` / `getFeedBits`.\n  - `addDecoration(i, ...)`, `getAttachedDecorationCount(i)`, `getAttachedDecorationIndex(i, slot)`.\n  - The instance method and the static call the same work function. The static reads its flags and class from the entity's type.\n- **SceneBridge** takes `(entityIndex, className)` instead of a sender object.\n- **addDecoration** makes no facade, and Decoration.ensureForParented is gone: a despawn evicted it anyway.\n- **Decoration:** every setter by pool id, sharing the facade's work: position, scale, alpha, tint, local, anchor, innerZ, face, textureId, offsets, sortOffsetY, skew, sway, rotation. A static checks only that the slot is active, since an id is a raw slot.\n- **AdobeAnimComponent:** setAsset, play, gotoAndStop, gotoAndPlay, pause, resume, frameCount and currentFrame, by index. The reads take the count and rate from the asset's columns, so no clip object is spread per read: 2000 cold frameCount reads 258 KB -> under 1 KB in Node. Parity with the old component: frames, times and playing identical.\n- **MeshRenderer:** the setters and the geometry methods by index, parity-checked (-0, NaN and strings included).\n- **Doubles** reach only work TurboFan always inlines. Larger work reads them from SETTER_ARGS or SETTER_ARGS64.\n- **Tests:** gameObjectIndexStatics, decorationStatics, adobeAnimStatics and meshRendererStatics, each running both forms on twins and comparing every column. The guide's ECS table and a lantern example that makes no instance; types drift check green."
+    },
+    {
+      "id": "R-1672",
+      "date": "2026-11-21",
+      "title": "E-540 merged: instance tables allocated by the first instance (0 MB in an ECS realm, 0.9 MB before), no owner, no start()",
+      "verdict": "note",
+      "text": "**E-540 built and merged (5856f012): instance housekeeping for ECS scenes.** Agent A, commits 5c5c752c (entityInstanceBootMicrobench reports the table's length), bd459394, 528a4985, 5749ac99, 81a43df8, bc3d1024.\n\n- **Instance tables on first use:**\n  - A logic worker's `gameObjects` is now `GameObject.instances` itself.\n  - That table, each class's `instances` and the page's stay empty until their first instance allocates them whole.\n  - An empty table is `new Array(1).fill(null)` cut to length 0, which has the map of a full one (`%HaveSameMap`, tested), so the tick loops' loads stay monomorphic.\n  - At 57 600 slots a realm held 0.9 MB at boot in Node (Chrome's 4-byte elements: 0.69 MB a logic worker, 0.46 on the page). An ECS scene now holds none, and an object scene holds two tables per logic worker instead of three.\n- **Components hold no owner:** an FSM reads its entity's tickInterval by type (entityTypes.js entityClassOfType).\n- **start() removed:** nothing used it.\n- **Debug build:** devChecks notes a class's shape at its first spawn only.\n- **Demos:** three page-side demos that read `EntityClass.instances` now walk entities by index. Two of them dereferenced `null.index` since E-209: adobeAnimate, headlights, sunStreet.\n- **Tests:** instanceTablesOnFirstUse and componentNoOwner, plus 8 updated. Suites on the merge: node 3400 of 3400, demos 127 of 127. spawnPathMicrobench was too noisy beside the other agents to read."
     }
   ],
   "leads": [
