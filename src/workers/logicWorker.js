@@ -604,8 +604,8 @@ class LogicWorker extends AbstractWorker {
    */
   /**
    * E-209: the instance at `index` on its first use in this worker: its class from the slot's type, made without
-   * touching the slot's Transform (it may be live, spawned by another worker or the page), then start(). Null for an
-   * index no registered pool holds.
+   * touching the slot's Transform (it may be live, spawned by another worker or the page). Null for an index no
+   * registered pool holds.
    */
   _makeInstance(index) {
     if (!(index >= 0)) return null;
@@ -621,13 +621,6 @@ class LogicWorker extends AbstractWorker {
     const instance = new EntityClass(index, this.config, this, { lazy: true });
     if (this.gameObjects.length === 0) this.gameObjects = GameObject.instances;
     this.gameObjects[index] = instance;
-    if (instance.start) {
-      try {
-        instance.start();
-      } catch (error) {
-        this._entityThrew(error, index, 'start');
-      }
-    }
     return instance;
   }
 
