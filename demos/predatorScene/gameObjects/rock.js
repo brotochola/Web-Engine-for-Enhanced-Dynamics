@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { ROCK_SPARKS } from '../effectPresets.js';
 import { LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
@@ -26,24 +27,11 @@ export class Rock extends GameObject {
     const impactSound = rng() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
     SoundManager.play(impactSound, 0.25, 0.85, 1.12, 0, 0, hitX, hitY, 'bullet_hits');
 
-    ParticleEmitter.emit({
-      count: 10 + rng() * 10,
-      x: hitX,
-      y: hitY,
-      z: - rng() * SpriteRenderer.getOriginalHeight(i),
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 2, max: 4 },
-      rotation: { min: 0, max: 360 },
-      vz: -rng() * 4 - 2,
-      gravity: 0.6,
-      lifespan: { min: 100, max: 300 },
-      scale: { min: 0.15, max: 0.5 },
-      texture: '_whiteCircle',
-      tint: { min: 0xffff00, max: 0xffbb00 },
-      alpha: { min: 0.8, max: 1 },
-      stayOnTheFloor: false,
-      despawnOnGroundContact: true,
-    });
+    // 10 to 20 sparks from anywhere up the rock's height; the burst at one vz.
+    const count = 10 + rng() * 10;
+    const z = -rng() * SpriteRenderer.getOriginalHeight(i);
+    const vz = -rng() * 4 - 2;
+    ParticleEmitter.withVz(vz).emitPreset(ROCK_SPARKS, hitX, hitY, z, count);
 
   }
 

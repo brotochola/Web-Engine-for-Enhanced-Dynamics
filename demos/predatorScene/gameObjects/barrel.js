@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { BARREL_FLASH, BARREL_SPARKS } from '../effectPresets.js';
 
 // Destructure what we need from WEED
 const {
@@ -40,37 +41,17 @@ export class Barrel extends GameObject {
     SoundManager.play(impactSound, 0.25, 0.85, 1.15, 0, 0, hitX, hitY, 'bullet_hits');
 
     const radius = Collider.radius[i];
-    ParticleEmitter.emit({
-      count: Math.floor(rng() * radius) + radius * 0.5,
-      x: hitX,
-      y: hitY,
-      z: - rng() * SpriteRenderer.getOriginalHeight(i),
-      angleXY: { min: 0, max: 360 },
-      speed: { min: radius * 0.2, max: radius * 0.4 },
-      rotation: { min: 0, max: 360 },
-      vz: -rng() * 4 - 2,
-      gravity: 0.6,
-      lifespan: { min: 100, max: 300 },
-      scale: { min: 0.15, max: 0.5 },
-      texture: '_whiteCircle',
-      tint: { min: 0xffff00, max: 0xffbb00 },
-      alpha: { min: 0.8, max: 1 },
-      stayOnTheFloor: false,
-      despawnOnGroundContact: true,
-    });
+    // As many sparks as the barrel is wide and as fast, from anywhere up its height; the burst at one vz.
+    const count = Math.floor(rng() * radius) + radius * 0.5;
+    const z = -rng() * SpriteRenderer.getOriginalHeight(i);
+    const vz = -rng() * 4 - 2;
+    ParticleEmitter.withVz(vz).withSpeedFactor(radius).emitPreset(BARREL_SPARKS, hitX, hitY, z, count);
 
     // The kick: along the line from the barrel's centre to the hit point, 60 px/s per px of it.
     RigidBody.addVelocity(i, (hitX - Transform.x[i]) * 60, (hitY - Transform.y[i]) * 60);
 
     // A spark of strength s: reach 10·√s, glow s / 50000.
     const strength = rng() * 1000 + 1000;
-    Flash.spawnIndex({
-      x: hitX,
-      y: hitY,
-      lifespan: 18,
-      color: 0xffee00,
-      radius: 10 * Math.sqrt(strength),
-      glow: strength / 50000,
-    });
+    Flash.withRadius(10 * Math.sqrt(strength)).withGlow(strength / 50000).spawnPreset(BARREL_FLASH, hitX, hitY);
   }
 }

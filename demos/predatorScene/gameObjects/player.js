@@ -2,6 +2,7 @@
 // Extends GameObject to create a WASD-controlled player entity
 
 import WEED from '/src/index.js';
+import { PLAYER_MUZZLE_FLASH } from '../effectPresets.js';
 
 // Destructure what we need from WEED
 const {
@@ -74,15 +75,8 @@ export class Player extends GameObject {
       1500 // max distance
     );
 
-    Flash.spawn({
-      x: this.x + (this.vx > 0 ? 35 : -35),
-      y: this.y - 35,
-      z: 0, // height
-      lifespan: 17,
-      color: 0xffbb11, // orange
-      radius: 1581,
-      glow: 0.5,
-    });
+    // The muzzle's flash, 35 px ahead (the side it moves to) and 35 px up.
+    Flash.spawnPreset(PLAYER_MUZZLE_FLASH, this.x + (this.vx > 0 ? 35 : -35), this.y - 35);
   }
 
   /**

@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { WALL_CHIPS, WALL_HIT_FLASH } from '../effectPresets.js';
 import { LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
@@ -63,33 +64,9 @@ export class TallLight extends GameObject {
     const impactSound = rng() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
     SoundManager.play(impactSound, 0.25, 0.9, 1.15, 0, 0, hitX, hitY, 'bullet_hits');
 
+    // As many chips as the damage, from 20 px up, and a short flash.
     const count = Math.floor(damage * 8) + 3;
-    ParticleEmitter.emit({
-      count,
-      texture: 'square',
-      x: hitX,
-      y: hitY,
-      z: -20,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 1.5, max: 4 },
-      vz: { min: 2, max: 6 },
-      lifespan: { min: 400, max: 800 },
-      gravity: 0.35,
-      scale: { min: 0.15, max: 0.4 },
-      alpha: { min: 0.7, max: 1 },
-      tint: { min: 0xffff00, max: 0xffffff },
-      rotation: { min: 0, max: 360 },
-      stayOnTheFloor: false,
-      despawnOnGroundContact: true,
-    });
-
-    Flash.spawnIndex({
-      x: hitX,
-      y: hitY,
-      lifespan: 18,
-      color: 0xffee00,
-      radius: 707,
-      glow: 0.1,
-    });
+    ParticleEmitter.emitPreset(WALL_CHIPS, hitX, hitY, -20, count);
+    Flash.spawnPreset(WALL_HIT_FLASH, hitX, hitY);
   }
 }
