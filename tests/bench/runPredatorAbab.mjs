@@ -285,6 +285,13 @@ const THROUGHPUT_FAMILY = { FLOWFIELDS_COMPUTED: ['FLOWFIELDS_SERVICED'] };
 // HOW_WE_MEASURE: a load key outside 5% fails the pair. A coefficient of
 // variation at or above 50% fails the pair. The band does not widen with cv.
 const LOAD_GATE_BAND_PCT = 5;
+/**
+ * E-210: a key whose count is the battle's own chance, not the work a side was given: DECAL_TILES_DIRTY counts the tiles
+ * blood and hits stamped, and two runs of identical code read it -24 % from fresh battles and -11 % from one save
+ * (cv 19 %) on 2026-11-21, so a 5 % band failed every Predator battle sitting on it alone. Its band is wide enough
+ * for that and still catches a side that stamps far less or far more.
+ */
+const LOAD_GATE_BAND_PCT_BY_KEY = { DECAL_TILES_DIRTY: 25 };
 const LOAD_CV_FAIL = 0.5;
 
 /**
@@ -700,6 +707,7 @@ export function decideAbab(pairs, owner, metric = null, limits = null) {
     const floor = LOAD_GATE_MIN[key] ?? 0;
     const bothPresent = av.length === pairs.length && bv.length === pairs.length;
     const belowFloor = bothPresent && a < floor && b < floor;
+    const band = LOAD_GATE_BAND_PCT_BY_KEY[key] ?? LOAD_GATE_BAND_PCT;
     const entry = {
       base: a,
       hyp: b,
@@ -707,7 +715,7 @@ export function decideAbab(pairs, owner, metric = null, limits = null) {
       cvBase: Number.isFinite(cvA) ? cvA : 0,
       cvHyp: Number.isFinite(cvB) ? cvB : 0,
       noisePct: noise * 100,
-      bandPct: LOAD_GATE_BAND_PCT,
+      bandPct: band,
       belowFloor,
       gated: !belowFloor,
       mutedBy: belowFloor ? 'floor' : null,
@@ -726,7 +734,7 @@ export function decideAbab(pairs, owner, metric = null, limits = null) {
     }
     if (noise >= LOAD_CV_FAIL) reasons.push(`load ${key} cv ${(noise * 100).toFixed(1)}%`);
     if (a === 0 && b !== 0) reasons.push(`load ${key} 0 -> ${b}`);
-    else if (entry.deltaPct != null && Math.abs(entry.deltaPct) > LOAD_GATE_BAND_PCT) {
+    else if (entry.deltaPct != null && Math.abs(entry.deltaPct) > band) {
       reasons.push(`load ${key} ${entry.deltaPct.toFixed(1)}%`);
     }
   }
