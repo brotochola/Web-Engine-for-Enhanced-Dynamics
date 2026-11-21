@@ -1163,7 +1163,8 @@ export interface ParticleEmitConfig {
   vz?: WeedNumOrRange;
   lifespan?: WeedNumOrRange;
   gravity?: number;
-  texture?: string;
+  /** A texture name, or a list of 1 to 8 names: one picked per particle. */
+  texture?: string | readonly string[];
   spritesheet?: string;
   animation?: string;
   /** Frame index, spawn range, or indices cycled over life. */
@@ -1180,6 +1181,11 @@ export interface ParticleEmitConfig {
   angularVelocity?: WeedParticleOp;
   rotC?: number;
   rotS?: number;
+  /**
+   * Each particle turned to face its launch direction: `dirX` / `dirY` (turned by its `spread`), or its `angleXY`.
+   * Without either it keeps `rotation`; `rotC` / `rotS` win over it.
+   */
+  faceDirection?: boolean;
   flipX?: boolean;
   flipY?: boolean;
   fadeOnTheFloor?: number;
@@ -1321,6 +1327,12 @@ export interface FlashCreateConfig {
   /** Radians, where the cone points, in the world's frame (a flash never turns). Default 0. */
   direction?: number;
 }
+
+/** A flash preset's config: spawnIndex's keys, the position too optional (spawnPreset gives it). */
+export type FlashPresetConfig = Partial<FlashCreateConfig>;
+
+/** A flash preset: {@link Flash.define}'s id, for {@link Flash.spawnPreset} (per thread). */
+export type FlashPreset = number & { readonly __flashPreset: true };
 
 export interface DecorationSpawnConfig {
   x?: WeedNumOrRange;
@@ -5131,13 +5143,49 @@ export declare class SharedAtomicPool {
 
 export declare const DECAL_STAMPS_BLEND_MODE: Readonly<{ normal: 0; multiply: 1 }>;
 
+/** A particle preset: {@link ParticleEmitter.define}'s id, for {@link ParticleEmitter.emitPreset} (per thread). */
+export type ParticlePreset = number & { readonly __particlePreset: true };
+
+/** A preset's config: emit's keys, each a value, a range drawn per particle or an over-life op. */
+export type ParticlePresetConfig = Partial<ParticleEmitConfig>;
+
 export declare class ParticleEmitter extends SharedAtomicPool {
   static poolName: string;
   static _warnedPoolExhausted: boolean;
   static initialize(maxParticles: number): void;
+  /** The one-off form: the config is read on every call. A burst fired again and again is a preset. */
   static emit(config: ParticleEmitConfig): number;
   static emitFlat(config: ParticleEmitConfig): number;
   static emitZenithal(config: ParticleEmitConfig): number;
+  /**
+   * A heighted preset (emit's mode), compiled once: define it at module level. A key emit does not know throws a
+   * TypeError. A preset lives as long as its module, in the thread that defined it.
+   */
+  static define(config: ParticlePresetConfig): ParticlePreset;
+  /** A zenithal preset (emitZenithal's mode). */
+  static defineZenithal(config: ParticlePresetConfig): ParticlePreset;
+  /** A flat preset (emitFlat's mode: no floor; gravity defaults to 0 and pulls on vy). */
+  static defineFlat(config: ParticlePresetConfig): ParticlePreset;
+  /**
+   * Particles from a preset, with what varies per emit: each argument left undefined keeps the preset's value. The same
+   * particles the literal emit of the preset's config with these keys writes; nothing allocated. Returns the
+   * particles spawned. Throws a TypeError for an id define did not return.
+   * @param z heighted modes only (z < 0 is up)
+   * @param count rounded, as emit's
+   * @param dirX with dirY: the direction of a preset with `speed` (turned by its `spread`), and where a
+   *   `faceDirection` preset's particles face
+   */
+  static emitPreset(preset: ParticlePreset, x?: number, y?: number, z?: number, count?: number, dirX?: number, dirY?: number): number;
+  /** The next emit on this thread launches every particle at this vz. Chains into the emit. */
+  static withVz(vz: number): typeof ParticleEmitter;
+  /** The next emit on this thread flips every particle so. */
+  static withFlip(flipX: boolean, flipY: boolean): typeof ParticleEmitter;
+  /** The next emit on this thread multiplies every value and range end of its scale (from and to) by `factor`. */
+  static withScaleFactor(factor: number): typeof ParticleEmitter;
+  /** The next emit on this thread multiplies every value and range end of its alpha (from and to) by `factor`. */
+  static withAlphaFactor(factor: number): typeof ParticleEmitter;
+  /** The next emit on this thread multiplies its `speed` (both range ends) by `factor`; not vx, vy or vz. */
+  static withSpeedFactor(factor: number): typeof ParticleEmitter;
   /** Flat particles spread along (x0,y0)-(x1,y1); `count` is the sample count (default 8). */
   static emitAlongLine(
     config: Omit<ParticleEmitConfig, 'x' | 'y'> & { x0: number; y0: number; x1: number; y1: number },
@@ -5544,6 +5592,21 @@ export declare class Flash extends GameObject {
   static isOnScreen(worldX: number, worldY: number): boolean;
   /** A flash by index (no instance): its entity index, or -1 if not initialized, off-screen or the pool is full. */
   static spawnIndex(config: FlashCreateConfig): number;
+  /**
+   * A flash preset, compiled once (spawnIndex's keys and defaults): define it at module level. A key a flash does not
+   * know throws a TypeError. A preset lives as long as its module, in the thread that defined it.
+   */
+  static define(config: FlashPresetConfig): FlashPreset;
+  /**
+   * A flash from a preset, by index, with what varies per spawn: each argument left undefined keeps the preset's value.
+   * Nothing allocated. Its entity index, or -1 if not initialized, off-screen or the pool is full.
+   * @param direction radians, where a cone points
+   */
+  static spawnPreset(preset: FlashPreset, x?: number, y?: number, z?: number, direction?: number): number;
+  /** The next flash spawned on this thread starts with this reach (px). Chains into the spawn. */
+  static withRadius(radius: number): typeof Flash;
+  /** The next flash spawned on this thread starts with this halo alpha. Chains into the spawn. */
+  static withGlow(glow: number): typeof Flash;
   static onSpawned(i: number, spawnConfig: FlashCreateConfig): void;
   static onDespawned(i: number): void;
   static tickAll(list: ArrayLike<number>, count: number, dtRatio: number): void;

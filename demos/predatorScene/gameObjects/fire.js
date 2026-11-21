@@ -1,6 +1,7 @@
 import { FireComponent } from '../components/fireComponent.js';
 import WEED from '/src/index.js';
 import { LIGHT3D } from '../light3d.js';
+import { FIRE_SPARKS, SMOKE } from '../effectPresets.js';
 
 const { GameObject, Collider, SpriteRenderer, LightEmitter, Transform, ParticleEmitter, SoundManager, rng, randomColor, enums } =
   WEED;
@@ -130,47 +131,30 @@ export class Fire extends GameObject {
   /** Sparks off fire i, within `radius` of it; fadeFactor (1 to 0) makes them rarer, fewer and dimmer. */
   static emitSparks(i, radius, fadeFactor = 1) {
     if (rng() > 0.4 * fadeFactor) return;
-    ParticleEmitter.emit({
-      count: Math.floor(rng() * 3 * fadeFactor) + 1,
-      x: Transform.x[i] + (rng() * radius - radius * 0.5),
-      y: Transform.y[i] + (rng() * radius - radius * 0.5),
-      z: -radius - rng() * radius,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 0, max: 1 },
-      vz: -rng() * 2 - 2,
-      gravity: -0.1,
-      lifespan: { min: 200, max: 500 },
-      scale: 0.25 * fadeFactor,
-      texture: 'square',
-      tint: { min: 0xffff00, max: 0xffbb00 },
-      alpha: { min: 0.8 * fadeFactor, max: 1 * fadeFactor },
-    });
+    // One to three, from anywhere within the fire and up to its radius above the ground's one; the burst rises at one vz.
+    const count = Math.floor(rng() * 3 * fadeFactor) + 1;
+    const x = Transform.x[i] + (rng() * radius - radius * 0.5);
+    const y = Transform.y[i] + (rng() * radius - radius * 0.5);
+    const z = -radius - rng() * radius;
+    const vz = -rng() * 2 - 2;
+    ParticleEmitter.withVz(vz).withScaleFactor(fadeFactor).withAlphaFactor(fadeFactor).emitPreset(FIRE_SPARKS, x, y, z, count);
   }
 
   /** Smoke rising off fire i, above `radius`; fadeFactor (1 to 0) makes it rarer, smaller and fainter. */
   static emitSmoke(i, radius, fadeFactor = 1) {
     if (rng() > 0.3 * fadeFactor) return;
     const baseScale = FireComponent.baseScale[i];
-    ParticleEmitter.emit({
-      count: Math.floor(rng() * 2 * fadeFactor) + 1,
-      x: Transform.x[i],
-      y: Transform.y[i],
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 0, max: 1 },
-      vz: -rng() * 2 - 2,
-      gravity: 0,
-      rotation: { min: 0, max: 360 },
-      flipX: rng() > 0.5,
-      flipY: rng() > 0.5,
-      z: -radius * 2 - rng() * radius * 2,
-      lifespan: { min: 500, max: 2000 },
-      scale: {
-        min: baseScale * fadeFactor,
-        max: baseScale * 3 * fadeFactor,
-      },
-      texture: 'smoke',
-      tint: { min: 0xaaaaaa, max: 0x666666 },
-      alpha: { from: { min: 0.15 * fadeFactor, max: 0.3 * fadeFactor }, to: 0 },
-    });
+    // One or two puffs, two to four radii up; the burst rises at one vz, flipped one way. As big as the fire, fading
+    // with it.
+    const count = Math.floor(rng() * 2 * fadeFactor) + 1;
+    const vz = -rng() * 2 - 2;
+    const flipX = rng() > 0.5;
+    const flipY = rng() > 0.5;
+    const z = -radius * 2 - rng() * radius * 2;
+    ParticleEmitter.withVz(vz)
+      .withFlip(flipX, flipY)
+      .withScaleFactor(baseScale * fadeFactor)
+      .withAlphaFactor(fadeFactor)
+      .emitPreset(SMOKE, Transform.x[i], Transform.y[i], z, count);
   }
 }

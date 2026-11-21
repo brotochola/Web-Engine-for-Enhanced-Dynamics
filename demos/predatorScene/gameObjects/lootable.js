@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { HARD_HIT_SPARKS } from '../effectPresets.js';
 
 import { LootableComponent } from '../components/lootableComponent.js';
 import { DropMoney } from './dropMoney.js';
@@ -55,22 +56,12 @@ export class Lootable extends GameObject {
   /** Sparks off entity i (a hit on something hard). */
   static emitSparks(i) {
     const radius = Collider.radius[i];
-    ParticleEmitter.emit({
-      count: Math.floor(rng() * radius) + radius * 0.5,
-      x: Transform.x[i] + (rng() * radius - radius * 0.5),
-      y: Transform.y[i] + (rng() * radius - radius * 0.5),
-      z: -radius - rng() * radius,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: radius * 0.1, max: radius * 0.2 },
-      rotation: { min: 0, max: 360 },
-      vz: -rng() * 2 - 2,
-      gravity: 0.6,
-      lifespan: { min: 100, max: 300 },
-      scale: { min: 0.25, max: 0.5 },
-      texture: 'square',
-      tint: { min: 0xffff00, max: 0xffbb00 },
-      alpha: { min: 0.8, max: 1 },
-      stayOnTheFloor: false,
-    });
+    // As many sparks as it is wide and as fast, from anywhere within it; the burst at one vz.
+    const count = Math.floor(rng() * radius) + radius * 0.5;
+    const x = Transform.x[i] + (rng() * radius - radius * 0.5);
+    const y = Transform.y[i] + (rng() * radius - radius * 0.5);
+    const z = -radius - rng() * radius;
+    const vz = -rng() * 2 - 2;
+    ParticleEmitter.withVz(vz).withSpeedFactor(radius).emitPreset(HARD_HIT_SPARKS, x, y, z, count);
   }
 }

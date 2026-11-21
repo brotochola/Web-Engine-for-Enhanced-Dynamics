@@ -13,6 +13,7 @@ import { LootableComponent } from '../components/lootableComponent.js';
 import { PersonComponent } from '../components/personComponent.js';
 import { PersonAnimationFSM } from '../fsm/personAnimationFsm.js';
 import { LIGHT3D } from '../light3d.js';
+import { DEATH_BLOOD, MUZZLE_FLASH, MUZZLE_SPRITE, SHOT_SPARKS, WOUND_BLOOD } from '../effectPresets.js';
 import {
   ParticleEmitter,
   SpriteSheetRegistry,
@@ -154,22 +155,8 @@ export class Person extends Lootable {
 
     if (damage < 0.1) return;
 
-    ParticleEmitter.emit({
-      count: Math.floor(damage * (rng() * 10 + 4)),
-      texture: 'blood',
-      x: Transform.x[i],
-      y: Transform.y[i],
-      z: -30,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 0.7, max: 1.66 },
-      vz: { min: -4, max: 0 },
-      lifespan: 2000,
-      gravity: 0.22,
-      scale: { min: 0.12, max: 0.3 },
-      alpha: { min: 0.66, max: 0.95 },
-      tint: { min: 0xaaaaaa, max: 0xffffff },
-      stayOnTheFloor: true,
-    });
+    // Blood from 30 px up, as many drops as the damage.
+    ParticleEmitter.emitPreset(WOUND_BLOOD, Transform.x[i], Transform.y[i], -30, Math.floor(damage * (rng() * 10 + 4)));
   }
 
   /**
@@ -373,52 +360,10 @@ export class Person extends Lootable {
       );
     }
 
-    // Muzzle flash sprites face shot direction (CS, no degree→trig round-trip)
-    ParticleEmitter.emit({
-      count: 1,
-      x: muzzleX,
-      y: muzzleY + 1,
-      texture: "muzzle" + Math.floor(rng() * 3 + 1),
-      scaleX: rng() * 0.5 + 0.5,
-      scaleY: rng() * 0.5 + 0.5,
-      rotC: shotDirX,
-      rotS: shotDirY,
-      alpha: rng() * 0.5 + 0.5,
-      anchorX: 0,
-      anchorY: 0.5,
-      z: muzzleHeightPx,
-      gravity: 0,
-      lifespan: 50,
-      speed: 0
-    })
-
-    ParticleEmitter.emit({
-      count: 1,
-      x: muzzleX,
-      y: muzzleY + 1,
-      texture: "muzzle" + Math.floor(rng() * 3 + 1),
-      scaleX: rng() * 0.5 + 0.5,
-      scaleY: rng() * 0.5 + 0.5,
-      rotC: shotDirX,
-      rotS: shotDirY,
-      alpha: rng() * 0.5 + 0.5,
-      anchorX: 0,
-      anchorY: 0.5,
-      z: muzzleHeightPx,
-      gravity: 0,
-      lifespan: 50,
-      speed: 0
-    })
-
-    Flash.spawnIndex({
-      x: muzzleX,
-      y: muzzleY,
-      z: -muzzleHeightPx,
-      lifespan: 18,
-      color: 0xffaa00,
-      radius: 1000,
-      glow: 0,
-    });
+    // Two muzzle sprites facing the shot (its direction turns them: no degree→trig round-trip), and the muzzle's flash.
+    ParticleEmitter.emitPreset(MUZZLE_SPRITE, muzzleX, muzzleY + 1, muzzleHeightPx, 1, shotDirX, shotDirY);
+    ParticleEmitter.emitPreset(MUZZLE_SPRITE, muzzleX, muzzleY + 1, muzzleHeightPx, 1, shotDirX, shotDirY);
+    Flash.spawnPreset(MUZZLE_FLASH, muzzleX, muzzleY, -muzzleHeightPx);
 
     this.shootingSparks(shotDirX, shotDirY, muzzleX, muzzleY, muzzleHeightPx);
 
@@ -430,26 +375,8 @@ export class Person extends Lootable {
    * shooter, so they take no entity index.
    */
   static shootingSparks(dirX, dirY, muzzleX, muzzleY, muzzleHeightPx) {
-    // Unit dir + spread rad — no atan2→deg→angleXY round-trip
-    ParticleEmitter.emit({
-      count: Math.floor(rng() * 10) + 10,
-      x: muzzleX,
-      y: muzzleY + 1,
-      z: muzzleHeightPx,
-      dirX,
-      dirY,
-      spread: (10 * Math.PI) / 180,
-      speed: { min: 0.1, max: 10 },
-      rotation: { min: 0, max: 360 },
-      vz: { min: -1, max: 5 },
-      gravity: 0.4,
-      lifespan: { min: 33, max: 100 },
-      scale: { min: 0.15, max: 0.5 },
-      texture: '_whiteCircle',
-      tint: { min: 0xffff00, max: 0xffffff },
-      alpha: { min: 0.5, max: 0.8 },
-      despawnOnGroundContact: true,
-    });
+    // 10 to 19 of them, along the unit direction (the preset's spread turns each): no atan2→deg→angleXY round-trip.
+    ParticleEmitter.emitPreset(SHOT_SPARKS, muzzleX, muzzleY + 1, muzzleHeightPx, Math.floor(rng() * 10) + 10, dirX, dirY);
   }
 
   /**
@@ -530,23 +457,8 @@ export class Person extends Lootable {
     const deathSound = deathSounds[(rng() * deathSounds.length) | 0];
     SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, x, y, 'voice');
 
-    // Emit blood particles
-    ParticleEmitter.emit({
-      count: Math.floor(10 + rng() * 5),
-      texture: 'blood',
-      x,
-      y,
-      z: -10,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 0.7, max: 2 },
-      vz: { min: -4, max: 0 },
-      lifespan: 2000,
-      gravity: 0.15,
-      scale: { min: 0.1, max: 0.2 },
-      alpha: { min: 0.4, max: 0.9 },
-      tint: { min: 0xaaaaaa, max: 0xffffff },
-      stayOnTheFloor: true,
-    });
+    // 10 to 14 drops of blood, from 10 px up
+    ParticleEmitter.emitPreset(DEATH_BLOOD, x, y, -10, Math.floor(10 + rng() * 5));
 
     // Start dying animation IMMEDIATELY - forceChangeState executes transition now
     // (changeState only queues for next tick, which can cause animation issues).

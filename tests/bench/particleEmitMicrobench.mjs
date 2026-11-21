@@ -25,8 +25,8 @@ if (BURST_SIZE > MAX_PARTICLES) {
   throw new Error(`--burst-size (${BURST_SIZE}) must be <= --particles (${MAX_PARTICLES})`);
 }
 
-// ParticleEmitter._spawn uses core/utils.js rng() -> globalThis.rng (set by AbstractWorker in
-// real workers). Seed it here so randomRange() calls are deterministic and quiet in Node.
+// ParticleEmitter draws its ranges from core/utils.js's generator (rngFill on globalThis.rng, set by AbstractWorker
+// in real workers). Seed it here so the draws are deterministic and quiet in Node.
 globalThis.rng = seededRandom(SEED);
 
 // ============================================================================

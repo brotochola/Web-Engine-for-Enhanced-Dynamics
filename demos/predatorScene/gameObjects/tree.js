@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { TREE_CHIPS } from '../effectPresets.js';
 import { FARM_TREES, LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
@@ -23,24 +24,12 @@ export class Tree extends GameObject {
   static onGotShot(i, damage, hitX, hitY, ownerId, shooterEntityType) {
     // const count = Math.floor(damage * 8) + 3;
     const radius = Collider.radius[i];
-    ParticleEmitter.emit({
-      count: Math.floor(rng() * radius) + radius * 0.5,
-      x: hitX + (rng() * radius - radius * 0.5),
-      y: hitY + (rng() * radius - radius * 0.5),
-      z: - rng() * 40,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 2, max: 8 },
-      rotation: { min: 0, max: 360 },
-      vz: -rng() * 4 - 2,
-      gravity: 0.6,
-      lifespan: { min: 100, max: 300 },
-      scale: { min: 0.15, max: 1 },
-      texture: '_whiteCircle',
-      tint: { min: 0x4A3728, max: 0xC4A484 },
-      alpha: 1,
-      stayOnTheFloor: true,
-
-    });
+    const count = Math.floor(rng() * radius) + radius * 0.5;
+    const x = hitX + (rng() * radius - radius * 0.5);
+    const y = hitY + (rng() * radius - radius * 0.5);
+    const z = -rng() * 40;
+    const vz = -rng() * 4 - 2;
+    ParticleEmitter.withVz(vz).emitPreset(TREE_CHIPS, x, y, z, count);
   }
 
   /** Tree i spawned: one of the two tree sprites, a random size and facing, a static trunk for a body. */

@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { EXPLOSION_SPARKS, SMOKE } from '../effectPresets.js';
 import { ExplosionComponent } from '../components/explosionComponent.js';
 import { Fire } from './fire.js';
 
@@ -179,46 +180,25 @@ export class Explosion extends GameObject {
   static emitSparks(i) {
     const radius = Collider.radius[i];
     if (rng() > 0.4) return;
-    ParticleEmitter.emit({
-      count: Math.floor(rng() * 30) + 10,
-      x: Transform.x[i] + (rng() * radius - radius * 0.5),
-      y: Transform.y[i] + (rng() * radius - radius * 0.5),
-      z: -radius - rng() * radius,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 10, max: 20 },
-      rotation: { min: 0, max: 360 },
-      vz: -rng() * 2 - 2,
-      gravity: 0.6,
-      lifespan: { min: 100, max: 300 },
-      scale: { min: 0.25, max: 0.5 },
-      texture: 'square',
-      tint: { min: 0xffff00, max: 0xffbb00 },
-      alpha: { min: 0.8, max: 1 },
-      stayOnTheFloor: false,
-    });
+    // 10 to 39, from anywhere within the blast and up to its radius above the ground's one; the burst at one vz.
+    const count = Math.floor(rng() * 30) + 10;
+    const x = Transform.x[i] + (rng() * radius - radius * 0.5);
+    const y = Transform.y[i] + (rng() * radius - radius * 0.5);
+    const z = -radius - rng() * radius;
+    const vz = -rng() * 2 - 2;
+    ParticleEmitter.withVz(vz).emitPreset(EXPLOSION_SPARKS, x, y, z, count);
   }
 
   /** Smoke rising off explosion i, above its radius, on about 3 frames in 10. */
   static emitSmoke(i) {
     if (rng() > 0.3) return;
     const radius = Collider.radius[i];
-    ParticleEmitter.emit({
-      count: Math.floor(rng() * 2) + 1,
-      x: Transform.x[i],
-      y: Transform.y[i],
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 0, max: 1 },
-      vz: -rng() * 2 - 2,
-      gravity: 0,
-      rotation: { min: 0, max: 360 },
-      flipX: rng() > 0.5,
-      flipY: rng() > 0.5,
-      z: -radius * 2 - rng() * radius * 2,
-      lifespan: { min: 500, max: 2000 },
-      scale: { min: 1, max: 3 },
-      texture: 'smoke',
-      tint: { min: 0xaaaaaa, max: 0x666666 },
-      alpha: { from: { min: 0.15, max: 0.3 }, to: 0 },
-    });
+    // One or two puffs, two to four radii up; the burst rises at one vz, flipped one way.
+    const count = Math.floor(rng() * 2) + 1;
+    const vz = -rng() * 2 - 2;
+    const flipX = rng() > 0.5;
+    const flipY = rng() > 0.5;
+    const z = -radius * 2 - rng() * radius * 2;
+    ParticleEmitter.withVz(vz).withFlip(flipX, flipY).emitPreset(SMOKE, Transform.x[i], Transform.y[i], z, count);
   }
 }
