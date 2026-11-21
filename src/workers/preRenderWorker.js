@@ -4648,6 +4648,9 @@ class PreRenderWorker extends AbstractWorker {
             const influence = lightRadius[id];
             if (!(influence > 0)) continue;
             if (lightElevation !== null && !(lightElevation[id] > 0)) continue;
+            // E-531: a light at brightness 0 is off (its shadow's strength is its brightness, below): no tile in the
+            // lamps' map, no slot of maxShadowCastingLights, nothing stamped. A lamp a game dims by day costs nothing.
+            if (lightBrightness[id] === 0) continue;
             const ox = offsetX[id];
             const oy = offsetY[id];
             const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
@@ -5766,6 +5769,7 @@ class PreRenderWorker extends AbstractWorker {
             const rotC = Transform.rotC;
             const rotS = Transform.rotS;
             const lightRadius = LightEmitter.radius;
+            const lightBrightness = LightEmitter.brightness;
             const flashActive = FlashComponent.active;
             const zoom = this.cameraData ? this._frameCameraZoom : 1;
             const camX = this.cameraData ? this._frameCameraX : 0;
@@ -5796,6 +5800,8 @@ class PreRenderWorker extends AbstractWorker {
 
                 const lightInfluenceR = lightRadius[lightIdx];
                 if (!(lightInfluenceR > 0)) continue;
+                // E-531: brightness 0 scales its colour to nothing; it takes no slot of the light pass or its culling.
+                if (lightBrightness[lightIdx] === 0) continue;
 
                 const ox = offsetX[lightIdx];
                 const oy = offsetY[lightIdx];
