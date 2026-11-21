@@ -15825,12 +15825,12 @@
       "id": "N-187",
       "title": "A frame whose GPU queue count differs from the rows pre-render collected sends no G-buffer words: Pixi zeroes them, so every sprite is lit without its id and flags that frame (its own map shadow, its glow, its self-shadow); with Adobe animations every frame differs",
       "status": "open",
-      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "statusText": "Read again 2026-11-21: deferred while Adobe Animate stays out (the owner, 2026-10-29; E-145). Only scenes with Adobe characters and light3d's G-buffer lose the words, and today that is the Adobe demo alone. The queue's key column cannot carry a piece's root entity: Pixi's keyed pack takes a key as the row's slot identity (gpuPack.c), and pieces must stay unkeyed (adobe_root writes KEY_NONE).",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
       "result": "Read 2026-11-15: _writeGbufWords returns false when q.count differs from the collected rows (Adobe roots expanded into more rows), the frame goes without GPU_FLAG_GBUF and Pixi's commitGbuf(null) zeroes the words (not the last frame's, as first reported). Each such frame lights every sprite as before round 2: id 0 (a caster's own shadow paints it in map mode), no glow of its own, no self-shadow flag. A scene with Adobe animated entities expands roots every frame, so there the words never reach Pixi.",
-      "next": "Give the expanded rows their root's entity (the collector knows it) so the words are written whatever the count; a capture of an Adobe character with spriteRenderer.emissive and a sun map.",
+      "next": "The emit kernel (wasm/preRenderEmit.c adobe_root and emit_rows, tests/reference/preRenderEmitJs.mjs) writes where each collector row starts in the queue (a u32 per collector row in the queue memory), or a G-buffer entity column beside the key; _writeGbufWords then gives every queue row its collector row's entity (a piece its root's) whatever the count. C/JS parity in preRenderEmitAdobe.test.js, scripts/buildWasm.mjs, an adobeAnimateScene capture with lighting.gbuffer and a sun map. About 2-3 h.",
       "refs": [
         "REVIEW_PLAN.md#N-187"
       ],
@@ -19654,8 +19654,8 @@
     {
       "id": "N-227",
       "title": "Volumes cast no lamp shadow in a scene without sprite casters: the lamps' map draws its volumes only after its stamp cards, and a lamp gets a tile only from pre-render's stamp lights",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the pixi batch agent (opt/pixi-gpu-batch)",
+      "status": "kept",
+      "statusText": "Fixed 2026-11-18 by OL-5 (13c69176, R-1356; closed 2026-11-21 in R-1686): a lamp gets a tile for a casting volume, and the volumes draw with no stamp row.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "bug",
@@ -19665,7 +19665,9 @@
       "aliases": [
         "volumes need stamp casters for lamp shadows"
       ],
-      "records": []
+      "records": [
+        "R-1686"
+      ]
     },
     {
       "id": "E-457",
@@ -21074,8 +21076,8 @@
     {
       "id": "N-258",
       "title": "Normals do not flip with flipX/flipY nor turn with a rotated sprite: the G-buffer pass decodes them in the frame's own space, so a lamp on the left would light a mirrored car's right side (the standard cars mirror half their headings)",
-      "status": "open",
-      "statusText": "suspected from the code 2026-11-16 (preRenderEmit.c makes a flip a negative scale; faceMap.frag.glsl decodes the normal without it); to confirm on the light bench first (a mirrored car with a lamp at its side)",
+      "status": "kept",
+      "statusText": "Fixed 2026-11-17 (3cd826a5, closed 2026-11-21 in R-1685): the G-buffer pass mirrors and turns a frame's normals with its sprite, GLSL and WGSL; faceMap.test.js.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "bug",
@@ -21085,7 +21087,9 @@
       ],
       "aliases": [],
       "next": "Flip and turn the decoded normal (and the Sobel's) in the G-buffer pass, GLSL and WGSL.",
-      "records": []
+      "records": [
+        "R-1685"
+      ]
     },
     {
       "id": "E-496",
@@ -40810,11 +40814,29 @@
     {
       "id": "R-1684",
       "date": "2026-11-21",
-      "time": "20:51",
+      "time": "20:44",
       "timeFrom": "recorded",
       "title": "N-272 v3 merged: the face map a texel inside its edges; captures change only pixels by the edges (149 px WebGL, 132 WebGPU); barrio films for N-291",
       "verdict": "kept",
       "text": "**N-272 v3 merged (d74a5d7e cherry-picked as 5d8b2840, merged on main 2026-11-21): the face map is drawn a texel inside its edges, so WebGL's clamp-to-edge reads past the screen land on the empty ring.** The march is main's (v1 and v2's per-step test cost the HD 620 about 4.5 %, R-1337); the light pass reads a pixel's own face and id a texel inside.\n\n- Captures, main against v3, selfShadowStressScene `hour=12&still=1` (nothing moves), captureDiffWhere (a8929be5): WebGL 149 of 921 600 px differ, 100 in the 1-px border, 5 within 4 px, 28 within 16 px, 16 inside; WebGPU 132 (100, 0, 16, 16 inside). The change touches only what lies by the screen's edges, on both backends.\n- The barrio (Buenos Aires, noon, people and cars off) differs about equally on both backends (3 307 and 3 565 px, mostly inside: trees and water move), so a still capture there cannot tell the fix; films of the barrio panning (pan=60, panY=60), main beside v3, WebGL and WebGPU, are at D:/tmp/films/n272-barrio-*.mp4 for the owner's eye (N-291).\n- No GPU sitting: the march and its steps are main's; the ring adds one texel of border to the face map.\n- Node 3433/3433 (selfShadowRing.test.js), demos 143/143."
+    },
+    {
+      "id": "R-1685",
+      "date": "2026-11-21",
+      "time": "20:46",
+      "timeFrom": "recorded",
+      "title": "N-258 closed: fixed 2026-11-17 in 3cd826a5 (normals mirror and turn with their sprite, both backends), its row left open",
+      "verdict": "kept",
+      "text": "**N-258 was fixed on 2026-11-17 and its row left open: closed now.** 3cd826a5 (\"Maps: normals mirror and turn with their sprite\", merged with dx/barrios-render 0e157f7f and dx/barrios 700d9650): the G-buffer pass turns a frame's normal with its sprite's rotation and mirrors it with a negative scale, in GLSL (faceMap.frag.glsl turnNormal) and WGSL (faceMap.js faceFunctionsWgsl), the Sobel's too; faceMap.test.js holds the mirrored car and the rotated sprite (turnNormal in JS against the shader's terms). Found while working the 2026-11-21 plan's bug list."
+    },
+    {
+      "id": "R-1686",
+      "date": "2026-11-21",
+      "time": "20:50",
+      "timeFrom": "recorded",
+      "title": "N-227 closed: fixed 2026-11-18 by OL-5 (13c69176, R-1356: volumes cast lamp shadows with no stamp row), its row left open",
+      "verdict": "kept",
+      "text": "**N-227 was fixed on 2026-11-18 by OL-5 and its row left open: closed now.** 13c69176 (R-1356, merged with dx/one-light 85ca7900): with lampShadows 'map', pre-render names the casting lamps without a stamp row (_writeStampLightIds, _lampMapCasts) and Pixi gives them tiles for a stamp row or a casting volume and draws the volumes alone when no stamp row ran (_drawLampMapVolumes). R-1356 checked it: visPolyStressScene ?arm=maps before against after 139 473 px (no lamp shadow before), WebGL against WebGPU 0 px. Not measured again (on record)."
     }
   ],
   "leads": [
