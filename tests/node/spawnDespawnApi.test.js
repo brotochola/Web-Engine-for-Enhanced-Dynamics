@@ -169,10 +169,15 @@ test('the page builds one instance per slot and resets no shared state', { concu
   Transform.active.fill(1);
   Transform.entityType.fill(7);
   buildPageInstances();
-  assert.equal(Crate.instances.length, 3);
-  assert.equal(Lamp.instances.length, 1);
+  // E-540: no table until an instance is made; a class's first allocates its table whole, and the realm's.
+  assert.equal(Crate.instances.length, 0);
+  assert.equal(GameObject.instances.length, 0);
   assert.ok(GameObject.get(1) instanceof Crate);
+  assert.equal(Crate.instances.length, 3);
+  assert.equal(GameObject.instances.length, 4);
+  assert.equal(Lamp.instances.length, 0, 'no Lamp made yet');
   assert.ok(GameObject.get(3) instanceof Lamp);
+  assert.equal(Lamp.instances.length, 1);
   assert.equal(GameObject.get(1), Crate.instances[1], 'one object per slot');
   assert.equal(GameObject.get(2).index, 2);
   assert.ok(GameObject.get(0)._onPage);

@@ -17,6 +17,7 @@ class Walker extends GameObject {
   static components = [SpriteRenderer];
   steps = 0;
   started = 0;
+  // E-540: not an engine hook (it was called on a lazy instance's first use, undocumented): a game's own method.
   start() {
     this.started++;
   }
@@ -42,13 +43,15 @@ async function bootLogic() {
 test('a logic worker makes no instance at boot, and writes every slot\'s type and "not active"', { concurrency: false }, async () => {
   const lw = await bootLogic();
   assert.equal(lw.gameObjects.filter((o) => o !== null).length, 0, 'no instance made');
-  assert.equal(Walker.instances.length, N);
-  assert.ok(Walker.instances.every((o) => o === null));
+  // E-540: nor a table for them: the first instance allocates it.
+  assert.equal(lw.gameObjects.length, 0);
+  assert.equal(lw.gameObjects, GameObject.instances, 'the worker\'s table is the realm\'s');
+  assert.equal(Walker.instances.length, 0);
   assert.ok(Transform.active.subarray(0, N).every((a) => a === 0), 'every slot not active');
   assert.ok(Transform.entityType.subarray(0, N).every((t) => t === 0), 'every slot typed');
 });
 
-test('a slot another worker made live gets its instance on first use, start() once, its Transform untouched', { concurrency: false }, async () => {
+test('a slot another worker made live gets its instance on first use, its Transform untouched', { concurrency: false }, async () => {
   const lw = await bootLogic();
   const i = 417;
   Transform.active[i] = 1; // spawned elsewhere (another logic worker, the page)
@@ -58,13 +61,12 @@ test('a slot another worker made live gets its instance on first use, start() on
   const inst = lw.gameObjects[i];
   assert.ok(inst instanceof Walker);
   assert.equal(inst.index, i);
-  assert.equal(inst.started, 1, 'start() on its first use');
+  assert.equal(inst.started, 0, 'E-540: the engine calls no start()');
   assert.equal(inst.steps, 1);
   assert.equal(Transform.active[i], 1, 'still live: the lazy instance does not reset its slot');
   assert.equal(GameObject.get(i), inst, 'the same object by index');
   assert.equal(Walker.instances[i], inst, 'and in its class\'s list');
   lw._tickBucketNoBody(list, 0, 1, 1, 16.6, 0, 2, Transform.active, lw.gameObjects);
-  assert.equal(inst.started, 1, 'not again');
   assert.equal(inst.steps, 2);
   assert.equal(lw.gameObjects.filter((o) => o !== null).length, 1, 'the other slots still have none');
 });

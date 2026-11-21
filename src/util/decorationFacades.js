@@ -23,3 +23,8 @@ export function evictDecorationFacade(id) {
 export function clearAllDecorationFacades() {
   facadeMap.clear();
 }
+
+/** E-537: how many facades this thread holds (a spawn or addDecoration makes none: Decoration.get does). */
+export function decorationFacadeCount() {
+  return facadeMap.size;
+}

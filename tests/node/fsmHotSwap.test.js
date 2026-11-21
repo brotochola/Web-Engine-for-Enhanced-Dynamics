@@ -36,7 +36,6 @@ function start(live) {
   const F = live.ns.MoveFSM;
   F.initializeArrays(new ArrayBuffer(F.getBufferSize(1)), 1);
   const fsm = new F(0);
-  fsm.owner = { constructor: { tickInterval: 1 } }; // the entity the engine's component getter records
   return { F, fsm };
 }
 

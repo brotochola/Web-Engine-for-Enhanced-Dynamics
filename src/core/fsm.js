@@ -22,6 +22,8 @@
 
 import { Component } from './component.js';
 import { FSMState } from './fsmState.js';
+import { entityClassOfType } from './entityTypes.js';
+import { Transform } from '../components/transform.js';
 import { reportWorkerError } from '../util/errorReport.js';
 
 // Every FSM class whose states are linked in this realm: a hot swap reads their states' hooks again (_refreshStateHooks).
@@ -306,10 +308,11 @@ export class FSM extends Component {
     if (CurrentState) {
       // Update time in state (approximate ms based on 60fps baseline)
       // Scale by tickInterval so decimated entities track real elapsed time
-      // The entity's class: the entity that made this component instance (its this.walkFSM).
+      // The entity's class, by its type (E-540: a component holds no reference to its entity).
       let msPerTick = this._msPerTick;
       if (msPerTick !== msPerTick) {
-        const Entity = this.owner ? this.owner.constructor : null;
+        const types = Transform.entityType;
+        const Entity = types ? entityClassOfType(types[i]) : undefined;
         msPerTick = this._msPerTick = 16.67 * ((Entity && Entity.tickInterval) || 1);
       }
       FSMClass.time[i] += dt * msPerTick;

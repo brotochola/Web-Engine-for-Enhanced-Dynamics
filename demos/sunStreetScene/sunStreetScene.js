@@ -30,7 +30,7 @@ import { StreetCar, StreetCloud, StreetHouse, StreetLamp, StreetTree, StreetWalk
 import { CAR_SHEETS } from './streetCars.js';
 import { SunPanel } from './sunPanel.js';
 
-const { Scene, Camera, Decoration, Keyboard, Layer, Sun, Transform, BLEND_MODES, LAYER_KIND } = WEED;
+const { Scene, Camera, Decoration, GameObject, Keyboard, Layer, Sun, BLEND_MODES, LAYER_KIND } = WEED;
 
 const param = (key, fallback) => Number(WEED.params?.get(key) ?? fallback);
 const START_HOUR = param('hour', 16.5);
@@ -329,18 +329,19 @@ export class SunStreetScene extends Scene {
 
   _toggleHeadlights() {
     this._headlightsAhead = !this._headlightsAhead;
-    for (const car of StreetCar.instances) {
-      if (Transform.active[car.index]) car.lightEmitter.offsetX = this._headlightsAhead ? HEADLIGHT_OFFSET : 0;
+    // Every live car by index: the page makes an entity's instance only when asked for it (GameObject.get).
+    for (const i of StreetCar.getAllActive()) {
+      GameObject.get(i).lightEmitter.offsetX = this._headlightsAhead ? HEADLIGHT_OFFSET : 0;
     }
     this._showStates();
   }
 
   _toggleOccluders() {
     this._occluders = !this._occluders;
-    for (const list of [StreetHouse.instances, StreetCar.instances]) {
-      for (const entity of list) {
+    for (const type of [StreetHouse, StreetCar]) {
+      for (const i of type.getAllActive()) {
         // How much light the wall takes out (setWall takes the caster's opacity).
-        if (Transform.active[entity.index]) entity.shadowCaster.opacity = this._occluders ? 1 : 0;
+        GameObject.get(i).shadowCaster.opacity = this._occluders ? 1 : 0;
       }
     }
     this._showStates();
@@ -348,8 +349,8 @@ export class SunStreetScene extends Scene {
 
   _toggleTreeShadows() {
     this._treeShadows = !this._treeShadows;
-    for (const tree of StreetTree.instances) {
-      if (!Transform.active[tree.index]) continue;
+    for (const i of StreetTree.getAllActive()) {
+      const tree = GameObject.get(i);
       // The frame stands where the sprite does, at its anchor: the foot.
       if (this._treeShadows) tree.shadowCaster.setSprite({ frame: 'tree2', scaleX: 1.5, scaleY: 1.5 });
       else tree.shadowCaster.setSprite();

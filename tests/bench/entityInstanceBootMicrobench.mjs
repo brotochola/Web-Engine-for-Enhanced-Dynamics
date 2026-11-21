@@ -6,7 +6,9 @@
 //   node --expose-gc tests/bench/entityInstanceBootMicrobench.mjs [--entities 100000] [--runs 5] [--output path]
 //
 // Boot code runs once, so each run is a cold call on fresh classes: the time includes whatever tier V8 runs it in,
-// as a scene's boot does. Heap is the growth after a full GC, with the instances still referenced.
+// as a scene's boot does. Heap is the growth after a full GC, with the instances still referenced. E-540: the instance
+// tables are allocated by the first instance now, not at boot; each side reports the length of its class's table after
+// boot (the pool's size where boot allocated it, 0 where it waits for an instance).
 import { isCli, parseArgs, writeReport } from './microbenchHelpers.mjs';
 import { loadWorker, quietly } from './workerHarness.mjs';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
@@ -50,6 +52,8 @@ export async function runEntityInstanceBoot({ entities = 100000, runs = 5 } = {}
   const logicBytes = [];
   const pageMs = [];
   const pageBytes = [];
+  let logicTable = -1;
+  let pageTable = -1;
   for (let r = 0; r < runs; r++) {
     const C = makeClass(r);
     globalThis.self[C.name] = C;
@@ -61,7 +65,8 @@ export async function runEntityInstanceBoot({ entities = 100000, runs = 5 } = {}
     await quietly(() => lw.createGameObjectInstances());
     logicMs.push(performance.now() - t0);
     logicBytes.push(heapUsed() - before);
-    if (C.instances.length !== n) throw new Error(`logic made ${C.instances.length} instances, not ${n}`);
+    logicTable = C.instances.length;
+    if (logicTable !== n && logicTable !== 0) throw new Error(`logic's table at boot holds ${logicTable} slots, not ${n} or 0`);
     lw.gameObjects = null;
     C.instances = [];
     GameObject.instances = [];
@@ -73,7 +78,8 @@ export async function runEntityInstanceBoot({ entities = 100000, runs = 5 } = {}
     Scene.prototype._createPageInstances.call(page);
     pageMs.push(performance.now() - t1);
     pageBytes.push(heapUsed() - beforePage);
-    if (P.instances.length !== n) throw new Error(`the page made ${P.instances.length} instances, not ${n}`);
+    pageTable = P.instances.length;
+    if (pageTable !== n && pageTable !== 0) throw new Error(`the page's table at boot holds ${pageTable} slots, not ${n} or 0`);
     P.instances = [];
     GameObject.instances = [];
   }
@@ -81,8 +87,8 @@ export async function runEntityInstanceBoot({ entities = 100000, runs = 5 } = {}
   return {
     entities: n,
     runs,
-    logic: { ms: median(logicMs), msRuns: logicMs, bytesPerSlot: per(median(logicBytes)), mb: median(logicBytes) / 1048576 },
-    page: { ms: median(pageMs), msRuns: pageMs, bytesPerSlot: per(median(pageBytes)), mb: median(pageBytes) / 1048576 },
+    logic: { ms: median(logicMs), msRuns: logicMs, bytesPerSlot: per(median(logicBytes)), mb: median(logicBytes) / 1048576, tableAtBoot: logicTable },
+    page: { ms: median(pageMs), msRuns: pageMs, bytesPerSlot: per(median(pageBytes)), mb: median(pageBytes) / 1048576, tableAtBoot: pageTable },
   };
 }
 
@@ -91,7 +97,7 @@ if (isCli(import.meta.url)) {
   const res = await runEntityInstanceBoot({ entities: args.entities ?? 100000, runs: args.runs ?? 5 });
   const f = (x) => x.toFixed(1);
   console.log(`${res.entities} slots, ${res.runs} runs (median)`);
-  console.log(`  logic worker: ${f(res.logic.ms)} ms, ${f(res.logic.mb)} MB (${f(res.logic.bytesPerSlot)} B a slot)  runs ${res.logic.msRuns.map(f).join(', ')}`);
-  console.log(`  page:         ${f(res.page.ms)} ms, ${f(res.page.mb)} MB (${f(res.page.bytesPerSlot)} B a slot)  runs ${res.page.msRuns.map(f).join(', ')}`);
+  console.log(`  logic worker: ${f(res.logic.ms)} ms, ${f(res.logic.mb)} MB (${f(res.logic.bytesPerSlot)} B a slot), class table at boot ${res.logic.tableAtBoot}  runs ${res.logic.msRuns.map(f).join(', ')}`);
+  console.log(`  page:         ${f(res.page.ms)} ms, ${f(res.page.mb)} MB (${f(res.page.bytesPerSlot)} B a slot), class table at boot ${res.page.tableAtBoot}  runs ${res.page.msRuns.map(f).join(', ')}`);
   if (args.output) writeReport(args.output, { kernel: 'entityInstanceBoot', ...res });
 }

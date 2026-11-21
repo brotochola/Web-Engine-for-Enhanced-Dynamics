@@ -169,7 +169,7 @@ test('emit reaches scene.on listeners with the sender', async () => {
   const { SceneBridge } = await import('../../src/core/sceneBridge.js');
   await loadWorker('particleWorker.js', 'particleWorker'); // a worker-like self
   const before = postedMessages().length;
-  SceneBridge.emitToScene('died', { score: 40 }, { index: 3, constructor: { name: 'Player' } });
+  SceneBridge.emitToScene('died', { score: 40 }, 3, 'Player');
   const posted = postedMessages().slice(before);
   assert.equal(posted.length, 1);
 

@@ -4,7 +4,7 @@
 
 import { noteEntityType } from './entityTypes.js';
 import { cameraFloorScaleY, resolveCamera } from '../util/cameraView.js';
-import { GameObject } from './gameObject.js';
+import { GameObject, emptyInstanceTable } from './gameObject.js';
 import { popEntity } from '../util/atomicFreeList.js';
 import { resolveForceProcessOnLogicWorker } from '../util/logicOwner.js';
 import { Transform } from '../components/transform.js';
@@ -781,9 +781,9 @@ class Scene {
 
     this.totalEntityCount += count;
 
-    // Auto-initialize static properties
+    // Auto-initialize static properties (E-540: its instance table, empty until its first instance)
     if (!EntityClass.hasOwnProperty('instances')) {
-      EntityClass.instances = [];
+      EntityClass.instances = emptyInstanceTable();
     }
 
     EntityClass.startIndex = startIndex;
@@ -814,14 +814,14 @@ class Scene {
   _createPageInstances() {
     // The scene's config for every entity of the page, made or not.
     GameObject._bindRealm(this.config, null);
-    // E-209: made on a slot's first use (_makePageInstance), not one per pool slot here.
-    const all = new Array(this.totalEntityCount | 0).fill(null);
+    // E-209: made on a slot's first use (_makePageInstance), not one per pool slot here. E-540: so are the tables,
+    // allocated whole by the first instance each holds: a page that makes none (an ECS scene) allocates none.
+    GameObject._useInstanceTables(this.totalEntityCount);
     for (let r = 0; r < this.registeredClasses.length; r++) {
-      const { class: EntityClass, count } = this.registeredClasses[r];
-      EntityClass.instances = new Array(count | 0).fill(null);
+      const { class: EntityClass } = this.registeredClasses[r];
+      EntityClass.instances = emptyInstanceTable();
       EntityClass._pageChecked = false;
     }
-    GameObject.instances = all;
     const scene = this;
     GameObject._makeAt = (index) => Scene.prototype._makePageInstance.call(scene, index);
   }
@@ -844,8 +844,8 @@ class Scene {
         EntityClass._pageChecked = true;
         checkFirstInstance(instance);
       }
-      EntityClass.instances[index - startIndex] = instance;
-      GameObject.instances[index] = instance;
+      GameObject._classInstanceTable(EntityClass, count)[index - startIndex] = instance;
+      GameObject._instanceTable()[index] = instance;
       return instance;
     }
     return null;
@@ -1201,7 +1201,7 @@ class Scene {
           ParentClass.poolSize = 0;
         }
         if (!ParentClass.hasOwnProperty('instances')) {
-          ParentClass.instances = [];
+          ParentClass.instances = emptyInstanceTable();
         }
 
         GameObject._assignComponentClassMap(ParentClass);

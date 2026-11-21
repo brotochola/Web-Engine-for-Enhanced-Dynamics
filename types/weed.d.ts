@@ -1632,7 +1632,11 @@ export declare class GameObject {
   ): void;
   static entityType: number | null;
   static scene: Scene | null;
-  static instances: GameObject[];
+  /**
+   * The realm's instances by entity index (on a class: its own, by index - startIndex). Empty until the realm's first
+   * instance, which allocates the table whole (null where a slot has none yet): a scene written ECS-style allocates none.
+   */
+  static instances: Array<GameObject | null>;
   /** The scene's config, for code that holds an index (a static tickAll or hook): what an entity's `this.config` reads. */
   static readonly config: SceneConfig;
   index: number;
@@ -1651,6 +1655,8 @@ export declare class GameObject {
   get shadowCaster(): ShadowCaster | null;
   get sceneBridge(): typeof SceneBridge;
   sendMessageToScene(data: unknown): boolean;
+  /** E-537: entity.sendMessageToScene(data) by index: Scene.onMessageFromGameObject gets entity i and its class's name. */
+  static sendMessageToScene(i: number, data: unknown): boolean;
   get active(): number;
   set active(value: number);
   get entityType(): number;
@@ -1813,6 +1819,8 @@ export declare class GameObject {
   setAwake(awake?: boolean): this;
   /** Poll: touching `other` this frame? Needs a CollisionListener type in the scene. */
   isCollidingWith(other: number | GameObject): boolean;
+  /** E-537: entity.isCollidingWith by index: entities i and other touch in the latest completed frame (logic workers). */
+  static isCollidingWith(i: number, other: number): boolean;
 
   // Sprite and animation
   setSprite(spriteNameOrSheet: string, animation?: string, frameIndex?: number): this;
@@ -1832,6 +1840,13 @@ export declare class GameObject {
   setLayers(names: string[]): this;
   setFeedBits(bits: number): this;
   getFeedBits(): number;
+  /** E-537: the layer methods by index: entity i's sprite, Adobe and mesh rows and collider feed, as its type has them. */
+  static setLayer(i: number, layerName: string): void;
+  static setLayers(i: number, names: Array<string | number>): void;
+  /** The first sprite layer entity i is subscribed to (entity.layerName). */
+  static layerName(i: number): string;
+  static setFeedBits(i: number, bits: number): void;
+  static getFeedBits(i: number): number;
 
   // Neighbors (spatial grid; filled by the spatial workers)
   getNeighbor(i: number): number;
@@ -1856,6 +1871,22 @@ export declare class GameObject {
   getAttachedDecorationCount(): number;
   getAttachedDecorationIndex(slot: number): number;
   getAttachedDecoration(slot: number): Decoration | null;
+  /**
+   * E-537: entity.addDecoration by index: a decoration attached to entity i, its pool index or -1. No facade is made
+   * (Decoration.get(id) makes one; Decoration's statics take the id).
+   */
+  static addDecoration(
+    i: number,
+    texture: string,
+    localX: number,
+    localY: number,
+    scaleX?: number,
+    scaleY?: number,
+    zIndex?: number,
+    extra?: Record<string, unknown>
+  ): number;
+  static getAttachedDecorationCount(i: number): number;
+  static getAttachedDecorationIndex(i: number, slot: number): number;
   /** Mirror left-right / top-bottom (sprite or Adobe clip), independent of scale: setScale keeps it. */
   get flipX(): boolean;
   set flipX(on: boolean);
@@ -1927,8 +1958,15 @@ export declare class GameObject {
    * on the logic worker that owns it. name must be in the scene's static messages. Numbers only.
    */
   sendTo(other: number | GameObject, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
+  /**
+   * E-537: entity.sendTo by index: entity `to` runs onMessage(name, from, a, b, c, d) next frame (from -1: the scene).
+   * No allocation, no instance.
+   */
+  static sendTo(from: number, to: number, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
   /** Tell the main thread: scene.on(name, fn) gets fn(data, entityIndex, className). Structured-cloned. */
   emit(name: string, data?: unknown): boolean;
+  /** E-537: entity.emit by index: scene.on(name, fn) gets fn(data, i, className), the class's from i's type. */
+  static emit(i: number, name: string, data?: unknown): boolean;
   /** Is this entity an EntityClass or a subclass? Another entity: GameObject.is(index, EntityClass). */
   is(EntityClass: Function): boolean;
   /** Does this entity's type list ComponentClass? Another entity: GameObject.hasComponent(index, ComponentClass). */
@@ -3773,8 +3811,10 @@ export declare class Keyboard {
   static updateEdgeFlags(): void;
 }
 
+/** Worker → page messages of an entity, by its index and its class's name (E-537): no instance needed. */
 export declare class SceneBridge {
-  static sendMessageToScene(data: unknown, sender?: GameObject | null): boolean;
+  static emitToScene(name: string, data: unknown, entityIndex?: number, className?: string | null): boolean;
+  static sendMessageToScene(data: unknown, entityIndex?: number, className?: string | null): boolean;
 }
 
 // --- Components ---
@@ -4075,6 +4115,29 @@ export declare class MeshRenderer extends Component {
   static tileOffsetU: Uint16Array;
   static tileOffsetV: Uint16Array;
   static visualOutset: Float32Array;
+  /**
+   * E-537: the mesh's setters and methods by entity index (MeshRenderer.setTint(i, v) is meshRenderer.tint = v), for
+   * code that holds an index. The same work as the component's; they return nothing.
+   */
+  static setTint(index: number, tint: number): void;
+  /** Clamped to 0-1. */
+  static setAlpha(index: number, alpha: number): void;
+  static setTextureId(index: number, textureId: number): void;
+  /** By name; a falsy name clears it to a solid tint. */
+  static setTexture(index: number, name: string | null | undefined): void;
+  static setTileMode(index: number, mode: number): void;
+  static setRepeatX(index: number, value: number): void;
+  static setRepeatY(index: number, value: number): void;
+  static setTileOffsetU(index: number, value: number): void;
+  static setTileOffsetV(index: number, value: number): void;
+  static setVisualOutset(index: number, value: number): void;
+  static setMesh(index: number, positions: ArrayLike<number>, indices?: ArrayLike<number> | null, uvs?: ArrayLike<number> | null): void;
+  static setVertices(index: number, positions: ArrayLike<number>): void;
+  static setHeights(index: number, heights: ArrayLike<number>): void;
+  static clearMesh(index: number): void;
+  static setPlane(index: number, width: number, height: number, segX: number, segY: number): void;
+  static setRope(index: number, points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>, halfWidth: number): void;
+  static setPolygon(index: number, points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>): void;
   get tint(): number;
   set tint(value: number);
   get alpha(): number;
@@ -4083,6 +4146,14 @@ export declare class MeshRenderer extends Component {
   set textureId(value: number);
   get tileMode(): number;
   set tileMode(value: number);
+  get repeatX(): number;
+  set repeatX(value: number);
+  get repeatY(): number;
+  set repeatY(value: number);
+  get tileOffsetU(): number;
+  set tileOffsetU(value: number);
+  get tileOffsetV(): number;
+  set tileOffsetV(value: number);
   get visualOutset(): number;
   set visualOutset(value: number);
   setTexture(name: string | null | undefined): this;
@@ -4325,6 +4396,22 @@ export declare class AdobeAnimComponent extends Component {
   static screenX: Float32Array;
   static screenY: Float32Array;
   static applyClipBounds(entityIndex: number): void;
+  /**
+   * E-537: the clip's methods by entity index (AdobeAnimComponent.play(i, clip, loop) is adobeAnimComponent.play(clip,
+   * loop)), for code that holds an index. They return nothing; frameCount and currentFrame make no object.
+   */
+  static setAsset(index: number, assetName: string, clipName?: string | null, options?: AdobeAnimSetAssetOptions): void;
+  static play(index: number, clipName: string, loop?: boolean): void;
+  /** Show frame frameNum (1-based, clamped to the clip) and stop. */
+  static gotoAndStop(index: number, frameNum: number): void;
+  /** Play on from frame frameNum (1-based, clamped). */
+  static gotoAndPlay(index: number, frameNum: number): void;
+  static pause(index: number): void;
+  static resume(index: number): void;
+  /** The clip's frames, 0 without one. */
+  static frameCount(index: number): number;
+  /** The 1-based frame its time shows (wrapped when it loops, held at its ends when not); 0 without a clip. */
+  static currentFrame(index: number): number;
   get assetName(): string;
   get clipName(): string;
   get frameCount(): number;
@@ -5231,10 +5318,47 @@ export declare class Decoration {
   /** Despawn by pool index. */
   static despawn(index: number): boolean;
   static despawnAll(): void;
-  static ensureForParented(id: number): Decoration;
   static evictFacade(id: number): void;
   /** World-owned decorations only; fills out with pool indices (a Uint32Array past 65 535 decorations); returns count. */
   static queryCircle(x: number, y: number, radius: number, out: Uint16Array | Uint32Array): number;
+  /**
+   * E-537: the facade's setters by pool id, for code that keeps ids and wants no object per decoration. Each writes an
+   * active slot only. An id is a raw slot: no generation is checked, so once its decoration despawns and the pool
+   * reuses the slot, the id names the new decoration (a facade kept that long writes nothing).
+   */
+  static isActive(id: number): boolean;
+  /** World-owned only (an attached one is placed by its parent); the spatial hash follows. */
+  static setPosition(id: number, x: number, y: number): void;
+  static setX(id: number, x: number): void;
+  static setY(id: number, y: number): void;
+  static setScaleX(id: number, v: number): void;
+  static setScaleY(id: number, v: number): void;
+  /** Both scales (y = x when omitted). */
+  static setScale(id: number, x: number, y?: number): void;
+  static setAlpha(id: number, alpha: number): void;
+  static setTint(id: number, tint: number): void;
+  static setLocalX(id: number, v: number): void;
+  static setLocalY(id: number, v: number): void;
+  static setLocalPosition(id: number, x: number, y: number): void;
+  static setAnchorX(id: number, v: number): void;
+  static setAnchorY(id: number, v: number): void;
+  static setInnerZ(id: number, z: number): void;
+  static setFaceNormal(id: number, x: number, y: number, z: number): void;
+  static setFaceHeight(id: number, height: number): void;
+  static setTextureId(id: number, textureId: number): void;
+  static setOffsetX(id: number, v: number): void;
+  static setOffsetY(id: number, v: number): void;
+  static setSortOffsetY(id: number, v: number): void;
+  static setSkew(id: number, skewX: number, skewY: number): void;
+  static setSkewX(id: number, v: number): void;
+  static setSkewY(id: number, v: number): void;
+  static setSway(id: number, on: boolean): void;
+  static setSwayAmplitude(id: number, radians: number): void;
+  static setSwayFrequency(id: number, v: number): void;
+  static impulseSway(id: number, amplitude: number, frequency: number): void;
+  static setRotation(id: number, radians: number): void;
+  static setBaseRotation(id: number, radians: number): void;
+  static setBaseRotCS(id: number, c: number, s: number): void;
   get active(): boolean;
   get x(): number;
   set x(v: number);
@@ -5256,6 +5380,8 @@ export declare class Decoration {
   set localY(v: number);
   get anchorX(): number;
   set anchorX(v: number);
+  get anchorY(): number;
+  set anchorY(v: number);
   /** Its order among decorations on the same sort line; for a face also its depth's tie on a shared plane (0 to 7). */
   get innerZ(): number;
   set innerZ(v: number);
@@ -5300,6 +5426,8 @@ export declare class Decoration {
   set rotation(v: number);
   get baseRotation(): number;
   set baseRotation(v: number);
+  /** Its facing as a unit complex (no atan2, cos or sin); not when sheared. */
+  setBaseRotCS(c: number, s: number): void;
 }
 
 export declare class DecorationSpatial {

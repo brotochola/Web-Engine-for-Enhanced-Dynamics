@@ -7,7 +7,7 @@ self.postMessage({
 // Runs GameObject.tick / AI; steering writes RigidBody accel fields for Box2D
 
 // Import engine dependencies
-import { GameObject, bindLogicWorkerRef, childOrphaned, relinkRestoredChild } from '../core/gameObject.js';
+import { GameObject, bindLogicWorkerRef, childOrphaned, relinkRestoredChild, emptyInstanceTable } from '../core/gameObject.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
@@ -202,8 +202,9 @@ class LogicWorker extends AbstractWorker {
     // Logic worker needs to CREATE GameObject instances (all workers get scripts/components)
     this.needsGameScripts = true;
 
-    // Game objects - one per entity
-    this.gameObjects = new Array(this.globalEntityCount).fill(null);
+    // This worker's instances by entity index: GameObject.instances, the same array (E-540: empty until the first
+    // instance allocates it; _makeInstance follows it).
+    this.gameObjects = emptyInstanceTable();
     // E-209: GameObject._makeAt in this realm, made once.
     this._makeAtFn = (index) => this._makeInstance(index);
 
@@ -538,9 +539,8 @@ class LogicWorker extends AbstractWorker {
     // Note: ParticleEmitter and DecorationPool are now initialized by AbstractWorker.initializeCommonBuffers()
     // with shared free lists, enabling any worker to spawn particles/decorations
 
-    // Pre-allocate gameObjects array to keep V8 in dense/packed mode
-    // Without this, sparse indices cause V8 to switch to dictionary mode (hash table lookups)
-    this.gameObjects = new Array(this.globalEntityCount).fill(null);
+    // E-540: no instance table until an instance is made (createGameObjectInstances and _makeInstance).
+    this.gameObjects = emptyInstanceTable();
     this._gameObjectInstancesCreated = false;
 
     // onSpawned writes Transform.x. With WASM, wait for box2dReady. With weed pose, bind already ran.
@@ -604,11 +604,14 @@ class LogicWorker extends AbstractWorker {
    */
   /**
    * E-209: the instance at `index` on its first use in this worker: its class from the slot's type, made without
-   * touching the slot's Transform (it may be live, spawned by another worker or the page), then start(). Null for an
-   * index no registered pool holds.
+   * touching the slot's Transform (it may be live, spawned by another worker or the page). Null for an index no
+   * registered pool holds.
    */
   _makeInstance(index) {
-    if (!(index >= 0) || index >= this.gameObjects.length) return null;
+    if (!(index >= 0)) return null;
+    // E-540: this.gameObjects is GameObject.instances, empty until the realm's first instance allocates it (its
+    // constructor, through bindToEntitySlot): an empty one is followed to the realm's.
+    if (this.gameObjects.length === 0) this.gameObjects = GameObject.instances;
     const made = this.gameObjects[index];
     if (made !== null && made !== undefined) return made;
     const EntityClass = this._entityClassByType[Transform.entityType[index]];
@@ -616,14 +619,8 @@ class LogicWorker extends AbstractWorker {
       return null;
     }
     const instance = new EntityClass(index, this.config, this, { lazy: true });
+    if (this.gameObjects.length === 0) this.gameObjects = GameObject.instances;
     this.gameObjects[index] = instance;
-    if (instance.start) {
-      try {
-        instance.start();
-      } catch (error) {
-        this._entityThrew(error, index, 'start');
-      }
-    }
     return instance;
   }
 
@@ -631,8 +628,10 @@ class LogicWorker extends AbstractWorker {
     const numTypes = this.registeredClasses.length;
     // The scene's config and this worker for every entity, made or not (an ECS-style type makes no instance).
     GameObject._bindRealm(this.config, this);
-    // E-209: the instances, by index, made on first use.
-    GameObject.instances = new Array(this.globalEntityCount | 0).fill(null);
+    // E-209: the instances, by index, made on first use. E-540: the tables too, on the first instance (an ECS scene
+    // makes none); this worker's is GameObject.instances.
+    GameObject._useInstanceTables(this.globalEntityCount);
+    this.gameObjects = GameObject.instances;
     GameObject._makeAt = this._makeAtFn;
     this.collisionListenerByType = new Uint8Array(numTypes);
     this.collisionStayByType = new Uint8Array(numTypes);
@@ -665,12 +664,6 @@ class LogicWorker extends AbstractWorker {
         EntityClass.entityIndices = new (EntityIdArray())(poolSize);
         for (let j = 0; j < poolSize; j++) {
           EntityClass.entityIndices[j] = startIndex + j;
-        }
-
-        // CRITICAL: Initialize instances array for THIS class (not inherited from GameObject)
-        // Without this, all entity types share GameObject.instances causing spawn bugs
-        if (!EntityClass.hasOwnProperty('instances')) {
-          EntityClass.instances = [];
         }
 
         GameObject._assignComponentClassMap(EntityClass);
@@ -725,8 +718,9 @@ class LogicWorker extends AbstractWorker {
 
         // E-209: no instance per slot here. A slot's instance is made on its first use (_makeInstance): a spawn, a
         // tick, a callback. What each constructor wrote for its slot, the type and "not active", is written for the
-        // pool at once. DENSE ALLOCATION: entityIndex === componentIndex for all components.
-        EntityClass.instances = new Array(poolSize).fill(null);
+        // pool at once. DENSE ALLOCATION: entityIndex === componentIndex for all components. E-540: the class's own
+        // table (not its parent's, which all would share), empty until its first instance allocates it.
+        EntityClass.instances = emptyInstanceTable();
         EntityClass._ensureComponentAccessors();
         if (poolSize > 0) {
           Transform.entityType.fill(entityType, startIndex, startIndex + poolSize);

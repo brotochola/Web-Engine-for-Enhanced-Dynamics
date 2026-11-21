@@ -176,9 +176,44 @@ test('E2: a field first written after onSpawned is named by the audit, once; one
     real.auditFields((C) => C.getFirstActiveInstance(), 2e9);
   });
   assert.deepEqual(lines, [
-    "WeedJS: Runner's field target is first written after onSpawned: the object changes shape, every method that saw " +
-      'the old one deoptimizes, and the field lives only in this worker. Declare it in the constructor (this.target = …).',
+    "WeedJS: Runner's field target is first written after onSpawned (or by some spawns only): the object changes shape, " +
+      'every method that saw the old one deoptimizes, and the field lives only in this worker. Declare it in the ' +
+      'constructor (this.target = …).',
   ]);
+});
+
+test('E-540: a class\'s shape is noted at its first spawn only: later spawns walk none of their keys', () => {
+  class Walker extends GameObject {}
+  let walks = 0;
+  const spawned = (fields) =>
+    new Proxy(Object.assign(Object.create(Walker.prototype), fields), {
+      ownKeys(target) {
+        walks++;
+        return Reflect.ownKeys(target);
+      },
+    });
+  real.setDevChecks(true);
+  real.noteSpawned(spawned({ lane: 1 }));
+  assert.equal(walks, 1, 'the first spawn of the class');
+  for (let k = 0; k < 50; k++) real.noteSpawned(spawned({ lane: 2 }));
+  assert.equal(walks, 1, 'none after it');
+});
+
+test('E-540: a field only some spawns write is named, as one written after onSpawned is', () => {
+  class Sometimes extends GameObject {
+    onSpawned(config) {
+      if (config.armed) this.ammo = 3;
+    }
+  }
+  const one = onePool(Sometimes);
+  const lines = warningsOf(() => {
+    Sometimes.spawn({}); // the class's first spawn: its shape, no ammo
+    one.despawn();
+    Sometimes.spawn({ armed: true });
+    real.auditFields((C) => C.getFirstActiveInstance(), 2.5e9); // between the other tests' clocks: theirs still audit
+  });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /Sometimes's field ammo is first written after onSpawned \(or by some spawns only\)/);
 });
 
 test('E2: the audit runs once a second at most, and not when the checks are off', () => {
