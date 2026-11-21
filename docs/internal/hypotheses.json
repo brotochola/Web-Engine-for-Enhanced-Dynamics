@@ -15277,17 +15277,18 @@
         "R-1057",
         "R-1058",
         "R-1120",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "engine",
       "kind": "dx",
       "result": "",
-      "next": "Owner: an ABAB with worktrees on a quiet machine (directionalSpriteStressScene ?mode=hand|ds, logic). Predator's gate against main ran (R-1058): neutral by the rule (logic and pre-render under the 6 ms floor), a real cost from its people's DirectionalSprite still to win back.",
+      "next": "",
       "id": "DX-DIRSPRITE",
       "title": "DirectionalSprite: a sprite drawn from several directions, from its facing (DX-LIGHT3D F2)",
-      "status": "running",
-      "statusText": "built 2026-11-14 on dx/light3d; measured on a 2-core VM only"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): DirectionalSprite merged with dx/light3d (R-1160); its Predator gates neutral by the rule (R-1058, R-1120, R-1162), the scene's own pair neutral (R-1162, n=60000); E-364, E-388 and E-533 won back logic and garbage. Left: the people's sun and lamp frames in pre-render (R-1162: +26.5 % at crowd 2.5), which E-371 and E-395 hold."
     },
     {
       "aliases": [
@@ -15308,17 +15309,18 @@
         "R-1065",
         "R-1120",
         "R-1132",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "render",
       "kind": "dx",
       "result": "",
-      "next": "The static cache; volumes in the sun's map on WebGPU; opacity in the maps; footprint solids (off: a bug); keyed rows in map mode; lampShadowStressScene (map against stamps), the formula checks, Predator at night (measuring phase).",
+      "next": "",
       "id": "DX-SHADOW3D",
       "title": "Shadows from the frame each light sees: cards on their base, renders’ solids, the sun’s map (DX-LIGHT3D F6/F7, §17)",
-      "status": "running",
-      "statusText": "sun and lamps built 2026-11-14/15 on dx/light3d: the sun's map and sprite modes (WebGL and WebGPU), the lamps' map (F7, option C); the owner approved the darker shadows; not timed against main"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): the sun's and the lamps' maps merged (R-1160) with volumes on WebGPU, opacity, footprint solids and keyed frames; lampShadowStressScene and Predator at night measured (R-1162, E-384); five of six formula checks pass (R-1123). Left: the lamps' static casters (E-508 kept the volumes; E-460, E-517), the sun's map cache (E-544), keyed rows for casters with a kind (E-395), shadowOutlineCheck's last 1.5 px (N-192)."
     },
     {
       "aliases": [
@@ -15331,17 +15333,18 @@
       ],
       "records": [
         "R-1061",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "render",
       "kind": "dx",
       "result": "",
-      "next": "WebGPU; opaque-only writes and zIndex bands; depthSortCheck and depthSortStressScene; the cost of writing depth from the shader (measuring phase).",
+      "next": "",
       "id": "DX-DEPTH",
       "title": "Depth that corrects the painter: each entity pixel at its place on the floor (DX-LIGHT3D F5)",
-      "status": "running",
-      "statusText": "first version built 2026-11-15 on dx/light3d (WebGL); not timed"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): per-pixel depth on WebGL and WebGPU, opaque-only writes and zIndex bands, depthSortCheck passing (R-1123) and depthSortStressScene. Left: its cost (E-378, first step kept) and the painter level across particle chunks (N-189)."
     },
     {
       "aliases": [
@@ -15353,17 +15356,18 @@
       ],
       "records": [
         "R-1062",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "render",
       "kind": "dx",
       "result": "",
-      "next": "The entity id (same-entity heights only), 1/2/4 rays in selfShadowStressScene, the owner's look at the car and the bed.",
+      "next": "",
       "id": "DX-SELFSHADOW",
       "title": "Self-shadow: faces and sprites with height maps shade themselves from the sun and the lamps (DX-LIGHT3D F8)",
-      "status": "running",
-      "statusText": "built 2026-11-14/15 on dx/light3d: sun and lamps (with the lamps' map), WebGL and WebGPU; not timed"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): self-shadow from the sun and the lamps on both backends, the entity id in the G-buffer (no shadow from its own map, N-181), 1/2/4 rays (E-365: the pass 3.33 -> 1.61 ms). Left: the owner's look at the car and the bed without the checkerboard (asked again 2026-11-21); the id wrap at 65 535 (N-185)."
     },
     {
       "aliases": [
@@ -15375,17 +15379,18 @@
       ],
       "records": [
         "R-1063",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "render",
       "kind": "dx",
       "result": "",
-      "next": "v2: MRT and the two colours a pixel (a glow past 1), spriteRenderer.emissive per entity, emissiveStressScene and emissiveCheck.",
+      "next": "",
       "id": "DX-EMISSIVE",
       "title": "Emissive sheets: a glowing sprite keeps its colour in the dark and sorts with the entities (DX-LIGHT3D F10)",
-      "status": "running",
-      "statusText": "v1 built 2026-11-15 on dx/light3d (per sheet, full light); v2 (MRT, two colours a pixel) to do"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): v2 built (MRT, two colours a pixel, the glow layer; E-457 kept), per entity through gbufFlags, emissiveStressScene; renamed unshaded since (DX-UNSHADED, unshadedCheck). Left: N-187 (Adobe rows get no G-buffer words), N-229 (capture determinism), both their own rows."
     },
     {
       "aliases": [
@@ -15397,17 +15402,18 @@
       ],
       "records": [
         "R-1064",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "engine",
       "kind": "dx",
       "result": "",
-      "next": "The second part (setBox / addLevel / setHull / setWall, selfShadow, baseRadius, setSprite({ frame, anchorX, anchorY, heightScale })), opacity in the maps, the demos' migration, CAST_KIND in the worker WEED.",
+      "next": "",
       "id": "DX-CASTER",
       "title": "One ShadowCaster: each entity says how it casts, for the sun and the lamps apart (DX-LIGHT3D F9)",
-      "status": "running",
-      "statusText": "first part built 2026-11-15 on dx/light3d (setSprite / setHeightMap / clear, sun / lamps, opacity, type, fixed cards); the rest being finished"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): one ShadowCaster with setSprite (frame, anchors, heightScale), setHeightMap, setBox, addLevel, setHull, setWall, selfShadow, baseRadius and opacity in the maps; every demo and stress scene on it; CAST_KIND in the worker WEED. Left: keyed rows for casters with a kind (E-395)."
     },
     {
       "id": "E-311",
@@ -24726,6 +24732,20 @@
       "date": "2026-11-21",
       "statusText": "Found 2026-11-21 measuring the object way across the ECS campaign (R-1679): under the 3 % bar but 4/4, with BODY_COUNT -5.2 % on B (the load did not match). The per-frame object way got 16.6 % faster in the same sitting set.",
       "next": "A CPU profile pair of spawnStormScene ?storm=6000, c01c6d51 against main: where the instance spawn's time moved (the TypePlan, the static core's bits read per key, onSpawned's lookup, the lazy instance tables); spawnPathMicrobench's object form with more runs."
+    },
+    {
+      "records": [
+        "R-1681"
+      ],
+      "refs": [],
+      "id": "E-544",
+      "title": "The sun's shadow map has no static cache: every frame redraws every caster into it, also the scenery that never moves (the lamps' map keeps still volumes since E-508)",
+      "status": "open",
+      "kind": "gpu",
+      "area": "render",
+      "date": "2026-11-21",
+      "statusText": "Filed 2026-11-21 closing DX-LIGHT3D (R-1681), from DX-SHADOW3D's list. Low: the sun's map is in screen space, so a cache of still casters holds only while the camera is still (the 2026-11-21 E-531 study ranked it last).",
+      "next": "Count the frames a game holds its camera still (Predator, the barrio); if they matter, a still-casters layer redrawn when the view or the static scenery changes and the movers drawn over it, as E-504 does for the colour pass."
     }
   ],
   "records": [
@@ -40751,6 +40771,15 @@
       "title": "Decal tiles deflated in a save: Predator's save 3.7 -> 0.6 s at crowd 2.5 and 2.7 -> 0.3 s at crowd 1, the load -11 %, the tiles exact",
       "verdict": "kept",
       "text": "**N-314 closed: a save's decal tiles are deflated by the browser, not PNG-encoded through a canvas (7d145d74, merged 47faa049).** packSnapshot deflates each tile with content (CompressionStream 'deflate-raw', the tile copied off the shared buffer when its turn comes, 16 in flight); applySnapshot inflates them the same way; save format 7. The first try (PNG 16 at a time) read the pack 25 % slower in its kernel and the apply 13 % faster; decalCodecProbe (ec1219d8) then showed the browser's deflate ahead on every count: 77 tiles of 256 px, encode 140-150 ms at once (PNG 235-507 one by one), decode 34-38 ms (PNG 158-230), 114 KB (PNG 244), every tile exact (PNG none: the canvas premultiplies).\n\n- Predator in the page (saveLoadTimer, 3 rounds a side, main 0b260fd7 against the branch, 20:13–20:16): crowd 1 save 2.63-2.68 s -> 0.27-0.31 s (-89 %), load 1.92-1.96 -> 1.72-1.77 s (-11 %), 2.50 -> 1.91 MB; crowd 2.5 save 3.68-3.70 -> 0.52-0.60 s (-85 %), load 2.19-2.40 -> 1.98-2.07 s (-12 %), 5.86 -> 4.82 MB. With E-539's load (R-1674), saving and loading a crowd scene now costs about what starting it does.\n- Chrome parity check (decalSnapshotParity): 77 of 77 tiles back exactly, empty tiles empty, dirty marks set.\n- Node 3429/3429, demos 143/143."
+    },
+    {
+      "id": "R-1681",
+      "date": "2026-11-21",
+      "time": "20:30",
+      "timeFrom": "recorded",
+      "title": "DX-LIGHT3D closed: DX-DIRSPRITE, DX-SHADOW3D, DX-DEPTH, DX-SELFSHADOW, DX-EMISSIVE and DX-CASTER kept, each leftover on its own row (E-544 filed)",
+      "verdict": "kept",
+      "text": "**DX-LIGHT3D closed (the owner, 2026-11-21: \"quiero que cierres dx-light3d, que tiene cosas abiertas\").** Its six rows had read \"running\" since the merge (R-1160, 2026-11-15) with lists written before it. A read-only audit of each list against main (c1f13b64) found nearly every item done, and each one left already has its own row:\n\n- DX-DIRSPRITE: gates neutral (R-1058, R-1120, R-1162); left: the people's frames in pre-render (E-371, E-395). The owner's ABAB of directionalSpriteStressScene is dropped: the scene's own 4-pair sitting (R-1162) read neutral.\n- DX-SHADOW3D: volumes on WebGPU, opacity, footprint solids, keyed frames, lampShadowStressScene, Predator at night; left: the static casters (E-460, E-517), the sun's map cache (E-544, filed now), keyed rows with kinds (E-395), N-192.\n- DX-DEPTH: WebGPU, opaque-only writes, zIndex bands, depthSortCheck; left: E-378, N-189.\n- DX-SELFSHADOW: the entity id, 1/2/4 rays; left: the owner's look at the car and the bed (asked again), N-185.\n- DX-EMISSIVE: v2, per entity, the stress scene (since renamed unshaded); left: N-187, N-229.\n- DX-CASTER: the whole API, every scene migrated, CAST_KIND; left: E-395.\n\nThe campaign's open follow-ups, all their own rows: E-371, E-373, E-378, E-386, E-395, E-460, E-517, E-544, N-185, N-187, N-189, N-192, N-212, N-229, and the light3d GPU studies (E-400 to E-417, E-463 to E-467)."
     }
   ],
   "leads": [
