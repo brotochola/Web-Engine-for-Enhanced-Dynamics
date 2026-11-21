@@ -1,6 +1,5 @@
 // Binary save body codec — sectioned little-endian payload (sole wire format).
 
-import { Layer } from '../layer.js';
 import { TWEEN_RECORD_FIELDS, tweenFieldValue } from './tweenRecord.js';
 
 export const SECTION = Object.freeze({
@@ -12,17 +11,11 @@ export const SECTION = Object.freeze({
   JOINTS: 5,
   LIQUIDFUN: 6,
   DECALS: 7,
-  /** Legacy (no schema fingerprint). Read only; writes use SHARED_RESOURCES2. */
-  SHARED_RESOURCES: 8,
-  /** Legacy (no layout byte). Read only; writes use CHAINS2, FIXTURES2, MESHES2. */
-  CHAINS: 9,
-  FIXTURES: 10,
-  MESHES: 11,
+  // 8 to 11 and 14 were the forms format 5 replaced (SHARED_RESOURCES, CHAINS, FIXTURES, MESHES, TWEENS): no
+  // format 6 save holds them, and they are not reused.
   NAV: 12,
   TIME: 13,
-  /** Legacy (u16 entity). Read only; writes use TWEENS2. */
-  TWEENS: 14,
-  /** u8 layout version, then the TWEENS records with a u32 entity. */
+  /** u8 layout version, then the tween records with a u32 entity. */
   TWEENS2: 15,
   /** u8 layout, then records of name, u32 schema fingerprint (0 = unknown), bytes. */
   SHARED_RESOURCES2: 16,
@@ -36,7 +29,7 @@ export const SECTION = Object.freeze({
   INSTANCE_FIELDS: 21,
 });
 
-/** 2: repeat, doneMsg, flags (DX 4.2). Layout 1 saves still read. */
+/** 2: repeat, doneMsg, flags (DX 4.2). */
 const TWEENS2_LAYOUT = 2;
 /** Record layout of SHARED_RESOURCES2, CHAINS2, FIXTURES2, MESHES2. Bump on any change. */
 const SECTION_LAYOUT = 1;
@@ -576,10 +569,8 @@ function writeLiquidFun(w, lf) {
     if (render.layerMask) writeTyped(w, render.layerMask);
   }
 
-  // Appended after v4 render block; readers skip if the section ends here.
   w.u8(lf.groupsLightIntensity ? 1 : 0);
   if (lf.groupsLightIntensity) writeTyped(w, lf.groupsLightIntensity);
-  w.u8(0); // no legacy feedLayerId
   w.u8(lf.userData ? 1 : 0);
   if (lf.userData) writeTyped(w, lf.userData);
   w.u8(lf.color ? 1 : 0);
@@ -634,31 +625,13 @@ function readLiquidFun(r) {
       alpha: readTyped(r),
       rotC: r.u8() ? readTyped(r) : null,
       rotS: r.u8() ? readTyped(r) : null,
-      layerField: r.u8() ? readTyped(r) : null,
+      layerMask: r.u8() ? readTyped(r) : null,
     };
   }
 
-  let groupsLightIntensity = null;
-  if (r.o < r.buf.byteLength) {
-    groupsLightIntensity = r.u8() ? readTyped(r) : null;
-  }
-  let feedLayerId = null;
-  if (r.o < r.buf.byteLength) {
-    feedLayerId = r.u8() ? readTyped(r) : null;
-  }
-  if (render) {
-    render.layerMask = Layer.maskFromLegacy(render.layerField, feedLayerId);
-    delete render.layerField;
-  }
-
-  let userData = null;
-  let color = null;
-  if (r.o < r.buf.byteLength) {
-    userData = r.u8() ? readTyped(r) : null;
-  }
-  if (r.o < r.buf.byteLength) {
-    color = r.u8() ? readTyped(r) : null;
-  }
+  const groupsLightIntensity = r.u8() ? readTyped(r) : null;
+  const userData = r.u8() ? readTyped(r) : null;
+  const color = r.u8() ? readTyped(r) : null;
 
   return {
     count,
@@ -729,13 +702,12 @@ function writeSharedResources(w, records) {
   }
 }
 
-/** @param {boolean} legacy SHARED_RESOURCES (tag 8): no fingerprint. */
-function readSharedResources(r, legacy) {
+function readSharedResources(r) {
   const n = r.u32();
   const out = [];
   for (let i = 0; i < n; i++) {
     const name = r.str();
-    const fingerprint = legacy ? 0 : r.u32();
+    const fingerprint = r.u32();
     out.push({ name, fingerprint: fingerprint || null, bytes: r.bytes() });
   }
   return out;
@@ -884,18 +856,12 @@ function writeTweens(w, slots) {
   }
 }
 
-/**
- * @param {Reader} r
- * @param {boolean} legacy TWEENS (tag 14): no layout byte, u16 entity.
- */
-function readTweens(r, legacy) {
-  let layout = 1;
-  if (!legacy) {
-    layout = r.u8();
-    if (layout > TWEENS2_LAYOUT) {
-      console.warn(`[SaveGame] tween section layout ${layout} is newer than this build; tweens skipped`);
-      return null;
-    }
+/** @param {Reader} r */
+function readTweens(r) {
+  const layout = r.u8();
+  if (layout !== TWEENS2_LAYOUT) {
+    console.warn(`[SaveGame] tween section layout ${layout} is not this build's; tweens skipped`);
+    return null;
   }
   const n = r.u32();
   const out = [];
@@ -904,10 +870,8 @@ function readTweens(r, legacy) {
     for (let f = 0; f < TWEEN_RECORD_FIELDS.length; f++) {
       const name = TWEEN_RECORD_FIELDS[f][0];
       const type = TWEEN_RECORD_FIELDS[f][1];
-      const since = TWEEN_RECORD_FIELDS[f][2] || 1;
-      if (since > layout) rec[name] = 0;
-      else if (type === 'f32') rec[name] = r.f32();
-      else if (type === 'u32') rec[name] = legacy && name === 'entity' ? r.u16() : r.u32();
+      if (type === 'f32') rec[name] = r.f32();
+      else if (type === 'u32') rec[name] = r.u32();
       else rec[name] = r.u8();
     }
     out.push(rec);
@@ -975,21 +939,18 @@ export function encodeBinarySaveBody(payload) {
 }
 
 /**
- * A section written with a leading layout byte (tag) or its older form
- * without one (legacyTag). A layout newer than this build reads as absent.
- * @returns {*} read(reader, legacy), or null
+ * A section written with a leading layout byte. A layout other than this build's reads as absent, with a warning.
+ * @returns {*} read(reader), or null
  */
-function readVersioned(map, tag, legacyTag, what, read) {
-  if (map[tag]) {
-    const r = new Reader(map[tag]);
-    const layout = r.u8();
-    if (layout !== SECTION_LAYOUT) {
-      console.warn(`[SaveGame] ${what} section layout ${layout} is newer than this build; skipped`);
-      return null;
-    }
-    return read(r, false);
+function readVersioned(map, tag, what, read) {
+  if (!map[tag]) return null;
+  const r = new Reader(map[tag]);
+  const layout = r.u8();
+  if (layout !== SECTION_LAYOUT) {
+    console.warn(`[SaveGame] ${what} section layout ${layout} is not this build's; skipped`);
+    return null;
   }
-  return map[legacyTag] ? read(new Reader(map[legacyTag]), true) : null;
+  return read(r);
 }
 
 /**
@@ -1021,21 +982,15 @@ export function decodeBinarySaveBody(bytes) {
       ? readLiquidFun(new Reader(map[SECTION.LIQUIDFUN]))
       : null,
     decals: map[SECTION.DECALS] ? readDecals(new Reader(map[SECTION.DECALS])) : null,
-    sharedResources: readVersioned(
-      map, SECTION.SHARED_RESOURCES2, SECTION.SHARED_RESOURCES, 'shared resource', readSharedResources,
-    ),
-    chains: readVersioned(map, SECTION.CHAINS2, SECTION.CHAINS, 'chain', readChains),
-    fixtures: readVersioned(map, SECTION.FIXTURES2, SECTION.FIXTURES, 'fixture', readFixtures),
-    meshes: readVersioned(map, SECTION.MESHES2, SECTION.MESHES, 'mesh', readMeshes),
+    sharedResources: readVersioned(map, SECTION.SHARED_RESOURCES2, 'shared resource', readSharedResources),
+    chains: readVersioned(map, SECTION.CHAINS2, 'chain', readChains),
+    fixtures: readVersioned(map, SECTION.FIXTURES2, 'fixture', readFixtures),
+    meshes: readVersioned(map, SECTION.MESHES2, 'mesh', readMeshes),
     nav: map[SECTION.NAV] ? readNav(new Reader(map[SECTION.NAV])) : null,
     timeScale: map[SECTION.TIME] ? readTime(new Reader(map[SECTION.TIME])) : null,
-    tweens: map[SECTION.TWEENS2]
-      ? readTweens(new Reader(map[SECTION.TWEENS2]), false)
-      : map[SECTION.TWEENS]
-        ? readTweens(new Reader(map[SECTION.TWEENS]), true)
-        : null,
-    // Older saves have no CUSTOM section: null, not an error.
-    custom: readVersioned(map, SECTION.CUSTOM, -1, 'custom', readCustom),
-    instanceFields: readVersioned(map, SECTION.INSTANCE_FIELDS, -1, 'instance fields', readCustom),
+    tweens: map[SECTION.TWEENS2] ? readTweens(new Reader(map[SECTION.TWEENS2])) : null,
+    // A save whose scene had no onSaveGame has no CUSTOM section: null, not an error.
+    custom: readVersioned(map, SECTION.CUSTOM, 'custom', readCustom),
+    instanceFields: readVersioned(map, SECTION.INSTANCE_FIELDS, 'instance fields', readCustom),
   };
 }

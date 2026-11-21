@@ -320,7 +320,7 @@ export function applySavePayloadToScene(scene, payload, options = {}) {
     // [index, worker] pins from a hot reload save; absent: classes and configs decide.
     forcedWorkers: allTypes && payload.instanceFields ? payload.instanceFields.forced || [] : null,
     joints: payload.joints || [],
-    // null = section absent (older save): the worker leaves onSpawned geometry alone.
+    // null = section absent (that pool was unbound): the worker leaves onSpawned geometry alone.
     chains: payload.chains ?? null,
     fixtures: payload.fixtures ?? null,
     meshes: payload.meshes ?? null,

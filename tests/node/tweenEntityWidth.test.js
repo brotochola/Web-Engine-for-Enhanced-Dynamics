@@ -5,7 +5,6 @@ import { Tween, tweenBufferBytes } from '../../src/core/tween.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { bindEntityIdWidth } from '../../src/util/entityIdWidth.js';
 import { encodeSaveUncompressed, decodeSaveUncompressed } from '../../src/core/save/entitySaveSnapshot.js';
-import { SECTION, encodeBinarySaveBody, decodeBinarySaveBody } from '../../src/core/save/binarySaveCodec.js';
 
 // With entityIdWidth: 32 an entity index can exceed 65535. The tween pool and the save
 // format must keep the whole index, or a tween animates (and a load restores onto)
@@ -65,42 +64,3 @@ test('a saved tween keeps an entity index above 65535', () => {
   assert.equal(back.tweens[0].elapsed, 25);
 });
 
-// Saves written between 67a93c49 and B12 carry tag 14: no layout byte, u16 entity.
-// Body framing: u16 section count, then per section u16 tag, u32 length, bytes (LE).
-test('a save written with the legacy TWEENS section still loads', () => {
-  const base = new Uint8Array(encodeBinarySaveBody({
-    sceneName: 'T',
-    engineVersion: '0',
-    layout: { types: [], totalEntityCount: 0 },
-    camera: null,
-    sun: null,
-    entities: [],
-    joints: [],
-  }));
-  const rec = new DataView(new ArrayBuffer(4 + 3 + 2 + 40 + 8));
-  let o = 0;
-  rec.setUint32(o, 1, true); o += 4;
-  rec.setUint8(o++, 0); // kind
-  rec.setUint8(o++, 0); // ease
-  rec.setUint8(o++, 1); // mask
-  rec.setUint16(o, 4464, true); o += 2;
-  const floats = [100, 25, 1, 0, 0, 0, 0, 0, 0, 0];
-  for (const f of floats) { rec.setFloat32(o, f, true); o += 4; }
-  rec.setUint32(o, 0xffffff, true); o += 4;
-  rec.setUint32(o, 0, true); o += 4;
-
-  const head = new DataView(new ArrayBuffer(2 + 4));
-  const out = new Uint8Array(base.byteLength + head.byteLength + rec.byteLength);
-  out.set(base, 0);
-  new DataView(out.buffer).setUint16(0, new DataView(base.buffer).getUint16(0, true) + 1, true);
-  head.setUint16(0, SECTION.TWEENS, true);
-  head.setUint32(2, rec.byteLength, true);
-  out.set(new Uint8Array(head.buffer), base.byteLength);
-  out.set(new Uint8Array(rec.buffer), base.byteLength + head.byteLength);
-
-  const back = decodeBinarySaveBody(out);
-  assert.equal(back.tweens.length, 1);
-  assert.equal(back.tweens[0].entity, 4464);
-  assert.equal(back.tweens[0].elapsed, 25);
-  assert.equal(back.tweens[0].tintFrom, 0xffffff);
-});

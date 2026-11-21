@@ -72,8 +72,8 @@ export function applySharedResources(records) {
       continue;
     }
     // Raw bytes cannot be applied best-effort: a different layout at the same
-    // size would land values in the wrong fields. Saves older than the
-    // fingerprint carry none and keep the size check alone.
+    // size would land values in the wrong fields. A record without one (0 on the
+    // wire) keeps the size check alone.
     if (rec.fingerprint != null && rec.fingerprint !== sharedResourceFingerprint(ResourceClass)) {
       console.warn(`[SaveGame] shared resource ${rec.name} schema changed since the save; skipped`);
       continue;
@@ -116,7 +116,7 @@ export function packChains(entityIndices) {
  * @param {Array<{old:number, neu:number}>} restored
  */
 export function applyChains(records, restored) {
-  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // null: the save has no such section (the pool was unbound):
   // leave what onSpawned built. [] means none of the saved entities had one.
   if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);
@@ -163,7 +163,7 @@ export function packFixtures(entityIndices) {
 }
 
 export function applyFixtures(records, restored) {
-  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // null: the save has no such section (the pool was unbound):
   // leave what onSpawned built. [] means none of the saved entities had one.
   if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);
@@ -222,7 +222,7 @@ export function packMeshes(entityIndices) {
 }
 
 export function applyMeshes(records, restored) {
-  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // null: the save has no such section (the pool was unbound):
   // leave what onSpawned built. [] means none of the saved entities had one.
   if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);

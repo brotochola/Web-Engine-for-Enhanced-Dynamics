@@ -13,10 +13,11 @@ import { componentSchemaFingerprint } from '../../src/core/save/entitySaveSnapsh
 import { fnv1a32 } from '../../src/core/save/schemaHash.js';
 
 // B23 (part). CHAINS, FIXTURES and MESHES had no layout byte, so their records
-// could never change without misreading older saves; they are now CHAINS2 /
-// FIXTURES2 / MESHES2 with one (the old tags still load). Shared resources
-// matched on name and byte size only, so a same-size schema change restored
-// bytes into the wrong fields; SHARED_RESOURCES2 carries a schema fingerprint.
+// could never change without misreading older saves; they are CHAINS2 /
+// FIXTURES2 / MESHES2 with one. Shared resources matched on name and byte size
+// only, so a same-size schema change restored bytes into the wrong fields;
+// SHARED_RESOURCES2 carries a schema fingerprint. E-539 (format 6): a save of
+// another format does not load, so the readers of the old tags are gone.
 
 const base = () => ({
   sceneName: 'T',
@@ -69,7 +70,7 @@ test('chains, fixtures and meshes are written with a layout byte and read back',
     meshes: [],
   }));
   const tags = sections(bytes).map((s) => s.tag);
-  assert.ok(tags.includes(SECTION.CHAINS2) && !tags.includes(SECTION.CHAINS));
+  assert.ok(tags.includes(SECTION.CHAINS2) && !tags.includes(9), 'not the old CHAINS tag');
   assert.ok(tags.includes(SECTION.FIXTURES2) && tags.includes(SECTION.MESHES2));
   for (const s of sections(bytes)) {
     if ([SECTION.CHAINS2, SECTION.FIXTURES2, SECTION.MESHES2].includes(s.tag)) assert.equal(s.body[0], 1, 'layout 1');
@@ -79,14 +80,6 @@ test('chains, fixtures and meshes are written with a layout byte and read back',
   assert.deepEqual(Array.from(back.chains[0].xy), Array.from(chain.xy));
   assert.equal(back.fixtures.length, 1);
   assert.deepEqual(back.meshes, []);
-});
-
-test('a save with the old CHAINS tag (no layout byte) still loads', () => {
-  const list = sections(new Uint8Array(encodeBinarySaveBody({ ...base(), chains: [chain] })));
-  const legacy = list.map((s) => (s.tag === SECTION.CHAINS2 ? { tag: SECTION.CHAINS, body: s.body.slice(1) } : s));
-  const back = decodeBinarySaveBody(assemble(legacy));
-  assert.equal(back.chains.length, 1);
-  assert.equal(back.chains[0].count, 4);
 });
 
 test('a layout newer than this build reads as an absent section', () => {
@@ -143,29 +136,6 @@ test('a same-size shared resource schema change is skipped, not restored into th
   applySharedResources(saved);
   assert.equal(Stats.hp[0], 2.5);
   assert.equal(Stats.gold[0], 40);
-  SharedResource.resetAll();
-});
-
-test('a save from before the fingerprint (tag 8) still restores on size alone', () => {
-  SharedResource.resetAll();
-  class Old extends SharedResource {}
-  const schema = { v: Int32Array };
-  Old.initialize(new SharedArrayBuffer(SharedResource.getBufferSize(schema)), schema);
-  // Tag 8 body: u32 count, then u32-length name, u32-length bytes.
-  const name = new TextEncoder().encode('Old');
-  const body = new Uint8Array(4 + 4 + name.length + 4 + 4);
-  const v = new DataView(body.buffer);
-  v.setUint32(0, 1, true);
-  v.setUint32(4, name.length, true);
-  body.set(name, 8);
-  v.setUint32(8 + name.length, 4, true);
-  v.setInt32(12 + name.length, 99, true);
-  const list = sections(new Uint8Array(encodeBinarySaveBody(base())));
-  list.push({ tag: SECTION.SHARED_RESOURCES, body });
-  const back = decodeBinarySaveBody(assemble(list));
-  assert.equal(back.sharedResources[0].fingerprint, null);
-  applySharedResources(back.sharedResources);
-  assert.equal(Old.v[0], 99);
   SharedResource.resetAll();
 });
 

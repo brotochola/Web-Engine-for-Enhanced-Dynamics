@@ -120,13 +120,8 @@ repeat:
 | 5 | JOINTS | packed joint records |
 | 6 | LIQUIDFUN | typed particle/group/pair/render buffers |
 | 7 | DECALS | sparse tiles as raw PNG or RGBA bytes |
-| 8 | SHARED_RESOURCES | legacy: name + raw SAB bytes, no fingerprint. Read only |
-| 9 | CHAINS | legacy: CHAINS2 records without the layout byte. Read only |
-| 10 | FIXTURES | legacy: FIXTURES2 records without the layout byte. Read only |
-| 11 | MESHES | legacy: MESHES2 records without the layout byte. Read only |
 | 12 | NAV | walkability bytes plus grid width, height, and cell size |
 | 13 | TIME | `Time.scale` |
-| 14 | TWEENS | legacy: active tween slots with a u16 entity. Read only (saves written before B12) |
 | 15 | TWEENS2 | u8 layout version, then active tween slots with a u32 entity (entityIdWidth 32) |
 | 16 | SHARED_RESOURCES2 | u8 layout, then one record per bound class: name, u32 schema fingerprint (0 = unknown), raw SAB bytes |
 | 17 | CHAINS2 | u8 layout, then local chain points for saved entities |
@@ -135,9 +130,9 @@ repeat:
 
 ENTITIES, per type: the type's name, the count n, n u32 indices, then each component's name, u32 schema fingerprint and fields; each field's name, u8 kind (Int8, Uint8, Uint8Clamped, Int16, Uint16, Int32, Uint32, Float32 or Float64), u16 elements per entity, u8 flags (1: entity ids) and its n × length values. Every array's bytes are as in memory, starting 8-byte aligned from the section's start, so a decode makes views of them, not copies.
 
-Every section added since TWEENS2 starts with a layout byte: a record change bumps it instead of needing a new tag, and a layout newer than the build reads as an absent section (with a warning). A shared resource whose schema fingerprint (name, then each field name, type, length and atomic flag in layout order) differs from the bound class is skipped: raw bytes cannot be applied best-effort, and two schemas can share a byte size.
+Tags 8 to 11 and 14 were the forms format 5 replaced; no format 6 save has them, and they are not reused. Every section added since TWEENS2 starts with a layout byte: a record change bumps it instead of needing a new tag, and a layout other than the build's reads as an absent section (with a warning). A shared resource whose schema fingerprint (name, then each field name, type, length and atomic flag in layout order) differs from the bound class is skipped: raw bytes cannot be applied best-effort, and two schemas can share a byte size.
 
-CHAINS, FIXTURES and MESHES are written whenever that pool is bound, even with no records: on load, a present section clears geometry the saved entities did not have, while an absent one (a save older than these tags, or a pool that was unbound) leaves whatever `onSpawned` built. Other empty optional sections are omitted. A load keeps tweens on entities the save does not own (`create()` runs again on a load); it replaces zoom tweens and tweens on restored or despawned entities. There is no JSON payload and no base64 on the wire.
+CHAINS, FIXTURES and MESHES are written whenever that pool is bound, even with no records: on load, a present section clears geometry the saved entities did not have, while an absent one (a pool that was unbound) leaves whatever `onSpawned` built. Other empty optional sections are omitted. A load keeps tweens on entities the save does not own (`create()` runs again on a load); it replaces zoom tweens and tweens on restored or despawned entities. There is no JSON payload and no base64 on the wire.
 
 Helpers: `SaveStore.put/get/list/listForScene/remove`, `downloadSave`, `parseUploadedFile`.
 
@@ -159,7 +154,7 @@ class Level extends WEED.Scene {
 }
 ```
 
-The value must be JSON data (objects, arrays, strings, numbers, booleans, null); a save of anything else throws `onSaveGame() must return JSON data`. It is stored in its own optional section (`CUSTOM`), so older saves load with `payload.custom === null` and the save format version is unchanged.
+The value must be JSON data (objects, arrays, strings, numbers, booleans, null); a save of anything else throws `onSaveGame() must return JSON data`. It is stored in its own optional section (`CUSTOM`): a save whose scene had no `onSaveGame` loads with `payload.custom === null`.
 
 ## API
 
@@ -238,7 +233,7 @@ LiquidFun WASM source: the sibling `Box2d_3.2_C_-_liquidfun` tree (`wasm_wrapper
 - **Shared resources:** the whole SAB for each bound class. A missing name or a different byte length skips that resource. Applied before logic0 restores the entities (so restore-time `onDespawned` / `onSpawned` hooks read the saved values) and again after it, so the load ends on exactly the saved bytes whatever those hooks wrote (a kill counter in `onDespawned` does not drift on every load).
 - **Chains, extra fixtures, custom meshes:** only for entities that are in the save. Restore writes them onto the new entity index. A saved entity with no chain, no extra fixtures, or no custom mesh has that data cleared, so an `onSpawned` default does not survive a save that removed it.
 - **Nav:** walkability only. Flow fields and paths are caches and are invalidated. A width, height, or cell-size mismatch skips the grid. Applied before and again after the entity restore, like shared resources. A `REBUILD_FROM_INDICES` posted from `create()` has already run; one posted from `onLoadGame` replaces the restored grid.
-- **Time:** `Time.scale`, including `0`. An old save with no TIME section leaves the new scene clock at `1`.
+- **Time:** `Time.scale`, including `0`. A save with no TIME section (the clock was unbound) leaves the new scene clock at `1`.
 - **Tweens:** active slots. Paint and xy slots remap their entity. Zoom slots do not. A paint or xy target that was not restored is dropped.
 - No decoration / CPU particle / bullet / playing-sound dumps.
 - Schema fingerprint mismatch warns once per type and component and applies best-effort: each saved field goes to the live field of the same name, as bits when its kind and length did not change, value by value (as far as both go) when they did. Adding `entityId: true` changes the fingerprint.
