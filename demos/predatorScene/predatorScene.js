@@ -128,7 +128,11 @@ export class PredatorScene extends WEED.Scene {
       // leaves the rest of its entities out of every neighbour list; spatial's CELL_OVERFLOW counts them).
       cellSize: Math.trunc(predatorPositiveParam('cellSize', 128)),
       maxNeighbors: 1024,
-      maxEntitiesPerCell: Math.trunc(predatorPositiveParam('maxEntitiesPerCell', 32)), //this is very important!!
+      // Very important: a 128 px cell must hold the densest crowd. At 32 the squad's and the crowd's packed cells
+      // overflowed even at crowd 1 (about 2 900 entries a frame left out of every neighbour list, 7 600 at crowd 2.5),
+      // so soldiers missed civilians beside them and flocking missed its neighbours. 64 left none at crowd 2.5, and
+      // spatial was no slower there (N-325).
+      maxEntitiesPerCell: Math.trunc(predatorPositiveParam('maxEntitiesPerCell', 64)),
       // E-310: `?spatialWorkers=<n>` (1 to 4) splits the neighbour search over n workers, for scaling runs past crowd 1.5.
       numberOfSpatialWorkers: Math.min(4, Math.max(1, Math.trunc(predatorNumberParam('spatialWorkers', 1)))),
       noLimitFPS: predatorNoLimitFPS,
