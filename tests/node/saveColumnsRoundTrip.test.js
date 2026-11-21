@@ -112,7 +112,7 @@ function rowBits(C, i) {
   return out;
 }
 
-const CAPTURE = { allEntities: true, instanceFields: true, staysPaused: true, decalsAsPng: false };
+const CAPTURE = { allEntities: true, instanceFields: true, staysPaused: true, decalsCompressed: false };
 
 test('a save holds one table per type: indices and a column per field, in the live kinds, with fingerprints', async () => {
   const payload = await captureSavePayload(scene, CAPTURE);
@@ -167,7 +167,7 @@ test('the GPU loss\'s restore (the payload as built, every entity at its own ind
 test('a stored save (through the codec and deflate) brings every column back bit for bit, NaN payloads included', async () => {
   const before = savedColumnsChecksum(scene);
   const decoded = await decodeSave(await encodeSave(await captureSavePayload(scene, CAPTURE)));
-  assert.equal(decoded.formatVersion, 6);
+  assert.equal(decoded.formatVersion, 7);
   await applySavePayloadToScene(scene, decoded, { allTypes: true });
   assert.equal(savedColumnsChecksum(scene).checksum, before.checksum);
   const words = new Uint32Array(Gauge.wide.buffer, Gauge.wide.byteOffset, Gauge.wide.length * 2);
@@ -194,7 +194,7 @@ test('a player\'s save restores at new indices: every column at its entity\'s ne
   const jointB = walkers[3];
   Joint.addDistance({ entityA: jointA, entityB: jointB, length: 40 });
   // A player's save: the serializable types only, through the codec.
-  const decoded = await decodeSave(await encodeSave(await captureSavePayload(scene, { staysPaused: true, decalsAsPng: false })));
+  const decoded = await decodeSave(await encodeSave(await captureSavePayload(scene, { staysPaused: true, decalsCompressed: false })));
   assert.deepEqual(decoded.entities.map((t) => t.typeName), ['Crate', 'Walker', 'Pinned']);
   // Something takes the slots the saved entities had: the load puts them elsewhere.
   for (let k = 0; k < 5; k++) GameObject._spawnAt(Crate, { x: 0, y: 0, _hotRestore: true }, -1, false);
@@ -255,7 +255,7 @@ test('the decal tiles come back with the entities', async () => {
 
 test('a player\'s load hands a pinned class\'s spawns to its worker with a row of its own, which that worker writes', async () => {
   const saved = new Map(liveIndicesOf(Pinned).map((i) => [i, rowBits(Pinned, i)]));
-  const decoded = await decodeSave(await encodeSave(await captureSavePayload(scene, { staysPaused: true, decalsAsPng: false })));
+  const decoded = await decodeSave(await encodeSave(await captureSavePayload(scene, { staysPaused: true, decalsCompressed: false })));
   const sent = [];
   const prev = { total: logic.totalLogicWorkers, send: logic.sendDataToWorker };
   logic.totalLogicWorkers = 2;

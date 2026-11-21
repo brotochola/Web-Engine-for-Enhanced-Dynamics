@@ -60,9 +60,10 @@ const TYPED_KIND = [null, Float32Array, Uint32Array, Uint16Array, Int32Array, Ui
 /** Record layout of ENTITIES. Bump on any change. */
 const ENTITIES_LAYOUT = 1;
 
+/** A decal tile's bytes: raw RGBA, or deflate-raw of them (N-314, format 7; PNG before). */
 const DECAL_FMT = Object.freeze({
   raw: 0,
-  png: 1,
+  deflate: 1,
 });
 
 const textEncoder = new TextEncoder();
@@ -663,7 +664,7 @@ function writeDecals(w, decals) {
   for (let i = 0; i < tiles.length; i++) {
     const tile = tiles[i];
     w.u32(tile.i | 0);
-    w.u8(tile.fmt === 'png' ? DECAL_FMT.png : DECAL_FMT.raw);
+    w.u8(tile.fmt === 'deflate' ? DECAL_FMT.deflate : DECAL_FMT.raw);
     const bytes =
       tile.bytes instanceof Uint8Array ? tile.bytes : new Uint8Array(tile.bytes || []);
     w.bytes(bytes);
@@ -682,7 +683,7 @@ function readDecals(r) {
     const fmtCode = r.u8();
     tiles.push({
       i: index,
-      fmt: fmtCode === DECAL_FMT.png ? 'png' : 'raw',
+      fmt: fmtCode === DECAL_FMT.deflate ? 'deflate' : 'raw',
       bytes: r.bytes(),
     });
   }
