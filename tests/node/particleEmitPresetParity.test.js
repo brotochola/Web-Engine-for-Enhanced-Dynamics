@@ -292,7 +292,7 @@ test('a preset writes what the old emit of its config wrote; its emit arguments 
     const args = { x: r() * 500, y: r() * 500, z: -r() * 40, dirX: Math.cos(a), dirY: Math.sin(a), count: (r() * 9) | 0 };
     const withArgs = { ...cfg, ...args };
     const oldArgs = run(LegacyParticleEmitter, k, (E) => E[mode](withArgs));
-    const nowArgs = run(ParticleEmitter, k, (E) => E.emitPreset(id, args.x, args.y, args.z, args.dirX, args.dirY, args.count));
+    const nowArgs = run(ParticleEmitter, k, (E) => E.emitPreset(id, args.x, args.y, args.z, args.count, args.dirX, args.dirY));
     assertSame(oldArgs, nowArgs, `preset ${k} ${mode} with ${JSON.stringify(args)}`);
 
     // Some of them: undefined keeps the preset's.
@@ -385,7 +385,7 @@ test('a texture list picks one per particle, drawn first: the same as the caller
         count: 1, x: 10, y: 11, texture: 'muzzle' + Math.floor(rng() * 3 + 1), scaleX: rng() * 0.5 + 0.5,
         scaleY: rng() * 0.5 + 0.5, rotC: dx, rotS: dy, alpha: rng() * 0.5 + 0.5, z: -34, gravity: 0, lifespan: 50, speed: 0,
       }));
-    const now = run(ParticleEmitter, k, (E) => E.emitPreset(muzzle, 10, 11, -34, dx, dy));
+    const now = run(ParticleEmitter, k, (E) => E.emitPreset(muzzle, 10, 11, -34, 1, dx, dy));
     assertSame(old, now, `muzzle ${k}`);
   }
 });
@@ -393,7 +393,7 @@ test('a texture list picks one per particle, drawn first: the same as the caller
 test('faceDirection turns each particle to its own direction: the spread one, or the angle one', () => {
   setup();
   const id = ParticleEmitter.define({ count: 20, x: 0, y: 0, z: -5, speed: { min: 1, max: 3 }, spread: 0.4, faceDirection: true });
-  run(ParticleEmitter, 4, (E) => E.emitPreset(id, 0, 0, -5, 0, 1));
+  run(ParticleEmitter, 4, (E) => E.emitPreset(id, 0, 0, -5, undefined, 0, 1));
   const pc = ParticleComponent;
   for (const i of liveSlots()) {
     const speed = Math.sqrt(pc.vx[i] * pc.vx[i] + pc.vy[i] * pc.vy[i]);

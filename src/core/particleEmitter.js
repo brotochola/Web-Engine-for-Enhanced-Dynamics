@@ -20,7 +20,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // const SPARKS = ParticleEmitter.define(config)   — once, at module level (defineZenithal / defineFlat: the other modes)
-// ParticleEmitter.emitPreset(SPARKS, x, y, z, dirX, dirY, count)   — per shot: only what varies per emit
+// ParticleEmitter.emitPreset(SPARKS, x, y, z, count, dirX, dirY)   — per shot: only what varies per emit
 // ParticleEmitter.withVz(vz).withScaleFactor(f).emitPreset(...)    — the few other keys a game changes per emit
 //
 // One core for both forms: a config is compiled into a row of numbers (each key a value, a range drawn per particle,
@@ -184,9 +184,9 @@ const EMIT_ARGS = scratch64(12);
 const ARG_X = 0;
 const ARG_Y = 1;
 const ARG_Z = 2;
-const ARG_DIR_X = 3;
-const ARG_DIR_Y = 4;
-const ARG_COUNT = 5;
+const ARG_COUNT = 3;
+const ARG_DIR_X = 4;
+const ARG_DIR_Y = 5;
 const ARG_VZ = 6;
 const ARG_FLIP_X = 7;
 const ARG_FLIP_Y = 8;
@@ -1040,20 +1040,20 @@ export class ParticleEmitter extends SharedAtomicPool {
    * @param {number} [x]
    * @param {number} [y]
    * @param {number} [z] - Heighted modes only (z < 0 is up)
+   * @param {number} [count] - Rounded, as emit's count
    * @param {number} [dirX] - With dirY: the direction of a preset with `speed` (turned by its `spread`), and where a
    *   `faceDirection` preset's particles face
    * @param {number} [dirY]
-   * @param {number} [count] - Rounded, as emit's count
    * @returns {number} particles spawned
    */
-  static emitPreset(preset, x, y, z, dirX, dirY, count) {
+  static emitPreset(preset, x, y, z, count, dirX, dirY) {
     const a = this._emitArgs;
     a[0] = x;
     a[1] = y;
     a[2] = z;
-    a[3] = dirX;
-    a[4] = dirY;
-    a[5] = count;
+    a[3] = count;
+    a[4] = dirX;
+    a[5] = dirY;
     return this._emitRow(preset);
   }
 
