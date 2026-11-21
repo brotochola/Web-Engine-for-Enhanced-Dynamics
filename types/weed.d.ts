@@ -4327,6 +4327,22 @@ export declare class AdobeAnimComponent extends Component {
   static screenX: Float32Array;
   static screenY: Float32Array;
   static applyClipBounds(entityIndex: number): void;
+  /**
+   * E-537: the clip's methods by entity index (AdobeAnimComponent.play(i, clip, loop) is adobeAnimComponent.play(clip,
+   * loop)), for code that holds an index. They return nothing; frameCount and currentFrame make no object.
+   */
+  static setAsset(index: number, assetName: string, clipName?: string | null, options?: AdobeAnimSetAssetOptions): void;
+  static play(index: number, clipName: string, loop?: boolean): void;
+  /** Show frame frameNum (1-based, clamped to the clip) and stop. */
+  static gotoAndStop(index: number, frameNum: number): void;
+  /** Play on from frame frameNum (1-based, clamped). */
+  static gotoAndPlay(index: number, frameNum: number): void;
+  static pause(index: number): void;
+  static resume(index: number): void;
+  /** The clip's frames, 0 without one. */
+  static frameCount(index: number): number;
+  /** The 1-based frame its time shows (wrapped when it loops, held at its ends when not); 0 without a clip. */
+  static currentFrame(index: number): number;
   get assetName(): string;
   get clipName(): string;
   get frameCount(): number;
