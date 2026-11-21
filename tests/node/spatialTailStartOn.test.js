@@ -7,14 +7,13 @@ import { bindFrameClock, createFrameClockBuffer, frameClockSlot, stampStep } fro
 import { SPATIAL_DEFAULTS } from '../../src/util/configDefaults.js';
 import { loadWorker, quietly } from '../bench/workerHarness.mjs';
 import { setupSpatialKernel } from '../bench/spatialWorkerMicrobench.mjs';
+import { wallMs, waitedUntil } from '../helpers/wallClockWait.mjs';
 
 // E-328 (spatial.startOn 'logicDone'): a spatial worker's frame waits for the logic workers' frame of this vsync, asleep
 // on the frame chain's bell ([2], rung by each logic worker at its frame's end after it adds one to [0]), so its search
 // runs while logic leaves the cores free. It counts the logic workers already done from the frame clock's stamps, waits
 // within the frame less its own step, starts on the vsync when its step would not fit after logic's, and four waits in
 // a row that run out turn the waits off for 120 frames.
-
-const wallMs = () => performance.timeOrigin + performance.now();
 
 // A thread that plays logic's frame ends at wall-clock times it is given (each: [0] += 1, [2] += 1, notify [2]), given 2
 // ms ahead: a hand-off between threads here can take over a millisecond.
@@ -37,11 +36,12 @@ async function logicEnds(chain) {
   const w = new Worker(LOGIC_ENDS, { eval: true, workerData: { chain: chain.buffer, at: at.buffer } });
   await new Promise((resolve) => w.once('message', resolve));
   return {
-    /** Frame ends `ms[k]` after the call returns (it returns 2 ms after it was made). */
+    /** Frame ends `ms[k]` after the call returns (it returns 2 ms after it was made); returns their wall-clock times. */
     endIn(...ms) {
       const d = wallMs() + 2;
       for (let k = ms.length - 1; k >= 0; k--) at[k] = d + ms[k];
       while (wallMs() < d);
+      return ms.map((m) => d + m);
     },
     stop: () => w.terminate(),
   };
@@ -77,22 +77,25 @@ function stampLogic(w, ago) {
 
 test('a logicDone frame sleeps on the bell until every logic worker has ended its frame, and counts the wait', async () => {
   const w = await loadWorker('spatialWorker.js', 'spatialWorker');
-  // A loaded machine may run the thread late: a few tries.
+  // A loaded machine may run either thread late: a few tries, each read against the ends' times (waitedUntil).
   let chain = null;
   let waited = 0;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  let untilSecond = false;
+  for (let attempt = 0; attempt < 6; attempt++) {
     // Both logic workers' last steps began a vsync ago (40 ms): neither has done this vsync's frame.
     chain = spatialAt(w, { ago: [40, 40] });
     const ends = await logicEnds(chain);
     resetWaitMeter();
-    ends.endIn(3, 6);
+    const [first, second] = ends.endIn(3, 6);
+    const begun = wallMs();
     w.beforeUpdate();
     await ends.stop();
     waited = waitMeterMs();
-    if (Atomics.load(chain, 0) === 2 && waited < 20) break;
+    untilSecond = waitedUntil(second, begun, waited) && begun < first;
+    if (Atomics.load(chain, 0) === 2 && untilSecond && waited < 20) break;
   }
   assert.equal(Atomics.load(chain, 0), 2, 'both frame ends came during the wait');
-  assert.ok(waited >= 5, `the first end alone does not end it (${waited.toFixed(2)} ms)`);
+  assert.ok(untilSecond, `the first end alone does not end it (${waited.toFixed(2)} ms)`);
   assert.ok(waited < 20, `the second end does, within the budget (${waited.toFixed(2)} ms)`);
   assert.equal(w._logicWaitMs, waited, 'the wait is kept, to take it out of the next own step');
   assert.equal(w._logicWaitMisses, 0);
@@ -111,22 +114,27 @@ test('logic workers already done with this vsync\'s frame are not waited for, ev
   resetWaitMeter();
   w.beforeUpdate();
   assert.equal(waitMeterMs(), 0, 'a late frame finds logic\'s frame of this vsync done');
-  // One done (began 1 ms ago), one still on the last vsync's step: one frame end ends the wait.
+  // One done (began 1 ms ago), one still on the last vsync's step: one frame end ends the wait. A loaded machine can
+  // run the end before this thread begins to wait (N-326: 0.68 ms of a 3 ms end were left once), so each try is read
+  // against the end's time (waitedUntil).
   let chain = null;
   let waited = 0;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  let untilEnd = false;
+  for (let attempt = 0; attempt < 6; attempt++) {
     chain = spatialAt(w, { ago: [1, 40] });
     const ends = await logicEnds(chain);
     stampLogic(w, [1, 40]); // the thread took tens of ms to start
     resetWaitMeter();
-    ends.endIn(3);
+    const [end] = ends.endIn(3);
+    const begun = wallMs();
     w.beforeUpdate();
     await ends.stop();
     waited = waitMeterMs();
-    if (Atomics.load(chain, 0) === 1 && waited < 20) break;
+    untilEnd = waitedUntil(end, begun, waited);
+    if (Atomics.load(chain, 0) === 1 && untilEnd && waited < 20) break;
   }
   assert.equal(Atomics.load(chain, 0), 1);
-  assert.ok(waited >= 2 && waited < 20, `one end ended it (${waited.toFixed(2)} ms)`);
+  assert.ok(untilEnd && waited < 20, `one end ended it (${waited.toFixed(2)} ms)`);
   assert.equal(w._logicWaitMisses, 0);
 });
 
