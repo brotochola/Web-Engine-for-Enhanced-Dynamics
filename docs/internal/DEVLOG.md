@@ -6,6 +6,38 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 21 November 2026 (evening) — The ECS Way, Finished
+
+Friday morning ended with a list of what still made an object on the ECS way. The owner approved the order, and the
+work was split by file between three agents, each in its own worktree: the statics, the effects, and the saves. This
+PC merged them, rebuilt the bundles and ran the final pass with every trace.
+
+**Everything an instance could do, an index can do.** Sending a message, telling the page, asking whether two entities
+touch, setting layers, attaching a decoration, playing an Adobe clip, setting a mesh's tint: each has a static by index
+now, doing the same work as the method (E-537). Reading an Adobe clip's frame made an object per read; it makes none.
+The instance tables are allocated by the first instance that needs them, so a scene written the ECS way allocates none
+at all (E-540).
+
+**A shot no longer makes garbage.** One Predator shot made about five config objects and ten range objects for its
+sparks, muzzle sprites and flash. Effects are now defined once as presets, and an emit from a preset allocates nothing
+(E-538). In Predator's mixed battle the logic worker went from 440 KB of garbage a frame to 49 KB. What is left is the
+bullet's own config (E-541) and the sound's numbers (E-542), and those are next.
+
+**A save is columns, not a million objects.** At Predator's biggest crowd a save held about 1.1 million objects; it
+holds about two thousand typed arrays now, one table per entity type (E-539). Loading a game in the page went from 8.5 s
+to 2.4 s at crowd 2.5, and from 4.7 to 2.0 s at crowd 1. That is about what starting the scene fresh costs, so the
+restore itself costs almost nothing now. On the way it turned up a bug: the stored format wrote NaN as null, and every
+NaN column came back as 0. Saving still takes about 3 s; most of that is the decals' PNG tiles, encoded one after
+another.
+
+**All together:** with Predator's whole logic on one worker, logic went from 29.0 to 20.2 ms a frame (-31.7 %), and no
+worker got slower. No steady deopt was left in the new code. The particle count moved in that sitting too. It was
+checked in a mixed battle where logic keeps up on both sides: the same particles and the same bodies. The fight had
+simply run at another pace.
+
+The same day Predator's street lamps went dark by day, switched at once like real ones. The engine now skips any light
+at brightness 0: no light, no glow, no shadow tile.
+
 ## Saturday 21 November 2026 (afternoon) — A Crowd That Could Not See Itself
 
 The ASUS session's counter for full grid cells had a question waiting on this PC: how many of Predator's entities
