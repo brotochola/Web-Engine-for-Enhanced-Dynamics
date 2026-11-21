@@ -3,15 +3,20 @@
  * E-538: the particle emits of Predator's firefight, the way its game objects call them, through the shipped
  * ParticleEmitter (src/). Node, no browser: the structure of the cost and of the garbage, not Chrome's numbers.
  *
- *   node tests/bench/particleShotMicrobench.mjs [--case shot|chips|blood|all] [--ops N] [--check] [--output path]
+ *   node tests/bench/particleShotMicrobench.mjs [--case shot|chips|blood|all] [--form literal|preset] [--ops N] [--check]
+ *     [--output path]
  *   node tests/bench/heapSampleNode.mjs -- tests/bench/particleShotMicrobench.mjs --case shot --check
  *
  * shot:  Person.shoot's emits: two muzzle sprites (a random texture of three, random scale and alpha, facing the shot)
  *        and Person.shootingSparks (10 to 19 sparks along the shot).
  * chips: House.onGotShot's chips (3 to 10 squares off a wall).
  * blood: Person.recieveDamage's blood (4 to 13 drops that stay on the floor).
- * One op is one call of the game's code (the shot's three emits, or one emit). Each config is the literal the game
- * builds, with the game's own random draws (the muzzle's texture, scale and alpha, the sparks' count).
+ * One op is one call of the game's code (the shot's three emits, or one emit), in two forms:
+ * literal: the config literal the game built before E-538, with its own random draws (the muzzle's texture, scale and
+ *          alpha, the sparks' count);
+ * preset:  the same emits from presets defined once (ParticleEmitter.define), as the game calls them since E-538: the
+ *          texture list and the ranges drawn in the engine, the per-shot values as emitPreset's arguments.
+ * Both forms write the same columns from the same seed (the checksums are equal).
  *
  * Reports ops/s, the bytes V8 allocated per op over --ops ops (its heap counters with GC observed: no count when a GC
  * ran in between) and a checksum of the particle columns after 64 ops from the seed. The pool is recycled whenever it
@@ -162,9 +167,79 @@ function literalBlood(x, y, damage) {
   });
 }
 
-/** The forms each case can run: literal (the game's code before E-538). */
+// ---------------------------------------------------------------------------------------------------------------------
+// The same calls from presets (demos/predatorScene/effectPresets.js since E-538): defined once, at module level.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const MUZZLE_SPRITE = ParticleEmitter.define({
+  count: 1,
+  texture: ['muzzle1', 'muzzle2', 'muzzle3'],
+  scaleX: { min: 0.5, max: 1 },
+  scaleY: { min: 0.5, max: 1 },
+  alpha: { min: 0.5, max: 1 },
+  faceDirection: true,
+  gravity: 0,
+  lifespan: 50,
+});
+const SHOT_SPARKS = ParticleEmitter.define({
+  spread: (10 * Math.PI) / 180,
+  speed: { min: 0.1, max: 10 },
+  rotation: { min: 0, max: 360 },
+  vz: { min: -1, max: 5 },
+  gravity: 0.4,
+  lifespan: { min: 33, max: 100 },
+  scale: { min: 0.15, max: 0.5 },
+  texture: '_whiteCircle',
+  tint: { min: 0xffff00, max: 0xffffff },
+  alpha: { min: 0.5, max: 0.8 },
+  despawnOnGroundContact: true,
+});
+const WALL_CHIPS = ParticleEmitter.define({
+  texture: 'square',
+  angleXY: { min: 0, max: 360 },
+  speed: { min: 1.5, max: 4 },
+  vz: { min: 2, max: 6 },
+  lifespan: { min: 400, max: 800 },
+  gravity: 0.35,
+  scale: { min: 0.15, max: 0.4 },
+  alpha: { min: 0.7, max: 1 },
+  tint: { min: 0xffff00, max: 0xffffff },
+  rotation: { min: 0, max: 360 },
+  stayOnTheFloor: false,
+  despawnOnGroundContact: true,
+});
+const WOUND_BLOOD = ParticleEmitter.define({
+  texture: 'blood',
+  angleXY: { min: 0, max: 360 },
+  speed: { min: 0.7, max: 1.66 },
+  vz: { min: -4, max: 0 },
+  lifespan: 2000,
+  gravity: 0.22,
+  scale: { min: 0.12, max: 0.3 },
+  alpha: { min: 0.66, max: 0.95 },
+  tint: { min: 0xaaaaaa, max: 0xffffff },
+  stayOnTheFloor: true,
+});
+
+function presetShot(muzzleX, muzzleY, shotDirX, shotDirY, muzzleHeightPx) {
+  let n = ParticleEmitter.emitPreset(MUZZLE_SPRITE, muzzleX, muzzleY + 1, muzzleHeightPx, 1, shotDirX, shotDirY);
+  n += ParticleEmitter.emitPreset(MUZZLE_SPRITE, muzzleX, muzzleY + 1, muzzleHeightPx, 1, shotDirX, shotDirY);
+  n += ParticleEmitter.emitPreset(SHOT_SPARKS, muzzleX, muzzleY + 1, muzzleHeightPx, Math.floor(rng() * 10) + 10, shotDirX, shotDirY);
+  return n;
+}
+
+function presetChips(hitX, hitY, damage) {
+  return ParticleEmitter.emitPreset(WALL_CHIPS, hitX, hitY, -20, Math.floor(damage * 8) + 3);
+}
+
+function presetBlood(x, y, damage) {
+  return ParticleEmitter.emitPreset(WOUND_BLOOD, x, y, -30, Math.floor(damage * (rng() * 10 + 4)));
+}
+
+/** The forms each case can run: literal (the game's code before E-538) and preset (since). */
 export const FORMS = {
   literal: { shot: literalShot, chips: literalChips, blood: literalBlood },
+  preset: { shot: presetShot, chips: presetChips, blood: presetBlood },
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
