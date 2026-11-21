@@ -1,7 +1,7 @@
 import { AdobeAnimateCharacter } from './gameObjects/adobeAnimateCharacter.js';
 
 import WEED from '/src/index.js';
-const { Scene, Camera } = WEED;
+const { Scene, Camera, AdobeAnimComponent } = WEED;
 
 // `?adobeTablesMB=<n>` sizes the Adobe tables' region (preRender.adobeTablesMB, default 4): with physics on, the
 // region is part of the block reserved in Box2D's heap before the world, so its size moves the world's arrays
@@ -137,12 +137,8 @@ export class AdobeAnimateScene extends Scene {
     if (this._lastClipKey === keyId) return;
     this._lastClipKey = keyId;
 
-    const instances = AdobeAnimateCharacter.instances;
-    for (let i = 0; i < instances.length; i++) {
-      const character = instances[i];
-      if (character && character.active) {
-        character.adobeAnimComponent.play(clipName, true);
-      }
-    }
+    // Every live character by index: the page makes an entity's instance only when asked for it, so its table does not
+    // list them all.
+    for (const i of AdobeAnimateCharacter.getAllActive()) AdobeAnimComponent.play(i, clipName, true);
   }
 }

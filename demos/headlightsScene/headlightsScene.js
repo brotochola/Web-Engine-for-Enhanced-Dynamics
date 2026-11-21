@@ -24,7 +24,7 @@ import { RoadBand, RoadDashes } from '../sunStreetScene/gameObjects/streetMeshes
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
 import { Car, CAR_SHEETS, HEADLIGHT, House, LAMP, StreetLamp } from './nightStreet.js';
 
-const { Scene, Camera, Keyboard, Sun, Transform, LAYER_KIND } = WEED;
+const { Scene, Camera, GameObject, Keyboard, Sun, LAYER_KIND } = WEED;
 
 const param = (key, fallback) => Number(WEED.params?.get(key) ?? fallback);
 const CARS = Math.max(0, Math.floor(param('cars', 6)));
@@ -196,11 +196,12 @@ export class HeadlightsScene extends Scene {
 
   // --- The panel: each key writes one field on every car's (or lamp's) LightEmitter. ---
 
-  /** Runs `write(lightEmitter)` for every active entity of `type`. */
+  /**
+   * Runs `write(lightEmitter)` for every active entity of `type`, by its index: the page makes an entity's instance
+   * only when asked for it (GameObject.get), so the class's table does not list them all.
+   */
   _forEachLight(type, write) {
-    for (const entity of type.instances) {
-      if (Transform.active[entity.index]) write(entity.lightEmitter);
-    }
+    for (const i of type.getAllActive()) write(GameObject.get(i).lightEmitter);
   }
 
   _toggleCone() {
