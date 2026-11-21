@@ -24667,15 +24667,17 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-1683"
+      ],
       "refs": [],
       "id": "N-327",
       "title": "A pinned class on a player's load: the worker it is handed to writes its saved row after logic0's id remap, so the remapped ids and the geometry on those entities are overwritten with the saved ones",
-      "status": "open",
+      "status": "kept",
       "kind": "bug",
       "area": "save",
       "date": "2026-11-21",
-      "statusText": "found 2026-11-21 by E-539's agent while moving saves to columns (R-1670): the behaviour predates the columns; a spawn handed to another logic worker carries its row (rowRestore) and applies it there, after logic0 remapped the ids of everything it placed",
+      "statusText": "Fixed 2026-11-21 (R-1683): logic0's load waits on a barrier for the workers it handed pinned spawns to, then remaps; savePinnedRemap.test.js shows the ids come back mapped.",
       "next": "A test first: a player's load (not exact indices) of a scene with a forceProcessOnLogicWorker class holding entity-id fields and a parent; then remap those rows on the receiving worker too (the old -> new table travels with the hand-off), or remap after every worker acked its spawns."
     },
     {
@@ -40792,6 +40794,15 @@
       "title": "Predator's sittings start from a save: an A/A's worker spread 3.6-7.0 % fresh -> 1.6 % from one save, the load matched (NEUTRAL)",
       "verdict": "kept",
       "text": "**E-210 kept: Predator's ABAB sittings start from a save by default.** `runPredatorAbab` takes `--restore auto` for Predator unless `--fresh` or `--restore <file>`: one save per scene, shared query and save format (tests/results/restore/predator-<key>.weedsave), made once by sceneSaveMaker 20 s into the scene (about 40 s) and reused by every later sitting with the same key; sides that read different save formats play fresh battles with a warning; `--restore-new` remakes it (c1f13b64). DECAL_TILES_DIRTY, the battle's own count of blood and hit stamps, is gated at a 25 % band (67dfbf99); HOW_WE_MEASURE rule 5 says both (a9fa1344).\n\nA/As of main 0a0570a8 against itself, Predator `crowd=2.5&logicWorkers=1&mix=1&dayCycle=0`, 4 pairs, owner logic:\n- fresh (20:19–20:22, an audit agent reading files during its first 1.5 min): logic +7.0 % (3/4), spatial +4.5 % (4/4), physics +6.7 %, renderer +0.5 %, pre-render +1.0 %; DECAL_TILES_DIRTY -24.1 % cv 81 %: FAIL (load).\n- fresh again, the machine quiet (20:31–20:35): logic -3.6 %, spatial -3.4 %, physics -2.4 % (0/4 worse), renderer -2.5 %, pre-render -2.4 %: the battle's drift on identical code; DECAL_TILES_DIRTY +25.1 % cv 82 %: FAIL (load).\n- from one save (20:22–20:26, the save made first): logic -1.5 %, spatial +0.6 %, physics +0.7 %, renderer -1.6 %, pre-render -1.6 %; BODY_COUNT -0.0 %, ACTIVE_PARTICLES -3.9 %, DECAL_TILES_DIRTY -11.1 % cv 19/8 %: NEUTRAL with the key's own band.\nSo a worker's A/A spread falls from 3.6-7.0 % to 1.6 %: a 3 % change can be called in 4 pairs, which fresh battles could not do.\n\nThe restored battle is a later phase of the fight, lighter than a fresh one's first seconds: logic 29.5 against 40.8-44.7 ms, physics 19.0 against 22.8-25.1, ACTIVE_PARTICLES 1 961 against 7 240-7 540 (fewer civilians left at 30-40 s); it still fights (28 flash lights at noon, 60-68 decal tiles stamped a frame). Every judged worker stays above the 6 ms floor at this query (renderer 6.1-6.3 ms, the closest). A change to the scene's start or to spawning runs `--fresh`. N-232 (leave-one-out sittings of two builds playing two battles) is answered by the default."
+    },
+    {
+      "id": "R-1683",
+      "date": "2026-11-21",
+      "time": "20:37",
+      "timeFrom": "recorded",
+      "title": "A player's load remaps a pinned class's ids after its worker wrote their rows: a barrier between the load's two halves",
+      "verdict": "kept",
+      "text": "**N-327 fixed (14f0f43b, merged ff3b77d0): a player's load remaps a pinned class's entities after the worker they went to has written their rows.** logic0's load runs in two halves, _restoreSpawn and _restoreFinish, with a barrier between them for every logic worker that took pinned spawns: sent on the same port after the spawns and answered once that worker has read them (a port is read in order), so chains, fixtures, meshes, tweens, the id remaps and the parents' links run after the saved rows are written, not before. The world is paused during a load; an unanswered barrier ends after 10 s with an error.\n\n- The test first (savePinnedRemap.test.js): a pinned class with entity-id fields (a Target, a pinned pair, none), saved, loaded at new indices, logic1 played by the test. Before the fix: Pinned 28 -> 31 kept its saved target 4 (expected 23). After: every id remapped, none stays none.\n- saveColumnsRoundTrip's hand-off test answers the barrier now.\n- Node 3430/3430, demos 143/143. No sitting: the load path only, not a frame's."
     }
   ],
   "leads": [
