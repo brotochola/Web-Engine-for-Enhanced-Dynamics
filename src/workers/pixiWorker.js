@@ -1073,6 +1073,9 @@ class PixiRenderer extends AbstractWorker {
     this._faceRtLayer = { resolution: 1 }; // _writeCameraRtTransform's layer for the face map
     this._faceRtTransform = new Matrix();
     this._faceCamera = new Float64Array(4).fill(NaN); // the camera _faceRtTransform was written for
+    // N-272: the face map is drawn a texel inside its edges, so its edge ring stays empty (cleared): the light pass's
+    // self-shadow march, which samples with clamp-to-edge, reads nothing past the screen instead of the wall at its edge.
+    this._faceRtFrame = new PIXI.Rectangle(1, 1, 1, 1);
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
     // DX-LIGHTEDGES (lightEdges.js): the light shown without crossing the floor's edges, where the entities write depth:
     // its host in the lighting layer's place (the sprite above then stays off the stage), the unshaded layer's two
@@ -1259,6 +1262,8 @@ class PixiRenderer extends AbstractWorker {
       container: null,
       target: null,
       transform: null,
+      // N-272: the area of the target drawn (the face map's pass only; null: the whole target).
+      frame: null,
       clear: true,
       clearColor: this._clearTransparent,
       // DX-POST: true only while the stage is drawn into the SCREEN passes' frame on WebGL (the canvas's projection).
@@ -3827,6 +3832,9 @@ class PixiRenderer extends AbstractWorker {
   /** DX-FACES: the face map's texture, nearest (its texels are codes), at the light pass's size. */
   _createFaceMap(width, height) {
     this.faceRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
+    // N-272: the area drawn, a texel inside each edge (the pass's transform is moved a texel to match).
+    this._faceRtFrame.width = Math.max(1, this.faceRT.width - 2);
+    this._faceRtFrame.height = Math.max(1, this.faceRT.height - 2);
     this._faceRtLayer.resolution = this.lightingResolution;
     this._faceCamera[0] = NaN; // a turned camera's transform holds the canvas's size
     const res = this.lightingShader?.resources;
@@ -3968,9 +3976,14 @@ class PixiRenderer extends AbstractWorker {
       seen[1] = this._renderCameraY;
       seen[2] = this._renderZoom;
       seen[3] = rot;
-      this._writeCameraRtTransform(this._faceRtTransform, this._faceRtLayer);
+      const mx = this._writeCameraRtTransform(this._faceRtTransform, this._faceRtLayer);
+      // N-272: the frame's projection starts at its corner (1, 1): a texel back, each pixel lands where it did.
+      mx.tx -= 1;
+      mx.ty -= 1;
     }
     opts.transform = this._faceRtTransform;
+    // N-272: drawn inside the edge ring (the clear still clears the whole target, the ring with it).
+    opts.frame = this._faceRtFrame;
     const mrt = this._gbufMrt && this.faceIdsRT !== null ? this._ensureGbufTarget() : null;
     if (mrt !== null) {
       // DX-GBUF (lighting.gbuffer 'mrt'): both targets in this one pass.
@@ -3979,6 +3992,7 @@ class PixiRenderer extends AbstractWorker {
       opts.target = mrt;
       this._submitRender(opts);
       opts.transform = null;
+      opts.frame = null;
       return;
     }
     this._submitRender(opts);
@@ -3990,6 +4004,7 @@ class PixiRenderer extends AbstractWorker {
       this._gpuPassesThisFrame++;
     }
     opts.transform = null;
+    opts.frame = null;
   }
 
   /**
