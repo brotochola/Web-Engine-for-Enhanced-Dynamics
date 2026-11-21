@@ -71,27 +71,23 @@ export function checkFirstInstance(instance) {
 // E2: a field first written after onSpawned.
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** class → the own property names its instances have had right after onSpawned. */
+/** class → the own property names its first instance had right after its first onSpawned here. */
 const spawnedKeys = new Map();
 let lastAuditMs = -Infinity;
 const AUDIT_EVERY_MS = 1000;
 
 /**
  * After onSpawned: what the class's instances hold by then is their shape. A field first written later reshapes the
- * object (every method that saw the old shape deoptimizes) and lives only in the worker that wrote it.
+ * object (every method that saw the old shape deoptimizes) and lives only in the worker that wrote it. E-540: noted
+ * once per class, at its first spawn in this thread: a walk of every own key at every spawn cost the debug build some
+ * 27 keys a spawn. A field only some spawns write gives the class a second shape too, and the audit names it as well.
  * @param {object} instance
  */
 export function noteSpawned(instance) {
   if (!on || !instance) return;
   const C = instance.constructor;
-  let keys = spawnedKeys.get(C);
-  if (!keys) {
-    keys = new Set();
-    spawnedKeys.set(C, keys);
-  }
-  for (const key in instance) {
-    if (Object.prototype.hasOwnProperty.call(instance, key)) keys.add(key);
-  }
+  if (spawnedKeys.has(C)) return;
+  spawnedKeys.set(C, new Set(Object.keys(instance)));
 }
 
 /**
@@ -114,9 +110,9 @@ export function auditFields(liveInstanceOf, nowMs) {
       warnOnce(
         C.name,
         `late-field-${key}`,
-        `${C.name}'s field ${key} is first written after onSpawned: the object changes shape, every method that saw ` +
-          `the old one deoptimizes, and the field lives only in this worker. Declare it in the constructor ` +
-          `(this.${key} = …).`,
+        `${C.name}'s field ${key} is first written after onSpawned (or by some spawns only): the object changes ` +
+          `shape, every method that saw the old one deoptimizes, and the field lives only in this worker. Declare it ` +
+          `in the constructor (this.${key} = …).`,
       );
     }
   }
