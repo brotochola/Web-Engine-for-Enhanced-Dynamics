@@ -14,9 +14,23 @@ const {
   randomColor,
   Flash,
   SoundManager,
+  Sun,
   enums,
 } = WEED;
 const { ShapeType } = enums;
+
+/**
+ * Street lamps are lit at night only, as a real city's: on while the sun is low enough for the night light to start
+ * (Sun.nightFactor above 0: from about 18:45 to 05:15 with the default night.from), off by day. They switch at once,
+ * with no fade, as a real lamp does (the owner, 2026-11-21). A lamp at brightness 0 shows nothing and the engine skips
+ * it: no light, no glow, no shadow tile (E-531).
+ */
+function lampsShouldBeLit() {
+  return Sun.nightFactor > 0 ? 1 : 0;
+}
+
+/** What this logic worker last switched every lamp to: -1 before its first frame, then 0 (off) or 1 (on). */
+let lampsSwitchedTo = -1;
 
 // Written ECS-style (E-530): every hook is static, takes the lamp's index and writes its components' columns, so the
 // logic workers make no instance for a lamp post.
@@ -51,12 +65,28 @@ export class TallLight extends GameObject {
     LightEmitter.radius[i] = 1414;
     LightEmitter.active[i] = 1;
     LightEmitter.setGlow(i, 0.48); // TallLights show the glowing sprite
+    // A lamp spawned by day comes up off, one spawned by night lit, like the others at that hour.
+    LightEmitter.brightness[i] = lampsShouldBeLit();
 
     // Circle collider
     Collider.setShapeType(i, ShapeType.Circle);
     Collider.setRadius(i, 17);
     LightEmitter.shadowRange[i] = 400; // its shadows stop at 400 px (the light reaches 1414): cheaper
     Collider.setOffsetY(i, -9);
+  }
+
+  /**
+   * Each frame: when day turns to night or back, every lamp is switched at once (all of them, whichever logic worker
+   * owns each, so a lamp this worker does not tick switches with the rest; the other workers write the same values).
+   * Every other frame costs one comparison.
+   */
+  static tickAll(list, count) {
+    const lit = lampsShouldBeLit();
+    if (lit === lampsSwitchedTo) return;
+    lampsSwitchedTo = lit;
+    const lamps = TallLight.getAllActive();
+    if (!lamps) return;
+    for (let k = 0; k < lamps.length; k++) LightEmitter.brightness[lamps[k]] = lit;
   }
 
   /** A bullet hit lamp post i: a metal clang, sparks where it hit, and a short flash. */
