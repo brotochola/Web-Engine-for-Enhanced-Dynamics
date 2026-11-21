@@ -127,6 +127,7 @@ test('B-01: release happens on the normal (GPU available) path too', { concurren
   ctx.updateCameraTransform = () => {};
   ctx.updateGpuParticleLayers = () => {};
   ctx.syncLayerAlphaFromSharedState = () => {};
+  ctx.syncLayerPresentationFromSharedState = () => {};
   ctx.updateDecalTiles = () => {};
   ctx.shouldDrawFrameLockedPasses = () => false;
   ctx.applyLayerVisibility = () => {};
@@ -161,6 +162,7 @@ test('B-01: not presenting releases immediately inside consumeNextRenderQueue', 
   ctx.updateCameraTransform = () => {};
   ctx.updateGpuParticleLayers = () => {};
   ctx.syncLayerAlphaFromSharedState = () => {};
+  ctx.syncLayerPresentationFromSharedState = () => {};
   ctx.updateDecalTiles = () => {};
   ctx.shouldDrawFrameLockedPasses = () => false;
   ctx.applyLayerVisibility = () => {};
@@ -194,6 +196,7 @@ test('B-01: catch-up after an outage walks forward one frame at a time', { concu
     ctx.updateCameraTransform = () => {};
     ctx.updateGpuParticleLayers = () => {};
     ctx.syncLayerAlphaFromSharedState = () => {};
+    ctx.syncLayerPresentationFromSharedState = () => {};
     ctx.updateDecalTiles = () => {};
     ctx.shouldDrawFrameLockedPasses = () => false;
     ctx.applyLayerVisibility = () => {};
@@ -248,6 +251,7 @@ function drawableContext(sync) {
   ctx.updateCameraTransform = () => {};
   ctx.updateGpuParticleLayers = () => {};
   ctx.syncLayerAlphaFromSharedState = () => {};
+  ctx.syncLayerPresentationFromSharedState = () => {};
   ctx.updateDecalTiles = () => {};
   ctx.shouldDrawFrameLockedPasses = () => false;
   ctx.applyLayerVisibility = () => {};

@@ -3294,6 +3294,63 @@ class PixiRenderer extends AbstractWorker {
     this.syncSunLayerAlpha();
   }
 
+  /**
+   * DBG-2: blendMode, containerBlendMode and zIndex set at run time (the Layer setters: config SAB plus a dirty flag),
+   * applied to every object that draws the layer. _applyLayerPresentation reads the same SAB, so registering a layer's
+   * object again (a shader swap, a look composite, the light pass rebuilt) keeps them.
+   */
+  syncLayerPresentationFromSharedState() {
+    const dirty = Layer._presentationDirty;
+    if (!dirty) return;
+    let moved = false;
+    for (let i = 0; i < Layer.count; i++) {
+      if (Atomics.load(dirty, i) !== 1) continue;
+      Atomics.store(dirty, i, 0);
+      const name = Layer.getName(i);
+      if (name) {
+        this._applyLayerBlendAndZ(i, name);
+        moved = true;
+      }
+    }
+    if (moved) this.pixiApp.stage.sortChildren();
+  }
+
+  /** DBG-2: one layer's blend and z on its display object and on the objects beside it that draw its pixels. */
+  _applyLayerBlendAndZ(id, name) {
+    const layer = Layer.get(name);
+    if (!layer) return;
+    const display = this._layerRuntime[name] ?? null;
+    const cl = this._customLayers[id];
+    const z = layer.zIndex;
+    const blend = cl !== undefined && display !== null && this._customLayerForcesContainerBlend(cl, display)
+      ? layer.containerBlendMode
+      : layer.blendMode;
+    if (display !== null) {
+      display.zIndex = z;
+      // The light's meshes multiply and add by themselves (lightEdges.js): a blend on their host would change nothing.
+      if (name !== 'lighting' || this._lightEdges === null) display.blendMode = blend;
+    }
+    // The entities' meshes set their own blend, so their root's was never inherited: the batch takes it (its opaque pass
+    // drops itself off 'normal').
+    if (name === 'entities' && this.entitiesBatch) this.entitiesBatch.setLayerBlend(layer.blendMode);
+    if (name === 'lighting' && this._unshadedComposite !== null) this._unshadedComposite.zIndex = z;
+    if (cl === undefined) return;
+    // A layer's pieces drawn into its render texture take the container blend; the one on the stage is the display.
+    const pieceBlend = layer.containerBlendMode;
+    const pieces = [cl.batch?.mesh, cl.fillBatch?.mesh, cl.splatBatch?.mesh];
+    for (let k = 0; k < pieces.length; k++) {
+      const piece = pieces[k];
+      if (piece && piece !== display) piece.blendMode = pieceBlend;
+    }
+    const uvMesh = cl.uvFillBatch?.mesh;
+    if (uvMesh) {
+      // On the stage a MESH layer's textured rows draw beside the fill mesh, as it does; through an RT they are a piece.
+      const onStage = !cl.rt && !cl.meshLook;
+      uvMesh.blendMode = onStage ? (display !== null ? display.blendMode : blend) : pieceBlend;
+      if (onStage) uvMesh.zIndex = z;
+    }
+  }
+
   /** Layers with alphaBySun, from layer metadata (one short list, so the general layer loops carry no branch). */
   _collectSunLayers() {
     const metas = Layer._metadata?.layers || [];
@@ -4119,6 +4176,7 @@ class PixiRenderer extends AbstractWorker {
       this.updateCameraTransform();
       this.updateGpuParticleLayers();
       this.syncLayerAlphaFromSharedState();
+      this.syncLayerPresentationFromSharedState();
       this.updateDecalTiles();
       if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
         this.syncLayerResolutionFromSharedState();
@@ -7536,47 +7594,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Handle layer property changes from debug UI
-   * @param {Object} data - { layer, visible, blendMode, containerBlendMode, zIndex, shader, shaderFragment }
+   * The debug UI's shader swap and splat radius for a layer. Visibility, alpha, blend and z are the Layer facade's
+   * setters (config SAB plus dirty flags), applied each frame (DBG-2).
+   * @param {Object} data - { layer, shader, shaderFragment, splatRadius }
    */
   handleSetLayerProps(data) {
-    const { layer, visible, blendMode, containerBlendMode, zIndex, shader, shaderFragment, splatRadius } = data;
+    const { layer, shader, shaderFragment, splatRadius } = data;
 
     if (shader !== undefined || shaderFragment !== undefined) {
       this._setCustomLayerShader(layer, shaderFragment || null, shader || null);
-    }
-
-    const displayObject = this.layerRefs?.[layer];
-    if (!displayObject && splatRadius === undefined) {
-      return;
-    }
-
-    if (visible !== undefined && displayObject) {
-      const show = visible && (layer !== 'lightGlows' || this._lightGlowAdd);
-      setDisplayVisible(displayObject, show);
-    }
-
-    if (blendMode !== undefined && displayObject) {
-      displayObject.blendMode = blendMode;
-    }
-
-    if (containerBlendMode !== undefined) {
-      const layerObj = Layer.get(layer);
-      if (layerObj) {
-        const cl = this._customLayers[layerObj.id];
-        if (cl?.batch?.mesh) {
-          cl.batch.mesh.blendMode = containerBlendMode;
-        }
-        if (cl?.fillBatch?.mesh) {
-          cl.fillBatch.mesh.blendMode = containerBlendMode;
-        }
-        if (cl?.uvFillBatch?.mesh) {
-          cl.uvFillBatch.mesh.blendMode = containerBlendMode;
-        }
-        if (cl?.splatBatch?.mesh) {
-          cl.splatBatch.mesh.blendMode = containerBlendMode;
-        }
-      }
     }
 
     if (splatRadius !== undefined) {
@@ -7588,11 +7614,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           if (cl.splat) cl.splat.radius = splatRadius;
         }
       }
-    }
-
-    if (zIndex !== undefined && displayObject) {
-      displayObject.zIndex = zIndex;
-      this.pixiApp.stage.sortChildren();
     }
   }
 

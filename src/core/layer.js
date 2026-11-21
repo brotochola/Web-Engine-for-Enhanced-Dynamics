@@ -119,6 +119,7 @@ export class Layer {
     static _visible = null;           // Uint8Array[MAX_LAYERS]  (mutable via Atomics)
     static _feederKind = null;        // Uint8Array[MAX_LAYERS]  (LAYER_FEEDER_KIND)
     static _visibleDirty = null;      // Int32Array[MAX_LAYERS]  (dirty flag for visible)
+    static _presentationDirty = null; // Int32Array[MAX_LAYERS]  (dirty flag for blendMode, containerBlendMode, zIndex)
     // Plain (non-SAB) per-realm cache: OR of `1<<id` for every id where hasSpriteQueue(id)
     // is true. Recomputed locally after _feederKind/_hasRenderQueue are known (init or
     // initializeFromBuffers) — lets collectRenderable bit-scan `mask & _spriteQueueBits`
@@ -156,11 +157,7 @@ export class Layer {
 
     // Blend mode ID -> PixiJS string. Indices match BLEND_MODES enum in configDefaults.js.
     static _BLEND_MODE_STRINGS = [
-        'normal', 'inherit', 'add', 'multiply', 'screen', 'darken', 'lighten', 'erase',
-        'color-dodge', 'color-burn', 'linear-burn', 'linear-dodge', 'linear-light',
-        'hard-light', 'soft-light', 'pin-light', 'difference', 'exclusion', 'overlay',
-        'saturation', 'color', 'luminosity', 'normal-npm', 'add-npm', 'screen-npm',
-        'none', 'subtract', 'divide', 'vivid-light', 'hard-mix', 'negation', 'min', 'max',
+        'normal', 'add', 'multiply', 'screen', 'erase', 'normal-npm', 'add-npm', 'screen-npm', 'none', 'min', 'max',
     ];
 
     // LAYER_SCALE_MODE id -> Pixi TextureSource.scaleMode string.
@@ -202,6 +199,16 @@ export class Layer {
     // ========================================
 
     get zIndex() { return Layer._zIndex[this.id]; }
+    /**
+     * Draw order against the other layers. Mutable from any worker, as blendMode: the renderer moves every object that
+     * draws the layer, and keeps the value when it registers the layer's objects again (DBG-2).
+     * @example Layer.get("smoke").zIndex = 7.5;
+     */
+    set zIndex(v) {
+        if (!Number.isFinite(v)) throw new Error(`WeedJS: layer "${this.name}" zIndex must be a finite number (got ${v})`);
+        Layer._zIndex[this.id] = v;
+        Atomics.store(Layer._presentationDirty, this.id, 1);
+    }
     get resolution() { return Layer._resolution[this.id]; }
     /**
      * A look layer (one with a shader) draws into render textures the size of the viewport times this. Mutable from
@@ -242,10 +249,28 @@ export class Layer {
     get available() { return Layer._available[this.id] === 1; }
     /** Returns the blend mode as a human-readable string (for debug UI / logging). */
     get blendMode() { return Layer._BLEND_MODE_STRINGS[Layer._blendModeId[this.id]] || 'normal'; }
+    /**
+     * How the layer's picture blends onto the scene, by name ('normal', 'add', 'multiply', 'screen', 'erase', ...: the
+     * modes of BLEND_MODES). Mutable from any worker: config SAB plus an Atomics dirty flag, as alpha; the renderer applies
+     * it to every object that draws the layer and keeps it when it registers them again (DBG-2).
+     * @example Layer.get("fx").blendMode = 'add';
+     */
+    set blendMode(name) {
+        Layer._blendModeId[this.id] = Layer._blendModeIdOf(name, this.name, 'blendMode');
+        Atomics.store(Layer._presentationDirty, this.id, 1);
+    }
     /** Returns the blend mode numeric id. */
     get blendModeId() { return Layer._blendModeId[this.id]; }
     /** Returns the container blend mode as a human-readable string (for debug UI / logging). */
     get containerBlendMode() { return Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[this.id]] || 'normal'; }
+    /**
+     * The blend a layer's pieces draw with into its render texture (config shader.containerBlend), by name, as blendMode.
+     * Mutable from any worker (DBG-2).
+     */
+    set containerBlendMode(name) {
+        Layer._containerBlendId[this.id] = Layer._blendModeIdOf(name, this.name, 'containerBlendMode');
+        Atomics.store(Layer._presentationDirty, this.id, 1);
+    }
     /** Returns the container blend mode numeric id. */
     get containerBlendModeId() { return Layer._containerBlendId[this.id]; }
     get hasRenderQueue() { return Layer._hasRenderQueue[this.id] === 1; }
@@ -709,6 +734,7 @@ export class Layer {
     //   feederKind:      Uint8[MAX_LAYERS]  (LAYER_FEEDER_KIND)
     //   (align to 4)
     //   visibleDirty:    Int32[MAX_LAYERS]  (Atomics dirty flag)
+    //   presentationDirty: Int32[MAX_LAYERS] (Atomics dirty flag: blendMode, containerBlendMode, zIndex)
 
     static _createConfigViews(sab) {
         let offset = 0;
@@ -753,6 +779,19 @@ export class Layer {
 
         offset = Math.ceil(offset / 4) * 4;
         this._visibleDirty = new Int32Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS * 4;
+
+        this._presentationDirty = new Int32Array(sab, offset, this.MAX_LAYERS);
+    }
+
+    /** A blend mode's id from its name or its BLEND_MODES id, or a WeedJS error naming the modes there are. */
+    static _blendModeIdOf(mode, layerName, key) {
+        const id = typeof mode === 'number' ? mode : this._BLEND_MODE_STRINGS.indexOf(mode);
+        if (Number.isInteger(id) && id >= 0 && id < this._BLEND_MODE_STRINGS.length) return id;
+        throw new Error(
+            `WeedJS: layer "${layerName}" ${key} ${JSON.stringify(mode)} is not a blend mode this build draws; use one of ` +
+                `${this._BLEND_MODE_STRINGS.join(', ')} (BLEND_MODES)`,
+        );
     }
 
     static _getConfigSABSize() {
@@ -772,6 +811,7 @@ export class Layer {
         size += this.MAX_LAYERS;      // feederKind Uint8
         size = Math.ceil(size / 4) * 4;
         size += this.MAX_LAYERS * 4;  // visibleDirty Int32
+        size += this.MAX_LAYERS * 4;  // presentationDirty Int32
         return size;
     }
 
@@ -1557,16 +1597,17 @@ export class Layer {
         );
 
         this._zIndex[id] = config.zIndex !== undefined ? config.zIndex : id;
-        this._blendModeId[id] = config.blendMode ?? LAYER_DEFAULTS.blendMode;
+        this._blendModeId[id] = this._blendModeIdOf(config.blendMode ?? LAYER_DEFAULTS.blendMode, name, 'blendMode');
         this._hasShader[id] = config.shader ? 1 : 0;
         const ySorting = config.ySorting !== undefined ? config.ySorting : LAYER_DEFAULTS.ySorting;
         this._ySorting[id] = ySorting ? 1 : 0;
         this._resolution[id] = config.resolution ?? LAYER_DEFAULTS.resolution;
         layer.alpha = config.alpha ?? LAYER_DEFAULTS.alpha;
-        this._containerBlendId[id] = config.shader?.containerBlend ?? 0;
+        this._containerBlendId[id] = this._blendModeIdOf(config.shader?.containerBlend ?? 0, name, 'shader.containerBlend');
         this._available[id] = 1;
         this._visible[id] = 1;
         if (this._visibleDirty) this._visibleDirty[id] = 0;
+        if (this._presentationDirty) this._presentationDirty[id] = 0;
 
         this._byName[name] = layer;
         this._byId[id] = layer;
@@ -2008,6 +2049,7 @@ export class Layer {
         this._visible = null;
         this._feederKind = null;
         this._visibleDirty = null;
+        this._presentationDirty = null;
         this._spriteQueueBits = 0;
         this._feedCountSAB = null;
         this._feedCount = null;

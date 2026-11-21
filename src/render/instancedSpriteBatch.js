@@ -1713,6 +1713,17 @@ export class InstancedSpriteBatch {
     this._opAllowed = !!on;
   }
 
+  /**
+   * DBG-2: the entities layer's blend (layer.blendMode) on the batch's mesh and its edge pass; the depth twins made later
+   * take it from the blend state. The opaque pass drops itself while it is not 'normal' (_commitOpaque).
+   * @param {string} mode
+   */
+  setLayerBlend(mode) {
+    this.mesh.blendMode = mode;
+    this._blendState.blendMode = mode;
+    if (this.edgeMesh !== null) this.edgeMesh.blendMode = mode;
+  }
+
   /** E-448: this frame draws no opaque pass (the batch's own mesh blends every instance, untested, as without it). */
   dropOpaquePass() {
     if (this.opaqueHost === null) return;
