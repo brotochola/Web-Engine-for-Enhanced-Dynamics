@@ -13,7 +13,15 @@ import { LootableComponent } from '../components/lootableComponent.js';
 import { PersonComponent } from '../components/personComponent.js';
 import { PersonAnimationFSM } from '../fsm/personAnimationFsm.js';
 import { LIGHT3D } from '../light3d.js';
-import { DEATH_BLOOD, MUZZLE_FLASH, MUZZLE_SPRITE, SHOT_SPARKS, WOUND_BLOOD } from '../effectPresets.js';
+import {
+  DEATH_BLOOD,
+  MACHINE_GUN_BULLET,
+  MUZZLE_FLASH,
+  MUZZLE_SPRITE,
+  PISTOL_BULLET,
+  SHOT_SPARKS,
+  WOUND_BLOOD,
+} from '../effectPresets.js';
 import {
   ParticleEmitter,
   SpriteSheetRegistry,
@@ -72,6 +80,7 @@ export class Person extends Lootable {
   static WEAPONS = {
     PISTOL: {
       damage: 0.66,
+      bullet: PISTOL_BULLET, // its bullet's preset, the same damage (E-541)
       cooldown: 500,
       range: 180,
       rangeSq: 180 ** 2,
@@ -80,6 +89,7 @@ export class Person extends Lootable {
     },
     MACHINE_GUN: {
       damage: 0.2,
+      bullet: MACHINE_GUN_BULLET, // its bullet's preset, the same damage (E-541)
       cooldown: 133,
       range: 500,
       rangeSq: 500 ** 2,
@@ -329,22 +339,8 @@ export class Person extends Lootable {
     }
     const vx = shotDirX * speed;
     const vy = shotDirY * speed;
-    BulletPool.spawn({
-      x: muzzleX,
-      y: muzzleY,
-      offsetY: muzzleHeightPx,
-      vx,
-      vy,
-      damage: weapon.damage,
-      ownerId: i,
-      shooterEntityType: Transform.entityType[i],
-      texture: 'bullet',
-      scale: 1,
-      anchorX: 1,
-      anchorY: 0.5,
-      trailWidth: 4,
-      // layerId: Layer.getId('bullets')
-    });
+    // The weapon's bullet preset holds its look and damage (E-541: no config object per shot); i is the shooter.
+    BulletPool.spawnPreset(weapon.bullet, muzzleX, muzzleY, muzzleHeightPx, vx, vy, i);
 
     if (weapon.sound) {
       SoundManager.play(
