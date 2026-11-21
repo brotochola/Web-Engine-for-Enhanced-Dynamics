@@ -24162,7 +24162,8 @@
       "records": [
         "R-1528",
         "R-1586",
-        "R-1670"
+        "R-1670",
+        "R-1674"
       ],
       "refs": [],
       "id": "N-314",
@@ -24171,8 +24172,8 @@
       "kind": "bug",
       "area": "save",
       "date": "2026-11-19",
-      "statusText": "in part 2026-11-19 (R-1528): the restart 3.6 s; logic0's restoreSave (1.7 s) and the load (1.5 s) left",
-      "next": "Time the save's parts (pauseAndSettle, instance fields, the decals' PNG tiles, collectSerializableEntities, the codec) and the load's (destroy, the boot, restoreSave on logic0 with allTypes, the prime) in one Predator run, then fix the largest; the restart's console line gives the two totals."
+      "statusText": "in part 2026-11-19 (R-1528): the restart 3.6 s. 2026-11-21 (E-539, R-1674): the load 4.7 -> 2.0 s at crowd 1 and 8.5 -> 2.4 s at crowd 2.5 in the page, as fast as a fresh start; the save 2.9 and 3.7 s left.",
+      "next": "The save: Decal.packSnapshot encodes its PNG tiles one after another (2.56 s in R-1528); issue every convertToBlob before awaiting any, and time it with tests/bench/saveLoadTimer.mjs at crowd 1 and 2.5."
     },
     {
       "records": [
@@ -24563,65 +24564,67 @@
     },
     {
       "records": [
-        "R-1671"
+        "R-1671",
+        "R-1673"
       ],
       "refs": [],
       "id": "E-537",
       "title": "Index statics for the APIs only an instance has: sendTo, emit, sendMessageToScene, isCollidingWith, addDecoration and Decoration's setters, AdobeAnimComponent, MeshRenderer, setLayer",
-      "status": "running",
+      "status": "kept-hygiene",
       "kind": "dx",
       "area": "logic",
       "date": "2026-11-20",
-      "rank": 9,
-      "result": "",
+      "result": "Kept 2026-11-21 (5856f012, R-1671, R-1673): every instance-only API has an index static that does the same work (GameObject, Decoration, AdobeAnimComponent, MeshRenderer); Adobe reads make no object; in the batch gate Predator logic -31.7 % and nothing worse.",
       "statusText": "Filed 2026-11-20 from the instance survey: each forces GameObject.get(i) from ECS code (Messages is not exported; SceneBridge needs a sender object; addDecoration makes a facade and a Map entry per decoration, read or not; AdobeAnimComponent's frameCount and currentFrame allocate an object per read)",
-      "next": "GameObject.sendTo(from, to, name, a, b, c, d), GameObject.emit(i, name, data), GameObject.isCollidingWith(i, other), GameObject.addDecoration(i, ...), Decoration.setAlpha(id, a) and the rest, AdobeAnimComponent.play(i, clip, loop), MeshRenderer.setTint(i, v); the instance forms delegate (E-533's pattern)."
-    },
-    {
-      "records": [],
-      "refs": [],
-      "id": "E-538",
-      "title": "Particle and flash presets: a firefight's per-emit config literals and their {min, max} ranges are garbage on the logic workers",
-      "status": "open",
-      "kind": "speed",
-      "area": "logic",
-      "date": "2026-11-20",
-      "rank": 11,
-      "result": "",
-      "statusText": "Filed 2026-11-20 from the instance survey: one Predator shot makes about 5 config literals and 10 range objects (3 emits, a flash, a bullet); the engine copies them into a scratch, but they escape (_spawn is too big to inline). BulletPool already avoids it (E-286)",
-      "next": "ParticleEmitter.define(cfg) -> id and emitPreset(id, x, y, z, dirX, dirY, count), the same for Flash; heap-sample the mixed battle (tests/bench/heapSampleWorkers.mjs) before and after."
+      "next": "Nothing left for the API; the guide's ECS table lists every static."
     },
     {
       "records": [
-        "R-1670"
+        "R-1673"
+      ],
+      "refs": [],
+      "id": "E-538",
+      "title": "Particle and flash presets: a firefight's per-emit config literals and their {min, max} ranges are garbage on the logic workers",
+      "status": "kept",
+      "kind": "speed",
+      "area": "logic",
+      "date": "2026-11-20",
+      "result": "Kept 2026-11-21 (506f8f36, R-1673): particle and flash presets (define, emitPreset, spawnPreset), one compiled core for both forms; Predator's logic worker allocates 440 -> 49 KB a frame in the mixed battle, and the batch gate read logic 29.0 -> 20.2 ms (-31.7 %, one logic worker); Predator's effects bit-identical.",
+      "statusText": "Filed 2026-11-20 from the instance survey: one Predator shot makes about 5 config literals and 10 range objects (3 emits, a flash, a bullet); the engine copies them into a scratch, but they escape (_spawn is too big to inline). BulletPool already avoids it (E-286)",
+      "next": "The shot's BulletPool literal is next (E-541); one literal particle a call is 3-6 % slower in the kernel (no scene reads it yet)."
+    },
+    {
+      "records": [
+        "R-1670",
+        "R-1673",
+        "R-1674"
       ],
       "refs": [],
       "id": "E-539",
       "title": "Save and restore by columns: a save holds an object per entity and component, and the restore recomputes each component's schema fingerprint per entity",
-      "status": "running",
+      "status": "kept",
       "kind": "speed",
       "area": "logic",
       "date": "2026-11-20",
-      "rank": 16,
-      "result": "",
+      "result": "Kept 2026-11-21 (88a510fe, R-1670, R-1674): saves by columns (format 6); Predator's load in the page 4.7 -> 2.0 s at crowd 1 and 8.5 -> 2.4 s at crowd 2.5 (the restore itself about nothing), save 3.6 -> 2.9 s and 5.7 -> 3.7 s; every column bit for bit.",
       "statusText": "Filed 2026-11-20 from the instance survey: at Predator's 42k entities about 1M objects to save; on restore about 0.4M fingerprint computations and 12M schema entries (entitySaveSnapshot.js, binarySaveCodec.js, worldBufferSave.js)",
-      "next": "First a per-load plan cache (fingerprint and field specs once per class); then a columnar ENTITIES section (per type, an index list and a gathered typed array per field, transferable)."
+      "next": "The save's decal tiles (N-314)."
     },
     {
       "records": [
-        "R-1672"
+        "R-1672",
+        "R-1673"
       ],
       "refs": [],
       "id": "E-540",
       "title": "Instance housekeeping for ECS scenes: the instance tables allocated on first use, the facades' owner dropped, start() removed, debug checks that walk every spawn",
-      "status": "running",
+      "status": "kept-hygiene",
       "kind": "refactor",
       "area": "logic",
       "date": "2026-11-20",
-      "rank": 10,
-      "result": "",
+      "result": "Kept 2026-11-21 (5856f012, R-1672, R-1673): instance tables allocated by the first instance (0 MB in an ECS realm at 57 600 slots, 0.9 MB before in Node), no owner, no start(); in the batch gate nothing worse.",
       "statusText": "Filed 2026-11-20 from the instance survey: three Array(N) per logic worker and two on the page stay all null in an ECS scene (about 1.8 MB at 57.6k slots; gameObjects and GameObject.instances hold the same); every facade gets .owner after construction (read only for the mesh bit and tickInterval); start() is unused and undocumented; noteSpawned walks ~27 keys per spawn in debug builds",
-      "next": "Alias gameObjects to GameObject.instances or allocate on the first _makeInstance; read the mesh bit and tickInterval from typeBitsOf and classByType, then drop owner; remove start(); note spawns by class."
+      "next": "Nothing left."
     },
     {
       "records": [
@@ -24654,6 +24657,32 @@
       "date": "2026-11-21",
       "statusText": "found 2026-11-21 by E-539's agent while moving saves to columns (R-1670): the behaviour predates the columns; a spawn handed to another logic worker carries its row (rowRestore) and applies it there, after logic0 remapped the ids of everything it placed",
       "next": "A test first: a player's load (not exact indices) of a scene with a forceProcessOnLogicWorker class holding entity-id fields and a parent; then remap those rows on the receiving worker too (the old -> new table travels with the hand-off), or remap after every worker acked its spawns."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-541",
+      "title": "Bullet presets: Predator's shot still makes its BulletPool.spawn literal (34 KB a frame on each logic worker in the mixed battle), because shoot's inline budget is spent before the spawn front",
+      "status": "open",
+      "kind": "speed",
+      "area": "logic",
+      "date": "2026-11-21",
+      "rank": 8,
+      "statusText": "Filed 2026-11-21 from the ECS-finish final pass (Chrome heap sampling, Predator ?mix=1): after E-538 the logic worker allocates 48.9 KB a frame (439.9 before), 34.4 KB of it in Person.shoot: the BulletPool.spawn({...}) literal, which E-286's front removes only where TurboFan inlines it, and shoot calls many fronts (two emitPreset, spawnPreset, SoundManager.play).",
+      "next": "BulletPool.define(config) -> id and spawnPreset(id, x, y, offsetY, vx, vy, damage, ownerId, shooterType) through a Float64Array, as E-538 did for particles and flashes; Predator's shot moved to it; a Node allocation test and the same Chrome heap sample before and after."
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-542",
+      "title": "SoundManager.play boxes its doubles: gain and pan written into the shared _spatialResult object and passed to _writeSlot, which TurboFan does not inline (7.7 KB a frame on each logic worker in Predator's mixed battle)",
+      "status": "open",
+      "kind": "speed",
+      "area": "audio",
+      "date": "2026-11-21",
+      "rank": 9,
+      "statusText": "Filed 2026-11-21 from the ECS-finish final pass (Chrome heap sampling, Predator ?mix=1): play allocates 7.7 KB a frame on each logic worker, the second allocator after the shot's literal (E-541).",
+      "next": "The spatial result and the slot's doubles through a module Float64Array, integers across the calls (CLAUDE.md, E-85, E-66); a heap sample before and after, audioStormScene for the cost."
     }
   ],
   "records": [
@@ -40600,6 +40629,24 @@
       "title": "E-540 merged: instance tables allocated by the first instance (0 MB in an ECS realm, 0.9 MB before), no owner, no start()",
       "verdict": "note",
       "text": "**E-540 built and merged (5856f012): instance housekeeping for ECS scenes.** Agent A, commits 5c5c752c (entityInstanceBootMicrobench reports the table's length), bd459394, 528a4985, 5749ac99, 81a43df8, bc3d1024.\n\n- **Instance tables on first use:**\n  - A logic worker's `gameObjects` is now `GameObject.instances` itself.\n  - That table, each class's `instances` and the page's stay empty until their first instance allocates them whole.\n  - An empty table is `new Array(1).fill(null)` cut to length 0, which has the map of a full one (`%HaveSameMap`, tested), so the tick loops' loads stay monomorphic.\n  - At 57 600 slots a realm held 0.9 MB at boot in Node (Chrome's 4-byte elements: 0.69 MB a logic worker, 0.46 on the page). An ECS scene now holds none, and an object scene holds two tables per logic worker instead of three.\n- **Components hold no owner:** an FSM reads its entity's tickInterval by type (entityTypes.js entityClassOfType).\n- **start() removed:** nothing used it.\n- **Debug build:** devChecks notes a class's shape at its first spawn only.\n- **Demos:** three page-side demos that read `EntityClass.instances` now walk entities by index. Two of them dereferenced `null.index` since E-209: adobeAnimate, headlights, sunStreet.\n- **Tests:** instanceTablesOnFirstUse and componentNoOwner, plus 8 updated. Suites on the merge: node 3400 of 3400, demos 127 of 127. spawnPathMicrobench was too noisy beside the other agents to read."
+    },
+    {
+      "id": "R-1673",
+      "date": "2026-11-21",
+      "time": "16:36",
+      "timeFrom": "recorded",
+      "title": "The ECS finish's final pass: Predator logic 29.0 -> 20.2 ms (-31.7 %, one logic worker), the logic worker's garbage 440 -> 49 KB a frame, no steady deopt",
+      "verdict": "kept",
+      "text": "**The ECS-finish plan's final pass (ECS_FINISH_PLAN.md):** main da2b8eb5 (before the three agents) against de22cb18. That covers E-537, E-538, E-539 and E-540 merged, E-531's off lights (136a9667) and Predator's lamps off by day (bec42d50). Full revisions on both sides (Predator's code changed too), headed, `--pool`, on AC, nothing else running, 16:36 to 16:51. No A/A this session; Predator's run-to-run spread is 8 to 13 % a worker.\n\n- **Gate, Predator `crowd=2.5&logicWorkers=1&dayCycle=0` (noon), 4 pairs, FAIL (load):**\n\n  | worker | before | after | paired | vs the others |\n  | --- | --- | --- | --- | --- |\n  | logic (one worker) | 29.045 ms | 20.228 ms | -31.7 %, worse 0/4, cv 11/10 % | -18.1 %, lower 4/4 |\n  | spatial | 14.526 | 12.976 | -10.8 % | |\n  | physics | 15.465 | 13.962 | -11.1 % | |\n  | renderer | 7.273 | 6.190 | -15.3 % | |\n  | pre-render | 9.815 | 7.998 | -17.0 % | |\n\n  The load keys moved for two reasons:\n  - GPU_SHADOW_LIGHTS 47.8 -> 35.4: the lamps are off at noon.\n  - ACTIVE_PARTICLES -19.9 %, DECAL_TILES_DIRTY -21.5 %, BODY_COUNT -2.3 %: with one logic worker over its frame both ways (29 and 20 ms), the fight runs at another pace.\n\n  It is not E-538. The mixed battle with two logic workers (`mix=1&dayCycle=0`, 2 pairs, logic under its frame on both sides) read ACTIVE_PARTICLES 7785 -> 7802 (+0.2 %) and BODY_COUNT +1.0 %, with logic 5.414 -> 4.497 ms (under the floor). At crowd 1 the lamps alone moved: GPU_SHADOW_LIGHTS 48 -> 17.8, BODY_COUNT +0.2 %.\n- **Chrome heap sampling of the logic worker,** Predator `mix=1`, 15 s warm-up, 10 s sample: 25 817 KB/s and 439 873 B/frame -> 2 873 KB/s and 48 949 B/frame (-89 %).\n  - What went: the shot's sparks and muzzle emits (shootingSparks, `_spawn`, copyEmitFields, rng: about 300 KB a frame).\n  - What is left: Person.shoot 34.4 KB a frame (its BulletPool.spawn literal: E-541) and SoundManager.play 7.7 KB (E-542). Pre-render allocates under 1 KB a frame either way.\n- **Deopts and ICs** (`crowd=2.5&logicWorkers=1&mix=1`, --log-deopt --log-ic): no steady deopt loop. After 10 s only single deopts are left (1 to 5 each, dependency changes and OSR), none in the code these items changed.\n- **Bundles** (8c838168): the eight bundles' smokes pass, test:node:bundle 358 of 358 eight times, and checkBundleSetters ok (set x 69 bytes of 75)."
+    },
+    {
+      "id": "R-1674",
+      "date": "2026-11-21",
+      "time": "16:45",
+      "timeFrom": "recorded",
+      "title": "Predator's load in the page 4.7 -> 2.0 s at crowd 1 and 8.5 -> 2.4 s at crowd 2.5; save 3.6 -> 2.9 s and 5.7 -> 3.7 s (decal tiles left)",
+      "verdict": "kept",
+      "text": "**Predator's save and load in the page, before and after E-539** (tests/bench/saveLoadTimer.mjs 351c95d1, `--root` for the base): headed, `dayCycle=0`, 20 s of play, then 3 rounds of `scene.saveGame` and `scene.loadGame` with 3 s of play between them, 16:45 to 16:49.\n\n| crowd (entities) | save before | save after | load before | load after | fresh scene load |\n| --- | --- | --- | --- | --- | --- |\n| 1 (16 400) | 3509 to 3638 ms | 2921 to 2951 | 4709 to 4775 | 2016 to 2104 | 2067 / 2147 |\n| 2.5 (35 000) | 5624 to 5726 | 3656 to 3687 | 8388 to 8513 | 2371 to 2484 | 2377 / 2393 |\n\n- **Load:** a load now costs about what a fresh start of the scene costs. The restore itself fell from about 2.7 s at crowd 1 and 6.1 s at crowd 2.5 to about nothing.\n- **Size:** a stored save 3.69 -> 2.44 MB at crowd 1, 8.83 -> 5.92 MB at crowd 2.5.\n- **Save:** still 2.9 s at crowd 1 and 3.7 s at crowd 2.5. Its largest known part is Decal.packSnapshot's PNG tiles, encoded one after another (2.56 s in R-1528). That is N-314's next step: every tile's convertToBlob issued before any is awaited, timed with this tool."
     }
   ],
   "leads": [
