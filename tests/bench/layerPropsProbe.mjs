@@ -10,7 +10,7 @@
  *   node tests/bench/layerPropsProbe.mjs --scene /tests/bench/stressScenes/dxCaptureScene.js --scene-export DxCaptureScene \
  *     --query shadowMaps=1 --set castedShadows.visible=false --set entities.alpha=0.5 [--vs <rev>] [--save <dir>]
  *
- * --set <layer>.<prop>=<value> (repeatable): visible (true/false), alpha (a number), blendMode or containerBlendMode
+ * --set <layer>.<prop>=<value> (repeatable): visible (true/false), alpha or zIndex (a number), blendMode or containerBlendMode
  * (a name). --vs <rev>: the scene and src/ from that revision (a src-only worktree, revWorktree.mjs) instead of this
  * tree. --wait-ms (default 3000) before the first capture, --step-ms (default 800) after each change. Headed Chrome
  * (a real GPU); --headless for a check without one. --save <dir>: each capture as a PNG. Exit 1 on a page error.
@@ -49,10 +49,10 @@ function parseCli(argv) {
 }
 
 function parseSet(text) {
-  const m = /^([^.=]+)\.(visible|alpha|blendMode|containerBlendMode)=(.*)$/.exec(text || '');
-  if (!m) throw new Error(`layerPropsProbe: --set wants <layer>.<visible|alpha|blendMode|containerBlendMode>=<value>, got ${text}`);
+  const m = /^([^.=]+)\.(visible|alpha|zIndex|blendMode|containerBlendMode)=(.*)$/.exec(text || '');
+  if (!m) throw new Error(`layerPropsProbe: --set wants <layer>.<visible|alpha|zIndex|blendMode|containerBlendMode>=<value>, got ${text}`);
   const [, layer, prop, raw] = m;
-  const value = prop === 'visible' ? raw === 'true' : prop === 'alpha' ? Number(raw) : raw;
+  const value = prop === 'visible' ? raw === 'true' : prop === 'alpha' || prop === 'zIndex' ? Number(raw) : raw;
   return { layer, prop, value, label: text };
 }
 
