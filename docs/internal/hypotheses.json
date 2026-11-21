@@ -24642,6 +24642,18 @@
         "frameChainWait",
         "flaky test"
       ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-327",
+      "title": "A pinned class on a player's load: the worker it is handed to writes its saved row after logic0's id remap, so the remapped ids and the geometry on those entities are overwritten with the saved ones",
+      "status": "open",
+      "kind": "bug",
+      "area": "save",
+      "date": "2026-11-21",
+      "statusText": "found 2026-11-21 by E-539's agent while moving saves to columns (R-1670): the behaviour predates the columns; a spawn handed to another logic worker carries its row (rowRestore) and applies it there, after logic0 remapped the ids of everything it placed",
+      "next": "A test first: a player's load (not exact indices) of a scene with a forceProcessOnLogicWorker class holding entity-id fields and a parent; then remap those rows on the receiving worker too (the old -> new table travels with the hand-off), or remap after every worker acked its spawns."
     }
   ],
   "records": [
