@@ -22391,17 +22391,18 @@
         "R-1333",
         "R-1336",
         "R-1337",
-        "R-1340"
+        "R-1340",
+        "R-1684"
       ],
       "result": "",
-      "next": "Captures: a house cut by the screen's bottom edge with the sun from the south, WebGL and WebGPU, main (bug) against exp/n272-branchfree (v2) against v3 (v3 must match v2 but for the 1-px border); then the barrio at night on the four GPUs (GTX 1650, Radeon, HD 620, MX110), main against v3. Later: WebGPU's march could drop its per-step bounds test too (the ring does it).",
+      "next": "",
       "id": "N-272",
       "kind": "bug",
       "area": "render",
-      "status": "running",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "WebGL's self-shadow march reads the face map's edge texel, clamped, for every step past the screen: near the edge the sun's side looks at (the bottom, with the sun in the south), pixels take shadows from whatever wall stands at the edge, and they slide as the camera moves; WebGPU's march skips those steps",
-      "statusText": "v3 built 2026-11-18 on exp/n272-ring (d74a5d7e): the face map drawn a texel inside its edges (Pixi's frame, the transform a texel back), so the clamp-to-edge reads past the screen land on the empty ring; the march is main's (both earlier fixes, a per-step test and the exit worked out before the loop, cost the HD 620 about 4.5 %, R-1337); the light pass reads a pixel's own face and id a texel inside. Not browser-checked or measured yet"
+      "statusText": "Fixed 2026-11-21 (R-1684): v3 merged, the face map drawn a texel inside its edges so WebGL's march reads the empty ring past the screen; the march is main's (no GPU cost)."
     },
     {
       "id": "DX-ONELIGHT",
@@ -23072,7 +23073,7 @@
       "id": "N-291",
       "title": "Moving the camera changes the shading of things near the screen's right edge, as it did near the bottom edge: likely N-272's (the self-shadow march reads the face map's edge texel past the screen) with the sun's march toward that edge",
       "status": "open",
-      "statusText": "seen by the owner 2026-11-18 in the barrio (localhost:8000, main 702e6842): near the right edge the shading changes as the camera moves; the bottom edge did the same (N-272's sighting). N-272's fix is not on main (v3 on exp/n272-ring, unmeasured), so main's WebGL march still reads the edge texel; the sun's direction decides which edge shows it. Not checked: added at the owner's ask, nothing touched",
+      "statusText": "2026-11-21 (R-1684): N-272 v3 is on main now; films of the barrio panning (main beside v3, WebGL and WebGPU, D:/tmp/films/n272-barrio-*.mp4) wait for the owner's eye. If the right edge still drifts, find what else reads past the screen there (light tiles, lightEdges, the half-resolution light pass).",
       "date": "2026-11-18",
       "result": "",
       "next": "Pan the barrio by day with the sun's march toward the right edge (film the drift), main against exp/n272-ring (N-272 v3, the empty ring), WebGL and WebGPU. If v3 fixes both edges, close it with N-272; if not, find what else reads past the screen on that side (the light tiles, lightEdges, the half-resolution light pass).",
@@ -23083,7 +23084,9 @@
         "right edge shading",
         "screen edge shading drifts"
       ],
-      "records": []
+      "records": [
+        "R-1684"
+      ]
     },
     {
       "id": "DX-DEBUGUI",
@@ -40803,6 +40806,15 @@
       "title": "A player's load remaps a pinned class's ids after its worker wrote their rows: a barrier between the load's two halves",
       "verdict": "kept",
       "text": "**N-327 fixed (14f0f43b, merged ff3b77d0): a player's load remaps a pinned class's entities after the worker they went to has written their rows.** logic0's load runs in two halves, _restoreSpawn and _restoreFinish, with a barrier between them for every logic worker that took pinned spawns: sent on the same port after the spawns and answered once that worker has read them (a port is read in order), so chains, fixtures, meshes, tweens, the id remaps and the parents' links run after the saved rows are written, not before. The world is paused during a load; an unanswered barrier ends after 10 s with an error.\n\n- The test first (savePinnedRemap.test.js): a pinned class with entity-id fields (a Target, a pinned pair, none), saved, loaded at new indices, logic1 played by the test. Before the fix: Pinned 28 -> 31 kept its saved target 4 (expected 23). After: every id remapped, none stays none.\n- saveColumnsRoundTrip's hand-off test answers the barrier now.\n- Node 3430/3430, demos 143/143. No sitting: the load path only, not a frame's."
+    },
+    {
+      "id": "R-1684",
+      "date": "2026-11-21",
+      "time": "20:51",
+      "timeFrom": "recorded",
+      "title": "N-272 v3 merged: the face map a texel inside its edges; captures change only pixels by the edges (149 px WebGL, 132 WebGPU); barrio films for N-291",
+      "verdict": "kept",
+      "text": "**N-272 v3 merged (d74a5d7e cherry-picked as 5d8b2840, merged on main 2026-11-21): the face map is drawn a texel inside its edges, so WebGL's clamp-to-edge reads past the screen land on the empty ring.** The march is main's (v1 and v2's per-step test cost the HD 620 about 4.5 %, R-1337); the light pass reads a pixel's own face and id a texel inside.\n\n- Captures, main against v3, selfShadowStressScene `hour=12&still=1` (nothing moves), captureDiffWhere (a8929be5): WebGL 149 of 921 600 px differ, 100 in the 1-px border, 5 within 4 px, 28 within 16 px, 16 inside; WebGPU 132 (100, 0, 16, 16 inside). The change touches only what lies by the screen's edges, on both backends.\n- The barrio (Buenos Aires, noon, people and cars off) differs about equally on both backends (3 307 and 3 565 px, mostly inside: trees and water move), so a still capture there cannot tell the fix; films of the barrio panning (pan=60, panY=60), main beside v3, WebGL and WebGPU, are at D:/tmp/films/n272-barrio-*.mp4 for the owner's eye (N-291).\n- No GPU sitting: the march and its steps are main's; the ring adds one texel of border to the face map.\n- Node 3433/3433 (selfShadowRing.test.js), demos 143/143."
     }
   ],
   "leads": [
