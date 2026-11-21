@@ -6,6 +6,25 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 21 November 2026 (afternoon) — A Crowd That Could Not See Itself
+
+The ASUS session's counter for full grid cells had a question waiting on this PC: how many of Predator's entities
+fall out of the neighbour lists, and what cap would fix it. Predator capped its cells of 128 px at 32 entities, with a
+comment from its first commit, "this is very important!!".
+
+**Every crowd overflowed, even the default one.** At crowd 1 about 2 900 entries a frame did not fit their cell. That
+is against 17 600 bodies. At crowd 2.5 it was 7 600. Those entities were in nobody's neighbour list. Soldiers missed
+the civilians standing next to them, and flocking missed the neighbours it was supposed to push away from.
+
+**64 left none, and cost nothing.** In one sitting at crowd 2.5 the cap went from 32 to 48, 64, and 96 px cells:
+- At 48, about 530 entries a frame still did not fit.
+- 96 px cells at 32 left about 150.
+- 64 left none, and spatial dropped 10.8 % and physics 24 %. Part of that drop is the fight itself: once the soldiers
+  saw their neighbours they shot more, and 9.5 % fewer bodies were alive by the end of the window.
+
+The comment was right that the number matters; it was wrong about which way. Predator now uses the engine's default
+of 64, and its numbers from before this change are not comparable with later ones.
+
 ## Friday 20 November 2026 (afternoon) — A Second Laptop on the Bug Queue
 
 The owner split the work between his two machines. This PC keeps the speed and GPU work. The ASUS laptop (an
