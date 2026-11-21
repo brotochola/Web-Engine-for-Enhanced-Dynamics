@@ -24,46 +24,25 @@ export {
 } from '../box2d/box2dConstants.js';
 
 /**
- * Blend mode enum — all PixiJS-supported blend modes.
- * Numeric values stored directly in the Layer config SAB (Uint8).
- * Indices match Layer._BLEND_MODE_STRINGS for id-to-string translation.
+ * Blend modes a layer can draw with (layer.blendMode, layer.containerBlendMode, config blendMode and
+ * shader.containerBlend). Only the modes this build draws: Pixi's advanced modes (overlay, darken, difference ...) are not
+ * registered here and drew as normal, so they were dropped (DBG-2, the owner's call of 2026-11-18).
+ * Numeric values stored directly in the Layer config SAB (Uint8); indices match Layer._BLEND_MODE_STRINGS.
  * @readonly
  * @enum {number}
  */
 export const BLEND_MODES = Object.freeze({
   NORMAL: 0,
-  INHERIT: 1,
-  ADD: 2,
-  MULTIPLY: 3,
-  SCREEN: 4,
-  DARKEN: 5,
-  LIGHTEN: 6,
-  ERASE: 7,
-  COLOR_DODGE: 8,
-  COLOR_BURN: 9,
-  LINEAR_BURN: 10,
-  LINEAR_DODGE: 11,
-  LINEAR_LIGHT: 12,
-  HARD_LIGHT: 13,
-  SOFT_LIGHT: 14,
-  PIN_LIGHT: 15,
-  DIFFERENCE: 16,
-  EXCLUSION: 17,
-  OVERLAY: 18,
-  SATURATION: 19,
-  COLOR: 20,
-  LUMINOSITY: 21,
-  NORMAL_NPM: 22,
-  ADD_NPM: 23,
-  SCREEN_NPM: 24,
-  NONE: 25,
-  SUBTRACT: 26,
-  DIVIDE: 27,
-  VIVID_LIGHT: 28,
-  HARD_MIX: 29,
-  NEGATION: 30,
-  MIN: 31,
-  MAX: 32,
+  ADD: 1,
+  MULTIPLY: 2,
+  SCREEN: 3,
+  ERASE: 4,
+  NORMAL_NPM: 5,
+  ADD_NPM: 6,
+  SCREEN_NPM: 7,
+  NONE: 8,
+  MIN: 9,
+  MAX: 10,
 });
 
 /**

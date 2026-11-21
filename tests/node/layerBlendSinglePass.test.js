@@ -1,7 +1,7 @@
 // N-79: a layer drawn in one pass (a sprite layer without a look, a MESH layer's fill, a world-rect mesh) draws with
 // its blendMode, unless its config sets shader.containerBlend. Before, those layers took the container blend, 0
 // (normal) when the config had no shader, and blendMode did nothing. Through the Pixi worker's real init of the custom
-// layers; the layers panel's blend select still changes the blend at run time.
+// layers; the layers panel's blend select changes the blend at run time through layer.blendMode (DBG-2).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -128,11 +128,15 @@ test('the layer keeps its blend when the layer refs are built again', async () =
   assert.equal(drawn(px, 'meshForced'), 'add');
 });
 
-test('the layers panel still changes the blend at run time', async () => {
+test('the layers panel changes the blend at run time through the Layer setter, and it stays (DBG-2)', async () => {
   const px = await initPixi(scene());
   quietly(() => px.buildLayerRefsMap());
-  px.handleSetLayerProps({ layer: 'glow', blendMode: 'screen' });
+  Layer.get('glow').blendMode = 'screen';
+  Layer.get('meshGlow').blendMode = 'add';
+  px.syncLayerPresentationFromSharedState();
   assert.equal(drawn(px, 'glow'), 'screen');
-  px.handleSetLayerProps({ layer: 'meshGlow', blendMode: 'add' });
+  assert.equal(drawn(px, 'meshGlow'), 'add');
+  quietly(() => px.buildLayerRefsMap());
+  assert.equal(drawn(px, 'glow'), 'screen', 'the refs built again keep it');
   assert.equal(drawn(px, 'meshGlow'), 'add');
 });
