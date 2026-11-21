@@ -26,6 +26,7 @@ function bind(xs, ys) {
   LightEmitter.initializeArrays(new SharedArrayBuffer(LightEmitter.getBufferSize(N)), N);
   LightEmitter.active.fill(1);
   LightEmitter.radius.fill(100);
+  LightEmitter.brightness.fill(1); // a spawned light's (resetLightEmitterRow); 0 is off (E-531)
   FlashComponent.active = new Uint8Array(N);
 }
 
