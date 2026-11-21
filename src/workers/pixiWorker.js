@@ -2065,7 +2065,12 @@ class PixiRenderer extends AbstractWorker {
     // E-448: the opaque pass needs the canvas's depth and the entities drawn in one piece: not through a SCREEN layer
     // (the stage's target there has no depth on WebGL), nor in chunks around GPU particle groups (last frame's).
     // E-502: nor on Intel's integrated or tile-based GPUs, unless debug.opaquePass forces it (_opaqueOn, set at GL init).
-    this.entitiesBatch.setOpaqueAllowed(this._opaqueOn && !this._entityChunksActive && !this._screenLayersShown());
+    // DBG-3: nor while the layer fades: the pass draws solid pixels with blending off, so a layer alpha under 1 left them
+    // opaque (only the soft edges faded) until 0, where Pixi skips the container. The batch then blends every pixel.
+    const root = this._entitiesRoot;
+    this.entitiesBatch.setOpaqueAllowed(
+      this._opaqueOn && !this._entityChunksActive && !this._screenLayersShown() && (root === null || root.alpha >= 1),
+    );
     // And it draws when its rows cover enough of the canvas at the camera's zoom to pay for their second vertex pass.
     this.entitiesBatch.setOpaqueView(this._renderZoom || 1, this.canvasWidth * this.canvasHeight);
 
@@ -3283,6 +3288,8 @@ class PixiRenderer extends AbstractWorker {
       // On the stage a MESH layer's textured rows are a mesh of their own. Through an RT, the Sprite holds the alpha.
       const cl = this._customLayers[i];
       if (cl && cl.uvFillBatch && !cl.rt) cl.uvFillBatch.mesh.alpha = Layer._alpha[i];
+      // DBG-3: the unshaded pixels are added where the light is short of them, so they fade with the light they make up for.
+      if (name === 'lighting' && this._unshadedComposite !== null) this._unshadedComposite.alpha = Layer._alpha[i];
     }
     this.syncSunLayerAlpha();
   }
@@ -3713,12 +3720,16 @@ class PixiRenderer extends AbstractWorker {
   _createUnshadedLayer() {
     const width = this.canvasWidth;
     const height = this.canvasHeight;
+    // DBG-3: it fades with the lighting layer (syncLayerAlphaFromSharedState), from the alpha that layer has now.
+    const lightingId = Layer.lighting?.id;
+    const alpha = lightingId !== undefined && Layer._alpha ? Layer._alpha[lightingId] : 1;
     this.unshadedRT = PIXI.RenderTexture.create({ width, height });
     if (this._lightEdges !== null) {
       // DX-LIGHTEDGES: the two halves over the light host's stencil marks, drawn right after it (same zIndex, added later).
       this._unshadedEdges = unshadedEdgesHost(this._lightEdgesEnv(), this._lightEdgesGeometry, this.lightingRT.source, this.unshadedRT.source);
       const host = this._unshadedEdges.host;
       host.visible = false;
+      host.alpha = alpha;
       host.zIndex = this._lightEdges.host.zIndex;
       this._unshadedComposite = host;
       this.pixiApp.stage.addChild(host);
@@ -3754,6 +3765,7 @@ class PixiRenderer extends AbstractWorker {
     mesh.blendMode = 'add';
     mesh.cullable = false;
     mesh.visible = false;
+    mesh.alpha = alpha;
     mesh.zIndex = this.lightingDisplaySprite ? this.lightingDisplaySprite.zIndex : 0;
     this._unshadedComposite = mesh;
     this.pixiApp.stage.addChild(mesh);

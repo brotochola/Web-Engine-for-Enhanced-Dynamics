@@ -32,6 +32,7 @@ precision highp float;
 in vec2 vUV;
 uniform sampler2D uUnshaded;
 uniform sampler2D uLight;
+uniform vec4 uColor; // DBG-3: the group colour, premultiplied: its alpha is the lighting layer's (the worker sets it)
 out vec4 finalColor;
 
 // DX-UNSHADED: the unshaded colour where the light is short of it (unshadedComposite.js), added. E-509: none here adds
@@ -40,7 +41,7 @@ void main() {
   vec3 unshaded = texture(uUnshaded, vUV).rgb;
   if (unshaded.r + unshaded.g + unshaded.b <= 0.0) discard;
   vec3 light = textureLod(uLight, vUV, 0.0).rgb;
-  finalColor = vec4(unshaded * (vec3(1.0) - min(light, vec3(1.0))), 0.0);
+  finalColor = vec4(unshaded * (vec3(1.0) - min(light, vec3(1.0))) * uColor.a, 0.0);
 }
 `;
 
@@ -87,7 +88,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     discard;
   }
   let light = textureSampleLevel(uLight, uLightSampler, in.vUV, 0.0).rgb;
-  return vec4<f32>(unshaded * (vec3<f32>(1.0) - min(light, vec3<f32>(1.0))), 0.0);
+  return vec4<f32>(unshaded * (vec3<f32>(1.0) - min(light, vec3<f32>(1.0))) * localUniforms.uColor.a, 0.0);
 }
 `;
 

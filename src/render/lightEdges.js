@@ -131,17 +131,20 @@ void main() {
 ` };
   }
   const unshaded = kind === 'unshadedFloor' || kind === 'unshadedEntity';
+  // DBG-3: uColor is the mesh's group colour, premultiplied: its alpha is the layer's. Alpha 0 applies no light (the
+  // multiplied half reads white, the added half nothing), 1 the whole light, as the stretched light's sprite faded.
   return { vertex, fragment: `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D uLight;
+uniform vec4 uColor;
 ${unshaded ? 'uniform sampler2D uUnshaded;\n' : ''}out vec4 finalColor;
 
 ${edgeLightGlsl(kindClass(kind))}
 void main() {
 ${unshaded
-    ? '  // DX-UNSHADED, as unshadedComposite.js: the unshaded colour where the light is short of it, added. E-509: none here\n  // adds nothing, so the pixel reads no light and blends nothing.\n  vec3 unshaded = texture(uUnshaded, vUV).rgb;\n  if (unshaded.r + unshaded.g + unshaded.b <= 0.0) discard;\n  finalColor = vec4(unshaded * (vec3(1.0) - min(edgeLight(vUV), vec3(1.0))), 0.0);'
-    : '  // Multiplied over the canvas, as the stretched light was (alpha 1).\n  finalColor = vec4(edgeLight(vUV), 1.0);'}
+    ? '  // DX-UNSHADED, as unshadedComposite.js: the unshaded colour where the light is short of it, added. E-509: none here\n  // adds nothing, so the pixel reads no light and blends nothing.\n  vec3 unshaded = texture(uUnshaded, vUV).rgb;\n  if (unshaded.r + unshaded.g + unshaded.b <= 0.0) discard;\n  finalColor = vec4(unshaded * (vec3(1.0) - min(edgeLight(vUV), vec3(1.0))) * uColor.a, 0.0);'
+    : '  // Multiplied over the canvas, as the stretched light was (alpha 1).\n  finalColor = vec4(mix(vec3(1.0), edgeLight(vUV), uColor.a), 1.0);'}
 }
 ` };
 }
@@ -183,8 +186,8 @@ ${unshaded ? '@group(2) @binding(1) var uUnshaded: texture_2d<f32>;\n@group(2) @
   }
   let light = (t00.rgb * own.x + t10.rgb * own.y + t01.rgb * own.z + t11.rgb * own.w) / sum;
 ${unshaded
-    ? '  return vec4<f32>(unshaded * (vec3<f32>(1.0) - min(light, vec3<f32>(1.0))), 0.0);'
-    : '  return vec4<f32>(light, 1.0);'}`;
+    ? '  return vec4<f32>(unshaded * (vec3<f32>(1.0) - min(light, vec3<f32>(1.0))) * localUniforms.uColor.a, 0.0);'
+    : '  return vec4<f32>(mix(vec3<f32>(1.0), light, localUniforms.uColor.a), 1.0);'}`;
   return `struct GlobalUniforms {
   uProjectionMatrix: mat3x3<f32>,
   uWorldTransformMatrix: mat3x3<f32>,
