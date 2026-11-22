@@ -21002,7 +21002,8 @@
       "records": [
         "R-1852",
         "R-1853",
-        "R-1854"
+        "R-1854",
+        "R-1855"
       ]
     },
     {
@@ -42578,6 +42579,15 @@
       "title": "Predator gate over the ASUS's batch 10 (N-300, E-455 step 1) and N-256 PW-3 (8b5592cf -> a09dbe65), owner renderer, 16 pairs: NEUTRAL, every worker within 1.3 % (renderer +0.3 %, preRender +1.3 %)",
       "verdict": "kept-hygiene",
       "text": "**The Predator gate over the ASUS's batch 10 (N-300 steps 1-2, E-455 step 1) and N-256 PW-3 (8b5592cf -> a09dbe65):\nNEUTRAL in 16 pairs. Every worker is within ±1.3 %.**\n\nThe sitting: `runPredatorAbab.mjs --name n256p2-batch10 --vs 8b5592cf --hyp-rev a09dbe65 --owner renderer --pairs 16`,\nwith `--query \"crowd=2.5&dayCycle=0&mix=1\"`. It ran headed, from the save, on AC power, 11:13 to 11:26.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.090 -> 15.041 | +0.7 % | 9/16 | -0.2 % |\n| spatial | 7.047 -> 6.995 | +0.5 % | 9/16 | -0.3 % |\n| physics | 14.584 -> 14.595 | -0.1 % | 7/16 | +0.1 % |\n| renderer | 6.457 -> 6.312 | +0.3 % | 8/16 | +2.4 % |\n| preRender | 8.399 -> 8.484 | +1.3 % | 9/16 | +0.8 % |\n\nParticle stays under the 6 ms floor. The load keys are within 0.5 %.\n\n- Predator's lamps have no compound solid near a wall, so N-300's merge runs on few rows here. Its own reading is\n  compoundVisPoly's, on the ASUS (R-1776).\n- E-455's keyed G-buffer words go up only in a scene that draws the G-buffer from keyed frames.\n- PW-3 moves the custom layers' per-frame update behind one more property load a layer. This sitting with the renderer\n  as owner reads it as unchanged."
+    },
+    {
+      "id": "R-1855",
+      "date": "2026-11-22",
+      "time": "12:21",
+      "timeFrom": "recorded",
+      "title": "N-256 PW-9a (glow layer) and PW-8 (shadow maps) through Pixi-owner Predator sittings (f06b3e16 -> 95fdfbf1): NEUTRAL plain in 16 pairs (renderer -0.1 %) and by night with light3d in 8 (fresh battles, renderer -0.9 %)",
+      "verdict": "kept-hygiene",
+      "text": "**The Pixi-owner sittings over N-256 PW-9a (glowLayer.js) and PW-8 (shadowMaps.js), f06b3e16 -> 95fdfbf1: NEUTRAL\nplain in 16 pairs, and NEUTRAL by night with light3d in 8.**\n\nBoth ran `runPredatorAbab.mjs --vs f06b3e16 --hyp-rev 95fdfbf1 --owner renderer`, headed, on AC power.\n\n**Plain:** `--pairs 16 --query \"crowd=2.5&dayCycle=0&mix=1\"`, from the save, 12:00 to 12:13.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.931 -> 16.212 | +0.1 % | 9/16 | +0.5 % |\n| spatial | 7.340 -> 7.566 | +0.1 % | 8/16 | -0.0 % |\n| physics | 15.475 -> 15.591 | -0.4 % | 7/16 | +0.3 % |\n| renderer | 6.928 -> 7.365 | -0.1 % | 8/16 | +0.6 % |\n| preRender | 8.890 -> 8.903 | -1.4 % | 7/16 | -2.9 % |\n\n**Night:** `--pairs 8 --fresh --query \"crowd=2.5&mix=1&light3d=1&hour=22\"`, 12:14 to 12:21. These are fresh battles:\nR-1853's night sitting started from the save and read every worker under the floor. Here the sun and lamp maps draw\n(GPU_SHADOW_LIGHTS 47).\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 22.365 -> 23.121 | +1.1 % | 4/8 | +0.6 % |\n| spatial | 10.747 -> 10.564 | +0.4 % | 4/8 | -0.2 % |\n| physics | 27.360 -> 27.844 | -0.5 % | 3/8 | -0.9 % |\n| renderer | 11.719 -> 11.766 | -0.9 % | 3/8 | -1.0 % |\n| preRender | 11.588 -> 11.395 | -1.3 % | 2/8 | +0.9 % |\n\nParticle stays under the 6 ms floor in both. The load keys are within 0.4 % plain and within 1.5 % by night\n(GPU_CASTERS +1.5 %).\n\nThe V8 deopt summary of a Predator light3d night run lists no steady deopt in pixiWorker.js or src/render/pixi/."
     }
   ],
   "leads": [
