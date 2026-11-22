@@ -334,10 +334,13 @@ ${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBas
   float dist = length(fromLamp);
   vec2 across = dist > 1e-3 ? vec2(-fromLamp.y, fromLamp.x) / dist : vec2(1.0, 0.0);
   vec2 cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
-  float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
+  // N-192: half the strip's width at the column's floor point (its side runs -1 to 1), a cell and a tenth with half a px
+  // either way; taken before the landing's stretch, it widens with it, as the neighbours' landings spread (a fixed width
+  // left gaps under a low lamp, and twice it grew the shadow past its outline near the lamp).
+  float halfWidth = 0.55 * max(cell.x, cell.y * uGroundInvScaleY) + 0.5;
   // DX-LAMPPANO: its rows in this half (aCell.z 0, 0.5, 1: lampColumnGrid), as the cards' (lampRowsGlsl).
 ${lampRowsGlsl('z', 'dist', 'aCell.z')}  vec2 lampQuad = aQuad;
-  vec2 land = lamp.xy + fromLamp / w + across * aCell.w * width;
+  vec2 land = lamp.xy + (fromLamp + across * aCell.w * halfWidth) / w;
   vSunZ = zReal;
 ${LAMP_OUT_GLSL}`;
 }
@@ -523,10 +526,11 @@ ${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBas
   var across = vec2<f32>(1.0, 0.0);
   if (dist > 1e-3) { across = vec2<f32>(-fromLamp.y, fromLamp.x) / dist; }
   let cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
-  let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
+  // N-192: half the strip's width, widened with the stretch (lampMapColumnsVertex says why).
+  let halfWidth = 0.55 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 0.5;
   // DX-LAMPPANO: its rows in this half (lampMapColumnsVertex says how).
 ${lampRowsWgsl('z', 'dist', 'aCell.z')}  let lampQuad = aQuad;
-  let land = lamp.xy + fromLamp / w + across * aCell.w * width;
+  let land = lamp.xy + (fromLamp + across * aCell.w * halfWidth) / w;
   out.vSunZ = zReal;
 ${LAMP_OUT_WGSL}${parts.rest}${LAMP_FRAGMENT_WGSL}`;
 }

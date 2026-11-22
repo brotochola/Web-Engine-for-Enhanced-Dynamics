@@ -350,7 +350,9 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
   vec2 cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
-  float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
+  // N-192: half the strip's width (its side runs -1 to 1): a cell and a tenth with half a px either way, so neighbours
+  // overlap; twice that grew the solid's shadow by up to a cell and a px past its outline.
+  float halfWidth = 0.55 * max(cell.x, cell.y * uGroundInvScaleY) + 0.5;
   // A column from the cell's floor point (height 0) to where its top lands; with a footprint, the cell swept north at
   // its own height to the footprint's edge, as the light bench's heightmap did (light passes under a belly, between
   // legs and rails).
@@ -368,7 +370,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vec2 along = b - a;
   float len = length(along);
   vec2 across = len > 1e-3 ? vec2(-along.y, along.x) / len : vec2(1.0, 0.0);
-  vec2 p = mix(a, b, aCell.z) + across * aCell.w * width;
+  vec2 p = mix(a, b, aCell.z) + across * aCell.w * halfWidth;
   vec2 world = vec2(p.x, p.y / uGroundInvScaleY);
   vec2 screen = (world - uCam.xy) * uCam.z;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
@@ -528,7 +530,8 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
   let cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
-  let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
+  // N-192: half the strip's width (sunMapColumnsVertex says why).
+  let halfWidth = 0.55 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 0.5;
   // A column, or with a footprint the cell swept north at its own height (sunMapColumnsVertex says why).
   var a = base;
   var b = base - z * uniforms.uSunK.xy;
@@ -545,7 +548,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   let len = length(along);
   var across = vec2<f32>(1.0, 0.0);
   if (len > 1e-3) { across = vec2<f32>(-along.y, along.x) / len; }
-  let p = mix(a, b, aCell.z) + across * aCell.w * width;
+  let p = mix(a, b, aCell.z) + across * aCell.w * halfWidth;
   let world = vec2<f32>(p.x, p.y / uniforms.uGroundInvScaleY);
   let screen = (world - uniforms.uCam.xy) * uniforms.uCam.z;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
