@@ -32,6 +32,7 @@
 import { TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW } from './frameBase.js';
 import { FACE_CODE_SCALE, FACE_INNER_Z_SHIFT, FACE_OCT_HALF, FACE_OCT_MID, FACE_ROW_Z_UNITS, FACE_Z_HEIGHT_MAX_CODE } from './faceMap.js';
 import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
+import { hasOnce, requireMarks } from './shaderEdit.js';
 
 /** The floor span's margin past the view, floor px: a tall object's top in view stands this far past its floor place. */
 export const PIXEL_DEPTH_MARGIN = 1024;
@@ -187,9 +188,7 @@ function cullGlsl(cull, gbuf) {
 export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = 'none', plainEdge = false } = {}) {
   const decl = 'out vec2 vTileOff;\n';
   const pos = 'gl_Position = vec4(clip.xy, aInstDepth, 1.0);';
-  for (const mark of [decl, pos]) {
-    if (source.split(mark).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite vertex shader (${mark.trim()})`);
-  }
+  requireMarks(source, [decl, pos], `pixel depth needs the sprite vertex shader`);
   if (plainEdge && !(source.includes('float instA = ') && source.includes('uniform vec4 uColor;'))) {
     throw new Error('WeedJS: the edge pass\'s plain cull needs the sprite vertex shader\'s instA and uColor');
   }
@@ -321,9 +320,7 @@ function vertexDepthBodyGlsl(gbuf) {
 export function pixelDepthFragment(source, { edge = false, gbuf = false, faces = false, vertexDepth = false } = {}) {
   const decl = 'uniform sampler2D uTexture;\n';
   const main = 'void main() {\n';
-  for (const mark of [decl, main]) {
-    if (source.split(mark).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite fragment shader (${mark.trim()})`);
-  }
+  requireMarks(source, [decl, main], `pixel depth needs the sprite fragment shader`);
   if (vertexDepth) {
     return source
       .replace(decl, () => `${decl}uniform sampler2D uMaps;\n${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}flat in vec4 vMapsWin;\n${twinGlsl()}`)
@@ -469,7 +466,7 @@ function facesDepthCoreWgsl(gbuf) {
  */
 export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces = false, cull = 'none', plainEdge = false } = {}) {
   const once = (text, find, add, what) => {
-    if (text.split(find).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite WGSL (${what})`);
+    if (!hasOnce(text, find)) throw new Error(`WeedJS: pixel depth needs the sprite WGSL (${what})`);
     return text.replace(find, () => find + add);
   };
   if (plainEdge && !(source.includes('let instA = ') && source.includes('localUniforms.uColor'))) {
@@ -479,7 +476,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces 
     ? '  if (out.vPlain > 0.5 && instA * localUniforms.uColor.a >= 1.0) { out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); }\n'
     : '';
   const pose = '  uPoseAlpha: f32,\n';
-  const hasPose = source.split(pose).length === 2;
+  const hasPose = hasOnce(source, pose);
   let out = hasPose
     ? once(source, pose, '  uDepth: vec4<f32>,\n', 'uPoseAlpha')
     : once(source, '  uTileWorld: vec4<f32>,\n', `${poseAlpha ? pose : ''}  uDepth: vec4<f32>,\n`, 'uTileWorld');
@@ -556,7 +553,7 @@ const GBUF_DEPTH_TERMS_WGSL = 'let weedDepth = vec4<f32>(1.0 / uniforms.uFaceSpa
 
 /** `find` once in `text`, `add` after it; a source without it (or with two) throws. */
 function gbufOnce(text, find, add, what) {
-  if (text.split(find).length !== 2) throw new Error(`WeedJS: the G-buffer's depth needs the face map's shader (${what})`);
+  if (!hasOnce(text, find)) throw new Error(`WeedJS: the G-buffer's depth needs the face map's shader (${what})`);
   return text.replace(find, () => find + add);
 }
 
@@ -568,7 +565,7 @@ function gbufOnce(text, find, add, what) {
  */
 export function gbufDepthVertex(source) {
   const main = 'void main() {\n';
-  if (source.split(main).length !== 2) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s shader (main)');
+  if (!hasOnce(source, main)) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s shader (main)');
   const out = source.replace(main, () => `out float vGbufFloor;\nflat out vec3 vGbufPainter;\n${main}`);
   return gbufOnce(
     out,
@@ -588,7 +585,7 @@ export function gbufDepthVertex(source) {
 export function gbufDepthFragment(source, { faces = true } = {}) {
   const main = 'void main() {\n';
   const cut = '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n';
-  if (source.split(main).length !== 2) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s fragment (main)');
+  if (!hasOnce(source, main)) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s fragment (main)');
   const depth = `in float vGbufFloor;
 flat in vec3 vGbufPainter;
 
@@ -687,7 +684,7 @@ export function gbufDepthWgsl(source, { faces = true } = {}) {
   out = gbufOnce(out, '  @location(1) ids: vec4<f32>,\n', '  @builtin(frag_depth) depth: f32,\n', 'the one pass\'s outputs');
   out = gbufOnce(out, 'fn mainFragGbuf(in: VertexOut) -> WeedGbufOut {\n  var o: WeedGbufOut;\n', '  o.depth = weedGbufDepth(in);\n', 'mainFragGbuf');
   // N-266: the unshaded pass's entry, where the module has one, writes the same depth (a texel under half covered cut).
-  if (out.split(UNSHADED_ENTRY_WGSL).length === 2) out = out.replace(UNSHADED_ENTRY_WGSL, () => UNSHADED_DEPTH_ENTRY_WGSL);
+  if (hasOnce(out, UNSHADED_ENTRY_WGSL)) out = out.replace(UNSHADED_ENTRY_WGSL, () => UNSHADED_DEPTH_ENTRY_WGSL);
   return `${out}
 // N-274: this texel's depth, as the colour pass's (pixelDepth.js weedPixelDepth with faces).
 fn weedGbufDepth(in: VertexOut) -> f32 {

@@ -21,6 +21,7 @@
 
 import { resolveHeightScaleY } from '../util/cameraView.js';
 import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl, withTwinGlsl } from './twinTexel.js';
+import { hasOnce, requireMarks } from './shaderEdit.js';
 
 /** The face map texel's height steps a px (15 bits: 4 095 px). */
 export const FACE_Z_UNITS = 8;
@@ -232,7 +233,7 @@ const UNSHADED_MASK_CUT_GLSL = `  if (((uint(aInstGbuf.x + 0.5) >> 21u) & 1u) ==
  */
 export function unshadedMaskVertex(source) {
   const end = 'vTileOff = aInstTileOff;\n';
-  if (source.split(end).length !== 2) throw new Error('WeedJS: the unshaded mask needs one vTileOff in the sprite vertex shader');
+  if (!hasOnce(source, end)) throw new Error('WeedJS: the unshaded mask needs one vTileOff in the sprite vertex shader');
   return source.replace(end, () => end + UNSHADED_MASK_CUT_GLSL);
 }
 
@@ -247,9 +248,7 @@ export function faceGbufFragment(faceFrag, { unshaded = false } = {}) {
   const src = faceFragmentGlsl(faceFrag, { gbuf: true, unshaded });
   const out = 'out vec4 finalColor;\n';
   const cut = '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n';
-  for (const mark of [out, cut]) {
-    if (src.split(mark).length !== 2) throw new Error(`WeedJS: the G-buffer's one pass needs faceMap.frag.glsl (${mark.trim()})`);
-  }
+  requireMarks(src, [out, cut], `the G-buffer's one pass needs faceMap.frag.glsl`);
   return src
     .replace(
       out,
@@ -271,7 +270,7 @@ const GBUF_ATTRIBUTE_WGSL = '  @location(12) aInstGbuf: vec3<f32>,\n';
 export function gbufAttributeWgsl(source) {
   if (source.includes('aInstGbuf:')) return source;
   const at = '  @location(1) aInstXY: vec2<f32>,\n';
-  if (source.split(at).length !== 2) throw new Error('WeedJS: the G-buffer words need the sprite WGSL (aInstXY)');
+  if (!hasOnce(source, at)) throw new Error('WeedJS: the G-buffer words need the sprite WGSL (aInstXY)');
   return source.replace(at, () => at + GBUF_ATTRIBUTE_WGSL);
 }
 
@@ -287,7 +286,7 @@ export function gbufAttributeGlsl(source) {
   if (source.includes('in vec3 aInstGbuf;')) return source;
   const main = 'void main() {\n';
   const at = '  gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n';
-  if (source.split(main).length !== 2 || source.split(at).length !== 2) {
+  if (!hasOnce(source, main) || !hasOnce(source, at)) {
     throw new Error('WeedJS: the G-buffer words need the sprite vertex shader (main, its gl_Position)');
   }
   return source
@@ -309,7 +308,7 @@ export function gbufAttributeGlsl(source) {
 export function faceMapVertex(source, { gbuf = false } = {}) {
   const main = 'void main() {\n';
   const end = 'vTileOff = aInstTileOff;\n';
-  if (source.split(main).length !== 2 || source.split(end).length !== 2) {
+  if (!hasOnce(source, main) || !hasOnce(source, end)) {
     throw new Error('WeedJS: the face map needs one main and one vTileOff in the sprite vertex shader');
   }
   const gbufDecl = gbuf ? 'in vec3 aInstGbuf;\nflat out vec2 vGbuf;\nout float vFootY;\nflat out float vRender;\n' : '';
@@ -464,7 +463,7 @@ fn mainFragGbuf(in: VertexOut) -> WeedGbufOut {
  */
 export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = {}) {
   const once = (text, find, add) => {
-    if (text.split(find).length !== 2) throw new Error(`WeedJS: the face map needs one "${find.trim()}" in the sprite WGSL`);
+    if (!hasOnce(text, find)) throw new Error(`WeedJS: the face map needs one "${find.trim()}" in the sprite WGSL`);
     return text.replace(find, () => find + add);
   };
   let out = once(source, '  uTileWorld: vec4<f32>,\n', '  uFaceSpace: vec4<f32>, // heightScaleY, groundScaleY\n');
