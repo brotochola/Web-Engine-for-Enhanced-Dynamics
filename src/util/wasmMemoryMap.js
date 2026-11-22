@@ -304,7 +304,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'collectResults', owner: 'pre-render', bytes: 16 },
     );
     // W19: with physics, the bullet pool's block and the bullet tick's regions too (bulletTickClient.js): the
-    // active list (u16) and the impact records it writes, the slots it returns, its ray stamps, table, results.
+    // active list (u16) and the impact records it writes, the slots it returns, its table, results.
     const b = collect.bullets;
     if (b) {
       regions.push(
@@ -313,7 +313,6 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
         { name: 'bulletActive', owner: 'particle', bytes: ((b.bullets | 0) + 1) * ((b.bullets | 0) > 65535 ? 4 : 2) },
         { name: 'bulletImpacts', owner: 'particle', bytes: (b.impacts | 0) * 6 * 4 },
         { name: 'bulletReturned', owner: 'particle', bytes: (b.bullets | 0) * 4 },
-        { name: 'bulletStamp', owner: 'particle', bytes: (b.entities | 0) * 4 },
         { name: 'bulletTable', owner: 'particle', bytes: BULLET_TABLE_SLOTS * 4 },
         { name: 'bulletResults', owner: 'particle', bytes: 16 },
       );

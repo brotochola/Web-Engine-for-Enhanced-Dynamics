@@ -102,29 +102,12 @@
         "astar_path",
         "collect_sprites",
         "collect_sprites_turned",
-        "bullet_tick",
-        "bullet_tick_hoist",
-        "bullet_tick_nostamp",
         "bullet_tick_lean",
         "bullet_tick_lean_ids32",
         "bullet_tick_lean_slots32",
         "bullet_tick_lean_u32",
-        "radix_sort_scalar",
-        "radix_sort_kv8",
-        "radix_sort_kv11",
-        "radix_sort_adaptive",
         "radix_sort_simd",
-        "painter_order_scalar",
-        "painter_order_kv8",
-        "painter_order_kv11",
-        "painter_order_adaptive",
         "painter_order_simd",
-        "reinsert_scalar",
-        "reinsert_kv8",
-        "reinsert_kv11",
-        "reinsert_adaptive",
-        "reinsert_simd",
-        "reinsert_inplace",
         "reinsert_simd_inplace",
         "sweep_light_f32",
         "sweep_light_simd",
@@ -134,7 +117,6 @@
         "gather_light_u32",
         "gather_light_cone",
         "gather_light_cone_u32",
-        "premultiply_scalar",
         "premultiply_simd"
       ],
       "maxMemoryPages": 32768
@@ -373,7 +355,7 @@
     },
     {
       "name": "bulletTick",
-      "source": "wasm/bulletTick.c",
+      "source": "wasm/test/bulletTickVariants.c",
       "output": "tests/fixtures/wasm/bulletTick.wasm",
       "exports": [
         "bullet_tick",
@@ -390,7 +372,7 @@
     },
     {
       "name": "painterRadix",
-      "source": "wasm/painterRadix.c",
+      "source": "wasm/test/painterRadixVariants.c",
       "output": "tests/fixtures/wasm/painterRadix.wasm",
       "exports": [
         "radix_sort_scalar",
@@ -483,7 +465,7 @@
     },
     {
       "name": "decalPremultiply",
-      "source": "wasm/decalPremultiply.c",
+      "source": "wasm/test/decalPremultiplyVariants.c",
       "output": "tests/fixtures/wasm/decalPremultiply.wasm",
       "exports": [
         "premultiply_scalar",

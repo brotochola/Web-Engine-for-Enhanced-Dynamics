@@ -12,7 +12,8 @@ import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/wasm/engine.wasm'));
+// Both loops: the test module (N-303 CR-11; engine.wasm ships premultiply_simd).
+const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'tests/fixtures/wasm/decalPremultiply.wasm'));
 
 async function bind(maxPixels) {
   const bytes = maxPixels * 4;

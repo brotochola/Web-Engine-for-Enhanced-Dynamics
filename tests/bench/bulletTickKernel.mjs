@@ -132,7 +132,14 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
   };
 }
 
-/** The kernel on that world, as the particle worker binds it (a variant of BULLET_TICK_VARIANTS, or the default). */
+/** The bullet tick's variants (one walk, the same bytes): the engine ships bullet_tick_lean, the others are the test
+ * module's (N-303 CR-11). */
+export const BULLET_TICK_VARIANTS = ['bullet_tick', 'bullet_tick_hoist', 'bullet_tick_nostamp', 'bullet_tick_lean'];
+const VARIANTS_URL = new URL('../fixtures/wasm/bulletTick.wasm', import.meta.url);
+
+/** The kernel on that world, as the particle worker binds it: the engine's tick, or a variant from the test module. */
 export function bindBullets(w, variant) {
-  return bindBulletTick(w.memory, w.layout, variant);
+  if (variant === undefined || variant === 'bullet_tick_lean') return bindBulletTick(w.memory, w.layout, variant);
+  if (!BULLET_TICK_VARIANTS.includes(variant)) throw new Error(`bulletTick: no variant ${variant}`);
+  return bindBulletTick(w.memory, w.layout, variant, VARIANTS_URL);
 }

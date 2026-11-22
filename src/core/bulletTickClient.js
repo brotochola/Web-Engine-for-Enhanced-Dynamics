@@ -11,8 +11,7 @@ import { engineWasmUrl } from '../wasm/engine.js';
 import { putColumn } from '../util/wasmColumnTable.js';
 
 
-/** The kernel's variants (one walk, the same bytes): the shipped tick takes BULLET_TICK_VARIANT. */
-export const BULLET_TICK_VARIANTS = ['bullet_tick', 'bullet_tick_hoist', 'bullet_tick_nostamp', 'bullet_tick_lean'];
+/** The shipped tick (hoisted, no ray stamps); its other variants are a test module (tests/bench/bulletTickKernel.mjs). */
 export const BULLET_TICK_VARIANT = 'bullet_tick_lean';
 
 /** wasm/bulletTick.c's column table, slot for slot. */
@@ -34,14 +33,14 @@ if (ShapeType.Box !== 0 || ShapeType.Circle !== 1 || ShapeType.Polygon !== 2 || 
 
 /**
  * @param {WebAssembly.Memory} memory
- * @param {{ tableByte: number, resultsByte: number, returnedByte: number, stampByte: number, activeByte: number,
+ * @param {{ tableByte: number, resultsByte: number, returnedByte: number, stampByte?: number, activeByte: number,
  *   impactsByte: number, bullets: number, entities: number, impacts: number }} layout the kernel's regions in that
- *   memory: the active list and the impact records it writes (the pool copies them out), its returned list, stamps,
- *   results and table
- * @param {string} [variant] one of BULLET_TICK_VARIANTS (benches and tests pick; the engine takes the default)
+ *   memory: the active list and the impact records it writes (the pool copies them out), its returned list, results
+ *   and table; the ray stamps only for a test variant that keeps them
+ * @param {string} [variant] the export: the engine takes the default; tests and benches pick another with `wasmUrl`
+ * @param {string|URL} [wasmUrl] the module (tests/fixtures/wasm/bulletTick.wasm holds every variant)
  */
-export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIANT) {
-  if (!BULLET_TICK_VARIANTS.includes(variant)) throw new Error(`bulletTick: no variant ${variant}`);
+export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIANT, wasmUrl = engineWasmUrl) {
   // 32-bit entity ids (the grid's ids, the owners) and a pool past 65 535 bullets (the active list) take the lean
   // tick's 32-bit forms; the other variants are 16-bit (benches).
   const wideIds = entityIdBytes() === 4;
@@ -51,14 +50,14 @@ export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIA
     if (variant !== 'bullet_tick_lean') throw new Error(`bulletTick: ${variant} has no 32-bit form`);
     name = wideIds && wideSlots ? 'bullet_tick_lean_u32' : wideIds ? 'bullet_tick_lean_ids32' : 'bullet_tick_lean_slots32';
   }
-  const k = await loadWasmKernel('bulletTick', engineWasmUrl, memory, [...BULLET_TICK_VARIANTS, name]);
+  const k = await loadWasmKernel('bulletTick', wasmUrl, memory, [name]);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, layout.tableByte, BULLET_TICK_SLOTS.length);
   table[SLOT.results] = layout.resultsByte;
   table[SLOT.oReturned] = layout.returnedByte;
   table[SLOT.oActive] = layout.activeByte;
   table[SLOT.oImpacts] = layout.impactsByte;
-  table[SLOT.gStamp] = layout.stampByte;
+  table[SLOT.gStamp] = layout.stampByte | 0;
   table[SLOT.gGen] = 0;
   return {
     buffer,
@@ -68,7 +67,7 @@ export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIA
     tableByte: layout.tableByte,
     results: new Int32Array(buffer, layout.resultsByte, 4),
     returned: new Uint32Array(buffer, layout.returnedByte, layout.bullets),
-    stamp: new Uint32Array(buffer, layout.stampByte, layout.entities),
+    stamp: layout.stampByte ? new Uint32Array(buffer, layout.stampByte, layout.entities) : new Uint32Array(0),
     // The active list ([0] unused here: the count is results[0] - 1) and the impacts, 6 floats each.
     activeOut: new (wideSlots ? Uint32Array : Uint16Array)(buffer, layout.activeByte, layout.bullets + 1),
     impacts: new Float32Array(buffer, layout.impactsByte, layout.impacts * 6),
@@ -126,7 +125,7 @@ export function writeBulletColumns(b, BulletComponent, Transform, Collider, Grid
   return ok === 1;
 }
 
-/** Ray numbers left before the stamps wrap; past it they are cleared, as Ray._beginRayGen clears its own. */
+/** A stamping test variant's ray numbers left before the stamps wrap; past it they are cleared, as Ray._beginRayGen clears its own. */
 export function readyBulletStamps(b, rays) {
   const gen = b.table[SLOT.gGen] >>> 0;
   if (gen + rays >= 0xFFFFFFFF) {

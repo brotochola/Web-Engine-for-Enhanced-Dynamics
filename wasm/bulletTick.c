@@ -387,9 +387,8 @@ INLINE uint32_t tick(uint32_t table, uint32_t from, uint32_t count, double dt, d
                 hoist, stamps, wideIds, wideSlots);                                                               \
   }
 
-BULLET_TICK(bullet_tick, 0, 1, 0, 0)
-BULLET_TICK(bullet_tick_hoist, 1, 1, 0, 0)
-BULLET_TICK(bullet_tick_nostamp, 0, 0, 0, 0)
+/* The shipped tick (hoisted, no stamps) and its 32-bit forms. The variants it beat (stamps, no hoist) are a test
+   module, wasm/test/bulletTickVariants.c (N-303 CR-11). */
 BULLET_TICK(bullet_tick_lean, 1, 0, 0, 0)
 BULLET_TICK(bullet_tick_lean_ids32, 1, 0, 1, 0)
 BULLET_TICK(bullet_tick_lean_slots32, 1, 0, 0, 1)

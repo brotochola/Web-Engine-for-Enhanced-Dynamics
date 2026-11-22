@@ -271,7 +271,6 @@ function collectLayout(r, collect) {
           activeByte: r.bulletActive.byte,
           impactsByte: r.bulletImpacts.byte,
           returnedByte: r.bulletReturned.byte,
-          stampByte: r.bulletStamp.byte,
           tableByte: r.bulletTable.byte,
           resultsByte: r.bulletResults.byte,
         }

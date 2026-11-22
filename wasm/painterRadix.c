@@ -535,15 +535,16 @@ INLINE int32_t reinsert(const uint32_t *t, uint32_t n, const uint32_t *keys, con
     return reinsert(T(table), n, T(keys), core, 0);                                                  \
   }
 
-PAINTER_EXPORTS(scalar, CORE_SCALAR)
-PAINTER_EXPORTS(kv8, CORE_KV8)
-PAINTER_EXPORTS(kv11, CORE_KV11)
-PAINTER_EXPORTS(adaptive, CORE_ADAPTIVE)
-PAINTER_EXPORTS(simd, CORE_SIMD)
+/* The shipped variant, simd_inplace: the simd radix and order, and the in-place merge with the simd radix. The
+   variants it beat are a test module, wasm/test/painterRadixVariants.c (N-303 CR-11). */
+__attribute__((export_name("radix_sort_simd")))
+void radix_sort_simd(uint32_t table, uint32_t idx, uint32_t n, uint32_t keys) {
+  radix_core(T(table), U(idx), n, T(keys), CORE_SIMD);
+}
 
-__attribute__((export_name("reinsert_inplace")))
-int32_t reinsert_inplace(uint32_t table, uint32_t n, uint32_t keys) {
-  return reinsert(T(table), n, T(keys), CORE_SCALAR, 1);
+__attribute__((export_name("painter_order_simd")))
+uint32_t painter_order_simd(uint32_t table, uint32_t idxE, uint32_t ne, uint32_t keys) {
+  return painter_order(T(table), T(idxE), ne, T(keys), CORE_SIMD);
 }
 
 __attribute__((export_name("reinsert_simd_inplace")))

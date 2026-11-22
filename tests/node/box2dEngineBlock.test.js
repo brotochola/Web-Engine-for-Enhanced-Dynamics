@@ -263,7 +263,7 @@ test('W19: with physics the bodies part carries the bullet tick regions, for any
   const memory = new WebAssembly.Memory({ initial: 256, maximum: 256, shared: true });
   const placed = createRenderQueueMemory(...args, withBullets, null, { memory, baseByte: 65536 });
   const l = placed.layout.collect.bullets;
-  for (const key of ['componentByte', 'activeByte', 'impactsByte', 'returnedByte', 'stampByte', 'tableByte', 'resultsByte']) {
+  for (const key of ['componentByte', 'activeByte', 'impactsByte', 'returnedByte', 'tableByte', 'resultsByte']) {
     assert.ok(l[key] >= 65536 && l[key] % 64 === 0, key);
   }
   assert.ok(l.impactsByte >= l.activeByte + (4000 + 1) * 2 && l.returnedByte >= l.impactsByte + 128 * 24);

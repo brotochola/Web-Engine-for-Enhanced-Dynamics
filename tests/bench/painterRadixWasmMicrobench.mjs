@@ -193,7 +193,8 @@ export async function setupPainterBench({ fixtureBytes, stressRows = STRESS_ROWS
   const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
   const buffer = memory.buffer;
   const R = layout.regions;
-  const kernel = await loadPainterRadix(memory, url);
+  // Every variant: the test module (N-303 CR-11), unless the caller names one.
+  const kernel = await loadPainterRadix(memory, url ?? new URL('../fixtures/wasm/painterRadix.wasm', import.meta.url));
 
   const data = {};
   for (const c of cases) {

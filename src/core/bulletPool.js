@@ -12,7 +12,7 @@ import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { Layer } from './layer.js';
 import { Ray } from './ray.js';
 import { Grid } from './grid.js';
-import { readyBulletStamps, writeBulletColumns } from './bulletTickClient.js';
+import { writeBulletColumns } from './bulletTickClient.js';
 
 // E-286: one spawn's numbers from spawn() to its body (x, y, vx, vy, damage, ownerId, shooterEntityType, trailWidth,
 // scale, alpha, tint, anchorX, anchorY, offsetY, then the sprite's facing: cos, sin, angle).
@@ -524,7 +524,6 @@ export class BulletPool extends SharedAtomicPool {
     res[1] = 0;
     res[2] = impactHeader ? maxImpacts | 0 : 0;
     res[3] = 0;
-    readyBulletStamps(k, count);
     const returned = k.returned;
     let from = 0;
     for (;;) {
