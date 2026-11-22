@@ -2930,11 +2930,7 @@ class PixiRenderer extends AbstractWorker {
     if (layout.rows < (this.renderQueueMaxItems | 0)) {
       throw new Error(`[PIXI WORKER] the painter state holds ${layout.rows} rows for a queue of ${this.renderQueueMaxItems | 0}`);
     }
-    try {
-      this._painterWasm = await bindPainterRadix(memory, layout);
-    } catch (err) {
-      throw new Error(`[PIXI WORKER] painterRadix.wasm did not load: ${err?.message ?? err}`, { cause: err });
-    }
+    this._painterWasm = await bindPainterRadix(memory, layout);
   }
 
   /**
@@ -2953,11 +2949,7 @@ class PixiRenderer extends AbstractWorker {
     }
     if (!memory || !layout) return null;
     if (this._painterWasm) return this._painterWasm.kernel;
-    try {
-      return (await bindPainterRadix(memory, layout)).kernel;
-    } catch (err) {
-      throw new Error(`[PIXI WORKER] painterRadix.wasm did not load for the y-sorted custom layers: ${err?.message ?? err}`, { cause: err });
-    }
+    return (await bindPainterRadix(memory, layout)).kernel;
   }
 
   /**
@@ -2984,18 +2976,14 @@ class PixiRenderer extends AbstractWorker {
     // Close-out group B: Pixi's pack scratch is there whenever the emit's regions are (its custom layers and glow
     // batch pack through it in either pack mode); the entities' rows only in pixi pack mode.
     if (!memory || !layout || !(layout.pixiTableByte >= 0)) return;
-    try {
-      this._pixiGpuPack = await bindGpuPack(memory, {
-        tableByte: layout.pixiTableByte,
-        tableSlots: layout.pixiTableSlots | 0 || layout.tableSlots,
-        indexByte: layout.pixiIndexByte,
-        indexCap: layout.indexCap,
-        particlesByte: layout.pixiParticlesByte,
-        inverseByte: 0,
-      });
-    } catch (err) {
-      throw new Error(`[PIXI WORKER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
-    }
+    this._pixiGpuPack = await bindGpuPack(memory, {
+      tableByte: layout.pixiTableByte,
+      tableSlots: layout.pixiTableSlots | 0 || layout.tableSlots,
+      indexByte: layout.pixiIndexByte,
+      indexCap: layout.indexCap,
+      particlesByte: layout.pixiParticlesByte,
+      inverseByte: 0,
+    });
     const rows = layout.pixiInstanceRows | 0;
     const floats = layout.pixiInstanceFloats | 0 || INSTANCED_SPRITE_FLOATS;
     // A layout made for the other mode (interpolation on or off) leaves the entity batch packing in JS.

@@ -807,8 +807,6 @@ class ParticleWorker extends AbstractWorker {
           f32: this.config?.wasm?.decorationSwayF32 !== false,
         }).then((sway) => {
           this._swayWasm = sway;
-        }, (err) => {
-          throw new Error(`[particle] decorationSway.wasm did not load: ${err?.message ?? err}`, { cause: err });
         }));
       }
     }
@@ -821,8 +819,6 @@ class ParticleWorker extends AbstractWorker {
     if (bulletLayout && data.renderQueueMemory && this.maxBullets > 0) {
       kernelBinds.push(bindBulletTick(data.renderQueueMemory, bulletLayout).then((tick) => {
         BulletPoolImport._wasm = tick;
-      }, (err) => {
-        throw new Error(`[particle] bulletTick.wasm did not load: ${err?.message ?? err}`, { cause: err });
       }));
     }
 
