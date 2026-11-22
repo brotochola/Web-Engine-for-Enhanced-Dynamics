@@ -1,16 +1,15 @@
 // EntitiesPanel.js — Per-type chips (count + paint / clear)
 
-import { createPanel, createRow, createStat } from '../ui/debugDom.js';
+import { createPanel, createRow, createStat, elem } from '../ui/debugDom.js';
 import { formatNumber } from '../../../util/utils.js';
 import { getFreeListCount } from '../../../util/atomicFreeList.js';
 import { Transform } from '../../../components/transform.js';
 import { PARTICLE_STATS } from '../stats/statsCollector.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
-export class EntitiesPanel {
+export class EntitiesPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.elements = {};
-    this.panel = null;
+    super(debugUI);
     this._internalEntitiesSet = new Set(['Flash', 'Mouse']);
     this._typeRows = [];
   }
@@ -24,8 +23,7 @@ export class EntitiesPanel {
     this.panel.appendChild(statsRow);
 
     const bulkRow = createRow('margin-top:6px');
-    const bulkLabel = document.createElement('label');
-    bulkLabel.className = 'debug-ui-bulk-label';
+    const bulkLabel = elem('label', 'debug-ui-bulk-label');
     this.elements.bulkSpawnCheckbox = document.createElement('input');
     this.elements.bulkSpawnCheckbox.type = 'checkbox';
     this.elements.bulkSpawnCheckbox.onchange = (e) => {
@@ -36,15 +34,12 @@ export class EntitiesPanel {
     bulkLabel.appendChild(document.createTextNode('Paint ×50'));
     bulkRow.appendChild(bulkLabel);
 
-    this.elements.eraserButton = document.createElement('button');
-    this.elements.eraserButton.className = 'debug-ui-btn danger';
-    this.elements.eraserButton.textContent = 'Eraser';
+    this.elements.eraserButton = elem('button', 'debug-ui-btn danger', 'Eraser');
     this.elements.eraserButton.onclick = () => this.debugUI.tools.toggleEraser();
     bulkRow.appendChild(this.elements.eraserButton);
     this.panel.appendChild(bulkRow);
 
-    this.elements.entityToolsContainer = document.createElement('div');
-    this.elements.entityToolsContainer.className = 'debug-ui-type-list';
+    this.elements.entityToolsContainer = elem('div', 'debug-ui-type-list');
     this.panel.appendChild(this.elements.entityToolsContainer);
 
     return this.panel;
@@ -124,29 +119,20 @@ export class EntitiesPanel {
       const name = reg.class.name;
       if (this._internalEntitiesSet.has(name)) continue;
 
-      const chip = document.createElement('div');
-      chip.className = 'debug-ui-type-chip';
+      const chip = elem('div', 'debug-ui-type-chip');
 
-      const nameEl = document.createElement('span');
-      nameEl.className = 'debug-ui-type-name';
-      nameEl.textContent = name;
+      const nameEl = elem('span', 'debug-ui-type-name', name);
       nameEl.title = name;
       chip.appendChild(nameEl);
 
-      const countEl = document.createElement('span');
-      countEl.className = 'debug-ui-type-count';
-      countEl.textContent = '--/--';
+      const countEl = elem('span', 'debug-ui-type-count', '--/--');
       chip.appendChild(countEl);
 
-      const paintBtn = document.createElement('button');
-      paintBtn.className = 'debug-ui-btn tool';
-      paintBtn.textContent = 'Paint';
+      const paintBtn = elem('button', 'debug-ui-btn tool', 'Paint');
       paintBtn.onclick = () => this.debugUI.tools.toggleSpawner(name);
       chip.appendChild(paintBtn);
 
-      const clearBtn = document.createElement('button');
-      clearBtn.className = 'debug-ui-btn danger';
-      clearBtn.textContent = 'Clear';
+      const clearBtn = elem('button', 'debug-ui-btn danger', 'Clear');
       clearBtn.onclick = () => reg.class.despawnAll();
       chip.appendChild(clearBtn);
 

@@ -165,6 +165,47 @@ function ownWorkMs(avg, withQueryWake = false) {
 }
 
 /**
+ * N-407: a worker's own work a frame over every frame of the window, from the runner's running totals (`exact`:
+ * workMs, plus extraMs on physics, as runPredatorAbab's exactPrimary); NaN when the revision kept none. The sampled
+ * mean (ownWorkMs) reads 100 ms samples, one frame in six, and missed a spike frame that came every 16 (N-403: 0.91 ms
+ * sampled against 3.11 ms exact).
+ */
+function exactWorkMs(worker, withExtra = false) {
+  const e = worker?.exact;
+  if (!e || !Number.isFinite(e.workMs)) return NaN;
+  const work = e.workMs + (withExtra && Number.isFinite(e.extraMs) ? e.extraMs : 0);
+  return work > 0 ? work : 0;
+}
+
+/** The suffix of a primary's exact-frame twin among extractMetrics' keys (N-407). */
+export const EXACT_SUFFIX = '_EXACT';
+
+/**
+ * N-407: the summaries a row judges by. A primary whose exact-frame twin both sides have reads that; otherwise both
+ * sides read the sampled mean, never one of each (a base revision whose workers keep no running totals has no twin).
+ * @param {object} baseSum summarizeRuns of the base side
+ * @param {object} hypSum summarizeRuns of the hypothesis side
+ * @param {string[]} primaryKeys
+ * @returns {{ base: object, hyp: object, exact: string[] }} the summaries with the chosen stats under each primary's
+ *   own key, and the primaries that read exact
+ */
+export function rowEstimates(baseSum, hypSum, primaryKeys) {
+  const base = { ...baseSum };
+  const hyp = { ...hypSum };
+  const exact = [];
+  for (const key of primaryKeys || []) {
+    const b = baseSum?.[key + EXACT_SUFFIX];
+    const h = hypSum?.[key + EXACT_SUFFIX];
+    if (Number.isFinite(b?.median) && Number.isFinite(h?.median)) {
+      base[key] = b;
+      hyp[key] = h;
+      exact.push(key);
+    }
+  }
+  return { base, hyp, exact };
+}
+
+/**
  * The scoreboard's keys from one run's report. Each `<worker>_STEP_MS` is that worker's own work (ownWorkMs), as in
  * runPredatorAbab; `WAIT_MS` and `<worker>_WAIT_MS` keep the waits; `physics_loadPct` is the raw step's share of the
  * frame. Exported for its tests.
@@ -172,13 +213,16 @@ function ownWorkMs(avg, withQueryWake = false) {
 export function extractMetrics(report) {
   const workers = report.workers || [];
   const pick = (pred) => workers.find(pred);
-  const physics = avgOf(pick((w) => w.id === 'physics' || w.type === 'physics'));
-  const logic0 = avgOf(pick((w) => w.id === 'logic0'));
-  const particle = avgOf(pick((w) => w.id === 'particle' || w.type === 'particle'));
-  const preRender = avgOf(pick((w) => w.id === 'preRender' || w.type === 'preRender'));
-  const pixi = avgOf(
-    pick((w) => w.id === 'renderer' || w.type === 'pixi' || w.id === 'pixi' || w.type === 'renderer')
-  );
+  const physicsW = pick((w) => w.id === 'physics' || w.type === 'physics');
+  const logic0W = pick((w) => w.id === 'logic0');
+  const particleW = pick((w) => w.id === 'particle' || w.type === 'particle');
+  const preRenderW = pick((w) => w.id === 'preRender' || w.type === 'preRender');
+  const pixiW = pick((w) => w.id === 'renderer' || w.type === 'pixi' || w.id === 'pixi' || w.type === 'renderer');
+  const physics = avgOf(physicsW);
+  const logic0 = avgOf(logic0W);
+  const particle = avgOf(particleW);
+  const preRender = avgOf(preRenderW);
+  const pixi = avgOf(pixiW);
   // M4. WAIT_MS is the largest per-worker value: pre-render never blocks on a
   // sibling, so its own WAIT_MS (what this read before) is 0 by construction.
   // Logic waits in query claims and results, physics between burst queries.
@@ -188,8 +232,12 @@ export function extractMetrics(report) {
     if (v > waitMax) waitMax = v;
   }
   let spatialMax = null;
+  // N-407: the slowest spatial worker by its exact-frame mean, NaN when any spatial worker kept no running totals.
+  let spatialExact = -Infinity;
   for (const w of workers) {
     if (!String(w.id || '').startsWith('spatial')) continue;
+    const exact = exactWorkMs(w);
+    spatialExact = Number.isFinite(exact) && !Number.isNaN(spatialExact) ? Math.max(spatialExact, exact) : NaN;
     const step = ownWorkMs(avgOf(w));
     if (!spatialMax || step > spatialMax.STEP_MS) {
       spatialMax = { id: w.id, STEP_MS: step, NEIGHBOR_MS: avgOf(w).NEIGHBOR_MS ?? 0, NEIGHBORS_REUSED: avgOf(w).NEIGHBORS_REUSED ?? 0 };
@@ -245,6 +293,13 @@ export function extractMetrics(report) {
     MESH_FILL_INSTANCES: pixi.MESH_FILL_INSTANCES ?? 0,
     MESH_RT_DRAWS: pixi.MESH_RT_DRAWS ?? 0,
     spatialMax_STEP_MS: spatialMax?.STEP_MS ?? 0,
+    // N-407: the primaries' exact-frame twins (rowEstimates reads them when both sides have them).
+    physics_STEP_MS_EXACT: exactWorkMs(physicsW, true),
+    logic0_STEP_MS_EXACT: exactWorkMs(logic0W),
+    particle_STEP_MS_EXACT: exactWorkMs(particleW),
+    preRender_STEP_MS_EXACT: exactWorkMs(preRenderW),
+    pixi_STEP_MS_EXACT: exactWorkMs(pixiW),
+    spatialMax_STEP_MS_EXACT: spatialMax && Number.isFinite(spatialExact) ? spatialExact : NaN,
     spatialMax_NEIGHBOR_MS: spatialMax?.NEIGHBOR_MS ?? 0,
     physics_loadPct: workerLoadPct(physics.STEP_MS ?? 0),
   };

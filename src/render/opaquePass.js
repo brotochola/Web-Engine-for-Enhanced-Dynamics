@@ -26,6 +26,7 @@
 import { FRAME_GLOW, FRAME_HALF, FRAME_SOFT, FRAME_UNSCANNED } from './frameBase.js';
 import { GPU_INTEGRATED, GPU_TILED, GPU_VENDOR_INTEL } from './gpuClass.js';
 import { GPU_STATIC_FLOATS } from './gpuQueueLayout.js';
+import { replaceOnce } from './shaderEdit.js';
 
 /** The frame texels (frameBase.js FRAME_*) that keep a frame out of the opaque pass: any alpha but 0 and 255, glow, unknown. */
 export const OPAQUE_FRAME_MASK = FRAME_SOFT | FRAME_HALF | FRAME_GLOW | FRAME_UNSCANNED;
@@ -127,11 +128,8 @@ export function opaqueFragment(source) {
   return `${source.slice(0, at + mark.length)}  if (a < 1.0) discard;\n${source.slice(at + mark.length)}`;
 }
 
-function replaceOnce(source, from, to) {
-  const at = source.indexOf(from);
-  if (at < 0 || source.indexOf(from, at + 1) >= 0) throw new Error(`WeedJS: the opaque pass needs one "${from.trim()}" in the sprite vertex shader`);
-  return source.slice(0, at) + to + source.slice(at + from.length);
-}
+/** The shader the opaque pass's edits expect (replaceOnce's error names it). */
+const OPAQUE_VERT = 'the opaque pass\'s sprite vertex shader';
 
 /**
  * The opaque pass's vertex shader from the batch's (instancedSpritePose.vert.glsl, a pose or a split batch's): the pose
@@ -145,9 +143,9 @@ function replaceOnce(source, from, to) {
  */
 export function opaqueVertex(source, poseWords) {
   if (poseWords !== 4 && poseWords !== 6) throw new Error(`WeedJS: the opaque pass reads 4 or 6 pose words, not ${poseWords}`);
-  let out = replaceOnce(source, 'in vec2 aInstXY;\n', 'vec2 aInstXY;\n');
-  out = replaceOnce(out, 'in vec2 aInstRotCS;\n', 'vec2 aInstRotCS;\n');
-  out = replaceOnce(out, 'in vec2 aInstPrevXY;\n', 'vec2 aInstPrevXY;\n');
+  let out = replaceOnce(source, 'in vec2 aInstXY;\n', 'vec2 aInstXY;\n', OPAQUE_VERT);
+  out = replaceOnce(out, 'in vec2 aInstRotCS;\n', 'vec2 aInstRotCS;\n', OPAQUE_VERT);
+  out = replaceOnce(out, 'in vec2 aInstPrevXY;\n', 'vec2 aInstPrevXY;\n', OPAQUE_VERT);
   const fetch = (t) => `texelFetch(uOpPoses, ivec2((${t}) & ${OPAQUE_POSE_TEXELS - 1}, (${t}) >> ${POSE_ROW_SHIFT - 2}), 0)`;
   const head = '// E-448: this row\'s painter slot, whose pose uOpPoses holds (the batch\'s pose stream, copied on the GPU).\n' +
     'in float aInstSlot;\nuniform highp usampler2D uOpPoses;\n\n';
@@ -177,7 +175,7 @@ export function opaqueVertex(source, poseWords) {
  */
 export function opaqueRowVertex(source, painter) {
   let out = replaceOnce(source, '  aInstDepth = 0.0;\n',
-    `  aInstDepth = 1.0 - (${painter ? 'aInstPainter' : 'float(gl_InstanceID)'} + 1.0) * uOpDepth;\n`);
+    `  aInstDepth = 1.0 - (${painter ? 'aInstPainter' : 'float(gl_InstanceID)'} + 1.0) * uOpDepth;\n`, OPAQUE_VERT);
   const main = 'void main() {\n';
   const at = out.indexOf(main);
   if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: the opaque pass needs one "void main() {" in the sprite vertex shader');

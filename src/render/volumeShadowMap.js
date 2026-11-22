@@ -25,10 +25,11 @@ import {
   LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, LAMP_PANO_GLSL, LAMP_PANO_INNER, LAMP_PANO_WGSL, lampClipZGlsl, lampClipZWgsl, lampPanoLanding,
 } from './lampShadowMap.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
+import { hasOnce } from './shaderEdit.js';
 
 /** The source with `add` after its one `find`, or a clear error. */
 function after(source, find, add, what) {
-  if (typeof source !== 'string' || source.split(find).length !== 2) {
+  if (typeof source !== 'string' || !hasOnce(source, find)) {
     throw new Error(`WeedJS: ${what} needs the volumes' mesh shader (${find.trim()})`);
   }
   return source.replace(find, () => find + add);

@@ -11,6 +11,7 @@ export const RENDER_VIEW = Object.freeze({
   SHADOWS: 7,
   SUN_MAP: 8,
   LAMP_MAP: 9,
+  LIGHT_TILES: 10,
 });
 export const RENDER_VIEWS = Object.freeze([{ id: 0, label: 'Final', needs: '' }]);
 export const RENDER_VIEW_Z = 1e9;
@@ -18,6 +19,8 @@ export const RENDER_VIEW_HEIGHT_PX = 256;
 export const RENDER_VIEW_VERT = '';
 export const RENDER_VIEW_FRAG = '';
 export const RENDER_VIEW_WGSL = '';
+export const RENDER_TILES_FRAG = '';
+export const RENDER_TILES_WGSL = '';
 export function renderViewTextures(_w, _view, out) {
   out[0] = null;
   out[1] = null;
@@ -27,5 +30,8 @@ export function availableRenderViews() {
   return [0];
 }
 export function renderViewGpuProgram() {
+  return null;
+}
+export function renderTilesGpuProgram() {
   return null;
 }

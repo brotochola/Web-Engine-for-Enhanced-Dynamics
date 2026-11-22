@@ -17,6 +17,7 @@
 
 import { FOOTPRINT_MAX_VERTICES } from './frameBase.js';
 import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
+import { hasOnce, requireMarks } from './shaderEdit.js';
 
 /** Height (px) that the map's 8 bits span: 2 px a step. */
 export const SUN_MAP_ZMAX = 512;
@@ -342,7 +343,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   const quad = 'in vec2 aQuad;\n';
   const main = 'void main() {\n';
   const after = '  // weed:afterAnchor\n';
-  if (card.split(quad).length !== 2 || card.split(main).length !== 2 || card.split(after).length !== 2) {
+  if (!hasOnce(card, quad) || !hasOnce(card, main) || !hasOnce(card, after)) {
     throw new Error('WeedJS: the sun shadow map columns need the sprite shadow vertex shader (aQuad, main, weed:afterAnchor)');
   }
   const head = card
@@ -415,7 +416,7 @@ export function sunMapVertex(source, { heights = true } = {}) {
   const out = '    // weed:sunOut\n';
   const color = '  vColor = vec4(0.0, 0.0, 0.0, alpha);\n';
   for (const mark of [decl, main, card, out, color]) {
-    if (source.split(mark).length !== 2) {
+    if (!hasOnce(source, mark)) {
       throw new Error(`WeedJS: the sun shadow map needs the sprite shadow vertex shader (${mark.trim()})`);
     }
   }
@@ -441,12 +442,6 @@ export function sunMapVertex(source, { heights = true } = {}) {
     .replace(color, `  vColor = vec4(1.0, castOpacity, 1.0, 1.0);\n  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);\n`);
 }
 
-/** A WGSL source with one occurrence of each mark, or a clear error. */
-function wgslMarks(source, marks, what) {
-  for (const mark of marks) {
-    if (source.split(mark).length !== 2) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (${mark.trim()})`);
-  }
-}
 
 /**
  * DX-SHADOW3D: a shadow map's texel (sunShadowMap.frag.glsl): the height (R), the caster's opacity (G: how much light it
@@ -487,7 +482,7 @@ export function sunMapWgsl(source, { heights = true } = {}) {
   const card = '    // weed:sunCard\n';
   const out = '    // weed:sunOut\n';
   const color = '  out.vColor = vec4<f32>(0.0, 0.0, 0.0, alpha);\n';
-  wgslMarks(source, [struct, card, out, color], 'the sun shadow map');
+  requireMarks(source, [struct, card, out, color], 'the sun shadow map needs the sprite shadow WGSL');
   const skipped = source.replace(
     card,
     `${card}    // A render's frame casts columns instead (sunMapColumnsWgsl), unless its sheet casts its card for the sun.
@@ -500,7 +495,7 @@ export function sunMapWgsl(source, { heights = true } = {}) {
   if (!heights) return skipped;
   // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
   const body = '  var out: VertexOut;\n';
-  if (skipped.split(body).length !== 2) throw new Error('WeedJS: the sun shadow map needs the sprite shadow WGSL (mainVert)');
+  if (!hasOnce(skipped, body)) throw new Error('WeedJS: the sun shadow map needs the sprite shadow WGSL (mainVert)');
   return (
     skipped
       .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(8) @interpolate(flat) vSunId: f32,\n`)
@@ -525,7 +520,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   const body = '  var out: VertexOut;\n';
   const after = '  // weed:afterAnchor\n';
   const end = '  out.vTileOff = aInstTileOff;\n  return out;\n}\n';
-  wgslMarks(card, [quad, body, after], 'the sun shadow map columns');
+  requireMarks(card, [quad, body, after], 'the sun shadow map columns need the sprite shadow WGSL');
   const from = card.indexOf(after);
   const to = card.indexOf(end, from);
   if (to < 0) throw new Error('WeedJS: the sun shadow map columns need the sprite shadow WGSL (mainVert\'s end)');
@@ -599,9 +594,7 @@ export function volumeMapVertex(source) {
   const decl = 'out vec2 vMeshUV;\n';
   // E-453: the vertex's own height (meshUvFill.vert.glsl's `height`, its U), no corner to place.
   const pos = 'gl_Position = vec4(clip.xy, 0.5, 1.0);';
-  for (const mark of [decl, pos]) {
-    if (source.split(mark).length !== 2) throw new Error(`WeedJS: the sun map's volumes need the mesh vertex shader (${mark.trim()})`);
-  }
+  requireMarks(source, [decl, pos], `the sun map's volumes need the mesh vertex shader`);
   return source
     .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n`)
     .replace(

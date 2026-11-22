@@ -3,6 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import * as real from '../../src/core/debug/devChecks.js';
 import * as stub from '../../src/core/debug/stubs/devChecks.js';
@@ -34,14 +36,19 @@ test('the stub has every export of the real module, and does nothing', () => {
   assert.equal(stub.devChecksOn(), false);
 });
 
-test('the production bundle takes the stub, on the page and in the workers', () => {
+test('the production bundle takes the stub, on the page and in the workers', async () => {
+  const { debugStubAliases } = await import('../../scripts/debugStubAliases.js');
+  const root = fileURLToPath(new URL('../..', import.meta.url));
+  const aliases = debugStubAliases(root, true);
+  assert.equal(
+    aliases[path.resolve(root, 'src/core/debug/devChecks.js')],
+    path.resolve(root, 'src/core/debug/stubs/devChecks.js'),
+  );
+  assert.deepEqual(debugStubAliases(root, false), {});
+  // Both configs (the bundles' and the dev server's) take that one list.
   for (const file of ['webpack.bundle.config.js', 'webpack.config.js']) {
     const config = readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
-    assert.match(
-      config,
-      /src\/core\/debug\/devChecks\.js'\)\]:\s*\r?\n\s*path\.resolve\(__dirname, 'src\/core\/debug\/stubs\/devChecks\.js'\)/,
-      file,
-    );
+    assert.match(config, /const debugStubAliases = makeDebugStubAliases\(__dirname, isProd\);/, file);
   }
 });
 

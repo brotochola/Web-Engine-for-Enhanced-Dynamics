@@ -46,18 +46,9 @@
   var PHYSICS_DEFAULTS = PhysicsConfig.PHYSICS_SIM_DEFAULTS;
   var validatePhysicsConfig = PhysicsConfig.validatePhysicsConfig;
 
-  // Mirrors PHYSICS_STATS (workersUtils.js) — host writes FPS / STEP_MS / MSG_MS.
-  var PS = {
-    FPS: 0,
-    STEP_MS: 1,
-    MSG_MS: 2,
-    // E-01: WAIT_MS / IDLE_MS. The physics host is not an AbstractWorker, so it
-    // does its own frame bookkeeping and cannot inherit the idle measurement.
-    WAIT_MS: 47,
-    IDLE_MS: 48,
-    // E-56: sync queries answered by the wake between steps.
-    QUERY_WAKE_MS: 49,
-  };
+  // The stats slots (box2dConstantsImpl.js, which weedjsPost.js loaded: CR-20). The host writes FPS, STEP_MS, MSG_MS,
+  // WAIT_MS and IDLE_MS (E-01: it is not an AbstractWorker) and QUERY_WAKE_MS (E-56).
+  var PS = global.Box2dConstants.PHYSICS_STATS;
 
   // M4: blocked-on-sibling ms inside the step. The query IIFEs (bursts waiting
   // for the next logic query) add to this shared object; the step resets it.

@@ -4,6 +4,8 @@
 
 import { createPanel, createRow, createStat } from '../ui/debugDom.js';
 import { RENDER_VIEW, RENDER_VIEWS } from '../../../render/renderViews.js';
+import { DebugPanel } from '../ui/debugPanel.js';
+import { Mouse } from '../../mouse.js';
 
 const LEGENDS = Object.freeze({
   [RENDER_VIEW.NORMALS]: 'normal → RGB (0.5 + 0.5·n); magenta an unshaded pixel, grey one lit as drawn, black no face',
@@ -15,12 +17,12 @@ const LEGENDS = Object.freeze({
   [RENDER_VIEW.SHADOWS]: 'the casted shadows layer, on white',
   [RENDER_VIEW.SUN_MAP]: "the sun's shadow map: caster heights as a ramp (the whole map, margins included)",
   [RENDER_VIEW.LAMP_MAP]: "the lamps' shadow atlas: every lamp's tile, heights as a ramp",
+  [RENDER_VIEW.LIGHT_TILES]: 'lights per light tile: black none, the ramp up to 32 (or lighting.maxLights) white; the tile grid in grey',
 });
 
-export class RenderPanel {
+export class RenderPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.panel = null;
+    super(debugUI);
     this.select = null;
     this.opacity = null;
     this.opacityVal = null;
@@ -28,7 +30,11 @@ export class RenderPanel {
     this.views = [RENDER_VIEW.FINAL];
     this.view = RENDER_VIEW.FINAL;
     this._worker = null;
-    this._onMessage = (e) => this._takeViews(e.data);
+    this.tileReadout = null;
+    this._onMessage = (e) => {
+      if (e.data?.msg === 'lightTile') this._takeTile(e.data);
+      else this._takeViews(e.data);
+    };
   }
 
   create() {
@@ -68,6 +74,10 @@ export class RenderPanel {
     this.legend = createStat('');
     this.legend.style.cssText = 'display:block;margin-top:6px;font-size:10px;color:rgba(255,255,255,0.55)';
     this.panel.appendChild(this.legend);
+    // DBG-7: the light tile under the mouse, while the Light tiles view is on.
+    this.tileReadout = createStat('');
+    this.tileReadout.style.cssText = 'display:none;margin-top:4px;font-size:10px;font-family:monospace;color:rgba(255,255,255,0.8)';
+    this.panel.appendChild(this.tileReadout);
     this._syncOptions();
     return this.panel;
   }
@@ -90,6 +100,25 @@ export class RenderPanel {
     // The buffers a scene has can change as it plays (the G-buffer turns on with the first decoration that carries a
     // normal): ask again while the tab is open.
     if (this._worker) this._worker.postMessage({ msg: 'listRenderViews' });
+    // DBG-7: the mouse's light tile, at this interval.
+    if (this._worker && this.view === RENDER_VIEW.LIGHT_TILES && Mouse.isPresent) {
+      this._worker.postMessage({ msg: 'lightTileAt', x: Mouse.canvasXAt(0), y: Mouse.canvasYAt(0) });
+    }
+  }
+
+  /** DBG-7: the worker's light tile under the mouse, as one line. */
+  _takeTile(data) {
+    if (!this.tileReadout || this.view !== RENDER_VIEW.LIGHT_TILES) return;
+    const grid = `${data.cols} x ${data.rows} tiles of ${data.tilePx} px, ${data.wordsUsed} words`;
+    let text;
+    if (data.x < 0) {
+      text = `outside the grid (${grid})`;
+    } else {
+      const lights = Array.isArray(data.lights) ? data.lights : [];
+      const shown = lights.slice(0, 24).join(', ');
+      text = `tile ${data.x}, ${data.y} of ${grid}: ${lights.length} lights${lights.length ? ` [${shown}${lights.length > 24 ? ', ...' : ''}]` : ''}`;
+    }
+    if (this.tileReadout.textContent !== text) this.tileReadout.textContent = text;
   }
 
   /** The worker's answer: the views it can draw now and the one it draws. */
@@ -120,5 +149,7 @@ export class RenderPanel {
     if (document.activeElement !== this.select && this.select.value !== String(this.view)) this.select.value = String(this.view);
     const legend = LEGENDS[this.view] || 'The final picture.';
     if (this.legend.textContent !== legend) this.legend.textContent = legend;
+    const tiles = this.view === RENDER_VIEW.LIGHT_TILES ? 'block' : 'none';
+    if (this.tileReadout && this.tileReadout.style.display !== tiles) this.tileReadout.style.display = tiles;
   }
 }

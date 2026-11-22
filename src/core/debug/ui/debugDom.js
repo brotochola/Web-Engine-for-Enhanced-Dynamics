@@ -33,6 +33,20 @@ export async function injectStyles() {
   }
 }
 
+/**
+ * An element with its class and text (CR-23: the panels' three-line create, class, text). An empty class sets none;
+ * text, when given, is set after the class, as the lines it replaces did.
+ * @param {string} tag
+ * @param {string} [className]
+ * @param {string|number} [text]
+ */
+export function elem(tag, className = '', text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
 /** Create a <span class="debug-ui-stat …"> element */
 export function createStat(text, className = '') {
   const span = document.createElement('span');

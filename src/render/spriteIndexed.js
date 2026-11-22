@@ -5,6 +5,7 @@
 // records (E-157).
 
 import { GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW } from './gpuQueueLayout.js';
+import { replaceOnce } from './shaderEdit.js';
 
 /** Statics rows a texture row holds, and its log2: three RGBA32UI texels a statics row, a texture 3 072 texels wide. */
 export const STATICS_TEX_ROW = GPU_INDEXED_TEX_ROW;
@@ -44,12 +45,6 @@ const STATIC_ATTRIBUTES = [
   ['vec2', 'aInstTileOff'],
 ];
 
-/** Replace the one `from` in `source`, or say the shader is not the one this rewrite knows. */
-function replaceOnce(source, from, to, what) {
-  const at = source.indexOf(from);
-  if (at < 0 || source.indexOf(from, at + 1) >= 0) throw new Error(`WeedJS: the sprite ${what} needs one "${from.trim()}"`);
-  return source.slice(0, at) + to + source.slice(at + from.length);
-}
 
 /**
  * instancedSprite.vert.glsl reading its statics from the statics texture: the static attributes become globals the
@@ -73,8 +68,8 @@ export function spriteIndexedVertex(source, { shadow = false, casterRows = false
   let out = source;
   const byRow = poseBlock > 0;
   if (byRow) {
-    out = replaceOnce(out, 'in vec2 aInstXY;', 'vec2 aInstXY;', 'vertex shader');
-    if (!(shadow && casterRows)) out = replaceOnce(out, 'in vec2 aInstRotCS;', 'vec2 aInstRotCS;', 'vertex shader');
+    out = replaceOnce(out, 'in vec2 aInstXY;', 'vec2 aInstXY;', 'the sprite vertex shader');
+    if (!(shadow && casterRows)) out = replaceOnce(out, 'in vec2 aInstRotCS;', 'vec2 aInstRotCS;', 'the sprite vertex shader');
   }
   for (const [type, name] of STATIC_ATTRIBUTES) {
     const declaration = new RegExp(`^in ${type} ${name};`, 'm');
@@ -82,12 +77,12 @@ export function spriteIndexedVertex(source, { shadow = false, casterRows = false
     out = out.replace(declaration, `${type} ${name};`);
   }
   if (!shadow) {
-    out = replaceOnce(out, 'uint tintBits = floatBitsToUint(aInstTintBits);', 'uint tintBits = weedS1.y;', 'vertex shader');
+    out = replaceOnce(out, 'uint tintBits = floatBitsToUint(aInstTintBits);', 'uint tintBits = weedS1.y;', 'the sprite vertex shader');
   } else if (!light) {
-    out = replaceOnce(out, 'in vec4 aInstLight;', 'const vec4 aInstLight = vec4(0.0);', 'shadow vertex shader');
+    out = replaceOnce(out, 'in vec4 aInstLight;', 'const vec4 aInstLight = vec4(0.0);', 'the sprite shadow vertex shader');
   }
   if (shadow && casterRows) {
-    out = replaceOnce(out, 'in vec2 aInstRotCS;', 'const vec2 aInstRotCS = vec2(1.0, 0.0);', 'shadow vertex shader');
+    out = replaceOnce(out, 'in vec2 aInstRotCS;', 'const vec2 aInstRotCS = vec2(1.0, 0.0);', 'the sprite shadow vertex shader');
   }
   const main = 'void main() {\n';
   const at = out.indexOf(main);
@@ -162,25 +157,25 @@ export function spriteIndexedWgsl(source, { shadow = false, casterRows = false, 
     `@group(2) @binding(3) var<uniform> uniforms: ${uniforms};\n` +
       "// The statics in the queue's row order, three vec4<u32> a row (E-162).\n" +
       '@group(2) @binding(4) var<storage, read> uStatics: array<vec4<u32>>;\n',
-    'WGSL'
+    'the sprite WGSL'
   );
   // Constants for the inputs a shadow form has no stream for (E-191: a caster row carries no rotation; a sun row no
   // light of its own, the pass's uLight decides).
   let lets = '';
   if (!shadow) {
-    out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstRotCS: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'WGSL');
-    out = replaceOnce(out, '  let tintBits = bitcast<u32>(aInstTintBits);\n', '  let tintBits = weedS1.y;\n', 'WGSL');
+    out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstRotCS: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'the sprite WGSL');
+    out = replaceOnce(out, '  let tintBits = bitcast<u32>(aInstTintBits);\n', '  let tintBits = weedS1.y;\n', 'the sprite WGSL');
   } else {
-    out = replaceOnce(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @location(1) aInstXY: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'shadow WGSL');
+    out = replaceOnce(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @location(1) aInstXY: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'the sprite shadow WGSL');
     // E-395: a keyed caster row's entity (its key) where a full row carries it, for the shadow maps' casterEntityId.
     lets += casterRows ? '  let aInstTintBits = aInstSlot;\n' : '  let aInstTintBits = 0.0;\n';
     if (casterRows) {
       // DX-SHADOW3D (plan §17.2): the row's fourth float, the frame a light sees, takes the rotation's free location.
-      out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstFrame: f32,\n', 'shadow WGSL');
+      out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstFrame: f32,\n', 'the sprite shadow WGSL');
       lets += '  let aInstRotCS = vec2<f32>(1.0, 0.0);\n';
     }
     if (!light) {
-      out = replaceOnce(out, '  @location(11) aInstLight: vec4<f32>,\n', '', 'shadow WGSL');
+      out = replaceOnce(out, '  @location(11) aInstLight: vec4<f32>,\n', '', 'the sprite shadow WGSL');
       lets += '  let aInstLight = vec4<f32>(0.0);\n';
     }
   }

@@ -26,6 +26,7 @@
 // will still get auto-generated accessors.
 
 import { markEngineAccessor } from './engineAccessors.js';
+import { laySchema } from '../util/schemaLayout.js';
 
 /** False once compiling an accessor has thrown (a CSP without 'unsafe-eval'): the shared closures from then on. */
 let compileAccessors = true;
@@ -119,23 +120,10 @@ export class Component {
     this.sharedBufferByte = byteOffset;
     this.globalEntityCount = count;
 
-    let offset = byteOffset;
-
-    // Create typed array views for each property defined in schema
-    for (const [name, typeOrSpec] of Object.entries(this.ARRAY_SCHEMA)) {
-      const { type, length } = this._schemaEntry(typeOrSpec);
-      const bytesPerElement = type.BYTES_PER_ELEMENT;
-      const elements = count * length;
-
-      // Ensure proper alignment for this typed array
-      const remainder = offset % bytesPerElement;
-      if (remainder !== 0) {
-        offset += bytesPerElement - remainder;
-      }
-
-      this[name] = new type(buffer, offset, elements);
-      offset += elements * bytesPerElement;
-    }
+    // A typed array view for each property in the schema, each aligned to its element size.
+    laySchema(this.ARRAY_SCHEMA, (spec) => this._schemaEntry(spec), count, byteOffset, buffer, (name, view) => {
+      this[name] = view;
+    });
 
     // Auto-generate instance getters/setters on prototype
     this._createInstanceProperties();
@@ -189,23 +177,7 @@ export class Component {
    * @returns {number} Buffer size in bytes
    */
   static getBufferSize(count) {
-    let offset = 0;
-
-    for (const typeOrSpec of Object.values(this.ARRAY_SCHEMA)) {
-      const { type, length } = this._schemaEntry(typeOrSpec);
-      const bytesPerElement = type.BYTES_PER_ELEMENT;
-      const elements = count * length;
-
-      // Add alignment padding
-      const remainder = offset % bytesPerElement;
-      if (remainder !== 0) {
-        offset += bytesPerElement - remainder;
-      }
-
-      offset += elements * bytesPerElement;
-    }
-
-    return offset;
+    return laySchema(this.ARRAY_SCHEMA, (spec) => this._schemaEntry(spec), count, 0, null, null);
   }
 
   constructor(index) {

@@ -11,7 +11,7 @@ import { RigidBody } from '../components/rigidBody.js';
 import { Camera } from './camera.js';
 import { applyParticleEase, lerpRgb, resolveEaseId } from '../util/particleTween.js';
 import { logicBlockRange } from '../util/logicOwner.js';
-import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
+import { EntityIdArray } from '../util/entityIdWidth.js';
 import { Messages } from './messages.js';
 
 export const TWEEN_KIND_PAINT = 0;
@@ -58,6 +58,44 @@ function align4(n) {
 }
 
 /**
+ * CR-19: the tween pool's columns in buffer order, each padded to 4 bytes; a null type is the entity column, whose
+ * array follows entityIdWidth. tweenBufferBytes and Tween.bind both walk it.
+ */
+const TWEEN_COLUMNS = [
+  ['active', Int32Array],
+  ['ease', Uint8Array],
+  ['mask', Uint8Array],
+  ['kind', Uint8Array],
+  ['entity', null],
+  ['duration', Float32Array],
+  ['elapsed', Float32Array],
+  ['from0', Float32Array],
+  ['to0', Float32Array],
+  ['from1', Float32Array],
+  ['to1', Float32Array],
+  ['from2', Float32Array],
+  ['to2', Float32Array],
+  ['from3', Float32Array],
+  ['to3', Float32Array],
+  ['tintFrom', Uint32Array],
+  ['tintTo', Uint32Array],
+  ['repeat', Uint16Array],
+  ['doneMsg', Uint16Array],
+  ['flags', Uint8Array],
+];
+
+/** Walks TWEEN_COLUMNS for `n` slots: with a buffer, sets each column's view on `pool`. Returns the bytes taken. */
+function layTweenColumns(pool, sab, n) {
+  let o = 0;
+  for (const [name, Type] of TWEEN_COLUMNS) {
+    const T = Type === null ? EntityIdArray() : Type;
+    if (sab !== null) pool[name] = new T(sab, o, n);
+    o = align4(o + n * T.BYTES_PER_ELEMENT);
+  }
+  return o;
+}
+
+/**
  * Bytes for a pool of `count` slots. The entity column follows entityIdWidth, so
  * call it after bindEntityIdWidth (Scene and workers do). `entityCount` > 0 adds
  * a live-tween count per entity, so a despawn only scans the pool for an entity
@@ -66,21 +104,7 @@ function align4(n) {
  * @param {number} [entityCount]
  */
 export function tweenBufferBytes(count, entityCount = 0) {
-  const n = count | 0;
-  let o = 0;
-  o = align4(o + n * 4);
-  o = align4(o + n);
-  o = align4(o + n);
-  o = align4(o + n);
-  o += n * entityIdBytes();
-  o = align4(o);
-  o += n * 4 * 10;
-  o += n * 4 * 2;
-  o = align4(o + n * 2); // repeat
-  o = align4(o + n * 2); // doneMsg
-  o = align4(o + n); // flags
-  o += (entityCount | 0) * 2; // live tweens per entity
-  return o;
+  return layTweenColumns(null, null, count | 0) + (entityCount | 0) * 2; // then the live tweens per entity
 }
 
 function repeatCount(options) {
@@ -160,43 +184,7 @@ export class Tween {
     const n = count | 0;
     this.capacity = n;
     this._claimCursor = 0;
-    let o = 0;
-    this.active = new Int32Array(sab, o, n);
-    o = align4(o + n * 4);
-    this.ease = new Uint8Array(sab, o, n);
-    o = align4(o + n);
-    this.mask = new Uint8Array(sab, o, n);
-    o = align4(o + n);
-    this.kind = new Uint8Array(sab, o, n);
-    o = align4(o + n);
-    const IdArray = EntityIdArray();
-    this.entity = new IdArray(sab, o, n);
-    o = align4(o + n * entityIdBytes());
-    const take = () => {
-      const view = new Float32Array(sab, o, n);
-      o += n * 4;
-      return view;
-    };
-    this.duration = take();
-    this.elapsed = take();
-    this.from0 = take();
-    this.to0 = take();
-    this.from1 = take();
-    this.to1 = take();
-    this.from2 = take();
-    this.to2 = take();
-    this.from3 = take();
-    this.to3 = take();
-    this.tintFrom = new Uint32Array(sab, o, n);
-    o += n * 4;
-    this.tintTo = new Uint32Array(sab, o, n);
-    o += n * 4;
-    this.repeat = new Uint16Array(sab, o, n);
-    o = align4(o + n * 2);
-    this.doneMsg = new Uint16Array(sab, o, n);
-    o = align4(o + n * 2);
-    this.flags = new Uint8Array(sab, o, n);
-    o = align4(o + n);
+    const o = layTweenColumns(this, sab, n);
     this.entityTweens = new Uint16Array(sab, o, entityCount | 0);
   }
 

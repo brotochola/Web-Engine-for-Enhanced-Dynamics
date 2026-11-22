@@ -1,45 +1,8 @@
 // VisualAidsPanel.js — Toggle buttons for debug flags (colliders, velocity, etc.)
 
-import { DEBUG_FLAGS } from '../debugFlags.js';
-import { createPanel, createRow, createDivider, createButton } from '../ui/debugDom.js';
-
-const VISUAL_METHOD = {
-  colliders: 'showColliders',
-  velocity: 'showVelocity',
-  acceleration: 'showAcceleration',
-  neighbors: 'showNeighbors',
-  spatialGrid: 'showSpatialGrid',
-  entityIndices: 'showEntityIndices',
-  debugDraws: 'showDebugDraws',
-  sleepingEntities: 'showSleepingEntities',
-  sleepingCells: 'showSleepingCells',
-  joints: 'showJoints',
-  entityOrigins: 'showEntityOrigins',
-  meshes: 'showMeshes',
-  entityInfo: 'showEntityInfo',
-  activeOnly: 'showActiveOnly',
-  lights: 'showLights',
-  fpsGraph: 'showFPSGraph',
-};
-
-const VISUAL_FLAG = {
-  colliders: DEBUG_FLAGS.SHOW_COLLIDERS,
-  velocity: DEBUG_FLAGS.SHOW_VELOCITY,
-  acceleration: DEBUG_FLAGS.SHOW_ACCELERATION,
-  neighbors: DEBUG_FLAGS.SHOW_NEIGHBORS,
-  spatialGrid: DEBUG_FLAGS.SHOW_SPATIAL_GRID,
-  entityIndices: DEBUG_FLAGS.SHOW_ENTITY_INDICES,
-  debugDraws: DEBUG_FLAGS.SHOW_DEBUG_DRAWS,
-  sleepingEntities: DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES,
-  sleepingCells: DEBUG_FLAGS.SHOW_SLEEPING_CELLS,
-  joints: DEBUG_FLAGS.SHOW_JOINTS,
-  entityOrigins: DEBUG_FLAGS.SHOW_ENTITY_ORIGINS,
-  meshes: DEBUG_FLAGS.SHOW_MESHES,
-  entityInfo: DEBUG_FLAGS.SHOW_ENTITY_INFO,
-  activeOnly: DEBUG_FLAGS.SHOW_ACTIVE_ONLY,
-  lights: DEBUG_FLAGS.SHOW_LIGHTS,
-  fpsGraph: DEBUG_FLAGS.SHOW_FPS_GRAPH,
-};
+import { DEBUG_FLAG_KEYS } from '../debugFlags.js';
+import { createPanel, createRow, createDivider, createButton, elem } from '../ui/debugDom.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
 const TIP_PHYSICS = 'Requires config.physics.enabled';
 const TIP_SPATIAL = 'Requires spatial.numberOfSpatialWorkers > 0';
@@ -59,6 +22,11 @@ const VISUAL_CAP = {
   lights: 'lighting',
 };
 
+const AID_TITLE = {
+  acceleration: 'Impulse applied this step (Box2D clears ax/ay after integrate)',
+  meshes: 'Triangle edges. Magenta = authored mesh, cyan = per-vertex UVs, orange = collider fill',
+};
+
 const VISUAL_TIP = {
   physics: TIP_PHYSICS,
   spatial: TIP_SPATIAL,
@@ -66,11 +34,10 @@ const VISUAL_TIP = {
   joints: TIP_JOINTS,
 };
 
-export class VisualAidsPanel {
+export class VisualAidsPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
+    super(debugUI);
     this.elements = { visualToggles: {} };
-    this.panel = null;
   }
 
   create() {
@@ -92,23 +59,9 @@ export class VisualAidsPanel {
       { key: 'entityOrigins', label: 'Origins' },
     ];
 
-    for (const aid of visualAids) {
-      const btn = document.createElement('button');
-      btn.className = 'debug-ui-btn';
-      btn.textContent = aid.label;
-      if (aid.key === 'acceleration') {
-        btn.title = 'Impulse applied this step (Box2D clears ax/ay after integrate)';
-      } else if (aid.key === 'meshes') {
-        btn.title = 'Triangle edges. Magenta = authored mesh, cyan = per-vertex UVs, orange = collider fill';
-      }
-      btn.onclick = () => this.toggleVisualAid(aid.key);
-      this.elements.visualToggles[aid.key] = btn;
-      row.appendChild(btn);
-    }
+    for (const aid of visualAids) row.appendChild(this._toggleButton(aid));
 
-    const disableBtn = document.createElement('button');
-    disableBtn.className = 'debug-ui-btn danger';
-    disableBtn.textContent = 'Off';
+    const disableBtn = elem('button', 'debug-ui-btn danger', 'Off');
     disableBtn.onclick = () => {
       const flags = this.debugUI.debugFlags;
       if (flags) {
@@ -128,18 +81,9 @@ export class VisualAidsPanel {
       { key: 'lights', label: 'Lights' },
       { key: 'fpsGraph', label: 'FPS graph' },
     ];
-    for (const aid of extras) {
-      const btn = document.createElement('button');
-      btn.className = 'debug-ui-btn';
-      btn.textContent = aid.label;
-      btn.onclick = () => this.toggleVisualAid(aid.key);
-      this.elements.visualToggles[aid.key] = btn;
-      row2.appendChild(btn);
-    }
+    for (const aid of extras) row2.appendChild(this._toggleButton(aid));
     row2.appendChild(createDivider());
-    this.elements.inspectorBtn = document.createElement('button');
-    this.elements.inspectorBtn.className = 'debug-ui-btn tool';
-    this.elements.inspectorBtn.textContent = 'Inspect';
+    this.elements.inspectorBtn = elem('button', 'debug-ui-btn tool', 'Inspect');
     this.elements.inspectorBtn.title = 'Click an entity to inspect';
     this.elements.inspectorBtn.onclick = () => this.debugUI.tools.toggleInspector('entity');
     row2.appendChild(this.elements.inspectorBtn);
@@ -157,20 +101,28 @@ export class VisualAidsPanel {
     return this.panel;
   }
 
+  /** A flag's toggle button, kept in elements.visualToggles by its key. */
+  _toggleButton(aid) {
+    const btn = createButton(aid.label, '', () => this.toggleVisualAid(aid.key));
+    const title = AID_TITLE[aid.key];
+    if (title) btn.title = title;
+    this.elements.visualToggles[aid.key] = btn;
+    return btn;
+  }
+
   attach() {
     this._applyCaps();
     this.updateState();
   }
 
-  update() { /* toggles are event-driven */ }
 
   updateState() {
     const flags = this.debugUI.debugFlags;
     if (!flags) return;
     const toggles = this.elements.visualToggles;
-    for (const key in VISUAL_FLAG) {
+    for (const key in DEBUG_FLAG_KEYS) {
       const btn = toggles[key];
-      if (btn) btn.classList.toggle('active', flags.isEnabled(VISUAL_FLAG[key]));
+      if (btn) btn.classList.toggle('active', flags.isEnabled(DEBUG_FLAG_KEYS[key]));
     }
   }
 
@@ -192,10 +144,8 @@ export class VisualAidsPanel {
       if (!on) {
         btn.title = VISUAL_TIP[cap];
         btn.classList.remove('active');
-      } else if (key === 'acceleration') {
-        btn.title = 'Impulse applied this step (Box2D clears ax/ay after integrate)';
       } else {
-        btn.title = '';
+        btn.title = AID_TITLE[key] || '';
       }
     }
 
@@ -242,10 +192,10 @@ export class VisualAidsPanel {
     const flags = this.debugUI.debugFlags;
     if (!flags) return;
 
-    const method = VISUAL_METHOD[key];
-    if (!method || !flags[method]) return;
+    const flag = DEBUG_FLAG_KEYS[key];
+    if (flag === undefined) return;
 
-    flags[method](!flags.isEnabled(VISUAL_FLAG[key]));
+    flags.setFlag(flag, !flags.isEnabled(flag));
     this.updateState();
     this.debugUI.canvas.syncLoop();
   }

@@ -26,6 +26,7 @@
 
 import { HEIGHT_UNITS } from './spriteMaps.js';
 import { MAPS_HEIGHTS, MAPS_RELIEF, MAPS_TWIN, MAPS_UNSHADED } from './mapsTable.js';
+import { hasOnce } from './shaderEdit.js';
 
 /** The maps table's binding in a WGSL program's group 2 (the twin page is 5; the shadow programs take 6 and 7). */
 export const MAPS_TABLE_BINDING = 8;
@@ -258,7 +259,7 @@ export const TWIN_MARK_GLSL = '// weed:twin\n';
  * @returns {string}
  */
 export function withTwinGlsl(source) {
-  if (source.split(TWIN_MARK_GLSL).length !== 2) throw new Error('WeedJS: the twin page\'s readers need one "// weed:twin" line');
+  if (!hasOnce(source, TWIN_MARK_GLSL)) throw new Error('WeedJS: the twin page\'s readers need one "// weed:twin" line');
   const twin = twinGlsl();
   return source.replace(TWIN_MARK_GLSL, () => twin);
 }

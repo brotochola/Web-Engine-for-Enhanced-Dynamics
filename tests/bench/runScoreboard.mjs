@@ -26,6 +26,7 @@ import {
   pickOpsWithKey,
   renderCompareTable,
   repoRoot,
+  rowEstimates,
   runKernelScript,
   sceneMetricKeys,
   sceneWantsHeaded,
@@ -79,14 +80,17 @@ function decideRow(feature, kernel, scenePair) {
         .join(', ')}`
     );
   }
+  // N-407: each primary's exact-frame mean when both sides have one, else the sampled mean on both.
+  const est = scenePair?.ok && scenePair.base && scenePair.hyp
+    ? rowEstimates(scenePair.base, scenePair.hyp, feature.primary)
+    : null;
+  if (est?.exact.length) reasons.push(`exact-frame means: ${est.exact.join(', ')}`);
   if (
     !feature.protocolCeiling &&
     usesStressStepFloor(feature.scene) &&
-    scenePair?.ok &&
-    scenePair.base &&
-    scenePair.hyp
+    est
   ) {
-    const floor = stepMsFloorOk(scenePair.base, scenePair.hyp, feature.primary);
+    const floor = stepMsFloorOk(est.base, est.hyp, feature.primary);
     if (!floor.ok) reasons.push(floor.reason);
   }
 
@@ -103,8 +107,8 @@ function decideRow(feature, kernel, scenePair) {
   }
   if (!feature.protocolCeiling && scenePair?.ok && scenePair.workload?.ok) {
     for (const metric of feature.primary) {
-      const b = scenePair.base[metric]?.median;
-      const h = scenePair.hyp[metric]?.median;
+      const b = (est || scenePair).base[metric]?.median;
+      const h = (est || scenePair).hyp[metric]?.median;
       const d = pctDelta(h, b);
       if (d == null) continue;
       hits.push({ metric, base: b, hyp: h, deltaPct: d, higherBetter: false });

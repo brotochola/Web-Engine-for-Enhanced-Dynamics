@@ -27,6 +27,102 @@ function jointSetWide(idx, entityA, entityB) {
   Joint.entityA[idx] = entityA >>> 0;
   Joint.entityB[idx] = entityB >>> 0;
 }
+/**
+ * CR-19: the joint pool's columns in buffer order, one table for getBufferSize, initializeArrays and reset (the offsets
+ * they wrote by hand; physicsHostImpl mirrors this order: append, don't move). [field, array type]: a 1-byte column
+ * pads to 4 bytes after it. PAIRS is the entity pair (entityA and entityB, two Uint32 columns, when ids are 4 bytes; one
+ * packed Uint32 column, pairs, when 2), META the active list's two Int32 words (activeMeta, activeCount, activeListLock),
+ * ALIGN pads to 4 bytes, HEAD the per-entity list heads (entityCount Uint16, or none).
+ */
+const PAIRS = 1;
+const META = 2;
+const ALIGN = 3;
+const HEAD = 4;
+const JOINT_LAYOUT = [
+  ['type', Uint8Array],
+  [PAIRS],
+  ['localAnchorAX', Float32Array], ['localAnchorAY', Float32Array], ['localAnchorBX', Float32Array], ['localAnchorBY', Float32Array],
+  ['forceThreshold', Float32Array], ['torqueThreshold', Float32Array],
+  ['active', Uint8Array],
+  // Distance
+  ['length', Float32Array], ['enableSpring', Uint8Array], ['hertz', Float32Array], ['dampingRatio', Float32Array],
+  // Revolute (and prismatic)
+  ['enableLimit', Uint8Array], ['lowerAngle', Float32Array], ['upperAngle', Float32Array],
+  ['enableMotor', Uint8Array], ['motorSpeed', Float32Array], ['maxMotorTorque', Float32Array],
+  // Weld (linearHertz is prismatic's axis angle too)
+  ['linearHertz', Float32Array], ['angularHertz', Float32Array],
+  ['linearDampingRatio', Float32Array], ['angularDampingRatio', Float32Array],
+  // The dense active list, revisions, the intrusive per-entity lists
+  ['activeIndices', Uint16Array], ['activeIndexPositions', Uint16Array],
+  [META],
+  ['revision', Uint32Array], [ALIGN],
+  ['nextA', Uint16Array], ['nextB', Uint16Array], [ALIGN],
+  [HEAD], [ALIGN],
+];
+
+const align4 = (o) => Math.ceil(o / 4) * 4;
+
+/**
+ * Walks JOINT_LAYOUT for n joints and e entities: with a buffer, sets each column's view on `pool` (null with none: the
+ * pair columns that do not apply, the heads when e is 0). Returns the bytes the pool takes.
+ */
+function layJoints(pool, buffer, n, e, wide) {
+  const bind = buffer !== null;
+  let offset = 0;
+  for (const [name, Type] of JOINT_LAYOUT) {
+    if (name === PAIRS) {
+      if (bind) {
+        pool.entityA = wide ? new Uint32Array(buffer, offset, n) : null;
+        pool.entityB = wide ? new Uint32Array(buffer, offset + n * 4, n) : null;
+        pool.pairs = wide ? null : new Uint32Array(buffer, offset, n);
+      }
+      offset += wide ? n * 8 : n * 4;
+    } else if (name === META) {
+      if (bind) {
+        pool.activeMeta = new Int32Array(buffer, offset, 2);
+        pool.activeCount = new Int32Array(buffer, offset, 1);
+        pool.activeListLock = new Int32Array(buffer, offset + 4, 1);
+      }
+      offset += 8;
+    } else if (name === ALIGN) {
+      offset = align4(offset);
+    } else if (name === HEAD) {
+      if (bind) pool.head = e > 0 ? new Uint16Array(buffer, offset, e) : null;
+      offset += e * 2;
+    } else {
+      if (bind) pool[name] = new Type(buffer, offset, n);
+      offset += n * Type.BYTES_PER_ELEMENT;
+      if (Type.BYTES_PER_ELEMENT === 1) offset = align4(offset);
+    }
+  }
+  return offset;
+}
+
+/** Joint.update's props by joint type: [prop, column, stored as 1/0]. The anchors apply to every type. */
+const ANCHOR_PROPS = [
+  ['localAnchorAX', 'localAnchorAX'], ['localAnchorAY', 'localAnchorAY'],
+  ['localAnchorBX', 'localAnchorBX'], ['localAnchorBY', 'localAnchorBY'],
+];
+const UPDATE_PROPS = {
+  [JOINT_TYPE.DISTANCE]: [
+    ['length', 'length'], ['enableSpring', 'enableSpring', true], ['hertz', 'hertz'], ['dampingRatio', 'dampingRatio'],
+  ],
+  [JOINT_TYPE.REVOLUTE]: [
+    ['enableLimit', 'enableLimit', true], ['lowerAngle', 'lowerAngle'], ['upperAngle', 'upperAngle'],
+    ['enableMotor', 'enableMotor', true], ['motorSpeed', 'motorSpeed'], ['maxMotorTorque', 'maxMotorTorque'],
+  ],
+  // maxMotorForce after maxMotorTorque: given both, the force is kept, as before.
+  [JOINT_TYPE.PRISMATIC]: [
+    ['axisAngle', 'linearHertz'], ['enableLimit', 'enableLimit', true], ['lowerTranslation', 'lowerAngle'],
+    ['upperTranslation', 'upperAngle'], ['enableMotor', 'enableMotor', true], ['motorSpeed', 'motorSpeed'],
+    ['maxMotorTorque', 'maxMotorTorque'], ['maxMotorForce', 'maxMotorTorque'],
+  ],
+  [JOINT_TYPE.WELD]: [
+    ['linearHertz', 'linearHertz'], ['angularHertz', 'angularHertz'],
+    ['linearDampingRatio', 'linearDampingRatio'], ['angularDampingRatio', 'angularDampingRatio'],
+  ],
+};
+
 function bindJointAccess(wide) {
   if (wide) {
     Joint.getEntityA = jointGetAWide;
@@ -99,144 +195,14 @@ export class Joint extends SharedAtomicPool {
   static _entityCount = 0;
 
   static getBufferSize(maxJoints, entityCount = 0) {
-    // Mirror initializeArrays offsets
-    let offset = 0;
-    const n = maxJoints;
-    const e = entityCount | 0;
-    const align4 = (o) => Math.ceil(o / 4) * 4;
-    offset = align4(offset + n); // type
-    if (entityIdBytes() === 4) {
-      offset += n * 4; // entityA
-      offset += n * 4; // entityB
-    } else {
-      offset += n * 4; // packed pairs
-    }
-    offset += n * 4 * 4; // localAnchors
-    offset += n * 4; // forceThreshold
-    offset += n * 4; // torqueThreshold
-    offset = align4(offset + n); // active
-    offset += n * 4; // length
-    offset = align4(offset + n); // enableSpring
-    offset += n * 4; // hertz
-    offset += n * 4; // dampingRatio
-    offset = align4(offset + n); // enableLimit
-    offset += n * 4; // lowerAngle
-    offset += n * 4; // upperAngle
-    offset = align4(offset + n); // enableMotor
-    offset += n * 4; // motorSpeed
-    offset += n * 4; // maxMotorTorque
-    offset += n * 4 * 4; // weld floats
-    offset += n * 2; // activeIndices
-    offset += n * 2; // activeIndexPositions
-    offset += 8; // activeMeta
-    offset += n * 4; // revision
-    offset = align4(offset);
-    offset += n * 2; // nextA
-    offset += n * 2; // nextB
-    offset = align4(offset);
-    offset += e * 2; // head
-    offset = align4(offset);
-    return offset;
+    return layJoints(null, null, maxJoints, entityCount | 0, entityIdBytes() === 4);
   }
 
   static initializeArrays(buffer, maxJoints, entityCount = 0) {
-    let offset = 0;
-    const n = maxJoints;
-    const align4 = (o) => Math.ceil(o / 4) * 4;
-
-    this.type = new Uint8Array(buffer, offset, n);
-    offset = align4(offset + n);
-
     this._widePairs = entityIdBytes() === 4;
     bindJointAccess(this._widePairs);
-    if (this._widePairs) {
-      this.entityA = new Uint32Array(buffer, offset, n);
-      offset += n * 4;
-      this.entityB = new Uint32Array(buffer, offset, n);
-      offset += n * 4;
-      this.pairs = null;
-    } else {
-      this.entityA = null;
-      this.entityB = null;
-      this.pairs = new Uint32Array(buffer, offset, n);
-      offset += n * 4;
-    }
-
-    this.localAnchorAX = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.localAnchorAY = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.localAnchorBX = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.localAnchorBY = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-
-    this.forceThreshold = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.torqueThreshold = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-
-    this.active = new Uint8Array(buffer, offset, n);
-    offset = align4(offset + n);
-
-    this.length = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.enableSpring = new Uint8Array(buffer, offset, n);
-    offset = align4(offset + n);
-    this.hertz = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.dampingRatio = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-
-    this.enableLimit = new Uint8Array(buffer, offset, n);
-    offset = align4(offset + n);
-    this.lowerAngle = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.upperAngle = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.enableMotor = new Uint8Array(buffer, offset, n);
-    offset = align4(offset + n);
-    this.motorSpeed = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.maxMotorTorque = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-
-    this.linearHertz = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.angularHertz = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.linearDampingRatio = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-    this.angularDampingRatio = new Float32Array(buffer, offset, n);
-    offset += n * 4;
-
-    this.activeIndices = new Uint16Array(buffer, offset, n);
-    offset += n * 2;
-    this.activeIndexPositions = new Uint16Array(buffer, offset, n);
-    offset += n * 2;
-
-    this.activeMeta = new Int32Array(buffer, offset, 2);
-    this.activeCount = new Int32Array(buffer, offset, 1);
-    this.activeListLock = new Int32Array(buffer, offset + 4, 1);
-    offset += 8;
-
-    this.revision = new Uint32Array(buffer, offset, n);
-    offset += n * 4;
-    offset = align4(offset);
-
-    this.nextA = new Uint16Array(buffer, offset, n);
-    offset += n * 2;
-    this.nextB = new Uint16Array(buffer, offset, n);
-    offset += n * 2;
-    offset = align4(offset);
-
     this._entityCount = entityCount | 0;
-    this.head =
-      this._entityCount > 0
-        ? new Uint16Array(buffer, offset, this._entityCount)
-        : null;
-    offset += this._entityCount * 2;
-    offset = align4(offset);
+    layJoints(this, buffer, maxJoints, this._entityCount, this._widePairs);
 
     this.active.fill(0);
     this.type.fill(0);
@@ -381,6 +347,23 @@ export class Joint extends SharedAtomicPool {
     return idx;
   }
 
+  /**
+   * The start every add* shares: a slot (-1 when the pool is full), its type, pair, anchors and break thresholds.
+   * @returns {number}
+   */
+  static _begin(opts, type) {
+    const entityA = opts.entityA | 0;
+    const entityB = opts.entityB | 0;
+    const idx = this._acquireOrWarn();
+    if (idx === -1) return -1;
+    const anchors = this._resolveLocalAnchors(opts, entityA, entityB);
+    this.type[idx] = type;
+    this._setPairAndAnchors(idx, entityA, entityB, anchors);
+    this.forceThreshold[idx] = opts.forceThreshold ?? Infinity;
+    this.torqueThreshold[idx] = opts.torqueThreshold ?? Infinity;
+    return idx;
+  }
+
   static _setPairAndAnchors(idx, entityA, entityB, anchors) {
     this.setPair(idx, entityA, entityB);
     this.localAnchorAX[idx] = anchors.ax;
@@ -395,16 +378,8 @@ export class Joint extends SharedAtomicPool {
    * @returns {number}
    */
   static addDistance(opts = {}) {
-    const entityA = opts.entityA | 0;
-    const entityB = opts.entityB | 0;
-    const idx = this._acquireOrWarn();
+    const idx = this._begin(opts, JOINT_TYPE.DISTANCE);
     if (idx === -1) return -1;
-
-    const anchors = this._resolveLocalAnchors(opts, entityA, entityB);
-    this.type[idx] = JOINT_TYPE.DISTANCE;
-    this._setPairAndAnchors(idx, entityA, entityB, anchors);
-    this.forceThreshold[idx] = opts.forceThreshold ?? Infinity;
-    this.torqueThreshold[idx] = opts.torqueThreshold ?? Infinity;
     this.length[idx] = opts.length ?? 0;
     this.enableSpring[idx] = opts.enableSpring ? 1 : 0;
     this.hertz[idx] = opts.hertz ?? 1;
@@ -419,16 +394,8 @@ export class Joint extends SharedAtomicPool {
    * @returns {number}
    */
   static addRevolute(opts = {}) {
-    const entityA = opts.entityA | 0;
-    const entityB = opts.entityB | 0;
-    const idx = this._acquireOrWarn();
+    const idx = this._begin(opts, JOINT_TYPE.REVOLUTE);
     if (idx === -1) return -1;
-
-    const anchors = this._resolveLocalAnchors(opts, entityA, entityB);
-    this.type[idx] = JOINT_TYPE.REVOLUTE;
-    this._setPairAndAnchors(idx, entityA, entityB, anchors);
-    this.forceThreshold[idx] = opts.forceThreshold ?? Infinity;
-    this.torqueThreshold[idx] = opts.torqueThreshold ?? Infinity;
     this.enableLimit[idx] = opts.enableLimit ? 1 : 0;
     this.lowerAngle[idx] = opts.lowerAngle ?? 0;
     this.upperAngle[idx] = opts.upperAngle ?? 0;
@@ -445,16 +412,8 @@ export class Joint extends SharedAtomicPool {
    * @returns {number}
    */
   static addWeld(opts = {}) {
-    const entityA = opts.entityA | 0;
-    const entityB = opts.entityB | 0;
-    const idx = this._acquireOrWarn();
+    const idx = this._begin(opts, JOINT_TYPE.WELD);
     if (idx === -1) return -1;
-
-    const anchors = this._resolveLocalAnchors(opts, entityA, entityB);
-    this.type[idx] = JOINT_TYPE.WELD;
-    this._setPairAndAnchors(idx, entityA, entityB, anchors);
-    this.forceThreshold[idx] = opts.forceThreshold ?? Infinity;
-    this.torqueThreshold[idx] = opts.torqueThreshold ?? Infinity;
     this.linearHertz[idx] = opts.linearHertz ?? 0;
     this.angularHertz[idx] = opts.angularHertz ?? 0;
     this.linearDampingRatio[idx] = opts.linearDampingRatio ?? 1;
@@ -471,16 +430,8 @@ export class Joint extends SharedAtomicPool {
    * @returns {number}
    */
   static addPrismatic(opts = {}) {
-    const entityA = opts.entityA | 0;
-    const entityB = opts.entityB | 0;
-    const idx = this._acquireOrWarn();
+    const idx = this._begin(opts, JOINT_TYPE.PRISMATIC);
     if (idx === -1) return -1;
-
-    const anchors = this._resolveLocalAnchors(opts, entityA, entityB);
-    this.type[idx] = JOINT_TYPE.PRISMATIC;
-    this._setPairAndAnchors(idx, entityA, entityB, anchors);
-    this.forceThreshold[idx] = opts.forceThreshold ?? Infinity;
-    this.torqueThreshold[idx] = opts.torqueThreshold ?? Infinity;
     this.enableLimit[idx] = opts.enableLimit ? 1 : 0;
     this.lowerAngle[idx] = opts.lowerTranslation ?? 0;
     this.upperAngle[idx] = opts.upperTranslation ?? 0;
@@ -540,119 +491,22 @@ export class Joint extends SharedAtomicPool {
 
   static update(idx, props = {}) {
     if (idx < 0 || idx >= this.maxCount || !this.active[idx]) return;
-    const t = this.type[idx];
-    let changed = false;
-
-    if (props.localAnchorAX !== undefined) {
-      this.localAnchorAX[idx] = props.localAnchorAX;
-      changed = true;
-    }
-    if (props.localAnchorAY !== undefined) {
-      this.localAnchorAY[idx] = props.localAnchorAY;
-      changed = true;
-    }
-    if (props.localAnchorBX !== undefined) {
-      this.localAnchorBX[idx] = props.localAnchorBX;
-      changed = true;
-    }
-    if (props.localAnchorBY !== undefined) {
-      this.localAnchorBY[idx] = props.localAnchorBY;
-      changed = true;
-    }
-
-    if (t === JOINT_TYPE.DISTANCE) {
-      if (props.length !== undefined) {
-        this.length[idx] = props.length;
-        changed = true;
-      }
-      if (props.enableSpring !== undefined) {
-        this.enableSpring[idx] = props.enableSpring ? 1 : 0;
-        changed = true;
-      }
-      if (props.hertz !== undefined) {
-        this.hertz[idx] = props.hertz;
-        changed = true;
-      }
-      if (props.dampingRatio !== undefined) {
-        this.dampingRatio[idx] = props.dampingRatio;
-        changed = true;
-      }
-    } else if (t === JOINT_TYPE.REVOLUTE) {
-      if (props.enableLimit !== undefined) {
-        this.enableLimit[idx] = props.enableLimit ? 1 : 0;
-        changed = true;
-      }
-      if (props.lowerAngle !== undefined) {
-        this.lowerAngle[idx] = props.lowerAngle;
-        changed = true;
-      }
-      if (props.upperAngle !== undefined) {
-        this.upperAngle[idx] = props.upperAngle;
-        changed = true;
-      }
-      if (props.enableMotor !== undefined) {
-        this.enableMotor[idx] = props.enableMotor ? 1 : 0;
-        changed = true;
-      }
-      if (props.motorSpeed !== undefined) {
-        this.motorSpeed[idx] = props.motorSpeed;
-        changed = true;
-      }
-      if (props.maxMotorTorque !== undefined) {
-        this.maxMotorTorque[idx] = props.maxMotorTorque;
-        changed = true;
-      }
-    } else if (t === JOINT_TYPE.PRISMATIC) {
-      if (props.axisAngle !== undefined) {
-        this.linearHertz[idx] = props.axisAngle;
-        changed = true;
-      }
-      if (props.enableLimit !== undefined) {
-        this.enableLimit[idx] = props.enableLimit ? 1 : 0;
-        changed = true;
-      }
-      if (props.lowerTranslation !== undefined) {
-        this.lowerAngle[idx] = props.lowerTranslation;
-        changed = true;
-      }
-      if (props.upperTranslation !== undefined) {
-        this.upperAngle[idx] = props.upperTranslation;
-        changed = true;
-      }
-      if (props.enableMotor !== undefined) {
-        this.enableMotor[idx] = props.enableMotor ? 1 : 0;
-        changed = true;
-      }
-      if (props.motorSpeed !== undefined) {
-        this.motorSpeed[idx] = props.motorSpeed;
-        changed = true;
-      }
-      if (props.maxMotorForce !== undefined) {
-        this.maxMotorTorque[idx] = props.maxMotorForce;
-        changed = true;
-      } else if (props.maxMotorTorque !== undefined) {
-        this.maxMotorTorque[idx] = props.maxMotorTorque;
-        changed = true;
-      }
-    } else if (t === JOINT_TYPE.WELD) {
-      if (props.linearHertz !== undefined) {
-        this.linearHertz[idx] = props.linearHertz;
-        changed = true;
-      }
-      if (props.angularHertz !== undefined) {
-        this.angularHertz[idx] = props.angularHertz;
-        changed = true;
-      }
-      if (props.linearDampingRatio !== undefined) {
-        this.linearDampingRatio[idx] = props.linearDampingRatio;
-        changed = true;
-      }
-      if (props.angularDampingRatio !== undefined) {
-        this.angularDampingRatio[idx] = props.angularDampingRatio;
-        changed = true;
-      }
-    }
+    const byType = UPDATE_PROPS[this.type[idx]];
+    let changed = this._applyProps(idx, props, ANCHOR_PROPS);
+    if (byType !== undefined && this._applyProps(idx, props, byType)) changed = true;
     if (changed) this.bumpRevision(idx);
+  }
+
+  /** The props a table names, each into its column; true when any was given. */
+  static _applyProps(idx, props, table) {
+    let changed = false;
+    for (const [key, column, flag] of table) {
+      const v = props[key];
+      if (v === undefined) continue;
+      this[column][idx] = flag === true ? (v ? 1 : 0) : v;
+      changed = true;
+    }
+    return changed;
   }
 
   static isActive(idx) {
@@ -919,41 +773,17 @@ export class Joint extends SharedAtomicPool {
 
   static reset() {
     super.reset();
-    this.type = null;
+    for (const [name] of JOINT_LAYOUT) {
+      if (typeof name === 'string') this[name] = null;
+    }
     this.pairs = null;
     this.entityA = null;
     this.entityB = null;
     this._widePairs = false;
     bindJointAccess(false);
-    this.localAnchorAX = null;
-    this.localAnchorAY = null;
-    this.localAnchorBX = null;
-    this.localAnchorBY = null;
-    this.forceThreshold = null;
-    this.torqueThreshold = null;
-    this.active = null;
-    this.length = null;
-    this.enableSpring = null;
-    this.hertz = null;
-    this.dampingRatio = null;
-    this.enableLimit = null;
-    this.lowerAngle = null;
-    this.upperAngle = null;
-    this.enableMotor = null;
-    this.motorSpeed = null;
-    this.maxMotorTorque = null;
-    this.linearHertz = null;
-    this.angularHertz = null;
-    this.linearDampingRatio = null;
-    this.angularDampingRatio = null;
-    this.activeIndices = null;
-    this.activeIndexPositions = null;
     this.activeMeta = null;
     this.activeCount = null;
     this.activeListLock = null;
-    this.revision = null;
-    this.nextA = null;
-    this.nextB = null;
     this.head = null;
     this._entityCount = 0;
   }

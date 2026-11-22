@@ -9,6 +9,7 @@
  * The snap rounds the origin in the stage's pixels (uWorldTransformMatrix · uTransformMatrix: the camera's zoom and
  * place, a parallax layer's own), as the packs did with the camera's: round((x - camera) · zoom).
  */
+import { replaceOnce } from './shaderEdit.js';
 
 /** The GLSL snap: v moved by the rounding of its place on the stage, brought back through the transform's inverse. */
 const SNAP_GLSL = `
@@ -34,11 +35,6 @@ fn weedSnapXY(v: vec2<f32>) -> vec2<f32> {
 }
 `;
 
-/** `from` once in `source`, replaced by `to`; a source without it (or with two) throws. */
-function once(source, from, to, what) {
-  if (source.split(from).length !== 2) throw new Error(`WeedJS: the pixel snap needs ${what} (${from.trim()})`);
-  return source.replace(from, () => to);
-}
 
 /**
  * instancedSprite.vert.glsl or its pose form, snapping its origin.
@@ -47,10 +43,10 @@ function once(source, from, to, what) {
  */
 export function pixelSnapGlsl(source) {
   const pose = source.includes('vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);');
-  let out = once(source, 'void main() {', `${SNAP_GLSL}\nvoid main() {`, 'a sprite vertex shader');
+  let out = replaceOnce(source, 'void main() {', `${SNAP_GLSL}\nvoid main() {`, 'the pixel snap (a sprite vertex shader)');
   out = pose
-    ? once(out, 'vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);', 'vec2 xy = weedSnapXY(mix(aInstPrevXY, aInstXY, uPoseAlpha));', 'the pose blend')
-    : once(out, 'vec2 world = (isShear ? sheared : spun) + aInstXY;', 'vec2 world = (isShear ? sheared : spun) + weedSnapXY(aInstXY);', 'the corner');
+    ? replaceOnce(out, 'vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);', 'vec2 xy = weedSnapXY(mix(aInstPrevXY, aInstXY, uPoseAlpha));', 'the pixel snap (the pose blend)')
+    : replaceOnce(out, 'vec2 world = (isShear ? sheared : spun) + aInstXY;', 'vec2 world = (isShear ? sheared : spun) + weedSnapXY(aInstXY);', 'the pixel snap (the corner)');
   return out;
 }
 
@@ -61,10 +57,10 @@ export function pixelSnapGlsl(source) {
  */
 export function pixelSnapWgsl(source) {
   const pose = source.includes('let xy = mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha);');
-  let out = once(source, '@vertex', `${SNAP_WGSL}\n@vertex`, 'a sprite WGSL');
+  let out = replaceOnce(source, '@vertex', `${SNAP_WGSL}\n@vertex`, 'the pixel snap (a sprite WGSL)');
   out = pose
-    ? once(out, 'let xy = mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha);', 'let xy = weedSnapXY(mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha));', 'the pose blend')
-    : once(out, 'let world = select(spun, sheared, isShear) + aInstXY;', 'let world = select(spun, sheared, isShear) + weedSnapXY(aInstXY);', 'the corner');
+    ? replaceOnce(out, 'let xy = mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha);', 'let xy = weedSnapXY(mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha));', 'the pixel snap (the pose blend)')
+    : replaceOnce(out, 'let world = select(spun, sheared, isShear) + aInstXY;', 'let world = select(spun, sheared, isShear) + weedSnapXY(aInstXY);', 'the pixel snap (the corner)');
   return out;
 }
 

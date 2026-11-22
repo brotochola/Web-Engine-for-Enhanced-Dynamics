@@ -1,8 +1,9 @@
 // AudioPanel.js — Mixer debug: device, channel cards, output graph, voices, assets.
 
-import { createPanel, createStat, createButton } from '../ui/debugDom.js';
+import { createPanel, createStat, createButton, elem } from '../ui/debugDom.js';
 import { SoundManager } from '../../soundManager.js';
 import { formatBytes } from '../../../util/sceneBufferMemory.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
 const HISTORY = 150;
 const DB_FLOOR = -60;
@@ -67,11 +68,9 @@ function fmtSpan(sec, precise) {
   return precise ? sec.toFixed(1) + 's' : fmtClock(sec);
 }
 
-export class AudioPanel {
+export class AudioPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.elements = {};
-    this.panel = null;
+    super(debugUI);
     this._voices = [];
     this._voiceRows = [];
     this._assetCache = [];
@@ -98,17 +97,11 @@ export class AudioPanel {
 
   create() {
     this.panel = createPanel();
-    const root = document.createElement('div');
-    root.className = 'debug-ui-audio';
+    const root = elem('div', 'debug-ui-audio');
 
-    const bar = document.createElement('div');
-    bar.className = 'debug-ui-audio-status';
-    const brand = document.createElement('span');
-    brand.className = 'debug-ui-audio-brand';
-    brand.textContent = 'AUDIO';
-    this.elements.state = document.createElement('span');
-    this.elements.state.className = 'debug-ui-audio-pill';
-    this.elements.state.textContent = 'closed';
+    const bar = elem('div', 'debug-ui-audio-status');
+    const brand = elem('span', 'debug-ui-audio-brand', 'AUDIO');
+    this.elements.state = elem('span', 'debug-ui-audio-pill', 'closed');
     this.elements.resume = createButton('Resume', '', () => SoundManager.resume());
     this.elements.resume.style.display = 'none';
     this.elements.rate = createStat('—');
@@ -116,8 +109,7 @@ export class AudioPanel {
     this.elements.process = createStat('Process —');
     this.elements.voices = createStat('Voices —');
     this.elements.dropped = createStat('Dropped —');
-    const gap = document.createElement('span');
-    gap.className = 'debug-ui-audio-status-gap';
+    const gap = elem('span', 'debug-ui-audio-status-gap');
     bar.append(
       brand,
       this.elements.state,
@@ -133,12 +125,10 @@ export class AudioPanel {
     );
     root.appendChild(bar);
 
-    this.elements.busRow = document.createElement('div');
-    this.elements.busRow.className = 'debug-ui-audio-buses';
+    this.elements.busRow = elem('div', 'debug-ui-audio-buses');
     root.appendChild(this.elements.busRow);
 
-    const columns = document.createElement('div');
-    columns.className = 'debug-ui-audio-columns';
+    const columns = elem('div', 'debug-ui-audio-columns');
     columns.append(this._voiceCard(), this._assetCard(), this._outputCard());
     root.appendChild(columns);
 
@@ -147,19 +137,14 @@ export class AudioPanel {
   }
 
   _voiceCard() {
-    const card = document.createElement('div');
-    card.className = 'debug-ui-audio-card';
-    const head = document.createElement('div');
-    head.className = 'debug-ui-audio-card-head';
+    const card = elem('div', 'debug-ui-audio-card');
+    const head = elem('div', 'debug-ui-audio-card-head');
     head.appendChild(this._title('Playing voices'));
-    this.elements.voiceCount = document.createElement('span');
-    this.elements.voiceCount.className = 'debug-ui-audio-count';
-    this.elements.voiceCount.textContent = '0 active';
+    this.elements.voiceCount = elem('span', 'debug-ui-audio-count', '0 active');
     head.appendChild(this.elements.voiceCount);
     card.appendChild(head);
 
-    const scroll = document.createElement('div');
-    scroll.className = 'debug-ui-audio-scroll';
+    const scroll = elem('div', 'debug-ui-audio-scroll');
     this.elements.voiceEmpty = this._empty('No voices playing');
     this.elements.voiceHead = this._head(
       ['#', 'Name', 'Channel', 'Vol', 'Progress', 'Loop', 'Play', 'Stop'],
@@ -173,14 +158,10 @@ export class AudioPanel {
   }
 
   _assetCard() {
-    const card = document.createElement('div');
-    card.className = 'debug-ui-audio-card';
-    const head = document.createElement('div');
-    head.className = 'debug-ui-audio-card-head';
+    const card = elem('div', 'debug-ui-audio-card');
+    const head = elem('div', 'debug-ui-audio-card-head');
     head.appendChild(this._title('Loaded assets'));
-    this.elements.assetCount = document.createElement('span');
-    this.elements.assetCount.className = 'debug-ui-audio-count';
-    this.elements.assetCount.textContent = '0 total';
+    this.elements.assetCount = elem('span', 'debug-ui-audio-count', '0 total');
     const filter = document.createElement('input');
     filter.type = 'search';
     filter.className = 'debug-ui-audio-filter';
@@ -194,8 +175,7 @@ export class AudioPanel {
     head.append(this.elements.assetCount, filter);
     card.appendChild(head);
 
-    const scroll = document.createElement('div');
-    scroll.className = 'debug-ui-audio-scroll';
+    const scroll = elem('div', 'debug-ui-audio-scroll');
     this.elements.assetEmpty = this._empty('No audio assets loaded');
     this.elements.assetHead = this._head(
       ['#', 'Name', 'Channel', 'Size', 'State', 'Play', 'Stop'],
@@ -213,45 +193,32 @@ export class AudioPanel {
   }
 
   _outputCard() {
-    const card = document.createElement('div');
-    card.className = 'debug-ui-audio-card debug-ui-audio-out';
-    const head = document.createElement('div');
-    head.className = 'debug-ui-audio-card-head';
+    const card = elem('div', 'debug-ui-audio-card debug-ui-audio-out');
+    const head = elem('div', 'debug-ui-audio-card-head');
     head.appendChild(this._title('Output'));
-    const stereo = document.createElement('span');
-    stereo.className = 'debug-ui-audio-count';
-    stereo.textContent = 'Stereo';
-    this.elements.readout = document.createElement('span');
-    this.elements.readout.className = 'debug-ui-audio-headline';
-    this.elements.readout.textContent = '-inf';
-    this.elements.clip = document.createElement('span');
-    this.elements.clip.className = 'debug-ui-audio-clip';
-    this.elements.clip.textContent = 'CLIP';
+    const stereo = elem('span', 'debug-ui-audio-count', 'Stereo');
+    this.elements.readout = elem('span', 'debug-ui-audio-headline', '-inf');
+    this.elements.clip = elem('span', 'debug-ui-audio-clip', 'CLIP');
     head.append(stereo, this.elements.readout, this.elements.clip);
     card.appendChild(head);
 
-    const canvas = document.createElement('canvas');
-    canvas.className = 'debug-ui-audio-graph';
+    const canvas = elem('canvas', 'debug-ui-audio-graph');
     this.elements.graph = canvas;
     card.appendChild(canvas);
 
-    const meters = document.createElement('div');
-    meters.className = 'debug-ui-audio-meters';
+    const meters = elem('div', 'debug-ui-audio-meters');
     const left = this._meter('L');
     const right = this._meter('R');
     this.elements.meterL = left.fill;
     this.elements.dbL = left.db;
     this.elements.meterR = right.fill;
     this.elements.dbR = right.db;
-    this.elements.rms = document.createElement('div');
-    this.elements.rms.className = 'debug-ui-audio-rms';
-    this.elements.rms.textContent = 'RMS -inf';
+    this.elements.rms = elem('div', 'debug-ui-audio-rms', 'RMS -inf');
     meters.append(left.root, right.root, this.elements.rms);
     card.appendChild(meters);
     return card;
   }
 
-  attach() {}
 
   update() {
     const metrics = this.debugUI.scene?.audioMetrics;
@@ -276,54 +243,39 @@ export class AudioPanel {
   }
 
   _title(text) {
-    const el = document.createElement('div');
-    el.className = 'debug-ui-audio-title';
-    el.textContent = text;
+    const el = elem('div', 'debug-ui-audio-title', text);
     return el;
   }
 
   _empty(text) {
-    const el = document.createElement('div');
-    el.className = 'debug-ui-audio-empty';
-    el.textContent = text;
+    const el = elem('div', 'debug-ui-audio-empty', text);
     return el;
   }
 
   _head(labels, gridClass) {
-    const row = document.createElement('div');
-    row.className = `debug-ui-audio-head ${gridClass}`;
+    const row = elem('div', `debug-ui-audio-head ${gridClass}`);
     for (let i = 0; i < labels.length; i++) {
-      const cell = document.createElement('span');
-      cell.textContent = labels[i];
+      const cell = elem('span', '', labels[i]);
       row.appendChild(cell);
     }
     return row;
   }
 
   _meter(label) {
-    const root = document.createElement('div');
-    root.className = 'debug-ui-audio-meter';
-    const name = document.createElement('span');
-    name.textContent = label;
-    const track = document.createElement('div');
-    track.className = 'debug-ui-audio-meter-track';
-    const fill = document.createElement('div');
-    fill.className = 'debug-ui-audio-meter-fill';
+    const root = elem('div', 'debug-ui-audio-meter');
+    const name = elem('span', '', label);
+    const track = elem('div', 'debug-ui-audio-meter-track');
+    const fill = elem('div', 'debug-ui-audio-meter-fill');
     track.appendChild(fill);
-    const db = document.createElement('span');
-    db.className = 'debug-ui-audio-meter-db';
-    db.textContent = 'Peak -inf';
+    const db = elem('span', 'debug-ui-audio-meter-db', 'Peak -inf');
     root.append(name, track, db);
     return { root, fill, db };
   }
 
   _nowLine() {
-    const root = document.createElement('div');
-    root.className = 'debug-ui-audio-now-line';
-    const name = document.createElement('span');
-    name.className = 'debug-ui-audio-now-name';
-    const time = document.createElement('span');
-    time.className = 'debug-ui-audio-now-time';
+    const root = elem('div', 'debug-ui-audio-now-line');
+    const name = elem('span', 'debug-ui-audio-now-name');
+    const time = elem('span', 'debug-ui-audio-now-time');
     root.append(name, time);
     return { root, name, time };
   }
@@ -499,22 +451,15 @@ export class AudioPanel {
   }
 
   _createBusStrip(name, index) {
-    const root = document.createElement('div');
-    root.className = 'debug-ui-audio-strip';
+    const root = elem('div', 'debug-ui-audio-strip');
     root.style.setProperty('--bus-accent', BUS_ACCENTS[index % BUS_ACCENTS.length]);
 
-    const head = document.createElement('div');
-    head.className = 'debug-ui-audio-strip-head';
-    const title = document.createElement('div');
-    title.className = 'debug-ui-audio-strip-name';
-    title.textContent = name;
-    const count = document.createElement('div');
-    count.className = 'debug-ui-audio-strip-count';
-    count.textContent = '0 playing';
+    const head = elem('div', 'debug-ui-audio-strip-head');
+    const title = elem('div', 'debug-ui-audio-strip-name', name);
+    const count = elem('div', 'debug-ui-audio-strip-count', '0 playing');
     head.append(title, count);
 
-    const body = document.createElement('div');
-    body.className = 'debug-ui-audio-strip-body';
+    const body = elem('div', 'debug-ui-audio-strip-body');
     const fader = document.createElement('input');
     fader.type = 'range';
     fader.className = 'debug-ui-audio-fader';
@@ -522,25 +467,19 @@ export class AudioPanel {
     fader.max = '100';
     fader.step = '1';
     fader.value = '100';
-    const pct = document.createElement('div');
-    pct.className = 'debug-ui-audio-strip-pct';
-    pct.textContent = '100%';
+    const pct = elem('div', 'debug-ui-audio-strip-pct', '100%');
     this._bindFader(fader, (value) => {
       SoundManager.channel(name).volume = value / 100;
       setText(pct, value + '%');
     });
-    const now = document.createElement('div');
-    now.className = 'debug-ui-audio-now';
+    const now = elem('div', 'debug-ui-audio-now');
     const lines = [this._nowLine(), this._nowLine()];
     now.append(lines[0].root, lines[1].root);
     body.append(fader, pct, now);
 
-    const panRow = document.createElement('div');
-    panRow.className = 'debug-ui-audio-pan-row';
-    const panL = document.createElement('span');
-    panL.textContent = 'L';
-    const panR = document.createElement('span');
-    panR.textContent = 'R';
+    const panRow = elem('div', 'debug-ui-audio-pan-row');
+    const panL = elem('span', '', 'L');
+    const panR = elem('span', '', 'R');
     const pan = document.createElement('input');
     pan.type = 'range';
     pan.className = 'debug-ui-range debug-ui-audio-pan-slider';
@@ -558,26 +497,20 @@ export class AudioPanel {
       bus.muted = !bus.muted;
     });
     mute.title = 'Mute';
-    const trim = document.createElement('div');
-    trim.className = 'debug-ui-audio-strip-trim';
+    const trim = elem('div', 'debug-ui-audio-strip-trim');
     root.append(head, body, panRow, mute, trim);
     return { root, name, index, fader, pct, pan, mute, count, lines, trim, master: false };
   }
 
   _createMasterStrip() {
-    const root = document.createElement('div');
-    root.className = 'debug-ui-audio-strip debug-ui-audio-strip-master';
+    const root = elem('div', 'debug-ui-audio-strip debug-ui-audio-strip-master');
     root.style.setProperty('--bus-accent', '#e2e8f0');
 
-    const head = document.createElement('div');
-    head.className = 'debug-ui-audio-strip-head';
-    const title = document.createElement('div');
-    title.className = 'debug-ui-audio-strip-name';
-    title.textContent = 'Master';
+    const head = elem('div', 'debug-ui-audio-strip-head');
+    const title = elem('div', 'debug-ui-audio-strip-name', 'Master');
     head.appendChild(title);
 
-    const body = document.createElement('div');
-    body.className = 'debug-ui-audio-strip-master-body';
+    const body = elem('div', 'debug-ui-audio-strip-master-body');
     const fader = document.createElement('input');
     fader.type = 'range';
     fader.className = 'debug-ui-audio-fader';
@@ -585,20 +518,15 @@ export class AudioPanel {
     fader.max = '100';
     fader.step = '1';
     fader.value = '100';
-    const pct = document.createElement('div');
-    pct.className = 'debug-ui-audio-strip-pct';
-    pct.textContent = '100%';
+    const pct = elem('div', 'debug-ui-audio-strip-pct', '100%');
     this._bindFader(fader, (value) => {
       SoundManager.setMasterVolume(value / 100);
       setText(pct, value + '%');
     });
     body.append(fader, pct);
 
-    const mixRow = document.createElement('div');
-    mixRow.className = 'debug-ui-audio-mix';
-    const mixLabel = document.createElement('span');
-    mixLabel.className = 'debug-ui-audio-mix-label';
-    mixLabel.textContent = 'Mix 50%';
+    const mixRow = elem('div', 'debug-ui-audio-mix');
+    const mixLabel = elem('span', 'debug-ui-audio-mix-label', 'Mix 50%');
     const mix = document.createElement('input');
     mix.type = 'range';
     mix.className = 'debug-ui-range debug-ui-audio-pan-slider';
@@ -614,8 +542,7 @@ export class AudioPanel {
 
     const mute = createButton('Mute', '', () => SoundManager.setMuted(!SoundManager.isMuted()));
     mute.title = 'Mute master';
-    const trim = document.createElement('div');
-    trim.className = 'debug-ui-audio-strip-trim';
+    const trim = elem('div', 'debug-ui-audio-strip-trim');
     root.append(head, body, mixRow, mute, trim);
     return { root, fader, pct, pan: mix, panLabel: mixLabel, mute, trim, master: true };
   }
@@ -726,11 +653,9 @@ export class AudioPanel {
   }
 
   _createVoiceRow() {
-    const root = document.createElement('div');
-    root.className = 'debug-ui-audio-row debug-ui-audio-voice';
+    const root = elem('div', 'debug-ui-audio-row debug-ui-audio-voice');
     const slot = document.createElement('span');
-    const name = document.createElement('span');
-    name.className = 'debug-ui-audio-name';
+    const name = elem('span', 'debug-ui-audio-name');
     const bus = document.createElement('span');
     const vol = document.createElement('span');
     const progress = this._bar();
@@ -830,15 +755,12 @@ export class AudioPanel {
   }
 
   _createAssetRow() {
-    const root = document.createElement('div');
-    root.className = 'debug-ui-audio-row debug-ui-audio-asset';
+    const root = elem('div', 'debug-ui-audio-row debug-ui-audio-asset');
     const index = document.createElement('span');
-    const name = document.createElement('span');
-    name.className = 'debug-ui-audio-name';
+    const name = elem('span', 'debug-ui-audio-name');
     const channel = document.createElement('span');
     const size = document.createElement('span');
-    const state = document.createElement('span');
-    state.className = 'debug-ui-audio-state';
+    const state = elem('span', 'debug-ui-audio-state');
     const play = createButton('Play', '', () => {
       if (play._name) SoundManager.play(play._name, 1);
     });
@@ -866,15 +788,11 @@ export class AudioPanel {
   }
 
   _bar() {
-    const root = document.createElement('span');
-    root.className = 'debug-ui-audio-bar';
-    const track = document.createElement('span');
-    track.className = 'debug-ui-audio-bar-track';
-    const fill = document.createElement('span');
-    fill.className = 'debug-ui-audio-bar-fill';
+    const root = elem('span', 'debug-ui-audio-bar');
+    const track = elem('span', 'debug-ui-audio-bar-track');
+    const fill = elem('span', 'debug-ui-audio-bar-fill');
     track.appendChild(fill);
-    const label = document.createElement('span');
-    label.className = 'debug-ui-audio-bar-label';
+    const label = elem('span', 'debug-ui-audio-bar-label');
     root.append(track, label);
     return { root, fill, label };
   }

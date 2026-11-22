@@ -6,11 +6,12 @@
 //   decision 2), with the GPU, the backend and the opaque pass.
 // - The lamps: every LightEmitter, each a link that inspects its entity.
 
-import { createPanel, createRow, createStat } from '../ui/debugDom.js';
+import { createPanel, createRow, createStat, elem } from '../ui/debugDom.js';
 import { Sun } from '../../sun.js';
 import { LightEmitter } from '../../../components/lightEmitter.js';
 import { LIGHTING_DEFAULTS } from '../../../util/configDefaults.js';
 import { gpuRowTitle } from './performancePanel.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
 const DEG = 180 / Math.PI;
 /** How many lamps the list names (it counts them all). */
@@ -80,10 +81,9 @@ function hex(v) {
   return `#${((v >>> 0) & 0xffffff).toString(16).padStart(6, '0')}`;
 }
 
-export class LightPanel {
+export class LightPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.panel = null;
+    super(debugUI);
     this.sliders = [];
     this.hour = null;
     this.hourVal = null;
@@ -253,8 +253,7 @@ export class LightPanel {
     const lighting = this.debugUI.scene?.config?.lighting;
     this.options.innerHTML = '';
     for (const [key, value] of lightingOptionRows(lighting)) {
-      const cell = document.createElement('span');
-      cell.textContent = `${key}: ${value}`;
+      const cell = elem('span', '', `${key}: ${value}`);
       this.options.appendChild(cell);
     }
     this._lampsKey = '';

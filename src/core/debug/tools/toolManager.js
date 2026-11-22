@@ -20,6 +20,24 @@ import { entityIdNone } from '../../../util/entityIdWidth.js';
 import { GameObject } from '../../gameObject.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
 import { childrenOf, formatInspectorField } from './inspectorFormat.js';
+import { elem } from '../ui/debugDom.js';
+import { SpriteRenderer } from '../../../components/spriteRenderer.js';
+import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
+import { BigAtlasInspector } from '../../bigAtlasInspector.js';
+import { frameMapsImage } from '../../atlasMapsView.js';
+
+/**
+ * DBG-6: the atlas frame sprite `i` draws now: a texture is its own frame; a sheet's is its animation's current frame.
+ * Null when the registry does not know it.
+ */
+function spriteFrameName(i, json) {
+  const sheet = SpriteSheetRegistry.getSpritesheetName(SpriteRenderer.spritesheetId[i]);
+  if (!sheet) return null;
+  if (json.frames[sheet]) return sheet;
+  const anim = SpriteSheetRegistry.getAnimationName(sheet, SpriteRenderer.animationState[i]);
+  if (anim === undefined) return null;
+  return SpriteSheetRegistry.getFrameName(sheet, anim, SpriteRenderer.animationFrame[i]);
+}
 
 const PICK_CAP = 64;
 /** DBG-10: how many children the Transform section names (it counts them all). */
@@ -128,107 +146,64 @@ export class ToolManager {
     }
   }
 
-  toggleSpawner(className) {
-    if (this.activeSpawnerType === className) {
-      this.activeSpawnerType = null;
-    } else {
-      this.activeSpawnerType = className;
-      this.eraserActive = false;
-      this.poolPaintKind = null;
-      this.poolEraserKind = null;
-      this.inspectorActive = false;
-      this.inspectKind = null;
-    }
-    this._syncDebugToolFlag();
-    this.updateToolIndicator();
-    this._syncToolButtons();
-    this.debugUI._ensureTickLoop();
-  }
-
-  toggleEraser() {
-    this.eraserActive = !this.eraserActive;
-    if (this.eraserActive) {
-      this.activeSpawnerType = null;
-      this.poolPaintKind = null;
-      this.poolEraserKind = null;
-      this.inspectorActive = false;
-      this.inspectKind = null;
-    }
-    this._syncDebugToolFlag();
-    this.updateToolIndicator();
-    this._syncToolButtons();
-    this.debugUI._ensureTickLoop();
-  }
-
-  togglePoolPaint(kind) {
-    this.poolPaintKind = this.poolPaintKind === kind ? null : kind;
-    if (this.poolPaintKind) {
-      this.activeSpawnerType = null;
-      this.eraserActive = false;
-      this.poolEraserKind = null;
-      this.inspectorActive = false;
-      this.inspectKind = null;
-    }
-    this._syncDebugToolFlag();
-    this.updateToolIndicator();
-    this._syncToolButtons();
-    this.debugUI._ensureTickLoop();
-  }
-
-  togglePoolEraser(kind) {
-    this.poolEraserKind = this.poolEraserKind === kind ? null : kind;
-    if (this.poolEraserKind) {
-      this.activeSpawnerType = null;
-      this.eraserActive = false;
-      this.poolPaintKind = null;
-      this.inspectorActive = false;
-      this.inspectKind = null;
-    }
-    this._syncDebugToolFlag();
-    this.updateToolIndicator();
-    this._syncToolButtons();
-    this.debugUI._ensureTickLoop();
-  }
-
-  toggleDecoEraser() {
-    this.togglePoolEraser('decoration');
-  }
-
-  toggleInspector(kind = 'entity') {
-    if (this.inspectorActive && this.inspectKind === kind) {
-      this.inspectorActive = false;
-      this.inspectKind = null;
-    } else {
-      this.inspectorActive = true;
-      this.inspectKind = kind;
-      this.activeSpawnerType = null;
-      this.eraserActive = false;
-      this.poolPaintKind = null;
-      this.poolEraserKind = null;
-    }
-    this._syncDebugToolFlag();
-    this.updateToolIndicator();
-    this._syncToolButtons();
-    this.debugUI._ensureTickLoop();
-  }
-
-  deactivateAll() {
+  /** Every tool off (one is on at a time: turning one on turns the others off). */
+  _clearTools() {
     this.activeSpawnerType = null;
     this.eraserActive = false;
     this.poolPaintKind = null;
     this.poolEraserKind = null;
     this.inspectorActive = false;
     this.inspectKind = null;
-    this._toolMouseDown = false;
-    this.clearSelection();
+  }
+
+  /** After a tool turned on or off: the workers' tool flag, the indicator, the buttons and the tick loop. */
+  _toolsChanged() {
     this._syncDebugToolFlag();
     this.updateToolIndicator();
     this._syncToolButtons();
+    this.debugUI._ensureTickLoop();
+  }
+
+  toggleSpawner(className) {
+    const on = this.activeSpawnerType !== className;
+    this._clearTools();
+    if (on) this.activeSpawnerType = className;
+    this._toolsChanged();
+  }
+
+  toggleEraser() {
+    const on = !this.eraserActive;
+    this._clearTools();
+    this.eraserActive = on;
+    this._toolsChanged();
+  }
+
+  togglePoolPaint(kind) {
+    const on = this.poolPaintKind !== kind;
+    this._clearTools();
+    if (on) this.poolPaintKind = kind;
+    this._toolsChanged();
+  }
+
+  togglePoolEraser(kind) {
+    const on = this.poolEraserKind !== kind;
+    this._clearTools();
+    if (on) this.poolEraserKind = kind;
+    this._toolsChanged();
+  }
+
+  toggleInspector(kind = 'entity') {
+    const on = !(this.inspectorActive && this.inspectKind === kind);
+    this._clearTools();
+    if (on) {
+      this.inspectorActive = true;
+      this.inspectKind = kind;
+    }
+    this._toolsChanged();
   }
 
   _createToolIndicator() {
-    this._toolIndicator = document.createElement('div');
-    this._toolIndicator.className = 'debug-ui-tool-indicator';
+    this._toolIndicator = elem('div', 'debug-ui-tool-indicator');
     document.body.appendChild(this._toolIndicator);
   }
 
@@ -482,12 +457,10 @@ export class ToolManager {
     float.body.className = 'debug-ui-inspector-body';
     float.body.style.padding = '0';
 
-    this._inspectorEntityInfo = document.createElement('div');
-    this._inspectorEntityInfo.className = 'debug-ui-inspector-info';
+    this._inspectorEntityInfo = elem('div', 'debug-ui-inspector-info');
     float.body.appendChild(this._inspectorEntityInfo);
 
-    this._inspectorComponentsContainer = document.createElement('div');
-    this._inspectorComponentsContainer.className = 'debug-ui-inspector-sections';
+    this._inspectorComponentsContainer = elem('div', 'debug-ui-inspector-sections');
     float.body.appendChild(this._inspectorComponentsContainer);
 
     float.mount();
@@ -538,6 +511,61 @@ export class ToolManager {
     }
     if (!components) components = [Transform];
     this._fillComponentSections(components);
+    this._addFrameMapsSection(entityIndex);
+  }
+
+  /** DBG-6: a sprite's current atlas frame, and a button that shows its colours, height and normals. */
+  _addFrameMapsSection(entityIndex) {
+    const scene = this.debugUI.scene;
+    const container = this._inspectorComponentsContainer;
+    if (!container || !scene?.bigAtlasJson || !SpriteRenderer.active || SpriteRenderer.active[entityIndex] !== 1) return;
+    const frameName = spriteFrameName(entityIndex, scene.bigAtlasJson);
+    if (!frameName) return;
+    const section = elem('div', 'debug-ui-inspector-section');
+    section.appendChild(elem('div', 'debug-ui-inspector-section-head', `Frame ${frameName}`));
+    const body = elem('div', 'debug-ui-inspector-props');
+    const button = elem('button', 'debug-ui-btn', 'Show its maps');
+    button.onclick = () => this._showFrameMaps(body, frameName, button);
+    body.appendChild(button);
+    section.appendChild(body);
+    container.appendChild(section);
+  }
+
+  /** DBG-6: the frame cut from the atlas, beside its height and normals from the twin page. */
+  async _showFrameMaps(body, frameName, button) {
+    const scene = this.debugUI.scene;
+    const json = scene?.bigAtlasJson;
+    const rect = json?.frames?.[frameName]?.frame;
+    if (!rect) return;
+    button.disabled = true;
+    button.textContent = 'reading the atlas...';
+    const [atlas, page] = await Promise.all([BigAtlasInspector.atlasCanvas(scene), BigAtlasInspector.mapsPage(scene)]);
+    button.remove();
+    const row = elem('div', '');
+    row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end';
+    const add = (label, paint) => {
+      const cell = elem('div', '');
+      cell.appendChild(elem('div', '', label));
+      const canvas = document.createElement('canvas');
+      canvas.width = rect.w;
+      canvas.height = rect.h;
+      canvas.style.cssText = `width:${Math.min(96, rect.w)}px;image-rendering:pixelated;background:#222`;
+      paint(canvas.getContext('2d'));
+      cell.appendChild(canvas);
+      row.appendChild(cell);
+    };
+    if (atlas) add('colour', (ctx) => ctx.drawImage(atlas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h));
+    let maps = 0;
+    if (page) {
+      for (const mode of ['height', 'normals']) {
+        const img = frameMapsImage(page, json, frameName, mode);
+        if (!img) continue;
+        maps++;
+        add(mode === 'height' ? `height (to ${img.maxZ.toFixed(0)} px)` : mode, (ctx) => ctx.putImageData(new ImageData(img.rgba, img.width, img.height), 0, 0));
+      }
+    }
+    if (maps === 0) row.appendChild(elem('div', '', 'no maps for this frame'));
+    body.appendChild(row);
   }
 
   _populatePoolInspector(kind, index) {
@@ -563,8 +591,7 @@ export class ToolManager {
       const saved = this._inspectorCollapsed[componentName];
       const open = saved === undefined ? c === 0 : !saved;
 
-      const section = document.createElement('div');
-      section.className = 'debug-ui-inspector-section';
+      const section = elem('div', 'debug-ui-inspector-section');
       section.style.borderColor = color.css;
       section.style.borderLeftColor = color.css;
 
@@ -574,17 +601,13 @@ export class ToolManager {
       header.style.color = color.css;
       header.style.background = 'linear-gradient(90deg,' + color.css + '22,transparent)';
 
-      const chevron = document.createElement('span');
-      chevron.className = 'debug-ui-inspector-chevron';
-      chevron.textContent = open ? '▾' : '▸';
-      const title = document.createElement('span');
-      title.textContent = componentName;
+      const chevron = elem('span', 'debug-ui-inspector-chevron', open ? '▾' : '▸');
+      const title = elem('span', '', componentName);
       header.appendChild(chevron);
       header.appendChild(title);
       section.appendChild(header);
 
-      const propsContainer = document.createElement('div');
-      propsContainer.className = 'debug-ui-inspector-props';
+      const propsContainer = elem('div', 'debug-ui-inspector-props');
       if (!open) propsContainer.style.display = 'none';
 
       const propNames = getInspectorPropertyNames(ComponentClass);
@@ -608,17 +631,12 @@ export class ToolManager {
 
       for (let p = 0; p < propNames.length; p++) {
         const propName = propNames[p];
-        const row = document.createElement('div');
-        row.className = 'debug-ui-inspector-prop';
+        const row = elem('div', 'debug-ui-inspector-prop');
 
-        const label = document.createElement('span');
-        label.className = 'debug-ui-inspector-prop-label';
-        label.textContent = propName;
+        const label = elem('span', 'debug-ui-inspector-prop-label', propName);
         row.appendChild(label);
 
-        const value = document.createElement('span');
-        value.className = 'debug-ui-inspector-prop-value';
-        value.textContent = '--';
+        const value = elem('span', 'debug-ui-inspector-prop-value', '--');
         row.appendChild(value);
 
         // DBG-10: the parent is a link: a click inspects it.
@@ -635,15 +653,10 @@ export class ToolManager {
 
       // DBG-10: an entity's children (the entities whose Transform.parent is it), each a link.
       if (componentName === 'Transform' && Transform.parent && !this.selectedPoolKind) {
-        const row = document.createElement('div');
-        row.className = 'debug-ui-inspector-prop';
-        const label = document.createElement('span');
-        label.className = 'debug-ui-inspector-prop-label';
-        label.textContent = 'children';
+        const row = elem('div', 'debug-ui-inspector-prop');
+        const label = elem('span', 'debug-ui-inspector-prop-label', 'children');
         row.appendChild(label);
-        const value = document.createElement('span');
-        value.className = 'debug-ui-inspector-prop-value';
-        value.textContent = '--';
+        const value = elem('span', 'debug-ui-inspector-prop-value', '--');
         row.appendChild(value);
         propsContainer.appendChild(row);
         rec.children = { el: value, key: '', list: [] };
@@ -720,8 +733,7 @@ export class ToolManager {
     }
     for (let k = 0; k < children.list.length; k++) {
       const child = children.list[k];
-      const link = document.createElement('span');
-      link.textContent = `#${child}`;
+      const link = elem('span', '', `#${child}`);
       link.style.cssText = 'cursor:pointer;text-decoration:underline;margin-right:6px';
       link.title = 'Inspect this child';
       link.onclick = () => {

@@ -24,6 +24,7 @@ import { getColliderBounds, _boundsResult } from '../../../util/colliderUtils.js
 import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
 
 import { decorationNoParent } from '../../decorationPool.js';
+import { strokeGridLines, visibleCells } from './gridDraw.js';
 const EMPTY_DASH = [];
 const DASH_DECO_PARENT = [4, 3];
 
@@ -214,34 +215,10 @@ export class PhysicsDebugRenderer {
     const cellSize = Grid.cellSize;
     const gridCols = Grid.gridWidth;
     const gridRows = Grid.gridHeight;
-    const worldWidth = gridCols * cellSize;
-    const worldHeight = gridRows * cellSize;
-
-    const startCellX = Math.max(0, Math.floor(camera.x / cellSize));
-    const startCellY = Math.max(0, Math.floor(camera.y / cellSize));
-    const endCellX = Math.min(gridCols, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
-    const endCellY = Math.min(gridRows, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
-
-    const worldStartX = startCellX * cellSize;
-    const worldStartY = startCellY * cellSize;
-    const worldEndX = Math.min(endCellX * cellSize, worldWidth);
-    const worldEndY = Math.min(endCellY * cellSize, worldHeight);
-
+    const cells = visibleCells(camera, canvas, zoom, cellSize, gridCols, gridRows, 0);
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 1;
-    ctx.beginPath();
-
-    for (let x = startCellX; x <= endCellX; x++) {
-      const sx = (x * cellSize - camera.x) * zoom;
-      ctx.moveTo(sx, (worldStartY - camera.y) * zoom);
-      ctx.lineTo(sx, (worldEndY - camera.y) * zoom);
-    }
-    for (let y = startCellY; y <= endCellY; y++) {
-      const sy = (y * cellSize - camera.y) * zoom;
-      ctx.moveTo((worldStartX - camera.x) * zoom, sy);
-      ctx.lineTo((worldEndX - camera.x) * zoom, sy);
-    }
-    ctx.stroke();
+    strokeGridLines(ctx, camera, zoom, cellSize, cells[0], cells[1], cells[2], cells[3], gridCols * cellSize, gridRows * cellSize);
   }
 
   // ------- sleeping cells -------
@@ -255,10 +232,11 @@ export class PhysicsDebugRenderer {
     const cellSleepingData = Grid.cellSleepingData;
     const cellSizeScreen = cellSize * zoom;
 
-    const startCellX = Math.max(0, Math.floor(camera.x / cellSize));
-    const startCellY = Math.max(0, Math.floor(camera.y / cellSize));
-    const endCellX = Math.min(gridCols, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
-    const endCellY = Math.min(gridRows, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
+    const cells = visibleCells(camera, canvas, zoom, cellSize, gridCols, gridRows, 0);
+    const startCellX = cells[0];
+    const startCellY = cells[1];
+    const endCellX = cells[2];
+    const endCellY = cells[3];
 
     ctx.fillStyle = 'rgba(0, 200, 255, 0.3)';
     for (let row = startCellY; row < endCellY; row++) {

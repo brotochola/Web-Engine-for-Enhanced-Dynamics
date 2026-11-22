@@ -174,6 +174,28 @@ import {
 
 /** `wasm` keys a scene set that are not switches, already warned about (once per key per page). */
 const warnedWasmKeys = new Set();
+
+/**
+ * CR-22: the config sections whose defaults are a plain shallow merge (the scene's keys over these), in the order
+ * _applyConfigDefaults has always merged them. Physics merges on its own (its gravity comes from the top level).
+ */
+const SECTION_DEFAULTS = [
+  ['spatial', SPATIAL_DEFAULTS],
+  ['wasm', WASM_DEFAULTS],
+  ['particle', PARTICLE_DEFAULTS],
+  ['decoration', DECORATION_DEFAULTS],
+  ['bullet', BULLET_DEFAULTS],
+  ['tween', TWEEN_DEFAULTS],
+  ['audio', AUDIO_DEFAULTS],
+  ['assets', ASSETS_DEFAULTS],
+  ['logic', LOGIC_DEFAULTS],
+  ['renderer', RENDERER_DEFAULTS],
+  ['preRender', PRE_RENDER_DEFAULTS],
+  ['lighting', LIGHTING_DEFAULTS],
+  ['navigation', NAVIGATION_DEFAULTS],
+  ['debug', DEBUG_DEFAULTS],
+];
+
 /** DX-IGPUWARN: the integrated GPU's warning, said once a page. */
 let warnedIntegratedGpu = false;
 
@@ -887,12 +909,6 @@ class Scene {
       );
     }
 
-    // Spatial defaults from centralized config
-    this.config.spatial = {
-      ...SPATIAL_DEFAULTS,
-      ...(this.config.spatial || {}),
-    };
-
     // WASM kernel switches (E-76 T7). A key that is not one (a kernel whose JavaScript path has left the engine
     // has no switch) is named once, so a scene that still sets it learns why nothing changed.
     for (const key of Object.keys(this.config.wasm || {})) {
@@ -901,73 +917,25 @@ class Scene {
         console.warn(`WeedJS: wasm.${key} is not a WASM switch (a kernel without one always runs in WebAssembly); ignored`);
       }
     }
-    this.config.wasm = {
-      ...WASM_DEFAULTS,
-      ...(this.config.wasm || {}),
-    };
 
-    // Particle defaults from centralized config
-    this.config.particle = {
-      ...PARTICLE_DEFAULTS,
-      ...(this.config.particle || {}),
-    };
-    // Compute decalsTilePixelSize
+    // Every other section: the scene's keys over the defaults (SECTION_DEFAULTS), then each one's fix-ups below.
+    for (const [key, defaults] of SECTION_DEFAULTS) {
+      this.config[key] = { ...defaults, ...(this.config[key] || {}) };
+    }
+
+    // particle: its decal tile in px
     this.config.particle.decalsTilePixelSize = Math.floor(
       this.config.particle.decalsTileSize * this.config.particle.decalsResolution
     );
 
-    // Decoration defaults from centralized config
-    this.config.decoration = {
-      ...DECORATION_DEFAULTS,
-      ...(this.config.decoration || {}),
-    };
     const ma = this.config.decoration.maxAttachedDecorationsPerEntity | 0;
     if (ma > 255) {
       console.warn(`WeedJS: decoration.maxAttachedDecorationsPerEntity is ${ma}; an entity holds at most 255 attached decorations, so the scene uses 255.`);
     }
     this.config.decoration.maxAttachedDecorationsPerEntity = ma < 1 ? 1 : ma > 255 ? 255 : ma;
 
-    // Bullet defaults from centralized config
-    this.config.bullet = {
-      ...BULLET_DEFAULTS,
-      ...(this.config.bullet || {}),
-    };
-
-    this.config.tween = {
-      ...TWEEN_DEFAULTS,
-      ...(this.config.tween || {}),
-    };
-
-    // Audio defaults from centralized config
-    this.config.audio = {
-      ...AUDIO_DEFAULTS,
-      ...(this.config.audio || {}),
-    };
-
-    // Assets defaults (BigAtlas packing)
-    this.config.assets = {
-      ...ASSETS_DEFAULTS,
-      ...(this.config.assets || {}),
-    };
-
-    // Logic defaults from centralized config
-    this.config.logic = {
-      ...LOGIC_DEFAULTS,
-      ...(this.config.logic || {}),
-    };
-
-    // Renderer defaults from centralized config
-    this.config.renderer = {
-      ...RENDERER_DEFAULTS,
-      ...(this.config.renderer || {}),
-    };
     this.config.renderer.backend = assertSceneRendererConfig(this.config);
 
-    // Pre-render defaults from centralized config
-    this.config.preRender = {
-      ...PRE_RENDER_DEFAULTS,
-      ...(this.config.preRender || {}),
-    };
     const spritePipe = resolveSpritePipeline({
       ySort: this.config.renderer.ySort,
       packGpuSprites: this.config.preRender.packGpuSprites,
@@ -977,13 +945,9 @@ class Scene {
     this.config.preRender.packGpuSprites = spritePipe.packGpuSprites;
     this.config.preRender.sortSprites = spritePipe.sortSprites;
 
-    // Lighting defaults from centralized config (sun / dayCycle / particleLights nested, not shallow-replaced)
+    // lighting: sun, dayCycle and particleLights nested, not shallow-replaced
     const userSun = userLightingConfig.sun || {};
     const userParticleLights = userLightingConfig.particleLights || {};
-    this.config.lighting = {
-      ...LIGHTING_DEFAULTS,
-      ...(this.config.lighting || {}),
-    };
     this.config.lighting.particleLights = {
       ...LIGHTING_DEFAULTS.particleLights,
       ...userParticleLights,
@@ -1024,18 +988,7 @@ class Scene {
     const walls = this.config.lighting.enabled === true && this.config.lighting.walls === true;
     this.config.lighting.walls = walls;
 
-    // Navigation defaults from centralized config
-    this.config.navigation = {
-      ...NAVIGATION_DEFAULTS,
-      ...(this.config.navigation || {}),
-    };
-
-    // Debug defaults from centralized config.
-    // collectDetailedStats is opt-in on the scene; GameEngine({ debug }) does not force it.
-    this.config.debug = {
-      ...DEBUG_DEFAULTS,
-      ...(this.config.debug || {}),
-    };
+    // debug: collectDetailedStats is opt-in on the scene; GameEngine({ debug }) does not force it.
     setVerboseWorkers(!!this.config.debug.verboseWorkers);
     setDevChecks(this.config.debug.checks !== false);
 
@@ -1807,7 +1760,7 @@ class Scene {
   }
 
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
-    const { json, imageBitmap, mapsBitmap = null, decals = null, inspect = null } = atlas;
+    const { json, imageBitmap, mapsBitmap = null, decals = null, inspect = null, inspectMaps = null } = atlas;
     // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
     const proxySheets = { ...(json?.meta?.proxySheets || {}) };
     addBigAtlasChunks(json, proxySheets);
@@ -1860,6 +1813,8 @@ class Scene {
 
     this.bigAtlasProxySheets = proxySheets;
     this.bigAtlasInspect = inspect;
+    // DBG-6: the twin page's texels on demand, for the inspector's maps modes.
+    this.bigAtlasInspectMaps = inspectMaps;
     this.bigAtlasJson = json;
 
     if (this.config.particle.decals && decals) {
@@ -1877,7 +1832,7 @@ class Scene {
       };
 
       window.inspectBigAtlas = async () => {
-        BigAtlasInspector.show(await this.bigAtlasInspect(), this.bigAtlasJson);
+        BigAtlasInspector.show(await this.bigAtlasInspect(), this.bigAtlasJson, this.bigAtlasInspectMaps);
       };
     }
   }
@@ -3074,6 +3029,7 @@ class Scene {
     this.decalMemory = null;
     this.box2dBlock = null;
     this.bigAtlasInspect = null;
+    this.bigAtlasInspectMaps = null;
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;
     this._loadedShaderSources = null;

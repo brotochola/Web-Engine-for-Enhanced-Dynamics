@@ -1,6 +1,6 @@
 // PerformancePanel.js — Full-width worker rows (expandable details), pools, audio
 
-import { createPanel, createStat } from '../ui/debugDom.js';
+import { createPanel, createStat, elem } from '../ui/debugDom.js';
 import { SoundManager } from '../../soundManager.js';
 import { formatNumber } from '../../../util/utils.js';
 import { DecorationPool } from '../../decorationPool.js';
@@ -24,9 +24,9 @@ import {
   displayHeadKeys,
   displayDetailStart,
 } from '../stats/statsCollector.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
 const COMMON_KEYS = ['STEP_MS', 'LOAD', 'FPS'];
-const LEAN_KEYS = ['STEP_MS', 'LOAD', 'FPS'];
 const SCHEMA_BY_TYPE = {
   renderer: RENDERER_STATS,
   particle: PARTICLE_STATS,
@@ -36,8 +36,6 @@ const SCHEMA_BY_TYPE = {
   preRender: PRE_RENDER_STATS,
 };
 
-/** Worker types that start expanded (empty = all collapsed). */
-const DEFAULT_EXPANDED = new Set();
 
 const GPU_ROW_TIP = 'The GPU the page got (scene.gpu), the backend, and whether E-448\'s opaque pass suits this GPU '
   + '(debug.opaquePass overrides it). A frame still draws without it on WebGPU, with pixel depth or G-buffer words, '
@@ -73,11 +71,9 @@ function padCount(n, width) {
   return s.length >= width ? s : s.padStart(width, ' ');
 }
 
-export class PerformancePanel {
+export class PerformancePanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.elements = {};
-    this.panel = null;
+    super(debugUI);
     /** @type {Map<string, boolean>} */
     this._expandedById = new Map();
   }
@@ -88,18 +84,13 @@ export class PerformancePanel {
     this.panel = createPanel();
     this.panel.classList.add('debug-ui-performance-panel');
 
-    const container = document.createElement('div');
-    container.className = 'debug-ui-performance-body';
+    const container = elem('div', 'debug-ui-performance-body');
 
-    const summary = document.createElement('div');
-    summary.className = 'debug-ui-performance-summary';
+    const summary = elem('div', 'debug-ui-performance-summary');
 
-    const poolRow = document.createElement('div');
-    poolRow.className = 'debug-ui-row debug-ui-pool-row';
+    const poolRow = elem('div', 'debug-ui-row debug-ui-pool-row');
 
-    const poolTitle = document.createElement('span');
-    poolTitle.className = 'debug-ui-stat debug-ui-pool-title';
-    poolTitle.textContent = 'Pools';
+    const poolTitle = elem('span', 'debug-ui-stat debug-ui-pool-title', 'Pools');
     poolRow.appendChild(poolTitle);
 
     this.elements.perfGameObjects = this._poolChip('#4ade80', 'Game objects: -- / -- (👁 --)');
@@ -120,8 +111,7 @@ export class PerformancePanel {
     summary.appendChild(poolRow);
     container.appendChild(summary);
 
-    this.elements.workerStatsContainer = document.createElement('div');
-    this.elements.workerStatsContainer.className = 'debug-ui-worker-list';
+    this.elements.workerStatsContainer = elem('div', 'debug-ui-worker-list');
     container.appendChild(this.elements.workerStatsContainer);
 
     this.panel.appendChild(container);
@@ -200,8 +190,7 @@ export class PerformancePanel {
   _isExpanded(rowId, expandable) {
     if (!expandable) return false;
     if (this._expandedById.has(rowId)) return this._expandedById.get(rowId);
-    const type = rowId.split(':')[0];
-    return DEFAULT_EXPANDED.has(type);
+    return false;
   }
 
   _setExpanded(rowId, row, expanded) {
@@ -214,15 +203,12 @@ export class PerformancePanel {
   }
 
   _createRowShell(rowId, colorClass, title, { expandable = false } = {}) {
-    const row = document.createElement('div');
-    row.className = `debug-ui-worker-row ${colorClass}`;
+    const row = elem('div', `debug-ui-worker-row ${colorClass}`);
     row.dataset.rowId = rowId;
 
-    const head = document.createElement('div');
-    head.className = 'debug-ui-worker-row-head';
+    const head = elem('div', 'debug-ui-worker-row-head');
 
-    const chevron = document.createElement('span');
-    chevron.className = 'debug-ui-worker-chevron';
+    const chevron = elem('span', 'debug-ui-worker-chevron');
     chevron.setAttribute('aria-hidden', 'true');
     if (!expandable) {
       chevron.classList.add('hidden');
@@ -230,26 +216,20 @@ export class PerformancePanel {
     }
     head.appendChild(chevron);
 
-    const label = document.createElement('span');
-    label.className = `debug-ui-worker-row-label debug-ui-stat ${colorClass}`;
-    label.textContent = title;
+    const label = elem('span', `debug-ui-worker-row-label debug-ui-stat ${colorClass}`, title);
     head.appendChild(label);
 
-    const metrics = document.createElement('div');
-    metrics.className = 'debug-ui-worker-row-metrics';
+    const metrics = elem('div', 'debug-ui-worker-row-metrics');
     head.appendChild(metrics);
 
-    const loadTrack = document.createElement('div');
-    loadTrack.className = 'debug-ui-worker-load-track';
-    const loadFill = document.createElement('div');
-    loadFill.className = 'debug-ui-worker-load-fill';
+    const loadTrack = elem('div', 'debug-ui-worker-load-track');
+    const loadFill = elem('div', 'debug-ui-worker-load-fill');
     loadTrack.appendChild(loadFill);
     head.appendChild(loadTrack);
 
     row.appendChild(head);
 
-    const details = document.createElement('div');
-    details.className = 'debug-ui-worker-row-details';
+    const details = elem('div', 'debug-ui-worker-row-details');
     row.appendChild(details);
 
     if (expandable) {
@@ -269,8 +249,7 @@ export class PerformancePanel {
   }
 
   _metricCell(colorClass, key, empty = false) {
-    const cell = document.createElement('span');
-    cell.className = `debug-ui-worker-metric debug-ui-stat ${colorClass}`;
+    const cell = elem('span', `debug-ui-worker-metric debug-ui-stat ${colorClass}`);
     cell.dataset.key = key;
     if (empty) cell.classList.add('empty');
     cell.textContent = '—';
@@ -366,14 +345,11 @@ export class PerformancePanel {
     } else if (detailed) {
       for (let s = detailStart; s < config.stats.length; s++) {
         const stat = config.stats[s];
-        const chip = document.createElement('span');
-        chip.className = 'debug-ui-worker-detail';
+        const chip = elem('span', 'debug-ui-worker-detail');
         if (stat.kind) chip.classList.add(`kind-${stat.kind}`);
         if (workerType === 'preRender' || workerType === 'renderer') {
-          const label = document.createElement('span');
-          label.textContent = `${stat.label}:`;
-          const value = document.createElement('span');
-          value.className = 'debug-ui-worker-detail-value';
+          const label = elem('span', '', `${stat.label}:`);
+          const value = elem('span', 'debug-ui-worker-detail-value');
           value.classList.add(stat.kind === 'count' ? 'is-count' : 'is-ms');
           value.textContent = '—';
           chip.appendChild(label);
@@ -612,9 +588,7 @@ export class PerformancePanel {
       if (els._extras) {
         els._extras.textContent = '';
         for (const part of parts) {
-          const chip = document.createElement('span');
-          chip.className = 'debug-ui-worker-detail';
-          chip.textContent = part;
+          const chip = elem('span', 'debug-ui-worker-detail', part);
           els._extras.appendChild(chip);
         }
       }

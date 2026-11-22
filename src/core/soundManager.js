@@ -202,18 +202,8 @@ export class SoundManager {
       if (embedded) URL.revokeObjectURL(processorUrl);
     }
 
-    this._maxSlots = maxSlots;
-    const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
-    this._sab = new SharedArrayBuffer(sabBytes);
-    this._i32 = new Int32Array(this._sab);
-    this._f32 = new Float32Array(this._sab);
-    this._i32.fill(0);
-    Atomics.store(this._i32, 0, maxSlots);
-
-    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, mixGain));
-    this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
-    this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
-    this._muted = false;
+    this._makeSlotSab(maxSlots);
+    this._setLevels(mixGain, masterVolume);
 
     this._processMsSab = new SharedArrayBuffer(4);
     this._processMsF32 = new Float32Array(this._processMsSab);
@@ -232,6 +222,25 @@ export class SoundManager {
       `[SoundManager] AudioWorklet mixer initialized (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
     );
     return true;
+  }
+
+  /** The slot buffer for maxSlots voices, zeroed, its slot count in word 0. */
+  static _makeSlotSab(maxSlots) {
+    this._maxSlots = maxSlots;
+    const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
+    this._sab = new SharedArrayBuffer(sabBytes);
+    this._i32 = new Int32Array(this._sab);
+    this._f32 = new Float32Array(this._sab);
+    this._i32.fill(0);
+    Atomics.store(this._i32, 0, maxSlots);
+  }
+
+  /** A scene's mix gain and master volume (each clamped to [0, 1]), unmuted. */
+  static _setLevels(mixGain, masterVolume) {
+    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, mixGain));
+    this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
+    this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
+    this._muted = false;
   }
 
   static _ensureLevelsSab() {
@@ -546,21 +555,10 @@ export class SoundManager {
    */
   static _reconfigureForNewScene(maxSlots, mixGain, masterVolume, channels, masterCompressor) {
     if (maxSlots !== this._maxSlots) {
-      this._maxSlots = maxSlots;
-      const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
-      this._sab = new SharedArrayBuffer(sabBytes);
-      this._i32 = new Int32Array(this._sab);
-      this._f32 = new Float32Array(this._sab);
-      this._i32.fill(0);
-      Atomics.store(this._i32, 0, maxSlots);
-
+      this._makeSlotSab(maxSlots);
       if (this._workletNode) this._postWorkletInit();
     }
-
-    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, mixGain));
-    this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
-    this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
-    this._muted = false;
+    this._setLevels(mixGain, masterVolume);
     this.configureChannels(channels, masterCompressor);
     this._postChannelCount();
 
@@ -728,15 +726,7 @@ export class SoundManager {
   }
 
   static reset() {
-    this.stopAll();
-    if (this._workletNode) {
-      for (const [, id] of this._nameToId) {
-        this._workletNode.port.postMessage({ type: 'unload', id });
-      }
-    }
-    this._idToName.length = 0;
-    this._nameToId.clear();
-    this._clearAssets();
+    this.unloadAll();
     if (this._i32) {
       Atomics.store(this._i32, this.HEADER_DROPPED, 0);
     }

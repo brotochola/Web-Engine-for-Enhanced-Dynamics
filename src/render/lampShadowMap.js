@@ -18,6 +18,7 @@
 
 import { CASTER_ID_GLSL, CASTER_ID_WGSL, FIRST_LINE, MAP_TEXEL_WGSL } from './sunShadowMap.js';
 import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
+import { hasOnce, requireMarks } from './shaderEdit.js';
 
 /** The highest height a tile's 8 bits spanned, as the sun map's (2 px a step); N-211: the volumes' fragment scale. */
 export const LAMP_MAP_ZMAX = 512;
@@ -313,9 +314,7 @@ function lampHeadGlsl(source, what) {
   const decl = 'uniform vec4 uSunPerp;\n';
   const main = 'void main() {\n';
   const after = '  // weed:afterAnchor\n';
-  for (const mark of [decl, main, after]) {
-    if (source.split(mark).length !== 2) throw new Error(`WeedJS: ${what} needs the sprite shadow vertex shader (${mark.trim()})`);
-  }
+  requireMarks(source, [decl, main, after], `${what} needs the sprite shadow vertex shader`);
   return source
     .slice(0, source.indexOf(after))
     .replace(decl, `${decl}${LAMP_DECL_GLSL}`)
@@ -390,7 +389,7 @@ export function lampMapColumnsVertex(source, cells = LAMP_MAP_COLUMNS) {
   const quad = 'in vec2 aQuad;\n';
   const main = 'void main() {\n';
   const head = lampHeadGlsl(source, 'the lamps\' shadow map columns');
-  if (head.split(quad).length !== 2 || head.split(main).length !== 2) {
+  if (!hasOnce(head, quad) || !hasOnce(head, main)) {
     throw new Error('WeedJS: the lamps\' shadow map columns need the sprite shadow vertex shader (aQuad, main)');
   }
   const top = head
@@ -428,9 +427,7 @@ export function lampMapFragment(sunMapFrag) {
   const main = 'void main() {\n';
   // N-211: the texel keeps the point's place along its lamp's ray (lampRayDepth), not its height.
   const height = '  float h = clamp(vSunZ / 512.0, 0.0, 1.0);\n';
-  for (const mark of [varying, main, height]) {
-    if (sunMapFrag.split(mark).length !== 2) throw new Error(`WeedJS: the lamps' shadow map needs the sun map's fragment (${mark.trim()})`);
-  }
+  requireMarks(sunMapFrag, [varying, main, height], `the lamps' shadow map needs the sun map's fragment`);
   return sunMapFrag
     .replace(varying, `${varying}in vec3 vTileUvW;\nflat in float vLampE;\n`)
     .replace(height, '  float h = clamp(1.0 / (1.0 + abs(vLampE - vSunZ) / max(vLampE, 1e-3)), 0.0, 1.0);\n')
@@ -494,15 +491,13 @@ function lampPartsWgsl(source, what) {
   const after = '  // weed:afterAnchor\n';
   const end = '  out.vTileOff = aInstTileOff;\n  return out;\n}\n';
   const binding = '@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n';
-  for (const mark of [struct, after, binding]) {
-    if (source.split(mark).length !== 2) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (${mark.trim()})`);
-  }
+  requireMarks(source, [struct, after, binding], `${what} needs the sprite shadow WGSL`);
   const from = source.indexOf(after);
   const to = source.indexOf(end, from);
   if (to < 0) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (mainVert's end)`);
   // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
   const body = '  var out: VertexOut;\n';
-  if (source.split(body).length !== 2) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (mainVert)`);
+  if (!hasOnce(source, body)) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (mainVert)`);
   const head = source
     .slice(0, from)
     .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(7) vTileUvW: vec3<f32>,\n  @location(8) @interpolate(flat) vSunId: f32,\n  @location(9) @interpolate(flat) vLampE: f32,\n`)
@@ -575,7 +570,7 @@ export function lampMapColumnsWgsl(source, cells = LAMP_MAP_COLUMNS) {
   const quad = '  @location(0) aQuad: vec2<f32>,\n';
   // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
   const body = '  var out: VertexOut;\n';
-  if (parts.head.split(quad).length !== 2 || parts.head.split(body).length !== 2) {
+  if (!hasOnce(parts.head, quad) || !hasOnce(parts.head, body)) {
     throw new Error('WeedJS: the lamps\' shadow map columns need the sprite shadow WGSL (aQuad, mainVert)');
   }
   const head = parts.head

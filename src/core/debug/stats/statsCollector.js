@@ -17,6 +17,42 @@ import {
   displayDetailStart,
 } from '../../../util/workersUtils.js';
 
+/** The previous-value caches' start: nothing written yet (CR-23: the constructor and attach() each had a copy). */
+const PREV_START = Object.freeze({
+  mainFPS: -1,
+  mainStepMs: -1,
+  audioProcessMs: -1,
+  audioActive: -1,
+  audioMax: -1,
+  audioLoaded: -1,
+  audioDropped: -1,
+  audioMixGain: -1,
+  audioMasterVol: -1,
+  audioMuted: false,
+  audioRate: -1,
+  audioLatency: -1,
+  activeGO: -1,
+  totalGO: -1,
+  visibleGO: -1,
+  activeP: -1,
+  totalP: -1,
+  visibleP: -1,
+  activeD: -1,
+  totalD: -1,
+  visibleD: -1,
+  flashUpdated: -1,
+  activeEntities: -1,
+  totalEntities: -1,
+  visibleEntities: -1,
+  decorationTotal: -1,
+  decorationActive: -1,
+  decorationVisible: -1,
+  decorationSprites: -1,
+  bulletActive: -1,
+  bulletTotal: -1,
+  bulletVisible: -1,
+});
+
 /**
  * Manages worker stat buffer views, FPS smoothing, and cached previous values.
  * Panels read from this collector instead of touching buffers directly.
@@ -27,7 +63,6 @@ export class StatsCollector {
 
     // 60-frame circular buffer for smoothed FPS
     this.fpsSmoothing = {
-      frameCount: 60,
       renderer: this._createSmoother(),
       gpu: { values: new Array(60).fill(0), index: 0, sum: 0 },
       particle: this._createSmoother(),
@@ -38,40 +73,7 @@ export class StatsCollector {
     };
 
     // Previous-value caches (shared across panels to avoid duplicate DOM writes)
-    this._prevValues = {
-      mainFPS: -1,
-      mainStepMs: -1,
-      audioProcessMs: -1,
-      audioActive: -1,
-      audioMax: -1,
-      audioLoaded: -1,
-      audioDropped: -1,
-      audioMixGain: -1,
-      audioMasterVol: -1,
-      audioMuted: false,
-      audioRate: -1,
-      audioLatency: -1,
-      activeGO: -1,
-      totalGO: -1,
-      visibleGO: -1,
-      activeP: -1,
-      totalP: -1,
-      visibleP: -1,
-      activeD: -1,
-      totalD: -1,
-      visibleD: -1,
-      flashUpdated: -1,
-      activeEntities: -1,
-      totalEntities: -1,
-      visibleEntities: -1,
-      decorationTotal: -1,
-      decorationActive: -1,
-      decorationVisible: -1,
-      decorationSprites: -1,
-      bulletActive: -1,
-      bulletTotal: -1,
-      bulletVisible: -1,
-    };
+    this._prevValues = { ...PREV_START };
 
     // Per-worker previous stat cache: { workerType: { workerIndex: { statKey: prev } } }
     this._prevWorkerStats = {};
@@ -102,38 +104,13 @@ export class StatsCollector {
         : [],
     };
 
-    this.fpsSmoothing.spatial = [];
-    for (let i = 0; i < spatialCount; i++) {
-      this.fpsSmoothing.spatial.push(this._createSmoother());
-    }
-
-    this.fpsSmoothing.logic = [];
-    for (let i = 0; i < logicCount; i++) {
-      this.fpsSmoothing.logic.push(this._createSmoother());
-    }
-
-    this.fpsSmoothing.preRender = [];
-    for (let i = 0; i < preRenderCount; i++) {
-      this.fpsSmoothing.preRender.push(this._createSmoother());
-    }
+    this.fpsSmoothing.spatial = this._createSmoothers(spatialCount);
+    this.fpsSmoothing.logic = this._createSmoothers(logicCount);
+    this.fpsSmoothing.preRender = this._createSmoothers(preRenderCount);
 
     this._prevWorkerStats = {};
 
-    const pv = this._prevValues;
-    pv.mainFPS = -1;
-    pv.mainStepMs = -1;
-    pv.audioProcessMs = -1;
-    pv.audioActive = -1; pv.audioMax = -1; pv.audioLoaded = -1;
-    pv.audioDropped = -1; pv.audioMixGain = -1; pv.audioMasterVol = -1;
-    pv.audioMuted = false; pv.audioRate = -1; pv.audioLatency = -1;
-    pv.activeGO = -1; pv.totalGO = -1; pv.visibleGO = -1;
-    pv.activeP = -1; pv.totalP = -1; pv.visibleP = -1;
-    pv.activeD = -1; pv.totalD = -1; pv.visibleD = -1;
-    pv.flashUpdated = -1;
-    pv.activeEntities = -1; pv.totalEntities = -1; pv.visibleEntities = -1;
-    pv.decorationTotal = -1; pv.decorationActive = -1;
-    pv.decorationVisible = -1; pv.decorationSprites = -1;
-    pv.bulletActive = -1; pv.bulletTotal = -1; pv.bulletVisible = -1;
+    Object.assign(this._prevValues, PREV_START);
   }
 
   detach() {
@@ -160,6 +137,12 @@ export class StatsCollector {
 
   _createSmoother() {
     return { values: new Array(60).fill(60), index: 0, sum: 3600 };
+  }
+
+  _createSmoothers(count) {
+    const out = [];
+    for (let i = 0; i < count; i++) out.push(this._createSmoother());
+    return out;
   }
 }
 
