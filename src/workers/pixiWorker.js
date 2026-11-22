@@ -380,7 +380,7 @@ import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
 import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
-import { poseBlockFloats, spriteIndexedVertex } from '../render/spriteIndexed.js';
+import { poseBlockFloats, spriteIndexedVertex, spriteIndexedWgsl } from '../render/spriteIndexed.js';
 import { createStaticsScatterGpu, scatterStaticsGpu } from '../render/webgpu/staticsScatterGpu.js';
 import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
@@ -5754,9 +5754,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _ensureKeyedCasters(sunShader) {
     // DX-SHADOW3D: the sun's map and the renders' solids read pre-render's full rows (their columns need a frame's
     // instance whole); a directional caster's sun frame rides in the keyed rows too (plan §17.2).
-    // E-395: the maps draw keyed rows too (_drawSunMap, _drawLampMap), on WebGL; not the renders' columns (they need a
-    // frame's instance whole), nor WebGPU's maps yet.
-    if (this._keyedCastersTried || this._sunSolidsOn() || (this._useWebGpu && (this._sunMapOn || this._lampMapOn))) return;
+    // E-395: the maps draw keyed rows too (_drawSunMap, _drawLampMap); not the renders' columns (they need a frame's
+    // instance whole).
+    if (this._keyedCastersTried || this._sunSolidsOn()) return;
     this._keyedCastersTried = true;
     const b = this.entitiesBatch;
     const casters = this.gpuCasterBatch;
@@ -5977,9 +5977,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this._sunMapKeyedMesh !== null) return this._sunMapKeyedMesh;
     const shaders = this._engineShaders;
     const entities = this.entitiesBatch;
-    if (this._useWebGpu || !entities || !entities.keyed || !shaders?.shadowVert || !shaders?.sunMapFrag) return null;
-    const vertex = sunMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true }), { heights: true });
-    const program = { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, shaders.sunMapFrag, 'sun-map-keyed') };
+    if (!entities || !entities.keyed) return null;
+    let program;
+    if (this._useWebGpu) {
+      if (!shaders?.shadowWgsl) return null;
+      const source = sunMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true }), { heights: true });
+      program = { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragMap', 'sun-map-keyed', { statics: true }) };
+    } else {
+      if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
+      const vertex = sunMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true }), { heights: true });
+      program = { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, shaders.sunMapFrag, 'sun-map-keyed') };
+    }
     const r = batch.shadowShader.resources;
     const shader = entities.makeKeyedRowsShader(program, {
       uTexture: r.uTexture,
@@ -6445,10 +6453,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const shaders = this._engineShaders;
     const entities = this.entitiesBatch;
     const casters = this.gpuCasterBatch;
-    if (this._useWebGpu || !entities || !entities.keyed || !casters || !shaders?.shadowVert) return false;
+    if (!entities || !entities.keyed || !casters) return false;
     if (this._lampMapKeyedMesh === null) {
-      const vertex = lampMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: true }));
-      const program = { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), 'lamp-map-keyed') };
+      let program;
+      if (this._useWebGpu) {
+        if (!shaders?.shadowWgsl) return false;
+        const source = lampMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true, light: true }));
+        program = { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragLamp', 'lamp-map-keyed', { lampTiles: true, statics: true }) };
+      } else {
+        if (!shaders?.shadowVert || !shaders?.sunMapFrag) return false;
+        const vertex = lampMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: true }));
+        program = { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), 'lamp-map-keyed') };
+      }
       const r = casters.shadowShader.resources;
       const keyedShader = (uniforms) => entities.makeKeyedRowsShader(program, {
         uTexture: r.uTexture,
