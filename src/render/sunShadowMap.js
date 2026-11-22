@@ -147,6 +147,54 @@ const ROW_TEX = 10;
  * @param {Float32Array} blocks
  * @returns {number}
  */
+/**
+ * E-395: compactColumnRows for keyed caster rows (gpuQueueLayout.js GPU_KEYED_CASTER_FLOATS, or GPU_KEYED_STAMP_FLOATS):
+ * a row's frame is its fourth float when it carries one (±(textureId + 1), negative mirrored), else its slot's texture in
+ * `statics` (the entity batch's CPU copy: textureId, scaleX, scaleY a slot), and its scale the slot's (its x mirrored with
+ * a negative frame), as the keyed programs read them. Keyed rows carry no caster code: every row casts its sheet's way.
+ * The rows that cast columns are copied whole into `out` with their blocks, as compactColumnRows does.
+ * @returns {number} the instances written (may pass `out`'s room: the caller grows it and calls again)
+ */
+export function compactKeyedColumnRows(src, rows, rowFloats, statics, lut, lutFloats, light, out, blocks) {
+  const ids = (lut.length / lutFloats) | 0;
+  const slots = (statics.length / 3) | 0;
+  const cap = Math.min((out.length / rowFloats) | 0, (blocks.length / 4) | 0);
+  const span = SUN_MAP_COLUMNS * COLUMN_CELL_PX;
+  let n = 0;
+  for (let r = 0; r < rows; r++) {
+    const at = r * rowFloats;
+    const slot = src[at + 2] | 0;
+    if (slot < 0 || slot >= slots) continue;
+    const frame = src[at + 3];
+    const id = frame !== 0 ? ((frame < 0 ? -frame : frame) - 1) | 0 : statics[slot * 3] | 0;
+    if (id < 0 || id >= ids) continue;
+    const l = id * lutFloats;
+    if (!(lut[l + 10] < 0 && (light === 1 || lut[l + 11] >= 0))) continue;
+    const sx = statics[slot * 3 + 1];
+    const w = lut[l + 8] * (frame < 0 ? -(sx < 0 ? -sx : sx) : sx);
+    const h = lut[l + 9] * statics[slot * 3 + 2];
+    const side = Math.max(w < 0 ? -w : w, h < 0 ? -h : h);
+    let k = Math.ceil(side / span);
+    if (!(k >= 1)) k = 1;
+    else if (k > COLUMN_MAX_BLOCKS) k = COLUMN_MAX_BLOCKS;
+    for (let by = 0; by < k; by++) {
+      for (let bx = 0; bx < k; bx++) {
+        if (n < cap) {
+          const to = n * rowFloats;
+          for (let f = 0; f < rowFloats; f++) out[to + f] = src[at + f];
+          const b = n * 4;
+          blocks[b] = bx;
+          blocks[b + 1] = by;
+          blocks[b + 2] = k;
+          blocks[b + 3] = 0;
+        }
+        n++;
+      }
+    }
+  }
+  return n;
+}
+
 export function compactColumnRows(src, rows, rowFloats, lut, lutFloats, light, out, blocks) {
   const ids = (lut.length / lutFloats) | 0;
   const cap = Math.min((out.length / rowFloats) | 0, (blocks.length / 4) | 0);
@@ -473,7 +521,8 @@ export function sunMapWgsl(source, { heights = true } = {}) {
 export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = true } = {}) {
   const card = sunMapWgsl(source, { heights });
   const quad = '  @location(0) aQuad: vec2<f32>,\n';
-  const body = ') -> VertexOut {\n  var out: VertexOut;\n';
+  // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
+  const body = '  var out: VertexOut;\n';
   const after = '  // weed:afterAnchor\n';
   const end = '  out.vTileOff = aInstTileOff;\n  return out;\n}\n';
   wgslMarks(card, [quad, body, after], 'the sun shadow map columns');

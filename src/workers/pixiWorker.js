@@ -88,6 +88,7 @@ import {
   SUN_MAP_MARGIN_MAX,
   SUN_MAP_ZMAX,
   compactColumnRows,
+  compactKeyedColumnRows,
   sunMapColumnGrid,
   sunMapColumnIndex,
   sunMapColumnsVertex,
@@ -1040,8 +1041,10 @@ class PixiRenderer extends AbstractWorker {
     this._selfShadowOn = false; // DX-SELFSHADOW: lighting.selfShadow, WebGL for now
     this.sunMapRT = null;
     this._sunMapMesh = null;
-    // E-395: the sun's map over keyed caster rows (WebGL), and its host.
+    // E-395: the sun's map over keyed caster rows, and its host; the columns over keyed rows (_keyedColumnsFor).
     this._sunMapKeyedMesh = null;
+    this._sunMapKeyedColumns = null;
+    this._lampMapKeyedColumns = null;
     this._sunMapKeyedHost = null;
     // The map's card mesh inside a container: a mesh drawn as the render's root takes the root's blend mode (normal), not
     // its own; as a child it draws with max.
@@ -5754,13 +5757,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _ensureKeyedCasters(sunShader) {
     // DX-SHADOW3D: the sun's map and the renders' solids read pre-render's full rows (their columns need a frame's
     // instance whole); a directional caster's sun frame rides in the keyed rows too (plan §17.2).
-    // E-395: the maps draw keyed rows too (_drawSunMap, _drawLampMap); not the renders' columns (they need a frame's
-    // instance whole).
-    if (this._keyedCastersTried || this._sunSolidsOn()) return;
+    // E-395: the maps draw keyed rows too (_drawSunMap, _drawLampMap), and the renders' columns over them, picked with the
+    // entity batch's copy of the slots' statics (enableStaticsMirror) where the atlas has height maps.
+    if (this._keyedCastersTried) return;
     this._keyedCastersTried = true;
     const b = this.entitiesBatch;
     const casters = this.gpuCasterBatch;
     if (!b || !b.keyed || !casters || !casters.mesh) return;
+    if (this._sunSolidsOn() && !b.enableStaticsMirror()) return;
     const sun = b.makeKeyedCasterShader(sunShader, false);
     const stamp = b.makeKeyedCasterShader(sunShader, true);
     if (sun === null || stamp === null) return;
@@ -5953,9 +5957,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clearColor = this._clearTransparent;
     this._submitRender(rtOpts);
     // E-379: the rows that cast columns, as their own instances.
-    const sunColumns = rows > 0 && keyedMesh === null && this.atlasMapsSource !== null
-      ? this._columnsHost(batch, rows, this._sunMapColumns, 0)
-      : null;
+    const sunColumns = rows <= 0 || this.atlasMapsSource === null
+      ? null
+      : keyedMesh !== null
+        ? this._keyedColumnsHost(rows, this._keyedColumnsFor('sun', batch), 0)
+        : this._columnsHost(batch, rows, this._sunMapColumns, 0);
     if (sunColumns !== null) {
       rtOpts.container = sunColumns;
       rtOpts.clear = false;
@@ -6488,6 +6494,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     const rows = casters.commitKeyedCasterRows(gpu.stamp, stampN, GPU_KEYED_STAMP_FLOATS, gpu.stampLightIdx);
     if (rows === null) return false;
+    const keep = rows.instanceCount | 0;
     const strip = this._lampKeyedStripFor(rows);
     strip.instanceCount = rows.instanceCount;
     this._lampMapKeyedMesh.geometry = strip;
@@ -6509,10 +6516,110 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clearColor = this._clearTransparent;
     this._submitRender(rtOpts);
     this._gpuPassesThisFrame++;
+    // The keyed rows that cast columns towards their lamp, as their own instances (E-379's, over keyed rows).
+    const lampColumns = this.atlasMapsSource !== null ? this._keyedColumnsHost(keep, this._keyedColumnsFor('lamp', casters), 1) : null;
+    if (lampColumns !== null) {
+      rtOpts.container = lampColumns;
+      rtOpts.clear = false;
+      this._submitRender(rtOpts);
+      this._gpuPassesThisFrame++;
+    }
     this._drawVolumesInLampMap(rtOpts);
     rtOpts.target = this.shadowRT;
     this._lampMapClear = false;
     return true;
+  }
+
+  /**
+   * E-395: a columns pass over keyed caster rows (`kind` 'sun': the sun's map, 'lamp': the lamps' map), made on first use
+   * and kept: the columns programs composed over spriteIndexed's keyed rows (statics by key) on either backend, the full
+   * columns' resources and uniform groups, grid and state, and the caster batch's keyed geometry as the rows' layout.
+   * Null where the entity batch keeps no keyed frames or the full pass is not made yet.
+   */
+  _keyedColumnsFor(kind, batch) {
+    const key = kind === 'sun' ? '_sunMapKeyedColumns' : '_lampMapKeyedColumns';
+    if (this[key] !== null) return this[key];
+    const full = kind === 'sun' ? this._sunMapColumns : this._lampMapColumns;
+    const entities = this.entitiesBatch;
+    const shaders = this._engineShaders;
+    if (!full || !entities || !entities.keyed) return null;
+    const lamp = kind === 'lamp';
+    const name = lamp ? 'lamp-map-columns-keyed' : 'sun-map-columns-keyed';
+    let program;
+    if (this._useWebGpu) {
+      if (!shaders?.shadowWgsl) return null;
+      const keyed = spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true, light: lamp });
+      const source = lamp ? lampMapColumnsWgsl(keyed) : sunMapColumnsWgsl(keyed, SUN_MAP_COLUMNS, { heights: true });
+      program = { gpuProgram: sunShadowGpuProgram(GpuProgram, source, lamp ? 'mainFragLamp' : 'mainFragMap', name, { maps: true, lampTiles: lamp, statics: true }) };
+    } else {
+      if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
+      const keyed = spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: lamp });
+      const vertex = lamp ? lampMapColumnsVertex(keyed) : sunMapColumnsVertex(keyed, SUN_MAP_COLUMNS, { heights: true });
+      program = { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, lamp ? lampMapFragment(shaders.sunMapFrag) : shaders.sunMapFrag, name) };
+    }
+    const r = batch.shadowShader.resources;
+    const resources = (uniforms) => ({
+      uTexture: r.uTexture,
+      uSampler: r.uSampler,
+      uTexLut: r.uTexLut,
+      uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
+      uMapsLut: this._mapsTableSourceOrEmpty(),
+      uFoot: this._footSourceOrEmpty(),
+      ...(lamp ? { uLampTiles: this._lampTileSource } : {}),
+      uniforms,
+    });
+    const shader = entities.makeKeyedRowsShader(program, resources(lamp ? this._lampMapUniforms : this._sunMapUniforms));
+    const shaderCeil = lamp ? entities.makeKeyedRowsShader(program, resources(this._lampMapUniformsCeil)) : null;
+    if (shader === null || (lamp && shaderCeil === null)) return null;
+    const floats = lamp ? GPU_KEYED_STAMP_FLOATS : GPU_KEYED_CASTER_FLOATS;
+    this[key] = {
+      shader,
+      ...(lamp ? { shaderCeil } : {}),
+      grid: full.grid,
+      index: full.index,
+      state: full.state,
+      blendMode: 'none',
+      rows: new Float32Array(64 * floats),
+      blocks: new Float32Array(64 * 4),
+      slots: [],
+      ring: 0,
+      label: name,
+      floats,
+      layout: this.gpuCasterBatch.keyedCasterGeometry(lamp),
+    };
+    return this[key];
+  }
+
+  /**
+   * E-395: _columnsHost over this frame's keyed rows (in the caster batch's data, committed by commitKeyedCasterRows): the
+   * rows whose frame casts columns, picked with the entity batch's copy of the slots' statics (compactKeyedColumnRows).
+   */
+  _keyedColumnsHost(rows, columns, light) {
+    const lut = this._texLut;
+    const statics = this.entitiesBatch ? this.entitiesBatch.staticsMirror : null;
+    const src = this.gpuCasterBatch ? this.gpuCasterBatch.data : null;
+    if (columns === null || !lut || !statics || !src || rows <= 0) return null;
+    const F = columns.floats;
+    let n = compactKeyedColumnRows(src, rows, F, statics, lut, TEX_LUT_FLOATS, light, columns.rows, columns.blocks);
+    if (n > columns.blocks.length / 4) {
+      let cap = Math.max(64, columns.blocks.length / 4);
+      while (cap < n) cap *= 2;
+      columns.rows = new Float32Array(cap * F);
+      columns.blocks = new Float32Array(cap * 4);
+      for (const slot of columns.slots) slot.dispose();
+      columns.slots = [];
+      n = compactKeyedColumnRows(src, rows, F, statics, lut, TEX_LUT_FLOATS, light, columns.rows, columns.blocks);
+    }
+    if (n <= 0) return null;
+    if (columns.slots.length === 0) {
+      for (let k = 0; k < 2; k++) columns.slots.push(this._columnsSlot(this.gpuCasterBatch, columns, k));
+    }
+    const slot = columns.slots[columns.ring];
+    columns.ring ^= 1;
+    slot.rowBuffer.update(n * F * 4);
+    slot.blockBuffer.update(n * 16);
+    slot.mesh.geometry.instanceCount = n;
+    return slot.host;
   }
 
   /** E-395: the lamps' cards' strip (lampCardStrip) over a keyed stamp rows' ring geometry, made once for each. */
@@ -6975,7 +7082,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       aCell: { buffer: columns.grid, format: 'float32x4', stride: 16, offset: 0 },
       aBlock: { buffer: blockBuffer, format: 'float32x4', stride: 16, offset: 0, instance: true },
     };
-    for (const [name, a] of Object.entries(batch.mesh.geometry.attributes)) {
+    // E-395: the rows' layout is the batch's own, or the keyed rows' (a keyed columns pass names it).
+    for (const [name, a] of Object.entries((columns.layout || batch.mesh.geometry).attributes)) {
       if (name === 'aQuad') continue;
       attributes[name] = { buffer: rowBuffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
     }
