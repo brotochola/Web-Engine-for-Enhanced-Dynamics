@@ -86,8 +86,15 @@ enum {
 };
 
 /* Doubles at T_CONSTS, as angularSweep.js computes them: 1 / Math.cos(MAX_FREE_GAP / 2), and the end
-   direction Math.cos / Math.sin(Math.PI - EPSILON). */
-enum { C_FREE_OVERSIZE, C_END_DIR_C, C_END_DIR_S, CONST_COUNT };
+   direction Math.cos / Math.sin(Math.PI - EPSILON). Then (N-158) the light's doubles for the next call, which the caller
+   writes there: lx, ly, the radius (sweep_light_*) and the floor's inverse scale (wall_row). Not call arguments: a
+   JS-to-wasm call TurboFan does not inline boxes every double it passes (E-85). */
+enum { C_FREE_OVERSIZE, C_END_DIR_C, C_END_DIR_S, C_ARG_LX, C_ARG_LY, C_ARG_RADIUS, C_ARG_FLOOR_INV, CONST_COUNT };
+
+/* N-158: the consts region's doubles, where the caller left the light's. */
+INLINE const double *sweep_consts(uint32_t table) {
+  return (const double *)(uintptr_t)((const uint32_t *)(uintptr_t)table)[T_CONSTS];
+}
 
 /* u32 words at T_RESULTS. R_STAMP carries the N-39 stamp from one call to the next (start it at 0). */
 enum {
@@ -1006,13 +1013,15 @@ INLINE int32_t sweep_light(uint32_t table, double lx, double ly, double maxRadiu
 }
 
 __attribute__((export_name("sweep_light_f32")))
-int32_t sweep_light_f32(uint32_t table, double lx, double ly, double maxRadius, int32_t occCount, int32_t polar) {
-  return sweep_light(table, lx, ly, maxRadius, occCount, polar, MODE_F32);
+int32_t sweep_light_f32(uint32_t table, int32_t occCount, int32_t polar) {
+  const double *c = sweep_consts(table);
+  return sweep_light(table, c[C_ARG_LX], c[C_ARG_LY], c[C_ARG_RADIUS], occCount, polar, MODE_F32);
 }
 
 __attribute__((export_name("sweep_light_simd")))
-int32_t sweep_light_simd(uint32_t table, double lx, double ly, double maxRadius, int32_t occCount, int32_t polar) {
-  return sweep_light(table, lx, ly, maxRadius, occCount, polar, MODE_SIMD);
+int32_t sweep_light_simd(uint32_t table, int32_t occCount, int32_t polar) {
+  const double *c = sweep_consts(table);
+  return sweep_light(table, c[C_ARG_LX], c[C_ARG_LY], c[C_ARG_RADIUS], occCount, polar, MODE_SIMD);
 }
 
 /* OL-11: a lamp's row for the light pass, from the polygon the sweep left at T_OUT_X / T_OUT_Y / T_OUT_OCC:
@@ -1034,8 +1043,12 @@ INLINE float row_angle(float x, float y) {
 }
 
 __attribute__((export_name("wall_row")))
-int32_t wall_row(uint32_t table, double lx, double ly, double floorInv, int32_t n) {
+int32_t wall_row(uint32_t table, int32_t n) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const double *c = sweep_consts(table);
+  const double lx = c[C_ARG_LX];
+  const double ly = c[C_ARG_LY];
+  const double floorInv = c[C_ARG_FLOOR_INV];
   const float *xs = (const float *)(uintptr_t)t[T_OUT_X];
   const float *ys = (const float *)(uintptr_t)t[T_OUT_Y];
   const int32_t *hits = (const int32_t *)(uintptr_t)t[T_OUT_OCC];

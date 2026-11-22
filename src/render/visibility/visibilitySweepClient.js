@@ -96,14 +96,19 @@ export async function bindVisibilitySweep(vm, { maxVerts, f32 = true }) {
   results.fill(0);
   return {
     variant,
-    /** sweep_light_*(tableByte, lightX, lightY, radius, occluders, polar): the polygon's vertex count. */
+    /** sweep_light_*(tableByte, occluders, polar), args[0..2] (lightX, lightY, radius) written first: the polygon's vertex count. */
     sweep: k[exportName],
     /**
-     * OL-11. wall_row(tableByte, lampX, lampY, 1 / floorScale, vertices): the lamp's row for the light pass
+     * OL-11. wall_row(tableByte, vertices), args[0], args[1] (the lamp) and args[3] (1 / floorScale) written first: the lamp's row for the light pass
      * (lampWallRow.js) from the polygon the sweep just left, written at the memory's rowOut; the floats written.
      * For a light with no compound solid in reach, and a polygon a row holds.
      */
     row: k.wall_row,
+    /**
+     * N-158: the light's doubles for the next sweep or row call, after the consts region's three constants: lx, ly, the
+     * radius, the floor's inverse scale (the calls take integers only: E-85).
+     */
+    args: new Float64Array(buffer, L.constsByte + 3 * 8, 4),
     table,
     tableByte: L.tableByte,
     results,

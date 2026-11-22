@@ -27,8 +27,8 @@ const WASM_MAX_PAGES = 32768;
 /** visibilitySweep.c's table slots and result words (visibilitySweepClient.js names them). */
 export const VISIBILITY_SWEEP_TABLE_SLOTS = 63;
 export const VISIBILITY_SWEEP_RESULT_WORDS = 11;
-/** Doubles at the sweep's consts region. */
-const SWEEP_CONSTS = 3;
+/** Doubles at the sweep's consts region: its three constants, then (N-158) the light's four for the next call. */
+const SWEEP_CONSTS = 7;
 /** solidSegments.c's context table slots (solidSegmentsClient.js names them). */
 export const SOLID_CTX_SLOTS = 8;
 /** One outline edge's copy: four floats of solid.seg and its solid.chain entry. */

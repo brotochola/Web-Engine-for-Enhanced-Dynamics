@@ -12790,12 +12790,12 @@
       "id": "N-158",
       "title": "Per-frame allocations left in pre-render (61 KB/s) and Pixi in the flashlight trace: frame loop, waits, camera bounds, gather columns",
       "status": "open",
-      "statusText": "round 3 2026-11-22 on the ASUS (9c1f02c9, R-1758): the gather's doubles through its table",
+      "statusText": "rounds 3 and 4 2026-11-22 on the ASUS (9c1f02c9, d4e750af; R-1758, R-1760): the visibility kernels take no doubles",
       "date": "2026-11-12",
       "area": "engine",
       "kind": "speed",
-      "result": "_runFrame 7–9 KB/s per worker, _waitForPose/_waitForQueue 6–8, pre-render camera bounds ~20 (doubles in shared-map objects), writeGatherColumns put closure 4.9, renderVisibilityLighting clear colour and options 5.4.",
-      "next": "sweep_light_* and wall_row's three doubles a lamp the same way (with the sweep kernel's tests and microbench); Predator crowd 2.5 sampled with a longer warm-up.",
+      "result": "Pre-render on the flashlight scene 127 -> 54.6 KB/s (2 605 -> 930 B a frame): the gather's and the sweep's doubles go through their tables (E-85).",
+      "next": "What is left in pre-render: _waitForPose 122 B a frame, _runFrame 120 and reportFPS 105 (abstractWorker, every worker), resolveDrawnCamera 51, _collectVisibleEntitiesWasm 51; Predator crowd 2.5 sampled with a longer warm-up.",
       "refs": [
         "REVIEW_PLAN.md#N-158"
       ],
@@ -12810,7 +12810,8 @@
         "R-0958",
         "R-0960",
         "R-1742",
-        "R-1758"
+        "R-1758",
+        "R-1760"
       ]
     },
     {
@@ -41975,6 +41976,18 @@
       "title": "N-270 answered: with the WebGPU canvas opaque (N-155), Pixi's WebGPU add alpha factors change nothing shown; a patch to one, one changed 0 pixels in lightGallery, so it stays out",
       "verdict": "answered",
       "text": "**N-270 answered: with the WebGPU canvas opaque (N-155, 2731a1d8), Pixi's WebGPU 'add' alpha factors change nothing the engine shows; a build patch to WebGL's one, one changed 0 pixels, so it does not go in.**\n\nOn the ASUS, 2026-11-22 04:17 to 04:20 (job 0901c): the vendored Pixi rebuilt as it is came out byte for byte (scripts/buildPixi.mjs), then with a patch giving GpuBlendModesToPixi.add the alpha factors one, one (WebGL's, as Pixi 8.23 has them, #12290). lightGallery (its glows at half resolution, E-404), with sorted glows and with walls, each on both backends in both trees:\n\n- WebGPU before against after the patch: 0 pixels differ in all three; WebGL: 0.\n- WebGL against WebGPU, before and after alike: 18 563, 18 359 and 18 361 pixels, max 5, 6 and 26 (the 26 is two pixels of one cell; the rest rounding along lamps' edges).\n\nThe alpha the 'add' factors wrote mattered where it reached the page: N-155's canvas, fixed by making it opaque. An additive pass into a transparent target that is later composited by its colour alone shows no difference here. DX-PIXI823 brings Pixi's own fix with the upgrade."
+    },
+    {
+      "id": "R-1760",
+      "date": "2026-11-22",
+      "time": "04:44",
+      "timeFrom": "recorded",
+      "title": "N-158 round 4: the sweep's and the wall row's doubles through the consts region; the swept visibility 360 -> 19 B a frame, pre-render 83 -> 54.6 KB/s on the flashlight scene; pictures pixel-equal",
+      "verdict": "kept-hygiene",
+      "text": "**N-158 round 4: the visibility sweep's and the wall row's doubles go through the sweep's consts region (d4e750af); the swept visibility's garbage 360 -> 19 B a frame, pre-render's on the flashlight scene 83 -> 54.6 KB/s (127 before round 3).**\n\n- **The change:** sweep_light_* took three doubles a lamp a frame (lx, ly, the radius) and wall_row three more (lx, ly, the floor's inverse scale), boxed at a call TurboFan does not inline (E-85). The consts region grows from its three constants to seven doubles; pre-render writes the light's four after the constants (the client's args view) and the exports take integers only. The tests that call the shipped exports write the doubles first; the screening module (wasm/test/visibilitySweep.c) keeps its signatures and the shipped-module test calls the new exports through a wrapper of the old signature. engine.wasm and the visibilitySweep test fixture rebuilt on the ASUS (buildWasm --check over every module clean).\n- **Heap census** (heapSampleWorkers, Chrome on the ASUS, flashlightStressScene ?cone=1&lights=360&crates=320, 10 s after 10 s, 04:42): _buildVisibilityPolygonsSwept 360 -> 19 B a frame; pre-render 1 460 -> 930 B a frame, 83 -> 54.6 KB/s.\n- **Same result:** lightGallery with walls and cones before and after, pixel-equal on WebGL and WebGPU. Node 3497/3497, demos 143/143.\n\nPre-render's top allocators now: _waitForPose 122 B a frame, _runFrame 120, reportFPS 105, resolveDrawnCamera 51, _collectVisibleEntitiesWasm 51 (abstractWorker's frame loop and stats are every worker's).",
+      "commits": [
+        "d4e750af"
+      ]
     }
   ],
   "leads": [

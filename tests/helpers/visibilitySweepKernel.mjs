@@ -114,7 +114,8 @@ export async function createSweepKernel({
   add('occValid', occCache);
   add('seen', occCache * 4);
   add('active', maxActive * 4);
-  add('consts', 3 * 8);
+  // The three constants, then (N-158) the light's four doubles the shipped module reads.
+  add('consts', 7 * 8);
   add('fullC', FULL_CIRCLE_SEGS * 8);
   add('fullS', FULL_CIRCLE_SEGS * 8);
   add('polarDist', POLAR_BINS * 4);
@@ -139,7 +140,7 @@ export async function createSweepKernel({
   const G = layout.regions;
   const view = (Ctor, name, n) => new Ctor(buffer, G[name].byte, n);
 
-  const consts = view(Float64Array, 'consts', 3);
+  const consts = view(Float64Array, 'consts', 7);
   consts[0] = 1 / Math.cos(MAX_FREE_GAP * 0.5);
   consts[1] = Math.cos(END_ANGLE);
   consts[2] = Math.sin(END_ANGLE);
