@@ -378,25 +378,12 @@ export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS) {
   return out;
 }
 
-let _dummyLutGpu = null;
-let _dummyLutGl = null;
+/** A one-texture LUT for a batch made before the atlas has one, a source per backend (made once each). */
+const _dummyLut = { gpu: null, gl: null };
 export function dummyLutSource(useWebGpu) {
-  if (useWebGpu) {
-    if (_dummyLutGpu) return _dummyLutGpu;
-    _dummyLutGpu = TextureSource.from({
-      resource: packTextureLutRgba(null, 1),
-      width: textureLutLayout(1).width,
-      height: 1,
-      format: 'rgba32float',
-      scaleMode: 'nearest',
-      addressMode: 'clamp-to-edge',
-      autoGenerateMipmaps: false,
-    });
-    _dummyLutGpu.uploadMethodId = 'external';
-    return _dummyLutGpu;
-  }
-  if (_dummyLutGl) return _dummyLutGl;
-  _dummyLutGl = TextureSource.from({
+  const key = useWebGpu ? 'gpu' : 'gl';
+  if (_dummyLut[key]) return _dummyLut[key];
+  const source = TextureSource.from({
     resource: packTextureLutRgba(null, 1),
     width: textureLutLayout(1).width,
     height: 1,
@@ -405,8 +392,9 @@ export function dummyLutSource(useWebGpu) {
     addressMode: 'clamp-to-edge',
     autoGenerateMipmaps: false,
   });
-  _dummyLutGl.uploadMethodId = 'unknown';
-  return _dummyLutGl;
+  source.uploadMethodId = useWebGpu ? 'external' : 'unknown';
+  _dummyLut[key] = source;
+  return source;
 }
 
 export class InstancedSpriteBatch {
@@ -683,20 +671,11 @@ export class InstancedSpriteBatch {
     this._label = labelName;
     // _packRefused said its reason.
     this._packRefusedWarned = false;
-    this._buffers = [
-      this._makeInstanceBuffer(labelName),
-      this._makeInstanceBuffer(labelName + '-ring'),
-    ];
-    this._staticBuffers = this._twoStreams
-      ? [this._makeStaticBuffer(labelName + '-static'), this._makeStaticBuffer(labelName + '-static-ring')]
-      : null;
-    this._slotBuffers = this.indexed
-      ? [this._makeSlotBuffer(labelName + '-slots'), this._makeSlotBuffer(labelName + '-slots-ring')]
-      : null;
+    this._buffers = this._ringBuffers(this.data, labelName);
+    this._staticBuffers = this._twoStreams ? this._ringBuffers(this.staticData, labelName + '-static') : null;
+    this._slotBuffers = this.indexed ? this._ringBuffers(this._slotData, labelName + '-slots') : null;
     // DX-GBUF: a gbuf buffer a ring slot, each geometry over that slot's.
-    this._gbufBuffers = this.gbuf
-      ? [this._makeGbufBuffer(labelName + '-gbuf'), this._makeGbufBuffer(labelName + '-gbuf-ring')]
-      : null;
+    this._gbufBuffers = this.gbuf ? this._ringBuffers(this._gbufData, labelName + '-gbuf') : null;
     this._geometries = this._buffers.map((buf, r) => this._withGbuf(
       this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null), r,
     ));
@@ -916,37 +895,15 @@ export class InstancedSpriteBatch {
     };
   }
 
-  _makeInstanceBuffer(label) {
-    return new Buffer({
-      data: this.data,
-      usage: this._vertexUsage,
-      label,
-    });
-  }
-
-  _makeStaticBuffer(label) {
-    return new Buffer({
-      data: this.staticData,
-      usage: this._vertexUsage,
-      label,
-    });
-  }
-
-  _makeSlotBuffer(label) {
-    return new Buffer({
-      data: this._slotData,
-      usage: this._vertexUsage,
-      label,
-    });
-  }
-
-  /** DX-GBUF: a ring slot's buffer of the instances' G-buffer words. */
-  _makeGbufBuffer(label) {
-    return new Buffer({
-      data: this._gbufData,
-      usage: this._vertexUsage,
-      label,
-    });
+  /**
+   * The ring's two vertex buffers over one array (`label` and `label`-ring): the instances' rows, their statics, the
+   * indexed slots, the G-buffer words (DX-GBUF) or the keyed frames' shadow terms (E-191).
+   */
+  _ringBuffers(data, label) {
+    return [
+      new Buffer({ data, usage: this._vertexUsage, label }),
+      new Buffer({ data, usage: this._vertexUsage, label: label + '-ring' }),
+    ];
   }
 
   /**
@@ -1015,15 +972,6 @@ export class InstancedSpriteBatch {
   /** E-387: the words the last upload's keyed pack wrote, in draw order (read them while gbufPacked says so). */
   get packedGbuf() {
     return this._sharedGbuf;
-  }
-
-  /** E-191: a ring slot's buffer of the keyed frames' shadow terms. */
-  _makeShadowBuffer(label) {
-    return new Buffer({
-      data: this._shadowData,
-      usage: this._vertexUsage,
-      label,
-    });
   }
 
   /** E-191: the sun's pass over a ring slot's keyed instances: the shadow program's attributes and no other. */
@@ -2490,10 +2438,7 @@ export class InstancedSpriteBatch {
   enableKeyedShadows() {
     if (!this.keyed || this._sharedShadow.length === 0) return false;
     if (this._shadowBuffers === null) {
-      this._shadowBuffers = [
-        this._makeShadowBuffer(this._label + '-shadow'),
-        this._makeShadowBuffer(this._label + '-shadow-ring'),
-      ];
+      this._shadowBuffers = this._ringBuffers(this._shadowData, this._label + '-shadow');
       this._keyedShadowGeometries = this._buffers.map((b, r) =>
         this._keyedShadowGeometryFor(b, this._slotBuffers[r], this._shadowBuffers[r]));
       this._keyedShadowRowGeometries = this.posesByRow
