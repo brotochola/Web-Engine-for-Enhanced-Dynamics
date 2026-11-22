@@ -25,7 +25,9 @@
  * reached TurboFan counts as hot.
  *
  *   node tests/bench/summarizeV8Code.mjs <v8-log-dir> [--cpu cpu-summary.json] [--output code.json]
- *        [--min-pct 1] [--top 25] [--dump <dir>] [--dump-filter name,name]
+ *        [--min-pct 1] [--top 25] [--dump <dir>] [--dump-filter name,name] [--game]
+ *
+ * --game counts the game's code (demos/) with the engine's (E-292: a scene's per-entity loops are often the game's).
  *
  * --dump writes one readable file per worker and function (the bytecode with its source lines between the
  * instructions, its tiers and its inlined and not inlined calls), for the hot functions or the named ones.
@@ -411,7 +413,7 @@ export function cpuSelf(summary, kind) {
 const looseKey = (key) => key.replace(/:\d+$/, '');
 
 /** Summarize one worker kind (its isolates merged): hot functions, calls left out, stuck, reopt, allocations. */
-export function summarizeKind(kind, isolates, cpu, { minPct = 1 } = {}) {
+export function summarizeKind(kind, isolates, cpu, { minPct = 1, game = false } = {}) {
   const self = cpuSelf(cpu, kind);
   const loose = new Map();
   for (const [key, v] of self) {
@@ -426,7 +428,8 @@ export function summarizeKind(kind, isolates, cpu, { minPct = 1 } = {}) {
     for (const fn of iso.fns.values()) {
       // Inlined anywhere counts, game code's callers too (Predator's FSMs inline getNeighbor and setAnimationSpeed).
       for (const c of fn.codes) for (const f of c.inlined?.fns || []) inlinedSomewhere.add(f.key);
-      if (!fn.bc || !fn.url.startsWith('/src/')) continue;
+      // The engine's code; with --game the game's too (demos/: E-292, whose FSM loops are the scene's).
+      if (!fn.bc || !(fn.url.startsWith('/src/') || (game && fn.url.startsWith('/demos/')))) continue;
       const prev = byKey.get(fn.key);
       if (!prev || TIER_RANK[fn.top] > TIER_RANK[prev.fn.top]) byKey.set(fn.key, { fn, iso });
     }
@@ -602,6 +605,7 @@ async function main() {
   const opts = {
     cpu: args.cpu ? String(args.cpu) : null,
     minPct: Number(args['min-pct'] ?? 1),
+    game: Boolean(args.game),
     dump: args.dump ? String(args.dump) : null,
     dumpFilter: args['dump-filter'] ? String(args['dump-filter']).split(',').map((s) => s.trim()) : null,
   };
