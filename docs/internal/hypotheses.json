@@ -20459,7 +20459,8 @@
         "boids deopt loops"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1817"
       ]
     },
     {
@@ -41293,6 +41294,15 @@
       "title": "N-303 CR-0: codeSize.mjs and the baseline: src/ 103 551 code lines (362 files), engine.wasm 356 323 B, box2dWasm.wasm 429 737 B, prod bundle 4 039 052 B (1 298 549 gzipped); suite 3 453 tests, 121.5 s",
       "verdict": "note",
       "text": "**N-303 CR-0: the ruler (scripts/codeSize.mjs, f633d272) and the campaign's baseline on main 3bacfda5..f633d272 (2026-11-22).** Counted by the script: a line is blank when it holds only white space, a comment line when all it holds is a comment, code otherwise; the generated and vendored files are left out. The audit's 97 517 (fa12bc91) was counted another way and src/ has grown since; the campaign is measured against this table.\n\n| folder | files | code lines | comment lines | blank lines |\n| --- | --- | --- | --- | --- |\n| `src/core` | 69 | 25 581 | 8 646 | 3 544 |\n| `src/workers` | 19 | 23 088 | 5 260 | 1 804 |\n| `src/render` | 76 | 16 321 | 5 189 | 1 326 |\n| `src/box2d` | 36 | 10 653 | 1 024 | 830 |\n| `src/util` | 65 | 10 139 | 4 028 | 1 234 |\n| `src/core/debug` | 31 | 7 604 | 547 | 1 051 |\n| `src/components` | 19 | 4 235 | 1 645 | 691 |\n| `src/shaders` | 37 | 3 100 | 733 | 262 |\n| `src/core/save` | 9 | 2 434 | 452 | 221 |\n| `src/(src root)` | 1 | 396 | 46 | 32 |\n| **`src/` in all** | **362** | **103 551** | **27 570** | **10 995** |\n\nLeft out (generated or vendored): `src/box2d/box2dWasm.js`, `src/wasm/engine.js`, `src/vendor/pixi.min.js`, `src/version.js`.\n\n| file | bytes | gzipped (level 9) |\n| --- | --- | --- |\n| `src/wasm/engine.wasm` | 356 323 | 89 283 |\n| `src/box2d/box2dWasm.wasm` | 429 737 | 164 787 |\n| `dist/weed.bundle.min.js` | 4 275 796 | 1 367 035 |\n| `dist/weed.prod.bundle.min.js` | 4 039 052 | 1 298 549 |\n| `dist/weed.bundle.esm.min.js` | 4 278 745 | 1 368 230 |\n| `dist/weed.prod.bundle.esm.min.js` | 4 041 782 | 1 299 798 |\n\nNode suite (--suite, the same morning): 3 453 tests, 3 453 pass, 121.5 s by the runner (122.1 s wall)."
+    },
+    {
+      "id": "R-1817",
+      "date": "2026-11-22",
+      "time": "01:28",
+      "timeFrom": "recorded",
+      "title": "N-245's spatial sites fixed: _findNeighbors' loops split into _finishRebuiltRows and _scanOwnedEntities (ASUS: 274 steady OSR deopts -> 0); mix=1 crowd 2.5 NEUTRAL (spatial +0.6 %); the squad battle now ends before the 20 s save",
+      "verdict": "kept-hygiene",
+      "text": "**N-245's spatial sites fixed: _findNeighbors' two per-frame loops are methods of their own (merged 325c8b3a).** The ASUS's deopt pass (20 s warm-up, the last 8 s of each log, N-405's window) found Predator's spatial worker deoptimized \"prepare for OSR\" 274 times in 8 s at the loop over the rows the gather rebuilt (spatialWorker.js:2253 at 56c6a147): _findNeighbors is entered once a frame and ran its loops in OSR code. Split 1 (_finishRebuiltRows, its arrays in locals): that site 274 -> 0, and the OSR entry moved up to the owned-entity loop (:2143, 0 -> 84). Split 2 (_scanOwnedEntities, the owned pass with its setup): the kept-row mutant tests now patch that method. Boids, bichos and renderQueueStress showed no steady spatial deopt on either side; the :2222 site (944 in the first sweep) was start-up only. Here (16 threads) neither site showed in an 8 s window at the default crowd.\n\nGates, owner spatial, 4 pairs: from E-210's auto save at crowd 2.5 (to 01:20) every worker but physics fell under the 6 ms floor (physics 7.498 -> 7.569 ms, +1.6 %); from a 14 s save (to 01:24) the same (physics 6.217 -> 6.765, +9.0 % 4/4 at cv 12/2 %, a light world); **the mixed battle** `crowd=2.5&dayCycle=0&mix=1` (to 01:28): NEUTRAL, logic 15.699 -> 15.713 ms (+0.5 %), spatial 7.466 -> 7.520 (+0.6 %), physics 15.248 -> 15.367 (+0.8 %), renderer +2.5 %, pre-render +2.3 % (cv 4/5 %), presented 60 = 60, BODY_COUNT within 0.3 %. Kept as hygiene. Node suite 3452/3452.\n\nFound on the way: Predator's squad battle at crowd 2.5 is now over by the auto save's 20 s (34 700 bodies left against about 35 900 on 2026-11-21, physics 7.5 ms from the save against 15 ms): most likely E-310's second spatial worker (fresher neighbour lists, soldiers finding targets sooner). From-save sittings at crowd 2.5 that need load take mix=1."
     }
   ],
   "leads": [
