@@ -23158,11 +23158,11 @@
     {
       "id": "DX-DEBUGUI",
       "title": "The debug UI catches up with the engine: the Layers panel's Vis, blend and alpha work on every render path (they do not today), render views of the buffers the frame is made of (G-buffer normals and heights, light buffer, shadow maps), a sheet's height and normal maps, the lighting grid (light tiles), and panels for the sun, the light pass, the camera and the renderer's counters",
-      "status": "open",
-      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed. DBG-1 to DBG-3 fixed 2026-11-21 on the ASUS (R-1716, R-1717, R-1718)",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22: DBG-1 to DBG-12 (the last, DBG-5 to DBG-7, on the ASUS: R-1734, R-1748, R-1755; closed R-1771)",
       "date": "2026-11-18",
       "result": "",
-      "next": "Done: DBG-1 to DBG-4 and DBG-8 to DBG-12. Left: DBG-5 (render views of the frame's buffers, both backends; the largest, in pixiWorker.js), DBG-7 (the light tiles, one more view), DBG-6 (a sheet's maps: the atlas worker keeps the twin page since SST-5).",
+      "next": "",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23179,9 +23179,9 @@
         "R-1348",
         "R-1716",
         "R-1717",
-        "R-1718"
-      ],
-      "rank": 21
+        "R-1718",
+        "R-1771"
+      ]
     },
     {
       "id": "DBG-1",
@@ -24016,7 +24016,11 @@
         "R-1826",
         "R-1827",
         "R-1828",
-        "R-1829"
+        "R-1829",
+        "R-1766",
+        "R-1767",
+        "R-1768",
+        "R-1769"
       ]
     },
     {
@@ -24914,17 +24918,18 @@
     {
       "records": [
         "R-1694",
-        "R-1765"
+        "R-1765",
+        "R-1770"
       ],
       "refs": [],
       "id": "N-330",
       "title": "Shadows still pop at the per-entity cut (each entity's 3 nearest lights) and the per-light caster cut: an entity crossing either gains or loses a shadow at once",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "date": "2026-11-21",
-      "statusText": "step 1 done 2026-11-22 on the ASUS (9c22a462, R-1765): the per-entity cut fades; step 2 (the per-light caster cut) open",
-      "next": "Step 2: the per-light caster cut (a light's maxShadows / maxShadowsPerLight keeps its lim nearest casters): fade its lim-th caster by the (lim + 1)-th candidate. Without maxShadowsPerEntity the light's rows can take it directly (stamp_light_rows); with it the fade must ride the caster's record pair (no room in the 8 bytes today). Then a scene that shows a walker crossing between lamps, before and after."
+      "statusText": "step 1 done 2026-11-22 on the ASUS (9c22a462, R-1765): the per-entity cut fades; step 2 (the per-light caster cut) parked the same day (R-1770): reopen if the owner sees per-light pops",
+      "next": ""
     },
     {
       "records": [
@@ -42220,6 +42225,73 @@
         "435a85df",
         "9c22a462"
       ]
+    },
+    {
+      "id": "R-1766",
+      "date": "2026-11-22",
+      "time": "06:22",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-31: physics copies the WASM query slots without the dedupe kept for a wasm before N-22 (copyUniqueSlots -> copyQuerySlots); 20 lines fewer",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-31: physics copies the WASM query slots without the dedupe kept for a wasm before N-22 (17c14043).**\n\n- Since N-22 the WASM lists each body once. `box2dOverlapCastAll.wasm.test.js` proves it on a three-shape body, and it now also checks the copy.\n- `copyUniqueSlots`'s seenStamp filter had nothing to drop. It becomes `copyQuerySlots`: the copy, the result cap and the capacity warning, once per query kind. The callers are weedjsPost's queryAABB and overlapCircle services.\n- `box2dQueryUniqueSlots.test.js` becomes `box2dQuerySlots.test.js` (the order, the cap, the warning).\n- 20 lines fewer in `src/`. Suites (ASUS, job 0901y): node 3505/3505, demos 143/143.\n- Off the hot path (one copy per query), so the suites decide it, as the plan's rule allows.",
+      "commits": [
+        "17c14043"
+      ]
+    },
+    {
+      "id": "R-1767",
+      "date": "2026-11-22",
+      "time": "06:29",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-25: Ray's one-hit cast walks the grid through _traverseGrid with no exclusions; 111 lines fewer, cast -2.0 % and hasLineOfSight -3.9 % on rayMicrobench (8 pairs)",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-25: Ray's one-hit cast walks the grid through `_traverseGrid` with no exclusions (c455be83).**\n\n`_castUnitDir` sets the farthest hit kept to the ray's length and calls `_traverseGrid(null, mask, -1, -1)`. Its own copy of the DDA walk goes (111 lines), and only integers cross the call (E-85).\n\nrayMicrobench on the ASUS, 8 pairs (ABAB then BABA, jobs 0901z and 0902a), median ms per 200 000 rays:\n\n| case | A | B | change | B better in |\n| --- | --- | --- | --- | --- |\n| cast (long random rays) | 143.1 | 140.3 | -2.0 % | 5 of 8 |\n| hasLineOfSight | 147.9 | 142.2 | -3.9 % | 6 of 8 |\n| linecastBetweenEntities | 144.5 | 145.6 | +0.8 % | 4 of 8 |\n\ncastWithInfo and castAll moved within the noise. The brute-force check was OK, and the ray tests passed 10/10. Suites (job 0902b): node 3505/3505, demos 143/143.\n\nLeft from CR-25: the cell-walk setup that castAll and `_traverseGrid` still write twice, as one helper writing into the module typed arrays (about 25 lines). Not done: it would add a call to each hot loop's prologue, for little gain.",
+      "commits": [
+        "c455be83"
+      ]
+    },
+    {
+      "id": "R-1768",
+      "date": "2026-11-22",
+      "time": "06:55",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-13: one list of names for WEED (weedNames.js, weedEnums.js); index.js and workerWeed.js 715 -> 112 lines, the same names on both sides",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-13: one list of names for WEED (2361e4c3).**\n\n- `src/weedNames.js` holds the export-from lines of every name a scene or entity script may use at runtime, the names the page's WEED and the workers' share.\n- `src/weedEnums.js` holds the frozen `enums` object both WEEDs hold.\n- `index.js` does `export *` from weedNames, adds the page's own names (GameEngine, Scene, DebugUI, BigAtlasInspector, setupWorkerCommunication, the saves) and builds WEED from the namespace.\n- `workerWeed.js` spreads the same namespace and adds its Scene and DebugUI stand-ins.\n- The repeated DEBUG_FLAGS, DEBUG_SELECTED_ENTITY_OFFSET and SPRITE_TILE_MODE after `...enums` go.\n- The two files went from 715 lines to 112, plus the two new modules (159): 444 lines fewer.\n\nChecked on the ASUS (jobs 0902c and 0902e):\n- the same names before and after (`cr13check.mjs`): 123 named exports, 126 WEED keys and 114 WORKER_WEED keys, each WEED value the named export's, the enums' keys equal, all three objects frozen;\n- workerWeed.test 10/10, check:types green (both tsc runs and checkTypesDrift);\n- node 3505/3505, demos 143/143;\n- make_bundle and test:bundle green.\n\nOn that machine `npm run check:types` waited on npx's install prompt for typescript@5.7.2. Main's 6eb027d4 makes the script pass `--yes`.",
+      "commits": [
+        "2361e4c3"
+      ]
+    },
+    {
+      "id": "R-1769",
+      "date": "2026-11-22",
+      "time": "07:00",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-29: Gamepad's 38 pad-0 getters from two tables, compiled one by one; 76 lines fewer, +1.5 % on a 6 ns getter (quiet pairs); Sun and Decoration stay written out",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-29: Gamepad's 38 pad-0 getters come from two tables, each compiled on its own (52907353; the bench 7c2fe01d).**\n\n`PAD0_AXES` (leftX..rightY through getAxis) and `PAD0_BUTTONS` (is<Button>Down and is<Button>Pressed for the 17 W3C buttons). Each getter is made by `new Function`, as component.js makes its field accessors (rule 7), with closures where a CSP refuses it. 76 lines fewer. Every getter is present and reads the same values as the hand-written class.\n\naccessorTablesMicrobench on the ASUS, 8 pairs (jobs 0902d and 0902f), ms per 200 000 reads:\n\n| case | first four pairs (noisy) | last four pairs (quiet) |\n| --- | --- | --- |\n| sticks | 5.25 -> 5.55 | 5.03 -> 5.10 (+1.4 %) |\n| down | 13.78 -> 14.98 | 12.65 -> 12.85 (+1.6 %) |\n| pressed | 5.85 -> 5.53 | 5.48 -> 5.58 (+1.8 %) |\n\nThe quiet pairs put the cost at about 0.1 ns of a 6 ns getter, under the 3 % bar. Gamepad reads happen a few times a frame.\n\nNot converted: Sun's accessors have bodies of their own (clamps, written bits, updates), and so do most of Decoration's. Only 7 of Decoration's pairs (alpha, tint, localX, localY, sortOffsetY, swayAmplitude, swayFrequency) share one shape, and a table for them saves about 15 lines net. CR-29 ends at Gamepad.",
+      "commits": [
+        "7c2fe01d",
+        "52907353"
+      ]
+    },
+    {
+      "id": "R-1770",
+      "date": "2026-11-22",
+      "time": "07:03",
+      "timeFrom": "recorded",
+      "title": "N-330 step 2 parked: fading the per-light caster cut needs the ring walk to prune against ~1.56x the lim-th distance and, with maxShadowsPerEntity, a fade in the 8-byte record pair; reopen if the owner sees per-light pops",
+      "verdict": "parked",
+      "text": "**N-330 step 2 parked: the per-light caster cut (a light's maxShadows / maxShadowsPerLight keeps its lim nearest casters) still pops.**\n\nFading the lim-th caster by the (lim + 1)-th candidate costs much more than step 1:\n- **The ring walk** (E-315, lights with lim up to 64). The exact (lim + 1)-th distance means pruning cells against about 1.5625 times the lim-th squared distance instead of the lim-th itself. Within the fade's band that distance must be exact, or the kernel and the JS reference differ. More cells are visited, so E-315's speedup is partly lost on crowded small-budget lights.\n- **With maxShadowsPerEntity on.** The per-light fade must ride the caster's record pair, a float distance and an int32 light. There is no room in those 8 bytes, for example for a quantized fade in the light index's upper 16 bits, which note_nearest's ties would then have to mask out.\n\nStep 1 covers the per-entity cut, the one Predator's walkers cross. Reopen if the owner sees per-light pops: a shadow appearing or vanishing as a crowd moves under a lamp with a small budget."
+    },
+    {
+      "id": "R-1771",
+      "date": "2026-11-22",
+      "time": "07:03",
+      "timeFrom": "recorded",
+      "title": "DX-DEBUGUI done: DBG-1 to DBG-12 in (DBG-5 R-1734, DBG-7 R-1748, DBG-6 R-1755 were the last three)",
+      "verdict": "kept-hygiene",
+      "text": "**DX-DEBUGUI done: DBG-1 to DBG-12 are in.** The register's next still listed DBG-5 to DBG-7. They were done on the ASUS and merged:\n- DBG-5, the render views (R-1734);\n- DBG-7, the light tiles view and readout (R-1748);\n- DBG-6, a sheet's maps in the atlas inspector and the frame tool (R-1755)."
     }
   ],
   "leads": [
