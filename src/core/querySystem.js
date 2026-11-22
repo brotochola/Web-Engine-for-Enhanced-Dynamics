@@ -33,17 +33,8 @@ export const MAX_COMPONENTS = 64;
 /** Maximum entities (fits in Uint16) */
 export const MAX_ENTITIES = 65535;
 
-/** Maximum pre-computed queries */
-export const MAX_PRECOMPUTED_QUERIES = 64;
-
 /** Complete snapshots per pre-computed active query (readers may lag without seeing torn writes) */
 export const QUERY_SNAPSHOT_COUNT = 3;
-
-/** Bytes per entity type metadata entry (aligned to 16 bytes) */
-const ENTITY_TYPE_ENTRY_SIZE = 16;
-
-/** Bytes per query cache entry */
-const QUERY_CACHE_ENTRY_SIZE = 16;
 
 /**
  * Int32 header per query: [publishedSnapshot, publishedCount, publishedFrame, publishSeq]. publishSeq counts the
@@ -118,41 +109,6 @@ function maskIntoTrie(trie, componentClasses, mask) {
 // =============================================================================
 // SAB LAYOUT HELPERS
 // =============================================================================
-
-/**
- * Calculate total size needed for entityMetadataSAB
- * Layout:
- *   [0-1]   numTypes (Uint16)
- *   [2-15]  padding (14 bytes for alignment)
- *   [16+]   Per-type entries (16 bytes each):
- *           [0-7]   componentMask (BigUint64)
- *           [8-9]   startIndex (Uint16)
- *           [10-11] endIndex (Uint16)
- *           [12-15] padding (4 bytes)
- *
- * @param {number} numTypes - Number of entity types
- * @returns {number} Buffer size in bytes
- */
-export function calculateEntityMetadataSABSize(numTypes) {
-  return 16 + numTypes * ENTITY_TYPE_ENTRY_SIZE;
-}
-
-/**
- * Calculate total size needed for queryCacheSAB
- * Layout:
- *   [0-1]   numQueries (Uint16)
- *   [2-3]   maxQueries (Uint16)
- *   [4-7]   padding (4 bytes)
- *   [8+]    Per-query entries (16 bytes each):
- *           [0-7]   queryMask (BigUint64) - component combination
- *           [8-15]  typeMask (BigUint64) - matching entity types
- *
- * @param {number} maxQueries - Maximum number of cached queries
- * @returns {number} Buffer size in bytes
- */
-export function calculateQueryCacheSABSize(maxQueries) {
-  return 8 + maxQueries * QUERY_CACHE_ENTRY_SIZE;
-}
 
 /**
  * Calculate total size needed for queryResultsSAB
@@ -401,8 +357,6 @@ export class QuerySystem {
     this.queryMaskToIndex = new Map();
 
     // SAB references (set after createSharedBuffers)
-    this.entityMetadataSAB = null;
-    this.queryCacheSAB = null;
     this.queryResultsSAB = null;
     this.queryVersionSAB = null;
 
@@ -604,21 +558,10 @@ export class QuerySystem {
    * Create SharedArrayBuffers for query system
    * Call this after definePrecomputedQueries()
    *
-   * @returns {Object} - { entityMetadataSAB, queryCacheSAB, queryResultsSAB }
+   * @returns {Object} - { queryResultsSAB, queryVersionSAB }
    */
   createSharedBuffers() {
-    const numTypes = this.entityMetadata.length;
     const numPrecomputed = this.precomputedQueries.length;
-
-    // Create entityMetadataSAB
-    const entityMetadataSize = calculateEntityMetadataSABSize(numTypes);
-    this.entityMetadataSAB = new SharedArrayBuffer(entityMetadataSize);
-    this._writeEntityMetadataToSAB();
-
-    // Create queryCacheSAB
-    const queryCacheSize = calculateQueryCacheSABSize(MAX_PRECOMPUTED_QUERIES);
-    this.queryCacheSAB = new SharedArrayBuffer(queryCacheSize);
-    this._writeQueryCacheToSAB();
 
     // Create queryVersionSAB
     this.queryVersionSAB = new SharedArrayBuffer(QUERY_VERSION_BUFFER_SIZE);
@@ -640,79 +583,15 @@ export class QuerySystem {
     this._initializeQueryResultViews();
 
     debugWorkerLog(`[QuerySystem] Created SABs:`);
-    debugWorkerLog(`  - entityMetadataSAB: ${entityMetadataSize} bytes (${numTypes} types)`);
-    debugWorkerLog(
-      `  - queryCacheSAB: ${queryCacheSize} bytes (${numPrecomputed}/${MAX_PRECOMPUTED_QUERIES} queries)`
-    );
     debugWorkerLog(
       `  - queryResultsSAB: ${queryResultsSize} bytes (${numPrecomputed} result buffers × ${this.queryEntityCapacity} entity cap)`
     );
     debugWorkerLog(`  - queryVersionSAB: ${QUERY_VERSION_BUFFER_SIZE} bytes (shared invalidation counter)`);
 
     return {
-      entityMetadataSAB: this.entityMetadataSAB,
-      queryCacheSAB: this.queryCacheSAB,
       queryResultsSAB: this.queryResultsSAB,
       queryVersionSAB: this.queryVersionSAB,
     };
-  }
-
-  /**
-   * Write entity metadata to SAB
-   * @private
-   */
-  _writeEntityMetadataToSAB() {
-    const buffer = this.entityMetadataSAB;
-    const numTypes = this.entityMetadata.length;
-
-    // Write header
-    const headerView = new Uint16Array(buffer, 0, 1);
-    headerView[0] = numTypes;
-
-    // Write per-type entries
-    for (let i = 0; i < numTypes; i++) {
-      const meta = this.entityMetadata[i];
-      const entryOffset = 16 + i * ENTITY_TYPE_ENTRY_SIZE;
-
-      // componentMask (BigUint64 at offset 0)
-      const maskView = new BigUint64Array(buffer, entryOffset, 1);
-      maskView[0] = meta.componentMask;
-
-      if (entityIdWidth() === 32) {
-        const indexView = new Uint32Array(buffer, entryOffset + 8, 2);
-        indexView[0] = meta.startIndex;
-        indexView[1] = meta.endIndex;
-      } else {
-        const indexView = new Uint16Array(buffer, entryOffset + 8, 2);
-        indexView[0] = meta.startIndex;
-        indexView[1] = meta.endIndex;
-      }
-    }
-  }
-
-  /**
-   * Write query cache to SAB
-   * @private
-   */
-  _writeQueryCacheToSAB() {
-    const buffer = this.queryCacheSAB;
-    const numQueries = this.precomputedQueries.length;
-
-    // Write header
-    const headerView = new Uint16Array(buffer, 0, 2);
-    headerView[0] = numQueries;
-    headerView[1] = MAX_PRECOMPUTED_QUERIES;
-
-    // Write per-query entries
-    for (let i = 0; i < numQueries; i++) {
-      const query = this.precomputedQueries[i];
-      const entryOffset = 8 + i * QUERY_CACHE_ENTRY_SIZE;
-
-      // queryMask (BigUint64 at offset 0)
-      const maskView = new BigUint64Array(buffer, entryOffset, 2);
-      maskView[0] = query.queryMask;
-      maskView[1] = query.typeMask;
-    }
   }
 
   /**
@@ -1054,7 +933,7 @@ export class QuerySystem {
  * Called after receiving SAB references from main thread
  *
  * @param {Object} queryData - Serialized query data from main thread
- * @param {Object} buffers - SAB references { entityMetadataSAB, queryCacheSAB, queryResultsSAB }
+ * @param {Object} buffers - SAB references { queryResultsSAB }
  * @param {Uint16Array} activeEntitiesData - Reference to active entities SAB
  * @param {Int32Array|null} queryVersionData - Shared invalidation counter for active-query result caches
  * @returns {Object} - { query, queryActiveEntities }

@@ -418,8 +418,6 @@ class Scene {
       spatialStats: null,
       logicStats: null,
       // Query system SABs (for component-based entity queries)
-      queryEntityMetadata: null,
-      queryCache: null,
       queryResults: null,
       queryVersion: null,
       bodyDirtyFlags: null,

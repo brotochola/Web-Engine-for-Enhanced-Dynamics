@@ -269,8 +269,6 @@ export interface SceneBuffers {
   physicsStats: SharedArrayBuffer | null;
   spatialStats: SharedArrayBuffer | null;
   logicStats: SharedArrayBuffer | null;
-  queryEntityMetadata: SharedArrayBuffer | null;
-  queryCache: SharedArrayBuffer | null;
   queryResults: SharedArrayBuffer | null;
   queryVersion: SharedArrayBuffer | null;
   bodyDirtyFlags: SharedArrayBuffer | null;
@@ -714,8 +712,6 @@ export interface QuerySystemPrecomputeComponentMap {
 }
 
 export interface QuerySystemSharedBuffersResult {
-  entityMetadataSAB: SharedArrayBuffer;
-  queryCacheSAB: SharedArrayBuffer;
   queryResultsSAB: SharedArrayBuffer;
   queryVersionSAB: SharedArrayBuffer;
 }
@@ -2087,8 +2083,6 @@ export declare class QuerySystem {
   queryToTypeMask: Map<bigint, bigint>;
   precomputedQueries: QueryPrecomputedDefinition[];
   queryMaskToIndex: Map<bigint, number>;
-  entityMetadataSAB: SharedArrayBuffer | null;
-  queryCacheSAB: SharedArrayBuffer | null;
   queryResultsSAB: SharedArrayBuffer | null;
   queryVersionSAB: SharedArrayBuffer | null;
   queryMaskCache: Map<string, bigint>;

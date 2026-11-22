@@ -995,14 +995,10 @@ export class AbstractWorker {
     this.registeredClasses = data.registeredClasses || [];
 
     // Initialize query system for component-based entity filtering (SAB-based only)
-    if (data.queries && data.buffers?.queryEntityMetadata) {
+    if (data.queries && data.buffers?.queryResults) {
       const queryFunctions = createWorkerQueryFunctions(
         data.queries,
-        {
-          entityMetadataSAB: data.buffers.queryEntityMetadata,
-          queryCacheSAB: data.buffers.queryCache,
-          queryResultsSAB: data.buffers.queryResults,
-        },
+        { queryResultsSAB: data.buffers.queryResults },
         this.activeEntitiesData,
         this.queryVersionData
       );
@@ -1017,7 +1013,7 @@ export class AbstractWorker {
         `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries`
       );
     } else if (data.queries) {
-      throw new Error('Query system requires SAB buffers (queryEntityMetadata/queryCache/queryResults)');
+      throw new Error('Query system requires its SAB (queryResults)');
     }
 
     if (data.adobeAnimateMetadata) {

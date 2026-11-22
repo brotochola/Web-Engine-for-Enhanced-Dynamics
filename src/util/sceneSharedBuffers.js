@@ -1044,8 +1044,6 @@ function initializeNavigationAndQueryBuffers(scene) {
   }, scene.constructor.queries || []);
 
   const querySABs = Query.createSharedBuffers();
-  buffers.queryEntityMetadata = querySABs.entityMetadataSAB;
-  buffers.queryCache = querySABs.queryCacheSAB;
   buffers.queryResults = querySABs.queryResultsSAB;
   buffers.queryVersion = querySABs.queryVersionSAB;
 }
