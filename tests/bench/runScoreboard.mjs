@@ -70,7 +70,8 @@ function decideRow(feature, kernel, scenePair) {
     reasons.push(`protocol ceiling: ${feature.protocolCeiling}`);
   }
   if (kernel && kernel.error) reasons.push(`kernel failed: ${kernel.error}`);
-  if (scenePair && !scenePair.ok) reasons.push(`scene failed: ${scenePair.error || 'unknown'}`);
+  if (scenePair?.baseTooOld) reasons.push(scenePair.error);
+  else if (scenePair && !scenePair.ok) reasons.push(`scene failed: ${scenePair.error || 'unknown'}`);
   if (scenePair?.workload && !scenePair.workload.ok) {
     reasons.push(
       `load not comparable: ${scenePair.workload.drifts
@@ -118,6 +119,7 @@ function decideRow(feature, kernel, scenePair) {
       (r) =>
         r.startsWith('load') ||
         r.startsWith('scene failed') ||
+        r.startsWith(BASE_TOO_OLD) ||
         r.startsWith('kernel failed') ||
         r.startsWith('step floor:') ||
         r.includes('BODY_COUNT')
@@ -190,6 +192,34 @@ export function recheckRegressions(feature, row, args, baseline, outRoot) {
   return { pairs: RECHECK_PAIRS, results, confirmed: results.some((r) => r.confirmed) };
 }
 
+/** N-402: the reason a row's scene was not run against a base older than its scene.since. */
+export const BASE_TOO_OLD = 'base predates the scene:';
+
+/**
+ * N-402: why the base cannot run a row's scene as written (it predates scene.since: the base would load less work, or
+ * throw), or null. `isAncestor(a, b)` says whether commit a is in b's history.
+ */
+export function baseLacksScene(scene, vs, isAncestor = gitIsAncestor) {
+  if (!scene?.since || !vs) return null;
+  if (isAncestor(scene.since, vs)) return null;
+  return `${BASE_TOO_OLD} it needs ${scene.since} or later, and ${vs} is older`;
+}
+
+function gitIsAncestor(a, b) {
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', a, b], { cwd: repoRoot, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** N-402: a row whose scene the base could not run: not compared, so neither claimed nor a regression. */
+function isBaseTooOldFail(row) {
+  const reasons = (row.decision?.reasons || []).map(String);
+  return row.decision?.verdict === 'FAIL' && reasons.length > 0 && reasons.every((r) => r.startsWith(BASE_TOO_OLD));
+}
+
 function isProtocolCeilingFail(row) {
   return (
     row.decision?.verdict === 'FAIL' &&
@@ -214,7 +244,7 @@ function productVerdict(rows, gates) {
   if (gates?.lockstep && gates.lockstep !== 'ok' && gates.lockstep !== 'skipped') {
     return { fasterThanMain: false, text: `No. Lockstep failed (${gates.lockstep}). Speed does not count.` };
   }
-  const notClaimed = (r) => isProtocolCeilingFail(r) || isStepFloorFail(r);
+  const notClaimed = (r) => isProtocolCeilingFail(r) || isStepFloorFail(r) || isBaseTooOldFail(r);
   const usable = rows.filter((r) => r.decision.verdict !== 'NA' && !notClaimed(r));
   const fails = rows.filter(
     (r) => (r.decision.verdict === 'FAIL' || r.decision.verdict === 'WORSE') && !notClaimed(r)
@@ -222,9 +252,11 @@ function productVerdict(rows, gates) {
   const keeps = rows.filter((r) => r.decision.verdict === 'KEPT');
   const ceilings = rows.filter(isProtocolCeilingFail);
   const floors = rows.filter(isStepFloorFail);
+  const tooOld = rows.filter(isBaseTooOldFail);
   const aside = [
     ceilings.length ? `${ceilings.length} row(s) are a protocol ceiling (not claimed)` : '',
     floors.length ? `${floors.length} row(s) are under the 3 ms floor (not a regression)` : '',
+    tooOld.length ? `${tooOld.length} row(s) need a newer base (not compared)` : '',
   ].filter(Boolean).join('. ');
   const asideNote = aside ? ` ${aside}.` : '';
   if (fails.length) {
@@ -271,6 +303,7 @@ function describeFeature(feature) {
   }
   if (feature.primary?.length) bits.push(`Primaries: ${feature.primary.join(', ')}.`);
   if (feature.load?.length) bits.push(`Load keys: ${feature.load.join(', ')}.`);
+  if (feature.scene?.since) bits.push(`The scene runs on ${feature.scene.since} or later (scene.since).`);
   if (feature.protocolCeiling) {
     bits.push(`Protocol ceiling (the scene is not claimed): ${feature.protocolCeiling}.`);
   }
@@ -554,11 +587,15 @@ function main() {
       }
 
       if (!args.skipScenes && feature.scene && !feature.protocolCeiling) {
+        const tooOld = args.fullRev ? null : baseLacksScene(feature.scene, args.vs);
+        if (tooOld) console.log(`skip the scene: ${tooOld}`);
         const headed = sceneWantsHeaded(feature.scene, args, feature.id);
         const scene = sceneAtLoad(feature, args.loadsTable);
         if (scene.query) console.log(`load ${scene.query} (${args.loads})`);
         const cacheKey = `${feature.scene.key}|${headed ? 1 : 0}|${args.smoke}|${scene.query || ''}`;
-        if (!sceneCache.has(cacheKey)) {
+        if (tooOld) {
+          row.scene = { ok: false, baseTooOld: true, error: tooOld, base: null, hyp: null, query: null, workload: { ok: false, drifts: [] } };
+        } else if (!sceneCache.has(cacheKey)) {
           const sdir = path.join(outRoot, feature.scene.key);
           fs.mkdirSync(sdir, { recursive: true });
           const base = measureSceneSide(`${feature.scene.key}-BASE`, scene, args, sdir, feature.id, baseline.root);
@@ -570,8 +607,8 @@ function main() {
             hyp: hyp.summary,
           });
         }
-        const cached = sceneCache.get(cacheKey);
-        row.scene = {
+        const cached = tooOld ? null : sceneCache.get(cacheKey);
+        if (cached) row.scene = {
           ...cached,
           query: scene.query || null,
           workload:

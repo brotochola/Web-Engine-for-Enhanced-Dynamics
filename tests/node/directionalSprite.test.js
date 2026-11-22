@@ -328,6 +328,10 @@ test('the logic worker resolves after the ticks and tells the entity once per ch
     workerIndex: 0,
     gameObjects: [0, 1, 2].map((i) => ({ directionalSprite: { get direction() { return ['right', 'down', 'left', 'up'][DirectionalSprite.directionIndex[i]]; } }, onDirectionChanged: (d) => heard.push([i, d]) })),
     _directionChanged: logic._directionChanged,
+    // N-214: the entity loops are methods of their own.
+    _resolveBucketDirections: logic._resolveBucketDirections,
+    _resolveForcedDirections: logic._resolveForcedDirections,
+    _resolveListDirections: logic._resolveListDirections,
     _entityThrew: () => assert.fail('threw'),
     // E-528: no type has a static onDirectionChanged.
     staticHooks: createStaticHookTables(256),
@@ -371,6 +375,10 @@ test('E-364: a type that ticks every N frames through its buckets resolves the e
     workerIndex: 0,
     gameObjects: [],
     _directionChanged: logic._directionChanged,
+    // N-214: the entity loops are methods of their own.
+    _resolveBucketDirections: logic._resolveBucketDirections,
+    _resolveForcedDirections: logic._resolveForcedDirections,
+    _resolveListDirections: logic._resolveListDirections,
     _entityThrew: () => assert.fail('threw'),
   };
   RigidBody.vx.fill(40, 0, 4);

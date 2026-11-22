@@ -4,6 +4,11 @@
  *
  *   node tests/bench/summarizeV8Deopt.mjs tests/results/v8-deopt/chromium-logs
  *   node tests/bench/summarizeV8Deopt.mjs tests/results/v8-deopt --trace tests/results/v8-deopt/engine_trace.json
+ *   node tests/bench/summarizeV8Deopt.mjs <dir> --tail-ms 8000   (steady: each log's last 8 s, N-405)
+ *
+ * Steady state is after --warmup-ms of each log (an isolate starts when its worker does, so a page that loads for
+ * longer than the warm-up puts its start-up deopts in it), or, with --tail-ms, the last that many ms of each log: the
+ * measure window, which ends the run (N-405: the ASUS's pages load in 5 to 10 s).
  *
  * Frequency is the signal. Warmup-only deopts show up a handful of times;
  * a per-frame deopt shows up thousands of times. A deopt in a cold function
@@ -36,12 +41,13 @@ const IC_STATE_CODES = {
 };
 
 function parseArgs(argv) {
-  const out = { dir: null, trace: null, limit: 40, warmupMs: DEFAULT_WARMUP_MS };
+  const out = { dir: null, trace: null, limit: 40, warmupMs: DEFAULT_WARMUP_MS, tailMs: NaN };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--trace' && argv[i + 1]) out.trace = path.resolve(argv[++i]);
     else if (a === '--limit' && argv[i + 1]) out.limit = Math.max(1, parseInt(argv[++i], 10) || 40);
     else if (a === '--warmup-ms' && argv[i + 1]) out.warmupMs = Number(argv[++i]);
+    else if (a === '--tail-ms' && argv[i + 1]) out.tailMs = Number(argv[++i]);
     else if (!a.startsWith('--') && !out.dir) out.dir = path.resolve(a);
   }
   return out;
@@ -156,7 +162,15 @@ function parseCodeDeopt(line) {
   };
 }
 
-async function parseTextLogs(files, warmupMs) {
+/**
+ * N-405: the time from which a log's deopts and ICs count as steady: warmupMs from its start, or, with tailMs, that many
+ * ms before its last stamp.
+ */
+export function steadyFromUs(lastUs, warmupMs, tailMs) {
+  return Number.isFinite(tailMs) && tailMs > 0 ? Math.max(0, lastUs - tailMs * 1000) : warmupMs * 1000;
+}
+
+async function parseTextLogs(files, warmupMs, tailMs = NaN) {
   const deoptByFn = new Map();
   const deoptByReason = new Map();
   const deoptByPair = new Map();
@@ -176,6 +190,9 @@ async function parseTextLogs(files, warmupMs) {
     // Code addresses are per isolate, so each log resolves its own ICs.
     const ranges = [];
     const megaEvents = [];
+    // N-405: steady is decided once the log is read (its last stamp), so its deopts wait here.
+    const deopts = [];
+    let lastUs = 0;
     for await (const line of rl) {
       const code = parseCodeCreation(line);
       if (code) {
@@ -189,7 +206,8 @@ async function parseTextLogs(files, warmupMs) {
         bump(deoptByFn, fn);
         bump(deoptByReason, `${deopt.kind}: ${deopt.reason}`);
         bump(deoptByPair, `${fn} | ${deopt.kind} | ${deopt.reason}`);
-        if (deopt.tsUs >= warmupMs * 1000) bump(steadyByPair, `${fn} | ${deopt.kind} | ${deopt.reason}`);
+        deopts.push(deopt);
+        if (deopt.tsUs > lastUs) lastUs = deopt.tsUs;
         const src = fn.match(/(\/(?:src|demos|tests)\/[^:]+\.js)(?::(\d+))?/);
         if (src) bump(sourceHits, `${src[1]}${src[2] ? ':' + src[2] : ''}`);
         continue;
@@ -198,6 +216,7 @@ async function parseTextLogs(files, warmupMs) {
       const ic = parseIcLine(line);
       if (ic) {
         icLines++;
+        if (ic.tsUs > lastUs) lastUs = ic.tsUs;
         bump(icState, `${ic.kind} ${ic.state}`);
         if (ic.state === 'megamorphic' || ic.state === 'generic') {
           megaLines++;
@@ -205,11 +224,15 @@ async function parseTextLogs(files, warmupMs) {
         }
       }
     }
+    const steadyUs = steadyFromUs(lastUs, warmupMs, tailMs);
+    for (const d of deopts) {
+      if (d.tsUs >= steadyUs) bump(steadyByPair, `${d.loc || 'unknown'} | ${d.kind} | ${d.reason}`);
+    }
     ranges.sort((a, b) => a.start - b.start);
     for (const ic of megaEvents) {
       const fn = codeAt(ranges, ic.pc);
       if (fn && NOISE_URL.test(fn.name)) continue;
-      const phase = ic.tsUs >= warmupMs * 1000 ? 'steady' : 'warm-up';
+      const phase = ic.tsUs >= steadyUs ? 'steady' : 'warm-up';
       bump(megaIc, `${phase} ${ic.state} ${ic.kind} ${fn ? fn.name : '(no code)'} @${ic.line}:${ic.col} key=${ic.key}`);
     }
   }
@@ -288,7 +311,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const dir = args.dir || path.resolve('tests/results/v8-deopt');
   const files = walkFiles(dir).filter(looksLikeLog);
-  const parsed = await parseTextLogs(files, args.warmupMs);
+  const parsed = await parseTextLogs(files, args.warmupMs, args.tailMs);
   const tracePath =
     args.trace ||
     (fs.existsSync(path.join(path.dirname(dir), 'engine_trace.json'))
@@ -337,7 +360,8 @@ async function main() {
     topEntries(cpu.selfMs, args.limit).map(([k, v]) => [k, v.toFixed(1)]),
     '(no JS samples in trace)'
   );
-  console.log(`\n## Steady deopts (after ${args.warmupMs} ms) × self ms of the function`);
+  const steadyText = Number.isFinite(args.tailMs) && args.tailMs > 0 ? `the last ${args.tailMs} ms of each log` : `after ${args.warmupMs} ms`;
+  console.log(`\n## Steady deopts (${steadyText}) × self ms of the function`);
   if (!ranked.length) console.log('(none)');
   for (const r of ranked.slice(0, args.limit)) {
     console.log(

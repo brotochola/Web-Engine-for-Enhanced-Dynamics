@@ -495,4 +495,14 @@ bundle build shows it.
 
 ## 8. Found while building
 
-(empty)
+- **DBG-4, `volumeShadows` had a row already.** Scene._applyVolumeConfig adds it to `config.layers`, so it registers as
+  a custom layer and `getCustomLayers()` listed it. The rows now come from `Layer.getAll()` all the same: one list, built
+  in and custom alike.
+- **DBG-4, Y-Sort.** Run time sorting needs a painter. Pixi makes a custom layer's painter only when the layer started
+  sorted, and the scene reserves its painter state in the render-queue memory only then (`sceneSharedBuffers.js`, the
+  queue spec's `ySort`; for entities, `renderer.ySort`). So a layer that started unsorted cannot be turned on: the
+  setter `layer.ySorting` throws there, `layer.ySortable` says which layers can, and the box is disabled with the
+  reason. Turning a sorted custom layer off used to keep Pixi's painter on, sorting by keys pre-render had stopped
+  writing: Pixi now reads the flag each frame.
+- **DBG-4, the light's Out Blend.** DBG-2 disabled the `lighting` blend select when the row was made, but every
+  attach re-enabled it (`blendMode.disabled = !isAvailable`). The per-tick sync now keeps it disabled.

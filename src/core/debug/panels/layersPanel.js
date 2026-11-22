@@ -2,8 +2,73 @@
 
 import { createPanel } from '../ui/debugDom.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
-import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE } from '../../../util/configDefaults.js';
+import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE, LAYER_SCALE_MODE } from '../../../util/configDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../layer.js';
+
+function alphaBySunText(spec) {
+  if (typeof spec === 'string') return spec;
+  return `${spec.from}..${spec.to}`;
+}
+
+/**
+ * DBG-4: a layer's read-only details line: what it is and how it draws (its kind, its target's resolution and upsample,
+ * its queue size, where a look's density comes from, sun projection, alpha by the sun, a world rect painted once or
+ * every frame, GPU particle options).
+ */
+export function layerDetailsText(layer, meta) {
+  const parts = [layer.builtIn ? `${layer.kind} (built-in)` : layer.kind];
+  parts.push(`Res ${layer.resolution.toFixed(3)}x ${layer.scaleMode === LAYER_SCALE_MODE.NEAREST ? 'nearest' : 'linear'}`);
+  if (meta) {
+    if (meta.maxItems > 0) parts.push(`maxItems ${meta.maxItems}`);
+    const liquidFun = meta.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN;
+    if (liquidFun || (!layer.builtIn && layer.hasShader)) parts.push(`Density ${liquidFun ? 'liquidFun' : 'sprites'}`);
+    if (meta.sunProjected) parts.push('sunProjected');
+    if (meta.volumeFloor) parts.push('volumeFloor');
+    if (meta.alphaBySun) parts.push(`alphaBySun ${alphaBySunText(meta.alphaBySun)}`);
+    if (meta.worldRect) parts.push(`worldRect ${meta.worldRect.width}×${meta.worldRect.height} ${meta.shaderCache ? 'cached' : 'direct'}`);
+    if (meta.gpuParticles) {
+      let text = 'gpuParticles';
+      if (meta.gpuParticles.sortWithEntities) text += ' sortWithEntities';
+      if (meta.gpuParticles.pixelSnap) text += ' pixelSnap';
+      parts.push(text);
+    }
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * DBG-4: why a layer's container blend does nothing, or null where it applies. It is the blend of the pieces a layer
+ * draws into its render texture: built-in layers have none of their own, and a custom layer without a look draws its
+ * pieces straight onto the stage, where they take the Out Blend (unless its config set shader.containerBlend, N-79).
+ */
+export function containerBlendBlocked(layer, meta) {
+  if (layer.builtIn) return 'Built-in layers draw no pieces of their own into a render texture';
+  if (!layer.hasShader && meta?.containerBlendSet !== true) {
+    return 'No look shader: the layer draws in one pass onto the scene, with its Out Blend';
+  }
+  return null;
+}
+
+/** DBG-4: why a layer's Y-Sort box cannot change, or null where it can (Layer#ySortable). */
+export function ySortBlocked(layer) {
+  if (layer.ySortable) return null;
+  if (!layer.hasRenderQueue) return 'This layer has no sprite queue to sort';
+  return 'It started unsorted, so the scene reserved no painter for it: set ySorting: true in its config '
+    + '(renderer.ySort for entities) to toggle it here';
+}
+
+function setChecked(el, v) {
+  if (el.checked !== v && document.activeElement !== el) el.checked = v;
+}
+
+function setValue(el, v) {
+  if (el.value !== v && document.activeElement !== el) el.value = v;
+}
+
+function setDisabled(el, v, title) {
+  if (el.disabled !== v) el.disabled = v;
+  if (title !== undefined && el.title !== title) el.title = title;
+}
 
 function computeSizeLabel(meta) {
   const size = meta?.compute?.size;
@@ -39,6 +104,10 @@ const FLOAT_BUTTON_STYLE =
 const FLOAT_LEFT = { uniforms: 12, compute: 326 };
 const FLOAT_TITLES = { uniforms: 'Uniforms', compute: 'Compute passes' };
 
+const CONTAINER_BLEND_TITLE = "Blend mode used between this layer's own children, inside its render container";
+const Y_SORT_TITLE = 'Sort children by Y position for depth ordering';
+const LIGHTING_BLEND_TITLE = 'The light multiplies the scene by itself: its blend is not a choice';
+
 // Fixed column widths shared by the header row and every layer row, so
 // controls (and critically, Z-index) line up vertically across all layers
 // regardless of how long a select's current value or the layer name is.
@@ -54,7 +123,10 @@ export class LayersPanel {
       layerUniformInputs: {},
     };
     this.panel = null;
-    this._shaderOptionsSynced = false;
+    // DBG-4: the shader options are rebuilt when the scene's loaded sources change (they may finish after attach), not
+    // every tick while a scene has none.
+    this._shaderSources = null;
+    this._shaderSourceCount = -1;
     this._layerOrder = [];
     // Floating popups, one per kind ('uniforms' | 'compute'), independent of each other.
     this._floats = { uniforms: null, compute: null };
@@ -65,15 +137,29 @@ export class LayersPanel {
   create() {
     this.panel = createPanel();
     this.panel.appendChild(this._createHeaderRow());
-
-    const glowSprite = this.debugUI.scene?.config?.lighting?.lightGlow === 'sorted';
-    for (const layerName of Object.keys(DEFAULT_LAYERS)) {
-      if (layerName === 'lightGlows' && glowSprite) continue;
-      this._createLayerRow(layerName, this.panel);
-    }
-    this._sortLayerRows();
-
+    this._syncRows();
     return this.panel;
+  }
+
+  /**
+   * DBG-4: a row per layer the scene registered (built-in, engine-made such as volumeShadows, custom, SCREEN, GPU
+   * particles), from Layer.getAll(); before a scene's layers exist, the built-in ones.
+   */
+  _rowNames() {
+    if (Layer.initialized) return Layer.getAll().map((l) => l.name);
+    const glowSprite = this.debugUI.scene?.config?.lighting?.lightGlow === 'sorted';
+    return Object.keys(DEFAULT_LAYERS).filter((name) => !(name === 'lightGlows' && glowSprite));
+  }
+
+  _syncRows() {
+    if (!this.panel) return;
+    const names = this._rowNames();
+    const keep = new Set(names);
+    for (const layerName of Object.keys(this.elements.layerRows)) {
+      if (!keep.has(layerName)) this._removeLayerRow(layerName);
+    }
+    for (let i = 0; i < names.length; i++) this._createLayerRow(names[i], this.panel);
+    this._sortLayerRows();
   }
 
   _createHeaderRow() {
@@ -99,7 +185,8 @@ export class LayersPanel {
   // ------- lifecycle -------
 
   attach() {
-    this._shaderOptionsSynced = false;
+    this._shaderSources = null;
+    this._shaderSourceCount = -1;
     this._closeFloat('uniforms');
     this._closeFloat('compute');
     this._updateLayersAvailability();
@@ -107,12 +194,11 @@ export class LayersPanel {
 
   update() {
     this._updateLayersSection();
-    // Shader assets may finish loading after first attach — refresh options once ready.
-    const sources = this.debugUI.scene?._loadedShaderSources;
-    if (sources && !this._shaderOptionsSynced) {
-      this._updateLayersAvailability();
-      if (Object.keys(sources).length > 0) this._shaderOptionsSynced = true;
-    }
+    // Shader assets may finish loading after attach: the options follow when the loaded set changes.
+    const sources = this.debugUI.scene?._loadedShaderSources || null;
+    const count = sources ? Object.keys(sources).length : 0;
+    if (sources !== this._shaderSources || count !== this._shaderSourceCount) this._updateLayersAvailability();
+    else this._syncControls();
   }
 
   // ------- layer row -------
@@ -216,34 +302,31 @@ export class LayersPanel {
     if (layerName === 'lighting') {
       // DBG-2: the light multiplies the scene and adds its unshaded and glow parts by itself; another blend breaks it.
       blendSelect.disabled = true;
-      blendSelect.title = 'The light multiplies the scene by itself: its blend is not a choice';
+      blendSelect.title = LIGHTING_BLEND_TITLE;
     }
     row.appendChild(blendSelect);
 
-    // Container blend
+    // Container blend (DBG-4: every layer shows its own value; disabled, with the reason, where it cannot apply)
     const cBlendSelect = this._buildBlendSelect(selectStyle, Layer._BLEND_MODE_STRINGS);
-    cBlendSelect.title = "Blend mode used between this layer's own children, inside its render container";
-    if (customLayer) cBlendSelect.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[customLayer.id]] || 'normal';
+    cBlendSelect.title = CONTAINER_BLEND_TITLE;
+    cBlendSelect.value = customLayer ? customLayer.containerBlendMode : 'normal';
+    cBlendSelect.disabled = true;
     cBlendSelect.onchange = () => {
       const l = Layer.get(layerName);
       if (l) l.containerBlendMode = cBlendSelect.value;
     };
-    // DBG-2: only a layer of the scene's own draws pieces into a render texture of its own.
-    if (!customLayer || customLayer.builtIn) {
-      cBlendSelect.disabled = true;
-      cBlendSelect.title = 'Built-in layers draw no pieces of their own into a render texture';
-    }
     row.appendChild(cBlendSelect);
 
-    // Y-Sort
+    // Y-Sort (DBG-4: through the Layer setter; a layer that cannot sort at run time keeps the box disabled)
     const ySortCb = document.createElement('input');
     ySortCb.type = 'checkbox';
     ySortCb.className = 'debug-ui-checkbox';
-    ySortCb.checked = customLayer ? customLayer.ySorting : true;
-    ySortCb.title = 'Sort children by Y position for depth ordering';
+    ySortCb.checked = customLayer ? customLayer.ySorting : false;
+    ySortCb.disabled = true;
+    ySortCb.title = Y_SORT_TITLE;
     ySortCb.onchange = () => {
       const l = Layer.get(layerName);
-      if (l && Layer._ySorting) Layer._ySorting[l.id] = ySortCb.checked ? 1 : 0;
+      if (l && l.ySortable) l.ySorting = ySortCb.checked;
     };
     row.appendChild(ySortCb);
 
@@ -259,8 +342,9 @@ export class LayersPanel {
       const l = Layer.get(layerName);
       const z = Number(zInput.value);
       if (l && Number.isFinite(z)) l.zIndex = z;
-      this._sortLayerRows();
     };
+    // DBG-4: the rows re-sort once the field loses focus; moving the row while it is edited would drop the focus.
+    zInput.onblur = () => this._sortLayerRows();
     row.appendChild(zInput);
 
     // Uniforms popup — only shown when the layer has a shader with uniforms
@@ -283,26 +367,20 @@ export class LayersPanel {
 
     wrapper.appendChild(row);
 
-    // Read-only info line (resolution / density source / compute source) — kept
-    // out of the grid above so it can't push Z / the panel buttons out of
-    // alignment with other rows; dimmer color marks it as not editable.
+    // Read-only details line (DBG-4: kind, resolution, queue, density, sun, world rect, GPU particles; then the compute
+    // source) — kept out of the grid above so it can't push Z / the panel buttons out of alignment with other rows;
+    // dimmer color marks it as not editable.
     const metaRow = document.createElement('div');
     metaRow.style.cssText =
       'display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;padding-left:2px;' +
       'font-size:9px;color:rgba(255,255,255,0.35)';
 
-    const resVal = document.createElement('span');
-    resVal.title = 'Render target resolution scale (read-only)';
-    resVal.textContent = `Res ${customLayer ? customLayer.resolution.toFixed(3) : '1.000'}x`;
-    metaRow.appendChild(resVal);
-
-    let densVal = null;
-    if (customLayer) {
-      densVal = document.createElement('span');
-      densVal.title = 'Where per-pixel density data comes from — sprite queue or LiquidFun HEAP splat (read-only)';
-      densVal.textContent = `Density ${customLayer.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN ? 'liquidFun' : 'sprites'}`;
-      metaRow.appendChild(densVal);
-    }
+    const detailsVal = document.createElement('span');
+    detailsVal.title = 'What the layer is and how it draws (read-only)';
+    detailsVal.textContent = customLayer
+      ? layerDetailsText(customLayer, Layer._metadata?.layers?.[customLayer.id])
+      : (DEFAULT_LAYERS[layerName]?.kind ?? '');
+    metaRow.appendChild(detailsVal);
 
     let computeVal = null;
     if (customLayer?.compute) {
@@ -316,10 +394,11 @@ export class LayersPanel {
     wrapper.dataset.layerName = layerName;
 
     this.elements.layerControls[layerName] = {
+      available: true,
       visible: visibleCb, alpha: alphaSlider, alphaValue: alphaVal,
       blendMode: blendSelect, containerBlend: cBlendSelect,
       shader: shaderSelect, ySorting: ySortCb,
-      resolution: resVal, zIndex: zInput, computeVal, uniformsBtn, computeBtn,
+      details: detailsVal, zIndex: zInput, computeVal, uniformsBtn, computeBtn,
     };
     this.elements.layerRows[layerName] = wrapper;
     this._layerOrder.push(layerName);
@@ -596,50 +675,32 @@ export class LayersPanel {
     }
   }
 
+  /**
+   * The rows, which ones show, and the shader options: on attach and when the scene's loaded shader sources change.
+   * The controls' values follow the layers every tick in _syncControls.
+   */
   _updateLayersAvailability() {
     const scene = this.debugUI.scene;
     if (!scene || !this.elements.layerRows) return;
-    const config = scene.config;
-    const available = this._getAvailableLayers(config);
+    const sources = scene._loadedShaderSources || null;
+    this._shaderSources = sources;
+    this._shaderSourceCount = sources ? Object.keys(sources).length : 0;
+    const available = this._getAvailableLayers(scene.config);
 
-    // Remove rows for custom layers that no longer exist in the current scene
-    const defaultLayerNames = new Set(Object.keys(DEFAULT_LAYERS));
-    const currentCustomNames = Layer.initialized
-      ? new Set(Layer.getCustomLayers().map((l) => l.name))
-      : new Set();
-    for (const layerName of Object.keys(this.elements.layerRows)) {
-      if (defaultLayerNames.has(layerName)) continue;
-      if (currentCustomNames.has(layerName)) continue;
-      this._removeLayerRow(layerName);
-    }
-
-    if (Layer.initialized) {
-      for (const l of Layer.getCustomLayers()) {
-        if (!this.elements.layerRows[l.name]) {
-          this._createLayerRow(l.name, this.panel);
-        }
-      }
-    }
-
-    this._sortLayerRows();
+    this._syncRows();
 
     // Tag-at-load: compute-only WGSL assets never appear as look-shader choices.
     const computeNames = scene._computeShaderNames || null;
-    const shaderNames = scene._loadedShaderSources
-      ? Object.keys(scene._loadedShaderSources).filter((n) => !computeNames?.has(n))
-      : [];
+    const shaderNames = sources ? Object.keys(sources).filter((n) => !computeNames?.has(n)) : [];
 
     for (const [layerName, wrapper] of Object.entries(this.elements.layerRows)) {
       const isAvailable = available.has(layerName);
       const controls = this.elements.layerControls[layerName];
+      controls.available = isAvailable;
 
       // DECALS / LIGHTING / CASTED_SHADOWS don't exist at all unless the scene
       // config enables them — hide the row instead of just graying it out.
       wrapper.style.display = isAvailable ? '' : 'none';
-      controls.visible.disabled = !isAvailable;
-      controls.alpha.disabled = !isAvailable;
-      controls.blendMode.disabled = !isAvailable;
-      controls.zIndex.disabled = !isAvailable;
       controls.uniformsBtn.disabled = !isAvailable;
       controls.computeBtn.disabled = !isAvailable;
 
@@ -657,19 +718,7 @@ export class LayersPanel {
         }
         controls.uniformsBtn.style.display = (isAvailable && hasSceneUniforms(layer, meta)) ? '' : 'none';
         controls.computeBtn.style.display = (isAvailable && !!layer.compute) ? '' : 'none';
-        controls.ySorting.checked = layer.ySorting;
-        if (document.activeElement !== controls.visible) {
-          controls.visible.checked = layer.visible;
-        }
-        controls.resolution.textContent = `Res ${layer.resolution.toFixed(3)}x`;
-        if (document.activeElement !== controls.alpha) {
-          const pct = Math.round(layer.alpha * 100);
-          controls.alpha.value = pct;
-          controls.alphaValue.textContent = pct + '%';
-        }
-        if (layer.hasShader) controls.containerBlend.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[layer.id]] || 'normal';
         if (controls.computeVal && layer.compute) {
-          const meta = Layer._metadata?.layers?.[layer.id];
           const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
           const maxB = meta?.maxBodies || 0;
           controls.computeVal.textContent = `${srcName} · maxBodies ${maxB} · ${computeSizeLabel(meta)} · WebGPU`;
@@ -679,6 +728,66 @@ export class LayersPanel {
         controls.computeBtn.style.display = 'none';
       }
     }
+    this._syncControls();
+  }
+
+  /**
+   * DBG-4: every control shows its layer's value, so a change made by game code (layer.alpha, visible, blendMode,
+   * containerBlendMode, ySorting, zIndex, resolution) shows in the panel. Each write is compared first, and a control
+   * being edited (focused) is left alone.
+   */
+  _syncControls() {
+    if (!Layer.initialized || !this.panel) return;
+    let zMoved = false;
+    for (const [layerName, controls] of Object.entries(this.elements.layerControls)) {
+      const layer = Layer.get(layerName);
+      if (!layer) continue;
+      const meta = Layer._metadata?.layers?.[layer.id];
+      const isAvailable = controls.available !== false;
+
+      setDisabled(controls.visible, !isAvailable);
+      setChecked(controls.visible, layer.visible);
+
+      setDisabled(controls.alpha, !isAvailable);
+      if (document.activeElement !== controls.alpha) {
+        const pct = String(Math.round(layer.alpha * 100));
+        if (controls.alpha.value !== pct) controls.alpha.value = pct;
+        const text = pct + '%';
+        if (controls.alphaValue.textContent !== text) controls.alphaValue.textContent = text;
+      }
+
+      const lighting = layerName === 'lighting';
+      setDisabled(controls.blendMode, !isAvailable || lighting, lighting ? LIGHTING_BLEND_TITLE : undefined);
+      setValue(controls.blendMode, layer.blendMode);
+
+      const cBlocked = containerBlendBlocked(layer, meta);
+      setDisabled(controls.containerBlend, !isAvailable || cBlocked !== null, cBlocked ?? CONTAINER_BLEND_TITLE);
+      setValue(controls.containerBlend, layer.containerBlendMode);
+
+      const yBlocked = ySortBlocked(layer);
+      setDisabled(controls.ySorting, !isAvailable || yBlocked !== null, yBlocked ?? Y_SORT_TITLE);
+      setChecked(controls.ySorting, layer.ySorting);
+
+      setDisabled(controls.zIndex, !isAvailable);
+      const z = String(layer.zIndex);
+      if (controls.zIndex.value !== z && document.activeElement !== controls.zIndex) {
+        controls.zIndex.value = z;
+        zMoved = true;
+      }
+
+      const details = layerDetailsText(layer, meta);
+      if (controls.details.textContent !== details) controls.details.textContent = details;
+    }
+    if (zMoved && !this._editingZ()) this._sortLayerRows();
+  }
+
+  _editingZ() {
+    const active = document.activeElement;
+    if (!active) return false;
+    for (const controls of Object.values(this.elements.layerControls)) {
+      if (controls.zIndex === active) return true;
+    }
+    return false;
   }
 
   _syncShaderOptions(shaderSelect, shaderNames) {
@@ -724,12 +833,8 @@ export class LayersPanel {
     return available;
   }
 
+  /** A row's z: its layer's (the setter wrote what the field holds), else the built-in default before a scene loads. */
   _layerZ(name) {
-    const input = this.elements.layerControls[name]?.zIndex;
-    if (input) {
-      const z = parseInt(input.value, 10);
-      if (!Number.isNaN(z)) return z;
-    }
     const layer = Layer.initialized ? Layer.get(name) : null;
     if (layer && Layer._zIndex) return Layer._zIndex[layer.id];
     return DEFAULT_LAYERS[name]?.zIndex ?? 0;

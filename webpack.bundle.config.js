@@ -52,6 +52,9 @@ const debugStubAliases = isProd ? {
         path.resolve(__dirname, 'src/core/debug/stubs/hotReload.js'),
     [path.resolve(__dirname, 'src/core/debug/devChecks.js')]:
         path.resolve(__dirname, 'src/core/debug/stubs/devChecks.js'),
+    // DBG-5: the Pixi worker's render views (decode shaders the debug UI's Render tab asks for).
+    [path.resolve(__dirname, 'src/render/renderViews.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/renderViews.js'),
 } : {};
 
 // The file mode (SST-8, buildBundle.js --files) starts its workers from files beside the bundle: webpack

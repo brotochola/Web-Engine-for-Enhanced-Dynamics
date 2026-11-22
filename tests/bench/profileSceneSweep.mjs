@@ -158,7 +158,10 @@ function deoptPass(file, dir, opts) {
   const run = runScene(file, dir, opts, ['--js-flags', '--log-deopt --log-ic', '--v8-log-dir', logs], { traceCpu: false });
   const trace = path.join(dir, 'engine_trace.json');
   if (run.status !== 0 || !fs.existsSync(logs)) return failed(run);
-  const sum = spawn([bench('summarizeV8Deopt.mjs'), logs, '--warmup-ms', String(opts.warmupMs), ...(fs.existsSync(trace) ? ['--trace', trace] : [])], opts);
+  // N-405: steady is the measure window, the last durationMs of each log (a page that loads for longer than the warm-up
+  // put its start-up deopts in a window cut from each isolate's start).
+  const sum = spawn([bench('summarizeV8Deopt.mjs'), logs, '--warmup-ms', String(opts.warmupMs), '--tail-ms', String(opts.durationMs),
+    ...(fs.existsSync(trace) ? ['--trace', trace] : [])], opts);
   fs.writeFileSync(path.join(dir, 'deopt.txt'), sum.stdout || sum.stderr || '');
   const summary = path.join(logs, 'summary.json');
   if (sum.status !== 0 || !fs.existsSync(summary)) return 'summary failed';

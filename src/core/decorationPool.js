@@ -34,6 +34,7 @@ import {
 import { entityIdNone } from '../util/entityIdWidth.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { bucketFromSwayFrequency, swayFrequencyForBucket, skewMarkerC, SWAY_LOOP, SWAY_LOOP_SKEW } from '../util/decorationSway.js';
+import { spinPause } from '../util/spinPause.js';
 
 export {
   DECORATION_Y_SORT_SCALE,
@@ -130,6 +131,7 @@ export class DecorationPool extends SharedAtomicPool {
     while (Atomics.compareExchange(lock, 0, 0, 1) !== 0) {
       // Keep the critical section tiny (count + one swap/append). This lock is
       // only for decoration list metadata, not for particle/render hot loops.
+      spinPause();
     }
   }
 

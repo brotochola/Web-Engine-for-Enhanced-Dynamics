@@ -20,6 +20,7 @@ import { AUDIO_DEFAULTS } from '../util/configDefaults.js';
 import { rngInto } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { fetchAssetRead } from '../util/fetchAsset.js';
+import { spinPause } from '../util/spinPause.js';
 
 // E-285, E-542: the play being written. 0 volume, 1 pitch, 2 pan: what _fillSlot stores. 3 the volume asked, 6 and 7
 // the world point (then its screen point): what play() was given; 4 rateMin, 5 rateMax (_playIn writes them), 8 the
@@ -1032,7 +1033,7 @@ export class SoundManager {
   }
 
   static _lockBus(chI, tail) {
-    while (Atomics.compareExchange(chI, tail, 0, 1) !== 0) {}
+    while (Atomics.compareExchange(chI, tail, 0, 1) !== 0) spinPause();
   }
 
   static _unlockBus(chI, tail) {

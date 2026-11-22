@@ -6,6 +6,7 @@
 import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
 import { randomRange, rng } from '../util/utils.js';
 import { resolveParticleOp, resolveParticleColorOp } from '../util/particleTween.js';
+import { spinPause } from '../util/spinPause.js';
 
 const STAMP_HDR_WRITE = 0;
 const STAMP_HDR_READ = 1;
@@ -229,6 +230,7 @@ export class Decal {
       const base = STAMP_HEADER_I32 + (write % cap) * STAMP_STRIDE_I32;
       while (Atomics.load(stampRingI32, base) !== write) {
         /* wait prior lap */
+        spinPause();
       }
       stampRingI32[base + 1] = textureId | 0;
       stampRingI32[base + 2] = tint | 0;
@@ -258,6 +260,7 @@ export class Decal {
       const base = STAMP_HEADER_I32 + (read % cap) * STAMP_STRIDE_I32;
       while (Atomics.load(stampRingI32, base) !== read + 1) {
         /* wait publish */
+        spinPause();
       }
       onStamp.call(
         thisArg,

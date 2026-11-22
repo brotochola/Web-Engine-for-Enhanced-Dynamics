@@ -17,6 +17,8 @@ import { EntitiesPanel } from './panels/entitiesPanel.js';
 import { PoolsPanel } from './panels/poolsPanel.js';
 import { LayersPanel } from './panels/layersPanel.js';
 import { NavigationPanel } from './panels/navigationPanel.js';
+import { LightPanel } from './panels/lightPanel.js';
+import { RenderPanel } from './panels/renderPanel.js';
 import { MemoryPanel } from './panels/memoryPanel.js';
 import { SavesPanel } from './panels/savesPanel.js';
 
@@ -68,6 +70,8 @@ export class DebugOverlay {
       entities: new EntitiesPanel(this),
       pools: new PoolsPanel(this),
       layers: new LayersPanel(this),
+      light: new LightPanel(this),
+      render: new RenderPanel(this),
       navigation: new NavigationPanel(this),
     };
     this._panelList = [
@@ -80,6 +84,8 @@ export class DebugOverlay {
       this.panels.entities,
       this.panels.pools,
       this.panels.layers,
+      this.panels.light,
+      this.panels.render,
       this.panels.navigation,
     ];
 
@@ -244,6 +250,8 @@ export class DebugOverlay {
       ['📦', 'Entities', 'entities'],
       ['🌿', 'Pools', 'pools'],
       ['📚', 'Layers', 'layers'],
+      ['☀', 'Light', 'light'],
+      ['🖼', 'Render', 'render'],
       ['🧭', 'Nav', 'navigation'],
     ];
 

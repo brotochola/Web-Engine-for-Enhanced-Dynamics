@@ -495,6 +495,14 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'GPU_PASSES', label: 'Passes', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'GPU_CASTERS', label: 'Casters', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'GPU_SHADOW_LIGHTS', label: 'ShadowLights', format: fmtNum, kind: STAT_KIND.COUNT },
+      // DBG-11: the renderer's always-on counters (the Render row's chips need detailed stats).
+      { key: 'MESH_FILL_INSTANCES', label: 'MeshFill', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'MESH_RT_DRAWS', label: 'MeshRT', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'SCENERY_COUNT', label: 'Scenery', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'DECAL_TILES_DIRTY', label: 'DecalDirty', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'DECAL_TILES_UPLOADED', label: 'DecalUp', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'INPUT_LAG_MS', label: 'InputLag', format: fmtMs },
+      { key: 'INPUT_LAG_P95_MS', label: 'InputLag95', format: fmtMs },
     ],
   },
   particle: {

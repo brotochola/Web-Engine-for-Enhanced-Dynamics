@@ -239,6 +239,30 @@ export class Layer {
     }
     get hasShader() { return Layer._hasShader[this.id] === 1; }
     get ySorting() { return Layer._ySorting[this.id] === 1; }
+    /**
+     * Whether the layer's sprites draw in y order. Mutable from any worker (pre-render and the renderer read it each
+     * frame) for a layer that can sort at run time ({@link Layer#ySortable}); turning another on throws (DBG-4).
+     * @example Layer.get("trees").ySorting = false;
+     */
+    set ySorting(v) {
+        const on = !!v;
+        if (on && !this.ySortable) {
+            throw new Error(
+                `WeedJS: layer "${this.name}" cannot sort by y at run time: ${this.hasRenderQueue
+                    ? 'it started unsorted, so the scene reserved no painter for it. Set ySorting: true in its config '
+                        + '(renderer.ySort for entities); it can then be turned off and on'
+                    : 'it has no sprite queue'}`
+            );
+        }
+        Layer._ySorting[this.id] = on ? 1 : 0;
+    }
+    /**
+     * Whether ySorting can change at run time: a layer with a sprite queue that started sorted (its config's ySorting,
+     * renderer.ySort for entities), so the scene reserved its painter at load.
+     */
+    get ySortable() {
+        return this.hasRenderQueue && Layer._metadata?.layers?.[this.id]?.ySorting === true;
+    }
     get available() { return Layer._available[this.id] === 1; }
     /** Returns the blend mode as a human-readable string (for debug UI / logging). */
     get blendMode() { return Layer._BLEND_MODE_STRINGS[Layer._blendModeId[this.id]] || 'normal'; }

@@ -641,24 +641,44 @@
     }
   }
 
+  /**
+   * N-217: the first slot from i on that holds a body (has[] at 0 or more), or slots. A loop of its own: nested in a slot
+   * walk's run loop, V8 put this skip in OSR and left that code at every run of bodies (6 580 times in 8 s in
+   * publishPoseBySlot at Predator crowd 2.5).
+   */
+  function firstBodySlot(has, i, slots) {
+    while (i < slots && has[i] < 0) i++;
+    return i;
+  }
+
+  /** N-217: the first slot from i on with no body, or slots (firstBodySlot's twin). */
+  function runEndSlot(has, i, slots) {
+    while (i < slots && has[i] >= 0) i++;
+    return i;
+  }
+
   /** E-246: snapshotPrevPose over the slots in order, runs of bodies copied with set(). */
   function snapshotPrevPoseBySlot(x, y, px, py) {
     const has = densePositions;
     const slots = has.length;
     let i = 0;
     while (i < slots) {
-      while (i < slots && has[i] < 0) i++;
-      const start = i;
-      while (i < slots && has[i] >= 0) i++;
-      if (i - start >= RUN_COPY_MIN) {
-        px.set(x.subarray(start, i), start);
-        py.set(y.subarray(start, i), start);
-      } else {
-        for (let k = start; k < i; k++) {
-          px[k] = x[k];
-          py[k] = y[k];
-        }
-      }
+      const start = firstBodySlot(has, i, slots);
+      i = runEndSlot(has, start, slots);
+      copyPrevRange(start, i, x, y, px, py);
+    }
+  }
+
+  /** E-246: slots [start, end) of x, y into the previous pose: with set() when the stretch is long. */
+  function copyPrevRange(start, end, x, y, px, py) {
+    if (end - start >= RUN_COPY_MIN) {
+      px.set(x.subarray(start, end), start);
+      py.set(y.subarray(start, end), start);
+      return;
+    }
+    for (let k = start; k < end; k++) {
+      px[k] = x[k];
+      py[k] = y[k];
     }
   }
 
@@ -758,27 +778,12 @@
   function publishPoseBySlot(x, y, rotC, rotS, outX, outY, outC, outS, since) {
     const has = densePositions;
     const slots = has.length;
-    const stamps = rotationStamps;
-    const shift = rotationBlockShift;
     let i = 0;
+    // N-217: no loop inside this one (each skip and each run's copy is a function of its own).
     while (i < slots) {
-      while (i < slots && has[i] < 0) i++;
-      const start = i;
-      while (i < slots && has[i] >= 0) i++;
-      if (i - start >= RUN_COPY_MIN) {
-        outX.set(x.subarray(start, i), start);
-        outY.set(y.subarray(start, i), start);
-        copyStampedRotations(start, i, rotC, rotS, outC, outS, since);
-      } else {
-        for (let k = start; k < i; k++) {
-          outX[k] = x[k];
-          outY[k] = y[k];
-          if (((stamps[k >> shift] - since) | 0) > 0) {
-            outC[k] = rotC[k];
-            outS[k] = rotS[k];
-          }
-        }
-      }
+      const start = firstBodySlot(has, i, slots);
+      i = runEndSlot(has, start, slots);
+      copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS, since);
     }
   }
 
@@ -791,25 +796,37 @@
     const slots = has.length;
     const gen = bodyGeneration;
     const seen = seenBodyGeneration;
-    let skipped = 0;
+    checkedSkipped = 0;
     let i = 0;
+    // N-217: no loop inside this one (the skip and each run are functions of their own).
     while (i < slots) {
-      while (i < slots && has[i] < 0) i++;
-      let start = i;
-      while (i < slots && has[i] >= 0) {
-        // A plain read: the writer bumps a generation (Atomics.add) before the epoch (Atomics.add), and publishPose read
-        // the epoch with Atomics.load first, so every bump behind that epoch is visible; one landing during this loop
-        // moves the epoch again and is caught on the next publish, as with Atomics.load here.
-        if ((seen[i] | 0) !== (gen[i] | 0)) {
-          copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS, since);
-          skipped++;
-          start = i + 1;
-        }
-        i++;
-      }
-      copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS, since);
+      i = publishCheckedRun(firstBodySlot(has, i, slots), slots, has, seen, gen, x, y, rotC, rotS, outX, outY, outC, outS, since);
     }
-    return skipped;
+    return checkedSkipped;
+  }
+
+  /** N-217: publishPoseBySlotChecked's slots skipped this publish (publishCheckedRun counts them). */
+  let checkedSkipped = 0;
+
+  /**
+   * N-217: one run of bodies from slot i, copied in stretches between the slots whose body is not the one this worker
+   * last saw (counted in checkedSkipped). Returns the slot after the run.
+   */
+  function publishCheckedRun(i, slots, has, seen, gen, x, y, rotC, rotS, outX, outY, outC, outS, since) {
+    let start = i;
+    while (i < slots && has[i] >= 0) {
+      // A plain read: the writer bumps a generation (Atomics.add) before the epoch (Atomics.add), and publishPose read
+      // the epoch with Atomics.load first, so every bump behind that epoch is visible; one landing during this loop
+      // moves the epoch again and is caught on the next publish, as with Atomics.load here.
+      if ((seen[i] | 0) !== (gen[i] | 0)) {
+        copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS, since);
+        checkedSkipped++;
+        start = i + 1;
+      }
+      i++;
+    }
+    copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS, since);
+    return i;
   }
 
   /**

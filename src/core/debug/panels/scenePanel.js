@@ -2,6 +2,7 @@
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 import { sceneParams } from '../../sceneParams.js';
+import { CameraSection } from './cameraSection.js';
 
 function sceneEntryIsActive(scene, entry) {
   if (!scene) return false;
@@ -35,6 +36,8 @@ export class ScenePanel {
     this.debugUI = debugUI;
     this.elements = {};
     this.panel = null;
+    // DBG-9: the camera's read-out, controls and projection.
+    this.camera = new CameraSection(debugUI);
   }
 
   // ------- DOM creation -------
@@ -71,6 +74,7 @@ export class ScenePanel {
     controlsRow.appendChild(this.elements.restartBtn);
 
     this.panel.appendChild(controlsRow);
+    this.panel.appendChild(this.camera.create());
     return this.panel;
   }
 
@@ -78,10 +82,12 @@ export class ScenePanel {
 
   attach() {
     this.updateSceneList();
+    this.camera.attach();
   }
 
   update() {
     this._updatePlayPauseState();
+    this.camera.update();
   }
 
   // ------- scene list -------

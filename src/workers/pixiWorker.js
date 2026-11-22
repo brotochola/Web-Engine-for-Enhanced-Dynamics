@@ -81,6 +81,16 @@ import {
 import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { WALL_VERT0, wallRowsLayout } from '../render/visibility/lampWallRow.js';
 import { UNSHADED_COMPOSITE_FRAG, UNSHADED_COMPOSITE_VERT, unshadedCompositeGpuProgram, unshadedQuadPositions } from '../render/unshadedComposite.js';
+import {
+  RENDER_VIEW,
+  RENDER_VIEW_FRAG,
+  RENDER_VIEW_HEIGHT_PX,
+  RENDER_VIEW_VERT,
+  RENDER_VIEW_Z,
+  availableRenderViews,
+  renderViewGpuProgram,
+  renderViewTextures,
+} from '../render/renderViews.js';
 import { lightEdgesHost, lightEdgesQuad, rgbOnlyHost, unshadedEdgesHost, wallEdgesWanted } from '../render/lightEdges.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
@@ -471,6 +481,7 @@ import {
   GlProgram,
   Buffer,
   BufferUsage,
+  UniformGroup,
   State,
   RendererType,
   RenderTexture,
@@ -940,6 +951,16 @@ class PixiRenderer extends AbstractWorker {
     this._unshadedQuadBuffer = null;
     this._unshadedRtLayer = { resolution: 1 };
     this._unshadedRtTransform = new Matrix();
+    // DBG-5 (renderViews.js): the debug UI's render view, 0 the final picture: the only per-frame cost while it is 0. The
+    // view's quad, its uniforms and its vertex buffer are made on first use and released when the view goes back to 0.
+    this._renderView = 0;
+    this._renderViewOpacity = NaN;
+    this._renderViewMesh = null;
+    this._renderViewQuad = new Float32Array(8);
+    this._renderViewQuadBuffer = null;
+    this._renderViewParams = new Float32Array(4);
+    this._renderViewUniforms = null;
+    this._renderViewPair = [null, null];
     // E-404: the lightGlows layer drawn into a target a share of the canvas (the layer's resolution, from
     // lighting.lightGlowResolution) and added to the frame once by a sprite; null while the glows draw onto the frame.
     this._glowLayerRT = null;
@@ -3850,6 +3871,120 @@ class PixiRenderer extends AbstractWorker {
    * resources are. _replaceRT destroys every bind group still listening on the old lighting target, the glow
    * composite's own among them, and _bindUnshadedLayer's next read of it threw: the renderer died on a resize.
    */
+  /**
+   * DBG-5: the render view to draw (renderViews.js RENDER_VIEW) and its opacity over the picture (1 the buffer alone).
+   * A view whose buffer this scene has not falls back to the final picture; the final picture releases the quad.
+   */
+  _setRenderView(view, opacity) {
+    const pair = renderViewTextures(this, view, this._renderViewPair);
+    this._renderView = pair[0] !== null ? view : RENDER_VIEW.FINAL;
+    this._renderViewOpacity = opacity > 0 && opacity <= 1 ? opacity : 1;
+    if (this._renderView === RENDER_VIEW.FINAL) this._releaseRenderView();
+  }
+
+  /** DBG-5, each present while a view is on: the view's buffers bound (a resize replaces them), its uniforms, its size. */
+  _syncRenderView() {
+    const pair = renderViewTextures(this, this._renderView, this._renderViewPair);
+    if (pair[0] === null) {
+      this._renderView = RENDER_VIEW.FINAL;
+      this._releaseRenderView();
+      return;
+    }
+    if (this._renderViewMesh === null) this._createRenderView();
+    const res = this._renderViewMesh.shader.resources;
+    const main = pair[0].source;
+    const second = pair[1] !== null ? pair[1].source : PIXI.Texture.EMPTY.source;
+    if (res.uTex !== main) {
+      res.uTex = main;
+      if (this._useWebGpu) res.uTexSampler = main.style;
+    }
+    if (res.uTex2 !== second) {
+      res.uTex2 = second;
+      if (this._useWebGpu) res.uTex2Sampler = second.style;
+    }
+    const p = this._renderViewParams;
+    const both = pair[1] !== null ? 1 : 0;
+    if (p[0] !== this._renderView || p[1] !== Math.fround(this._renderViewOpacity) || p[3] !== both) {
+      p[0] = this._renderView;
+      p[1] = this._renderViewOpacity;
+      p[2] = RENDER_VIEW_HEIGHT_PX;
+      p[3] = both;
+      this._renderViewUniforms.update();
+    }
+    const q = this._renderViewQuad;
+    if (q[2] !== this.canvasWidth || q[5] !== this.canvasHeight) {
+      unshadedQuadPositions(q, this.canvasWidth, this.canvasHeight);
+      this._renderViewQuadBuffer.update();
+    }
+    if (!this._renderViewMesh.visible) this._renderViewMesh.visible = true;
+  }
+
+  /** DBG-5: the view's quad over the canvas, on top of the stage, drawn with normal blending (premultiplied). */
+  _createRenderView() {
+    const q = unshadedQuadPositions(this._renderViewQuad, this.canvasWidth, this.canvasHeight);
+    this._renderViewQuadBuffer = new Buffer({ data: q, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST });
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: { buffer: this._renderViewQuadBuffer, format: 'float32x2', stride: 8, offset: 0 },
+        aUV: [0, 0, 1, 0, 1, 1, 0, 1],
+      },
+      indexBuffer: [0, 1, 2, 0, 2, 3],
+    });
+    this._renderViewUniforms = new UniformGroup({ uView: { value: this._renderViewParams, type: 'vec4<f32>' } });
+    const empty = PIXI.Texture.EMPTY.source;
+    const shader = this._useWebGpu
+      ? new PIXI.Shader({
+          gpuProgram: renderViewGpuProgram(GpuProgram),
+          resources: {
+            uTex: empty, uTexSampler: empty.style, uTex2: empty, uTex2Sampler: empty.style, viewUniforms: this._renderViewUniforms,
+          },
+        })
+      : new PIXI.Shader({
+          glProgram: PIXI.GlProgram.from({ vertex: RENDER_VIEW_VERT, fragment: RENDER_VIEW_FRAG, name: 'weed-render-view' }),
+          resources: { uTex: empty, uTex2: empty, viewUniforms: this._renderViewUniforms },
+        });
+    const state = new PIXI.State();
+    state.blendMode = 'normal';
+    state.depthTest = false;
+    state.depthMask = false;
+    state.culling = false;
+    const mesh = new PIXI.Mesh({ geometry, shader, state, label: 'weed-render-view' });
+    mesh.cullable = false;
+    mesh.visible = false;
+    mesh.zIndex = RENDER_VIEW_Z;
+    this._renderViewParams.fill(-1);
+    this._renderViewMesh = mesh;
+    this.pixiApp.stage.addChild(mesh);
+    this.pixiApp.stage.sortChildren();
+  }
+
+  /** DBG-5: back to the final picture: the quad, its geometry and buffer go. */
+  _releaseRenderView() {
+    const mesh = this._renderViewMesh;
+    if (mesh === null) return;
+    this._renderViewMesh = null;
+    if (mesh.parent) mesh.parent.removeChild(mesh);
+    const geometry = mesh.geometry;
+    mesh.destroy();
+    geometry.destroy();
+    this._renderViewQuadBuffer = null;
+    this._renderViewUniforms = null;
+  }
+
+  /** DBG-5: the view's quad off the targets a resize is about to replace (N-222's rule, as the unshaded layer's). */
+  _unbindRenderView() {
+    const mesh = this._renderViewMesh;
+    if (mesh === null) return;
+    const res = mesh.shader.resources;
+    const empty = PIXI.Texture.EMPTY.source;
+    if (res.uTex !== empty) res.uTex = empty;
+    if (res.uTex2 !== empty) res.uTex2 = empty;
+    if (this._useWebGpu) {
+      if (res.uTexSampler !== empty.style) res.uTexSampler = empty.style;
+      if (res.uTex2Sampler !== empty.style) res.uTex2Sampler = empty.style;
+    }
+  }
+
   _unbindUnshadedLayer() {
     const mesh = this._unshadedComposite;
     if (mesh === null) return;
@@ -4343,6 +4478,7 @@ class PixiRenderer extends AbstractWorker {
   /** Weed owns the swapchain present. Skip when the document is hidden. */
   _presentStage() {
     if (!this._gpuLive()) return;
+    if (this._renderView !== 0) this._syncRenderView();
     // DX-POST: one test a frame without SCREEN layers; the present as before.
     const throughScreenLayers = this._screenLayers.length > 0 && this._presentThroughScreenLayers();
     if (!throughScreenLayers) {
@@ -7836,6 +7972,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._loseGpuForTest(data.restoreAfterMs);
       return;
     }
+    if (msg === 'setRenderView' || msg === 'listRenderViews') {
+      // DBG-5: the debug UI's Render tab; the answer lists the views this scene has now.
+      if (msg === 'setRenderView') this._setRenderView(data.view | 0, +data.opacity);
+      self.postMessage({ msg: 'renderViews', views: availableRenderViews(this), view: this._renderView });
+      return;
+    }
     debugWorkerLog(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
 
     if (msg === 'setLayerContent') {
@@ -8671,6 +8813,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _applyResize(width, height) {
+    // DBG-5: off the targets the resize replaces; the next present binds the new ones.
+    this._unbindRenderView();
     // Let PixiJS resize the renderer first (updates viewport, projection, and canvas)
     if (this.pixiApp) {
       this.pixiApp.renderer.resize(width, height);
@@ -11023,7 +11167,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           opts.cameraY = 0;
           opts.resolution = 1;
         }
-        this._uploadSortedSprites(cl.batch, q, opts, cl.painter, cl.sortKeyU32, null, count);
+        // DBG-4: the layer's flag can change at run time (Layer#ySorting): unsorted, pre-render writes no sort keys and
+        // the rows go in queue order.
+        const painter = Layer._ySorting[cl.layerId] === 1 ? cl.painter : null;
+        this._uploadSortedSprites(cl.batch, q, opts, painter, cl.sortKeyU32, null, count);
         densityMesh = cl.batch.mesh;
       } else if (cl.fillBatch) {
         const views = this._ensureColliderFillViews();

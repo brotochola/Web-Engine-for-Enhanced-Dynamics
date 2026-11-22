@@ -25,17 +25,30 @@ const STATUS_IDLE = 0;
 const STATUS_PENDING = 1;
 const BOX2D_DIR = new URL('../../src/box2d/', import.meta.url).href;
 
-function inWorker(sab, body) {
+function inWorker(sab, body, extra = {}) {
   const worker = new Worker(
     `const { workerData, parentPort } = require('node:worker_threads');
      (async () => { const base = workerData.base; ${body} })().then(
        (r) => parentPort.postMessage({ ok: true, r }),
        (e) => parentPort.postMessage({ ok: false, e: String((e && e.message) || e) }),
      );`,
-    { eval: true, workerData: { sab, base: BOX2D_DIR } },
+    { eval: true, workerData: { sab, base: BOX2D_DIR, ...extra } },
   );
   const reply = new Promise((resolve) => worker.once('message', resolve));
   return { worker, reply };
+}
+
+/**
+ * N-404: until a worker raised flags[i] (it does just before it waits), within a wall-clock deadline, then a moment more
+ * so the thread is inside its wait. A fixed sleep lost the race when the thread started late under load.
+ */
+async function untilFlag(flags, i, deadlineMs = 10000) {
+  const until = Date.now() + deadlineMs;
+  while (Atomics.load(flags, i) === 0) {
+    if (Date.now() > until) throw new Error(`worker flag ${i} never rose`);
+    await new Promise((res) => setTimeout(res, 2));
+  }
+  await new Promise((res) => setTimeout(res, 50));
 }
 
 async function serviceWhenPending(service, fn) {
@@ -183,15 +196,20 @@ test('an answer wakes its requester even with another worker queued in front (N-
   bindRayCastSab(sab);
   const i32 = new Int32Array(sab);
   Atomics.store(i32, 0, STATUS_CLAIMED); // requester A holds the slot
+  // N-404: each worker raises its flag just before it waits (B: before the call that queues it in the claim wait).
+  const flags = new Int32Array(new SharedArrayBuffer(8));
   // B wants a cast too: it queues in the claim wait.
   const b = inWorker(
     sab,
     `const m = await import(base + 'box2dRayCast.js');
      m.bindRayCastSab(workerData.sab);
+     Atomics.store(new Int32Array(workerData.flags), 0, 1);
      return m.box2dCastRayClosest(0, 0, 1, 0).hit;`,
+    { flags: flags.buffer },
   );
   try {
-    await sleep(300);
+    await untilFlag(flags, 0);
+    await sleep(250);
     // A posts its request: B wakes, cannot claim, and queues again.
     Atomics.store(i32, 5, 1); // HDR_COUNT: a single cast
     Atomics.store(i32, 0, STATUS_PENDING);
@@ -201,9 +219,12 @@ test('an answer wakes its requester even with another worker queued in front (N-
     const a = inWorker(
       sab,
       `const i32 = new Int32Array(workerData.sab);
+       Atomics.store(new Int32Array(workerData.flags), 1, 1);
        return Atomics.wait(i32, 0, ${STATUS_PENDING}, 2000);`,
+      { flags: flags.buffer },
     );
-    await sleep(300);
+    await untilFlag(flags, 1);
+    await sleep(250);
     assert.equal(servicePendingRayCast(() => ({ hit: false })), 1);
     const msg = await a.reply;
     await a.worker.terminate();

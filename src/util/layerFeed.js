@@ -8,11 +8,13 @@
  * moves the last entry into the slot it frees. A list whose buffer has no index (built elsewhere) is walked.
  */
 import { Layer } from '../core/layer.js';
+import { spinPause } from './spinPause.js';
 
 function acquireLayerLock(lock, layerId) {
   if (!lock) return;
   while (Atomics.compareExchange(lock, layerId, 0, 1) !== 0) {
     // Mask writes are rare; short spin is enough.
+    spinPause();
   }
 }
 

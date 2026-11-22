@@ -95,39 +95,52 @@ async function capture(browser, root, opts, sideQuery) {
   }
 }
 
-async function main() {
-  const opts = parseCli(process.argv.slice(2));
-  const wt = { srcOnly: !opts.fullRev };
-  const rootA = opts.vs ? ensureRevWorktree(opts.vs, wt).root : repoRoot;
-  const rootB = opts.hypRev ? ensureRevWorktree(opts.hypRev, { ...wt, tag: 'hyp' }).root : repoRoot;
+/** One browser for one use, closed after it. */
+async function withBrowser(opts, use) {
   const browser = await chromium.launch({
     headless: opts.headless,
     channel: 'chrome',
     args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--enable-unsafe-webgpu'],
   });
   try {
-    const a = await capture(browser, rootA, opts, opts.queryA);
-    const b = await capture(browser, rootB, opts, opts.queryB);
-    const page = await browser.newPage();
-    const diff = await diffPngs(page, a.png, b.png);
-    await page.close();
-    if (opts.save) {
-      fs.mkdirSync(opts.save, { recursive: true });
-      fs.writeFileSync(path.join(opts.save, 'a.png'), a.png);
-      fs.writeFileSync(path.join(opts.save, 'b.png'), b.png);
-    }
-    const errors = [...a.errors, ...b.errors];
-    const same = diff.maxDelta <= opts.tolerance;
-    const ok = errors.length === 0 && same !== opts.expectDiff;
-    console.log(
-      `${ok ? 'PASS' : 'FAIL'} ${opts.sceneExport} [${opts.query.join(' ')}] a[${opts.queryA.join(' ')}] b[${opts.queryB.join(' ')}]: ` +
-        `${diff.differing} of ${diff.pixels} pixels differ, max delta ${diff.maxDelta}` +
-        (errors.length ? `; page errors: ${errors.slice(0, 3).join(' | ')}` : ''),
-    );
-    process.exitCode = ok ? 0 : 1;
+    return await use(browser);
   } finally {
     await browser.close();
   }
+}
+
+async function main() {
+  const opts = parseCli(process.argv.slice(2));
+  const wt = { srcOnly: !opts.fullRev };
+  const rootA = opts.vs ? ensureRevWorktree(opts.vs, wt).root : repoRoot;
+  const rootB = opts.hypRev ? ensureRevWorktree(opts.hypRev, { ...wt, tag: 'hyp' }).root : repoRoot;
+  // N-229: each side is a first load in a browser of its own. A second page in the same browser shares its GPU process
+  // and caches with the first: emissiveStressScene's read 174 000 to 231 000 pixels off an identical first page (max
+  // delta 183), while first loads in separate browsers were byte-identical.
+  const a = await withBrowser(opts, (browser) => capture(browser, rootA, opts, opts.queryA));
+  const { b, diff } = await withBrowser(opts, async (browser) => {
+    const side = await capture(browser, rootB, opts, opts.queryB);
+    const page = await browser.newPage();
+    try {
+      return { b: side, diff: await diffPngs(page, a.png, side.png) };
+    } finally {
+      await page.close();
+    }
+  });
+  if (opts.save) {
+    fs.mkdirSync(opts.save, { recursive: true });
+    fs.writeFileSync(path.join(opts.save, 'a.png'), a.png);
+    fs.writeFileSync(path.join(opts.save, 'b.png'), b.png);
+  }
+  const errors = [...a.errors, ...b.errors];
+  const same = diff.maxDelta <= opts.tolerance;
+  const ok = errors.length === 0 && same !== opts.expectDiff;
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'} ${opts.sceneExport} [${opts.query.join(' ')}] a[${opts.queryA.join(' ')}] b[${opts.queryB.join(' ')}]: ` +
+      `${diff.differing} of ${diff.pixels} pixels differ, max delta ${diff.maxDelta}` +
+      (errors.length ? `; page errors: ${errors.slice(0, 3).join(' | ')}` : ''),
+  );
+  process.exitCode = ok ? 0 : 1;
 }
 
 await main();

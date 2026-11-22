@@ -1251,6 +1251,10 @@ import { BLEND_MODES } from '/src/util/configDefaults.js';
 // NORMAL, ADD, MULTIPLY, SCREEN, ERASE, NORMAL_NPM, ADD_NPM, SCREEN_NPM, NONE, MIN, MAX: the modes this build draws
 // (Pixi's advanced modes, overlay, darken and the rest, are not registered and are not offered).
 Layer.fx.blendMode = 'add'            // any worker, by name; containerBlendMode and zIndex the same way
+
+// Y-sort at run time: only a layer that started sorted (config ySorting: true; renderer.ySort for entities), since
+// the scene reserves its painter at load. Layer.trees.ySortable says so; turning another on throws.
+Layer.trees.ySorting = false
 ```
 
 ### Two-RT Shader Pipeline (How It Works)

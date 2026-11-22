@@ -12714,12 +12714,12 @@
       "id": "N-155",
       "title": "lightGalleryScene draws differently on WebGL and WebGPU: up to 52/255 on about 80 000 to 98 000 pixels",
       "status": "open",
-      "statusText": "found 2026-11-12 checking DX-SPOT on both backends; not read in the code yet",
+      "statusText": "reproduced 2026-11-22 on main (R-1741)",
       "date": "2026-11-12",
       "area": "render",
       "kind": "bug",
       "result": "The same count with and without cones (raycast 79 499 both; basic 97 951 and 96 252); traced in the session to the lamp whose halo is on its own layer (glowLayer); predates the light API change.",
-      "next": "A capture with that lamp's glowLayer cleared on both backends; then the custom layer's composite on WebGPU (its blend or premultiplication) against WebGL's.",
+      "next": "The light pass's GLSL against its WGSL for this scene's lamps (cones, glows, the lamp on its own glow layer).",
       "refs": [
         "REVIEW_PLAN.md#N-155"
       ],
@@ -12731,7 +12731,8 @@
         "custom layer"
       ],
       "records": [
-        "R-0940"
+        "R-0940",
+        "R-1741"
       ]
     },
     {
@@ -12791,7 +12792,7 @@
       "area": "engine",
       "kind": "speed",
       "result": "_runFrame 7–9 KB/s per worker, _waitForPose/_waitForQueue 6–8, pre-render camera bounds ~20 (doubles in shared-map objects), writeGatherColumns put closure 4.9, renderVisibilityLighting clear colour and options 5.4.",
-      "next": "Left (Predator, R-0960): subarray per frame in bulletPool._tickWasm, _collectVisibleEntitiesWasm, _collectEntityGlowRows; camera bounds (resetFrameCounters, calculateCameraScreenBounds, _readFollowSnapshot); most per-frame rows are lower-tier boxing (E-239).",
+      "next": "The visibility gather's doubles through an args block in the kernel's memory (a C change and a wasm build); Predator crowd 2.5 sampled again with a longer warm-up.",
       "refs": [
         "REVIEW_PLAN.md#N-158"
       ],
@@ -12804,7 +12805,8 @@
       ],
       "records": [
         "R-0958",
-        "R-0960"
+        "R-0960",
+        "R-1742"
       ]
     },
     {
@@ -16586,19 +16588,20 @@
       "id": "N-214",
       "title": "Steady-state deopts in Predator (main too): spatialWorker _flushWasmPublish, weedjsPost publishPose, logicWorker's spawn list",
       "status": "open",
-      "statusText": "found 2026-11-15 in Phase 3's deopt pass of Predator ?light3d=1&hour=22; the sites are the same on main (spatialWorker.js and weedjsPost.js unchanged by dx/light3d)",
+      "statusText": "round 2 2026-11-22 on the ASUS (4e70bdd5, 53ae0ce7, R-1736); spatialWorker.js:2253 fixed on the main PC's fix/n245-spatial-rebuilt-rows",
       "date": "2026-11-15",
       "area": "engine",
       "kind": "bug",
       "result": "In steady state (8 s): spatialWorker.js:1764:22 (_flushWasmPublish, this._wasmPub.queued) deopt-eager \"Insufficient type feedback for generic named access\" x391; box2d/weedjsPost.js:662:31 (the N-86 epoch check after the pose copy) \"Insufficient type feedback for call\" x286; logicWorker.js:912:11 (compare) x70 and :901:10 (named access) x68 (the spawn batch sort); util/gameObjectActiveState.js:140:17 (unary) x13. A site that keeps deopting in steady state recompiles its function each time. Fixed 2026-11-15 (R-1158): the spatial publish (391 -> 0, e334063b) and the Box2D pose epoch (287 -> 0, 68c0d0c5): code compiled before a branch at its end had run, deopting there every frame and never replaced.",
-      "next": "logicWorker _processSpawnSoA's batch path (cold in one logic worker when it tiered); the LiquidFun gate for 68c0d0c5.",
+      "next": "The spatial owned loop (main PC, spatialWorker.js:2143); a Predator gate on the main PC for the logic changes.",
       "refs": [],
       "aliases": [
         "steady deopts predator"
       ],
       "records": [
         "R-1155",
-        "R-1158"
+        "R-1158",
+        "R-1736"
       ]
     },
     {
@@ -19269,19 +19272,20 @@
     {
       "id": "E-441",
       "title": "Several CAS spin locks and lap waits spin with no Atomics.pause and no bound (the decoration pool's lock is held for its whole snapshot copy, the sound bus lock is taken by logic0, logic1 and main on every play; box2dSyncSlot spins 100 000 loads before its 2 ms wait)",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "status": "kept-hygiene",
+      "statusText": "built 2026-11-22 on the ASUS (5e6ce86d, R-1735), not measured",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "speed",
       "result": "The audit's list: decorationPool.js (held through the snapshot copy), decorationSpatial.js, soundManager.js (bus lock), layerFeed.js, spawnCommandRing.js, messageRing.js, decal.js, box2dCommandRingImpl.js, sharedAtomicPool.js, weedjsPost.js, box2dSyncSlotImpl.js.",
-      "next": "Atomics.pause in the loops (Chrome 133+), a bounded spin then Atomics.wait on the lock word, the decoration snapshot copied outside the lock (double buffer); the CPU pass's self time of these functions and Windows per-thread CPU (a waiting thread looks busy in V8 profiles).",
+      "next": "Left: Box2D's command ring, weedjsPost and the sync slot; a bounded spin then wait; the decoration snapshot copied outside its lock; a contended sitting (Predator crowd 2.5 on the ASUS) to see any gain.",
       "refs": [],
       "aliases": [
         "spin locks without pause"
       ],
       "records": [
-        "R-1188"
+        "R-1188",
+        "R-1735"
       ]
     },
     {
@@ -19671,7 +19675,8 @@
         "R-1229",
         "R-1444",
         "R-1446",
-        "R-1459"
+        "R-1459",
+        "R-1740"
       ]
     },
     {
@@ -19826,19 +19831,20 @@
     {
       "id": "N-229",
       "title": "compareCaptures is not deterministic for emissiveStressScene: its side B is the second page in the same browser, and an A/A reads 174 000 to 231 000 pixels off (max 183, mostly 1 to 8); first loads in separate browsers are byte-identical",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "status": "kept-hygiene",
+      "statusText": "fixed by construction 2026-11-22 (6fbf495a, R-1737); not reproduced on the HD 620",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "The agent captured each side as a first load in its own browser (scratchpad tools2/capture1.mjs) to compare E-457.",
-      "next": "compareCaptures loads each side in its own browser (or its own context with no shared caches), or reports an A/A of the scene first; then a scene whose second page differs is flagged, not compared.",
+      "result": "A browser per side, the diff in the second; the ASUS A/A read 0 pixels with both tools.",
+      "next": "An A/A on the main PC's GTX 1650, where the error showed, to say it is gone there.",
       "refs": [],
       "aliases": [
         "compareCaptures side B"
       ],
       "records": [
-        "R-1210"
+        "R-1210",
+        "R-1737"
       ]
     },
     {
@@ -20429,19 +20435,20 @@
     {
       "id": "N-244",
       "title": "keyedPackStressScene gbuf=1 has a steady deopt loop in Pixi: packSpriteLayer.js:72 (`flags |= orderSpriteIndices(...)` after the OSR'd loop at :69, insufficient type feedback for a binary op) 116 steady deopts in 8 s, and gpuPackClient.js:214 indexByteFor (`return b.indexByte` after its OSR'd copy loop) 18; TurboFan recompiled packSpriteLayer 2x, indexByteFor 2x, fillQueueIndices 3x",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "status": "superseded",
+      "statusText": "gone 2026-11-22 (R-1740): E-456 took the OSR'd loop out of packSpriteLayer",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "bug",
-      "result": "Deopt pass at 27eb6a71, keyedPack gbuf=1 (the E-251 / N-214 / N-217 pattern: a cold site after an OSR loop).",
-      "next": "Seed the binary op and the return with feedback before the loop runs hot (the N-214 fixes), or split the loop into its own function so the site after it is compiled normally; the deopt pass before and after.",
+      "result": "No steady deopt in packSpriteLayer.js or gpuPackClient.js in keyedPack gbuf=1 (the ASUS, last 8 s of each log).",
+      "next": "Nothing left.",
       "refs": [],
       "aliases": [
         "packSpriteLayer deopt loop"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1740"
       ]
     },
     {
@@ -20460,7 +20467,8 @@
       ],
       "records": [
         "R-1229",
-        "R-1817"
+        "R-1817",
+        "R-1743"
       ]
     },
     {
@@ -21209,7 +21217,7 @@
       "id": "N-259",
       "title": "GPU particles with sortWithEntities: true drew nothing, not even what stands above the fountain (the buenos-aires game's water layer, bundle fa59073a, Chromium without a GPU): the water goes over the entities",
       "status": "open",
-      "statusText": "reported in the game's BACKLOG (2026-11-12); not reproduced on main yet",
+      "statusText": "not reproduced 2026-11-22 on main in the stress scene (R-1738)",
       "date": "2026-11-16",
       "area": "particle",
       "kind": "bug",
@@ -21218,8 +21226,10 @@
       "aliases": [
         "gpu particles sorted with entities"
       ],
-      "next": "Reproduce with a small scene on main; then the fountain's water can sort with the trees.",
-      "records": []
+      "next": "The buenos-aires game's scene, or the stress scene under --disable-gpu (SwiftShader), which the capture tools cannot pass yet.",
+      "records": [
+        "R-1738"
+      ]
     },
     {
       "id": "DX-ENT1M",
@@ -23125,7 +23135,7 @@
       "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed. DBG-1 to DBG-3 fixed 2026-11-21 on the ASUS (R-1716, R-1717, R-1718)",
       "date": "2026-11-18",
       "result": "",
-      "next": "DBG-4 (the Layers panel lists every layer and says what it is), then DBG-5 (render views) before DBG-7; DBG-6 beside them. DBG-3 left the worldRect stage mesh (3.3.3).",
+      "next": "Done: DBG-1 to DBG-4 and DBG-8 to DBG-12. Left: DBG-5 (render views of the frame's buffers, both backends; the largest, in pixiWorker.js), DBG-7 (the light tiles, one more view), DBG-6 (a sheet's maps: the atlas worker keeps the twin page since SST-5).",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23214,11 +23224,11 @@
     {
       "id": "DBG-4",
       "title": "The debug UI's Layers panel lists every layer the scene has (volumeShadows, SCREEN, GPU particles, not only DEFAULT_LAYERS plus custom ones), shows each one's kind and metadata, and its controls follow changes made by game code",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS, asus2/batch2-2026-11-22 (1b9969ef, R-1725)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Rows from Layer.getAll(); one read-only details line; the small defects the plan lists (Y-sort, Cont Blend refresh, sync every tick, focus lost on re-sort); a node test with a DOM shim.",
+      "result": "Rows from Layer.getAll(), a details line per layer, every control following its layer each tick, Cont Blend and Y-Sort disabled with the reason where they cannot apply, z re-sorted on blur. Layer#ySorting is a setter now (Layer#ySortable: the layers that started sorted), and Pixi reads a custom layer's flag each frame.",
+      "next": "Nothing left.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23229,17 +23239,18 @@
         "layer metadata"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1725"
       ]
     },
     {
       "id": "DBG-5",
       "title": "Render views: a View select that draws one of the frame's buffers decoded over the picture (G-buffer normals, heights, entity ids and flags; light buffer; unshaded; casted shadows; sun and lamp shadow maps; lamp volume cache), on WebGL and WebGPU, free when off",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (d0219ad9, R-1734)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "A setRenderView message, one integer field checked once a frame, a full-screen quad with a decode shader per view made on first use; the worker lists the views the scene has; worker-side debug code stubbed out of the production bundle.",
+      "result": "renderViews.js (one decode shader, GLSL and WGSL), one integer in Pixi checked a present, a quad made on first use and released on Final, the Render tab; every view drawn on both backends on the HD 620 and Final pixel-equal after.",
+      "next": "Left: the lamp volume cache and pixel depth as views; a light drawn straight onto the canvas has no buffer to show; a film in motion.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23251,7 +23262,8 @@
         "normals view"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1734"
       ]
     },
     {
@@ -23301,11 +23313,11 @@
     {
       "id": "DBG-8",
       "title": "A Light tab in the debug UI: the sun's sliders (angle, elevation, intensity, colour, hour, day cycle, night) over Sun's setters, the light pass's resolved options read-only, a lamp list (shadow tile owner, culled), and cones and shadow owners in the Lights overlay",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (781b817e, R-1730)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Sun setters already work at run time; every light pass option is read-only (the owner, 2026-11-18: nothing fixed at program build becomes live for now).",
+      "result": "lightPanel.js: Sun setters as sliders, setTimeOfDay, the day cycle from config, a direction dial, every lighting option read-only, the active lamps as links to the inspector.",
+      "next": "Left: the light overlays on the debug canvas and the per-frame shadow-tile and culling state (the workers hold them).",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23317,17 +23329,18 @@
       ],
       "records": [
         "R-1347",
-        "R-1348"
+        "R-1348",
+        "R-1730"
       ]
     },
     {
       "id": "DBG-9",
       "title": "Camera in the debug UI: zoom, position, rotation, follow, free camera (Camera.setFree, not wired) and shake as controls; pitch, yaw, floorScaleY, heightScaleY and the flat view as read-outs",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (56c5b8ed, R-1729)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Main thread only, on existing Camera API.",
+      "result": "cameraSection.js in the Scene tab: a live read-out, controls over Camera's setters (zoom, turn, setFree, shake), and config.camera resolved, read-only.",
+      "next": "Nothing left.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23337,17 +23350,18 @@
         "camera panel"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1729"
       ]
     },
     {
       "id": "DBG-10",
       "title": "The debug UI's inspector decodes what it shows as raw numbers: gbufFlags as named bits, Transform.parent as a link with children and world vs local, light cone and elevation in units, decorations and shadow casters",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (6ef0dff1, R-1727)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "A per-field formatter table keyed by component and field; a field without one stays raw (DBG-12 lists them).",
+      "result": "inspectorFormat.js: a formatter per component and field (a field without one stays the plain number); the parent is a link and a children line lists the followers.",
+      "next": "Left: gbufFlags as checkboxes (the inspector writes nothing yet) and a colour swatch; DBG-12 lists the fields without a formatter.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23358,17 +23372,18 @@
         "parent tree"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1727"
       ]
     },
     {
       "id": "DBG-11",
       "title": "The debug UI's Performance tab prints the renderer counters RENDERER_STATS already publishes (GPU passes, casters, shadow lights, scenery, decal tiles) plus the GPU, the backend and the opaque pass's state",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (9c906dfb, R-1726)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Check which are already printed; no new counters in the worker.",
+      "result": "The GPU row shows every always-on RENDERER_STATS counter the panel did not print; its title is scene.gpu and the opaque pass's setting for that GPU. No new counter in the worker.",
+      "next": "Nothing left.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23378,17 +23393,18 @@
         "renderer counters"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1726"
       ]
     },
     {
       "id": "DBG-12",
       "title": "A node test that fails when a lighting, sun or camera config key or a layer kind has no counterpart in the debug UI and no line in a NOT_SHOWN table with a reason, so new features cannot land without one",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (e7b53472, R-1731)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Last, once DBG-4 and DBG-8 to DBG-10 exist.",
+      "result": "debugUiCoverage.js (SUN_SHOWN, NOT_SHOWN with reasons) and debugUiCoverage.test.js against the panels' own functions.",
+      "next": "When DBG-5 lands, its render views join the convention in the module's header.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23398,7 +23414,8 @@
         "debug ui coverage test"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1731"
       ]
     },
     {
@@ -23615,7 +23632,8 @@
       "records": [
         "R-1585",
         "R-1592",
-        "R-1719"
+        "R-1719",
+        "R-1724"
       ],
       "result": "Built: a load knob per floor-bound row, a calibration on the machine at hand and runScoreboard --loads. On the ASUS ray and rayVsBox2d now decide (tie), bullets and spawn read kept; spatial cannot reach the floor (40 000 entities: 2.7 ms); box2dRayJs has no knob that loads logic0.",
       "next": "spatial: a knob that loads it past the floor on a slow machine (denser neighbours or movers; 110 000 stationary entities would be needed); box2dRayJs: a primary its knob reaches (physics) or a protocol ceiling; queryAabb's +5.5 % at 1106 queries (wait-bound) rechecked; the spatial lead at 40 000 entities (main 3.99 against v0.14.0 2.62 ms) on the main PC.",
@@ -24860,6 +24878,102 @@
       "aliases": [
         "physicsChainWait",
         "physics bell test"
+      ]
+    },
+    {
+      "records": [
+        "R-1724",
+        "R-1728"
+      ],
+      "refs": [],
+      "id": "N-402",
+      "title": "Scoreboard rows whose scene uses an API the base lacks compare different work: visPoly and flashlights use lighting.walls (v0.14.0 ignores it), four light rows throw on v0.14.0's load and wait 320 s twice; the load keys see none of it",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-22",
+      "result": "visPoly and flashlights need 94e31445 (lighting.walls), sunShadowMap, selfShadow, depthSort and unshaded 4bf4d21a (DirectionalSprite); against an older base the scene is skipped and the row is neither claimed nor a regression.",
+      "statusText": "fixed 2026-11-22 on the ASUS (d6928e01, R-1728)",
+      "next": "spotLights keeps no tag (no missing API shown). A base whose load throws still waits for its own runner's watchdog.",
+      "aliases": [
+        "scoreboard base mismatch",
+        "since tag"
+      ]
+    },
+    {
+      "records": [
+        "R-1724"
+      ],
+      "refs": [],
+      "id": "N-403",
+      "title": "stationarySpatialScene at 40 000 entities: spatial reads slower on main than on v0.14.0 on the ASUS (spatialMax 1.37 -> 3.89 ms, +184 %; +52 % the day before), while physics and logic read faster",
+      "status": "open",
+      "kind": "speed",
+      "area": "spatial",
+      "date": "2026-11-22",
+      "result": "",
+      "statusText": "seen 2026-11-21 and 2026-11-22 in ASUS scoreboards (R-1719, R-1724), under the 6 ms floor both times",
+      "next": "An owner-scene ABAB at ?entities=40000 with the spatial worker count fixed on both sides; if it holds, bisect v0.14.0..main on the ASUS, then the CPU profile of the side that loses.",
+      "aliases": [
+        "spatial 40k",
+        "spatial regression"
+      ]
+    },
+    {
+      "records": [
+        "R-1732"
+      ],
+      "refs": [],
+      "id": "N-404",
+      "title": "box2dQueryProtocol.test.js's N-25 test slept 300 ms for each worker to reach its wait; under load the requester started after the answer and read 'not-equal'",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-22",
+      "result": "Each worker raises a flag just before it waits and the test waits for it within a wall-clock deadline: 24 copies at once on 2 cores, 3 rounds, 45 of 72 runs failed before, 0 after.",
+      "statusText": "fixed 2026-11-22 on the ASUS (284e25cf, R-1732)",
+      "next": "Nothing left.",
+      "aliases": [
+        "N-25 test flaky",
+        "ray cast queue test"
+      ]
+    },
+    {
+      "records": [
+        "R-1733"
+      ],
+      "refs": [],
+      "id": "N-405",
+      "title": "summarizeV8Deopt cut steady state at --warmup-ms from each log's start: a page that loads longer than the warm-up (the ASUS) put its start-up deopts in it",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-22",
+      "result": "summarizeV8Deopt --tail-ms takes the last n ms of each log (the measure window that ends the run); profileSceneSweep passes --duration-ms. The cut from the start stays without it.",
+      "statusText": "fixed 2026-11-22 on the ASUS (0397d082, R-1733)",
+      "next": "Nothing left.",
+      "aliases": [
+        "steady deopt window",
+        "deopt tail"
+      ]
+    },
+    {
+      "records": [
+        "R-1739"
+      ],
+      "refs": [],
+      "id": "N-406",
+      "status": "open",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-22",
+      "result": "24 tries instead of 8: 49 -> 13 failures of 72 under 24 parallel copies on the ASUS.",
+      "title": "frameChainWait.test.js's input-wait test needs the publisher's thread on a core within logic's 0.95 ms wait; on a loaded 2-core machine every try can miss",
+      "statusText": "mitigated 2026-11-22 (3d064a53, R-1739)",
+      "next": "A full fix lets the test widen logic's wait budget (an engine field for a test), or times the publish differently.",
+      "aliases": [
+        "frameChainWait flaky",
+        "input wait test"
       ]
     }
   ],
@@ -41303,6 +41417,229 @@
       "title": "N-245's spatial sites fixed: _findNeighbors' loops split into _finishRebuiltRows and _scanOwnedEntities (ASUS: 274 steady OSR deopts -> 0); mix=1 crowd 2.5 NEUTRAL (spatial +0.6 %); the squad battle now ends before the 20 s save",
       "verdict": "kept-hygiene",
       "text": "**N-245's spatial sites fixed: _findNeighbors' two per-frame loops are methods of their own (merged 325c8b3a).** The ASUS's deopt pass (20 s warm-up, the last 8 s of each log, N-405's window) found Predator's spatial worker deoptimized \"prepare for OSR\" 274 times in 8 s at the loop over the rows the gather rebuilt (spatialWorker.js:2253 at 56c6a147): _findNeighbors is entered once a frame and ran its loops in OSR code. Split 1 (_finishRebuiltRows, its arrays in locals): that site 274 -> 0, and the OSR entry moved up to the owned-entity loop (:2143, 0 -> 84). Split 2 (_scanOwnedEntities, the owned pass with its setup): the kept-row mutant tests now patch that method. Boids, bichos and renderQueueStress showed no steady spatial deopt on either side; the :2222 site (944 in the first sweep) was start-up only. Here (16 threads) neither site showed in an 8 s window at the default crowd.\n\nGates, owner spatial, 4 pairs: from E-210's auto save at crowd 2.5 (to 01:20) every worker but physics fell under the 6 ms floor (physics 7.498 -> 7.569 ms, +1.6 %); from a 14 s save (to 01:24) the same (physics 6.217 -> 6.765, +9.0 % 4/4 at cv 12/2 %, a light world); **the mixed battle** `crowd=2.5&dayCycle=0&mix=1` (to 01:28): NEUTRAL, logic 15.699 -> 15.713 ms (+0.5 %), spatial 7.466 -> 7.520 (+0.6 %), physics 15.248 -> 15.367 (+0.8 %), renderer +2.5 %, pre-render +2.3 % (cv 4/5 %), presented 60 = 60, BODY_COUNT within 0.3 %. Kept as hygiene. Node suite 3452/3452.\n\nFound on the way: Predator's squad battle at crowd 2.5 is now over by the auto save's 20 s (34 700 bodies left against about 35 900 on 2026-11-21, physics 7.5 ms from the save against 15 ms): most likely E-310's second spatial worker (fresher neighbour lists, soldiers finding targets sooner). From-save sittings at crowd 2.5 that need load take mix=1."
+    },
+    {
+      "id": "R-1724",
+      "date": "2026-11-22",
+      "time": "00:02",
+      "timeFrom": "recorded",
+      "title": "The calibrated scoreboard on the ASUS: 21 KEPT, 15 TIE, 3 WORSE, 20 FAIL; two wall rows compare different work and four light rows cannot load on the base (N-402), spatial at 40 000 slower on main (N-403)",
+      "verdict": "note",
+      "text": "**The full scoreboard on the ASUS at the calibrated loads (DX-SCORELOAD), main's batch b58319b8 against v0.14.0: 21 rows KEPT, 15 TIE, 3 WORSE, 20 FAIL.** The runner's own line: \"9 row(s) FAIL/WORSE. Do not claim a better WeedJS. 12 are a protocol ceiling, 5 under the 3 ms floor\". Job 0900s, 21:59 to 00:01 (runner.log); headed gameplay 5 x 10/10 s, stress headless 2 x 8/10 s, node suite and lockstep skipped, the loads from C:\\weedlab\\scoreboard-loads.json. The job threw its own register record away (git checkout of hypotheses.json); this is the record.\n\n- **Scenes KEPT:**\n  - box2d (balls): physics 17.62 -> 13.20 ms, -25.1 %;\n  - liquidfunQuery: physics 55.26 -> 32.10 ms, -41.9 %;\n  - bullets at 40 000: particle 8.69 -> 7.60 ms, -12.6 %;\n  - spawn at storm 1800: logic 8.39 -> 7.89 ms, -5.9 %. Its BODY_COUNT reads 430 against 1153: main holds more bodies at the same storm, and the load keys (ENTITIES_PROCESSED) did not see it.\n- **Kernel rows KEPT:** gameObjectAccess +72 %, despawnLists +159 %, gpuQueuePack +32 %, decalPremultiply +17 %, painterRadix +18 %, publishPose +573 %, decorationCollectYSort +16 %, textureUpload +28 %, tweenPool +8 %, and the scans that v0.14.0 did in JS (layerFeed*, decorationVisibilityGrid, attachedScan*).\n- **TIE:** ray, rayVsBox2d (both decided now that DX-SCORELOAD gave them their loads), queryAabb (+6.8 % flagged, then 4 ABAB pairs read +2.7 % median, 3 of 4 worse: not confirmed), particleListsZoomed, liquidfun, liquidfunCouple, tilemap, decorations, decalBlit, audioStorm, and five kernels.\n- **WORSE:**\n  - particleLists: the kernel alone, 9 297 -> 8 063 ops/s (-13.3 %), with no recheck. Its zoomed twin, flagged -15.9 %, read -5.5 % over 4 pairs (2 of 4): ASUS kernel noise is about ±20 % (R-1721).\n  - steadyCombat: logic +11.1 %, but the base's cv is 23 %.\n  - visPoly: see N-402.\n- **Not comparable (N-402):** visPoly and flashlights now use `lighting.walls` (OL-4), which v0.14.0 ignores (spotLights' scene changed too, for DX-CAMERA and the faces, but no API it uses was shown missing). So the base computes no wall visibility. visPoly's spatial reads 0.026 against 2.189 ms and NEIGHBORS_REUSED 0 against 783. flashlights' RENDER_QUEUE_SIZE reads 120 against 240. The load keys (BODY_COUNT) saw none of it. sunShadowMap, selfShadow, depthSort and unshaded throw on load in v0.14.0 (\"reading 'requires'\"), and each failed run waited 320 s before it gave up, twice.\n- **spatial at 40 000 entities: main slower.** spatialMax 1.37 ms (cv 25 %) against 3.89 ms (+184 %), while physics -59.8 % and logic -18.6 %. It is under the 6 ms floor, so FAIL. The single run on 2026-11-21 read +52 %. Two sittings now point the same way: an owner-scene ABAB is owed (N-403)."
+    },
+    {
+      "id": "R-1725",
+      "date": "2026-11-22",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "DBG-4 done: the Layers panel lists every layer and says what it is; its controls follow game code; Y-Sort through a Layer setter",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-4 done on the ASUS (asus2/batch2-2026-11-22): the Layers panel lists every layer the scene registered and says what each one is, and its controls follow game code.**\n\n- **Rows:** from Layer.getAll(). volumeShadows had a row already: Scene._applyVolumeConfig adds it to config.layers, so it registers as a custom layer.\n- **Details line:** kind, resolution and upsample, maxItems, density, sunProjected, volumeFloor, alphaBySun, worldRect cached or direct, GPU particle options.\n- **Controls:** each follows its layer every tick, compared first and left alone while focused. The shader options rebuild only when the loaded sources change.\n- **Cont Blend:** shows every layer's value and is disabled, with the reason, where it cannot apply.\n- **The light's Out Blend** stays disabled: every attach re-enabled it since DBG-2.\n- **z:** a typed value re-sorts the rows on blur.\n- **Y-Sort:** goes through the new Layer#ySorting setter. Layer#ySortable says which layers can toggle: those that started sorted, since the scene reserves a painter only for them. Turning another on throws.\n- **Pixi fix:** Pixi used a custom layer's painter even after its flag went off, sorting by keys pre-render had stopped writing. It now reads the flag each frame.\n\nTests: layersPanel.test.js runs the real Layer table and a DOM shim; renderQueueSortPaths reads the live flag. Node suite on the ASUS: 3467 green (0900va), demos 143 green (0900v). No sitting: debug code off the hot path, plus one per-layer branch a frame in Pixi.",
+      "commits": [
+        "1b9969ef"
+      ]
+    },
+    {
+      "id": "R-1726",
+      "date": "2026-11-22",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "DBG-11 done: the GPU row prints mesh fill, scenery, decal tiles and input lag, and names the GPU, backend and opaque pass",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-11 done: the Performance tab's GPU row prints the renderer's always-on counters and names the GPU, the backend and the opaque pass.**\n\n- **Already shown:** passes, casters, shadow lights.\n- **Added, all published every frame by RENDERER_STATS:** mesh fill instances, mesh RT draws, scenery, dirty and uploaded decal tiles, input lag (median and p95). The Render row's chips need detailed stats; these do not.\n- **The row's title:** scene.gpu's name and backend, and opaquePassOn's setting for that GPU (\"off (WebGL only)\" on WebGPU).\n- **Worker:** no new counter.\n\nTest: performancePanelGpuRow.test.js.",
+      "commits": [
+        "9c906dfb"
+      ]
+    },
+    {
+      "id": "R-1727",
+      "date": "2026-11-22",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "DBG-10 done: the inspector decodes G-buffer bits, the parent and children as links, light cones, caster kinds and sway",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-10 done: the inspector says what its numbers mean.**\n\nsrc/core/debug/tools/inspectorFormat.js holds one formatter per component and field:\n- gbufFlags: as normals, surface and unshaded;\n- Transform.parent: an entity, an orphan flagged;\n- localRotation: in degrees;\n- LightEmitter: colour, radius, elevation, shadow and glow ranges, cone aperture in degrees, softness;\n- ShadowCaster: sun and lamp kinds, orientation, opacity, self-shadow and frame, by name;\n- DecorationComponent: sway mode and amplitude, tint, parent.\n\nA field without a formatter stays the plain number. The Transform section's parent is a link that inspects it, and a children line lists the entities that follow the one inspected (Transform.parent), each a link.\n\nNot done:\n- the plan's gbufFlags checkboxes: the inspector is read-only text;\n- the light colour swatch.\n\nTest: inspectorFormat.test.js; every formatter names a real column.",
+      "commits": [
+        "6ef0dff1"
+      ]
+    },
+    {
+      "id": "R-1728",
+      "date": "2026-11-22",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "N-402 fixed: scoreboard rows name the oldest revision their scene runs on (scene.since); an older base is not compared",
+      "verdict": "kept-hygiene",
+      "text": "**N-402 fixed: a scoreboard row names the oldest revision its scene runs on (scene.since), and the scoreboard does not compare it against an older base.**\n\n- **The since tags:** visPoly and flashlights 94e31445 (lighting.walls); sunShadowMap, selfShadow, depthSort and unshaded 4bf4d21a (DirectionalSprite).\n- **Against v0.14.0:** the scene is skipped, unless --full-rev, where each side runs its own scenes. The row reads FAIL with the reason, and it is neither claimed nor counted as a regression (\"N row(s) need a newer base\").\n- **Why:** R-1724's visPoly +1087 % and flashlights +2437 % were the base doing no wall work. The four DirectionalSprite scenes threw on v0.14.0's load and waited 320 s twice each.\n- **Not done:** spotLights' scene changed for DX-CAMERA and the faces since v0.14.0, but no API of it was shown missing, so it keeps no tag. A load that throws still waits for the old revision's watchdog: the base runs its own runner.\n\nTest: scoreboardSince.test.js.",
+      "commits": [
+        "d6928e01"
+      ]
+    },
+    {
+      "id": "R-1729",
+      "date": "2026-11-22",
+      "time": "00:27",
+      "timeFrom": "recorded",
+      "title": "DBG-9 done: the Scene tab shows the camera, its zoom, turn, free camera and shake, and the projection it resolves to",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-9 done: the Scene tab shows the camera (cameraSection.js).**\n\n- **A live read-out:** zoom, the view's centre, the turn, what the camera follows (an entity, a point or nothing), and whether the free camera is on.\n- **Controls over Camera's own setters:**\n  - a log zoom slider between minZoom and maxZoom (Camera.setZoom, eased);\n  - the turn in degrees (Camera.setRotation);\n  - the free camera (Camera.setFree, which no UI reached; the scene's update drives it on the main thread);\n  - a shake.\n- **The projection, read-only:** config.camera as cameraView.js resolves it: pitch, yaw, floorScaleY, heightScaleY, and the view (oblique, flat at pitch 90 or 0, or the classic one with no camera set).\n\nMain thread only. Test: cameraSection.test.js. Node suite on the ASUS: 3470 green.",
+      "commits": [
+        "56c5b8ed"
+      ]
+    },
+    {
+      "id": "R-1730",
+      "date": "2026-11-22",
+      "time": "00:27",
+      "timeFrom": "recorded",
+      "title": "DBG-8 done: a Light tab with the sun's sliders, hour, day cycle and a dial, the light options read-only, and the lamps",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-8 done: a Light tab in the debug UI (lightPanel.js).**\n\n- **The sun:**\n  - sliders over Sun's setters, which work from the main thread's staged copy, published once a frame: angle, elevation, intensity, shadow alpha, sky light, night light, night from, night to;\n  - the hour (Sun.setTimeOfDay);\n  - the sun's and the night's colours;\n  - the day cycle on/off and its speed (config.lighting.sun.dayCycle, read by the scene each frame);\n  - a dial with the sun's direction, longer when lower, and the shadows' (Sun.shadowDirX/Y).\n- **The light pass, read-only:** every config.lighting key, the scene's value or the default, with the GPU, the backend and the opaque pass. The sun is left out, with the reason (LIGHT_OPTIONS_NOT_SHOWN).\n- **The lamps:** every active LightEmitter, the first 32 named: radius, brightness, elevation, cone, shadows. A click inspects its entity.\n\nNot done:\n- the plan's light overlays on the debug canvas (cones, rings on the lamps that hold a shadow tile, culled lamps in grey);\n- the per-frame tile and culling state, which live in the workers.\n\nTest: lightPanel.test.js.",
+      "commits": [
+        "781b817e"
+      ]
+    },
+    {
+      "id": "R-1731",
+      "date": "2026-11-22",
+      "time": "00:27",
+      "timeFrom": "recorded",
+      "title": "DBG-12 done: a node test fails when a lighting, sun or camera key or a layer kind has no place in the debug UI and no reason",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-12 done: a node test fails when a lighting, sun or camera config key or a layer kind has neither a place in the debug UI nor a reason.**\n\nsrc/core/debug/debugUiCoverage.js maps each SUN_DEFAULTS key to the Sun property its Light tab control drives. NOT_SHOWN gives the keys the UI leaves out, each with a one-line reason: maxElevation, shadowAngleOffset, the shadow length ratios and stretch fade (set once from config), the hour colour table, and lighting.sun (shown live).\n\ndebugUiCoverage.test.js checks every LIGHTING_DEFAULTS, SUN_DEFAULTS and CAMERA_DEFAULTS key and every LAYER_KIND against the tables and against the panels' own functions: lightingOptionRows, the Sun setters, cameraProjectionText, layerDetailsText.\n\nRender views wait for DBG-5: the module's header records the convention for them.",
+      "commits": [
+        "e7b53472"
+      ]
+    },
+    {
+      "id": "R-1732",
+      "date": "2026-11-22",
+      "time": "01:00",
+      "timeFrom": "recorded",
+      "title": "N-404 fixed: the N-25 test waits for each worker's flag before its wait (45 of 72 failed under 24 parallel copies before, 0 after)",
+      "verdict": "kept-hygiene",
+      "text": "**N-404 fixed: box2dQueryProtocol.test.js's N-25 test (\"an answer wakes its requester even with another worker queued in front\") slept 300 ms for each worker to reach its wait.**\n\nUnder load the requester's thread started after the answer was out, and its wait read 'not-equal': once in 3480 tests in the suite beside the deopt sweep on the ASUS. 5 of 5 runs alone passed.\n\nEach worker now raises a flag in a SAB of its own just before it waits, and the test waits for the flag within a 10 s wall-clock deadline, then 50 ms more.\n\nThe stress run, 24 copies of the file at once on the ASUS's 2 cores with the deopt sweep running, 3 rounds:\n- before: 45 of 72 runs of the test failed;\n- after: 0 of 72, and 504 of 504 tests passed.",
+      "commits": [
+        "284e25cf"
+      ]
+    },
+    {
+      "id": "R-1733",
+      "date": "2026-11-22",
+      "time": "01:00",
+      "timeFrom": "recorded",
+      "title": "N-405 fixed: the deopt summary's steady window is the last --tail-ms of each log; the sweep's deopt pass passes its measure window",
+      "verdict": "kept-hygiene",
+      "text": "**N-405 fixed: the deopt summary's steady window was cut at --warmup-ms from each V8 log's start.**\n\n**The cause.** An isolate starts when its worker does, so on a machine where the page loads for longer than the warm-up, start-up deopts counted as steady. The ASUS's pages load in 5 to 10 s against a 6 s warm-up. In the sweep of 2026-11-22 (0900w, 86 scenes) the \"steady\" list held:\n- the tilemap's GID page packs (tilemapGid.js 253 and 122, 215 and 52), which run once at load (pixiWorker _fillTilemapPages);\n- initializeArrays' megamorphic loads;\n- each scene's waitMeter and abstractWorker prototype-chain changes.\n\n**The fix.** summarizeV8Deopt --tail-ms <n> takes the last n ms of each log: the measure window, which ends the run. profileSceneSweep's deopt pass passes its --duration-ms. Without --tail-ms the cut is as before.\n\nTest: summarizeV8DeoptTail.test.js.",
+      "commits": [
+        "0397d082"
+      ]
+    },
+    {
+      "id": "R-1734",
+      "date": "2026-11-22",
+      "time": "01:11",
+      "timeFrom": "recorded",
+      "title": "DBG-5 done: render views, the frame's buffers decoded over the picture on WebGL and WebGPU; free while Final; a stub in production",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-5 done: render views. The debug UI's Render tab draws one of the frame's buffers decoded over the picture, on WebGL and WebGPU.**\n\n- **The views:** the G-buffer's normals, height, entity ids and flags, the light buffer, the unshaded colours, the casted shadows, the sun's shadow map and the lamps' atlas.\n- **renderViews.js:** which target each view samples, the views a scene has now, and one decode shader in GLSL and WGSL. It follows the light pass's own decode: the face map's octahedral normal, its 15-bit height and its codes, and the ids map's id and self-shadow bit.\n- **The cost:** Pixi keeps one integer, checked once a present.\n- **The quad:** made on first use and released on Final. Its buffers are bound again each present and taken off before a resize (N-222's rule).\n- **setRenderView:** takes a view only where its buffer exists, and answers with the views the scene has.\n- **The Render tab:** a View select (views the scene lacks are disabled, each naming the config that makes it), an opacity slider and a legend.\n- **Production:** the bundles take a stub (both webpack configs), so no decode shader ships and no view draws.\n- **Not views:** the lamps' volume cache and pixel depth.\n\nFound while building: the plan put the G-buffer flags in the ids map's bits 16 to 23. That map's B holds only the self-shadow bit; the flags are the face map's codes (unshaded (1, 0), lit as drawn (254, 254), a sprite's own normal: the height's top bit), and the flags view reads both maps.\n\nTests: renderViews.test.js covers the mapping, the stub's exports, and the real worker through workerHarness (no stage object while Final, the quad released on Final). Node suite on the ASUS: 3479 of 3480 green; the one failure was N-404, which passes 5 of 5 alone.\n\nIn the browser (job 0900ya, the ASUS, Intel HD 620), renderViewProbe drew every view each scene has, on WebGL and on WebGPU: dxCaptureScene ?shadowMaps=1 has 8 views (no lamp atlas), lightBenchScene ?still=1 has all 9. Final came back pixel-equal after the views (0 pixels) in all four runs, with no page error. Read on the captures: the normals as colours, faces apart and the floor black; height as a ramp, the barn's roof the highest; a colour per entity; the flags yellow, every prop of the bench carrying its own normal from its height map; the sun map, the casters thrown along the sun with their heights; the lamp atlas, the two lamps' panoramic tiles. Not filmed in motion: the buffers are bound again each present, but no capture proves a view tracks a moving camera.\n\nA limit found on lightGalleryScene (N-155): a scene that draws its light straight onto the canvas has no lightingRT, so the Light buffer view is not offered there.",
+      "commits": [
+        "d0219ad9"
+      ]
+    },
+    {
+      "id": "R-1735",
+      "date": "2026-11-22",
+      "time": "01:13",
+      "timeFrom": "recorded",
+      "title": "E-441: Atomics.pause in the ten spin waits outside Box2D's files (a no-op where the browser lacks it); not measured",
+      "verdict": "kept-hygiene",
+      "text": "**E-441, the first half: Atomics.pause in every spin wait outside Box2D's files (5e6ce86d).**\n\nsrc/util/spinPause.js calls Atomics.pause where the browser has it (Chrome 133+); in Node 22 and older browsers it does nothing. A spinning thread tells its core so: an SMT sibling gets the pipeline (the ASUS's i7-7500U runs two threads a core) and the spin draws less power.\n\nTen loops take it:\n- decal.js, the stamp ring's lap and publish waits;\n- the decoration pool's list lock;\n- decorationSpatial's lock;\n- meshGeometry's mesh lock;\n- sharedAtomicPool's joint lock;\n- the sound bus lock;\n- layerFeed's mask lock;\n- messageRing's lap wait;\n- spawnCommandRing's lap wait.\n\nA lock taken at once never calls it. The suites are green (the combined run on the ASUS).\n\nNot measured: a contended sitting would show any gain.\n\nNot done:\n- Box2D's command ring, weedjsPost and the sync slot;\n- a bounded spin then a wait on the lock word;\n- the decoration snapshot copied outside its lock.",
+      "commits": [
+        "5e6ce86d"
+      ]
+    },
+    {
+      "id": "R-1736",
+      "date": "2026-11-22",
+      "time": "01:28",
+      "timeFrom": "recorded",
+      "title": "N-214 round 2: logic's _resolveDirections and _processSpawnSoA deopt loops gone in Predator (2483 283 -> 0, 1076/1087 390 -> 0 over 3 runs)",
+      "verdict": "kept-hygiene",
+      "text": "**N-214 round 2: two of Predator's steady deopt loops in logic gone.** The deopt pass on the ASUS, Predator, 3 runs a side, steady = the last 8 s of each log after a 20 s warm-up (N-405). Before: C:\\weedbugs at b30b529f. After: the same with both changes, in a worktree.\n\n- **_resolveDirections** (4e70bdd5): \"exit from OSR'd inner loop\" at logicWorker.js:2483 went 283 -> 0, and at crowd 2.5 20 -> 0. Called once a frame, it went to OSR inside an entity loop and left that code each time the type loop moved on. Its three entity loops are methods of their own, as three copies (the hot-loop rule).\n- **_processSpawnSoA** (53ae0ce7): 1076 (named access) 184 -> 0, 1087 (compare) 206 -> 0, 1077 (OSR) 22 -> 0; at crowd 2.5, 87, 62 and 25 -> 0. The code after each loop ran in OSR code with no feedback. The key fill, the gather, the class runs and their merge are now module functions with one loop each.\n- **What replaced them:** the new loops take tier-up OSR entries, 395 in the 3 runs, most in mergeSpawnRuns, where the active-list merge is inlined. An OSR entry keeps its code; a deopt for missing feedback dropped it and recompiled.\n\nRun to run the counts move a lot even where the code did not change: particleWorker.js:2150 read 0 against 456 and spatialWorker.js:2253 251 against 486 in the same pairs. The sites above went to 0 in all three runs.\n\nNo timing claim. Logic is a hot path, so this wants a Predator gate on the main PC (hygiene keep: stays unless a primary worker is 3 % worse).",
+      "commits": [
+        "4e70bdd5",
+        "53ae0ce7"
+      ]
+    },
+    {
+      "id": "R-1737",
+      "date": "2026-11-22",
+      "time": "01:08",
+      "timeFrom": "recorded",
+      "title": "N-229: compareCaptures loads each side in a browser of its own; the A/A on the HD 620 read 0 pixels with the old tool and the new",
+      "verdict": "kept-hygiene",
+      "text": "**N-229 fixed by construction: compareCaptures loads each side as a first load in a browser of its own (6fbf495a).** Side A's browser closes before side B's opens, and the diff runs in B's.\n\n**What prompted it.** On 2026-11-16 a second page in the same browser read 174 000 to 231 000 pixels off an identical first one (emissiveStressScene, max delta 183), while first loads in separate browsers were byte-identical.\n\n**The A/A on the ASUS (Intel HD 620, job 0900x, 2026-11-22):** unshadedStressScene ?still=1 (emissiveStressScene's successor), 3 runs each, the committed tool against the old one. Both read 0 of 921 600 pixels different every run, so the old tool's error does not reproduce on this GPU and scene. The fix is kept: two browsers isolate the sides strictly, for a few seconds more per comparison. It still wants an A/A where the error showed (the main PC's GTX 1650) to say it is gone there.",
+      "commits": [
+        "6fbf495a"
+      ]
+    },
+    {
+      "id": "R-1738",
+      "date": "2026-11-22",
+      "time": "01:12",
+      "timeFrom": "recorded",
+      "title": "N-259 not reproduced on main: GPU particles with sortWithEntities draw in gpuParticlesStressScene (WebGL headed and headless, WebGPU)",
+      "verdict": "note",
+      "text": "**N-259 not reproduced on today's main: GPU particles with sortWithEntities draw.**\n\nThe ASUS (Intel HD 620, job 0900y, 2026-11-22) ran gpuParticlesStressScene ?hold=6 (six smoke and fire columns alive for the whole run, among y-sorted trees), sort=0 against sort=1, with compareCaptures (a browser per side).\n\nThe two sides differed in:\n- headed WebGL, 33 485 pixels;\n- headed WebGPU, 39 796;\n- headless WebGL, 21 969.\n\nEvery capture with sort=1 shows the columns and the fire, as sort=0 does. The difference is where trees and groups overlap.\n\nThe item's case was the buenos-aires game's water layer on its bundle fa59073a, in Chromium without a GPU (SwiftShader). The stress scene on main, on a GPU, draws. Left open for that case: the game's scene, or the stress scene under --disable-gpu, which the capture tools cannot pass yet."
+    },
+    {
+      "id": "R-1739",
+      "date": "2026-11-22",
+      "time": "01:21",
+      "timeFrom": "recorded",
+      "title": "N-406 mitigated: the input-wait test tries 24 times (49 of 72 runs failed under 24 parallel copies before, 13 after)",
+      "verdict": "note",
+      "text": "**N-406 (found 2026-11-22): frameChainWait.test.js's \"logic waits for main's frame of this vsync before it reads inputs, and counts the wait\" failed once.**\n\nThe run was the full suite on the ASUS beside a browser job (\"main's frame published during the wait\", 7 !== 8). The same file passed 5 of 5 runs alone.\n\nThe same family as N-400, N-401 and N-404: a cross-thread event timed by the test's own clock. Next: give the main-frame publish a handshake or a wall-clock deadline (tests/helpers/wallClockWait.mjs), and stress it with 24 parallel copies.\n\n**Mitigated 2026-11-22: 24 tries instead of 8.** 24 copies of the file at once on the ASUS, 3 rounds: 49 of 72 runs of the test failed before, 13 of 72 after. The test needs the publisher's thread on a core within logic's 0.95 ms budget, which is fixed in the engine (logicWorker beforeUpdate: min(period / 8, 0.95)). A full fix would let the test widen that budget, which means an engine field for a test; not done.",
+      "commits": [
+        "3d064a53"
+      ]
+    },
+    {
+      "id": "R-1740",
+      "date": "2026-11-22",
+      "time": "01:00",
+      "timeFrom": "recorded",
+      "title": "N-244 gone: keyedPack gbuf=1 has no steady deopt in packSpriteLayer or gpuPackClient (E-456 moved the loop out)",
+      "verdict": "superseded",
+      "text": "**N-244 gone: keyedPackStressScene ?gbuf=1 has no steady deopt in packSpriteLayer.js or gpuPackClient.js.**\n\nThe run: the ASUS, job 0900w's last run (2026-11-22), the summary's window the last 8 s of each log (N-405). The steady list holds only a few dependency changes, 1 to 4 each, that every scene shows.\n\nThe item's site was packSpriteLayer.js:72, `flags |= orderSpriteIndices(...)` after an OSR'd loop at :69, 116 times in 8 s. That loop left the function when E-456 made the glow split one pass (splitGlowQueueIndices); line 72 is now the call after it, and it no longer deopts. gpuPackClient.js:214 (indexByteFor, 18) is not in the list either.\n\nClosed with no change of its own."
+    },
+    {
+      "id": "R-1741",
+      "date": "2026-11-22",
+      "time": "01:26",
+      "timeFrom": "recorded",
+      "title": "N-155 still reproduces (100 425 pixels, max 52, WebGL against WebGPU in lightGallery); the shadows differ little (24 k, max 11): the light pass",
+      "verdict": "note",
+      "text": "**N-155 still reproduces on today's main (the ASUS, Intel HD 620, job 0900zc, 2026-11-22).** compareCaptures ran lightGalleryScene with WebGL on one side and WebGPU on the other, a browser per side:\n- the default gallery: 100 425 of 921 600 pixels differ, max delta 52;\n- glowMode=sorted: 100 222, max 52;\n- WebGPU against itself: 0.\n\nThose are the counts and the delta of 2026-11-12 (80 000 to 98 000, max 52). Since the sorted glows differ as much, the lamp's glowLayer alone may not be the cause.\n\nNext: DBG-5's render views on both backends (light buffer, unshaded, shadows), each view's capture WebGL against WebGPU, to name the pass that differs.\n\n**Render views, both backends (job 0900zg).** lightGallery has two views, Final and Casted shadows. It draws its light straight onto the canvas (no lightingRT), so DBG-5 has no light buffer to show there. Each view's capture, WebGL against WebGPU:\n- the casted shadows: 23 940 pixels, max delta 11;\n- Final: 100 425, max 52.\n\nSo the difference is in the light pass itself, not in the shadows. Next: the light pass's GLSL against its WGSL for this scene's lamps (cones, glows, the lamp on its own glow layer)."
+    },
+    {
+      "id": "R-1742",
+      "date": "2026-11-22",
+      "time": "01:14",
+      "timeFrom": "recorded",
+      "title": "N-158 round 2 census: pre-render 153.8 KB/s in the flashlight scene, 90.7 of it in _buildVisibilityPolygonsSwept (the walls path; doubles to the gather wasm)",
+      "verdict": "note",
+      "text": "**N-158 round 2, the census.** heapSampleWorkers on the ASUS (Chrome 158), flashlightStressScene ?cone=1&lights=360&crates=320, 10 s after 10 s (job 0900zb, 2026-11-22).\n\n- **Pre-render:** 153.8 KB/s, 2 616 B a frame, against 39.1 KB/s after round 1 on the main PC (R-0958). Of it, _buildVisibilityPolygonsSwept takes 90.7 KB/s (1 542 B a frame). That is OL-4's lighting.walls path, written after round 1.\n- **The suspect:** its per-light calls into visibilityGather.wasm (gk.gather / gk.gatherCone) pass four doubles each (lx, ly, influenceRadius, _poseAlpha). A JS-to-wasm call TurboFan does not inline boxes them, about 48 B a lamp, which with a few dozen lamps in view is this rate. That breaks CLAUDE.md's E-85 rule; collectSolid already passes its doubles through SOLID_ARGS.\n- **The fix it suggests:** the gather's doubles in an args block of the kernel's memory, which changes the C signature and needs a wasm rebuild (the main PC's toolchain).\n- **Smaller rows:** _waitForPose 9.1 KB/s, _collectVisibleEntitiesWasm 5.2, the camera's snapshot and bounds about 13.\n- **Pixi:** 142.2 KB/s (3 988 B a frame): Pixi's own bind and render pass objects, _waitForQueue 8.1, _renderFaceMap 6.3, _fitGlowLayerPart 4.0.\n- **Not sampled:** Predator crowd 2.5 wrote an empty sample (no worker reached; its load is slow on the ASUS). Run it again with a longer warm-up."
+    },
+    {
+      "id": "R-1743",
+      "date": "2026-11-22",
+      "time": "01:05",
+      "timeFrom": "recorded",
+      "title": "N-245: the ASUS numbers for the main PC's spatial fix: spatialWorker.js:2253 274 -> 0 in Predator; the OSR entry moves to the owned loop (2143, 84)",
+      "verdict": "note",
+      "text": "**N-245, the ASUS's numbers for the main PC's spatial fix** (fix/n245-spatial-rebuilt-rows, 7ea3fe24, against its base c8599a69). Deopt pass, one run a side, a 20 s warm-up, steady = the last 8 s of each log.\n\n- **Predator default:** spatialWorker.js:2253 (\"prepare for OSR\", the rows the gather rebuilt) went 274 -> 0. The per-frame OSR entry moved to the owned-entity loop of the same function (:2143, 0 -> 84), which the main PC plans to split the same way.\n- **bichos, Boids, renderQueueStress:** no steady spatial deopt either side. The sweep's spatialWorker.js:2222 (944) and Boids' 2253 were start-up (N-405).\n- **Boids:** weedjsPost.js:665, N-245's other site, is gone (N-214's fix, R-1158).\n\nCounts move a lot from run to run in code neither side changed, so one run each gives the shape."
     }
   ],
   "leads": [

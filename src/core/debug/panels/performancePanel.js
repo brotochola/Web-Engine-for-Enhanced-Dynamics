@@ -9,6 +9,7 @@ import { ParticleEmitter } from '../../particleEmitter.js';
 import { GameObject } from '../../gameObject.js';
 import { PoolSlotArray } from '../../../util/poolSlotWidth.js';
 import { bindPublishedList, peekPublishedCount } from '../../../util/publishedList.js';
+import { opaquePassOn } from '../../../render/opaquePass.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -37,6 +38,23 @@ const SCHEMA_BY_TYPE = {
 
 /** Worker types that start expanded (empty = all collapsed). */
 const DEFAULT_EXPANDED = new Set();
+
+const GPU_ROW_TIP = 'The GPU the page got (scene.gpu), the backend, and whether E-448\'s opaque pass suits this GPU '
+  + '(debug.opaquePass overrides it). A frame still draws without it on WebGPU, with pixel depth or G-buffer words, '
+  + 'entity chunks, SCREEN layers or a faded entities layer.';
+
+/**
+ * DBG-11: the GPU row's title: the GPU the page got, the backend, and the opaque pass's setting for that GPU
+ * (opaquePassOn, as the renderer decides it at init; WebGL only).
+ */
+export function gpuRowTitle(scene) {
+  const gpu = scene?.gpu;
+  if (!gpu) return 'GPU';
+  const opaque = gpu.backend === 'webgpu'
+    ? 'off (WebGL only)'
+    : (opaquePassOn(scene.config?.debug?.opaquePass, gpu.kind, gpu.vendor) ? 'on' : 'off');
+  return `GPU ${gpu.name || 'unnamed'} · ${gpu.backend} · opaque pass ${opaque}`;
+}
 
 function fmtMs(v) {
   return v == null || Number.isNaN(v) ? '—' : v.toFixed(2) + ' ms';
@@ -247,7 +265,7 @@ export class PerformancePanel {
       details.classList.add('empty');
     }
 
-    return { row, metrics, loadFill, details };
+    return { row, metrics, loadFill, details, label };
   }
 
   _metricCell(colorClass, key, empty = false) {
@@ -325,11 +343,11 @@ export class PerformancePanel {
     const detailStart = hasClock ? displayDetailStart(config) : 0;
     const detailCount = hasClock ? Math.max(0, config.stats.length - detailStart) : 0;
     const rowId = `${workerType}:${workerIndex}`;
-    const { row, metrics, loadFill, details } = this._createRowShell(rowId, config.color, title, {
+    const { row, metrics, loadFill, details, label } = this._createRowShell(rowId, config.color, title, {
       expandable: detailCount > 0,
     });
 
-    const elements = { _loadFill: loadFill, _extras: details };
+    const elements = { _loadFill: loadFill, _extras: details, _label: label };
 
     for (const key of headKeys) {
       const cell = this._metricCell(config.color, key);
@@ -680,6 +698,11 @@ export class PerformancePanel {
     const prevCache = stats.prevWorker.gpu[0];
     const smoother = stats.fpsSmoothing.gpu;
     const timerOn = (view[RENDERER_STATS.GPU_TIMER] || 0) > 0;
+    const title = gpuRowTitle(this.debugUI.scene);
+    if (elements._label.textContent !== title) {
+      elements._label.textContent = title;
+      elements._label.title = GPU_ROW_TIP;
+    }
 
     for (let s = 0; s < config.stats.length; s++) {
       const stat = config.stats[s];
