@@ -2477,16 +2477,14 @@ class LogicWorker extends AbstractWorker {
     const myIndex = this.workerIndex;
     const forced = GameObject.forceProcessOnLogicWorker;
     const typeHasForced = GameObject.entityTypeHasForcedLogicWorker;
-    const active = Transform.active;
-    const directionIndex = DirectionalSprite.directionIndex;
-    const notified = DirectionalSprite.notified;
+    // N-214: each entity loop is a method of its own. Called once a frame, this one went to OSR inside an entity loop
+    // and deopted each time the type loop moved on ("exit from OSR'd inner loop", every frame in Predator).
     for (let t = 0; t < types.length; t++) {
       const info = types[t];
       const hook = info.hook;
       const decimated = info.decimated;
       if (decimated !== null && decimated._bucketFrame === frameNum) {
         const phase = frameNum % decimated.tickInterval;
-        const bucket = decimated._buckets[phase];
         const nAll = decimated._bucketCounts[phase];
         let from = 0;
         let to = nAll;
@@ -2495,23 +2493,13 @@ class LogicWorker extends AbstractWorker {
           from = range.start;
           to = range.end;
         }
-        for (let k = from; k < to; k++) {
-          const e = bucket[k];
-          if (active[e] === 0) continue;
-          DirectionalSprite.resolve(e);
-          if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
-        }
+        this._resolveBucketDirections(decimated._buckets[phase], from, to, hook);
         continue;
       }
       const list = info.activeList;
       const count = Math.min(list[0], list.length - 1);
       if (totalWorkers > 1 && forced && typeHasForced && typeHasForced[info.entityType]) {
-        for (let idx = 0; idx < count; idx++) {
-          const e = list[1 + idx];
-          if (logicWorkerThatShouldTick(idx, e, totalWorkers, forced) !== myIndex || active[e] === 0) continue;
-          DirectionalSprite.resolve(e);
-          if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
-        }
+        this._resolveForcedDirections(list, count, hook, forced);
         continue;
       }
       let from = 0;
@@ -2521,12 +2509,48 @@ class LogicWorker extends AbstractWorker {
         from = range.start;
         to = range.end;
       }
-      for (let idx = from; idx < to; idx++) {
-        const e = list[1 + idx];
-        if (active[e] === 0) continue;
-        DirectionalSprite.resolve(e);
-        if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
-      }
+      this._resolveListDirections(list, from, to, hook);
+    }
+  }
+
+  /** A decimated type's bucket this frame, entities from..to (_resolveDirections). */
+  _resolveBucketDirections(bucket, from, to, hook) {
+    const active = Transform.active;
+    const directionIndex = DirectionalSprite.directionIndex;
+    const notified = DirectionalSprite.notified;
+    for (let k = from; k < to; k++) {
+      const e = bucket[k];
+      if (active[e] === 0) continue;
+      DirectionalSprite.resolve(e);
+      if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
+    }
+  }
+
+  /** A type with entities forced onto workers: this worker's share of its active list (_resolveDirections). */
+  _resolveForcedDirections(list, count, hook, forced) {
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const active = Transform.active;
+    const directionIndex = DirectionalSprite.directionIndex;
+    const notified = DirectionalSprite.notified;
+    for (let idx = 0; idx < count; idx++) {
+      const e = list[1 + idx];
+      if (logicWorkerThatShouldTick(idx, e, totalWorkers, forced) !== myIndex || active[e] === 0) continue;
+      DirectionalSprite.resolve(e);
+      if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
+    }
+  }
+
+  /** A type's active list, entries from..to (_resolveDirections). */
+  _resolveListDirections(list, from, to, hook) {
+    const active = Transform.active;
+    const directionIndex = DirectionalSprite.directionIndex;
+    const notified = DirectionalSprite.notified;
+    for (let idx = from; idx < to; idx++) {
+      const e = list[1 + idx];
+      if (active[e] === 0) continue;
+      DirectionalSprite.resolve(e);
+      if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
     }
   }
 
