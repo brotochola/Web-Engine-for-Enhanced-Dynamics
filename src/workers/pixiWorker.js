@@ -37,7 +37,6 @@ import { Sun } from '../core/sun.js';
 import {
   DEFAULT_LAYERS,
   RENDERER_DEFAULTS,
-  PRE_RENDER_DEFAULTS,
   LIGHTING_DEFAULTS,
   LAYER_DENSITY_SOURCE,
   LAYER_FEEDER_KIND,
@@ -194,8 +193,6 @@ import {
   createGpuQueueViews,
 } from '../render/gpuQueueLayout.js';
 import {
-  sortByY,
-  normalizeAngleDifference,
   extractRGBNormalizedMut,
   lightDataTextureFloatCount,
   clearUnusedLightDataTexels,
@@ -605,7 +602,6 @@ class PixiRenderer extends AbstractWorker {
     this._madePrograms = [];
     // SST-1: the backend (rendererBackend.js) and the engine shaders' sources by key, from boot; an error boot met, which
     // initialize reports (null: none).
-    this._rendererBackend = '';
     this._useWebGpu = false;
     // N-301: true while loseGpuForTest's destroy() of the WebGPU device stands for a real loss.
     this._gpuLossTest = false;
@@ -642,7 +638,6 @@ class PixiRenderer extends AbstractWorker {
     this._refusedFrameWarned = false;
     // The pipeline's sorter (resolveSpritePipeline): 'none' when nobody orders the sprites.
     this._sortSpritesOn = SORT_SPRITES_NONE;
-    this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
 
     // PIXI application and rendering
     this.pixiApp = null;
@@ -682,7 +677,6 @@ class PixiRenderer extends AbstractWorker {
     this._gpuAnimStartHeight = 0;
     /** @type {GpuParticleLayerBatch[]} */
     this._gpuParticleBatches = [];
-    this._gpuParticleLiveRecords = 0;
     // WebGL: the rings' record textures, made and filled here (E-157); null until the first GPU particle layer.
     this._gpuRecordTextureOps = null;
     // GPU particle groups among the entities (gpuParticleProxies.js): the sortWithEntities layers by id, as
@@ -764,11 +758,6 @@ class PixiRenderer extends AbstractWorker {
     this.canvasHeight = 0;
     this.canvasView = null;
 
-    // Visible units tracking (throttled reporting)
-    this.lastReportedVisibleCount = -1;
-    this.visibleUnitsReportInterval = 500; // Report every 500ms
-    this.lastVisibleUnitsReportTime = 0;
-
     // Draw call tracking
     this.drawCallCount = 0;
     this.visibleEntityCount = 0;
@@ -845,9 +834,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueCamera = null; // Float32Array[3] -> [zoom, x, y]
     this.renderQueuePoseReady = null; // Int32Array[1] -> pose generation stamped with this queue slot
 
-    // Render queue — instanced Mesh (no Particle pool for ENTITIES)
-    this._rqPrevCount = 0;
-
     // Custom layer rendering infrastructure (populated during initialize)
     this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
     this._customLayerList = []; // Cached array of custom layer objects, set once during init
@@ -895,7 +881,6 @@ class PixiRenderer extends AbstractWorker {
     this._meshRtDrawsThisFrame = 0;
 
     // SharedArrayBuffer views (shared with particle_worker)
-    this.decalsTilesRGBA = null; // Uint8ClampedArray - RGBA pixel data
     this.decalsTilesDirty = null; // Uint8Array - dirty flags (0=clean, 1=modified)
     // E-272: the same flags four to a word, for the frame's count (an empty array of its class until decals bind).
     this._decalDirtyWords = new Uint32Array(0);
@@ -921,9 +906,6 @@ class PixiRenderer extends AbstractWorker {
     this._nightRGB = new Float32Array(3); // Sun.nightLightRGB, once a frame
     this.maxLights = 128; // Light-data texture width / capacity (config.lighting.maxLights)
     this.maxShadowCastingLights = LIGHTING_DEFAULTS.maxShadowCastingLights;
-    this.maxShadowsPerLight = LIGHTING_DEFAULTS.maxShadowsPerLight;
-    this.maxShadowsPerEntity = LIGHTING_DEFAULTS.maxShadowsPerEntity;
-    this._lightGradientTexId = 0xffff;
     this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
     this.lightingRT = null; // RenderTexture for low-res lighting
     this.faceRT = null; // DX-FACES: the face map (src/render/faceMap.js)
@@ -1011,7 +993,6 @@ class PixiRenderer extends AbstractWorker {
     this._lampCachePerRow = 1;
     this._lampCacheCopy = null;
     this._lampVolumesEpoch = 0;
-    this._lampVolumesSeen = 0;
     this._lampVolumeScales = new Float64Array(2);
     // This frame's volumes' entries in order (_drawVolumesInLampMap), and how many.
     this._volumeLampActive = [];
@@ -1155,7 +1136,6 @@ class PixiRenderer extends AbstractWorker {
     this._visibleLightsAllCount = 0;
 
     this.shadowSpritesEnabled = false;
-    this.maxShadowRenderItems = 0;
 
     // RenderTexture-based shadow compositing
     this.shadowRT = null; // RenderTexture for shadow compositing
@@ -1207,27 +1187,6 @@ class PixiRenderer extends AbstractWorker {
       depthMode: BATCH_DEPTH.INDEX,
       depthDenom: 1,
       worldHeight: 10000,
-      sortKey: null,
-      texLut: null,
-      texLutCount: 0,
-      textures: null,
-      type: null,
-      includeType: -1,
-      excludeType0: -1,
-      excludeType1: -1,
-      indices: null,
-      indexCount: 0,
-    };
-    this._shadowUploadQ = makeBatchViews();
-    this._shadowUploadOpts = {
-      space: BATCH_SPACE.SCREEN,
-      zoom: 1,
-      cameraX: 0,
-      cameraY: 0,
-      resolution: 1,
-      depthMode: BATCH_DEPTH.INDEX,
-      depthDenom: 1,
-      worldHeight: 1,
       sortKey: null,
       texLut: null,
       texLutCount: 0,
@@ -1348,8 +1307,6 @@ class PixiRenderer extends AbstractWorker {
     this._meshCornersWasm = null;
 
     // Reusable matrices for low-res rendering
-    this._shadowTransform = new PIXI.Matrix();
-    this._lightingTransform = new PIXI.Matrix();
     this._meshRtTransform = new PIXI.Matrix();
 
     // Everything later paths write, declared here (N-32, as in pre-render). A
@@ -2772,9 +2729,7 @@ class PixiRenderer extends AbstractWorker {
     if (batches.length === 0) return;
     if (this._proxyLayerList.length > 0) this._syncProxiesOn();
     Time.readSimNowInto(this._gpuClock, 0);
-    let live = 0;
-    for (let i = 0; i < batches.length; i++) live += batches[i].update(this._gpuClock);
-    this._gpuParticleLiveRecords = live;
+    for (let i = 0; i < batches.length; i++) batches[i].update(this._gpuClock);
   }
 
   /**
@@ -5867,12 +5822,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (lightingConfig.maxShadowCastingLights !== undefined) {
       this.maxShadowCastingLights = lightingConfig.maxShadowCastingLights;
     }
-    if (lightingConfig.maxShadowsPerLight !== undefined) {
-      this.maxShadowsPerLight = lightingConfig.maxShadowsPerLight;
-    }
-    if (lightingConfig.maxShadowsPerEntity !== undefined) {
-      this.maxShadowsPerEntity = lightingConfig.maxShadowsPerEntity;
-    }
 
     this.shadowRT = PIXI.RenderTexture.create({
       width: rtPixelSize(this.canvasWidth, this.shadowResolution),
@@ -7758,7 +7707,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
             this.animationFrameStart[animIdx] = this.flatTextures.length;
             this.animationFrameCount[animIdx] = frames.length;
-            if (animName === '_lightGradient') this._lightGradientTexId = this.animationFrameStart[animIdx];
 
             for (let f = 0; f < frames.length; f++) {
               this.flatTextures.push(frames[f]);
@@ -9374,7 +9322,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const config = data.config || {};
     const rendererConfig = config.renderer || {};
     const backend = normalizeRendererBackend(rendererConfig.backend);
-    this._rendererBackend = backend;
     this._useWebGpu = backend === RENDERER_BACKEND_WEBGPU;
     // Bundles embed the engine shaders and post them; source builds fetch them.
     embeddedEngineShaders = data.engineShaders || null;
@@ -9821,7 +9768,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._applyResize(this.canvasWidth, this.canvasHeight);
     }
     this._presentingFlag = data.presentingFlag || null;
-    this.physicsWorkerIndex = data.config.spatial.numberOfSpatialWorkers;
 
     // Read renderer-specific configuration
     const rendererConfig = this.config.renderer || {};
@@ -9860,14 +9806,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // autoGenerateMipmaps, atlasScaleMode and N-271's pixel snap: read at boot, before any program or atlas source was made.
 
-    this.decorationFadeStartZoom =
-      preCfg.startFadingDecorationsAtZoom !== undefined
-        ? preCfg.startFadingDecorationsAtZoom
-        : PRE_RENDER_DEFAULTS.startFadingDecorationsAtZoom;
-    this.decorationHideZoom =
-      preCfg.hideDecorationsAtZoom !== undefined
-        ? preCfg.hideDecorationsAtZoom
-        : PRE_RENDER_DEFAULTS.hideDecorationsAtZoom;
     const maxDecalUploads = rendererConfig.maxDecalTileUploadsPerFrame;
     this.maxDecalTileUploadsPerFrame =
       Number.isFinite(maxDecalUploads) && maxDecalUploads > 0
@@ -9890,12 +9828,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (data.buffers.componentData.ParticleComponent && this.maxParticles > 0) {
       debugWorkerLog(`PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`);
     }
-
-    // Initialize particle free list for early-exit optimization
-    // freeListTop[1] is the free count, so activeCount = maxParticles - freeListTop[1]
-    this.particleFreeListTop = data.particleFreeListTop
-      ? new Int32Array(data.particleFreeListTop)
-      : null;
 
     // Note: DecorationComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     this.maxDecorations = data.maxDecorations || 0;
@@ -9954,9 +9886,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.decalsTotalTiles = data.decals.totalTiles;
 
       // Create typed array views over SharedArrayBuffers
-      // The tiles' bytes only: with W26 their buffer is the decal memory, the kernel's scratch after them.
-      this.decalsTilesRGBA = new Uint8ClampedArray(
-        data.decals.tilesRGBA, 0, data.decals.totalTiles * data.decals.tilePixelSize * data.decals.tilePixelSize * 4);
       // W21c: dirty tiles premultiplied by decalPremultiply.wasm, on the decal memory the tiles live in.
       if (!data.decals.memory || !data.decals.memoryLayout) throw new Error('decals without the decal memory (installDecalMemory)');
       decalBind = bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout).then((kernel) => {
@@ -10032,8 +9961,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           this.globalEntityCount
         );
       }
-
-      this._rqPrevCount = 0;
 
       debugWorkerLog(`PIXI WORKER: Double-buffered render queue initialized (max ${maxItems} items)`);
     } else {
@@ -10170,14 +10097,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         lightingConfig.maxShadowCastingLights !== undefined
           ? lightingConfig.maxShadowCastingLights
           : LIGHTING_DEFAULTS.maxShadowCastingLights;
-      this.maxShadowsPerLight =
-        lightingConfig.maxShadowsPerLight !== undefined
-          ? lightingConfig.maxShadowsPerLight
-          : LIGHTING_DEFAULTS.maxShadowsPerLight;
-      this.maxShadowsPerEntity =
-        lightingConfig.maxShadowsPerEntity !== undefined
-          ? lightingConfig.maxShadowsPerEntity
-          : LIGHTING_DEFAULTS.maxShadowsPerEntity;
       this.liquidFunMaxCount = data.liquidFunMaxCount | 0;
       const particleLights = resolveParticleLights(lightingConfig.particleLights);
       if (particleLights.warning) console.warn(`PIXI WORKER: ${particleLights.warning}`);
@@ -11471,7 +11390,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   createCastedShadowsSystem(data) {
     if (data.shadows && data.shadows.enabled) {
       this.shadowSpritesEnabled = true;
-      this.maxShadowRenderItems = data.shadows.maxRenderItems;
       this.createShadowSpriteSystem();
     }
   }
