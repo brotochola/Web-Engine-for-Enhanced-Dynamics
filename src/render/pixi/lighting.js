@@ -1514,7 +1514,17 @@ export class PixiLighting {
     this.lightEdgesGeometry = lightEdgesQuad(this.lightEdgesQuadBuffer);
     this.lightEdges = lightEdgesHost(this.worker._lightEdgesEnv(), this.lightEdgesGeometry, this.lightingRT.source);
     this.worker._registerLayerDisplayObject('lighting', this.lightEdges.host);
+    this.setLightEdgesBlend(Layer.get('lighting')?.blendMode ?? 'multiply');
     this.worker.pixiApp.stage.addChild(this.lightEdges.host);
+  }
+
+  /** The lighting layer's blend on the edges' two light meshes (multiply unless game code or the debug UI chose another). */
+  setLightEdgesBlend(blend) {
+    if (this.lightEdges === null) return;
+    const meshes = this.lightEdges.meshes;
+    for (let i = 0; i < meshes.length; i++) {
+      if (meshes[i].blendMode !== blend) meshes[i].blendMode = blend;
+    }
   }
 
   /** DX-LIGHTEDGES: the lighting layer's display: the edges' host, or the stretched sprite. */

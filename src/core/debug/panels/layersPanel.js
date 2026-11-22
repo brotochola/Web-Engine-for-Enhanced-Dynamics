@@ -107,7 +107,7 @@ const FLOAT_TITLES = { uniforms: 'Uniforms', compute: 'Compute passes' };
 
 const CONTAINER_BLEND_TITLE = "Blend mode used between this layer's own children, inside its render container";
 const Y_SORT_TITLE = 'Sort children by Y position for depth ordering';
-const LIGHTING_BLEND_TITLE = 'The light multiplies the scene by itself: its blend is not a choice';
+const LIGHTING_BLEND_TITLE = "The light's blend onto the scene: multiply lights it; another blend shows the light another way";
 
 // Fixed column widths shared by the header row and every layer row, so
 // controls (and critically, Z-index) line up vertically across all layers
@@ -297,11 +297,7 @@ export class LayersPanel extends DebugPanel {
       const l = Layer.get(layerName);
       if (l) l.blendMode = blendSelect.value;
     };
-    if (layerName === 'lighting') {
-      // DBG-2: the light multiplies the scene and adds its unshaded and glow parts by itself; another blend breaks it.
-      blendSelect.disabled = true;
-      blendSelect.title = LIGHTING_BLEND_TITLE;
-    }
+    if (layerName === 'lighting') blendSelect.title = LIGHTING_BLEND_TITLE;
     row.appendChild(blendSelect);
 
     // Container blend (DBG-4: every layer shows its own value; disabled, with the reason, where it cannot apply)
@@ -749,8 +745,7 @@ export class LayersPanel extends DebugPanel {
         if (controls.alphaValue.textContent !== text) controls.alphaValue.textContent = text;
       }
 
-      const lighting = layerName === 'lighting';
-      setDisabled(controls.blendMode, !isAvailable || lighting, lighting ? LIGHTING_BLEND_TITLE : undefined);
+      setDisabled(controls.blendMode, !isAvailable, layerName === 'lighting' ? LIGHTING_BLEND_TITLE : undefined);
       setValue(controls.blendMode, layer.blendMode);
 
       const cBlocked = containerBlendBlocked(layer, meta);

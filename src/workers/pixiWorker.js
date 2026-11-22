@@ -2388,8 +2388,10 @@ class PixiRenderer extends AbstractWorker {
       : layer.blendMode;
     if (display !== null) {
       display.zIndex = z;
-      // The light's meshes multiply and add by themselves (lightEdges.js): a blend on their host would change nothing.
-      if (name !== 'lighting' || this.lighting.lightEdges === null) display.blendMode = blend;
+      // With edges the light is two meshes with blends of their own (lightEdges.js): the layer's goes on them, not on
+      // their host, whose blend they do not inherit.
+      if (name === 'lighting' && this.lighting.lightEdges !== null) this.lighting.setLightEdgesBlend(blend);
+      else display.blendMode = blend;
     }
     // The entities' meshes set their own blend, so their root's was never inherited: the batch takes it (its opaque pass
     // drops itself off 'normal').

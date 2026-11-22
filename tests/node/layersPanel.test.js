@@ -221,8 +221,11 @@ test('Cont Blend shows every layer\'s value and is disabled, with the reason, wh
     assert.equal(controls(panel, 'props').containerBlend.disabled, true);
     assert.match(controls(panel, 'props').containerBlend.title, /No look shader/);
     const lighting = controls(panel, 'lighting').blendMode;
-    assert.equal(lighting.disabled, true, 'the light\'s blend stays off after attach and ticks');
-    assert.match(lighting.title, /multiplies the scene/);
+    assert.equal(lighting.disabled, false, 'the light\'s blend is the owner\'s to change, after attach and ticks');
+    assert.match(lighting.title, /multiply lights it/);
+    lighting.value = 'normal';
+    lighting.onchange();
+    assert.equal(Layer.get('lighting').blendMode, 'normal');
   } finally {
     Layer.reset();
   }
