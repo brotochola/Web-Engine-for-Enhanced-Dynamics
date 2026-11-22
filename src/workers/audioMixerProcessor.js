@@ -196,34 +196,21 @@ class MixerProcessor extends AudioWorkletProcessor {
         this._f32 = new Float32Array(d.sab);
         this._max = d.maxSlots;
         this._processMs = d.processMsSab ? new Float32Array(d.processMsSab) : null;
-        if (d.levelsSab) {
-          this._levelsI32 = new Int32Array(d.levelsSab);
-          this._levelsF32 = new Float32Array(d.levelsSab);
-          var ring = ((d.levelsSab.byteLength >> 2) - this._levelHeader) / 3 | 0;
-          this._levelRing = ring;
-          this._levelMask = ring > 0 ? ring - 1 : 0;
-        } else {
-          this._levelsI32 = null;
-          this._levelsF32 = null;
-          this._levelRing = 0;
-          this._levelMask = 0;
-        }
-        if (d.channelSab) {
-          this._chI32 = new Int32Array(d.channelSab);
-          releasedI32 = this._chI32;
-          this._chF32 = new Float32Array(d.channelSab);
-          this._channelCount = d.channelCount | 0;
-          if (!(this._channelCount > 0)) this._channelCount = 1;
-          this._setVoiceCap(d.voiceCap);
-          this._applyMaxVoices(d.maxVoices);
-          this._env.fill(1);
-          this._masterEnv = 1;
-        } else {
-          this._chI32 = null;
-          releasedI32 = null;
-          this._chF32 = null;
-          this._channelCount = 0;
-        }
+        // SoundManager always sends both (N-303 CR-6: the mixer had a direct path for neither, never taken).
+        this._levelsI32 = new Int32Array(d.levelsSab);
+        this._levelsF32 = new Float32Array(d.levelsSab);
+        var ring = ((d.levelsSab.byteLength >> 2) - this._levelHeader) / 3 | 0;
+        this._levelRing = ring;
+        this._levelMask = ring > 0 ? ring - 1 : 0;
+        this._chI32 = new Int32Array(d.channelSab);
+        releasedI32 = this._chI32;
+        this._chF32 = new Float32Array(d.channelSab);
+        this._channelCount = d.channelCount | 0;
+        if (!(this._channelCount > 0)) this._channelCount = 1;
+        this._setVoiceCap(d.voiceCap);
+        this._applyMaxVoices(d.maxVoices);
+        this._env.fill(1);
+        this._masterEnv = 1;
         this._ready = true;
       } else if (d.type === 'channels') {
         this._channelCount = d.channelCount | 0;
@@ -273,26 +260,6 @@ class MixerProcessor extends AudioWorkletProcessor {
       this._busFrames = n;
     }
     if (this._active.length < this._max) this._active = new Int32Array(this._max);
-  }
-
-  _mixDirect(i32, f32, L, R, frames, mixGain, PI_4) {
-    for (var s = 0; s < this._max; s++) {
-      var b = H + s * S;
-      if (Atomics.load(i32, b) !== 1) continue;
-      var asset = this._assets.get(i32[b + 1]);
-      if (!asset) {
-        releaseVoice(i32, f32, b);
-        continue;
-      }
-      var pitch = f32[b + 2];
-      if (!(pitch > 0)) pitch = 1;
-      var pan = f32[b + 3];
-      var vol = f32[b + 4] * mixGain;
-      if (pan > 1) pan = 1;
-      else if (pan < -1) pan = -1;
-      var angle = (pan + 1) * PI_4;
-      mixVoice(i32, f32, b, asset, pitch, i32[b + 5], Math.cos(angle) * vol, Math.sin(angle) * vol, L, R, frames);
-    }
   }
 
   _mixBuses(i32, f32, chF, chI, L, R, frames, mixGain, PI_4) {
@@ -423,22 +390,16 @@ class MixerProcessor extends AudioWorkletProcessor {
     var clipped = 0;
     var channelsOut = R ? 2 : 1;
 
-    if (!chF) {
-      this._mixDirect(i32, f32, L, R, frames, mixGain, PI_4);
-    } else {
-      this._ensureMixBuffers(frames);
-      this._mixBuses(i32, f32, chF, chI, L, R, frames, mixGain, PI_4);
-    }
+    this._ensureMixBuffers(frames);
+    this._mixBuses(i32, f32, chF, chI, L, R, frames, mixGain, PI_4);
 
     var dt = frames / sampleRate;
-    if (chF) {
-      var mGain = smoothGain(this._masterEnv, blockPeak(L, R, frames), chF[0], chF[1], chF[2], chF[3], dt);
-      this._masterEnv = mGain;
-      chF[4] = mGain;
-      for (var i = 0; i < frames; i++) {
-        L[i] *= mGain;
-        if (R) R[i] *= mGain;
-      }
+    var mGain = smoothGain(this._masterEnv, blockPeak(L, R, frames), chF[0], chF[1], chF[2], chF[3], dt);
+    this._masterEnv = mGain;
+    chF[4] = mGain;
+    for (var i = 0; i < frames; i++) {
+      L[i] *= mGain;
+      if (R) R[i] *= mGain;
     }
 
     for (var i = 0; i < frames; i++) {
@@ -468,7 +429,7 @@ class MixerProcessor extends AudioWorkletProcessor {
     }
 
     var levelsI = this._levelsI32;
-    if (levelsI && this._levelRing > 0) {
+    if (this._levelRing > 0) {
       var idx = Atomics.load(levelsI, 0);
       var slot = idx & this._levelMask;
       var base = this._levelHeader;

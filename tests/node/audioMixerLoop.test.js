@@ -96,6 +96,9 @@ function makeProcessor({ slots = 4, frames = 128 } = {}) {
   p._processMs = null;
   p._assets = new Map();
   p._frames = frames;
+  // N-303 CR-6: the engine always gives the mixer its channels and level ring (SoundManager._postWorkletInit), and the
+  // mixer has no other path: one bus at unity, as a scene with no sound channels set up has.
+  attachBuses(p);
   return { p, i32, f32, frames };
 }
 
@@ -121,7 +124,14 @@ function claimSlot(i32, slot, { audioId, pitch = 1, pan = 0, volume = 1, loop = 
 
 function runOnce({ p, i32, frames }) {
   const out = [{ 0: new Float32Array(frames), 1: new Float32Array(frames) }];
-  p.process([], out);
+  // The AudioWorklet global the buses' envelopes read (N-303 CR-6: every mix goes through the buses now).
+  const previousRate = globalThis.sampleRate;
+  globalThis.sampleRate = 48000;
+  try {
+    p.process([], out);
+  } finally {
+    globalThis.sampleRate = previousRate;
+  }
   return out[0];
 }
 
@@ -456,17 +466,22 @@ test('E-46: a one-shot voice that ends on the audio thread bumps the release cou
   f32[3] = 1;
   const channelSab = new SharedArrayBuffer(4096 * 4);
   const chI = new Int32Array(channelSab);
+  new Float32Array(channelSab)[CH_HEADER] = 1; // bus 0 at unity
+  const levelsSab = new SharedArrayBuffer((4 + 16 * 3) * 4);
   const port = p.port;
-  port.onmessage({ data: { type: 'init', sab, maxSlots: slots, channelSab: null } });
+  port.onmessage({ data: { type: 'init', sab, maxSlots: slots, levelsSab, channelSab, channelCount: 1, voiceCap: 4, maxVoices: [4] } });
   assert.equal(chI[6], 0);
-  port.onmessage({ data: { type: 'init', sab, maxSlots: slots, channelSab, channelCount: 1, voiceCap: 4, maxVoices: [4] } });
   p._assets = new Map();
   installAsset(p, 7, [new Float32Array(16).fill(0.25)]);
   claimSlot(i32, 0, { audioId: 7, loop: 0 });
-  p._mixDirect(i32, f32, new Float32Array(128), new Float32Array(128), 128, 1, Math.PI / 4);
+  const mix = () => {
+    p._ensureMixBuffers(128);
+    p._mixBuses(i32, f32, p._chF32, p._chI32, new Float32Array(128), new Float32Array(128), 128, 1, Math.PI / 4);
+  };
+  mix();
   assert.equal(Atomics.load(i32, H), 0, 'the voice ended and was released');
   assert.equal(Atomics.load(chI, 6), 1, 'one release, one bump');
   // A slot that is not playing is not released again.
-  p._mixDirect(i32, f32, new Float32Array(128), new Float32Array(128), 128, 1, Math.PI / 4);
+  mix();
   assert.equal(Atomics.load(chI, 6), 1);
 });
