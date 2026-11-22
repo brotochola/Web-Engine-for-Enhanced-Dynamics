@@ -19586,19 +19586,20 @@
       "id": "N-226",
       "title": "Wasm kernel benches that warm a new export with a few short frames time its Liftoff code, not TurboFan's: a 5 000-row pack read 0.104 ms warmed so against 0.065 ms under --no-liftoff, and gpuPackKeyedMicrobench (20 warm frames) may have timed E-387's 0.1318 ms that way",
       "status": "open",
-      "statusText": "found 2026-11-16 by the E-444 agent (opt/prerender-gbuf-words)",
+      "statusText": "screened 2026-11-21 on the ASUS with wasmTierCompare.mjs (R-1721); liquidFunExtract fixed (47ac1aab); four benches left",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
       "result": "gpuPackIndexedMicrobench, E-444's export: 0.104 ms (10 small warm frames) against 0.065 ms (--no-liftoff) at 5 000 rows; with 250 ms of warm-up per case the owner shape still read 13 % faster under --no-liftoff than under V8's default tiering (3.308 / 3.310 -> 3.283 / 3.083 against 3.400 / 3.560 -> 2.928 / 3.115), unexplained. HOW_WE_MEASURE asks for TurboFan, not Liftoff, in wasm kernels.",
-      "next": "Audit the wasm kernel benches' warm-up (a time-based warm-up, or a --no-liftoff run beside the default one, as kernelTierAudit does for JS), re-read gpuPackKeyedMicrobench for E-387, and find why default tiering trails --no-liftoff after 250 ms (a function Liftoff keeps because it is called rarely: each call a big frame?).",
+      "next": "liquidFunComputeDepth (x1.21), liquidFunPassProfile (x1.08 to x1.14), sunFrames (x1.17) and shadowStamp's stamp case (x1.19): confirm each with wasmTierCompare --pairs 4 on a quiet machine, then a time-based warm-up (as liquidFunExtract's); bodyForceCall's batch r1 (x1.10). warmWasm checks the export only: a callee can stay in Liftoff.",
       "refs": [],
       "aliases": [
         "liftoff in wasm benches",
         "wasm tiering gap"
       ],
       "records": [
-        "R-1247"
+        "R-1247",
+        "R-1721"
       ]
     },
     {
@@ -23572,17 +23573,18 @@
       ],
       "records": [
         "R-1585",
-        "R-1592"
+        "R-1592",
+        "R-1719"
       ],
-      "result": "",
-      "next": "A `query` per catalog row (engineFeatureCatalog.mjs) and a calibration pass in runScoreboard that raises it until the baseline's primary worker passes the floor on the machine at hand. Load knobs for the scenes that have none: stationarySpatialScene (spatial) and queryAabbStressScene (queryAabb, N-295). The ASUS's values from job 0896e are a start: ray casts=12288, bullets=65000, spawn storm=6000.",
+      "result": "Built: a load knob per floor-bound row, a calibration on the machine at hand and runScoreboard --loads. On the ASUS ray and rayVsBox2d now decide (tie), bullets and spawn read kept; spatial cannot reach the floor (40 000 entities: 2.7 ms); box2dRayJs has no knob that loads logic0.",
+      "next": "spatial: a knob that loads it past the floor on a slow machine (denser neighbours or movers; 110 000 stationary entities would be needed); box2dRayJs: a primary its knob reaches (physics) or a protocol ceiling; queryAabb's +5.5 % at 1106 queries (wait-bound) rechecked; the spatial lead at 40 000 entities (main 3.99 against v0.14.0 2.62 ms) on the main PC.",
       "id": "DX-SCORELOAD",
       "kind": "tool",
       "area": "tools",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-18",
       "title": "The scoreboard's stress rows run at loads chosen for the main PC, so on a slower machine many fall under the 6 ms floor and read FAIL: a load per row, calibrated per machine, and knobs for the scenes that have none (spatial, queryAabb)",
-      "statusText": "raised by the owner on 2026-11-18 from the ASUS scoreboards (R-1349, R-1361): about half the stress rows read FAIL there"
+      "statusText": "built 2026-11-21 on the ASUS (6c1e852a, 49fc08e0, R-1719): catalog load knobs, calibrateScoreboardLoads.mjs, runScoreboard --loads"
     },
     {
       "refs": [],
@@ -24713,6 +24715,26 @@
       "date": "2026-11-21",
       "statusText": "Kept 2026-11-21 (R-1677), hygiene (demo): the target's squared distance through a module Float64Array; Chrome heap, Predator ?mix=1: the soldier states' 5.5 KB a frame gone, the logic worker 6.9-7.7 -> 1.1-1.3 KB a frame.",
       "next": "The distance through a module Float64Array (the finders return the index, or -1, and write it there; canShootTarget and storeTarget read it), the scan's best distance in a local seeded with a module INF; the same Chrome heap sample before and after; test:demos."
+    },
+    {
+      "records": [
+        "R-1720"
+      ],
+      "refs": [],
+      "id": "N-400",
+      "title": "queryWake.test.js and waitMeterClaimBurst.test.js time a cross-thread event by a fixed wait and fail now and then under the suite's parallel files on 2 cores",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-21",
+      "result": "Fixed: the claim test's peer releases at a wall-clock time given ahead and a try counts only when this thread began before it (wallClockWait.mjs); the wake test waits for its callback up to 2 s. 24 parallel files, 4 rounds on the ASUS: 28 failures in 384 before, 0 after.",
+      "statusText": "fixed 2026-11-21 (4e7bb7b7), on fix/n400-two-core-test-waits (R-1720)",
+      "next": "Nothing left.",
+      "aliases": [
+        "queryWake",
+        "waitMeterClaimBurst",
+        "two-core flaky test"
+      ]
     }
   ],
   "records": [
@@ -40769,6 +40791,45 @@
       "commits": [
         "830450f4",
         "893571c1"
+      ]
+    },
+    {
+      "id": "R-1719",
+      "date": "2026-11-21",
+      "time": "21:17",
+      "timeFrom": "recorded",
+      "title": "DX-SCORELOAD built and used on the ASUS: rows at a load calibrated per machine; ray and rayVsBox2d decide (tie), bullets and spawn kept, spatial still under the floor",
+      "verdict": "kept-hygiene",
+      "text": "**DX-SCORELOAD built and used on the ASUS: the scoreboard's stress rows at a load calibrated per machine.** Branch tools/dx-scoreload (6c1e852a scene knobs, 49fc08e0 the calibration and runScoreboard --loads), on the ASUS, by the main PC's session over ssh.\n\n- **What:** the catalog names each floor-bound row's load knob (scene.loadKnob: query key, default, cap): ray, rayVsBox2d (casts), spatial (entities, new), queryAabb (queries, new), bullets (bullets), spawn (storm). calibrateScoreboardLoads.mjs runs a row's baseline side once on the machine at hand, as the scoreboard does, and raises the knob in a straight line toward 9 ms while the primary reads under 7.5 ms (1.25 x the floor), up to three runs or the cap; it writes a loads file (rows it leaves out are kept from an --out of the same baseline). runScoreboard --loads runs both sides of each row at that load and records the query in the row's verdict.\n- **Calibration on the ASUS** (jobs 0900m 20:57-21:04 and 0900n 21:06-21:07; v0.14.0's src under main 0b260fd7's scenes, headless, one run a step), the baseline primary at the default -> at the chosen load: ray casts 3072 -> 6218: logic0 4.45 -> 7.54 ms; rayVsBox2d casts 3072 -> 5640: 4.90 -> 7.53; bullets 40000 -> 54226: particle 6.64 -> 8.01; spawn storm 1800 -> 3635 -> 4883: logic0 4.46 -> 6.70 -> 8.38; queryAabb queries 1 -> 90 -> 512 -> 1106: logic0 0.06 -> 0.76 -> 3.40 -> 8.00 (about 7 us of own work a query, linear); spatial entities 9000 -> 40000 (the cap): spatialMax 0.47 -> 2.71 ms, still under the floor (about 110 000 would be needed, past what the grid's buffers allow).\n- **box2dRayJs has no knob:** ?casts sends its Box2D rays to the physics worker; logic0, its primary, read 0.18 -> 0.74 ms from 3 072 to 49 152 casts.\n- **queryAabb at 1106 queries is wait-bound:** each query is a round trip to physics, so logic0 runs at about 21 fps with 40 ms of waits a frame; its own work is what the row compares.\n- **A loaded scoreboard of those six rows** (main 0b260fd7 against v0.14.0, 2 runs a side, --skip-kernels --no-recheck, job 0900o, 21:07-21:17): ray TIE (logic0 -2.4 %), rayVsBox2d TIE (+2.3 %), bullets KEPT (particle -16.4 %), spawn KEPT (logic0 -13.5 %), queryAabb WORSE (logic0 +5.5 %, not rechecked, in the wait-bound regime above), spatial FAIL (floor). Before, all six read FAIL on this machine (floor, or spawn's load not comparable).\n- **A lead, not a verdict:** at 40 000 stationary entities spatial read main 3.99 ms against v0.14.0's 2.62 ms (+52 %), where at 9 000 earlier ASUS scoreboards had main 55 to 65 % cheaper. Under the floor and one sitting of 2 runs: worth a look at a large entity count on the main PC before calling it anything.\n- **Test:** scoreboardLoads.test.js (the scene at a load, the linear step, the primary, the loads file, the catalog's knobs).\n- The loads file of the ASUS is C:\\weedlab\\scoreboard-loads.json (not in the repo: a machine's calibration).",
+      "commits": [
+        "6c1e852a",
+        "49fc08e0"
+      ]
+    },
+    {
+      "id": "R-1720",
+      "date": "2026-11-21",
+      "time": "21:30",
+      "timeFrom": "recorded",
+      "title": "N-400 fixed: the claim-wait and query-wake tests wait for their cross-thread event (28 failures in 384 under 24 parallel files before, 0 after)",
+      "verdict": "kept-hygiene",
+      "text": "**N-400 fixed: two node tests timed a cross-thread event by a fixed wait and failed now and then under the suite's parallel files on the ASUS's 2 cores.** Branch fix/n400-two-core-test-waits (4e7bb7b7), on the ASUS, by the main PC's session over ssh.\n\n- **Found** in this session's full suites on the ASUS (3437 and 3434 tests): queryWake.test.js \"a request on every sync query kind wakes physics\" once, waitMeterClaimBurst.test.js \"a blocked claim counts as wait\" once; each 3 of 3 alone.\n- **Causes:** the claim test's peer released the slot 30 ms after its own start, and this thread sometimes reached the call after that (its 'up' message and the event loop ran late), so nothing was metered. The wake test waited a fixed 10 ms for an Atomics.waitAsync callback that comes when this thread next runs its event loop.\n- **Fixes:** the claim test's peer releases at a wall-clock time given ahead, and a try counts only when this thread began before it (tests/helpers/wallClockWait.mjs's waitedUntil, as N-326), up to 5 tries; the wake test waits for the callback, up to 2 s.\n- **Checked under load:** 12 copies of each file at once (24 files, --test-concurrency=24), 4 rounds on the ASUS (C:\\weedlab\\flakeStress.cmd): 28 failures in 384 before (26 claim, 2 wake), 0 in 384 after. Node suite 3429 of 3429.",
+      "commits": [
+        "4e7bb7b7"
+      ]
+    },
+    {
+      "id": "R-1721",
+      "date": "2026-11-21",
+      "time": "21:44",
+      "timeFrom": "recorded",
+      "title": "N-226 screened by wasmTierCompare (default against --no-liftoff, 56 benches): liquidFunExtract timed Liftoff 2 to 3.6x slow, fixed; four left",
+      "verdict": "note",
+      "text": "**N-226 screened: which WASM kernel benches time Liftoff, by a tool that runs each one as shipped and under node --no-liftoff in pairs; one fixed, four left.** Branch tools/n226-wasm-tier (42aa376d and a2c9c8e9 the tool, 47ac1aab the first fix), on the ASUS, by the main PC's session over ssh.\n\n- **The tool:** wasmTierCompare.mjs runs every *Microbench.mjs whose source mentions wasm, as it ships and under --no-liftoff (every WASM function compiled by TurboFan from the start), alternating which runs first, and compares each case's rate (opsPerSec, or 1000 / ms). LIFTOFF: the median ratio over 1.05 with every pair agreeing.\n- **Screen, 2 pairs, 56 benches (job 0900p, 21:22-21:28):** LIFTOFF flags on 7 (decalStampWasm x1.28, solidSegmentsWasm x1.20, painterRadixWasm x1.15-1.20, bodyForceCall up to x1.24, spatialGridMovers x1.14, shadowStamp x1.13, preRenderEmitAdobe x1.08), the reverse on 8 others; 20 benches that report ms read nothing (fixed in a2c9c8e9).\n- **Confirmation, 4 pairs (job 0900q, 21:34-21:40):** the ASUS's kernel noise (about +-20 %, R-1580) explains most of the screen: decalStampWasm, solidSegmentsWasm, painterRadixWasm, spatialGridMovers, preRenderEmitAdobe and every reverse flag read even. Left LIFTOFF: shadowStamp's stamp x1.19, bodyForceCall's batch r1 x1.10. The ms benches (2 pairs): liquidFunExtract x2.78 at k=64 and x1.76 at k=1024, liquidFunComputeDepth x1.21, sunFrames x1.17, liquidFunPassProfile x1.08 to x1.14 on every pass, decorationVisibilityGrid x1.06.\n- **Why warmWasm did not cover them:** five of the seven first flags already warm through wasmKernelHelpers.warmWasm, which checks that the timed export reached TurboFan; V8 tiers each WASM function up on its own work, so a callee inside the module can still run Liftoff code. The benches that stay flagged time one-shot calls (a fresh world or system a sample) or few calls, which a callee never warms in.\n- **Fixed: liquidFunExtractMicrobench** warms 1.5 s before each k, on one world for the process (the module has no world destroy). ASUS, median ms at k = 64 / 512 / 1024: before 0.250 / 0.144 / 0.159 (0.09 to 0.27 apart), before under --no-liftoff 0.090 / 0.090 / 0.091, now 0.069 / 0.070 / 0.071; the tool, 4 pairs: k=64 x1.064, the others even. Its old numbers read the extract 2 to 3.6 times too slow.\n- **Left (the next):** liquidFunComputeDepth, liquidFunPassProfile, sunFrames and shadowStamp's stamp case (confirm each with --pairs 4 on a quiet machine, then a time-based warm-up as above), bodyForceCall's batch r1; and the kernels' records that used those benches read Liftoff-inflated numbers before the fix. A kernel claim compares two variants under the same warm-up, so its ratio stood unless one variant tiered sooner.",
+      "commits": [
+        "42aa376d",
+        "a2c9c8e9",
+        "47ac1aab"
       ]
     }
   ],
