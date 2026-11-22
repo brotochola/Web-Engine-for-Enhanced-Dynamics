@@ -32,7 +32,7 @@ import {
   BulletPool,
 } from '/src/index.js';
 
-const { ShadowCaster, RigidBody, Collider, DirectionalSprite, SpriteRenderer, Transform, rng } = WEED;
+const { ShadowCaster, RigidBody, Collider, DirectionalSprite, SpriteRenderer, Transform, Time, rng } = WEED;
 
 /** How close to the world's edge (px) a person starts to be pushed back in, and how hard (px/s²). */
 const EDGE_MARGIN = 50;
@@ -248,14 +248,15 @@ export class Person extends Lootable {
 
   /**
    * Whether person i's weapon is ready to fire again (its cooldown since the last shot has passed).
-   * Uses performance.now() for frame-rate independent timing
+   * On the scene's clock (Time.simNowMs), which a load carries on: a stamp from performance.now() lay in a restored
+   * game's future, and every gun stayed cold until the new page's clock caught up (N-329). Time.scale slows it too.
    * @param {number} i - entity index
    * @param {Object} weapon - Weapon definition from Person.WEAPONS
    * @returns {boolean} True if can fire
    */
   static canFire(i, weapon) {
     const lastShot = PersonComponent.lastShotTime[i];
-    return performance.now() - lastShot >= weapon.cooldown;
+    return Time.simNowMs - lastShot >= weapon.cooldown;
   }
 
   // ==========================================
@@ -306,8 +307,8 @@ export class Person extends Lootable {
     DirectionalSprite.setFacingFrom(i, 'manual');
     if (lenSq > 1e-12) DirectionalSprite.setFacing(i, Math.atan2(dy, dx));
 
-    // Record shot time
-    PersonComponent.lastShotTime[i] = performance.now();
+    // Record shot time, on the scene's clock (canFire reads the same one)
+    PersonComponent.lastShotTime[i] = Time.simNowMs;
 
     // Trigger shoot animation (skip if rapid-fire and already shooting - avoids resetting animation)
     const alreadyShooting = PersonAnimationFSM.isInState(i, PersonAnimationFSM.states.SHOOTING);
