@@ -54,6 +54,7 @@ export const BUNDLE_INPUTS = [
   'scripts/bundle-test',
   'webpack.config.js',
   'webpack.bundle.config.js',
+  'scripts/debugStubAliases.js',
 ];
 
 /**

@@ -280,10 +280,6 @@ export class DebugCanvas {
 
   // ------- queries -------
 
-  hasActiveNavVisualization() {
-    return this.nav.hasActiveVisualization();
-  }
-
   hasActiveVisualization() {
     if (this.nav.hasActiveVisualization()) return true;
 

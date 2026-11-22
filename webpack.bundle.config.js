@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url';
 import webpack from 'webpack';
 import TerserPlugin from 'terser-webpack-plugin';
 import { MINIFY_RESERVED_NAMES } from './scripts/minifyReservedNames.js';
+import { debugStubAliases as makeDebugStubAliases } from './scripts/debugStubAliases.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,21 +42,7 @@ function bundleFileName(esm) {
     return parts.join('.');
 }
 
-const debugStubAliases = isProd ? {
-    [path.resolve(__dirname, 'src/core/debug/debugDraw.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/debugDraw.js'),
-    [path.resolve(__dirname, 'src/core/debug/debugUi.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/debugUi.js'),
-    [path.resolve(__dirname, 'src/core/debug/debugFlags.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/debugFlags.js'),
-    [path.resolve(__dirname, 'src/core/debug/hotReload.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/hotReload.js'),
-    [path.resolve(__dirname, 'src/core/debug/devChecks.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/devChecks.js'),
-    // DBG-5: the Pixi worker's render views (decode shaders the debug UI's Render tab asks for).
-    [path.resolve(__dirname, 'src/render/renderViews.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/renderViews.js'),
-} : {};
+const debugStubAliases = makeDebugStubAliases(__dirname, isProd);
 
 // The file mode (SST-8, buildBundle.js --files) starts its workers from files beside the bundle: webpack
 // finds the bundle's folder at run time (publicPath 'auto': import.meta.url in the ESM bundle, the script

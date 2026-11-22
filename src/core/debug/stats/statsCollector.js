@@ -27,7 +27,6 @@ export class StatsCollector {
 
     // 60-frame circular buffer for smoothed FPS
     this.fpsSmoothing = {
-      frameCount: 60,
       renderer: this._createSmoother(),
       gpu: { values: new Array(60).fill(0), index: 0, sum: 0 },
       particle: this._createSmoother(),

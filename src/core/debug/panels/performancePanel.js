@@ -26,7 +26,6 @@ import {
 } from '../stats/statsCollector.js';
 
 const COMMON_KEYS = ['STEP_MS', 'LOAD', 'FPS'];
-const LEAN_KEYS = ['STEP_MS', 'LOAD', 'FPS'];
 const SCHEMA_BY_TYPE = {
   renderer: RENDERER_STATS,
   particle: PARTICLE_STATS,
@@ -36,8 +35,6 @@ const SCHEMA_BY_TYPE = {
   preRender: PRE_RENDER_STATS,
 };
 
-/** Worker types that start expanded (empty = all collapsed). */
-const DEFAULT_EXPANDED = new Set();
 
 const GPU_ROW_TIP = 'The GPU the page got (scene.gpu), the backend, and whether E-448\'s opaque pass suits this GPU '
   + '(debug.opaquePass overrides it). A frame still draws without it on WebGPU, with pixel depth or G-buffer words, '
@@ -200,8 +197,7 @@ export class PerformancePanel {
   _isExpanded(rowId, expandable) {
     if (!expandable) return false;
     if (this._expandedById.has(rowId)) return this._expandedById.get(rowId);
-    const type = rowId.split(':')[0];
-    return DEFAULT_EXPANDED.has(type);
+    return false;
   }
 
   _setExpanded(rowId, row, expanded) {

@@ -190,10 +190,6 @@ export class ToolManager {
     this.debugUI._ensureTickLoop();
   }
 
-  toggleDecoEraser() {
-    this.togglePoolEraser('decoration');
-  }
-
   toggleInspector(kind = 'entity') {
     if (this.inspectorActive && this.inspectKind === kind) {
       this.inspectorActive = false;
@@ -210,20 +206,6 @@ export class ToolManager {
     this.updateToolIndicator();
     this._syncToolButtons();
     this.debugUI._ensureTickLoop();
-  }
-
-  deactivateAll() {
-    this.activeSpawnerType = null;
-    this.eraserActive = false;
-    this.poolPaintKind = null;
-    this.poolEraserKind = null;
-    this.inspectorActive = false;
-    this.inspectKind = null;
-    this._toolMouseDown = false;
-    this.clearSelection();
-    this._syncDebugToolFlag();
-    this.updateToolIndicator();
-    this._syncToolButtons();
   }
 
   _createToolIndicator() {
