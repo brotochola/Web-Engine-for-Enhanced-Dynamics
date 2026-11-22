@@ -14818,7 +14818,7 @@
       "area": "logic",
       "kind": "speed",
       "result": "Code pass: the game's neighbour loop `civilianBehaviorFsm.js:63` (334 B) stayed in Maglev for the whole run, its sibling at line 38 reached TurboFan at 2.5 s. One run with `--efficiency-mode=false` (to test V8's efficiency-mode TurboFan delay) left every JS function below TurboFan, wasm still tiering: logic STEP_MS 3.51/3.19 → 4.53/4.15 ms, particle 0.66 → 0.94, renderer 6.58 → 7.62, physics a tie (one run a side, both with the code log: an estimate, not a verdict). That flag cannot test the delay.",
-      "next": "Why FleeingCivilianBehaviorState.onUpdate never leaves Maglev (R-1834): the same shape in Node or d8 (D:/perf-tools) with --trace-opt --trace-opt-verbose, called from a TurboFan dispatcher as tickOneFsm calls it; then, if it is a V8 heuristic, a scene with the loop body as its own function against not (Predator logic STEP_MS at crowd 2.5).",
+      "next": "Why FleeingCivilianBehaviorState.onUpdate never leaves Maglev in Chrome (R-1834). Not V8 alone: d8 16.0 (D:/perf-tools) runs a harness of the same shape (three state classes' static onUpdate per entity from one dispatcher, the Fleeing body, tryPanic) and tiers all three to TurboFan within the first second (tests/bench/v8probes/fsmTierProbe.js, 2026-11-22). Left: Chrome's worker tiering (efficiency mode's TurboFan delay; count the function's calls in Predator, few civilians flee at once) or the scene's feedback; then the loop body as its own function against not, Predator logic STEP_MS at crowd 2.5.",
       "refs": [
         "EXECUTION_PLAN.md#E-292"
       ],
