@@ -6,6 +6,25 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 21 November 2026 (before midnight) — Shadow Maps Read the Short Form, a Loaded Battle Shoots Again
+
+**The shadow maps stopped re-sending every caster.** With shadow maps on, the renderer sent every caster's full
+description to the GPU each frame, about 1.1 MB, because the programs that draw into the maps only understood the
+full rows. The light's programs now read the short, keyed rows that the plain shadows already used: a caster's
+position, frame and height each frame, and the rest from a table the GPU keeps (E-395). The sun's map, the lamps' map and
+the renders' columns all draw from them, on WebGL and on WebGPU. In Predator's map mode pre-render got 35.7 % cheaper on
+WebGL and 38.5 % on WebGPU, and the renderer 21 to 24 %. With the columns too, Predator with light3d drew 59.9 frames a
+second instead of 54.4, pre-render −30.5 %, renderer −15.9 %. Captures before and after match pixel for pixel.
+
+**A loaded battle shoots again.** A restored Predator looked calmer than the battle it was saved from, and the gate
+that starts from a save was measuring a lighter world (N-329). A new tool plays a battle, saves it, and plays the save
+beside the original, so the two can be compared moment by moment. It showed that after a load the soldiers still aimed
+but never fired: each gun remembered its last shot by the page's own clock, and a new page's clock starts again at zero,
+so every gun waited for a time that lay tens of seconds in the future. The save now keeps the game's clock
+(`Time.simNowMs`) and a load goes on from it, and Predator's guns time their cooldown on that clock. After a load the
+battle fires about 7 500 bullet impacts a second instead of 370, and the loaded fight follows the original. A small gap
+is left: the reloaded physics world is a few percent cheaper per awake body, likely because Box2D rebuilds it in one go.
+
 ## Saturday 21 November 2026 (late night) — Saving in Half a Second, Measuring the Same Battle Twice
 
 **Saving a crowd takes a blink.** A save of Predator's biggest crowd took 3.7 seconds, and most of it was the blood on
