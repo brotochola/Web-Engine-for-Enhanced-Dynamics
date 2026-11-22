@@ -12281,11 +12281,10 @@
     {
       "id": "N-147",
       "title": "The prod bundle's spatial reads about 4 % slower than its sources in Boids since E-198",
-      "status": "open",
-      "statusText": "found 2026-11-12 (R-0927, R-0931); not explained",
+      "status": "answered",
+      "statusText": "Closed 2026-11-22 in the backlog triage (R-1808).",
       "date": "2026-11-12",
       "result": "Boids spatial +4.1 % (13/16) and +4.2 % (7/8) bundle against source since E-198; Windows per-thread CPU of spatial and physics 3 to 15 % more in the bundle; same wasm bytes and weedjsPost.",
-      "next": "Bisect: bundles at E-198's own commits, or one E-198 wait off at a time in both builds; then the wasm loaded by URL in the bundle (code caching, tier-up).",
       "area": "engine",
       "kind": "bug",
       "refs": [
@@ -12300,7 +12299,8 @@
       ],
       "records": [
         "R-0931",
-        "R-1161"
+        "R-1161",
+        "R-1808"
       ]
     },
     {
@@ -16419,19 +16419,19 @@
     {
       "id": "N-207",
       "title": "A render's silhouette card is as wide as its whole picture and as tall as the picture with its top seen from above, standing on its contact nearest the light: under a lamp high and close (the table, 300 px) its ends stick out of the thing's outline (slivers on the lamp's side) and on other lamps its shadow runs long; the prototype does the same",
-      "status": "open",
-      "statusText": "seen by the owner 2026-11-15 in R-1143's comparison (\"el frame más a la derecha en ambos casos está mal\"); to do within DX-LAMPPANO (it rewrites the lamps' cards), the sun's card too; the owner 2026-11-15 ~20:00: left as it is (\"está todo bien ahora, dejemos todo así\"). Tried that evening: the card through the anchor, its heights from the anchor row; it fixed a person's face shaded by the white pickup's sun card (the card stood 4 px past them, its ends out of the car's outline) but changed every car's shadow shape, so reverted. The way left if it comes back: a card bent along the footprint's near outline (a column a lateral step, each on the footprint), the look kept",
+      "status": "answered",
+      "statusText": "Closed 2026-11-22 in the backlog triage (R-1809).",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
       "result": "R-1143's grid, the table with the lamp at -110, -88 and 300 px: in both apps a thin dark sliver left of the table (towards the lamp's side) and one past its top right corner, where the true shadow lies almost all under the top with a thin band away from the lamp. The card's width is the picture's (the thing's full width across the light) placed on the support line, where the footprint is narrower; its height is the picture's rows over the art's 0.752, the top seen from above counted as height.",
-      "next": "For a card on a contact (a render): its height to the frame's height-map top (zmax) instead of the picture's rows, and its width to the footprint's extent across the light on the line it stands on; the lamps' card (in DX-LAMPPANO's program) and the sun's (sunMapVertex, GLSL and WGSL). Check: protoVsBenchLamp's eight places for the hen house and the table, and the sun at 75 degrees.",
       "refs": [],
       "aliases": [
         "render card size"
       ],
       "records": [
-        "R-1143"
+        "R-1143",
+        "R-1809"
       ]
     },
     {
@@ -16700,13 +16700,12 @@
     {
       "id": "E-386",
       "title": "New stress scenes for the light's costs and traces: (a) light3d complete, one population on main and the branch (switches for maps, G-buffer, self-shadow, pixel depth); (b) lamps at scale, 48 to 128 lamps with maps over thousands of casters; (c) renders with columns, hundreds of renders with height maps under the sun and the lamps",
-      "status": "open",
-      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "status": "kept",
+      "statusText": "Closed 2026-11-22 in the backlog triage (R-1810).",
       "date": "2026-11-15",
       "area": "tools",
       "kind": "speed",
       "result": "",
-      "next": "Write them in tests/bench/stressScenes with catalog rows; run each against main where it can, else the switches on and off; then the deep traces (CPU per function, deopts, heap, PMC, GPU per pass).",
       "refs": [
         "DX_LIGHT3D_PLAN.md"
       ],
@@ -16714,7 +16713,8 @@
       "records": [
         "R-1152",
         "R-1157",
-        "R-1164"
+        "R-1164",
+        "R-1810"
       ]
     },
     {
@@ -19016,19 +19016,19 @@
     {
       "id": "N-221",
       "title": "Background processes took part of the machine during sittings: VS Code (the agents' host) 6.5 % and Microsoft Defender 3.7 % of the instruction samples in an 8.8 s Predator window",
-      "status": "open",
-      "statusText": "found 2026-11-16 in the contention capture",
+      "status": "answered",
+      "statusText": "Closed 2026-11-22 in the backlog triage (R-1814).",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
       "result": "wprPmc by process: chrome.exe 68.4 %, wpr.exe 9.1 % (the capture), code.exe 6.5 %, msmpeng.exe 3.7 %, system 2.8 %, claude.exe 1.7 %.",
-      "next": "Sittings while agents build and test read their load: run sittings with the agents idle (the bench lock covers browsers, not builds); a Defender exclusion for the repo, the worktrees and D:\\tmp is the owner's call.",
       "refs": [],
       "aliases": [
         "background load during sittings"
       ],
       "records": [
-        "R-1184"
+        "R-1184",
+        "R-1814"
       ]
     },
     {
@@ -19499,13 +19499,12 @@
     {
       "id": "E-451",
       "title": "In scenes the frame pacer limits, the GPU stays at its idle clock (P8, 300 to 645 MHz): volumeStressScene's mesh fill draw takes 12.3 ms there against 1.86 ms at 1782 MHz. The pacer's skips and the driver's clock governor may feed each other, and every scene GPU timing in the register is at whatever clock the GPU sat at",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
+      "status": "answered",
+      "statusText": "Closed 2026-11-22 in the backlog triage (R-1813).",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "nvidia-smi through volumeStressScene's recording: P8, 300 to 645 MHz the whole window. GpuFramePacer finds the frame before last unfinished and skips (0.5 fences a tick before E-419, 0.6 to 0.7 drawn a tick after). meshFillGpuBench keeps the GPU busy: 1.864 ms a draw at 1782 MHz, against 12.30 / 12.64 ms in the scene.",
-      "next": "Log nvidia-smi's pstate and graphics clock with every GPU recording (glFrameRecorder, gpuPassBench) and say the clock beside each scene GPU number. Then test whether the pacer's skip lets the clock fall: drawn frames and clock with the pacer's threshold raised, or with the driver's power setting at maximum performance, as a measurement only.",
       "refs": [],
       "aliases": [
         "gpu idle clock p8",
@@ -19514,7 +19513,8 @@
       "records": [
         "R-1200",
         "R-1204",
-        "R-1229"
+        "R-1229",
+        "R-1813"
       ]
     },
     {
@@ -20929,20 +20929,20 @@
     {
       "id": "E-495",
       "title": "WebGPU: Pixi makes render pipelines on first use with the synchronous createRenderPipeline; Dawn compiles each on the GPU process's thread and stalls the frames waiting to be presented (the worker's STEP_MS does not show it)",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-475 agent",
+      "status": "superseded",
+      "statusText": "Closed 2026-11-22 in the backlog triage (R-1811).",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
       "result": "Read in PipelineSystem.getPipeline, not measured.",
-      "next": "Warm the pipelines a scene will use with createRenderPipelineAsync (Pixi's key: geometry layout, program, state, blend, topology, targets, depth/stencil, MSAA); a WebGPU scene's first seconds before and after. From three.js (R-1423): compileAsync's scheduler (at most 16 pipelines in flight, a yield after 8 ms through rAF then setTimeout(0), objects skipped until ready, the shared descriptor reset before the await), and a check that equal programs generate equal WGSL.",
       "refs": [],
       "aliases": [
         "webgpu pipelines on first use"
       ],
       "records": [
         "R-1241",
-        "R-1423"
+        "R-1423",
+        "R-1811"
       ]
     },
     {
@@ -21343,11 +21343,10 @@
     {
       "id": "SST-3",
       "title": "Game scripts in the bundle fetched once and in parallel by the main thread and posted to the workers, instead of a serial fetch walk plus a second fetch of every file in every worker",
-      "status": "running",
-      "statusText": "built 2026-11-18 (3ce60f3f); bundle only, not timed yet",
+      "status": "kept",
+      "statusText": "Closed 2026-11-22 in the backlog triage (R-1812).",
       "date": "2026-11-17",
       "result": "",
-      "next": "The workers evaluate from the posted texts in today's dependency order (a test on a graph with a shared dependency); source builds keep import().",
       "area": "load",
       "kind": "speed",
       "refs": [
@@ -21360,7 +21359,8 @@
       "records": [
         "R-1251",
         "R-1451",
-        "R-1456"
+        "R-1456",
+        "R-1812"
       ]
     },
     {
@@ -41229,6 +41229,55 @@
       "title": "E-392 read: the pose texture is by queue row in painter order, so any mover shifts the rows after it; a dirty range pays only in a still scene; E-362 (12-byte rows) is the cheaper step",
       "verdict": "note",
       "text": "**E-392 read against the code: a dirty range pays only in a still scene, since the pose texture is laid out by queue row, in painter order.** `InstancedSpriteBatch._uploadPoseRows` (E-201) copies x, y, rotC and rotS of every queue row into four blocks and uploads the texture rows they reach; the instance stream holds the row index. The rows are the frame's sorted queue: when one walker crosses another's y, every row between them shifts, so the rows that change are, in any scene with movers, nearly all of them. Predator's frame (glFrameRecorder, R-1802's A runs, 2026-11-22): 4 texSubImage2D of 1024 x 4 RGBA32UI a frame, 256 KB at the default crowd, the queue's trees, houses and rocks interleaved with the walkers in y.\n\nSo the levers are: (1) a still scene stops uploading (compare the blocks with the last frame's while copying: about 0.1 ms of JS a frame at 40 000 rows in a moving scene, for nothing); (2) E-362 (the rotation as one u32, 16 -> 12 bytes a row) cuts every frame's upload by a quarter; (3) poses by key instead of by row (the keyed frames' pose stream, E-191/E-201), where a still entity's pose never changes. None is worth a sitting before a scene shows the upload in its renderer's time: E-392 drops in rank; E-362 is the cheaper first step."
+    },
+    {
+      "id": "R-1808",
+      "date": "2026-11-22",
+      "title": "N-147 closed: the prod bundle reads as fast as its sources since (R-1161: f025d0c9 bundles NEUTRAL on Predator and Boids, Boids spatial 4.756 -> 4.660 ms; R-1183, R-1665)",
+      "verdict": "answered",
+      "text": "Closed in the 2026-11-22 backlog triage. Every bundle sitting after the report found the prod bundle no slower than its sources: R-1161 (f025d0c9: Predator and Boids NEUTRAL, Boids 8 pairs spatial 4.756 -> 4.660 ms), R-1183 (Boids bundle against sources NEUTRAL) and R-1665 (the ECS-way merge: prod ESM logic -7.2 % against src in Predator, Boids below the floor). The 4 % seen after E-198 did not hold; bundle-against-source runs read -3 to +10 % from noise alone (bundle-vs-src memory)."
+    },
+    {
+      "id": "R-1809",
+      "date": "2026-11-22",
+      "title": "N-207 closed: the owner left the render cards as they are (2026-11-15 \"está todo bien ahora, dejemos todo así\"); the anchor attempt was reverted (6f2d17e5)",
+      "verdict": "answered",
+      "text": "Closed in the 2026-11-22 backlog triage. The owner saw the frames side by side on 2026-11-15 and decided (\"está todo bien ahora, dejemos todo así\", about 20:00); the card-anchor attempt of that evening was reverted (6f2d17e5) and DX-LAMPPANO shipped its lamps' cards (2b19d9f8). Nothing left to do unless the owner reopens it."
+    },
+    {
+      "id": "R-1810",
+      "date": "2026-11-22",
+      "title": "E-386 closed: the light's stress scenes exist and were run (light3dCompareScene, lampShadowStressScene, sunShadowMap ?lamps=, selfShadow, spriteMaps; R-1152, R-1157, R-1164 kept)",
+      "verdict": "kept",
+      "text": "Closed in the 2026-11-22 backlog triage. The scenes the owner asked for are in tests/bench/stressScenes (light3dCompareScene, lampShadowStressScene's knobs, sunShadowMapStressScene ?lamps=, selfShadowStressScene, spriteMapsStressScene; R-1152), and they drove that night's batches: R-1157 (the lamps' frames a ninth of pre-render), R-1164 (light3dCompare KEPT, pre-render -24.7 % and -18.7 %). The traces they feed are separate items (E-405 to E-424)."
+    },
+    {
+      "id": "R-1811",
+      "date": "2026-11-22",
+      "title": "E-495 closed: WebGPU's pipelines are built ahead with createRenderPipelineAsync since SST-7 step 3 (67bead52, Pixi patch PipelineSystem.weedPipelineAhead)",
+      "verdict": "superseded",
+      "text": "Closed in the 2026-11-22 backlog triage: done by SST-7 step 3 (67bead52): Pixi's PipelineSystem.weedPipelineAhead (scripts/buildPixi.mjs) builds the pipelines a draw will ask for with createRenderPipelineAsync, and pixiWorker.js warms the scene's main ones at init."
+    },
+    {
+      "id": "R-1812",
+      "date": "2026-11-22",
+      "title": "SST-3 closed: the workers evaluate from posted texts (3ce60f3f), merged with DX-STARTUP (R-1451: Predator night first frame 3 545 -> 3 392 ms, the barrio 3 866 -> 3 499)",
+      "verdict": "kept",
+      "text": "Closed in the 2026-11-22 backlog triage. Built 2026-11-18 (3ce60f3f) and merged with DX-STARTUP, whose sitting timed the batch it was in (R-1451: Predator by night first frame 3 545 -> 3 392 ms, the barrio 3 866 -> 3 499, bunnyMark a tie). Its own share of that gain was not split out."
+    },
+    {
+      "id": "R-1813",
+      "date": "2026-11-22",
+      "title": "E-451 closed: not reproduced after E-419 (R-1204: P0 at 1 590-1 785 MHz); glFrameRecorder logs nvidia-smi's pstate and clock with every recording",
+      "verdict": "answered",
+      "text": "Closed in the 2026-11-22 backlog triage. After E-419 the GPU ran at P0 through bunnyMark (1 590 MHz) and volumeStressScene (1 785 MHz) (R-1204), and the asked step is in: glFrameRecorder prints the window's pstates and median clock (nvidia-smi) with each recording, as R-1802's runs show."
+    },
+    {
+      "id": "R-1814",
+      "date": "2026-11-22",
+      "title": "N-221 closed: Defender excludes C: and D: whole (the owner's choice); sittings run with the agents idle, by practice",
+      "verdict": "answered",
+      "text": "Closed in the 2026-11-22 backlog triage. The owner's call was made: Microsoft Defender excludes C:\\ and D:\\ whole (machine profile, 2026-11-21: MsMpEng under 90 CPU-s in 2.4 days). The other half is practice, not code: sittings run while the agents' builds and tests are idle (this session's sittings of 2026-11-22 ran with nothing else busy)."
     }
   ],
   "leads": [
