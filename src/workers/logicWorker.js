@@ -240,6 +240,9 @@ class LogicWorker extends AbstractWorker {
     this._inputWaitMisses = 0;
     this._inputWaitPeriodMs = NaN;
     this._inputWaitLastStart = NaN;
+    // The wait's cap, ms: under 1, where Windows wakes a timed-out Atomics.wait on time (1 or more sleeps to the timer
+    // period, about 15 ms). N-406: a test widens it, so a publisher that a loaded machine runs late still lands in it.
+    this._inputWaitCapMs = 0.95;
 
     // Logic worker needs to CREATE GameObject instances (all workers get scripts/components)
     this.needsGameScripts = true;
@@ -1322,7 +1325,8 @@ class LogicWorker extends AbstractWorker {
     const frame = this.frameNumber | 0;
     if (frame < this._inputWaitOffUntil) return;
     const eighth = period * 0.125;
-    const budget = eighth < 0.95 ? eighth : 0.95;
+    const cap = this._inputWaitCapMs;
+    const budget = eighth < cap ? eighth : cap;
     Atomics.wait(chain, 1, gen, budget);
     const waited = performance.now() - now;
     addWaitMs(waited);

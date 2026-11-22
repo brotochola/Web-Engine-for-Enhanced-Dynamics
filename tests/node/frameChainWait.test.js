@@ -164,15 +164,20 @@ function logicAt(w, gen, mainAgo = 40) {
 
 test('logic waits for main\'s frame of this vsync before it reads inputs, and counts the wait', async () => {
   const w = await loadWorker('logicWorker.js', 'logicWorker');
-  // A loaded machine may run the publisher late (past logic's 0.95 ms budget), or keep this thread off a core until
-  // main's frame is already out (no wait at all): a few tries, each read against the publish's time (N-326,
-  // waitedUntil; each a miss at most, and logicAt clears the misses, so the waits stay on). N-406: 24 tries, as 8 all
-  // missed on the ASUS's 2 cores beside a browser job; a try that lands ends the loop, so they cost only on such a machine.
+  // A loaded machine may run the publisher late, past logic's 0.95 ms cap (the ASUS's 2 cores beside a browser job
+  // missed 13 of 72 even with 24 tries), or keep this thread off a core until main's frame is already out (no wait at
+  // all). N-406: the test widens the cap to 20 ms (the engine keeps 0.95: Windows' timer, see the field), on a period
+  // whose eighth is the same 20 ms, so a publish 0.3 ms out lands in the wait however late its thread runs; a few tries
+  // are left for the thread kept off a core, each read against the publish's time (N-326, waitedUntil).
+  const CAP_MS = 20;
   let chain = null;
   let waited = 0;
   let untilPublish = false;
-  for (let attempt = 0; attempt < 24; attempt++) {
-    chain = logicAt(w, 7);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    // Main's last frame a whole (long) period back, so this vsync's is not out yet.
+    chain = logicAt(w, 7, CAP_MS * 8);
+    w._inputWaitCapMs = CAP_MS;
+    w._inputWaitPeriodMs = CAP_MS * 8;
     const p = await publisherAt(chain.buffer, 1, 8);
     resetWaitMeter();
     const at = p.publishIn(0.3);
@@ -181,11 +186,12 @@ test('logic waits for main\'s frame of this vsync before it reads inputs, and co
     await p.stop();
     waited = waitMeterMs();
     untilPublish = waitedUntil(at, begun, waited);
-    if (Atomics.load(chain, 1) === 8 && untilPublish && waited < 0.95) break;
+    if (Atomics.load(chain, 1) === 8 && untilPublish && waited < CAP_MS) break;
   }
+  w._inputWaitCapMs = 0.95;
   assert.equal(Atomics.load(chain, 1), 8, 'main\'s frame published during the wait');
   assert.ok(untilPublish, `the wait is in WAIT_MS (${waited.toFixed(2)} ms)`);
-  assert.ok(waited < 0.95, 'within the budget');
+  assert.ok(waited < CAP_MS, 'the publish ended the wait, not the cap');
   assert.equal(w._inputWaitOffUntil, 0, 'not turned off');
   // Main's frame of this vsync out before this frame began (its animation frame 0.2 ms earlier): no wait.
   logicAt(w, 9, 0.2);
