@@ -2030,7 +2030,7 @@ export declare class GameEngine {
   state: number;
   transitionCooldown: number;
   debugEnabled: boolean;
-  /** The debug overlay's loaded module, once it is in (it loads after the page's code runs); null with debug off. */
+  /** The debug overlay, once it is in (it loads with the first loadScene); null before that and with debug off. */
   debugUI: DebugUI | null;
   /** What registerScenes was given. */
   registeredScenes: DebugSceneEntry[];

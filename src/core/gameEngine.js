@@ -85,9 +85,17 @@ class GameEngine {
     // Debug UI (created if debug: true). Distinct from Scene.config.debug object.
     this.debugEnabled = config.debug ?? ENGINE_DEFAULTS.debug;
     this.debugUI = null;
-    /** SST-14: the debug overlay's load (debug: true), until it resolves into debugUI; null when off or destroyed. */
+    /**
+     * SST-14: the debug overlay's load (debug: true), until it resolves into debugUI; null before the first loadScene,
+     * with debug off, or destroyed.
+     */
     this._debugUILoad = null;
-    /** The debug overlay's scene switcher entries (registerScenes): kept here, the overlay loads after the page's code runs. */
+    /** The overlay's options, kept for its load at the first loadScene. */
+    this._debugUIOptions = {
+      updateInterval: config.debugUpdateInterval ?? DEBUG_DEFAULTS.updateInterval,
+      defaultOpen: config.debugDefaultOpen ?? DEBUG_DEFAULTS.defaultOpen,
+    };
+    /** The debug overlay's scene switcher entries (registerScenes): kept here, the overlay loads with the first scene. */
     this.registeredScenes = [];
     /**
      * N-301: a GPU loss being recovered: { scene, backend, save (the world's save, a promise), timer (WebGL: the wait
@@ -97,26 +105,11 @@ class GameEngine {
     /** N-301: when the last restart after a GPU loss ended (performance.now()), or -Infinity. */
     this._gpuRestartEnd = -Infinity;
 
-    if (this.debugEnabled) {
-      const load = DebugUI.load({
-        updateInterval: config.debugUpdateInterval ?? DEBUG_DEFAULTS.updateInterval,
-        defaultOpen: config.debugDefaultOpen ?? DEBUG_DEFAULTS.defaultOpen,
-      })
-        .then((overlay) => {
-          // Destroyed meanwhile: nothing to show it in.
-          if (this._debugUILoad !== load) {
-            overlay.destroy();
-            return;
-          }
-          this.debugUI = overlay;
-          overlay.registerScenes(this.registeredScenes);
-        })
-        .catch((error) => console.warn('[GameEngine] the debug UI did not load:', error));
-      this._debugUILoad = load;
-      // Opt-in (hotReload: true), for pages served by npm run dev: reload on a file
-      // change, keeping the running scene's state. Other servers would 404 the endpoint.
-      if (config.hotReload === true) HotReload.start(this);
-    }
+    // The debug overlay loads with the first scene (_loadDebugUI from loadScene): a page that shows no scene yet, a
+    // menu, has no debug bar over it and fetches none of the overlay's modules.
+    // Opt-in (hotReload: true), for pages served by npm run dev: reload on a file
+    // change, keeping the running scene's state. Other servers would 404 the endpoint.
+    if (this.debugEnabled && config.hotReload === true) HotReload.start(this);
 
     // Browser environment hardening
     this._injectedStyle = null;
@@ -338,8 +331,30 @@ class GameEngine {
   }
 
   /**
+   * The debug overlay's load (debug: true), started once, by the first loadScene: it imports while the scene loads and
+   * loadScene waits for it before attaching. Null with debug off or once destroyed.
+   * @returns {Promise<void>|null}
+   */
+  _loadDebugUI() {
+    if (!this.debugEnabled || this._abandoned || this._debugUILoad !== null) return this._debugUILoad;
+    const load = DebugUI.load(this._debugUIOptions)
+      .then((overlay) => {
+        // Destroyed meanwhile: nothing to show it in.
+        if (this._debugUILoad !== load) {
+          overlay.destroy();
+          return;
+        }
+        this.debugUI = overlay;
+        overlay.registerScenes(this.registeredScenes);
+      })
+      .catch((error) => console.warn('[GameEngine] the debug UI did not load:', error));
+    this._debugUILoad = load;
+    return load;
+  }
+
+  /**
    * The scenes the debug overlay's Scene tab offers, one button each. `{ name, url, export? }` (workers import that
-   * module), or `{ name, class }` / `{ name, load }`. Call it any time: the overlay loads after the page's code runs
+   * module), or `{ name, class }` / `{ name, load }`. Call it any time: the overlay loads with the first scene
    * (SST-14) and takes the list when it is in.
    * @param {{ name: string, url?: string, export?: string, class?: Function, load?: () => Promise<Function>|Function }[]} scenes
    */
@@ -379,6 +394,8 @@ class GameEngine {
     loadMark('loadScene');
     // SST-2: engine.wasm compiled on the page while the scene module loads (once a page; the workers get the module).
     compileEngineWasm();
+    // The debug overlay imports meanwhile too (the first scene only); the attach below waits for it.
+    this._loadDebugUI();
 
     try {
       // Before the import: a scene module may read WEED.params at its top level.
@@ -477,7 +494,7 @@ class GameEngine {
       await this.currentScene.init();
       if (!this._presenting) this.currentScene.setPresenting(false);
 
-      // Attach debug UI to new scene (its module is usually in by now: it loads from the engine's start)
+      // Attach debug UI to new scene (its module is usually in by now: it started loading with this call)
       if (this._debugUILoad) await this._debugUILoad;
       if (this.debugUI) {
         this.debugUI.attach(this, this.currentScene);
