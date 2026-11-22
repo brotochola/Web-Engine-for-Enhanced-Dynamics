@@ -32,7 +32,10 @@ empties it.
   ambient and no sun, no world size under a bigger canvas. While the game runs, in the debug build only, with
   `debug: { checks: false }` to turn them off: a field that hides an accessor, a field first written after
   `onSpawned`, body flags or a hand-set mass that do not reach the body, particles born on the floor, emit keys that
-  are ignored, unknown key names.
+  are ignored, unknown key names, neighbour lists cut at `spatial.maxNeighbors`. In both builds, once each, what the
+  engine drops (DX-CONFIGCHECK): a full physics command ring (`physics.commandRingCapacity`), a logic worker a whole
+  contact ring behind (`physics.contactRingCapacity`), more than Box2D's 10 000 contacts of a kind in one step, and a
+  frame that fills `bullet.maxImpactsPerFrame`.
 - **Errors that say what happened** (DX-GUARDS): an asset that does not load names its URL and the HTTP status; a
   scene file a worker cannot import, or one that imports a second copy of the engine, says so.
 - **The debug bundle's workers print their warnings and errors.** Their build dropped every console call, so a
