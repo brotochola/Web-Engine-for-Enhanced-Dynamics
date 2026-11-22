@@ -12714,12 +12714,12 @@
       "id": "N-155",
       "title": "lightGalleryScene draws differently on WebGL and WebGPU: up to 52/255 on about 80 000 to 98 000 pixels",
       "status": "open",
-      "statusText": "reproduced 2026-11-22 on main (R-1741)",
+      "statusText": "narrowed 2026-11-22 on the ASUS (R-1756): one lamp, its radius and glow; the light loop's text is the same on both",
       "date": "2026-11-12",
       "area": "render",
       "kind": "bug",
       "result": "The same count with and without cones (raycast 79 499 both; basic 97 951 and 96 252); traced in the session to the lamp whose halo is on its own layer (glowLayer); predates the light API change.",
-      "next": "The light pass's GLSL against its WGSL for this scene's lamps (cones, glows, the lamp on its own glow layer).",
+      "next": "Lamp 8's light data texel as each backend uploads it and a 1 x 1 readback of the light pass at its core, to tell the data from the output stage; then weedDither and the target around values near 1.",
       "refs": [
         "REVIEW_PLAN.md#N-155"
       ],
@@ -12732,7 +12732,8 @@
       ],
       "records": [
         "R-0940",
-        "R-1741"
+        "R-1741",
+        "R-1756"
       ]
     },
     {
@@ -23266,11 +23267,11 @@
     {
       "id": "DBG-6",
       "title": "A sheet's height, normal and relief maps seen from the debug UI: the atlas inspector (today console-only, window.inspectBigAtlas) gets a button and height / normals / relief / maps-table modes, and the inspector shows the picked entity's frame with its maps",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (a53ddc28, 5ad20aa3, R-1755)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Main thread only: the twin page texels are already there as data (scene.js, DX-MAPS); decode height and octahedral normals on a 2D canvas; node tests on hand-made texels.",
+      "result": "The atlas inspector (Scene tab, Atlas) has colour, height, normals, relief and marks modes from the twin page (any format), and a readout of the frame and texel under the pointer; a picked sprite's inspector shows its frame's colours, height and normals.",
+      "next": "",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23282,17 +23283,18 @@
         "twin page viewer"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1755"
       ]
     },
     {
       "id": "DBG-7",
       "title": "The lighting grid: E-205's light tiles drawn over the screen, each tile tinted by how many lights reach it, with a hover readout of its lights and the grid's numbers (tilePx, cols x rows, wordsUsed)",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured; the owner left \"the lighting grid\" to the planner: it is these tiles (the code has no light cells; the G-buffer is DBG-5)",
+      "status": "kept-hygiene",
+      "statusText": "view 2026-11-22 on the ASUS (197fc537, readout 5ba2f503, R-1748)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "One more render view (DBG-5): its shader bit-counts the R32UI tiles texture the light pass binds; the hover readout from LightTiles.bits at the debug UI's interval; a node test on a hand-filled LightTiles.",
+      "result": "Render view 10, Light tiles: each tile's light count as a ramp with the grid, GLSL (bits counted by hand: ES 3.00 has no bitCount) and WGSL; the same picture on both backends in lightGallery. The readout: the tile under the mouse, the grid and its lights.",
+      "next": "The border tiles dimmer, and maxLights in the readout.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23304,7 +23306,8 @@
       ],
       "records": [
         "R-1347",
-        "R-1348"
+        "R-1348",
+        "R-1748"
       ]
     },
     {
@@ -23968,7 +23971,13 @@
       ],
       "records": [
         "R-1430",
-        "R-1431"
+        "R-1431",
+        "R-1749",
+        "R-1750",
+        "R-1751",
+        "R-1752",
+        "R-1753",
+        "R-1754"
       ]
     },
     {
@@ -24431,7 +24440,8 @@
         "R-1596",
         "R-1569",
         "R-1599",
-        "R-1574"
+        "R-1574",
+        "R-1746"
       ],
       "refs": [],
       "id": "N-323",
@@ -24897,18 +24907,19 @@
     },
     {
       "records": [
-        "R-1724"
+        "R-1724",
+        "R-1746"
       ],
       "refs": [],
       "id": "N-403",
       "title": "stationarySpatialScene at 40 000 entities: spatial reads slower on main than on v0.14.0 on the ASUS (spatialMax 1.37 -> 3.89 ms, +184 %; +52 % the day before), while physics and logic read faster",
-      "status": "open",
+      "status": "answered",
       "kind": "speed",
       "area": "spatial",
       "date": "2026-11-22",
-      "result": "",
-      "statusText": "seen 2026-11-21 and 2026-11-22 in ASUS scoreboards (R-1719, R-1724), under the 6 ms floor both times",
-      "next": "An owner-scene ABAB at ?entities=40000 with the spatial worker count fixed on both sides; if it holds, bisect v0.14.0..main on the ASUS, then the CPU profile of the side that loses.",
+      "result": "First bad 546c5afc (N-323). Sampled STEP_MS 1.30/0.91 -> 4.12/4.00 ms; exact-frame mean 3.02/3.11 -> 4.35/4.29 ms, p95 30 -> 5.5 ms, max 62 -> 9 ms. The extra: gather_batch 202 -> 293 ms/s (+45 %), publish 55 -> 66, JS 74 -> 89. Kept as is (E-545 parked, R-1819).",
+      "statusText": "answered 2026-11-22 on the ASUS (two bisects and a CPU trace, R-1746): a sampling artifact plus N-323's deliberate trade of mean for tail",
+      "next": "",
       "aliases": [
         "spatial 40k",
         "spatial regression"
@@ -24969,6 +24980,25 @@
       "aliases": [
         "frameChainWait flaky",
         "input wait test"
+      ]
+    },
+    {
+      "records": [
+        "R-1747"
+      ],
+      "refs": [],
+      "id": "N-407",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-22",
+      "result": "The scoreboard reads each primary's exact-frame mean (exact.workMs, plus extraMs on physics) when both sides have one; runPredatorAbab did already.",
+      "title": "The scoreboard judges each row by the sampled STEP_MS mean (statsSamplesAverage, one frame in six), which misses periodic spike frames: N-403's spatial worker read 0.91 ms sampled against 3.11 ms exact",
+      "statusText": "fixed 2026-11-22 on the ASUS (18306d97, R-1747)",
+      "next": "",
+      "aliases": [
+        "scoreboard sampled mean",
+        "exact-frame primary"
       ]
     }
   ],
@@ -41526,6 +41556,138 @@
       "commits": [
         "4e70bdd5",
         "53ae0ce7"
+      ]
+    },
+    {
+      "id": "R-1746",
+      "date": "2026-11-22",
+      "time": "02:23",
+      "timeFrom": "recorded",
+      "title": "N-403 answered: first bad 546c5afc (N-323); the 2.4x was the sampled STEP_MS missing spike frames, the exact mean +41 % on the ASUS (3.06 -> 4.32 ms) for p95 30 -> 5.5 ms; the extra is in the wasm gather",
+      "verdict": "answered",
+      "text": "**N-403 answered: the first bad commit is 546c5afc (N-323's stagger of first builds by block of ids), and most of the \"2.4x\" was the sampled STEP_MS missing N-323's old spike frames. By the exact-frame mean the change costs +41 % on the ASUS's 2 cores (3.06 -> 4.32 ms), for a flat tail (p95 30 -> 5.5 ms).**\n\nTwo bisects on the ASUS, main's first-parent line, stationarySpatialScene ?entities=40000, headless, srcOnly worktrees, 8 s after 8 s, one run a step (two when the sum fell between 4.3 and 5.8 ms), good under 5.0 ms of the two spatial workers' sampled STEP_MS:\n- 0900zk (01:48-01:59), v0.14.0..fe9c859f, 856 commits: it called 7c82269f bad at 6.27 ms, a docs-only commit (HOW_WE_MEASURE.md). That one run met other work on the machine (my register tests), so the rest of that search ran on the lower half, which read good throughout (2.4-4.2 ms).\n- 0900zm (01:59-02:05), 7c82269f..fe9c859f, 428 commits, good end measured first (3.00 ms): **first bad 546c5afc** (N-323, 2026-11-19), last good 6e997c13.\n\n**The two sides at the boundary (spatial w0 / w1):**\n\n| | 6e997c13 | 546c5afc |\n| --- | --- | --- |\n| sampled STEP_MS (statsSamplesAverage) | 1.30 / 0.91 ms | 4.12 / 4.00 ms |\n| exact-frame mean (480 frames) | 3.02 / 3.11 ms | 4.35 / 4.29 ms |\n| p50, p95, p99 | 0.93, 30.2-30.6, 41 ms | 4.4-4.5, 5.5, 6.1-6.6 ms |\n| max, long frames | 49-62 ms, 29 | 7.9-9.1 ms, 0 |\n| NEIGHBORS_REBUILT a sample | 245 / 0 | 1 178 / 1 159 |\n\nBefore N-323 every list a worker holds (20 000) was rebuilt on one frame in 16; the sampler (100 ms) almost never landed on it: one worker's 81 samples saw no rebuild at all, where 1 250 a frame was the true mean. After, about 1 170 are rebuilt every frame and every sample sees them. **Verdicts on scenes with periodic spikes read the exact-frame mean, not statsSamplesAverage** (N-407 files the tools that read the sampled mean).\n\nWhat is left is real: about 2.9 us a list rebuilt spread out against about 1.75 us when all 20 000 go in one frame. The main PC read it level (R-1563, R-1574). Not locality: stationarySpatialScene spawns its grid row by row in id order, so N-323's id blocks are compact bands already (R-1819). Candidates there: in one pass each candidate's pose is reused across all its neighbours' rebuilds (the i7-7500U's 4 MB L3 holds one frame's working set, not sixteen), and the per-frame publish of the rebuilt rows. \n**Where the extra goes (job 0900zq, 02:22-02:23, --trace-cpu, both spatial workers summed, ms per second of the window from 10 s on, 6e997c13 -> 546c5afc):** spatial busy 345 -> 470 (+36 %); the wasm gather_batch 202 -> 293 (+45 %, 58 -> 62 % of spatial's busy time); publish_batch 55 -> 66 (+21 %); the JS around them (_findNeighbors, _canReuseNeighbors, _rebuildOwnedRowsLatched) 74 -> 89 (+19 %). The rebuild rate is the same (about 1 250 against 1 170 lists a frame), so the gather costs about 1.5 times as much a list spread over 16 frames: the first candidate, the working set warm across 20 000 rebuilds in one frame and cold in each of the spread frames after the other workers ran.\n\n**Closed as answered:** a sampling artifact plus N-323's deliberate trade of mean for tail. All at once is a 30-60 ms frame every 16 on the ASUS (dropped frames); a quarter of the lists every 4th frame would still be about 8-10 ms there for perhaps a third of the mean back; the gather already walks each batch in cell order (order_batch_by_cell). A flat 4.3 ms in a 16.7 ms frame is the better deal, so N-323 stays and E-545 stays parked (R-1819)."
+    },
+    {
+      "id": "R-1747",
+      "date": "2026-11-22",
+      "time": "02:45",
+      "timeFrom": "recorded",
+      "title": "N-407 filed and fixed: the scoreboard's primaries read the exact-frame mean when both sides kept running totals, the sampled mean on both otherwise",
+      "verdict": "kept-hygiene",
+      "text": "**N-407 filed: the scoreboard judges each row by the sampled STEP_MS mean (statsSamplesAverage), which misses periodic spike frames, so a spiky worker reads cheap.** Found in N-403's bisect (R-1746): before N-323, stationarySpatialScene's spatial workers rebuilt every list on one frame in 16 (30-60 ms on the ASUS); the 100 ms sampler caught one spatial worker's rebuild frame in none of its 81 samples, so its sampled mean read 0.91 ms against an exact-frame mean of 3.11 ms.\n\nWho reads what: runPredatorAbab's primaries already take the exact-frame figures when every worker of a kind has them (`<kind>_STEP_MS_EXACT`, else `_SAMPLED`). The scoreboard does not: measureLib's per-worker primary (N-311: STEP_MS less WAIT_MS, plus QUERY_WAKE_MS on physics) is built from `statsSamplesAverage`, so runScoreboard's rows, the spatial row at stationarySpatial among them (where N-403 was first seen as +184 %), read the sampled mean. Ad hoc scripts that read STEP_MS from the result JSON (N-403's bisect did) have the same blind spot.\n\nFix: measureLib's primary takes the runner's `exact` figures (exact.workMs, plus extraMs on physics, as runPredatorAbab's exactPrimary) when both sides of a row have them, the sampled one on both sides otherwise (a base revision whose workers keep no running totals has no `exact`: one estimator per row, as decideAbab does), and the report says which it read.\n\n**Fixed (18306d97):** extractMetrics gives each primary an _EXACT twin from the runner's totals; rowEstimates takes it when both sides have it, the sampled mean on both otherwise; decideRow judges and floors with those and names the primaries that read exact. scoreboardExact.test.js covers both.",
+      "commits": [
+        "18306d97"
+      ]
+    },
+    {
+      "id": "R-1748",
+      "date": "2026-11-22",
+      "time": "02:57",
+      "timeFrom": "recorded",
+      "title": "DBG-7 done: the Render tab's Light tiles view (lights per tile from the R32UI tiles texture, both backends) and the readout of the tile under the mouse",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-7 done: the debug UI's Render tab has a \"Light tiles\" view, how many lights each tile of the light pass loops over, drawn from the tiles' own R32UI texture on WebGL and WebGPU (197fc537), and a readout of the tile under the mouse (5ba2f503).**\n\n- **What it draws:** each canvas pixel finds its tile as the light pass lays the grid out (lightTiles.js: tilePx px of the light pass's target, `border` tiles past each edge), counts the set bits of that tile's words, and shows the count as a ramp: black no light, white 32 (or lighting.maxLights if fewer); the tile grid in grey. GLSL counts the bits by hand (GLSL ES 3.00 has no bitCount: the first WebGL run refused the shader), WGSL uses countOneBits on a texture_2d<u32>.\n- **In the Pixi worker:** a quad of its own, made at the first present with the view on and released with the other view's on Final; its uniforms (grid, words in use, the light pass's resolution, the canvas) go up only when they change. WebGPU keeps no \"made\" flag for the tiles, so there the view is offered once the grid is laid out.\n- **Checked on the ASUS (HD 620, Chrome 158), renderViewProbe:** lightGallery shows the same picture on WebGL and WebGPU (the tile counts agree across the backends); the light bench draws it on both; Final pixel-equal after every view. Node suite 3481/3481, demos 143/143. One lightBench boot on WebGL failed before any view (\"entity classes not loaded: Prop, Car, Tree, Walker, Lamp\", renderer); the retry booted and drew the view.\n\n- **The readout (5ba2f503):** with the view on, the Render tab asks the Pixi worker for the mouse's tile at the debug UI's interval ('lightTileAt'); the answer gives the tile, the grid (columns x rows, tile px, words in use) and the lights the tile lists, from LightTiles.bits as the light pass binned them that frame. renderViews.test.js checks it on a hand-made grid; lightTileProbe.mjs asked the real worker in lightGallery on both backends.\n\nLeft: the border tiles drawn dimmer, and maxLights in the readout (the plan's corner line).",
+      "commits": [
+        "197fc537",
+        "5ba2f503"
+      ]
+    },
+    {
+      "id": "R-1755",
+      "date": "2026-11-22",
+      "time": "03:23",
+      "timeFrom": "recorded",
+      "title": "DBG-6 done: the atlas inspector (from a Scene tab button) shows the sheets' height, normal and relief maps and the texel under the pointer; the entity inspector shows a sprite's frame with its maps",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-6 done: the Scene tab's Atlas button opens the atlas inspector, which now shows the sheets' height, normal and relief maps and reads out the frame and texel under the pointer (a53ddc28); the entity inspector shows a picked sprite's frame with its maps (5ad20aa3).**\n\n- **The modes:** colour (the atlas), height (each texel's height above the floor, a ramp to the page's highest point), normals (0.5 + 0.5·n of the stored normal; format B keeps none: grey), relief (the relief sheets' heights, the rest grey), marks (a window grey, a height map blue, a relief map orange, an unshaded frame magenta). atlasMapsView.js paints each frame's window of the twin page (any of E-497's formats, through twinPageTexel) over the frame's own rectangle; a bake from before E-496 reads each frame at its atlas texel.\n- **The page:** the atlas loaders give inspectMaps, the twin page's texels on demand (a debug view): packed again with keepMapsTexels, or a baked maps page read back exactly through a WebGL2 texture (a 2D canvas would premultiply the data in its alpha).\n- **Checked on the ASUS:** atlasMapsView.test.js decodes hand-made texels (a known height, a known octahedral normal) in formats A and B; the page probe opened the light bench's inspector from the button: every mode painted, 459 frames with maps, the highest 273 px, and the readout over a barn gave granero_granero_4, height 143.77 px, normal (0.30, 0.30, 0.91); no page error. Node 3495/3495.\n\n- **The entity inspector (5ad20aa3):** a picked sprite gets a Frame section naming the atlas frame it draws now (its texture, or its animation's current frame); its button shows the frame cut from the atlas beside its height (ramped to the frame's highest point) and its normals. The atlas canvas and the twin page are read once per atlas. The probe picked a table in the light bench (mesa_mesa_17, 68 x 94): colour, height (to 29 px) and normals all painted. Node 3496/3496.",
+      "commits": [
+        "a53ddc28",
+        "5ad20aa3"
+      ]
+    },
+    {
+      "id": "R-1756",
+      "date": "2026-11-22",
+      "time": "03:33",
+      "timeFrom": "recorded",
+      "title": "N-155 narrowed: lightGallery's WebGL/WebGPU difference is lamp 8's light alone (radius 260, glow 0), a brighter core on WebGPU; not its shadows, place or colour; the light loop is the same text",
+      "verdict": "note",
+      "text": "**N-155 narrowed: lightGallery's WebGL/WebGPU difference is one lamp's light, lamp 8 (radius 260, no glow, the bottom-left cell at 160, 600); the other eleven agree within 5/255.** On the ASUS (HD 620), 2026-11-22: the gallery's finals compared pixel by pixel (pngDiffMap.mjs, a block map of the largest channel delta), then a probe copy of the scene (not committed) with knobs to keep one lamp and change its fields, each variant drawn on both backends.\n\n- **The full gallery:** 100 425 pixels differ, max 52, but the block map puts everything above 5 in one disc around (160, 590); WebGPU is the brighter (mean +6.3 to +6.9 where they differ).\n- **Lamp 8 alone:** 82 262 pixels, max 52, the same with no Collider (no shadows of its own) and with no barrels: not the shadows.\n- **Its fields, crossed with lamp 0 (radius 500, glow 0.05, which alone differs on 11 pixels by 1):** lamp 8 at radius 520: 17 254 pixels, max 52; with glow 0.05: 43 808, max 12; glow 0.05 and radius 500: 7 607, max 12; lamp 0 with glow 0: still 11 pixels.\n\n- **Not where it is, not its colour, not the shadows:** lamp 8 moved to lamp 0's place (160, 120) or to the middle: the same 82 299 and 91 820 pixels, max 52; lamp 8 in lamp 0's colour: the same 82 262; lamp 0 moved to lamp 8's place, with or without its glow: 0 pixels; lamp 8 with lighting.shadowsEnabled false: the same 82 262 (and 43 808 with glow 0.05), so neither its shadow map nor the barrels' shadows.\n- **The picture:** WebGPU draws a brighter core of about 40 px around the lamp (its pool's centre, 10 px above its foot); the rest of its reach matches.\n- **The light loop is the same text:** the GLSL and WGSL accumulate a lamp the same way (I / (I + d²) times reachWindow, the same reachWindow, min(total, 1) then weedDither). So the difference comes from what feeds or follows that loop for this lamp: its light data, the pass's target and blend, or the dither, not the loop's arithmetic.\n\nNext: dump lamp 8's light data texel (rows 0 to 3) as each backend uploads it, and read the light pass's output for one pixel of the core on each (a 1 x 1 readback), to tell the data from the output stage; then the dither (weedDither) and the target format around values near 1."
+    },
+    {
+      "id": "R-1749",
+      "date": "2026-11-22",
+      "time": "01:55",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-4 and CR-8 on the ASUS: Pixi's dead fields and imports (85 lines out), debug dead code and one production stub list (206 out, 52 in)",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's CR-4 and CR-8 done on the ASUS: Pixi's dead fields and imports (d590db49, 85 lines out, 3 in) and the debug UI's dead code with one production stub list (048442fc, 206 out, 52 in).**\n\n- **CR-4:** written-and-never-read fields of the Pixi worker go with their writes (physicsWorkerIndex, _gpuParticleLiveRecords, _rqPrevCount, the decalsTilesRGBA view, _lightGradientTexId, _lampVolumesSeen, maxShadowRenderItems, the shadow upload queue and options, two transforms, the visible-units report fields, two decoration zooms pre-render owns, particleFreeListTop, _rendererBackend, maxShadowsPerLight/Entity), and three unused imports.\n- **CR-8:** stubs/debugFlags.js goes (the real module imports nothing; in production the selected entity now starts at -1 as in the debug build); scripts/debugStubAliases.js is the one stub list both webpack configs take (one listed hotReload, the other hotSwap) and joins the bundle inputs; toolManager's toggleDecoEraser and deactivateAll, debugCanvas.hasActiveNavVisualization, performancePanel's LEAN_KEYS and always-empty DEFAULT_EXPANDED, and the FPS smoother's unread frameCount go. devChecks.test.js asks debugStubAliases for the stub instead of matching the configs' text.\n- **Checks:** node 3480/3481 with the old devChecks test (the alias text), then that file green with the new test; demos 143/143; make_bundle clean; the bundle smoke 8/8. No timing claim: Pixi's change removes constructor fields and cold writes only.",
+      "commits": [
+        "d590db49",
+        "048442fc"
+      ]
+    },
+    {
+      "id": "R-1750",
+      "date": "2026-11-22",
+      "time": "02:23",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-23 on the ASUS: the debug UI from tables (787 lines out, 501 in); a page probe opened every tab before and after with the same content",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's CR-23 done on the ASUS: the debug UI from tables (787 lines out, 501 in, in src/core/debug and the typings).**\n\n- DebugFlags: the nineteen show* methods over setFlag; enable() and getState() walk DEBUG_FLAG_KEYS (same sixteen keys, same order); the visual-aids panel reads that table.\n- elem(tag, className, text) replaces the three-line create, class and text in 125 places (a mechanical rewrite of exactly that shape; `el` was taken by locals).\n- DebugPanel base for the twelve panels, one PANEL_DEFS table for the panels, their list and the tabs; toolManager's one-tool-at-a-time helper; savesPanel's _busyAction; statsCollector's PREV_START; rendering/gridDraw.js for the grid lines and flowfield arrows the physics and nav renderers each drew.\n- **Checks:** a page probe (the light bench with the overlay on) opened every tab before and after: the same panels with the same node and text counts, every Visual toggle lit on its click, no page error. Node 3481/3481, demos 143/143, make_bundle clean, bundle smoke 8/8. Debug bundle only, no timing claim.\n\nLeft of CR-23: nothing the plan names. The probe (debugUiProbe.mjs) lives in the ASUS lab folder; it could join tests/bench if the debug UI's next items want it.",
+      "commits": [
+        "2e0cfed8"
+      ]
+    },
+    {
+      "id": "R-1751",
+      "date": "2026-11-22",
+      "time": "02:27",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-22 on the ASUS: one table for the config sections' defaults, SoundManager's reset and buffer setup, one animation lookup (119 out, 50 in)",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's CR-22 done on the ASUS: core's cold copies (14f21d86, 119 lines out, 50 in).** Scene._applyConfigDefaults merges its fourteen plain sections in one loop over SECTION_DEFAULTS (same order, so config's keys keep theirs; each section's fix-ups after, in their old order); SoundManager.reset() is unloadAll() plus its two lines, and the slot buffer and levels have one setup each (_makeSlotSab, _setLevels); getAnimationIndex's proxy and regular branches were the same lookup. The plan's other CR-22 parts had been done already (atlasBuiltins.js's drawBuiltin; GameObject's setters each call a shared *At function). Node 3481/3481, demos 143/143. Cold code only: no timing claim.",
+      "commits": [
+        "14f21d86"
+      ]
+    },
+    {
+      "id": "R-1752",
+      "date": "2026-11-22",
+      "time": "02:42",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-19 on the ASUS: the joint, tween, component, shared-resource and layer layouts from tables, byte offsets checked against the old ones",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's CR-19 done on the ASUS: the hand-written layouts are tables (part 1: joint, tween, component, shared resource; part 2: layer).**\n\n- Joint: JOINT_LAYOUT drives getBufferSize, initializeArrays and reset; update() applies props from a table per joint type (a prismatic's force still wins over its torque); the four add* share _begin.\n- Tween: TWEEN_COLUMNS drives tweenBufferBytes and bind. Component and SharedResource size and bind through util/schemaLayout.js's laySchema (the aligned walk each wrote twice).\n- Layer: LAYER_CONFIG_COLUMNS drives the config buffer's size, views and reset; _clearRegistry is the registry reset both init paths and reset() copied.\n- **Same bytes:** layoutTables.test.js keeps the old hand-written joint, tween and layer layouts and checks every column's offset against them (joint and tween at both entity id widths: the physics host mirrors the joint layout by hand), Joint.update's tables, and laySchema's alignment.\n- Hot readers keep their named loads (Joint.length[i], Tween.from0[i], Layer._zIndex[id]); only cold setup changed, so no timing claim.",
+      "commits": [
+        "b21d5bb0",
+        "58312a98"
+      ]
+    },
+    {
+      "id": "R-1753",
+      "date": "2026-11-22",
+      "time": "03:16",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-20 parts 1 to 3 on the ASUS: PHYSICS_STATS in one place, LiquidFun's coefficients from the config defaults, the ring's cold writers through claimSlot",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's CR-20 parts 1 to 3 on the ASUS (f8bdbbb5, b5a51622, 1da55df4).**\n\n- **Part 1, PHYSICS_STATS in one place.** The physics worker's stats slots were written out three times: workersUtils.js (page and module workers), weedjsPost.js and physicsHostImpl.js (classic scripts that cannot import). box2dConstantsImpl.js, which the classic physics worker loads first and the ESM facade wraps, holds the one table; workersUtils.js re-exports it through box2dConstants.js, the post glue and the host read Box2dConstants.PHYSICS_STATS. Same slots and numbers. The first try left five host tests red (they built the host in a vm context without the constants): they now load box2dConstantsImpl.js first, as the worker does.\n- **Part 2, LiquidFun's coefficients.** weedjsPost.js's copy of the particle system def's twelve coefficients goes: they start from physicsConfigImpl.js's PHYSICS_SIM_DEFAULTS.liquidFun, and applyLiquidFunTuningFromConfig walks the keys instead of twelve hand-written pairs. Same values, so no LiquidFun gate can tell it apart.\n- **Part 3, the ring's cold writers.** enqueueBits, enqueueRangeBits, enqueueSetLiquidFunPayload and the two particle range writers claim and publish their slot through claimSlot (returns the slot's first word or -1) and publishSlot: integers in and out. enqueue, the hot path, keeps its own copy.\n- **Checks:** node and demo suites green each time; part 1 also the bundles and their smoke (the classic worker's embedded scripts).\n\nLeft of CR-20: part 4, the host passing its bound views straight through instead of packing them and rebuilding them on the other side: the main session takes it with its CR-34 lines there, under its batch gate.",
+      "commits": [
+        "f8bdbbb5",
+        "b5a51622",
+        "1da55df4"
+      ]
+    },
+    {
+      "id": "R-1754",
+      "date": "2026-11-22",
+      "time": "02:53",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-16 on the ASUS: shader string edits through render/shaderEdit.js (hasOnce, requireMarks, replaceOnce)",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's CR-16 on the ASUS: the engine's string edits on shader sources go through render/shaderEdit.js.** hasOnce replaces the 27 inline `split(mark).length !== 2` checks, requireMarks the 7 loops that checked a list of marks (one call each), replaceOnce the local copies (opaquePass's and spriteIndexed's replaceOnce, pixelSnap's once) and sunShadowMap's wgslMarks. The errors still name the shader and the mark. The generated shader text is unchanged: the suites' shader tests and the bundle smoke (pages that compile the edited shaders) passed.\n\nSmall in lines (the checks were one line each before and after; the module's own doc comments take back most of what the helpers' removal saved): its point is one implementation of the check. CR-14 and CR-15 wait: the plan puts CR-17's shader fetch table first, and CR-17 waits for N-256.",
+      "commits": [
+        "b167ca2c"
       ]
     }
   ],
