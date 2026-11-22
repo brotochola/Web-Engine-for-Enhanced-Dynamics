@@ -22,6 +22,9 @@
  *   - keyedWords: the keyed pack, then the words in JavaScript from the key column (writeGbufWords: Pixi's frame today);
  *   - keyedGbuf: the keyed pack writing them itself, then their copy out of the memory (commitGbuf's), where the tree's
  *            pack takes the columns (it says so in keyed.gbufWritten). Its words must be keyedWords'.
+ *   - keyedGbufKept: E-455's, keyedGbuf with the copy only when the pack says a slot's words changed (keyed.gbufChanged,
+ *            as commitGbuf takes it; a tree whose pack does not say copies every frame). The frames change textures,
+ *            not the words' columns, so a tree whose pack says copies none after the first.
  *
  *   node tests/bench/gpuPackKeyedMicrobench.mjs [--rows 14000] [--entities 42600] [--dirty 0.05] [--order random|near]
  *     [--marked [texture]] [--gbuf [bands]] [--frames 61] [--output path]
@@ -276,6 +279,11 @@ export async function run({
           s.gbufData.set(s.gbufOut.subarray(0, rows * 3));
         };
         cases.keyedGbuf = { ms: framesMs(change, packAndCopy, frames), check: wordSum(s.gbufData, rows) };
+        const packAndKeep = () => {
+          pack();
+          if (keyed.gbufChanged !== false) s.gbufData.set(s.gbufOut.subarray(0, rows * 3));
+        };
+        cases.keyedGbufKept = { ms: framesMs(change, packAndKeep, frames), check: wordSum(s.gbufData, rows) };
         const got = Uint32Array.from(new Uint32Array(s.gbufData.buffer, 0, rows * 3));
         words(rows);
         const want = new Uint32Array(s.gbufData.buffer, 0, rows * 3);
