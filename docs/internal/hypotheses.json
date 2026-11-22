@@ -20048,20 +20048,21 @@
     {
       "id": "E-468",
       "title": "Predator composites the light, the shadows and the glow in three full-screen passes of about 0.10 ms each at full clock (0.15 to 0.32 at lower clocks): one composite pass reading the three would save 0.1 to 0.3 ms of GPU a frame",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "status": "answered",
+      "statusText": "answered 2026-11-22: not one pass (R-1862)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "WebGPU per draw: the composites 0.10 ms each at 1785 MHz; WebGL the same order (R-1212: three composites 0.447 ms at 660 MHz).",
-      "next": "One pass sampling the light, shadow and glow layers (both backends), the image identical; per draw before and after. R-1429: three.js compiles its whole output graph into one fragment shader and inserts a target only where an effect samples neighbours.",
+      "result": "WebGPU per draw: the composites 0.10 ms each at 1785 MHz; WebGL the same order (R-1212: three composites 0.447 ms at 660 MHz). Answered 2026-11-22 (R-1862): castedShadows (z 2, multiply) draws under the entities, lighting (4, multiply) and lightGlows (5, add) over them; the last two make dst·L + G, which one draw gives only with dual-source blending or the scene as a texture: not worth about 0.1 ms.",
+      "next": "",
       "refs": [],
       "aliases": [
         "one composite pass"
       ],
       "records": [
         "R-1215",
-        "R-1429"
+        "R-1429",
+        "R-1862"
       ]
     },
     {
@@ -42713,6 +42714,13 @@
       "title": "N-192 part three: the sun's column strips a quarter cell past both ends (74bde9fa): the crate's outline p99 under the sun 2.5-4.1 -> 1.9-3.2 px measured, none worse; a half cell read worse",
       "verdict": "kept-hygiene",
       "text": "**N-192, part three: the sun's column strips reach a quarter cell past both ends of their line (74bde9fa).**\n\nA strip ran from its cell's floor point to its top's landing, both on the cell's centre line, so the shadow's far edge\ncame out in steps up to half a cell inside the outline. Now both ends reach a quarter cell further (GLSL and WGSL). A\nfootprint's sweep keeps its own half cell.\n\n`shadowOutlineCheck`, the crate under the sun, p99 px measured / projected, WebGL (WebGPU within 0.2):\n\n| sun from | before | quarter cell (kept) | half cell |\n| --- | --- | --- | --- |\n| 0 | 2.59 / 2.37 | 2.37 / 1.80 | 3.02 / 2.08 |\n| 45 | 4.09 / 2.99 | 3.22 / 2.98 | 3.28 / 2.98 |\n| 135 | 3.80 / 3.02 | 3.14 / 3.00 | 3.38 / 3.00 |\n| 180 | 2.85 / 3.54 | 1.93 / 2.54 | 3.02 / 2.22 |\n| 225 | 2.94 / 2.86 | 2.94 / 2.54 | 2.94 / 2.94 |\n| 270 | 2.48 / 2.88 | 1.88 / 1.88 | 2.69 / 1.80 |\n| 315 | 2.94 / 2.55 | 2.94 / 2.51 | 2.95 / 2.79 |\n\nThe light bench by day with the cars' height maps: 512 px differ against HEAD, and the bus's far shadow edge sits 1 to\n2 px further out. `test:node` passes (3 579).\n\n**Left:** the crate stays near 3 px with the sun on a diagonal (45, 135, 225, 315). Its projection's p99 does not move\nthere with either pad, so the cause is not the strips' ends."
+    },
+    {
+      "id": "R-1862",
+      "date": "2026-11-22",
+      "title": "E-468 answered: castedShadows multiplies under the entities, lighting and lightGlows above them; only those two are neighbours, and dst·L + G needs dual-source blending or the scene as a texture: not worth about 0.1 ms",
+      "verdict": "answered",
+      "text": "**E-468 answered: the three composites cannot be one pass, since the layers are not neighbours in the draw order.**\nRead from the code; nothing was measured.\n\nThe layers, from `configDefaults.js`, each drawn by a full-screen sprite of its target at its Layer's place:\n- `castedShadows`: zIndex 2, MULTIPLY;\n- `entities`: zIndex 3;\n- `lighting`: zIndex 4, MULTIPLY;\n- `lightGlows`: zIndex 5, ADD.\n\nThe shadows multiply the floor before the sprites are drawn over it, so they cannot join a pass after the entities. A\ngame may also move any of these layers (Layer.zIndex).\n\nOnly lighting and lightGlows sit together. Together they make `dst · L + G`, the light per channel and the glow added.\nFixed-function blending cannot form that with one source colour: `src + dst · src` mixes them, and the alpha factor is\none number where L is coloured. One draw would need either:\n- dual-source blending (WebGL2's `WEBGL_blend_func_extended` extension, WebGPU's optional `dual-source-blending`\n  feature), which Pixi does not drive: a patched pipeline and a fallback for 0.1 ms;\n- the scene behind as a texture: one more full-screen copy, which costs about what the pass saves.\n\nThe saving on record is 0.10 ms a composite at full clock (the WebGPU recorder, 2026-11-16), about 0.1 ms here. Not worth\neither route. Closed with no change. Two cheaper cases already hold: the glow pass is cut to a rect when one torch glows\n(E-404), and a target with nothing in it is not composited."
     }
   ],
   "leads": [
