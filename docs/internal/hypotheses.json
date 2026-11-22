@@ -24025,7 +24025,11 @@
         "R-1767",
         "R-1768",
         "R-1769",
-        "R-1843"
+        "R-1843",
+        "R-1772",
+        "R-1773",
+        "R-1774",
+        "R-1775"
       ]
     },
     {
@@ -42334,6 +42338,51 @@
       "title": "Predator gate over the ASUS's batch 8 (CR-31/25/13/29) and N-302, N-189, CR-21, CR-18 parts 1-2 (9a93d327 -> a66f2a63), owner logic: 4 pairs a drift REGRESSION, 8 pairs NEUTRAL, logic -2.8 %",
       "verdict": "kept-hygiene",
       "text": "**The ASUS's batch 8 (N-303 CR-31, CR-25: Ray's one-hit cast through _traverseGrid, CR-13: one WEED name list, CR-29: Gamepad's getters from tables) and the main PC's N-302, N-189, CR-21 (pre-render) and CR-18 parts 1-2 pass Predator: NEUTRAL after 8 pairs.** batch9-gate, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, 9a93d327 -> a66f2a63 (dist built), owner logic (CR-25 and CR-29 are on the game code's path), 07:12 to 07:19:\n\n- First 4 pairs: REGRESSION with every worker up together (logic +6.7 % but +1.0 % against the others, spatial +7.3 %, physics +4.5 %, renderer +8.5 %, preRender +7.6 %): drift, as in R-1840.\n- 8 pairs: logic 14.962 -> 14.656 ms (-2.8 %, worse 3/8, cv 2/7 %); spatial -1.3 %, physics -1.8 %, preRender +0.9 %, renderer +4.5 % (cv 8/12 %, its swing). Load keys within 0.4 %.\n- An append was first refused: the runner fingerprints the main folder, and an uncommitted edit made there during the sitting (CR-18 part 3) changed it; stashing it let the append run.\n\nKept as hygiene."
+    },
+    {
+      "id": "R-1772",
+      "date": "2026-11-22",
+      "time": "07:20",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-26: one QuerySystem on the page and in the workers (QuerySystem.fromSerialized; createWorkerQueryFunctions and Query.bindWorker gone); 234 lines fewer, the worker's read 11.2 -> 12.4 M reads/s, publish equal",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-26: one QuerySystem on the page and in the workers (6c043472).**\n\n- `createWorkerQueryFunctions` goes. It was a second copy, in closures, of the masks, query, queryActiveEntities, queryPublishedFrame, the slow fallback and the publish.\n- A worker now builds the class from serialize()'s data over the shared snapshots (`QuerySystem.fromSerialized`). Query's facade calls its one receiver on every thread: `bindWorker` is gone and `bindSystem` stays, taking a stand-in in tests.\n- The two had drifted. Now there is one behaviour:\n  - four result buffers taken in turn on both sides (the page had one);\n  - a component without an id warned once (the worker's warning was commented out; the page's warned on every call);\n  - each type's active list found once (the class on the page, the worker's global of that name).\n- querySystem.js 1211 -> 1004 lines, query.js 98 -> 71.\n\nASUS, 4 pairs (jobs 0902l and 0902m):\n- querySystemMicrobench publish_precomputed: 21.2 -> 21.6 ms. Pairs 1-3 were within 0.2 ms; the fourth A read 20.1, an outlier.\n- skip_unchanged and bitset_and_scan: equal.\n- The worker's read (querySnapshotReadMicrobench, its shipped line): 11.2 -> 12.4 M reads/s, 3 of 4 pairs better.\n\nQuery tests 22/22, node 3507/3507, demos 143/143.",
+      "commits": [
+        "6c043472"
+      ]
+    },
+    {
+      "id": "R-1773",
+      "date": "2026-11-22",
+      "time": "07:24",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-27 dropped: the lamp-frame JS passes through lampTurnFrame cost 29 % (keyed) and 18 % (full) on lampFramesMicrobench, 4 of 4 pairs: the call per row is not inlined; the two copies stay",
+      "verdict": "dropped",
+      "text": "**N-303 CR-27 dropped: the lamp-frame JS passes through lampTurnFrame lose 18 to 29 % on their kernel.**\n\napplyLampFramesInto and applyKeyedLampFramesInto took a uniform table's turn through lampTurnFrame, with the ray in LAMP_RAY, instead of their two copies of its body (70 lines). TurboFan does not inline lampTurnFrame into those loops, so every row paid a call.\n\nlampFramesMicrobench on the ASUS, 4 pairs (job 0902n), ms for 50 ops of 20 000 rows:\n\n| path | A | B | change | pairs worse |\n| --- | --- | --- | --- | --- |\n| keyed | 43.6 | 56.4 | +29 % | 4 of 4 |\n| full | 51.7 | 60.9 | +18 % | 4 of 4 |\n\nThe checksums were equal. The plan asked for a kernel tie (these passes run only where the wasm pack declines or overflows), and this is the R8 lesson again (CLAUDE.md: hot copies merged through a shared helper). The copies stay."
+    },
+    {
+      "id": "R-1774",
+      "date": "2026-11-22",
+      "time": "07:33",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-30: Pixi counts WebGL draw calls only with detailed stats (the only time the count is read); the four wrappers from a loop",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-30: Pixi counts WebGL draw calls only with detailed stats (bfea5430).**\n\n- RENDERER_STATS.DRAW_CALLS is written only with collectDetailedStats, which is set once at init. Without it, every draw went through one of four wrappers that allocated a rest array and spread it.\n- setupDrawCallMonitoring now returns without detailed stats; with them, the wrappers come from a loop.\n- Work removed off the measured path (the bench page runs without detailed stats). The renderer is in the batch gate.\n- Suites: node 3507/3507, demos 143/143.",
+      "commits": [
+        "bfea5430"
+      ]
+    },
+    {
+      "id": "R-1775",
+      "date": "2026-11-22",
+      "time": "07:33",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-32: Pixi's per-frame literals hold every field from the start (batch views, bind source, compute pose, MESH skip record); 52 warm-up deopts gone in renderQueueStressScene, steady state equal",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-32: Pixi's per-frame literals hold every field from the start (e466a44d).**\n\n- `makeBatchViews` gains type, sortKey, shadowH, shadowOffX, shadowOffY and key. `_bindSpriteQueue` used to add them on the first frame: a new map for every function that had seen the object.\n- The render queue's bind source is made by `makeBatchViews` instead of growing from `{}` field by field.\n- The compute pack's pose has `poseAlpha`, as NaN: a fraction from the start.\n- A MESH layer's skip record has `localsReady` and `_skipRt`.\n- `lastVertGen`, which starts null, stays as it is. It feeds the corner kernel's generation arguments (meshCornersClient), which main is changing in CR-18.\n- workerShape.test was not extended to factory literals: these were found by reading each literal's later writes.\n\nV8 deopt pass of renderQueueStressScene on the ASUS (job 0902o; A with CR-30, B with CR-32 too; 8 s warm-up, 12 s run):\n\n| | A | B |\n| --- | --- | --- |\n| deopts over the run | 402 | 359 |\n| of them gpuQueueLayout.js:491 | 47 | 0 |\n| of them painterRadixClient.js:42 | 5 | 0 |\n| steady state (last 8 s) | 55 | 53 |\n\nBoth sites that went were warm-up deopts.\n\nSeen on the way, both sides: 248 warm-up deopts at spatialWorker.js:1659 (`_rebuildMovedRows`' `movedCount === MOVED_SCAN`, insufficient compare feedback), none in the steady state. They are a start-up cost, not a loop.\n\nworkerShape 13/13; node 3507/3507, demos 143/143 (with CR-30).",
+      "commits": [
+        "e466a44d"
+      ]
     }
   ],
   "leads": [

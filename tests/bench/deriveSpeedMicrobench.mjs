@@ -56,7 +56,7 @@ TYPES.forEach((t, type) => {
   registered.push({ name: t.name, entityType: type, deriveSpeed: t.derive });
   start += t.count;
 });
-Query.bindWorker({ queryActiveEntities: () => all, query: () => all, queryActiveEntitiesSlow: () => all });
+Query.bindSystem({ queryActiveEntities: () => all, query: () => all, queryActiveEntitiesSlow: () => all });
 
 worker.globalEntityCount = N;
 worker.registeredClasses = registered;

@@ -28,7 +28,7 @@ test('speeds for the opted-in types only, active and not static', async () => {
   self.DeriveTestWalker = { _activeList: lists[0] };
   self.DeriveTestRock = { _activeList: lists[1] };
   const all = Int32Array.from({ length: N }, (_, i) => i);
-  Query.bindWorker({ queryActiveEntities: () => all, query: () => all, queryActiveEntitiesSlow: () => all });
+  Query.bindSystem({ queryActiveEntities: () => all, query: () => all, queryActiveEntitiesSlow: () => all });
   worker.globalEntityCount = N;
   worker.registeredClasses = [
     { name: 'DeriveTestWalker', entityType: 0, deriveSpeed: true },

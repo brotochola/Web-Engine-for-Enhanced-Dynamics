@@ -11,7 +11,7 @@
  *   - the pre-fix variant is an exact textual diff over the shipped method
  *     source, compiled in memory and written OUTSIDE the working tree.
  * Both are driven through the identical public entry,
- * `createWorkerQueryFunctions(...).queryActiveEntities`, so the only difference
+ * `QuerySystem.fromSerialized(...).queryActiveEntities` (a worker's QuerySystem), so the only difference
  * between the timed code is the one function under test.
  *
  * If the anchor text no longer matches, this throws rather than quietly
@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   calculateQueryResultBufferSize,
-  createWorkerQueryFunctions,
+  QuerySystem,
   getQuerySnapshotBytes,
   getQuerySnapshotElements,
   QUERY_SNAPSHOT_COUNT,
@@ -100,7 +100,7 @@ function makeHarness(rng) {
     snapshots.push(new Uint16Array(sab, HEADER_BYTES + i * snapshotBytes, elements));
   }
 
-  const fns = createWorkerQueryFunctions(
+  const fns = QuerySystem.fromSerialized(
     makeQueryData(),
     { queryResultsSAB: sab },
     new Uint16Array(CAPACITY + 1),
@@ -200,7 +200,7 @@ async function main() {
   Atomics.store(preHeader, 2, 1);
   Atomics.store(preHeader, 0, 0);
 
-  const preFns = preMod.createWorkerQueryFunctions(
+  const preFns = preMod.QuerySystem.fromSerialized(
     makeQueryData(),
     { queryResultsSAB: preSAB },
     new Uint16Array(CAPACITY + 1),
