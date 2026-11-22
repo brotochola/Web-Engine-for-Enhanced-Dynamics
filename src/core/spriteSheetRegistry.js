@@ -156,26 +156,7 @@ class SpriteSheetRegistry {
       return undefined;
     }
 
-    // Handle proxy sheets - return proxy-specific index, not global bigAtlas index
-    if (sheet.isProxy) {
-      const animInfo = sheet.animations[animName];
-      if (!animInfo) {
-        // Provide helpful suggestions for typos
-        const available = Object.keys(sheet.animations);
-        const suggestions = this._findSimilar(animName, available).slice(0, 3);
-        console.error(
-          `❌ Animation "${animName}" not found in "${sheetName}"\n` +
-          `   Available animations: ${available.length}\n` +
-          (suggestions.length > 0 ? `   Did you mean: ${suggestions.join(', ')}?` : '')
-        );
-        return undefined;
-      }
-
-      // Return the proxy-specific index (0, 1, 2, ...) not the global bigAtlas index
-      return animInfo.index;
-    }
-
-    // Regular sheet lookup
+    // A proxy sheet's animations carry its own index (0, 1, 2, ...), not bigAtlas's: the same lookup either way.
     const anim = sheet.animations[animName];
     if (!anim) {
       // Provide helpful suggestions for typos
