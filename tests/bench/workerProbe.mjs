@@ -23,7 +23,7 @@ const samples = Number(args.samples ?? 5);
 const intervalMs = Number(args['interval-ms'] ?? 250);
 
 const server = await createStaticBenchmarkServer(repoRoot);
-const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding'] });
+const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--mute-audio', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'] });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const params = new URLSearchParams(`src=1&${query}`);
