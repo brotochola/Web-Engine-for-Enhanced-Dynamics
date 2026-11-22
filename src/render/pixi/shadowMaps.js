@@ -129,6 +129,8 @@ export class PixiShadowMaps {
     this.shadowUpdateInterval = 1;
     this.shadowUpdateTick = 0;
     this.gpuSunDrew = false;
+    // N-411: whether the shadows' target holds what a pass drew (true at first: a new target is cleared once).
+    this.shadowTargetHeld = true;
   }
 
   createShadowSpriteSystem() {
@@ -391,11 +393,18 @@ export class PixiShadowMaps {
 
     if (this.worker._lampMapOn && !this.worker.lampMap.mapDrew) this.worker.lampMap.clearIfEmpty();
 
-    if (!this.gpuSunDrew) {
+    // N-411: with nothing drawn into the shadows' target this frame (map mode, where the sun and the lamps go to their
+    // maps, or a frame with no caster), its composite multiplied a transparent target over the whole canvas: a full
+    // pass a frame that changed no pixel. It is skipped, and the target cleared once when it last held shadows (a debug
+    // view shows it; the light pass never reads it). The next pass that draws into it clears it first.
+    if (!this.gpuSunDrew && this.shadowTargetHeld) {
       rtOpts.container = this.worker._rtEmptyContainer;
       rtOpts.clear = true;
       this.worker._submitRender(rtOpts);
     }
+    this.shadowTargetHeld = this.gpuSunDrew;
+    const composite = this.worker.shadowDisplaySprite;
+    if (composite && composite.renderable !== this.gpuSunDrew) composite.renderable = this.gpuSunDrew;
   }
 
   _drawGpuCasterPass(mesh, group, needClear) {
