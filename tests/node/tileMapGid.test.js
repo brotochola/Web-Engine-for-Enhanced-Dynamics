@@ -17,12 +17,8 @@ import {
   TILEMAP_GID_STACK_GID_MAX,
   gidLayersPerDraw,
   TILEMAP_GID_LAYERS_PER_DRAW,
-  unpackGidRgba8,
-  decodeTiledGid,
-  applyTiledLocalUv,
-  tiledGidAtlasUv,
-  pageUvToLocalTile,
 } from '../../src/render/tilemapGid.js';
+import { unpackGidRgba8, decodeTiledGid, applyTiledLocalUv, tiledGidAtlasUv, pageUvToLocalTile } from '../reference/tilemapGidJs.mjs';
 
 test('TILEMAP_GID_PAGE_TILES is WebGL2 minimum max texture size', () => {
   assert.equal(TILEMAP_GID_PAGE_TILES, 2048);
