@@ -4590,6 +4590,8 @@ loads, 2 allocations; `bindToEntitySlot`: 10 megamorphic stores, 9 loads, 4 keye
 instance `_makeInstance` makes.
 **Plan:** count the binds per second in Predator and the spawn scenes first; if they matter, one shape for every class's
 instances; the machine code again. Owner: logic.
+**Answered 2026-11-22 (R-1833):** an instance binds once per pooled slot, at boot (spawnStorm 2 001, then 0 a second
+while it spawns; Predator 0, its people tick through static hooks). Nothing to gain while a scene runs.
 
 ### E-291 _boxRayDistance is over TurboFan's 460-byte inlining limit: it stays in Sparkplug and boxes its doubles
 
