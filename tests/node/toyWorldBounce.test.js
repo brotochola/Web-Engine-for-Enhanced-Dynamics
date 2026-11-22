@@ -8,7 +8,7 @@ import {
   TOY_RIGHT,
   TOY_TOP,
   TOY_BOTTOM,
-} from '../../src/util/toyWorldBounce.js';
+} from '../bench/stressScenes/bunnyMark/toyWorldBounce.js';
 
 test('toyWorldBounce flips on cached world sides and is deterministic', () => {
   const xs = new Float32Array([TOY_LEFT + 1, TOY_RIGHT - 1]);
