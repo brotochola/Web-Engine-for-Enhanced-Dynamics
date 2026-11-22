@@ -24189,17 +24189,17 @@
     {
       "records": [
         "R-1520",
-        "R-1531"
+        "R-1531",
+        "R-1801"
       ],
       "refs": [],
       "id": "N-313",
       "title": "E-322's reorder raises Box2D's memory peak 45 to 70 MB at Predator crowd 2.5 (548 -> 593 to 619 MB of 669, the 90 % warning fires): its gathers take new buffers before freeing the old ones",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "physics",
       "date": "2026-11-19",
-      "statusText": "measured 2026-11-19 (R-1531); next: gather into the step's arena and copy back",
-      "next": "Keep the reorder's gather buffers between reorders (a scratch arena sized by the awake set's capacity, grown when it grows) instead of b2Alloc per pass; check the peak at Predator crowd 2.5 and the harness's pose hash."
+      "statusText": "Fixed 2026-11-21 (R-1801, Box2D 0f0fa10, WeedJS 3f9f23f2): the reorder gathers into the step's stack and copies back; an array the stack cannot hold still takes a new buffer. Predator crowd 2.5's Box2D memory peak 553-557 -> 518-519 MB."
     },
     {
       "records": [
@@ -41004,6 +41004,15 @@
       "title": "N-329 fixed: a loaded game's guns stayed on cooldown (performance.now() stamps); the save keeps the sim clock (format 8) and Predator times guns on it; restored battle now tracks the fresh one (impacts 370 -> 7 500/s)",
       "verdict": "kept-hygiene",
       "text": "**N-329 found: after a load every gun stayed on cooldown.** Person stamped `PersonComponent.lastShotTime` with the logic worker's `performance.now()`; the save kept the stamps and a new page's `performance.now()` starts near 0, so `canFire` stayed false until the new clock passed the old stamps (tens of seconds). No bullets, no new deaths, no new panic: the restored world calmed down. Found with `tests/bench/restoreFidelity.mjs` (new: the same battle fresh, saved, and restored from that save beside it), Predator `crowd=2.5&dayCycle=0`:\n\n- saved at 12 s (mid-battle): bullet impacts published ~9 000/s fresh against ~370/s restored; live bullets 60-250 against 9-16.\n- saved at 20 s: civilians killed in the next 10 s, 29 fresh against 1 restored; soldiers in RANGED_ATTACKING were alike (10-20), so they aimed and never fired.\n- Per-entity sight, neighbours, guns and FSM state times came back right (probed by type): only the stamp was wrong.\n\n**Fix.** Engine (1bde21d5): the save keeps the sim clock and a load goes on from it (TIME section: scale f32 + `Time.simNowMs` f64; format 7 -> 8; `Time._setSimNow`). Demo (935a7ba9): Person's cooldown reads `Time.simNowMs`; the car scene's hit throttle, which shares the column, too. After it, same battles: saved at 12 s, ~7 500 impacts/s restored and civilians dying at the fresh rate (1 083 against 947 in 5 s); saved at 20 s, the restored series tracks the fresh one (deaths 27 against 28, panic 1 585 against 1 503 eight seconds on).\n\n**Load left after the fix** (same battle, the bench page's 6 s window 10 s after a 20 s save, three sittings): physics 15.0 / 15.5 / 15.6 ms fresh against 13.9 / 12.8 / 14.0 restored; Awake 18 116 / 16 887 / 18 348 against 16 675 / 16 276 / 17 525 (-4 to -8 %); Moved mixed (6 824 / 4 614 / 6 271 against 6 534 / 5 649 / 5 771); spatial -1 to -8 %, logic -4 to -8 %. Per awake body restored physics costs 6-14 % less: likely the Box2D world rebuilt in one pass against one grown over 30 s of spawns and deaths (not measured). Both sides of a from-save sitting load the same save, so the comparison stays even; the cached format 7 saves no longer match (the runner's key holds the format) and are remade."
+    },
+    {
+      "id": "R-1801",
+      "date": "2026-11-21",
+      "time": "23:59",
+      "timeFrom": "recorded",
+      "title": "N-313 fixed: the awake reorder gathers into the step's stack and copies back; Predator crowd 2.5 Box2D memory peak 553-557 -> 518-519 MB, harness heap top 129.6 -> 109.6 MB; physics +0.8 % NEUTRAL, LiquidFun neutral",
+      "verdict": "kept-hygiene",
+      "text": "**N-313 fixed: E-322's awake reorder gathers into the step's stack and copies back, instead of into new buffers.** Box2D a87c81e (branch weed/n313-reorder-in-stack), shipped as the wasm of WeedJS fix/n313-reorder-in-stack 06f7d849. The reorder runs before any other task of the step uses the stack, which the solver already sized; it now gathers the body sims, body states and each sorted contact array there when the stack has the room (`b2GetStackRoom`), then copies back in a parallel pass. An array the stack cannot hold still goes to a new buffer, as before, rather than growing the stack.\n\n- **Crowd harness** (weed mode, 38 000 walkers, order 2, churn 100, idle 20, 960 steps, reorder -30, one round, 23:40-23:46): heap top 107.2 MB with no reorder; reordering, 129.6 MB on main against 109.6 MB with the fix (bytes in use 96.3 MB on every arm). poseHash 963cbc7b036c09c5 and weedHash identical to main's for each setting. The copy costs the reorder 5.27 -> 6.43 ms per 30-step cycle (median of 32 cycles), its longest step 3.43 -> 4.79 ms: about 0.04 ms a step on average.\n- **Predator crowd 2.5** (`dayCycle=0`, from the E-210 save, owner physics, 4 pairs, to 23:52): NEUTRAL; physics 14.102 -> 14.308 ms (+0.8 %, worse 2/4), logic +1.4 %, spatial -0.2 %, pre-render -1.0 %, presented 60 = 60; loads within 1 %. Box2D's memory peak (MEMORY_PEAK_KB): 552.9 to 556.8 MB on main against 518.2 to 518.9 MB with the fix, every run (-38 MB).\n- **LiquidFun** (the Box2D rule): liquidFunStressScene `water=1.5`, owner physics, 4 pairs, to 23:56: NEUTRAL, physics 9.239 -> 9.333 ms (+2.5 %, worse 2/4; 3 bodies, which the reorder cannot reach); liquidFunBodyCoupleStressScene, to 23:59: NEUTRAL, physics 8.001 -> 7.791 ms (-1.6 %, worse 1/4).\n\nKept as hygiene (no primary worker 3 % worse). Merged: Box2D 0f0fa10, WeedJS 3f9f23f2. Node suite 3434/3434, demos 143/143."
     }
   ],
   "leads": [
