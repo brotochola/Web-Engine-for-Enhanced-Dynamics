@@ -21,7 +21,7 @@
 import { GPU_CASTER_LIGHT_FLOAT, GPU_KEYED_CASTER_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
-import { layoutRegions, NULL_GUARD_BYTES, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
+import { layoutRegions, NULL_GUARD_BYTES, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS, stampNearPairs } from '../../src/util/wasmMemoryMap.js';
 import { decodeStampCapture } from './stampCapture.mjs';
 
 const SLOT = Object.fromEntries(STAMP_SLOTS.map((name, k) => [name, k]));
@@ -123,8 +123,8 @@ export async function createStampReplay(capture, kernelUrl, opts = {}) {
     { name: 'gridCounts', owner: 'pre-render', bytes: STAMP_GRID_CELLS * 4 },
     { name: 'gridStarts', owner: 'pre-render', bytes: (STAMP_GRID_CELLS + 1) * 4 },
     // 8 bytes a slot: room for a record of the distance and the light side by side (E-358), a float array before it.
-    { name: 'nearDist', owner: 'pre-render', bytes: maxSun * maxPE * 8 },
-    { name: 'nearSlot', owner: 'pre-render', bytes: maxSun * maxPE * 4 },
+    { name: 'nearDist', owner: 'pre-render', bytes: maxSun * stampNearPairs(maxPE) * 8 },
+    { name: 'nearSlot', owner: 'pre-render', bytes: maxSun * stampNearPairs(maxPE) * 4 },
     { name: 'stamp', owner: 'pre-render', bytes: maxCap * floats * 4 },
     { name: 'stampLightIdx', owner: 'pre-render', bytes: maxCap * 2 },
     { name: 'dist64', owner: 'pre-render', bytes: maxSun * 8 },

@@ -242,7 +242,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
   }
   if (stamp) {
     const sun = stamp.maxSun | 0;
-    const near = sun * (stamp.maxPerEntity | 0);
+    const near = sun * stampNearPairs(stamp.maxPerEntity);
     regions.push(
       { name: 'stampTmpIdx', owner: 'pre-render', bytes: sun * 4 },
       { name: 'stampDist', owner: 'pre-render', bytes: sun * 4 },
@@ -251,7 +251,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampGridCounts', owner: 'pre-render', bytes: STAMP_GRID_CELLS * 4 },
       { name: 'stampGridStarts', owner: 'pre-render', bytes: (STAMP_GRID_CELLS + 1) * 4 },
       { name: 'stampGridItems', owner: 'pre-render', bytes: sun * 4 },
-      // E-358: each caster's nearest lights as one record, 8 bytes a pair (wasm/shadowStamp.c note_nearest).
+      // E-358: each caster's nearest lights as one record, 8 bytes a pair (wasm/shadowStamp.c note_nearest), one pair past
+      // maxPerEntity (N-330: the next light, which fades the last one shown).
       { name: 'stampNear', owner: 'pre-render', bytes: near * 8 },
       { name: 'stampNearCount', owner: 'pre-render', bytes: sun },
       // E-160: the grid's packed x and y, each caster's cell, and the candidates' double distances.
@@ -438,6 +439,15 @@ export const STAMP_GRID_CELLS = 128 * 128;
  * over groundScaleY, cos, 1/span, 1/g²), then its shade (min(brightness, 1)).
  */
 export const STAMP_LIGHT_DOUBLES = 11;
+/**
+ * N-330: the pairs in a caster's record of nearest lights (wasm/shadowStamp.c note_nearest): maxShadowsPerEntity, and one
+ * more, the nearest light past the cut, which fades the last one shown; none without the cap.
+ * @param {number} maxPerEntity
+ */
+export function stampNearPairs(maxPerEntity) {
+  const m = maxPerEntity | 0;
+  return m > 0 ? m + 1 : 0;
+}
 /** E-331: the caster scan's bounds for the stamp (doubles): minX, minY, maxX, maxY, 1 when an x or y is NaN, the row count. */
 export const STAMP_SCAN_BOUNDS_DOUBLES = 6;
 /** Room for the stamp kernel's column table (shadowStampClient.js STAMP_SLOTS). */

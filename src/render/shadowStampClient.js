@@ -5,7 +5,7 @@
 // elsewhere, or more casters, lights or slots per entity than the regions were made for) is an error.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
-import { STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import { STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS, stampNearPairs } from '../util/wasmMemoryMap.js';
 import { GPU_CASTER_LIGHT_FLOAT } from './gpuQueueLayout.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
@@ -81,7 +81,7 @@ export async function bindShadowStamp(memory, stamp) {
   table[NEAR_DIST] = stamp.nearByte;
   // The region's second half: wasm/test/shadowStampF32.c's float32 stamps keep their distances in its first half and
   // their light slots there.
-  table[NEAR_SLOT] = stamp.nearByte + 4 * (stamp.maxSun | 0) * (stamp.maxPerEntity | 0);
+  table[NEAR_SLOT] = stamp.nearByte + 4 * (stamp.maxSun | 0) * stampNearPairs(stamp.maxPerEntity);
   table[NEAR_COUNT] = stamp.nearCountByte;
   table[PACKED_X] = stamp.packedXByte;
   table[PACKED_Y] = stamp.packedYByte;
@@ -102,8 +102,8 @@ export async function bindShadowStamp(memory, stamp) {
 
 /**
  * The light records into the kernel's light table, STAMP_LIGHT_DOUBLES each: x, y, intensity, rangeSq, maxShadows,
- * the cone (its floor direction, coneCos with -2 for none, coneInvSpan, 1 / groundScaleY²) and the shade
- * (min(brightness, 1)). An empty slot gets a NaN rangeSq, which the kernel skips as the JS skips a missing light.
+ * the cone (its floor direction, coneCos with -2 for none, coneInvSpan), 1 / groundScaleY² (1 for a record without it) and
+ * the shade (min(brightness, 1)). An empty slot gets a NaN rangeSq, which the kernel skips as the JS skips a missing light.
  * The bench harnesses write through it too (tests/bench/shadowStampKernel.mjs), so they feed the kernel what
  * pre-render does.
  * @param {Float64Array} table the light table (bindShadowStamp's `lights`)
@@ -129,12 +129,12 @@ export function writeStampLights(table, lights, count) {
     table[at + 5] = coneCos > -1 ? light.coneDirX : 0;
     table[at + 6] = coneCos > -1 ? light.coneDirYW : 0;
     table[at + 8] = coneCos > -1 ? light.coneInvSpan : 0;
-    table[at + 9] = coneCos > -1 ? light.invG2 : 0;
+    // 1 / groundScaleY² (a record without it: 1). A cone, a dim light's rows and the per-entity cut's fade (N-330)
+    // measure on the floor.
+    table[at + 9] = light.invG2 > 0 ? light.invG2 : 1;
     // DX-LIGHTAPI: how dark its shadows are, min(brightness, 1) (a record without the field: 1). A dim light's rows fold
-    // it in, measured on the floor (1 / groundScaleY²).
-    const shade = light.shade < 1 ? light.shade : 1;
-    table[at + 10] = shade;
-    if (shade < 1) table[at + 9] = light.invG2;
+    // it in.
+    table[at + 10] = light.shade < 1 ? light.shade : 1;
   }
 }
 
