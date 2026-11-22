@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { Layer } from '../../src/core/layer.js';
 import { DEFAULT_LAYERS } from '../../src/util/configDefaults.js';
+import { PixiGlowLayer } from '../../src/render/pixi/glowLayer.js';
 
 // pixiWorker.js registers its instance on `self` rather than exporting it, and it reads `self` at module scope.
 const previousSelf = globalThis.self;
@@ -116,42 +117,45 @@ test('E-404: the glows go into their target when there are some, the canvas onto
     const renders = [];
     const resized = [];
     const sprite = { renderable: false, scale: { set(x, y) { this.x = x; this.y = y; } }, position: { set(x, y) { this.x = x; this.y = y; } } };
-    const ctx = {
-      _glowLayerSprite: sprite,
-      _glowLayerHost: { label: 'host' },
-      _glowLayerRT: { label: 'rt' },
-      _glowLayerRes: 0.5,
-      _glowLayerTransform: { a: 0, b: 0, c: 0, d: 0, tx: 0, ty: 0 },
+    // N-256 PW-9: the glow layer (src/render/pixi/glowLayer.js) over a worker with what its draw reads.
+    const worker = {
       _rtRenderOpts: { container: null, target: null, clear: false, clearColor: null, transform: null },
       _clearTransparent: [0, 0, 0, 0],
       _gpuPassesThisFrame: 0,
       spriteGlowMesh: { visible: false },
       canvasWidth: 1920,
       canvasHeight: 1080,
-      _lightGlowLayerResolution: PixiRenderer.prototype._lightGlowLayerResolution,
-      _glowScreenBounds: () => true,
-      _fitGlowLayerPart() {},
-      _resizeGlowLayerTarget(resolution, w, h) {
-        resized.push([resolution, w, h]);
-        this._glowLayerRes = resolution;
-      },
       _submitRender(o) {
         renders.push({ ...o, transform: { ...o.transform } });
         return true;
       },
     };
-    const draw = () => PixiRenderer.prototype.drawFrameGlowLayer.call(ctx);
+    const glow = new PixiGlowLayer(worker);
+    Object.assign(glow, {
+      sprite,
+      host: { label: 'host' },
+      rt: { label: 'rt' },
+      res: 0.5,
+      transform: { a: 0, b: 0, c: 0, d: 0, tx: 0, ty: 0 },
+      screenBounds: () => true,
+      fitPart() {},
+      resizeTarget(resolution, w, h) {
+        resized.push([resolution, w, h]);
+        this.res = resolution;
+      },
+    });
+    const draw = () => glow.draw();
     draw();
     assert.equal(renders.length, 0, 'no glows: no pass');
     assert.equal(sprite.renderable, false, 'and no sprite over the frame');
-    ctx.spriteGlowMesh.visible = true;
+    worker.spriteGlowMesh.visible = true;
     draw();
     assert.equal(renders.length, 1);
-    assert.equal(renders[0].container, ctx._glowLayerHost);
-    assert.equal(renders[0].target, ctx._glowLayerRT);
+    assert.equal(renders[0].container, glow.host);
+    assert.equal(renders[0].target, glow.rt);
     assert.equal(renders[0].clear, true);
     assert.equal(sprite.renderable, true);
-    assert.equal(ctx._rtRenderOpts.transform, null, 'the shared options lose the transform again');
+    assert.equal(worker._rtRenderOpts.transform, null, 'the shared options lose the transform again');
     assert.deepEqual(resized, []);
     // Layer.get('lightGlows').resolution set at run time: the target is made again, once.
     Layer.get('lightGlows').resolution = 0.25;
@@ -159,9 +163,9 @@ test('E-404: the glows go into their target when there are some, the canvas onto
     draw();
     assert.deepEqual(resized, [[0.25, 1920, 1080]]);
     // The canvas's px onto the target's and the sprite back over the canvas (480 x 270 at 0.25 of 1920 x 1080).
-    PixiRenderer.prototype._fitGlowLayerTarget.call(ctx, 480, 270, 1920, 1080);
+    glow._fitTarget(480, 270, 1920, 1080);
     assert.deepEqual([sprite.scale.x, sprite.scale.y], [4, 4]);
-    assert.deepEqual([ctx._glowLayerTransform.a, ctx._glowLayerTransform.d, ctx._glowLayerTransform.tx], [0.25, 0.25, 0]);
+    assert.deepEqual([glow.transform.a, glow.transform.d, glow.transform.tx], [0.25, 0.25, 0]);
   } finally {
     Layer.reset();
   }
@@ -182,32 +186,29 @@ test("E-404: the glows' composite covers the canvas rect their quads reach, on t
   };
   const frame = { x: 0, y: 0, width: 960, height: 540 };
   let updates = 0;
-  const ctx = {
-    entitiesGlowBatch: { data },
-    assets: { texLut: lut },
-    canvasWidth: 1920,
-    canvasHeight: 1080,
-    _glowLayerBounds: new Float64Array(4),
-    _glowLayerRT: { width: 960, height: 540 },
-    _glowLayerTexture: { frame, update() { updates++; } },
-    _glowLayerSprite: { position: { set(x, y) { this.x = x; this.y = y; } } },
-  };
-  assert.equal(PixiRenderer.prototype._glowScreenBounds.call(ctx, mesh), true);
+  // N-256 PW-9: the glow layer over a worker with the glow batch's rows, the texture table and the canvas.
+  const glow = new PixiGlowLayer({ entitiesGlowBatch: { data }, assets: { texLut: lut }, canvasWidth: 1920, canvasHeight: 1080 });
+  Object.assign(glow, {
+    rt: { width: 960, height: 540 },
+    texture: { frame, update() { updates++; } },
+    sprite: { position: { set(x, y) { this.x = x; this.y = y; } } },
+  });
+  assert.equal(glow.screenBounds(mesh), true);
   // World: x 160..240 and 480..520 (the trim around the 50 px anchor, the second at half scale), y 60..140 and 280..320: on the canvas,
   // (world - camera) * 2.
-  assert.deepEqual(Array.from(ctx._glowLayerBounds), [120, 20, 840, 540]);
-  PixiRenderer.prototype._fitGlowLayerPart.call(ctx);
+  assert.deepEqual(Array.from(glow.bounds), [120, 20, 840, 540]);
+  glow.fitPart();
   assert.deepEqual([frame.x, frame.y, frame.width, frame.height], [59, 9, 362, 262]);
   assert.equal(updates, 1);
-  assert.deepEqual([ctx._glowLayerSprite.position.x, ctx._glowLayerSprite.position.y], [118, 18]);
-  PixiRenderer.prototype._fitGlowLayerPart.call(ctx);
+  assert.deepEqual([glow.sprite.position.x, glow.sprite.position.y], [118, 18]);
+  glow.fitPart();
   assert.equal(updates, 1, 'the same part: the texture is not touched');
   // Off the canvas: no composite at all.
   mesh.localTransform.tx = -5000;
-  assert.equal(PixiRenderer.prototype._glowScreenBounds.call(ctx, mesh), false);
+  assert.equal(glow.screenBounds(mesh), false);
   // A sheared quad (cos past 1): the whole canvas.
   data[6] = 1.6;
   mesh.localTransform.tx = -200;
-  assert.equal(PixiRenderer.prototype._glowScreenBounds.call(ctx, mesh), true);
-  assert.deepEqual(Array.from(ctx._glowLayerBounds), [0, 0, 1920, 1080]);
+  assert.equal(glow.screenBounds(mesh), true);
+  assert.deepEqual(Array.from(glow.bounds), [0, 0, 1920, 1080]);
 });

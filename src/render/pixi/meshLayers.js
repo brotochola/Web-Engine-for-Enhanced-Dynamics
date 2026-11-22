@@ -11,8 +11,7 @@
 
 import { Layer } from '../../core/layer.js';
 import { MeshGeometry } from '../../core/meshGeometry.js';
-import { meshLayerCapacities } from '../../util/meshMemory.js';
-import { Container, Mesh, RenderTexture, Sprite } from '../../vendor/pixi.min.js';
+import { Container, RenderTexture, Sprite } from '../../vendor/pixi.min.js';
 import { MESH_UV_VERT_FLOATS, packMeshUvVerts, packedMeshUvIndices } from '../colliderFillBatch.js';
 import {
   bindMeshCorners,

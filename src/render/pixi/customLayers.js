@@ -10,11 +10,9 @@
  * camera, canvas, render helpers, queues, batches, shaders, assets and mesh layers) goes through `this.worker`.
  */
 
-import { ColliderFixture } from '../../core/colliderFixture.js';
 import { GpuParticles } from '../../core/gpuParticles.js';
 import { Layer } from '../../core/layer.js';
 import { LiquidFun } from '../../core/liquidFun.js';
-import { MeshGeometry } from '../../core/meshGeometry.js';
 import { SharedResource } from '../../core/sharedResource.js';
 import { Sun } from '../../core/sun.js';
 import { LAYER_DENSITY_SOURCE, LAYER_KIND, LAYER_SCALE_MODE } from '../../util/configDefaults.js';
