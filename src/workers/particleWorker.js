@@ -646,6 +646,8 @@ class ParticleWorker extends AbstractWorker {
     this._impactHeader = null;
     this._impactData = null;
     this._maxImpactsPerFrame = 0;
+    // DX-CONFIGCHECK: a frame filled the impact cap (said once: past it a hit still kills its bullet but loses its impact).
+    this._impactCapWarned = false;
     this._impactRing = null;
     /** Decal textures the decal memory does not hold, warned about once each (stampParticleToTile). */
     this._decalTexturesMissing = new Set();
@@ -1606,6 +1608,13 @@ class ParticleWorker extends AbstractWorker {
     );
     // N-129: this frame's impacts after the ones the logic workers have not all read.
     if (this._impactRing !== null) publishImpacts(this._impactRing, this._impactData, this._impactHeader[0]);
+    if (!this._impactCapWarned && this._maxImpactsPerFrame > 0 && this._impactHeader[0] >= this._maxImpactsPerFrame) {
+      this._impactCapWarned = true;
+      console.warn(
+        `WeedJS: ${this._maxImpactsPerFrame} bullets hit in one frame, bullet.maxImpactsPerFrame: a bullet that hits past ` +
+          'it is gone without its impact (no onGotShot). Raise bullet.maxImpactsPerFrame in the scene config.',
+      );
+    }
 
     if (activeCount <= 0 || !this.cameraData || !visibleData) {
       if (visibleData) visibleData[0] = 0;
