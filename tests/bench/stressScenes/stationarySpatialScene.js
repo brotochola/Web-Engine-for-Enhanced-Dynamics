@@ -9,6 +9,10 @@ import { StationarySpatialEntity } from './stationary/stationarySpatialEntity.js
  * This scene is the SLEEPING-heavy half of the sweep: gravity is zero and the
  * probe reported `Awake 0`, so the solver has almost nothing to decompose and
  * extra Box2D threads should be close to pure spin.
+ *
+ * `?entities=N` (DX-SCORELOAD): the grid's entity count (default 9000), its rows growing by one every 100 entities at
+ * the same spacing, so each entity keeps the same neighbours and spatial's cost grows with N. The world grows past
+ * 5000 px only when the rows need it, so the default scene is unchanged.
  */
 const SCENE_QUERY =
   typeof location !== 'undefined' && location.search
@@ -22,10 +26,18 @@ function sceneNumberParam(name, fallback) {
 
 const { Scene, Camera } = WEED;
 
+const COLS = 100;
+const SPACING = 45;
+const START = 300;
+const ENTITIES = sceneNumberParam('entities', 9000);
+const WORLD = Math.max(5000, START * 2 + Math.ceil(ENTITIES / COLS) * SPACING);
+
+export const stressSceneConfig = { requested: { entities: ENTITIES } };
+
 export class StationarySpatialScene extends Scene {
   static config = {
-    worldWidth: 5000,
-    worldHeight: 5000,
+    worldWidth: WORLD,
+    worldHeight: WORLD,
     seed: 424242,
     spatial: {
       numberOfSpatialWorkers: 2,
@@ -63,20 +75,15 @@ export class StationarySpatialScene extends Scene {
     },
   };
 
-  static entities = [[StationarySpatialEntity, 9000]];
+  static entities = [[StationarySpatialEntity, ENTITIES]];
 
   create() {
-    const cols = 100;
-    const spacing = 45;
-    const startX = 300;
-    const startY = 300;
-
-    for (let i = 0; i < 9000; i++) {
-      const col = i % cols;
-      const row = (i / cols) | 0;
+    for (let i = 0; i < ENTITIES; i++) {
+      const col = i % COLS;
+      const row = (i / COLS) | 0;
       StationarySpatialEntity.spawn({
-        x: startX + col * spacing,
-        y: startY + row * spacing,
+        x: START + col * SPACING,
+        y: START + row * SPACING,
         radius: 10,
         visualRange: 170,
       });
