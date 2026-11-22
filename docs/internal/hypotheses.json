@@ -14552,13 +14552,13 @@
     {
       "id": "E-281",
       "title": "BunnyMark's tickAll allocates 1.5 MB/s in a typed-array loop",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-22 on the ASUS (R-1779): a warm-up tier, gone once the loop reaches TurboFan",
       "date": "2026-11-13",
       "area": "demo",
       "kind": "speed",
-      "result": "Heap pass: bunnyMarkScene's logic allocates 1.54 MB/s, 1.51 of it in `Bunny.tickAll`, a loop over typed arrays that should allocate nothing; likely a tier (interpreted or Maglev code after a deopt, or an OSR entry each frame).",
-      "next": "The sweep's deopt pass (fixed in 9d9908d6) on bunnyMark first; then `--trace-opt --trace-deopt` on tickAll; the fix where the reading points (engine if the cause is how logic calls tickAll); bunnyMark's logic STEP_MS.",
+      "result": "bunnyMarkScene logic: tickAll 1493 KB/s after 10 s of warm-up, absent after 70 s (the worker 11.1 KB/s).",
+      "next": "",
       "refs": [
         "EXECUTION_PLAN.md#E-281"
       ],
@@ -14567,7 +14567,8 @@
         "Bunny.tickAll"
       ],
       "records": [
-        "R-0980"
+        "R-0980",
+        "R-1779"
       ]
     },
     {
@@ -19207,19 +19208,20 @@
     {
       "id": "E-436",
       "title": "SpriteRenderer.keyedDirty and renderDirty are written by both sides: logic sets them when statics change, pre-render fetch_or's the texture bit at each frame advance and exchanges or clears them at the emit, on the same lines: an estimated 950 line transfers a frame",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "status": "answered",
+      "statusText": "measured 2026-11-22 on the ASUS (R-1782): a few microseconds a frame, nothing to gain",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
-      "result": "Candidate 6: directionalSprite.js and spriteRenderer.js (the sets), wasm/preRenderEmit.c (fetch_or, exchange, the renderDirty clear); about 472 lines set by logic and 552 written by pre-render a frame (assumes 4 000 sprites on screen, a frame advance every 6 frames, 10 % of ticks changing statics).",
-      "next": "The texture bit in a region pre-render owns (beside emitKeyChange), and keyedDirty and renderDirty as logic-written generations pre-render compares with its own last-seen copy, so pre-render never writes the shared column; pre-render and logic STEP_MS. A design that also closes N-103's trap: DX-STATICSGEN.",
+      "result": "dirtyFlagSharingMicrobench, medians a frame shared against apart: logic 8.1 vs 7.0 us, pre-render 69.2 vs 65.3 us (E-436's estimate); at five times the load 36.7 vs 32.1 and 200.8 vs 176.4 us.",
+      "next": "",
       "refs": [],
       "aliases": [
         "dirty flags written by both"
       ],
       "records": [
-        "R-1188"
+        "R-1188",
+        "R-1782"
       ]
     },
     {
@@ -19664,12 +19666,12 @@
       "id": "E-455",
       "title": "The G-buffer words are written again every frame for every row though most rows' words never change: a words generation (as the statics' gen) would skip both pre-render's rewrite and Pixi's re-upload of unchanged words, or a per-entity word column would let the pack read one u32 instead of the type, entity, flags, self-shadow and a modulo",
       "status": "kept",
-      "statusText": "step 1 kept 2026-11-22 on the ASUS (b582144e, R-1778): keyed frames; step 2 (pre-render's packs, the default) open",
+      "statusText": "step 1 kept 2026-11-22 on the ASUS (b582144e, R-1778): keyed frames; step 2 (pre-render's words looked at against the copy) dropped the same day (R-1780)",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
       "result": "keyedPackStressScene gbuf=1: Pixi 13.19 -> 11.21 ms at 150 000 sprites, 6.41 -> 4.91 ms at 80 000 (4 of 4 each); the keyed pack with the compare 1.04 -> 1.29 ms at 60 000 rows (its copy and upload skipped when the words hold).",
-      "next": "Step 2: pre-render's packs still send every frame's words: a words generation in the GPU queue header (a compare against the other queue buffer's words) would let Pixi skip the copy and upload there too; or the word could ride in the keyed statics texture by key, so the draw order no longer matters.",
+      "next": "Pre-render's frames: the word riding in the keyed statics texture by key (the draw order no longer mattering), only if a GPU trace shows their words' upload costing anything (R-1780 found skipping it saved Pixi nothing).",
       "refs": [],
       "aliases": [
         "gbuf words generation",
@@ -19678,7 +19680,8 @@
       "records": [
         "R-1446",
         "R-1778",
-        "R-1854"
+        "R-1854",
+        "R-1780"
       ]
     },
     {
@@ -22411,11 +22414,11 @@
     {
       "id": "DX-STATICSGEN",
       "title": "renderDirty and keyedDirty: a debug check for statics written without a mark first, then E-436 measured, then one statics generation per sprite only if it pays (nice to have, low priority)",
-      "status": "open",
-      "statusText": "step 1 done 2026-11-22 on the ASUS (dd9b3ed5, R-1761); steps 2 and 3 open. Nice to have, no rush (owner, 2026-11-17)",
+      "status": "kept-hygiene",
+      "statusText": "step 1 done 2026-11-22 on the ASUS (dd9b3ed5, R-1761); step 2 measured the same day (R-1782): the sharing costs microseconds a frame, so step 3 is not done",
       "date": "2026-11-17",
       "result": "Every statics setter (SpriteRenderer's, gameObject.markDirty, tweens, DirectionalSprite) writes renderDirty and keyedDirty together; pre-render's persist path misses on renderDirty and clears it at the emit, the keyed frames exchange keyedDirty, and pre-render fetch_or's its texture bit at each frame advance (wasm/preRenderEmit.c). A direct SoA write that forgets either flag shows only on the frames the emit runs in full (N-103).",
-      "next": "In order: (2) E-436 measured (pre-render and logic STEP_MS); (3) only if (2) pays: one generation logic bumps, two last-seen copies pre-render owns (persist, keyed) and the texture bit in pre-render's own region (it would also remove the shared column N-408 had to take with an exchange).",
+      "next": "",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22430,7 +22433,8 @@
       "records": [
         "R-1761",
         "R-1762",
-        "R-1838"
+        "R-1838",
+        "R-1782"
       ]
     },
     {
@@ -25142,18 +25146,19 @@
     {
       "records": [
         "R-1776",
-        "R-1777"
+        "R-1777",
+        "R-1781"
       ],
       "refs": [],
       "id": "N-409",
       "title": "An edge that is all but a ray reads part-lit along its sliver of directions: the light pass reads a point against the edge's line, which then passes by the lamp",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "date": "2026-11-22",
-      "result": "A point 100 px from its lamp, inside the polygon, read 0.82 in lampWallsWired (the sliver 0.06 px wide there); the wired tests leave such edges (under 1e-3 apart in wallAngle) out.",
-      "statusText": "found 2026-11-22 on the ASUS writing N-300 (R-1776); low: a fraction of a pixel wide, rarely on a light-pass texel centre",
-      "next": "Measure the anti-aliasing along the pixel's ray, or take the edge's segment instead of its line (lightingBasic wallVisibility and lampWallRow.js wallRowLight together).",
+      "result": "lightGallery walls=1: the thin dark lines from the lamps past each shadow side gone (2 257 pixels brighter); the light pass +0.5 to +1.1 % on the GPU.",
+      "statusText": "fixed 2026-11-22 on the ASUS (bae734ab8, R-1781)",
+      "next": "",
       "aliases": [
         "near-ray edge sliver",
         "shadow side reads part-lit",
@@ -42588,6 +42593,48 @@
       "title": "N-256 PW-9a (glow layer) and PW-8 (shadow maps) through Pixi-owner Predator sittings (f06b3e16 -> 95fdfbf1): NEUTRAL plain in 16 pairs (renderer -0.1 %) and by night with light3d in 8 (fresh battles, renderer -0.9 %)",
       "verdict": "kept-hygiene",
       "text": "**The Pixi-owner sittings over N-256 PW-9a (glowLayer.js) and PW-8 (shadowMaps.js), f06b3e16 -> 95fdfbf1: NEUTRAL\nplain in 16 pairs, and NEUTRAL by night with light3d in 8.**\n\nBoth ran `runPredatorAbab.mjs --vs f06b3e16 --hyp-rev 95fdfbf1 --owner renderer`, headed, on AC power.\n\n**Plain:** `--pairs 16 --query \"crowd=2.5&dayCycle=0&mix=1\"`, from the save, 12:00 to 12:13.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.931 -> 16.212 | +0.1 % | 9/16 | +0.5 % |\n| spatial | 7.340 -> 7.566 | +0.1 % | 8/16 | -0.0 % |\n| physics | 15.475 -> 15.591 | -0.4 % | 7/16 | +0.3 % |\n| renderer | 6.928 -> 7.365 | -0.1 % | 8/16 | +0.6 % |\n| preRender | 8.890 -> 8.903 | -1.4 % | 7/16 | -2.9 % |\n\n**Night:** `--pairs 8 --fresh --query \"crowd=2.5&mix=1&light3d=1&hour=22\"`, 12:14 to 12:21. These are fresh battles:\nR-1853's night sitting started from the save and read every worker under the floor. Here the sun and lamp maps draw\n(GPU_SHADOW_LIGHTS 47).\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 22.365 -> 23.121 | +1.1 % | 4/8 | +0.6 % |\n| spatial | 10.747 -> 10.564 | +0.4 % | 4/8 | -0.2 % |\n| physics | 27.360 -> 27.844 | -0.5 % | 3/8 | -0.9 % |\n| renderer | 11.719 -> 11.766 | -0.9 % | 3/8 | -1.0 % |\n| preRender | 11.588 -> 11.395 | -1.3 % | 2/8 | +0.9 % |\n\nParticle stays under the 6 ms floor in both. The load keys are within 0.4 % plain and within 1.5 % by night\n(GPU_CASTERS +1.5 %).\n\nThe V8 deopt summary of a Predator light3d night run lists no steady deopt in pixiWorker.js or src/render/pixi/."
+    },
+    {
+      "id": "R-1779",
+      "date": "2026-11-22",
+      "time": "10:48",
+      "timeFrom": "recorded",
+      "title": "E-281 answered: Bunny.tickAll allocates 1.5 MB/s at 10 s of warm-up and nothing at 70 s: the boxed doubles of code not yet in TurboFan, not a bug",
+      "verdict": "answered",
+      "text": "**E-281 answered on the ASUS: Bunny.tickAll allocates only while it warms up.** heapSampleWorkers on bunnyMarkScene's logic\nworker (batch 10's HEAD 3025aac4), 8 s samples: after the usual 10 s warm-up the worker allocates 1511 KB/s, 1493 of\nthem (25.7 KB a frame, about one heap number a bunny) in tickAll (demos/bunnyMarkScene/gameObjects/bunny.js:29); after\na 70 s warm-up the whole worker allocates 11.1 KB/s and tickAll is not in the list. The 2026-11-13 heap pass that filed\nthis took its samples after 8 s, before a loop run once a frame reaches TurboFan (over a minute, R-1830): the\ninterpreter's and baseline's doubles are boxed. Nothing to change in the demo or the engine's tickAll dispatch."
+    },
+    {
+      "id": "R-1780",
+      "date": "2026-11-22",
+      "time": "10:58",
+      "timeFrom": "recorded",
+      "title": "E-455 step 2 dropped: looking at pre-render's words against the copy (keyedPackStressScene pack=preRender gbuf=1 n=80000) costs Pixi +6.0 % (4 of 4); the words held every frame and skipping their copy and upload saved nothing measurable",
+      "verdict": "dropped",
+      "text": "**E-455 step 2 dropped: looking at pre-render's words against the copy costs Pixi more than the copy and upload it\nsaves.** commitGbuf compared words from another source than the keyed pack (gpu.spriteGbuf, pre-render's packs, the\nengine's default) with its copy up to the first difference and, the same and as many rows, left the copy and the ring\nslots' buffers as they were (committed on the batch as 1930e8ee, then removed). keyedPackStressScene pack=preRender gbuf=1\nn=80000, runPredatorAbab 4 pairs: Pixi 6.16 -> 6.58 ms (+6.0 %, 4 of 4 worse), pre-render 13.96 -> 14.56 ms (+4.4 %).\nA probe in the Pixi worker (commitGbuf wrapped for 40 commits) found the words the same every frame (0 floats differ, the\nsame 80 000 rows): the copy and the uploads were skipped every frame, and that saved Pixi nothing measurable, while the\ncompare (240 000 floats) costs about 0.4 ms. Open: step 1's -15/-24 % on keyed frames came from skipping the same copy\nand upload there (R-1778); either the keyed path's upload costs far more, or this path's costs Pixi next to nothing. The\nword riding in the keyed statics texture (the order no longer mattering) stays the other way for pre-render's frames."
+    },
+    {
+      "id": "R-1781",
+      "date": "2026-11-22",
+      "time": "12:05",
+      "timeFrom": "recorded",
+      "title": "N-409 fixed: the light pass reads a point against its covering edge's segment, not its line; the thin dark lines along walls' shadow sides are gone (lightGallery walls=1, 2 257 pixels), the light pass about +1 %",
+      "verdict": "kept-hygiene",
+      "text": "**N-409 fixed on the ASUS (bae734ab8): the light pass reads a point against its covering edge's segment, not the edge's\nline, and the thin dark lines along walls' shadow sides are gone.** For an edge whose ends lie almost on one ray from the\nlamp (a shadow side, or the polar merge's join of a free end to a wall) the line passes by the lamp, so a point anywhere\nalong the edge's sliver of directions read part of the light: in lightGallery walls=1 thin dark lines crossed the lit\nfloor from the lamps past each shadow side. The side stays the line's; the distance is now to the segment (both shaders\nand wallRowLight). The wired tests no longer leave such edges out.\n\nSitting (the ASUS, main 3501eb66 against the change): captures, both backends: lightGallery walls=1 2 257 pixels\nbrighter (the lines, max delta 38), the N-300 probe and houseLight byte for byte; the light pass on the GPU, 2 pairs:\ncompoundVisPoly WebGL 4.67 -> 4.72 ms (+1.1 %), lightGallery walls=1 WebGL 11.09 -> 11.21 ms (+1.0 %, one pair: the\nother's recorder hung and was killed), WebGPU 9.06 -> 9.10 ms (+0.5 %). Suites: lamp-row tests 38, test:node 3565,\ntest:demos 143.",
+      "commits": [
+        "bae734ab8"
+      ]
+    },
+    {
+      "id": "R-1782",
+      "date": "2026-11-22",
+      "time": "12:05",
+      "timeFrom": "recorded",
+      "title": "DX-STATICSGEN step 2, E-436 measured: sharing the dirty-flag columns costs logic about 1 us and pre-render about 4 us a frame at Predator crowd 2.5's estimate (0.005 and 0.03 ms at five times it): step 3 would not pay, not done",
+      "verdict": "answered",
+      "text": "**DX-STATICSGEN step 2 (E-436 measured): sharing the dirty-flag columns costs logic and pre-render a few microseconds a\nframe; step 3 (a statics generation) would not pay, so it is not done.** dirtyFlagSharingMicrobench (93ebcc7b9): two worker\nthreads meet once a frame; logic sets both flags of the sprites whose statics changed, pre-render takes the flags of the\nsprites it emits and, keyed, or's the texture bit at frame advances; on the same columns (as the engine) or pre-render on\nits own copy (the same work). On the ASUS, 2 000 frames, 4 rounds, medians a frame:\n- E-436's estimate (4 000 sprites, 470 marks, 670 advances): logic 7.0 -> 8.1 us shared, pre-render 65.3 -> 69.2 us;\n- no keyed frames (no advances): logic 6.8 -> 7.7 us, pre-render 32.1 -> 36.9 us;\n- five times the marks and advances: logic 32.1 -> 36.7 us, pre-render 176.4 -> 200.8 us.\nEven at five times the load the sharing is 0.03 ms of pre-render and 0.005 ms of logic a frame, under 1 % of either at\nPredator's crowd 2.5 (and pre-render's texture bit is or'ed only on keyed frames, which Predator does not draw). The\nfalse-sharing audit's 950 line transfers a frame were an upper bound from layouts. Step 1 (the debug check) stays the way\nto catch an unmarked write.",
+      "commits": [
+        "93ebcc7b9"
+      ]
     }
   ],
   "leads": [

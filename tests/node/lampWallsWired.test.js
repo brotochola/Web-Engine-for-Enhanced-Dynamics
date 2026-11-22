@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { gbufEntityId } from '../../src/render/gbufWord.js';
-import { WALL_UMBRA, WALL_VERT0, wallAngle, wallRowLight } from '../../src/render/visibility/lampWallRow.js';
+import { WALL_UMBRA, WALL_VERT0, wallRowLight } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import {
   bootPreRender, bootPreRenderGather, makeScene, onPolarRay, runFrame, runFrameJs, writeFrame,
@@ -46,22 +46,6 @@ function polygonAt(light, px, py) {
     nearest = Math.min(nearest, Math.sqrt(dx * dx + dy * dy));
   }
   return { inside, nearest };
-}
-
-/**
- * N-300: whether the row's edge over the point's direction is all but a ray (its ends under 1e-3 apart in wallAngle):
- * a shadow side, or where the polar merge joins a shadow side's far end to the next wall's corner across a bin a solid
- * stamped. The light pass reads a point against the edge's line, and that line passes by the lamp, so a point anywhere
- * along such an edge's sliver of directions (a fraction of a pixel wide) reads a part of the light.
- */
-function nearRayEdge(rows, o, px, py) {
-  const n = rows[o] | 0;
-  const angleOf = (i) => rows[o + 4 * (WALL_VERT0 + i) + 2];
-  let a = wallAngle(px - rows[o + 2], py - rows[o + 3]);
-  if (a < rows[o + 1]) a += 4;
-  let e = 0;
-  while (e + 1 < n && !(angleOf(e + 1) > a)) e++;
-  return angleOf(e + 1) - angleOf(e) < 1e-3;
 }
 
 /**
@@ -120,8 +104,6 @@ async function compare(t, boot) {
         const py = light.ly + Math.sin(a) * d;
         const at = polygonAt(light, px, py);
         if (at.nearest < 2) continue;
-        // N-300: a direction on an edge that is all but a ray is left out (nearRayEdge).
-        if (nearRayEdge(rows, o, px, py)) continue;
         const got = wallRowLight(rows, o, px, py, 0);
         if (at.inside) {
           assert.equal(got, 1, `frame ${f} light ${light.idx}: (${px}, ${py}) is inside the polygon`);
