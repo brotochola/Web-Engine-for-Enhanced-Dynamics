@@ -11594,10 +11594,10 @@
       "id": "DX-CONFIGCHECK",
       "title": "Config validation and a size advisor",
       "status": "open",
-      "statusText": "An idea from a code review (R-0854), not built",
+      "statusText": "partly built 2026-11-22 (R-1839): unknown keys and tickInterval (DX-GUARDS), cell and neighbour truncation warnings",
       "date": "2026-11-10",
       "result": "",
-      "next": "Unknown keys warned with the nearest known one; tickInterval without staggeredUpdates turns it on or warns; a visible counter for every silent truncation (cells, neighbours, impacts); a suggested config at the end of a session.",
+      "next": "Left: impacts and dropped contacts warned (they are counted in the stats only), and the suggested config at the end of a session (each cap's peak against its setting).",
       "area": "engine",
       "kind": "dx",
       "refs": [
@@ -11610,7 +11610,8 @@
         "caps"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-1839"
       ]
     },
     {
@@ -24921,6 +24922,20 @@
       "date": "2026-11-21",
       "statusText": "Filed 2026-11-21 from N-212 (R-1694): the maxShadowCastingLights cut fades since R-1151; these two cuts do not.",
       "next": "Design read 2026-11-22 (not a quick fix): the per-entity cut fades the last kept light by how close the next one is, f = min(1, (dNext - dLast) / (0.2 dNext)), applied as DX-SPOT's cone_intensity applies its f (lane 2 of the row's light vec4, so the shaders do not change). It needs the (maxPE + 1)-th nearest distance: note_nearest keeps one pair more a caster (the near records' stride and region in wasmMemoryMap), caster_rows reads it, the JS twin and the float32 test module follow, and the lamps' map's keyed stamp rows take the same vec4. The per-light caster cut (ring_select / the radix select) fades its lim-th caster the same way by the (lim + 1)-th candidate. Both builds of the kernel, the parity tests, then a film of Predator at night where walkers cross between lamps, before and after."
+    },
+    {
+      "records": [
+        "R-1839"
+      ],
+      "refs": [],
+      "id": "N-331",
+      "title": "With the debug checks on, four demos still warn: Predator's battle start overflows its grid cells and fills its Flash and particle pools, Buenos Aires' neighbour lists reach maxNeighbors 48, Boids and zenithal touch their caps once",
+      "status": "open",
+      "kind": "bug",
+      "area": "demo",
+      "date": "2026-11-22",
+      "statusText": "Filed 2026-11-22 from the demo sweep with the debug checks on (R-1839)",
+      "next": "The scenes' configs, by their owners: Predator's start, 735 entries a frame past maxEntitiesPerCell 64 (N-325 measured none at crowd 2.5 mid-battle), the Flash pool (32) full, particle.maxParticles exhausted; Buenos Aires, 22 and 4 lists a frame at maxNeighbors 48 (two spatial workers); Boids, one list at 128 and one cell entry at maxEntitiesPerCell 20; zenithalParticleTest, one cell entry at 64. Predator and Boids are the gates' scenes: a cap raised moves their load, so it goes with a gate of its own. `node tests/bench/demoWarnings.mjs --dev-checks` shows them."
     },
     {
       "records": [
@@ -42159,6 +42174,15 @@
       "title": "Predator gate over the ASUS's batch 6 and the frame loop (3fdbd5ba -> 7c1d004a): NEUTRAL, preRender -1.1 %",
       "verdict": "kept-hygiene",
       "text": "**The ASUS's batch 6 (N-408: persist_take_dirty, one walk over the queued rows on persist-miss frames; DX-STATICSGEN step 1, debug builds only) and the main PC's frame loop (cb0cad0d, R-1830), N-406 and CR-21's renderer key (dd5ab466) pass Predator: NEUTRAL.** batch7-gate, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, 3fdbd5ba -> 7c1d004a (dist built), owner preRender, 4 pairs, 05:41 to 05:44:\n\n- preRender 8.196 -> 8.159 ms (-1.1 %, worse 2/4, cv 1/4 %): N-408's extra walk does not show.\n- logic -2.2 %, spatial -3.6 %, physics -3.1 %, renderer -6.0 % (worse 0 or 1 of 4 each): every worker a little lower, drift (against the others preRender +2.4 %, logic +1.1 %).\n- Load keys within 0.6 %.\n\nKept as hygiene."
+    },
+    {
+      "id": "R-1839",
+      "date": "2026-11-22",
+      "time": "06:35",
+      "timeFrom": "recorded",
+      "title": "DX-CONFIGCHECK: neighbour lists cut at maxNeighbors warn in debug builds; demoWarnings --dev-checks over every demo: two fixed (meshGallery, gearChain), four filed (N-331)",
+      "verdict": "kept-hygiene",
+      "text": "**DX-CONFIGCHECK: neighbour lists cut at spatial.maxNeighbors now warn (debug builds), and every demo ran with the debug checks on.** 2026-11-22, 06:15 to 06:35.\n\n- 7c8e6a07: spatial counts, in the rebuild's cold branch (the rows whose candidates passed the cap, which already reset their reuse there), the rows a frame cut at maxNeighbors; reportFPS hands the count to devChecks.neighborCapHit, which warns once: the list keeps the first candidates the grid scan met, in cell order, not the nearest. A Boids capped at 4 warned (2 932 lists in a frame); Boids at its own 128, one list.\n- e3c813f9: demoWarnings takes --scene/--export (any scene) and --dev-checks: the bench page leaves config.debug.checks off unless asked, so its sweep had never shown a debug check.\n- The sweep with the checks on (36 demos, 6 s each; every demo also carries \"an integrated GPU\" here, this Chromium's adapter): MeshPicture's fields written after onSpawned (meshGallery) and gearChain's 368 cell entries a frame past maxEntitiesPerCell 64 fixed in 65b816ee (the fields in a constructor; gearChain without a spatial worker, since nothing reads its neighbours). Left for the scenes' owners (N-331): Predator's battle start, Buenos Aires, Boids, zenithal.\n- What DX-CONFIGCHECK's plan asked: unknown keys with the nearest known one (configKeys.js, DX-GUARDS) and tickInterval without staggeredUpdates (DX-GUARDS C3) were already built; silent truncations now warn for cells (N-325) and neighbour lists (here); impacts and dropped contacts are counted in the stats but not warned; the suggested config at the end of a session is not built."
     }
   ],
   "leads": [
