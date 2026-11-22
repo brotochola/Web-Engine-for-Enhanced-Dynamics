@@ -852,23 +852,23 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
 
   // What the frame did, per layer (its skip object) and batch.
   const log = { nonSkip: new Set(), full: new Set(), failedRewrite: new Set(), uploads: new Set() };
-  const proto = Object.getPrototypeOf(px);
-  px._ensureVertGenScratch = function (skip, views) {
+  const proto = Object.getPrototypeOf(px.meshLayers);
+  px.meshLayers.ensureVertGenScratch = function (skip, views) {
     log.nonSkip.add(skip);
-    return proto._ensureVertGenScratch.call(this, skip, views);
+    return proto.ensureVertGenScratch.call(this, skip, views);
   };
-  px._packMeshUvLayer = function (cl, views, skip) {
+  px.meshLayers.packUvLayer = function (cl, views, skip) {
     log.full.add(skip);
-    return proto._packMeshUvLayer.call(this, cl, views, skip);
+    return proto.packUvLayer.call(this, cl, views, skip);
   };
-  px._rewriteMeshCorners = function (...args) {
-    const code = proto._rewriteMeshCorners.apply(this, args);
+  px.meshLayers.rewriteCorners = function (...args) {
+    const code = proto.rewriteCorners.apply(this, args);
     if (code < 0) log.failedRewrite.add(args[2]);
     return code;
   };
   // E-453: the UV batch's vertex rewrite, its records' entity list for its failures.
-  px._rewriteMeshUvVerts = function (...args) {
-    const code = proto._rewriteMeshUvVerts.apply(this, args);
+  px.meshLayers.rewriteUvVerts = function (...args) {
+    const code = proto.rewriteUvVerts.apply(this, args);
     if (code < 0) log.failedRewrite.add(args[0].vertexEntity);
     return code;
   };
@@ -893,9 +893,9 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
     };
   };
   layers.forEach((cl, L) => spy(cl.fillBatch, `layer ${L} fill`));
-  px._ensureMeshUvBatch = function (cl) {
+  px.meshLayers.ensureUvBatch = function (cl) {
     const had = cl.uvFillBatch;
-    const batch = proto._ensureMeshUvBatch.call(this, cl);
+    const batch = proto.ensureUvBatch.call(this, cl);
     if (batch && batch !== had) spy(batch, `layer ${layers.indexOf(cl)} uv`);
     return batch;
   };
@@ -973,11 +973,11 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
       }
     });
   } finally {
-    delete px._ensureVertGenScratch;
-    delete px._packMeshUvLayer;
-    delete px._rewriteMeshCorners;
-    delete px._rewriteMeshUvVerts;
-    delete px._ensureMeshUvBatch;
+    delete px.meshLayers.ensureVertGenScratch;
+    delete px.meshLayers.packUvLayer;
+    delete px.meshLayers.rewriteCorners;
+    delete px.meshLayers.rewriteUvVerts;
+    delete px.meshLayers.ensureUvBatch;
     px._meshPoseLists = [];
     px.lastReadFrame = -1;
     px._poseX = null;

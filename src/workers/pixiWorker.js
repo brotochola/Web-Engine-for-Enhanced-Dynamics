@@ -212,26 +212,14 @@ import {
   ColliderFillBatch,
   packColliderFill,
   packColliderFillPoseOnly,
-  packMeshUvVerts,
   packMeshUvVertsPaint,
-  packedMeshUvIndices,
   colliderFillEpochsMatch,
   trackMeshFillPose,
   clearMeshFillPaintDirty,
   MESH_FILL_PRESENCE_MOVED,
   COLLIDER_FILL_PACK_FIRST_FRAME,
   COLLIDER_FILL_FLOATS,
-  MESH_UV_VERT_FLOATS,
 } from '../render/colliderFillBatch.js';
-import {
-  bindMeshCorners,
-  rewriteCornersWasm,
-  rewriteVertsWasm,
-  rewrittenFirstIndex,
-  rewrittenFirstRow,
-  rewrittenPastIndex,
-  rewrittenPastRow,
-} from '../render/meshCornersClient.js';
 import { meshLayerCapacities } from '../util/meshMemory.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
@@ -246,10 +234,6 @@ function finiteOrZero(n) {
 }
 
 /** Instanced Mesh with instanceCount 0 still GPU-draws if visible / used as RT root. */
-function emptyInstancedMesh(obj) {
-  return !!(obj && obj.geometry && (obj.geometry.instanceCount | 0) === 0);
-}
-
 function setDisplayVisible(obj, on) {
   if (!obj) return;
   obj.visible = !!on && !emptyInstancedMesh(obj);
@@ -385,6 +369,7 @@ import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import { PixiAssets } from '../render/pixi/assets.js';
 import { PixiScenery } from '../render/pixi/scenery.js';
+import { PixiMeshLayers, emptyInstancedMesh } from '../render/pixi/meshLayers.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
 import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
@@ -806,10 +791,6 @@ class PixiRenderer extends AbstractWorker {
     this._screenSceneDepth = null;
     this._screenClear = [0, 0, 0, 1];
     this._layerRuntime = Object.create(null); // layerName -> display object
-    this._cornerFirstRow = 0; // the rows the last corner rewrite wrote: [first, past)
-    this._cornerPastRow = 0;
-    this._cornerFirstIndex = 0; // E-453: the UV batch's indices the last vertex rewrite wrote: [first, past)
-    this._cornerPastIndex = 0;
     this._sunLayers = []; // layers with alphaBySun: { layerId, name, spec }
     this._layerSunFactor = new Float32Array(0); // by layer id: the sun's factor on its alpha (1 without alphaBySun)
     this.layerRefs = {};
@@ -1132,9 +1113,6 @@ class PixiRenderer extends AbstractWorker {
     };
     this._clearTransparent = [0, 0, 0, 0];
     this._rtEmptyContainer = new Container();
-    this._meshRtRoot = new Container();
-    this._meshRtRoot.eventMode = 'none';
-    this._meshRtRoot.cullable = false;
     this._entityUploadQ = makeBatchViews();
     this._entityUploadOpts = {
       space: BATCH_SPACE.WORLD,
@@ -1259,10 +1237,8 @@ class PixiRenderer extends AbstractWorker {
     this._colliderFillSkip = [];
     /** E-504: cached worldRect layers drawn into their targets, since the start (tests read it). */
     this._worldRectDraws = 0;
-    // E-76 W11: the mesh memory (meshMemory.js) the MESH layers' batches live in, and the corner kernel.
-    this._meshMemoryBuffer = null;
-    this._meshMemoryLayout = null;
-    this._meshCornersWasm = null;
+    // N-256 PW-4: the MESH layers' memory, kernels, UV batches and look composite (src/render/pixi/meshLayers.js).
+    this.meshLayers = new PixiMeshLayers(this);
 
     // Reusable matrices for low-res rendering
     this._meshRtTransform = new PIXI.Matrix();
@@ -3011,7 +2987,7 @@ class PixiRenderer extends AbstractWorker {
       if (Atomics.load(Layer._alphaDirty, i) !== 1) continue;
       Atomics.store(Layer._alphaDirty, i, 0);
       const name = Layer.getName(i);
-      if (Layer._alpha[i] !== 1) this._ensureMeshLookComposite(this._customLayers[i]);
+      if (Layer._alpha[i] !== 1) this.meshLayers.ensureLookComposite(this._customLayers[i]);
       const displayObject = name ? this._layerRuntime[name] : null;
       if (displayObject) displayObject.alpha = Layer._alpha[i];
       // On the stage a MESH layer's textured rows are a mesh of their own. Through an RT, the Sprite holds the alpha.
@@ -3088,7 +3064,7 @@ class PixiRenderer extends AbstractWorker {
       const spec = metas[i]?.alphaBySun;
       if (!spec) continue;
       list.push({ layerId: i, name: Layer.getName(i), spec });
-      this._ensureMeshLookComposite(this._customLayers[i]);
+      this.meshLayers.ensureLookComposite(this._customLayers[i]);
     }
     this._sunLayers = list;
     this._layerSunFactor = new Float32Array(Layer.count).fill(1);
@@ -3105,38 +3081,6 @@ class PixiRenderer extends AbstractWorker {
       const displayObject = this._layerRuntime[sl.name];
       if (displayObject) displayObject.alpha = Layer._alpha[sl.layerId] * factor;
     }
-  }
-
-  /** A MESH layer whose look cannot go straight to the stage: its alpha, or the sun's on it, has to apply. */
-  _meshLookMustCompose(cl) {
-    return Layer._alpha[cl.layerId] !== 1 || !!Layer._metadata?.layers?.[cl.layerId]?.alphaBySun;
-  }
-
-  /**
-   * A look on a MESH layer draws to the screen directly from a user shader, which cannot hear the layer's alpha. A
-   * layer that needs one goes through rtOut and a Sprite instead, as sprite look layers always do, and composes once.
-   */
-  _ensureMeshLookComposite(cl) {
-    if (!cl || !cl.meshLook || cl.rtOut || !cl.shaderMesh) return;
-    const resolution = cl.resolution || 1.0;
-    cl.rtOut = PIXI.RenderTexture.create({ width: this.canvasWidth * resolution, height: this.canvasHeight * resolution });
-    this._applyCustomLayerScaleMode(cl);
-    // Look-to-rtOut + Sprite already flips V (_createLayerFullscreenGeometry).
-    cl.shaderMesh.geometry = this._createLayerFullscreenGeometry(false);
-    if (cl.shaderMesh.parent) cl.shaderMesh.parent.removeChild(cl.shaderMesh);
-    if (cl.displaySprite) {
-      cl.displaySprite.texture = cl.rtOut;
-      cl.displaySprite.visible = true;
-    } else {
-      cl.displaySprite = new PIXI.Sprite(cl.rtOut);
-      cl.displaySprite.anchor.set(0, 0);
-      cl.displaySprite.position.set(0, 0);
-    }
-    cl.displaySprite.scale.set(1.0 / resolution);
-    if (!cl.displaySprite.parent) this.pixiApp.stage.addChild(cl.displaySprite);
-    this._registerLayerDisplayObject(Layer.getName(cl.layerId), cl.displaySprite);
-    this.pixiApp.stage.sortChildren();
-    this._syncLayerRefsFromRuntime();
   }
 
   /**
@@ -7498,12 +7442,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return uniformDefs;
   }
 
-  _meshLookFlipV() {
-    // WebGL RT is top-origin; look-on-stage needs V flip.
-    // WebGPU RT origin matches NDC — the same flip inverts terrain.
-    return !this._useWebGpu;
-  }
-
   _createLayerFullscreenGeometry(flipV) {
     // Look-to-rtOut + Sprite already flips V (GL RT write). Look on stage
     // samples the fill RT directly. Flip is backend-specific (_meshLookFlipV).
@@ -7531,212 +7469,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     mesh.eventMode = 'none';
     mesh.cullable = false;
     return mesh;
-  }
-
-  /**
-   * World verts + camera on a reused Container. Pixi 8 ignores Mesh x/y/scale
-   * when that Mesh is the RT render root.
-   */
-  _uploadMeshPoseSource(batch, label) {
-    const src = batch?._poseSource;
-    const pose = batch?.poseTable;
-    if (!src || !pose) return;
-    if (this._useWebGpu) {
-      const renderer = this.pixiApp?.renderer;
-      if (renderer) {
-        writeRgba32Float(renderer, src, pose, batch._poseWidth, batch._poseHeight, label);
-      }
-    } else {
-      this._uploadRgba32FloatGl(src, pose, batch._poseWidth, batch._poseHeight);
-    }
-  }
-
-  /**
-   * E-76 W11. A MESH layer's instance list and generation copies, in its regions of the mesh memory (the UV batch holds
-   * its records' entities itself, E-453).
-   */
-  _bindMeshSkipRegions(skip, r) {
-    const buf = this._meshMemoryBuffer;
-    const n = this._meshMemoryLayout.entities | 0;
-    skip.instanceEntity = new Uint32Array(buf, r.fillEntityByte, r.fillRows);
-    skip.lastVertGen = new Uint32Array(buf, r.lastVertGenByte, n);
-    skip.frameVertGen = new Uint32Array(buf, r.frameVertGenByte, n);
-    skip.lastUvGen = new Uint32Array(buf, r.lastUvGenByte, n);
-    skip.frameUvGen = new Uint32Array(buf, r.frameUvGenByte, n);
-  }
-
-  /**
-   * E-76 W11. The corner rewrite of a MESH layer's batch, through the corner kernel (meshCornersClient.js). Only
-   * moved vertex generations call it, and those exist only with MeshGeometry, hence with the mesh memory and the kernel.
-   */
-  _rewriteMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow) {
-    const b = this._meshCornersWasm;
-    if (b === null) throw new Error('meshCorners: a corner rewrite without the mesh memory');
-    const result = rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
-    this._cornerFirstRow = result > 0 ? rewrittenFirstRow(b) : 0;
-    this._cornerPastRow = result > 0 ? rewrittenPastRow(b) : 0;
-    return result;
-  }
-
-  /**
-   * E-453. The UV batch's vertex rewrite, through the corner kernel (rewriteVertsWasm): the records and indices it wrote
-   * into _cornerFirstRow.._cornerPastRow and _cornerFirstIndex.._cornerPastIndex.
-   */
-  _rewriteMeshUvVerts(batch, count, views, lastVertGen, genNow, lastUvGen, uvGenNow) {
-    const b = this._meshCornersWasm;
-    if (b === null) throw new Error('meshCorners: a vertex rewrite without the mesh memory');
-    const result = rewriteVertsWasm(b, batch, count, views, lastVertGen, genNow, lastUvGen, uvGenNow);
-    const done = result > 0;
-    this._cornerFirstRow = done ? rewrittenFirstRow(b) : 0;
-    this._cornerPastRow = done ? rewrittenPastRow(b) : 0;
-    this._cornerFirstIndex = done ? rewrittenFirstIndex(b) : 0;
-    this._cornerPastIndex = done ? rewrittenPastIndex(b) : 0;
-    return result;
-  }
-
-  _ensureMeshUvBatch(cl) {
-    if (cl.uvFillBatch) return cl.uvFillBatch;
-    const cap = cl.uvVertCapacity | 0;
-    const indexCap = cl.uvIndexCapacity | 0;
-    if (cap <= 0 || indexCap < 3) return null;
-    // E-76 W11, E-453: the vertex records, their entities, the indices and the span table in the mesh memory when the
-    // layer has its regions there.
-    const region = cl.meshRegion;
-    const buf = this._meshMemoryBuffer;
-    const there = !!(region && buf && region.uvVerts === cap && region.uvIndices === indexCap);
-    const entities = there ? this._meshMemoryLayout.entities | 0 : this.globalEntityCount | 0;
-    const renderer = this.pixiApp?.renderer;
-    const batch = new MeshUvFillBatch({
-      bufferSystem: renderer?.buffer ?? null,
-      geometrySystem: renderer?.geometry ?? null,
-      capacity: cap,
-      indexCapacity: indexCap,
-      entities,
-      label: `mesh-uv-${cl.layerId}`,
-      useWebGpu: this._useWebGpu,
-      shaders: this._engineShaders,
-      atlasSource: this.assets.resolveAtlasSource(),
-      lutSource: this.assets.texLutSource,
-      data: there ? new Float32Array(buf, region.uvVertsByte, cap * MESH_UV_VERT_FLOATS) : null,
-      vertexEntity: there ? new Uint32Array(buf, region.uvVertEntityByte, cap) : null,
-      indices: there ? new Uint32Array(buf, region.uvIndicesByte, indexCap) : null,
-      indexSpan: there ? new Uint32Array(buf, region.uvIndexSpanByte, entities * 2) : null,
-    });
-    batch.mesh.blendMode = cl.fillBatch?.mesh?.blendMode || cl.containerBlend || 'normal';
-    cl.uvFillBatch = batch;
-    if (cl.volumeFloor) batch.setVolumes();
-    if (!cl.rt && !cl.meshLook) {
-      const fill = cl.fillBatch?.mesh;
-      if (fill?.parent) fill.parent.addChild(batch.mesh);
-      else this.pixiApp.stage.addChild(batch.mesh);
-      if (fill) {
-        batch.mesh.x = fill.x;
-        batch.mesh.y = fill.y;
-        batch.mesh.scale.set(fill.scale.x, fill.scale.y);
-        batch.mesh.zIndex = fill.zIndex;
-        batch.mesh.alpha = fill.alpha;
-      }
-    }
-    return batch;
-  }
-
-  // vertgen-start
-  _ensureVertGenScratch(skip, views) {
-    const n = views.entityCount | 0;
-    if (!skip.lastVertGen || skip.lastVertGen.length < n) {
-      const next = new Uint32Array(n);
-      if (skip.lastVertGen) next.set(skip.lastVertGen);
-      skip.lastVertGen = next;
-    }
-  }
-
-  /**
-   * Copy the live vertex generations before any vertex is read this frame.
-   * Writers store the vertices, then bump the generation. Recording a copy
-   * taken after the reads could mark a write that landed in between as seen,
-   * with its vertices never drawn; from this copy, such a write still differs
-   * next frame and is redrawn.
-   * @returns {Uint32Array|null}
-   */
-  _captureVertGen(skip, views) {
-    const g = views.meshVertGen;
-    if (!g) return null;
-    const n = views.entityCount | 0;
-    if (!skip.frameVertGen || skip.frameVertGen.length < n) skip.frameVertGen = new Uint32Array(n);
-    const dst = skip.frameVertGen;
-    if (g.length === n && dst.length === n) {
-      dst.set(g);
-    } else {
-      dst.set(g.subarray(0, n));
-    }
-    return dst;
-  }
-
-  /** Record the generations captured this frame as drawn. */
-  _commitVertGen(skip, views) {
-    if (!skip.frameVertGen || !views.meshVertGen) return;
-    this._ensureVertGenScratch(skip, views);
-    skip.lastVertGen.set(skip.frameVertGen.subarray(0, skip.lastVertGen.length));
-  }
-
-  /**
-   * E-118. Copy the live UV generations right after the vertex generations, before any vertex or UV is
-   * read this frame, for the reason _captureVertGen gives. The rewrite also redraws a run whose UV
-   * generation moved alone, so a capture that caught one of a write's two bumps and not the other draws
-   * the write the next frame.
-   * @returns {Uint32Array|null}
-   */
-  _captureUvGen(skip, views) {
-    const g = views.meshUvGen;
-    if (!g) return null;
-    const n = views.entityCount | 0;
-    if (skip.lastUvGen.length < n) {
-      const next = new Uint32Array(n);
-      next.set(skip.lastUvGen);
-      skip.lastUvGen = next;
-    }
-    if (skip.frameUvGen.length < n) skip.frameUvGen = new Uint32Array(n);
-    const dst = skip.frameUvGen;
-    if (g.length === n && dst.length === n) {
-      dst.set(g);
-    } else {
-      dst.set(g.subarray(0, n));
-    }
-    return dst;
-  }
-
-  /** E-118. Record the UV generations captured this frame as drawn. */
-  _commitUvGen(skip, views) {
-    if (!views.meshUvGen) return;
-    const last = skip.lastUvGen;
-    last.set(skip.frameUvGen.subarray(0, last.length));
-  }
-  // vertgen-end
-
-  /**
-   * E-453: the layer's UV meshes, each mesh's vertices once and its triangles as indices of them (packMeshUvVerts):
-   * cl.uvPrevCount the records, cl.uvIndexCount the indices drawn.
-   */
-  _packMeshUvLayer(cl, views, skip) {
-    if (!views.layerHasVertexUv) {
-      if (cl.uvFillBatch) {
-        cl.uvFillBatch.upload(0, 0);
-        skip.uvLocalsReady = false;
-        cl.uvPrevCount = 0;
-        cl.uvIndexCount = 0;
-      }
-      return;
-    }
-    const batch = this._ensureMeshUvBatch(cl);
-    if (!batch) return;
-    const packed = packMeshUvVerts(batch, cl.layerId, views);
-    skip.uvLocalsReady = packed > 0;
-    cl.uvPrevCount = packed;
-    cl.uvIndexCount = batch.upload(packed, packedMeshUvIndices());
-    if (packed > 0) {
-      batch.uploadPoseTable(batch.vertexEntity, packed, views, skip.prevPose);
-      this._uploadMeshPoseSource(batch, 'mesh-uv-pose');
-    }
   }
 
   /**
@@ -7823,55 +7555,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     mx.tx = screenCx - a * focusX - cc * focusY;
     mx.ty = screenCy - b * focusX - d * focusY;
     return mx;
-  }
-
-  _renderMeshFillToRt(cl, fillMesh) {
-    const z = this._renderZoom * (cl.resolution || 1);
-    const mx = this._meshRtTransform;
-    const rot = this._renderCameraRot || 0;
-    if (!rot) {
-      mx.set(z, 0, 0, z, -this._renderCameraX * z, -this._renderCameraY * z);
-    } else {
-      const c = Math.cos(rot);
-      const s = Math.sin(rot);
-      const a = z * c;
-      const b = z * s;
-      const cc = -z * s;
-      const d = z * c;
-      const focusX = this._renderCameraX + (this.canvasWidth || 0) / (2 * (this._renderZoom || 1));
-      const focusY = this._renderCameraY + (this.canvasHeight || 0) / (2 * (this._renderZoom || 1));
-      const screenCx = (this.canvasWidth || 0) * (cl.resolution || 1) * 0.5;
-      const screenCy = (this.canvasHeight || 0) * (cl.resolution || 1) * 0.5;
-      mx.set(a, b, cc, d, screenCx - a * focusX - cc * focusY, screenCy - b * focusX - d * focusY);
-    }
-    const root = this._meshRtRoot;
-    const uvMesh = cl.uvFillBatch?.mesh || null;
-    root.removeChildren();
-    root.addChild(fillMesh);
-    if (uvMesh) root.addChild(uvMesh);
-    fillMesh.x = 0;
-    fillMesh.y = 0;
-    if (fillMesh.scale.x !== 1 || fillMesh.scale.y !== 1) fillMesh.scale.set(1);
-    if (uvMesh) {
-      uvMesh.x = 0;
-      uvMesh.y = 0;
-      if (uvMesh.scale.x !== 1 || uvMesh.scale.y !== 1) uvMesh.scale.set(1);
-    }
-    root.x = 0;
-    root.y = 0;
-    if (root.scale.x !== 1 || root.scale.y !== 1) root.scale.set(1);
-    const fillEmpty = emptyInstancedMesh(fillMesh);
-    const uvEmpty = !uvMesh || emptyInstancedMesh(uvMesh);
-    const rtOpts = this._rtRenderOpts;
-    rtOpts.container = fillEmpty && uvEmpty
-      ? this._rtEmptyContainer
-      : root;
-    rtOpts.target = cl.rt;
-    rtOpts.clear = true;
-    rtOpts.clearColor = this._clearTransparent;
-    rtOpts.transform = mx;
-    this._submitRender(rtOpts);
-    rtOpts.transform = null;
   }
 
   _destroyCustomLayerPostProcess(cl) {
@@ -8110,7 +7793,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const lookSource = cl.lookSource || cl.rt.source;
       cl.shader = this._createLookShader(fragmentSource, lookSource, uniformDefs, shaderName || 'look', layerName);
       cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
-      cl.shaderMesh = this._makeLookShaderMesh(cl.shader, !!cl.fillBatch && this._meshLookFlipV());
+      cl.shaderMesh = this._makeLookShaderMesh(cl.shader, !!cl.fillBatch && this.meshLayers.lookFlipV());
     } catch (err) {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', shaderName || 'look', layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
@@ -8130,7 +7813,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       if (!cl.shaderMesh.parent) this.pixiApp.stage.addChild(cl.shaderMesh);
       this._registerLayerDisplayObject(layerName, cl.shaderMesh, false);
-      if (this._meshLookMustCompose(cl)) this._ensureMeshLookComposite(cl);
+      if (this.meshLayers.lookMustCompose(cl)) this.meshLayers.ensureLookComposite(cl);
     } else {
       cl.displaySprite.texture = cl.rtOut;
       cl.displaySprite.scale.set(1.0 / resolution);
@@ -9154,7 +8837,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       decalBind,
       this.renderQueueEnabled ? this._bindPixiGpuPack(data) : null,
       this.renderQueueEnabled ? this._bindPainterRadix(data) : null,
-      this._bindMeshMemory(data),
+      this.meshLayers.bindMemory(data),
     ]);
     loadMark('kernels bound');
   }
@@ -9671,55 +9354,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * E-76 W11. The mesh memory the main thread made (meshMemory.js) and the corner kernel on it: with a MESH layer
-   * MeshGeometry and every MESH layer's batches live there. Without one there is no memory and nothing to rewrite.
-   */
-  async _bindMeshMemory(data) {
-    this._meshMemoryBuffer = null;
-    this._meshMemoryLayout = null;
-    this._meshCornersWasm = null;
-    const mg = data.meshGeom;
-    const memory = mg?.memory || null;
-    const layout = mg?.layout || null;
-    if (!memory || !layout) return;
-    if (mg.data !== memory.buffer || MeshGeometry.vertOffset?.buffer !== memory.buffer) {
-      throw new Error('meshCorners: MeshGeometry is not bound on the mesh memory');
-    }
-    if ((layout.entities | 0) !== (this.globalEntityCount | 0)) {
-      throw new Error(`meshCorners: the mesh memory holds ${layout.entities} entities, the scene ${this.globalEntityCount}`);
-    }
-    this._meshMemoryBuffer = memory.buffer;
-    this._meshMemoryLayout = layout;
-    this._meshCornersWasm = await bindMeshCorners(memory, layout.tableByte, {
-      vertOffset: MeshGeometry.vertOffset,
-      vertCount: MeshGeometry.vertCount,
-      indexOffset: MeshGeometry.indexOffset,
-      indexCount: MeshGeometry.indexCount,
-      vertexX: MeshGeometry.vertexX,
-      vertexY: MeshGeometry.vertexY,
-      uvU: MeshGeometry.uvU,
-      uvV: MeshGeometry.uvV,
-      indices: MeshGeometry.indices,
-    });
-  }
-
-  /**
-   * E-76 W11. The mesh memory's regions for MESH layer `layerId`, when the main thread sized them as this
-   * worker sizes the layer's batches (meshLayerCapacities); else null, which initializeCustomLayers refuses.
-   */
-  _meshLayerRegion(layerId, caps) {
-    const layout = this._meshMemoryLayout;
-    if (!layout || !this._meshMemoryBuffer) return null;
-    const layers = layout.layers || [];
-    for (let i = 0; i < layers.length; i++) {
-      const r = layers[i];
-      if (r.layerId !== layerId) continue;
-      return r.fillRows === caps.fill && r.uvVerts === caps.uvVerts && r.uvIndices === caps.uvIndices ? r : null;
-    }
-    return null;
-  }
-
-  /**
    * @param {object} data the init message (or its layers' part)
    * @param {boolean} [meshMemoryBound] initialize bound the mesh memory with its other kernels (_bindMeshMemory)
    */
@@ -9748,7 +9382,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._destroyScreenLayers();
     this._customLayers = {};
     this._gpuParticleBatches = [];
-    if (!meshMemoryBound) await this._bindMeshMemory(data);
+    if (!meshMemoryBound) await this.meshLayers.bindMemory(data);
     if (!data.layerData) return;
 
     const metadata = data.layerData.metadata;
@@ -9816,10 +9450,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Fixtures or one primary shape per entity; each convex is at most 6 fans (8-2).
         const caps = meshLayerCapacities(maxFx, entitySlots, maxMeshVerts, maxMeshIndices);
         // E-76 W11: the rows in the mesh memory, where the corner kernel rewrites them.
-        meshRegion = this._meshLayerRegion(layerId, caps);
+        meshRegion = this.meshLayers.layerRegion(layerId, caps);
         // Without MeshGeometry (renderer.maxMeshVerts 0) there is no mesh memory: the layer fills collider shapes in
         // arrays of its own and no corner is ever rewritten. With it, every MESH layer has its regions there.
-        if (!meshRegion && this._meshMemoryLayout) {
+        if (!meshRegion && this.meshLayers.memoryLayout) {
           throw new Error(`MESH layer "${layerName}": its rows are not in the mesh memory (sized apart from meshLayerCapacities)`);
         }
         fillBatch = new ColliderFillBatch({
@@ -9831,7 +9465,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           atlasSource: this.assets.resolveAtlasSource(),
           lutSource: this.assets.texLutSource,
           data: meshRegion
-            ? new Float32Array(this._meshMemoryBuffer, meshRegion.fillRowsByte, caps.fill * COLLIDER_FILL_FLOATS)
+            ? new Float32Array(this.meshLayers.memoryBuffer, meshRegion.fillRowsByte, caps.fill * COLLIDER_FILL_FLOATS)
             : null,
         });
         uvVertCapacity = caps.uvVerts;
@@ -10063,7 +9697,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             layerName
           );
           cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
-          cl.shaderMesh = this._makeLookShaderMesh(cl.shader, isMesh && this._meshLookFlipV());
+          cl.shaderMesh = this._makeLookShaderMesh(cl.shader, isMesh && this.meshLayers.lookFlipV());
         } catch (err) {
           if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
           throw errorCompileFailed(
@@ -10325,7 +9959,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             localsReady: false,
             _skipRt: false,
           };
-          if (cl.meshRegion) this._bindMeshSkipRegions(skip, cl.meshRegion);
+          if (cl.meshRegion) this.meshLayers.bindSkipRegions(skip, cl.meshRegion);
         }
         views.lastPaintEpoch = skip.lastPaintEpoch;
         views.lastMeshRevision = skip.lastMeshRevision | 0;
@@ -10357,12 +9991,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             (views.paintEpoch[0] | 0) !== (skip.lastPaintEpoch | 0)
           );
           const vertsMoved = vertEpoch !== (skip.lastVertEpoch >>> 0);
-          this._ensureVertGenScratch(skip, views);
+          this.meshLayers.ensureVertGenScratch(skip, views);
           let full = !topologyStable;
           // Generations before vertices (B24): both paths below read vertices.
-          const genNow = full || vertsMoved ? this._captureVertGen(skip, views) : null;
+          const genNow = full || vertsMoved ? this.meshLayers.captureVertGen(skip, views) : null;
           // E-118: the UV generations right after, for the same reads.
-          const uvGenNow = genNow ? this._captureUvGen(skip, views) : null;
+          const uvGenNow = genNow ? this.meshLayers.captureUvGen(skip, views) : null;
           // The rows of each batch this frame's rewrite touched: a mesh edit anywhere moves the one vertex epoch. E-453: the
           // UV batch's records, and the indices of its triangles.
           let fillFirst = 0;
@@ -10372,9 +10006,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           let uvIndexFirst = 0;
           let uvIndexPast = 0;
           if (!full && vertsMoved) {
-            this._cornerFirstRow = 0;
-            this._cornerPastRow = lastPacked;
-            const fillRewrite = this._rewriteMeshCorners(
+            this.meshLayers.cornerFirstRow = 0;
+            this.meshLayers.cornerPastRow = lastPacked;
+            const fillRewrite = this.meshLayers.rewriteCorners(
               cl.fillBatch.rows,
               lastPacked,
               skip.instanceEntity,
@@ -10383,16 +10017,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               skip.lastVertGen,
               genNow,
             );
-            fillFirst = this._cornerFirstRow;
-            fillPast = this._cornerPastRow;
+            fillFirst = this.meshLayers.cornerFirstRow;
+            fillPast = this.meshLayers.cornerPastRow;
             const uvCount = cl.uvPrevCount | 0;
-            this._cornerFirstRow = 0;
-            this._cornerPastRow = !cl.uvFillBatch ? 0 : uvCount;
-            this._cornerFirstIndex = 0;
-            this._cornerPastIndex = 0;
+            this.meshLayers.cornerFirstRow = 0;
+            this.meshLayers.cornerPastRow = !cl.uvFillBatch ? 0 : uvCount;
+            this.meshLayers.cornerFirstIndex = 0;
+            this.meshLayers.cornerPastIndex = 0;
             const uvRewrite = !cl.uvFillBatch || uvCount <= 0
               ? 1
-              : this._rewriteMeshUvVerts(
+              : this.meshLayers.rewriteUvVerts(
                 cl.uvFillBatch,
                 uvCount,
                 views,
@@ -10401,10 +10035,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 skip.lastUvGen,
                 uvGenNow,
               );
-            uvFirst = this._cornerFirstRow;
-            uvPast = this._cornerPastRow;
-            uvIndexFirst = this._cornerFirstIndex;
-            uvIndexPast = this._cornerPastIndex;
+            uvFirst = this.meshLayers.cornerFirstRow;
+            uvPast = this.meshLayers.cornerPastRow;
+            uvIndexFirst = this.meshLayers.cornerFirstIndex;
+            uvIndexPast = this.meshLayers.cornerPastIndex;
             if (fillRewrite < 0 || uvRewrite < 0) full = true;
           }
           const noRowMoved = !full && vertsMoved && !paintMoved && !poseMoved && fillPast <= fillFirst && uvPast <= uvFirst;
@@ -10417,11 +10051,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             cl.prevCount = packed;
             if (packed > 0) {
               cl.fillBatch.uploadPoseTable(skip.instanceEntity, packed, views, skip.prevPose);
-              this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
+              this.meshLayers.uploadPoseSource(cl.fillBatch, 'mesh-pose');
             }
-            this._packMeshUvLayer(cl, views, skip);
-            this._commitVertGen(skip, views);
-            this._commitUvGen(skip, views);
+            this.meshLayers.packUvLayer(cl, views, skip);
+            this.meshLayers.commitVertGen(skip, views);
+            this.meshLayers.commitUvGen(skip, views);
           } else {
             if (paintMoved) {
               if (lastPacked > 0) {
@@ -10451,17 +10085,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             if (poseMoved) {
               if (lastPacked > 0) {
                 cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views, skip.prevPose);
-                this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
+                this.meshLayers.uploadPoseSource(cl.fillBatch, 'mesh-pose');
               }
               const uvCount = cl.uvPrevCount | 0;
               if (cl.uvFillBatch && uvCount > 0) {
                 cl.uvFillBatch.uploadPoseTable(cl.uvFillBatch.vertexEntity, uvCount, views, skip.prevPose);
-                this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
+                this.meshLayers.uploadPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
               }
             }
             if (vertsMoved) {
-              this._commitVertGen(skip, views);
-              this._commitUvGen(skip, views);
+              this.meshLayers.commitVertGen(skip, views);
+              this.meshLayers.commitUvGen(skip, views);
             }
           }
           skip.lastRevision = rev;
@@ -10502,7 +10136,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl.fillBatch) {
           const skipRt = this._colliderFillSkip[cl.layerId];
           if (!skipRt || !skipRt._skipRt) {
-            this._renderMeshFillToRt(cl, densityMesh);
+            this.meshLayers.renderFillToRt(cl, densityMesh);
             this._meshRtDrawsThisFrame++;
             if (skipRt) {
               skipRt.camX = this._renderCameraX;

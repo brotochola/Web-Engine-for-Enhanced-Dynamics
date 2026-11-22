@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { PixiMeshLayers } from '../../src/render/pixi/meshLayers.js';
 import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 
 // B24. A logic worker edits a mesh in place: it stores the vertices, then bumps
@@ -17,12 +18,9 @@ import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
 
+/** The MESH layers' generation bookkeeping (N-256 PW-4: src/render/pixi/meshLayers.js), on its own. */
 function vertGenMethods() {
-  const start = pixi.indexOf('// vertgen-start');
-  const end = pixi.indexOf('// vertgen-end');
-  assert.ok(start >= 0 && end > start, 'vertex generation methods missing in pixiWorker.js');
-  const Methods = new Function(`return class { ${pixi.slice(start, end)} };`)();
-  return new Methods();
+  return new PixiMeshLayers({});
 }
 
 /** One entity, one triangle, explicit mesh (no index buffer). */
@@ -49,23 +47,23 @@ test('a write between the vertex read and the bookkeeping is drawn next frame', 
   const instance = new Uint32Array([0]);
 
   // Frame 1: draw edit A.
-  let genNow = px._captureVertGen(skip, v);
+  let genNow = px.captureVertGen(skip, v);
   assert.equal(rewriteExplicitMeshCorners(out, 1, instance, v, COLLIDER_FILL_FLOATS, skip.lastVertGen, genNow), 1);
   assert.deepEqual(drawnX(out), [0, 10, 0]);
   // Edit B lands now: vertices, then the generation.
   v.meshVertexX.set([5, 25, 5]);
   v.meshVertGen[0] = 2;
-  px._commitVertGen(skip, v);
+  px.commitVertGen(skip, v);
 
   // Frame 2: B must be redrawn.
-  genNow = px._captureVertGen(skip, v);
+  genNow = px.captureVertGen(skip, v);
   rewriteExplicitMeshCorners(out, 1, instance, v, COLLIDER_FILL_FLOATS, skip.lastVertGen, genNow);
   assert.deepEqual(drawnX(out), [5, 25, 5], 'edit B is on screen');
-  px._commitVertGen(skip, v);
+  px.commitVertGen(skip, v);
 
   // Frame 3: nothing new, nothing rewritten.
   out.fill(-1);
-  genNow = px._captureVertGen(skip, v);
+  genNow = px.captureVertGen(skip, v);
   rewriteExplicitMeshCorners(out, 1, instance, v, COLLIDER_FILL_FLOATS, skip.lastVertGen, genNow);
   assert.deepEqual(drawnX(out), [-1, -1, -1]);
 });
@@ -83,16 +81,16 @@ test('the dirty check reads the captured generations, not the live ones', () => 
 
 test('Pixi captures before both vertex-reading paths and commits the capture', () => {
   const block = pixi.slice(pixi.indexOf('const vertsMoved = vertEpoch'), pixi.indexOf('skip.lastRevision = rev;'));
-  const capture = block.indexOf('this._captureVertGen(skip, views)');
-  const rewrite = block.indexOf('this._rewriteMeshCorners(');
+  const capture = block.indexOf('this.meshLayers.captureVertGen(skip, views)');
+  const rewrite = block.indexOf('this.meshLayers.rewriteCorners(');
   assert.ok(capture > 0, 'captured');
   assert.ok(rewrite > 0 && capture < rewrite, 'before the rewrite');
   assert.ok(capture < block.indexOf('packColliderFill('), 'before the full pack');
   // E-118: the UV generations right after the vertex ones, committed with them.
-  const uvCapture = block.indexOf('this._captureUvGen(skip, views)');
+  const uvCapture = block.indexOf('this.meshLayers.captureUvGen(skip, views)');
   assert.ok(uvCapture > capture && uvCapture < rewrite, 'the UV generations after the vertex ones, before the rewrite');
-  assert.equal((block.match(/_commitVertGen\(skip, views\)/g) || []).length, 2);
-  assert.equal((block.match(/_commitUvGen\(skip, views\)/g) || []).length, 2);
+  assert.equal((block.match(/meshLayers\.commitVertGen\(skip, views\)/g) || []).length, 2);
+  assert.equal((block.match(/meshLayers\.commitUvGen\(skip, views\)/g) || []).length, 2);
   assert.ok(!/_snapshotVertGen/.test(pixi), 'no copy of the live generations after the reads');
 });
 
@@ -115,11 +113,11 @@ function drawnU(out) {
 }
 
 function uvFrame(px, out, instance, v, skip) {
-  const genNow = px._captureVertGen(skip, v);
-  const uvNow = px._captureUvGen(skip, v);
+  const genNow = px.captureVertGen(skip, v);
+  const uvNow = px.captureUvGen(skip, v);
   const code = rewriteExplicitMeshCorners(out, 1, instance, v, MESH_UV_FILL_FLOATS, skip.lastVertGen, genNow, skip.lastUvGen, uvNow);
-  px._commitVertGen(skip, v);
-  px._commitUvGen(skip, v);
+  px.commitVertGen(skip, v);
+  px.commitUvGen(skip, v);
   return code;
 }
 

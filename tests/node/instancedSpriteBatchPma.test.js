@@ -71,23 +71,24 @@ const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8
 const assetsSrc = readFileSync(join(dir, '../../src/render/pixi/assets.js'), 'utf8');
 const packLayer = readFileSync(join(dir, '../../src/render/packSpriteLayer.js'), 'utf8');
 
-test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', () => {
-  assert.match(pixiSrc, /function emptyInstancedMesh\(obj\)/);
+test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', async () => {
+  // N-256 PW-4: emptyInstancedMesh is the MESH layers' module's, which the worker imports.
+  const { emptyInstancedMesh } = await import('../../src/render/pixi/meshLayers.js');
   assert.match(pixiSrc, /obj\.visible = !!on && !emptyInstancedMesh\(obj\)/);
   assert.match(pixiSrc, /this\._rtEmptyContainer = new Container\(\)/);
   assert.match(pixiSrc, /rtOpts\.container = this\._rtEmptyContainer/);
   assert.match(pixiSrc, /emptyInstancedMesh\(densityMesh\)/);
 
-  const start = pixiSrc.indexOf('function emptyInstancedMesh');
+  const start = pixiSrc.indexOf('function setDisplayVisible');
   const end = pixiSrc.indexOf('function makeBatchViews');
   assert.ok(start >= 0 && end > start);
   const box = {};
-  new Function(`${pixiSrc.slice(start, end)}; this.emptyInstancedMesh = emptyInstancedMesh; this.setDisplayVisible = setDisplayVisible`).call(box);
+  new Function('emptyInstancedMesh', `${pixiSrc.slice(start, end)}; this.setDisplayVisible = setDisplayVisible`).call(box, emptyInstancedMesh);
 
-  assert.equal(box.emptyInstancedMesh(null), false);
-  assert.equal(box.emptyInstancedMesh({}), false);
-  assert.equal(box.emptyInstancedMesh({ geometry: { instanceCount: 1 } }), false);
-  assert.equal(box.emptyInstancedMesh({ geometry: { instanceCount: 0 } }), true);
+  assert.equal(emptyInstancedMesh(null), false);
+  assert.equal(emptyInstancedMesh({}), false);
+  assert.equal(emptyInstancedMesh({ geometry: { instanceCount: 1 } }), false);
+  assert.equal(emptyInstancedMesh({ geometry: { instanceCount: 0 } }), true);
 
   const sprite = { visible: true };
   box.setDisplayVisible(sprite, true);

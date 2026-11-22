@@ -407,15 +407,18 @@ test('colliderFill.wgsl samples the atlas in uniform control flow', () => {
 
 test('MESH look path is one RT, no fillSpace / SCREEN bake', () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const src = fs.readFileSync(path.join(here, '../../src/workers/pixiWorker.js'), 'utf8');
+  // N-256 PW-4: the MESH layers' own code is src/render/pixi/meshLayers.js; the worker calls it.
+  const worker = fs.readFileSync(path.join(here, '../../src/workers/pixiWorker.js'), 'utf8');
+  const meshSrc = fs.readFileSync(path.join(here, '../../src/render/pixi/meshLayers.js'), 'utf8');
+  const src = `${worker}\n${meshSrc}`;
   assert.equal(src.includes('fillSpace'), false);
-  assert.match(src, /_renderMeshFillToRt/);
+  assert.match(worker, /meshLayers\.renderFillToRt/);
+  assert.match(meshSrc, /return !this\.worker\._useWebGpu/);
   assert.match(src, /if\s*\(\s*!isMesh\s*\)/);
   assert.match(src, /cl\.rtOut\s*=/);
-  assert.match(src, /_meshLookFlipV\(\)/);
-  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*isMesh\s*&&\s*this\._meshLookFlipV\(\)\)/);
-  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*!!cl\.fillBatch\s*&&\s*this\._meshLookFlipV\(\)\)/);
-  assert.match(src, /return !this\._useWebGpu/);
+  assert.match(src, /meshLayers\.lookFlipV\(\)/);
+  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*isMesh\s*&&\s*this\.meshLayers\.lookFlipV\(\)\)/);
+  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*!!cl\.fillBatch\s*&&\s*this\.meshLayers\.lookFlipV\(\)\)/);
   assert.match(src, /skip\._skipRt/);
   assert.match(src, /paintEpoch/);
   assert.match(src, /packColliderFillPoseOnly/);

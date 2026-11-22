@@ -234,10 +234,10 @@ function gameFrame(r, api, shapes) {
 function rewriteMeshUvVertsJs(batch, count, views, lastVertGen, genNow, lastUvGen, uvGenNow) {
   const r = rewriteMeshUvVerts(batch, count, views, lastVertGen, genNow, lastUvGen, uvGenNow);
   const done = r.result > 0;
-  this._cornerFirstRow = done ? r.firstRow : 0;
-  this._cornerPastRow = done ? r.pastRow : 0;
-  this._cornerFirstIndex = done ? r.firstIndex : 0;
-  this._cornerPastIndex = done ? r.pastIndex : 0;
+  this.cornerFirstRow = done ? r.firstRow : 0;
+  this.cornerPastRow = done ? r.pastRow : 0;
+  this.cornerFirstIndex = done ? r.firstIndex : 0;
+  this.cornerPastIndex = done ? r.pastIndex : 0;
   return r.result;
 }
 
@@ -250,8 +250,8 @@ async function run(px, kernel) {
   const scene = await quietly(() => buildScene());
   await quietly(() => initPixi(px, scene));
   if (!kernel) {
-    px._rewriteMeshCorners = rewriteExplicitMeshCorners;
-    px._rewriteMeshUvVerts = rewriteMeshUvVertsJs;
+    px.meshLayers.rewriteCorners = rewriteExplicitMeshCorners;
+    px.meshLayers.rewriteUvVerts = rewriteMeshUvVertsJs;
   }
   const layerId = Layer.get('mesh').id;
   const cl = px._customLayers[layerId];
@@ -298,9 +298,9 @@ async function run(px, kernel) {
       frames.push({ fillN, uvN, uvM, fill, uv, uvIndices });
     }
   });
-  delete px._rewriteMeshCorners;
-  delete px._rewriteMeshUvVerts;
-  return { scene, cl, frames, kernel: px._meshCornersWasm, skip: px._colliderFillSkip[layerId] };
+  delete px.meshLayers.rewriteCorners;
+  delete px.meshLayers.rewriteUvVerts;
+  return { scene, cl, frames, kernel: px.meshLayers.cornersWasm, skip: px._colliderFillSkip[layerId] };
 }
 
 function firstDiff(a, b) {
@@ -486,7 +486,7 @@ async function lookLayer(options) {
   };
   const drawn = [];
   px._submitRender = (opts) => drawn.push(opts.container);
-  px._renderMeshFillToRt = () => {};
+  px.meshLayers.renderFillToRt = () => {};
   return { px, cl, drawn };
 }
 
@@ -495,7 +495,7 @@ test('a composed look on a MESH layer can be taken off and put back', async () =
   await quietly(() => {
     px._setCustomLayerShader('shade', 'look', 'look');
     Layer._alpha[cl.layerId] = 0.5;
-    px._ensureMeshLookComposite(cl);
+    px.meshLayers.ensureLookComposite(cl);
   });
   const composed = cl.rtOut;
   assert.ok(composed, 'the alpha made it compose');
@@ -572,7 +572,7 @@ async function sunLayer() {
   Transform.rotS[0] = 0;
   mr.setPlane(40, 30, 3, 2);
   let draws = 0;
-  px._renderMeshFillToRt = () => {
+  px.meshLayers.renderFillToRt = () => {
     draws++;
   };
   await quietly(() => {
@@ -625,5 +625,5 @@ test('a MESH layer without MeshGeometry fills its collider shapes in arrays of i
   assert.ok(cl?.fillBatch, 'the MESH layer has its fill batch');
   assert.equal(cl.meshRegion, null, 'no regions');
   assert.ok(!(cl.fillBatch.rows.buffer instanceof SharedArrayBuffer), 'rows of its own');
-  assert.equal(px._meshCornersWasm, null, 'no kernel');
+  assert.equal(px.meshLayers.cornersWasm, null, 'no kernel');
 });

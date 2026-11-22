@@ -351,24 +351,24 @@ async function run(px, kernel) {
   // Each rewrite's return code: a rewrite that answers -1 sends Pixi to a full pack, whose rows match anyway.
   const codes = [];
   // The JS run: the JS rewrites, in place of Pixi's own (E-453: the UV batch's records through rewriteMeshUvVerts).
-  const proto = Object.getPrototypeOf(px);
-  const rewrite = kernel ? proto._rewriteMeshCorners : rewriteExplicitMeshCorners;
-  px._rewriteMeshCorners = function (...args) {
+  const proto = Object.getPrototypeOf(px.meshLayers);
+  const rewrite = kernel ? proto.rewriteCorners : rewriteExplicitMeshCorners;
+  px.meshLayers.rewriteCorners = function (...args) {
     const code = rewrite.apply(this, args);
     codes.push(code);
     return code;
   };
-  px._rewriteMeshUvVerts = function (...args) {
+  px.meshLayers.rewriteUvVerts = function (...args) {
     let code;
     if (kernel) {
-      code = proto._rewriteMeshUvVerts.apply(this, args);
+      code = proto.rewriteUvVerts.apply(this, args);
     } else {
       const r = rewriteMeshUvVerts(...args);
       code = r.result;
-      this._cornerFirstRow = code > 0 ? r.firstRow : 0;
-      this._cornerPastRow = code > 0 ? r.pastRow : 0;
-      this._cornerFirstIndex = code > 0 ? r.firstIndex : 0;
-      this._cornerPastIndex = code > 0 ? r.pastIndex : 0;
+      this.cornerFirstRow = code > 0 ? r.firstRow : 0;
+      this.cornerPastRow = code > 0 ? r.pastRow : 0;
+      this.cornerFirstIndex = code > 0 ? r.firstIndex : 0;
+      this.cornerPastIndex = code > 0 ? r.pastIndex : 0;
     }
     codes.push(code);
     return code;
@@ -404,9 +404,9 @@ async function run(px, kernel) {
       frames.push({ fillN, uvN, uvM, fill, uv, uvIndices });
     }
   });
-  delete px._rewriteMeshCorners;
-  delete px._rewriteMeshUvVerts;
-  return { scene, cl, frames, codes, kernel: px._meshCornersWasm };
+  delete px.meshLayers.rewriteCorners;
+  delete px.meshLayers.rewriteUvVerts;
+  return { scene, cl, frames, codes, kernel: px.meshLayers.cornersWasm };
 }
 
 test('Pixi draws the same rows of a 32-bit arena through the kernel as the JS rewrite did', async () => {
