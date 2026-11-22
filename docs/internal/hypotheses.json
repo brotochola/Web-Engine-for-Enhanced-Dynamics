@@ -18161,7 +18161,8 @@
         "uploadPoseRows"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1807"
       ]
     },
     {
@@ -41221,6 +41222,13 @@
       "title": "Box2D by name at crowd 2.5 after N-313: physics thread collide 29.8 %, solve 20.7 %, finalize 7.6 %, serial refit 4.1 % + step/glue ~13 %; pool threads idle ~29 % (futex 19 %, scheduler 10 %)",
       "verdict": "note",
       "text": "**Box2D by name at Predator crowd 2.5 after N-313 and with two spatial workers (2026-11-22, main 32b8dff2 with the --profiling-funcs build of Box2D 0f0fa10 swapped in a worktree; from the E-210 save, 6 s warm-up, 8 s traced window, to 00:43).** The names build is not wasm-opt'ed and the trace costs: physics read 19.1 ms (shape, not a ruler).\n\nThe physics thread (the one whose STEP_MS counts): b2CollideTask 29.8 %, b2ExecuteBlock 20.7 %, b2FinalizeBodiesTask 7.6 %, b2World_Step's own code 4.5 %, **b2DynamicTree_Refit 4.1 % (serial, after the finalize)**, publishPose (JS) 3.8 %, b2ComputeFatShapeAABB 3.7 %, b2SolverTask 3.5 %, bodies_apply_accelerations 2.7 %, step_world 2.0 %. Each of the three pool threads: b2CollideTask 21 %, b2ExecuteBlock 20 %, **futex waits 19 % and b2SchedulerWorkerMain 10 %** (idle while the physics thread runs the serial parts), b2FinalizeBodiesTask 7.7 %, b2PlaceLeaf 6.6 % (the tree rebuild task), b2ComputeFatShapeAABB 3.5 %, b2SolverTask 3 %.\n\nSo about 17 % of the physics thread is serial work with the pool waiting (the refit, the step's own code, the glue's accelerations and pose publish), and the two parallel stages (collide, solve) are about half of every thread. Levers seen, none tried: the refit as a task beside the bullets and islands, or the kinematic tree's refit on a pool thread; the glue's publishPose overlapped with the next step's setup. The AABB margin was tried (E-306, dropped) and a fifth thread trades (R-1805)."
+    },
+    {
+      "id": "R-1807",
+      "date": "2026-11-22",
+      "title": "E-392 read: the pose texture is by queue row in painter order, so any mover shifts the rows after it; a dirty range pays only in a still scene; E-362 (12-byte rows) is the cheaper step",
+      "verdict": "note",
+      "text": "**E-392 read against the code: a dirty range pays only in a still scene, since the pose texture is laid out by queue row, in painter order.** `InstancedSpriteBatch._uploadPoseRows` (E-201) copies x, y, rotC and rotS of every queue row into four blocks and uploads the texture rows they reach; the instance stream holds the row index. The rows are the frame's sorted queue: when one walker crosses another's y, every row between them shifts, so the rows that change are, in any scene with movers, nearly all of them. Predator's frame (glFrameRecorder, R-1802's A runs, 2026-11-22): 4 texSubImage2D of 1024 x 4 RGBA32UI a frame, 256 KB at the default crowd, the queue's trees, houses and rocks interleaved with the walkers in y.\n\nSo the levers are: (1) a still scene stops uploading (compare the blocks with the last frame's while copying: about 0.1 ms of JS a frame at 40 000 rows in a moving scene, for nothing); (2) E-362 (the rotation as one u32, 16 -> 12 bytes a row) cuts every frame's upload by a quarter; (3) poses by key instead of by row (the keyed frames' pose stream, E-191/E-201), where a still entity's pose never changes. None is worth a sitting before a scene shows the upload in its renderer's time: E-392 drops in rank; E-362 is the cheaper first step."
     }
   ],
   "leads": [
