@@ -11,6 +11,25 @@ class BigAtlasInspector {
   /** DBG-6: the twin page read for the maps modes, and the json it belongs to (read once per atlas). */
   static _mapsPage = null;
   static _mapsJson = null;
+  /** DBG-6: the atlas made into a canvas for the entity inspector, and the json it belongs to. */
+  static _atlasCanvas = null;
+  static _atlasJson = null;
+
+  /** DBG-6: a scene's atlas as a canvas, made once per atlas json (the page keeps none: SST-5). */
+  static async atlasCanvas(scene) {
+    if (typeof scene?.bigAtlasInspect !== 'function') return null;
+    if (this._atlasJson !== scene.bigAtlasJson) {
+      this._atlasCanvas = await scene.bigAtlasInspect();
+      this._atlasJson = scene.bigAtlasJson;
+    }
+    return this._atlasCanvas;
+  }
+
+  /** DBG-6: a scene's twin page, read once per atlas json (null: no sheet has maps). */
+  static async mapsPage(scene) {
+    if (typeof scene?.bigAtlasInspectMaps !== 'function') return null;
+    return this._readMaps(scene.bigAtlasInspectMaps, scene.bigAtlasJson);
+  }
 
   /**
    * Show the bigAtlas in an overlay panel

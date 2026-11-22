@@ -21,6 +21,23 @@ import { GameObject } from '../../gameObject.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
 import { childrenOf, formatInspectorField } from './inspectorFormat.js';
 import { elem } from '../ui/debugDom.js';
+import { SpriteRenderer } from '../../../components/spriteRenderer.js';
+import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
+import { BigAtlasInspector } from '../../bigAtlasInspector.js';
+import { frameMapsImage } from '../../atlasMapsView.js';
+
+/**
+ * DBG-6: the atlas frame sprite `i` draws now: a texture is its own frame; a sheet's is its animation's current frame.
+ * Null when the registry does not know it.
+ */
+function spriteFrameName(i, json) {
+  const sheet = SpriteSheetRegistry.getSpritesheetName(SpriteRenderer.spritesheetId[i]);
+  if (!sheet) return null;
+  if (json.frames[sheet]) return sheet;
+  const anim = SpriteSheetRegistry.getAnimationName(sheet, SpriteRenderer.animationState[i]);
+  if (anim === undefined) return null;
+  return SpriteSheetRegistry.getFrameName(sheet, anim, SpriteRenderer.animationFrame[i]);
+}
 
 const PICK_CAP = 64;
 /** DBG-10: how many children the Transform section names (it counts them all). */
@@ -494,6 +511,61 @@ export class ToolManager {
     }
     if (!components) components = [Transform];
     this._fillComponentSections(components);
+    this._addFrameMapsSection(entityIndex);
+  }
+
+  /** DBG-6: a sprite's current atlas frame, and a button that shows its colours, height and normals. */
+  _addFrameMapsSection(entityIndex) {
+    const scene = this.debugUI.scene;
+    const container = this._inspectorComponentsContainer;
+    if (!container || !scene?.bigAtlasJson || !SpriteRenderer.active || SpriteRenderer.active[entityIndex] !== 1) return;
+    const frameName = spriteFrameName(entityIndex, scene.bigAtlasJson);
+    if (!frameName) return;
+    const section = elem('div', 'debug-ui-inspector-section');
+    section.appendChild(elem('div', 'debug-ui-inspector-section-head', `Frame ${frameName}`));
+    const body = elem('div', 'debug-ui-inspector-props');
+    const button = elem('button', 'debug-ui-btn', 'Show its maps');
+    button.onclick = () => this._showFrameMaps(body, frameName, button);
+    body.appendChild(button);
+    section.appendChild(body);
+    container.appendChild(section);
+  }
+
+  /** DBG-6: the frame cut from the atlas, beside its height and normals from the twin page. */
+  async _showFrameMaps(body, frameName, button) {
+    const scene = this.debugUI.scene;
+    const json = scene?.bigAtlasJson;
+    const rect = json?.frames?.[frameName]?.frame;
+    if (!rect) return;
+    button.disabled = true;
+    button.textContent = 'reading the atlas...';
+    const [atlas, page] = await Promise.all([BigAtlasInspector.atlasCanvas(scene), BigAtlasInspector.mapsPage(scene)]);
+    button.remove();
+    const row = elem('div', '');
+    row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end';
+    const add = (label, paint) => {
+      const cell = elem('div', '');
+      cell.appendChild(elem('div', '', label));
+      const canvas = document.createElement('canvas');
+      canvas.width = rect.w;
+      canvas.height = rect.h;
+      canvas.style.cssText = `width:${Math.min(96, rect.w)}px;image-rendering:pixelated;background:#222`;
+      paint(canvas.getContext('2d'));
+      cell.appendChild(canvas);
+      row.appendChild(cell);
+    };
+    if (atlas) add('colour', (ctx) => ctx.drawImage(atlas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h));
+    let maps = 0;
+    if (page) {
+      for (const mode of ['height', 'normals']) {
+        const img = frameMapsImage(page, json, frameName, mode);
+        if (!img) continue;
+        maps++;
+        add(mode === 'height' ? `height (to ${img.maxZ.toFixed(0)} px)` : mode, (ctx) => ctx.putImageData(new ImageData(img.rgba, img.width, img.height), 0, 0));
+      }
+    }
+    if (maps === 0) row.appendChild(elem('div', '', 'no maps for this frame'));
+    body.appendChild(row);
   }
 
   _populatePoolInspector(kind, index) {

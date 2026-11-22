@@ -68,6 +68,43 @@ function ramp(t, out, at) {
   out[at + 3] = 255;
 }
 
+/** One twin texel that holds a map, painted at rgba[at] in `mode` (atlasMapsImage's modes). */
+function paintTexel(t, mode, marks, scale, rgba, at) {
+  if (mode === 'height') {
+    ramp(t.z * scale, rgba, at);
+  } else if (mode === 'relief') {
+    if (marks.relief) ramp(t.z * scale, rgba, at);
+    else {
+      rgba[at] = rgba[at + 1] = rgba[at + 2] = 70;
+      rgba[at + 3] = 255;
+    }
+  } else if (mode === 'normals') {
+    const n = t.normal;
+    if (n === null) {
+      rgba[at] = rgba[at + 1] = rgba[at + 2] = 128;
+    } else {
+      rgba[at] = 127.5 + 127.5 * n[0];
+      rgba[at + 1] = 127.5 + 127.5 * n[1];
+      rgba[at + 2] = 127.5 + 127.5 * n[2];
+    }
+    rgba[at + 3] = 255;
+  } else {
+    // marks
+    if (marks.relief) {
+      rgba[at] = 255;
+      rgba[at + 1] = 140;
+      rgba[at + 2] = 20;
+    } else if (marks.heights) {
+      rgba[at] = 40;
+      rgba[at + 1] = 110;
+      rgba[at + 2] = 255;
+    } else {
+      rgba[at] = rgba[at + 1] = rgba[at + 2] = 160;
+    }
+    rgba[at + 3] = 255;
+  }
+}
+
 /**
  * The maps in `mode` as an RGBA image of the atlas's size:
  * - height: each texel's height above the floor, a ramp from 0 (blue) to the page's highest (white);
@@ -134,44 +171,52 @@ export function atlasMapsImage(page, json, mode) {
         const ty = win.y + dy;
         if (tx >= full.w || ty >= full.h) continue;
         const t = twinPageTexel(page.texels, page.width, page.height, tx, ty, format);
-        if (!t.present) continue;
-        if (mode === 'height') {
-          ramp(t.z * scale, rgba, at);
-        } else if (mode === 'relief') {
-          if (marks.relief) ramp(t.z * scale, rgba, at);
-          else {
-            rgba[at] = rgba[at + 1] = rgba[at + 2] = 70;
-            rgba[at + 3] = 255;
-          }
-        } else if (mode === 'normals') {
-          const n = t.normal;
-          if (n === null) {
-            rgba[at] = rgba[at + 1] = rgba[at + 2] = 128;
-          } else {
-            rgba[at] = 127.5 + 127.5 * n[0];
-            rgba[at + 1] = 127.5 + 127.5 * n[1];
-            rgba[at + 2] = 127.5 + 127.5 * n[2];
-          }
-          rgba[at + 3] = 255;
-        } else {
-          // marks
-          if (marks.relief) {
-            rgba[at] = 255;
-            rgba[at + 1] = 140;
-            rgba[at + 2] = 20;
-          } else if (marks.heights) {
-            rgba[at] = 40;
-            rgba[at + 1] = 110;
-            rgba[at + 2] = 255;
-          } else {
-            rgba[at] = rgba[at + 1] = rgba[at + 2] = 160;
-          }
-          rgba[at + 3] = 255;
-        }
+        if (t.present) paintTexel(t, mode, marks, scale, rgba, at);
       }
     }
   }
   return { rgba, width, height, maxZ, frames: frames.length };
+}
+
+/**
+ * One frame's maps in `mode`, at the frame's size (the entity inspector's): its window of the twin page painted as
+ * atlasMapsImage paints it, height scaled to the frame's own highest point. Null for a frame without a window.
+ * @param {{ texels: Uint8ClampedArray, width: number, height: number }} page
+ * @param {object} json
+ * @param {string} frameName
+ * @param {string} mode
+ * @returns {{ rgba: Uint8ClampedArray, width: number, height: number, maxZ: number } | null}
+ */
+export function frameMapsImage(page, json, frameName, mode) {
+  const data = json?.frames?.[frameName];
+  if (!data) return null;
+  const format = json.meta?.mapsFormat || 'A';
+  const full = twinFullSize(page, format);
+  const win = frameWindow(data, isAtlasLayout(json, full));
+  if (win === null) return null;
+  const { w, h } = data.frame;
+  const marks = marksOf(data, win);
+  const texel = (dx, dy) => {
+    const tx = win.x + dx;
+    const ty = win.y + dy;
+    return tx < full.w && ty < full.h ? twinPageTexel(page.texels, page.width, page.height, tx, ty, format) : null;
+  };
+  let maxZ = 0;
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      const t = texel(dx, dy);
+      if (t && t.present && t.z > maxZ) maxZ = t.z;
+    }
+  }
+  const scale = maxZ > 0 ? 1 / maxZ : 0;
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      const t = texel(dx, dy);
+      if (t && t.present) paintTexel(t, mode, marks, scale, rgba, (dy * w + dx) * 4);
+    }
+  }
+  return { rgba, width: w, height: h, maxZ };
 }
 
 /**

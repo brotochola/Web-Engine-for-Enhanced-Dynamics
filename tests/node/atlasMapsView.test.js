@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { atlasMapsAt, atlasMapsImage, frameWindow, twinFullSize } from '../../src/core/atlasMapsView.js';
+import { atlasMapsAt, atlasMapsImage, frameMapsImage, frameWindow, twinFullSize } from '../../src/core/atlasMapsView.js';
 import { encodeOctahedral, HEIGHT_UNITS } from '../../src/render/spriteMaps.js';
 
 const px = (img, x, y) => Array.from(img.rgba.slice((y * img.width + x) * 4, (y * img.width + x) * 4 + 4));
@@ -92,4 +92,13 @@ test('the readout: the frame under a point, its marks, and the texel there', () 
   assert.equal(unshaded.texel, null);
   assert.equal(atlasMapsAt(page, json, 9, 9), null);
   assert.equal(atlasMapsAt(null, json, 0, 0).texel, null, 'before the page is read: the frame alone');
+});
+
+test('frameMapsImage: one frame, its maps at its own size, the ramp to its own highest point', () => {
+  const img = frameMapsImage(page, json, 'f1', 'height');
+  assert.deepEqual([img.width, img.height, img.maxZ], [2, 1, 20]);
+  assert.deepEqual(Array.from(img.rgba.slice(0, 4)), [255, 115, 13, 255]);
+  assert.deepEqual(Array.from(img.rgba.slice(4, 8)), [255, 255, 255, 255]);
+  assert.equal(frameMapsImage(page, json, 'f2', 'height'), null, 'no window: no image');
+  assert.equal(frameMapsImage(page, json, 'nope', 'height'), null);
 });
