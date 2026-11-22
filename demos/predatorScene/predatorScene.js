@@ -54,6 +54,18 @@ function predatorCrowd() {
   const f = predatorNumberParam('crowd', 1);
   return f > 0 ? Math.min(f, PREDATOR_CROWD_MAX) : 1;
 }
+/**
+ * E-310: how many spatial workers split the neighbour search. From crowd 2, two, where the machine has logical CPUs
+ * for a thread more than the engine's dozen: at crowd 2.5 one worker took 15.0 ms a frame and two 10.0 ms each, with
+ * logic 3.3 % dearer and the rest alike (R-1804). A smaller crowd, or a laptop with 2 cores, keeps one.
+ * `?spatialWorkers=<n>` (1 to 4) sets it.
+ */
+function predatorSpatialWorkers() {
+  const cpus = (globalThis.navigator && globalThis.navigator.hardwareConcurrency) | 0;
+  const byCrowd = predatorCrowd() >= 2 && cpus >= 12 ? 2 : 1;
+  return Math.min(4, Math.max(1, Math.trunc(predatorNumberParam('spatialWorkers', byCrowd))));
+}
+
 // `?mix=1`: the soldiers spawn spread over the whole map among the civilians, as the civilians do, instead of as a squad
 // in the middle. Every soldier then has civilians in sight from the first frame, so its scans, shots and the panic they
 // spread load the logic all over the map, not only at the squad's edge.
@@ -133,8 +145,8 @@ export class PredatorScene extends WEED.Scene {
       // so soldiers missed civilians beside them and flocking missed its neighbours. 64 left none at crowd 2.5, and
       // spatial was no slower there (N-325).
       maxEntitiesPerCell: Math.trunc(predatorPositiveParam('maxEntitiesPerCell', 64)),
-      // E-310: `?spatialWorkers=<n>` (1 to 4) splits the neighbour search over n workers, for scaling runs past crowd 1.5.
-      numberOfSpatialWorkers: Math.min(4, Math.max(1, Math.trunc(predatorNumberParam('spatialWorkers', 1)))),
+      // E-310: two from crowd 2 on a machine with the CPUs for it (predatorSpatialWorkers), one otherwise.
+      numberOfSpatialWorkers: predatorSpatialWorkers(),
       noLimitFPS: predatorNoLimitFPS,
       // Dense/fast flocks: smaller skin + longer reuse than engine defaults (0.04 / 15)
       neighborReuseSkin: 0.01,
