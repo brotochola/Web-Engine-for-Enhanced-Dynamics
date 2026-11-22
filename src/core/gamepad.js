@@ -268,124 +268,48 @@ export class Gamepad {
     return this._pressedThisFrame[p * this.BUTTONS_PER_PAD + b] === 1;
   }
 
-  // ============================================
-  // PAD-0 ERGONOMICS (Mouse-style)
-  // ============================================
+  // Pad 0's getters (Mouse-style: Gamepad.leftX, Gamepad.isADown, Gamepad.isAPressed, …) are made below the class
+  // from PAD0_AXES and PAD0_BUTTONS.
+}
 
-  static get leftX() {
-    return this.getAxis(0, 0);
-  }
-  static get leftY() {
-    return this.getAxis(0, 1);
-  }
-  static get rightX() {
-    return this.getAxis(0, 2);
-  }
-  static get rightY() {
-    return this.getAxis(0, 3);
-  }
+// ============================================
+// PAD-0 ERGONOMICS (Mouse-style)
+// ============================================
 
-  static get isADown() {
-    return this.isButtonDown(0, this.A);
-  }
-  static get isBDown() {
-    return this.isButtonDown(0, this.B);
-  }
-  static get isXDown() {
-    return this.isButtonDown(0, this.X);
-  }
-  static get isYDown() {
-    return this.isButtonDown(0, this.Y);
-  }
-  static get isLBDown() {
-    return this.isButtonDown(0, this.LB);
-  }
-  static get isRBDown() {
-    return this.isButtonDown(0, this.RB);
-  }
-  static get isLTDown() {
-    return this.isButtonDown(0, this.LT);
-  }
-  static get isRTDown() {
-    return this.isButtonDown(0, this.RT);
-  }
-  static get isSelectDown() {
-    return this.isButtonDown(0, this.SELECT);
-  }
-  static get isStartDown() {
-    return this.isButtonDown(0, this.START);
-  }
-  static get isL3Down() {
-    return this.isButtonDown(0, this.L3);
-  }
-  static get isR3Down() {
-    return this.isButtonDown(0, this.R3);
-  }
-  static get isUpDown() {
-    return this.isButtonDown(0, this.UP);
-  }
-  static get isDownDown() {
-    return this.isButtonDown(0, this.DOWN);
-  }
-  static get isLeftDown() {
-    return this.isButtonDown(0, this.LEFT);
-  }
-  static get isRightDown() {
-    return this.isButtonDown(0, this.RIGHT);
-  }
-  static get isHomeDown() {
-    return this.isButtonDown(0, this.HOME);
-  }
+/** Pad 0's sticks, getAxis(0, n): Gamepad.leftX, leftY, rightX, rightY. */
+const PAD0_AXES = ['leftX', 'leftY', 'rightX', 'rightY'];
 
-  static get isAPressed() {
-    return this.isButtonPressed(0, this.A);
+/**
+ * Pad 0's buttons: Gamepad.is<Name>Down (isButtonDown) and Gamepad.is<Name>Pressed (isButtonPressed), for the W3C
+ * index in Gamepad[<constant>]: isADown, isLBPressed, isSelectDown, isUpPressed, …
+ */
+const PAD0_BUTTONS = [
+  ['A', 'A'], ['B', 'B'], ['X', 'X'], ['Y', 'Y'], ['LB', 'LB'], ['RB', 'RB'], ['LT', 'LT'], ['RT', 'RT'],
+  ['Select', 'SELECT'], ['Start', 'START'], ['L3', 'L3'], ['R3', 'R3'],
+  ['Up', 'UP'], ['Down', 'DOWN'], ['Left', 'LEFT'], ['Right', 'RIGHT'], ['Home', 'HOME'],
+];
+
+/**
+ * N-303 CR-29: one pad-0 getter, `this.<method>(0, arg)` (arg an axis index, or the name of Gamepad's button constant),
+ * compiled on its own as component.js compiles its field accessors (CODE_REDUCTION_PLAN rule 7: closures of one function
+ * share their feedback); a closure where new Function is refused (a page's CSP).
+ */
+function pad0Getter(method, arg) {
+  const argCode = typeof arg === 'number' ? String(arg) : `this.${arg}`;
+  try {
+    return new Function(`return function () { return this.${method}(0, ${argCode}); };`)();
+  } catch {
+    return typeof arg === 'number'
+      ? function () { return this[method](0, arg); }
+      : function () { return this[method](0, this[arg]); };
   }
-  static get isBPressed() {
-    return this.isButtonPressed(0, this.B);
-  }
-  static get isXPressed() {
-    return this.isButtonPressed(0, this.X);
-  }
-  static get isYPressed() {
-    return this.isButtonPressed(0, this.Y);
-  }
-  static get isLBPressed() {
-    return this.isButtonPressed(0, this.LB);
-  }
-  static get isRBPressed() {
-    return this.isButtonPressed(0, this.RB);
-  }
-  static get isLTPressed() {
-    return this.isButtonPressed(0, this.LT);
-  }
-  static get isRTPressed() {
-    return this.isButtonPressed(0, this.RT);
-  }
-  static get isSelectPressed() {
-    return this.isButtonPressed(0, this.SELECT);
-  }
-  static get isStartPressed() {
-    return this.isButtonPressed(0, this.START);
-  }
-  static get isL3Pressed() {
-    return this.isButtonPressed(0, this.L3);
-  }
-  static get isR3Pressed() {
-    return this.isButtonPressed(0, this.R3);
-  }
-  static get isUpPressed() {
-    return this.isButtonPressed(0, this.UP);
-  }
-  static get isDownPressed() {
-    return this.isButtonPressed(0, this.DOWN);
-  }
-  static get isLeftPressed() {
-    return this.isButtonPressed(0, this.LEFT);
-  }
-  static get isRightPressed() {
-    return this.isButtonPressed(0, this.RIGHT);
-  }
-  static get isHomePressed() {
-    return this.isButtonPressed(0, this.HOME);
-  }
+}
+
+for (let a = 0; a < PAD0_AXES.length; a++) {
+  Object.defineProperty(Gamepad, PAD0_AXES[a], { get: pad0Getter('getAxis', a), configurable: true });
+}
+for (let i = 0; i < PAD0_BUTTONS.length; i++) {
+  const [name, constant] = PAD0_BUTTONS[i];
+  Object.defineProperty(Gamepad, `is${name}Down`, { get: pad0Getter('isButtonDown', constant), configurable: true });
+  Object.defineProperty(Gamepad, `is${name}Pressed`, { get: pad0Getter('isButtonPressed', constant), configurable: true });
 }

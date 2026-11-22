@@ -10,7 +10,7 @@ import { rayPolygonIntersect } from '../util/utils.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { ChainPoints } from './chainPoints.js';
 
-// The ray being traced, and the hits, live in typed arrays (E-85). _traverseGrid, _castUnitDir,
+// The ray being traced, and the hits, live in typed arrays (E-85). _traverseGrid,
 // _checkCellEntities and _shapeRayDistance are too big for TurboFan to inline, and a double passed
 // to a call that is not inlined, returned from one, or stored in a shared object field became a
 // heap number: per ray, per cell visited and per candidate, 272 MB/s in bulletStressScene. Their
@@ -278,117 +278,15 @@ export class Ray {
     return Ray._castUnitDir(mask);
   }
 
-  /** The first entity on the ray in RAY (origin, unit direction, length, end), or -1. */
+  /**
+   * The first entity on the ray in RAY (origin, unit direction, length, end), or -1: _traverseGrid with no exclusions,
+   * the farthest hit kept the ray's length (CR-25: the DDA walk written once).
+   */
   static _castUnitDir(mask) {
-    const ray = RAY;
-    const xFrom = ray[RAY_X];
-    const yFrom = ray[RAY_Y];
-    const dirX = ray[RAY_DIR_X];
-    const dirY = ray[RAY_DIR_Y];
-    const rayLength = ray[RAY_LEN];
-    const xTo = ray[RAY_TO_X];
-    const yTo = ray[RAY_TO_Y];
-    Ray._beginRayGen();
-    // Get grid data from Grid class
-    const invCellSize = Grid.invCellSize;
-    const gridCols = Grid.gridWidth;
-    const gridRows = Grid.gridHeight;
-    const cellSize = Grid.cellSize;
-
-    // DDA traversal - find all cells the ray passes through
-    const startCellX = Math.floor(xFrom * invCellSize);
-    const startCellY = Math.floor(yFrom * invCellSize);
-    const endCellX = Math.floor(xTo * invCellSize);
-    const endCellY = Math.floor(yTo * invCellSize);
-
-    // Ray step direction
-    const stepX = dirX >= 0 ? 1 : -1;
-    const stepY = dirY >= 0 ? 1 : -1;
-
-    // Calculate distance to next cell boundary
-    let tMaxX, tMaxY;
-    if (dirX !== 0) {
-      const nextBoundaryX =
-        (stepX > 0 ? Math.floor(xFrom * invCellSize) + 1 : Math.ceil(xFrom * invCellSize) - 1) *
-        cellSize;
-      tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
-    } else {
-      tMaxX = INF;
-    }
-
-    if (dirY !== 0) {
-      const nextBoundaryY =
-        (stepY > 0 ? Math.floor(yFrom * invCellSize) + 1 : Math.ceil(yFrom * invCellSize) - 1) *
-        cellSize;
-      tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
-    } else {
-      tMaxY = INF;
-    }
-
-    // Distance to cross one cell
-    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : INF;
-    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : INF;
-
-    // Current cell position
-    let currentCellX = startCellX;
-    let currentCellY = startCellY;
-
-    // Track closest hit
-    let closestHit = -1;
-    let closestDist = rayLength;
-
-    // Traverse cells using DDA
-    const maxSteps = gridCols + gridRows; // Safety limit
-    let steps = 0;
-
-    while (steps++ < maxSteps) {
-      // Check if current cell is valid
-      if (
-        currentCellX >= 0 &&
-        currentCellX < gridCols &&
-        currentCellY >= 0 &&
-        currentCellY < gridRows
-      ) {
-        // Get entities in this cell
-        const cellIndex = currentCellY * gridCols + currentCellX;
-        ray[RAY_MAX] = closestDist;
-        Ray._checkCellEntities(cellIndex, null, mask);
-
-        const hitE = CELL_HIT[0];
-        if (hitE !== -1) {
-          closestHit = hitE;
-          closestDist = CELL_HIT_DIST[0];
-        }
-      }
-
-      // EARLY-OUT: spatial workers insert entities into every cell their AABB
-      // overlaps, so any hit at t < exit-of-current-cell is already found.
-      // Once the closest hit (or maxDist) is not past the current cell's exit
-      // boundary, later cells cannot contain a closer hit.
-      if (closestDist <= (tMaxX < tMaxY ? tMaxX : tMaxY)) {
-        break;
-      }
-
-      // Check if we've reached the end cell
-      if (currentCellX === endCellX && currentCellY === endCellY) {
-        break;
-      }
-
-      // Step to next cell
-      if (tMaxX < tMaxY) {
-        currentCellX += stepX;
-        tMaxX += tDeltaX;
-      } else {
-        currentCellY += stepY;
-        tMaxY += tDeltaY;
-      }
-    }
-
-    if (closestHit !== -1 && closestDist !== 0) {
-      return closestHit;
-    }
-
-    return -1;
+    RAY[RAY_MAX] = RAY[RAY_LEN];
+    Ray._traverseGrid(null, mask, -1, -1);
+    const hit = TRAVERSE_HIT[0];
+    return hit !== -1 && TRAVERSE_DIST[0] !== 0 ? hit : -1;
   }
 
   /**

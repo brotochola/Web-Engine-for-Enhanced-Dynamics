@@ -193,16 +193,12 @@
   }
 
   // Physics side of queryAABB and overlapCircle: copy the WASM query slots into
-  // a results view. Since N-22 the WASM lists each body once and stops at
-  // slots.length bodies (its query capacity); before, it listed a compound body
-  // once per shape, and the first-wins dedupe here stays for a wasm of that age.
-  // Reaching the capacity means bodies past it were not listed: warned once per
-  // query kind.
-  var seenStamp = new Int32Array(0);
-  var seenGen = 0;
+  // a results view. The WASM lists each body once (N-22) and stops at
+  // slots.length bodies (its query capacity). Reaching the capacity means bodies
+  // past it were not listed: warned once per query kind.
   var capacityWarned = Object.create(null);
 
-  function copyUniqueSlots(slots, n, results, cap, kind) {
+  function copyQuerySlots(slots, n, results, cap, kind) {
     if (n >= slots.length) {
       n = slots.length;
       if (!capacityWarned[kind] && typeof console !== 'undefined' && console.warn) {
@@ -213,22 +209,8 @@
         );
       }
     }
-    if (++seenGen === 0x40000000) {
-      seenStamp.fill(0);
-      seenGen = 1;
-    }
-    var w = 0;
-    for (var i = 0; i < n && w < cap; i++) {
-      var s = slots[i] | 0;
-      if (s >= seenStamp.length) {
-        var grown = new Int32Array(Math.max(s + 1, seenStamp.length * 2, 1024));
-        grown.set(seenStamp);
-        seenStamp = grown;
-      }
-      if (seenStamp[s] === seenGen) continue;
-      seenStamp[s] = seenGen;
-      results[w++] = s;
-    }
+    var w = n < cap ? n : cap;
+    for (var i = 0; i < w; i++) results[i] = slots[i] | 0;
     return w;
   }
 
@@ -251,7 +233,7 @@
     box2dQueryAABB: box2dQueryAABB,
     box2dQueryAABBAsync: box2dQueryAABBAsync,
     servicePendingQuery: servicePendingQuery,
-    copyUniqueSlots: copyUniqueSlots,
+    copyQuerySlots: copyQuerySlots,
     armPendingWake: armPendingWake,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);
