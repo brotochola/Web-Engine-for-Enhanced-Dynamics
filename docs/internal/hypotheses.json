@@ -14766,13 +14766,12 @@
     {
       "id": "E-290",
       "title": "Binding an instance to its entity slot runs megamorphic stores and loads and allocates (GameObject + bindToEntitySlot)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the machine-code harvest, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-22 (R-1833): binds happen at boot, once per pooled slot; none while a scene runs",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
       "result": "Machine code (Node 22, componentGetterMicrobench): the GameObject constructor makes 3 megamorphic stores and 5 megamorphic loads (`_ensureComponentAccessors`, `_componentSlotCount`, `_c0`, `_c1`, `bindToEntitySlot`) and 2 allocations; `bindToEntitySlot` 10 megamorphic stores, 9 megamorphic loads, 4 megamorphic keyed stores and 6 allocations. Each lazily made instance (`_makeInstance`, a spawn's first tick or callback) pays them.",
-      "next": "Count instance binds per second in Predator and the spawn-heavy scenes first (a counter, not a trace); if they matter, give every class's instances one shape (fields declared in GameObject's constructor in one order, component slots in a fixed array) and check the machine code again.",
       "refs": [
         "EXECUTION_PLAN.md#E-290"
       ],
@@ -14782,7 +14781,8 @@
         "_makeInstance cost"
       ],
       "records": [
-        "R-0992"
+        "R-0992",
+        "R-1833"
       ]
     },
     {
@@ -42050,6 +42050,15 @@
       "title": "N-242 parked with N-303's CR-18: the UV rows run only in tests, but removing them rewrites the corner kernel's uvOn branch and about 15 tests, and packMeshUvFill uses colliderFillBatch's private paint state",
       "verdict": "note",
       "text": "**N-242 parked, to go with N-303's CR-18 (the render modules' cold copies, the same files).** Read 2026-11-22: the engine calls the corner rewrite only with the 6-float collider rows and no UV generations (pixiWorker's one call passes COLLIDER_FILL_FLOATS), and packColliderFillPoseOnly only with its default stride, so the 24-float UV rows run in tests and benches alone. What removing them takes:\n\n- the C kernel's UV branch is a flag (uvOn) through six functions of wasm/meshCorners.c (indexed_run, fan_run, checked_run and their 32-bit copies) and the UV generations in rewrite_corners: engine.wasm rebuilt, about 15 test files and three benches that feed it UV rows rewritten or dropped;\n- packMeshUvFill and its writeUvTri (about 130 lines) use colliderFillBatch.js's private paint state and helpers (_paint, _packEntity, _instanceEntity, bindMeshPaint, readMeshFillPose, explicitMeshOffset, packOutU32): moving them to tests/reference means exporting those for the tests.\n\nAbout 200 lines of src for a day of test churn on a path nothing runs: not now. CR-18 opens these modules (ColliderFillBatch and MeshUvFillBatch's shared setup); do N-242 with it."
+    },
+    {
+      "id": "R-1833",
+      "date": "2026-11-22",
+      "time": "05:31",
+      "timeFrom": "recorded",
+      "title": "E-290 answered: instances bind once per pool slot at boot (spawnStorm 2 001, then 0 a second; Predator 0, static ticks): nothing to gain while a scene runs",
+      "verdict": "answered",
+      "text": "**E-290 answered: an instance binds to its slot once, at boot, so the megamorphic bind costs nothing while a scene runs.** Its first step, counted (a temporary counter in GameObject.bindToEntitySlot, read by workerProbe in logic0, not committed), 05:30:\n\n- Predator `crowd=2.5&dayCycle=0&mix=1`: 0 binds from 15 s to 29 s, and 0 before: its people tick through static hooks (tickAll), which make no instances.\n- spawnStormScene: 2 001 binds by 10 s (one per pooled slot, made with the pool), then 0 more in 6 s of spawning and despawning: a spawn reuses its slot's instance.\n\nSo bindToEntitySlot's 10 megamorphic stores and 6 allocations are paid per pool slot at boot (2 001 binds, a few milliseconds), not per spawn. Dropped as a speed item; the shape work it proposed would only shorten the boot."
     }
   ],
   "leads": [
