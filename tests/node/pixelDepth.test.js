@@ -40,7 +40,7 @@ test('the opaque pass keeps the opaque pixels and the edge pass the others, in b
   assert.match(pixelDepthFragment(frag, { edge: true }), /if \(solid\) discard;/);
   assert.match(pixelDepthFragment(frag, { gbuf: true }), /flat in vec2 vDepthWord;/);
   const vert = pixelDepthVertex(shader('instancedSprite.vert.glsl'), { gbuf: true });
-  assert.match(vert, /vPainter = vec2\(float\(gl_InstanceID & 127\), abs\(aInstScale\.y\)\);/);
+  assert.match(vert, /vPainter = vec2\(float\(\(gl_InstanceID \+ uWeedFirstInstance\) & 127\), abs\(aInstScale\.y\)\);/);
   assert.match(vert, /in vec3 aInstGbuf;/);
   const wgsl = pixelDepthWgsl(shader('instancedSprite.wgsl'));
   assert.match(wgsl, /fn mainFrag\(in: VertexOut\) -> WeedDepthOut/);

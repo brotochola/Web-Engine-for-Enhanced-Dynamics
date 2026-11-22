@@ -5,7 +5,8 @@
 // - WebGL2: core has no base instance and Pixi bakes each attribute's offset into its VAO. With
 //   WEBGL_draw_instanced_base_vertex_base_instance the draw takes the base instance; otherwise the instance
 //   attributes are pointed `first * stride` further for the draw, and back after it, so the VAO Pixi cached is
-//   left as Pixi made it.
+//   left as Pixi made it. Either way gl_InstanceID starts at 0: a program's uWeedFirstInstance gets the range's first
+//   instance for its draw (N-189).
 // GPU particle layers draw ring slices with it (gpuParticleBatch.js), and the y-sort painter's proxies draw the
 // entities batch in chunks (gpuParticleProxies.js).
 
@@ -48,6 +49,15 @@ export function installInstanceRangeDraw(renderer, useWebGpu) {
   }
   const bufferSystem = renderer.buffer;
   const ext = gl.getExtension('WEBGL_draw_instanced_base_vertex_base_instance');
+  // N-189: gl_InstanceID starts at 0 in each draw, with the base instance or without it. A program that orders by the
+  // instance index (pixelDepth.js's painter step) adds uWeedFirstInstance, which no uniform group holds: it is set here
+  // for a range's draw and put back to 0 after it.
+  const shaderSystem = renderer.shader;
+  const firstInstanceLocation = (glProgram) => {
+    if (!glProgram || !shaderSystem || typeof shaderSystem._getProgramData !== 'function') return null;
+    const uniform = shaderSystem._getProgramData(glProgram)?.uniformData?.uWeedFirstInstance;
+    return uniform && uniform.location ? uniform.location : null;
+  };
   let program = null;
   const bind = geometrySystem.bind.bind(geometrySystem);
   geometrySystem.bind = (geometry, glProgram) => {
@@ -84,12 +94,15 @@ export function installInstanceRangeDraw(renderer, useWebGpu) {
     const type = bytes === 2 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT;
     const n = size || geometry.indexBuffer.data.length;
     const offset = (start || 0) * bytes;
+    const firstAt = firstInstanceLocation(program);
+    if (firstAt !== null) gl.uniform1i(firstAt, first);
     if (ext) {
       ext.drawElementsInstancedBaseVertexBaseInstanceWEBGL(mode, n, type, offset, count, 0, first);
-      return geometrySystem;
+    } else {
+      if (point(geometry, first)) gl.drawElementsInstanced(mode, n, type, offset, count);
+      point(geometry, 0);
     }
-    if (point(geometry, first)) gl.drawElementsInstanced(mode, n, type, offset, count);
-    point(geometry, 0);
+    if (firstAt !== null) gl.uniform1i(firstAt, 0);
     return geometrySystem;
   };
   renderer.__weedInstanceRange = ext ? 'baseInstance' : 'repoint';

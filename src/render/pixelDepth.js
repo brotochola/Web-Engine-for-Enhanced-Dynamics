@@ -107,13 +107,25 @@ function facesDepthGlsl(gbuf) {
 }
 
 /**
+ * N-189: the painter step (GLSL): the instance index's low bits, counted from the batch's first instance. gl_InstanceID
+ * starts at 0 in each draw, and a batch drawn in chunks (GPU particles among the entities: gpuParticleChunks.js) draws
+ * from an instance; instanceRangeDraw.js sets uWeedFirstInstance for those draws, so a chunk's steps go on from the one
+ * before it, as the G-buffer pass's do over the whole batch.
+ */
+const PAINTER_STEP_GLSL = `float((gl_InstanceID + uWeedFirstInstance) & ${PIXEL_DEPTH_PAINTER_STEPS - 1})`;
+const FIRST_INSTANCE_DECL = 'uniform int uWeedFirstInstance;\n';
+
+/** `source`'s declarations with FIRST_INSTANCE_DECL, once. */
+const firstInstanceDecl = (source) => (source.includes(FIRST_INSTANCE_DECL) ? '' : FIRST_INSTANCE_DECL);
+
+/**
  * facesDepthGlsl's work without its outputs (GLSL, in a sprite vertex after its place): the locals depthFloor and
  * depthPainter, from uDepth (x: 1 / floorScaleY, y: heightScaleY; a uniform, or a local of that name).
  */
 function facesDepthCoreGlsl(gbuf) {
   return `
   float depthFloor = aInstXY.y * uDepth.x;
-  float depthPainter = float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1});
+  float depthPainter = ${PAINTER_STEP_GLSL};
   {
     uint dfCode = uint(aInstTileOff.x * ${FACE_CODE_SCALE}.0 + 0.5);
     if (dfCode != 0u && aInstTileInv == vec2(0.0)) {
@@ -187,11 +199,11 @@ export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = '
   return source
     .replace(
       decl,
-      () => `${decl}out float vFootFloor;\nflat out float vFootRy;\nflat out vec2 vPainter;\nflat out float vPlain;\nflat out vec4 vMapsWin;\nuniform vec4 uDepth;\n${words}${MAPS_TABLE_GLSL}${facesDecl}`,
+      () => `${decl}out float vFootFloor;\nflat out float vFootRy;\nflat out vec2 vPainter;\nflat out float vPlain;\nflat out vec4 vMapsWin;\nuniform vec4 uDepth;\n${firstInstanceDecl(source)}${words}${MAPS_TABLE_GLSL}${facesDecl}`,
     )
     .replace(
       pos,
-      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n${FOOT_RY_GLSL}\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
+      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n${FOOT_RY_GLSL}\n  vPainter = vec2(${PAINTER_STEP_GLSL}, abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
         (gbuf ? '\n  vDepthWord = aInstGbuf.xy;' : '') + plainGlsl(gbuf) + plainEdgeCull +
         (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
     );
@@ -550,7 +562,7 @@ function gbufOnce(text, find, add, what) {
 export function gbufDepthVertex(source) {
   const main = 'void main() {\n';
   if (!hasOnce(source, main)) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s shader (main)');
-  const out = source.replace(main, () => `out float vGbufFloor;\nflat out vec3 vGbufPainter;\n${main}`);
+  const out = source.replace(main, () => `out float vGbufFloor;\nflat out vec3 vGbufPainter;\n${firstInstanceDecl(source)}${main}`);
   return gbufOnce(
     out,
     'vTileOff = aInstTileOff;\n',

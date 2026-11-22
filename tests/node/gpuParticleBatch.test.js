@@ -267,6 +267,52 @@ test('instance ranges: WebGL without the extension points the instance attribute
   assert.equal(log[log.length - 1][0], 'pixi-draw', 'no range: Pixi\'s own draw');
 });
 
+test('N-189: a WebGL range gives the program its first instance for the draw, then 0 (base instance or not)', () => {
+  for (const withExt of [false, true]) {
+    const log = [];
+    const gl = {
+      TRIANGLES: 4, FLOAT: 0x1406, UNSIGNED_SHORT: 0x1403, UNSIGNED_INT: 0x1405, ARRAY_BUFFER: 0x8892,
+      getExtension: () => (withExt ? { drawElementsInstancedBaseVertexBaseInstanceWEBGL: (...a) => log.push(['draw', a[4], a[6]]) } : null),
+      bindBuffer: () => {},
+      vertexAttribPointer: () => {},
+      drawElementsInstanced: (mode, n, type, offset, count) => log.push(['draw', count]),
+      uniform1i: (location, value) => log.push(['uniform', location, value]),
+    };
+    const painterProgram = { _attributeData: {} };
+    const plainProgram = { _attributeData: {} };
+    const programData = new Map([
+      [painterProgram, { uniformData: { uWeedFirstInstance: { location: 'firstLoc', value: 0 } } }],
+      [plainProgram, { uniformData: {} }],
+    ]);
+    const geometrySystem = {
+      _activeGeometry: null,
+      bind(g) { this._activeGeometry = g; },
+      draw() { log.push(['pixi-draw']); },
+    };
+    const renderer = {
+      gl,
+      geometry: geometrySystem,
+      buffer: { getGlBuffer: () => ({ buffer: 'glbuf' }) },
+      shader: { _getProgramData: (program) => programData.get(program) },
+    };
+    installInstanceRangeDraw(renderer, false);
+    const geometry = { weedFirstInstance: 130, instanceCount: 5, topology: 'triangle-list', indexBuffer: { data: new Uint32Array(6) }, attributes: {} };
+    geometrySystem.bind(geometry, painterProgram);
+    geometrySystem.draw('triangle-list', 6, 0, 5);
+    const drawn = withExt ? ['draw', 5, 130] : ['draw', 5];
+    assert.deepEqual(log, [['uniform', 'firstLoc', 130], drawn, ['uniform', 'firstLoc', 0]], withExt ? 'base instance' : 'repoint');
+    log.length = 0;
+    geometrySystem.bind(geometry, plainProgram);
+    geometrySystem.draw('triangle-list', 6, 0, 5);
+    assert.deepEqual(log, [drawn], 'a program without the uniform: the draw alone');
+    log.length = 0;
+    geometry.weedFirstInstance = 0;
+    geometrySystem.bind(geometry, painterProgram);
+    geometrySystem.draw('triangle-list', 6, 0, 5);
+    assert.deepEqual(log, [['pixi-draw']], 'no range: Pixi\'s own draw, the uniform left at 0');
+  }
+});
+
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 const VERT = readEngineShader('gpuParticle.vert.glsl');

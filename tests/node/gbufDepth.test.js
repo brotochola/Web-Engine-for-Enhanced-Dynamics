@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PIXEL_DEPTH_FLOOR_STEPS, gbufDepthFragment, gbufDepthVertex, gbufDepthWgsl } from '../../src/render/pixelDepth.js';
+import { PIXEL_DEPTH_FLOOR_STEPS, gbufDepthFragment, gbufDepthVertex, gbufDepthWgsl, pixelDepthVertex } from '../../src/render/pixelDepth.js';
 import { pixelDepthValue } from '../reference/renderMathJs.mjs';
 import { faceGbufFragment, faceMapVertex, faceMapWgsl, faceUnshadedFragment, gbufAttributeWgsl } from '../../src/render/faceMap.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
@@ -30,6 +30,22 @@ test('N-274: the G-buffer\'s vertex passes on the floor place and painter step t
   const indexed = spriteIndexedVertex(gbufDepthVertex(faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true })));
   assert.match(indexed, /vGbufFloor = depthFloor;/);
   assert.throws(() => gbufDepthVertex('void main() {\n}\n'), /G-buffer's depth/);
+});
+
+test('N-189: the painter step counts from the first instance in the colour pass and the G-buffer pass (WebGL)', () => {
+  const painter = '(gl_InstanceID + uWeedFirstInstance) & 127';
+  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+    const g = gbufDepthVertex(faceMapVertex(shader(name), { gbuf: true }));
+    assert.equal(count(g, 'uniform int uWeedFirstInstance;'), 1, `${name}: the G-buffer pass declares it once`);
+    assert.ok(g.includes(`float depthPainter = float(${painter});`), name);
+    for (const faces of [false, true]) {
+      const v = pixelDepthVertex(shader(name), { gbuf: true, faces, cull: faces ? 'heights' : 'none' });
+      assert.equal(count(v, 'uniform int uWeedFirstInstance;'), 1, `${name} faces ${faces}: the colour pass declares it once`);
+      assert.ok(v.includes(`vPainter = vec2(float(${painter}), abs(aInstScale.y));`), `${name} faces ${faces}`);
+      assert.doesNotMatch(v, /float\(gl_InstanceID &/, `${name} faces ${faces}: no step from the draw's own index`);
+      if (faces) assert.ok(v.includes(`float depthPainter = float(${painter});`), name);
+    }
+  }
 });
 
 test('N-274: the G-buffer\'s fragment writes that depth for every texel past its alpha cut', () => {
