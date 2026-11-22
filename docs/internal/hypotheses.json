@@ -23120,7 +23120,7 @@
       "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed. DBG-1 to DBG-3 fixed 2026-11-21 on the ASUS (R-1716, R-1717, R-1718)",
       "date": "2026-11-18",
       "result": "",
-      "next": "Done: DBG-1 to DBG-4, DBG-10, DBG-11. Left: DBG-5 (render views; DBG-7 is one more view), DBG-6 (a sheet's maps), DBG-8 (Light tab), DBG-9 (Camera), DBG-12 last.",
+      "next": "Done: DBG-1 to DBG-4 and DBG-8 to DBG-12. Left: DBG-5 (render views of the frame's buffers, both backends; the largest, in pixiWorker.js), DBG-7 (the light tiles, one more view), DBG-6 (a sheet's maps: the atlas worker keeps the twin page since SST-5).",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23297,11 +23297,11 @@
     {
       "id": "DBG-8",
       "title": "A Light tab in the debug UI: the sun's sliders (angle, elevation, intensity, colour, hour, day cycle, night) over Sun's setters, the light pass's resolved options read-only, a lamp list (shadow tile owner, culled), and cones and shadow owners in the Lights overlay",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (781b817e, R-1730)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Sun setters already work at run time; every light pass option is read-only (the owner, 2026-11-18: nothing fixed at program build becomes live for now).",
+      "result": "lightPanel.js: Sun setters as sliders, setTimeOfDay, the day cycle from config, a direction dial, every lighting option read-only, the active lamps as links to the inspector.",
+      "next": "Left: the light overlays on the debug canvas and the per-frame shadow-tile and culling state (the workers hold them).",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23313,17 +23313,18 @@
       ],
       "records": [
         "R-1347",
-        "R-1348"
+        "R-1348",
+        "R-1730"
       ]
     },
     {
       "id": "DBG-9",
       "title": "Camera in the debug UI: zoom, position, rotation, follow, free camera (Camera.setFree, not wired) and shake as controls; pitch, yaw, floorScaleY, heightScaleY and the flat view as read-outs",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (56c5b8ed, R-1729)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Main thread only, on existing Camera API.",
+      "result": "cameraSection.js in the Scene tab: a live read-out, controls over Camera's setters (zoom, turn, setFree, shake), and config.camera resolved, read-only.",
+      "next": "Nothing left.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23333,7 +23334,8 @@
         "camera panel"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1729"
       ]
     },
     {
@@ -23382,11 +23384,11 @@
     {
       "id": "DBG-12",
       "title": "A node test that fails when a lighting, sun or camera config key or a layer kind has no counterpart in the debug UI and no line in a NOT_SHOWN table with a reason, so new features cannot land without one",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (e7b53472, R-1731)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Last, once DBG-4 and DBG-8 to DBG-10 exist.",
+      "result": "debugUiCoverage.js (SUN_SHOWN, NOT_SHOWN with reasons) and debugUiCoverage.test.js against the panels' own functions.",
+      "next": "When DBG-5 lands, its render views join the convention in the module's header.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23396,7 +23398,8 @@
         "debug ui coverage test"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1731"
       ]
     },
     {
@@ -41262,6 +41265,42 @@
       "text": "**N-402 fixed: a scoreboard row names the oldest revision its scene runs on (scene.since), and the scoreboard does not compare it against an older base.**\n\n- **The since tags:** visPoly and flashlights 94e31445 (lighting.walls); sunShadowMap, selfShadow, depthSort and unshaded 4bf4d21a (DirectionalSprite).\n- **Against v0.14.0:** the scene is skipped, unless --full-rev, where each side runs its own scenes. The row reads FAIL with the reason, and it is neither claimed nor counted as a regression (\"N row(s) need a newer base\").\n- **Why:** R-1724's visPoly +1087 % and flashlights +2437 % were the base doing no wall work. The four DirectionalSprite scenes threw on v0.14.0's load and waited 320 s twice each.\n- **Not done:** spotLights' scene changed for DX-CAMERA and the faces since v0.14.0, but no API of it was shown missing, so it keeps no tag. A load that throws still waits for the old revision's watchdog: the base runs its own runner.\n\nTest: scoreboardSince.test.js.",
       "commits": [
         "d6928e01"
+      ]
+    },
+    {
+      "id": "R-1729",
+      "date": "2026-11-22",
+      "time": "00:27",
+      "timeFrom": "recorded",
+      "title": "DBG-9 done: the Scene tab shows the camera, its zoom, turn, free camera and shake, and the projection it resolves to",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-9 done: the Scene tab shows the camera (cameraSection.js).**\n\n- **A live read-out:** zoom, the view's centre, the turn, what the camera follows (an entity, a point or nothing), and whether the free camera is on.\n- **Controls over Camera's own setters:**\n  - a log zoom slider between minZoom and maxZoom (Camera.setZoom, eased);\n  - the turn in degrees (Camera.setRotation);\n  - the free camera (Camera.setFree, which no UI reached; the scene's update drives it on the main thread);\n  - a shake.\n- **The projection, read-only:** config.camera as cameraView.js resolves it: pitch, yaw, floorScaleY, heightScaleY, and the view (oblique, flat at pitch 90 or 0, or the classic one with no camera set).\n\nMain thread only. Test: cameraSection.test.js. Node suite on the ASUS: 3470 green.",
+      "commits": [
+        "56c5b8ed"
+      ]
+    },
+    {
+      "id": "R-1730",
+      "date": "2026-11-22",
+      "time": "00:27",
+      "timeFrom": "recorded",
+      "title": "DBG-8 done: a Light tab with the sun's sliders, hour, day cycle and a dial, the light options read-only, and the lamps",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-8 done: a Light tab in the debug UI (lightPanel.js).**\n\n- **The sun:**\n  - sliders over Sun's setters, which work from the main thread's staged copy, published once a frame: angle, elevation, intensity, shadow alpha, sky light, night light, night from, night to;\n  - the hour (Sun.setTimeOfDay);\n  - the sun's and the night's colours;\n  - the day cycle on/off and its speed (config.lighting.sun.dayCycle, read by the scene each frame);\n  - a dial with the sun's direction, longer when lower, and the shadows' (Sun.shadowDirX/Y).\n- **The light pass, read-only:** every config.lighting key, the scene's value or the default, with the GPU, the backend and the opaque pass. The sun is left out, with the reason (LIGHT_OPTIONS_NOT_SHOWN).\n- **The lamps:** every active LightEmitter, the first 32 named: radius, brightness, elevation, cone, shadows. A click inspects its entity.\n\nNot done:\n- the plan's light overlays on the debug canvas (cones, rings on the lamps that hold a shadow tile, culled lamps in grey);\n- the per-frame tile and culling state, which live in the workers.\n\nTest: lightPanel.test.js.",
+      "commits": [
+        "781b817e"
+      ]
+    },
+    {
+      "id": "R-1731",
+      "date": "2026-11-22",
+      "time": "00:27",
+      "timeFrom": "recorded",
+      "title": "DBG-12 done: a node test fails when a lighting, sun or camera key or a layer kind has no place in the debug UI and no reason",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-12 done: a node test fails when a lighting, sun or camera config key or a layer kind has neither a place in the debug UI nor a reason.**\n\nsrc/core/debug/debugUiCoverage.js maps each SUN_DEFAULTS key to the Sun property its Light tab control drives. NOT_SHOWN gives the keys the UI leaves out, each with a one-line reason: maxElevation, shadowAngleOffset, the shadow length ratios and stretch fade (set once from config), the hour colour table, and lighting.sun (shown live).\n\ndebugUiCoverage.test.js checks every LIGHTING_DEFAULTS, SUN_DEFAULTS and CAMERA_DEFAULTS key and every LAYER_KIND against the tables and against the panels' own functions: lightingOptionRows, the Sun setters, cameraProjectionText, layerDetailsText.\n\nRender views wait for DBG-5: the module's header records the convention for them.",
+      "commits": [
+        "e7b53472"
       ]
     }
   ],
