@@ -261,6 +261,10 @@
   // 90 % of Box2D's memory, in KB (0 = unknown): past it, one warning to raise physics.wasmMemoryMB.
   let memoryWarnKb = 0;
   let memoryWarned = false;
+  // DX-CONFIGCHECK: each silent loss said once (the stats count them only with detailed stats on).
+  let commandOverflowWarned = false;
+  let contactRingWarned = false;
+  let eventCapWarned = false;
 
   function bindWeedViews(desc) {
     // Pose/vel/sleeping are HEAP-only (bound in bindStateChannels). The host's component columns supply the rest.
@@ -3068,6 +3072,42 @@
     }
   }
 
+  /**
+   * DX-CONFIGCHECK: what the step dropped, said once each: commands past physics.commandRingCapacity (the ring's overflow
+   * total), contact events a logic worker's drain fell a whole ring behind on (physics.contactRingCapacity; the ring's
+   * header word 2), and contact or sensor events past Box2D's 10 000 of a kind in one step (MAX_CONTACT_EVENTS, a constant
+   * of the build). Three loads a step until each has been said.
+   */
+  function warnLostEventsOnce() {
+    if (!commandOverflowWarned && cmdI32 && readBox2dCommandRingOverflow(cmdI32) > 0) {
+      commandOverflowWarned = true;
+      console.warn(
+        '[weedjs-box2d] the physics command ring overflowed: commands sent past its room were lost (forces, impulses, ' +
+          'teleports, body changes). Raise physics.commandRingCapacity in the scene config.',
+      );
+    }
+    if (!contactRingWarned && contactRingI32 && Atomics.load(contactRingI32, 2) > 0) {
+      contactRingWarned = true;
+      console.warn(
+        '[weedjs-box2d] a logic worker fell a whole contact ring behind: the contact events it had not read were lost ' +
+          '(onCollision callbacks never called). Raise physics.contactRingCapacity in the scene config.',
+      );
+    }
+    // Only where the events go to logic: a scene that does not publish them loses nothing.
+    const hdr = world && world._eventHeader;
+    if (
+      !eventCapWarned && publishContactRing && hdr &&
+      (hdr[EVENT_HEADER.CONTACT_DROPPED_COUNT] | 0) + (hdr[EVENT_HEADER.SENSOR_DROPPED_COUNT] | 0) > 0
+    ) {
+      eventCapWarned = true;
+      console.warn(
+        '[weedjs-box2d] more than 10 000 contacts or sensor overlaps of one kind began or ended in one step: Box2D keeps ' +
+          'the first 10 000 and drops the rest, so onCollision and the sensor callbacks miss them. Fewer bodies touching ' +
+          'at once keeps them all.',
+      );
+    }
+  }
+
   function writePhysicsStats(
     bodySyncMs,
     jointSyncMs,
@@ -3115,6 +3155,7 @@
           'physics.wasmMemoryMB in the scene config; running out stops physics.',
       );
     }
+    warnLostEventsOnce();
     if (!collectDetailedStats) return;
     statsF32[PS.JOINT_COUNT] = world ? world.getJointCount() : 0;
     statsF32[PS.BODY_SYNC_MS] = bodySyncMs;
