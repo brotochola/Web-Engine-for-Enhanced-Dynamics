@@ -605,18 +605,14 @@ export function buildSavePayload(scene, globals = {}, options = {}) {
   return payload;
 }
 
-// --- Binary encode/decode (JSON body after header for simplicity + deflate) ---
+// --- The file: magic, u32 format version, then the sectioned binary body (binarySaveCodec), deflated or not ---
 
 function encodeUtf8(str) {
   return new TextEncoder().encode(str);
 }
 
-function decodeUtf8(bytes) {
-  return new TextDecoder().decode(bytes);
-}
-
 /**
- * Encode payload object to uncompressed ArrayBuffer (magic + u32 ver + utf8 JSON).
+ * Encode payload object to uncompressed bytes (magic + u32 version + the binary body).
  * @param {object} payload
  * @returns {Uint8Array}
  */

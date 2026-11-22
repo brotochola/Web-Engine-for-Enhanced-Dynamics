@@ -7,15 +7,9 @@ import {
   applyCameraGlobals,
   applySunGlobals,
   isEntityClassSerializable,
-  collectSerializableEntities,
-  shouldSaveEntity,
-  encodeSaveUncompressed,
-  decodeSaveUncompressed,
   SAVE_MAGIC,
-  SAVE_FORMAT_VERSION,
   savedEntityCount,
 } from './entitySaveSnapshot.js';
-import { applyEntitySaveRestore } from './entitySaveSnapshot.js';
 import { SaveStore } from './saveStore.js';
 import {
   packLiquidFunSnapshot,
@@ -37,21 +31,7 @@ import {
   idMapGetter,
 } from './worldBufferSave.js';
 
-export {
-  SaveStore,
-  buildSavePayload,
-  encodeSave,
-  decodeSave,
-  collectSerializableEntities,
-  isEntityClassSerializable,
-  shouldSaveEntity,
-  applyEntitySaveRestore,
-  encodeSaveUncompressed,
-  decodeSaveUncompressed,
-  SAVE_MAGIC,
-  SAVE_FORMAT_VERSION,
-  savedEntityCount,
-};
+export { SaveStore, buildSavePayload, encodeSave, decodeSave, savedEntityCount };
 
 /**
  * Ask every logic worker for its instances' plain JS fields (instanceFields.js).
