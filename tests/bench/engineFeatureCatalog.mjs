@@ -359,13 +359,16 @@ export const ENGINE_FEATURES = [
       key: 'rayVsBox2dBoxBusy',
       path: '/tests/bench/stressScenes/rayVsBox2dStressScene.js',
       exportName: 'RayVsBox2dBoxBusyScene',
-      // No loadKnob: ?casts sends its Box2D rays to the physics worker, and logic0 (the primary) stayed 0.18 -> 0.74 ms
-      // from 3 072 to 49 152 casts on the ASUS (DX-SCORELOAD calibration, 2026-11-21).
+      // ?casts: the Box2D rays a frame, which the physics worker services (weedjsPost.js servicePendingRayCast). logic0
+      // stayed 0.18 -> 0.74 ms from 3 072 to 49 152 casts on the ASUS (DX-SCORELOAD calibration, 2026-11-21): the cost is
+      // the service's, on physics.
+      loadKnob: { key: 'casts', base: 3072, max: 49152 },
       headed: false,
       kind: 'stress',
     },
-    // Ray servicing is logic0 (~50 ms); BOX2D_RAYCAST_MS is a detailed-stats subtimer and is 0 with stats off.
-    primary: ['logic0_STEP_MS'],
+    // The JS service of castRayClosest runs on the physics worker, beside the step; BOX2D_RAYCAST_MS is a detailed-stats
+    // subtimer and is 0 with stats off.
+    primary: ['physics_STEP_MS'],
     load: ['BODY_COUNT'],
   },
   {
