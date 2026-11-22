@@ -14260,12 +14260,12 @@
       "id": "E-270",
       "title": "Decal tiles are premultiplied into a scratch, copied into the tile's array, and uploaded whole (texSubImage2D of the full tile) for any stamp",
       "status": "open",
-      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "statusText": "re-read 2026-11-22 (R-1835): the lever is the upload count, not the rows",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
       "result": "CPU sweep: decalStampStressScene's Pixi spends 173 ms in _uploadDecalRgba8 (89 % on its texSubImage2D of the whole tile) and 157 ms in premultiplyDecalTile (100 % on dst.set(b.scratch)); decalBlitStressScene 415 ms in the upload (68 %).",
-      "next": "Upload from the premultiplied scratch (no copy), and only the rows (or rect) a stamp touched; the decal kernels and the two decal stress scenes' Pixi STEP_MS. From three.js (R-1427): upload only the stamp's rectangle with UNPACK_ROW_LENGTH, UNPACK_SKIP_PIXELS and UNPACK_SKIP_ROWS (#30998).",
+      "next": "Fewer upload calls (R-1835): decal tiles laid out as the world is in a few large textures (one sprite or mesh per texture instead of one per tile), so a run of dirty tiles goes up as one rectangle (texSubImage2D or writeTexture of the run's rows); decalBlitStressScene's renderer STEP_MS (7.7 ms, over a thousand 1 KB uploads a frame) is the owner pair, decalStamp at resolution=1 the second. A stamp's rows alone are not worth it (R-1835).",
       "refs": [
         "EXECUTION_PLAN.md#E-270"
       ],
@@ -14276,7 +14276,8 @@
         "dirty rect"
       ],
       "records": [
-        "R-1427"
+        "R-1427",
+        "R-1835"
       ]
     },
     {
@@ -42069,6 +42070,15 @@
       "title": "E-292's code pass over Predator: the engine's hot code is TurboFan (what stays in Maglev are waits and once-a-frame code); the game's FleeingCivilianBehaviorState.onUpdate stays in Maglev for 35 s with no deopt and no reason in the logs",
       "verdict": "note",
       "text": "**E-292's code pass over Predator (default crowd, 30 s warm-up, 8 s window), 05:36 to 05:45: the engine's hot code reaches TurboFan; one game function stays in Maglev for no reason the logs give.**\n\n- CPU pass and code pass (profileSceneSweep --only predatorScene), then the code log again with summarizeV8Code's new --game, which counts the game's code (demos/) with the engine's.\n- Engine functions that end the run below TurboFan with self time: only waits and once-a-frame functions. pixi `_waitForQueue` (2 557 ms), pre-render `_waitForPose` (1 695 ms) and logic `beforeUpdate` (134 ms, E-219's input wait) block in Atomics.wait, which V8's profiler counts as busy; particle's `updateFrameTiming`, `_runFrame`, `update` and `processNavigationRequests` are 2 to 7 ms in 8 s. The per-entity engine code (directionalSprite.resolve, tickOneFsm, _resolveListDirections, the spatial rebuilds) is TurboFan.\n- The game: `FleeingCivilianBehaviorState.onUpdate` (civilianBehaviorFsm.js:73, 393 B of bytecode), 298 ms self in 8 s over the two logic workers, the scene's second hottest game function: Ignition, Sparkplug and Maglev within 3 ms at 2.67 s, then no TurboFan compile in the remaining 35 s, no deopt, no code-disable-optimization event. Its sibling IdleCivilianBehaviorState.onUpdate (line 46, 144 B) is TurboFan from 2.4 s. The cause is not in the logs: --trace-opt prints to the renderer's stdout, which a Windows Chrome does not hand over.\n- Other findings for later, not E-292: directionalSprite.resolve (978 B) is compiled by TurboFan three times and calls pickDirectionArgs (799 B) and tableOf (761 B) as real calls (too big to inline), 236 + 52 ms in 8 s; findACivilianToShoot (soldierBehaviorFsm.js:122) is the hottest game function (870 ms) and calls the ray's _traverseGrid (905 B) as a real call."
+    },
+    {
+      "id": "R-1835",
+      "date": "2026-11-22",
+      "time": "05:56",
+      "timeFrom": "recorded",
+      "title": "E-270 re-read: stamp rows only pay for sparse stamps (tens of µs); decalBlit's cost is over a thousand 1 KB tile uploads a frame, so the lever is fewer calls (tiles as the world lays them out, a dirty run as one rectangle)",
+      "verdict": "note",
+      "text": "**E-270 re-read before building it: uploading only a stamp's rows does not pay where the decal cost is.** 2026-11-22, 05:55, the two stress scenes on main (6 s, detailed stats off):\n\n- decalBlitStressScene (the owner pair: renderer 7.69 ms): 32-world tiles at resolution 0.5 are 16 px, and each of the 1 024 stamps a tick is 36.8 world (the 32 px blood at 1.15) centred on its tile: it covers its whole tile and spills into the neighbours. Its cost is the number of uploads, over a thousand texSubImage2D calls of 1 KB a frame (68 % of Pixi in the CPU sweep), not their size.\n- decalStampStressScene at resolution=1 (renderer 3.22 ms; 1.67 at the default 0.5, under the floor): 768 stamps a tick over 40 tiles of 256 px, about 19 a tile a frame, whose rows together cover the tile.\n- Where rows would pay, a few splats a frame on big tiles (a stamp of 6 to 32 rows of 128), a tile's premultiply and upload is tens of microseconds: a range would save about that.\n- The copy after the premultiply stays (E-123: an upload straight from the shared memory cost the other workers).\n\nSo the plan's lever for the scene that has the cost is fewer calls: tiles laid out as the world is in a few large textures, so a run of dirty tiles (decalBlit's cursor walks them in order) goes up as one rectangle. That changes how decal tiles are drawn (one sprite per tile today): a bigger change, kept as E-270's next."
     }
   ],
   "leads": [
