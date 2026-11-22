@@ -18206,12 +18206,12 @@
       "id": "E-395",
       "title": "Keyed caster rows for casters that ask for a kind (DX-CASTER): one such caster turns the keyed caster path off for the whole scene (_casterKindsOn), so light3d scenes pack full rows and E-372 does not serve them",
       "status": "kept",
-      "statusText": "Kept 2026-11-21 on WebGL (R-1696): the sun's and the lamps' maps draw keyed caster rows; Predator map mode pre-render 11.0 -> 7.1 ms (-35.7 %), renderer -21.3 %, uploads -42 %; captures identical.",
+      "statusText": "Kept 2026-11-21 on both backends (R-1696, R-1697): the sun's and the lamps' maps draw keyed caster rows; Predator map mode pre-render -35.7 % (WebGL) and -38.5 % (WebGPU), renderer -21.3 % and -23.9 %, uploads -42 %; captures identical.",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
       "result": "",
-      "next": "WebGPU's keyed maps (the WGSL transforms accept a keyed source already), the columns over keyed rows, a still capture of the lamps' map, and a kind carried in the keyed row.",
+      "next": "The columns over keyed rows (scenes with height maps, the barrio, keep the full rows), and a kind carried in the keyed row.",
       "refs": [],
       "aliases": [
         "keyed rows caster kinds"
@@ -18220,7 +18220,8 @@
         "R-1173",
         "R-1687",
         "R-1688",
-        "R-1696"
+        "R-1696",
+        "R-1697"
       ]
     },
     {
@@ -40975,6 +40976,15 @@
       "title": "Shadow maps draw keyed caster rows on WebGL: Predator map mode pre-render -35.7 %, renderer -21.3 %, uploads -42 %, captures identical",
       "verdict": "kept",
       "text": "**E-395 kept on WebGL: the shadow maps draw pre-render's keyed caster rows (7 floats a caster, 11 a stamp, the statics by key) instead of the full 22-float rows (aecbd2e2, merged 10cafeda).** Pixi's keyed caster programs no longer turn off under the sun's map or the lamps' map (only while a render casts columns, and on WebGPU's maps); the maps' programs compose over spriteIndexedVertex's keyed rows; a keyed row's tint float holds its entity (its key), written after the keyed prologue (a first build read it before: every keyed caster was entity 0's id and shaded its own sprite, 5 282 px in the capture below, fixed before the commit).\n\n- Captures, dxCaptureScene ?maps=1&hour=16.5 with the keyed path live (workerProbe): keyed against full rows (?fullRows=1, a11472ed) 0 of 921 600 px; against main 0 px; WebGPU against main 0 px (full rows both). The lamps' map has no still capture yet (Predator at night: keyed with 62 stamp lights, a film beside main alike).\n- glFrameRecorder, Predator dayCycle=0&sunShadows=map&lampShadows=map: buffers 1 413.7 -> 637.8 KB a frame (-55 %), textures 287 -> 355, uploads 1 701 -> 993 KB (-42 %).\n- Gate, Predator crowd=2.5&dayCycle=0&sunShadows=map&lampShadows=map from one save, 4 pairs, base ffab2257, ended 22:05: KEPT, pre-render 11.01 -> 7.12 ms (-35.7 %, 4/4), renderer 8.16 -> 6.27 ms (-21.3 %, 4/4), physics -10.7 %, spatial -7.7 %, logic -1.9 %; drawn 58.6 -> 59.8 fps; BODY_COUNT -0.0 %.\n- Node 3433/3433, demos 143/143.\nLeft: WebGPU's keyed maps (the WGSL transforms already accept a keyed source), the columns over keyed rows, a still capture of the lamps' map, and the casters with a kind (the row carries no code)."
+    },
+    {
+      "id": "R-1697",
+      "date": "2026-11-21",
+      "time": "22:23",
+      "timeFrom": "recorded",
+      "title": "Keyed caster rows in the shadow maps on WebGPU too: pre-render -38.5 %, renderer -23.9 %; the lamps' map captured identical on both backends",
+      "verdict": "kept",
+      "text": "**E-395 on WebGPU too, and the lamps' map captured (merged on main 2026-11-21).** sunShadowGpuProgram takes the statics (group 2, binding 4); the keyed sun-map and lamps'-map meshes on both backends; keyed caster programs stay on under a shadow map on both (off only while a render casts columns).\n\n- Captures, dxCaptureScene with the keyed path live: the sun's map (?maps=1&hour=16.5) on WebGPU, keyed against full rows 0 px, against main 0 px; the lamps' map (?maps=1&hour=22&night=1&lampElevation=70, 8 stamp lights; the knob 9a9c28d2) keyed against full rows and against main 0 px on WebGL and WebGPU; the raise changes 622 932 px, so the lamps' shadows are in the picture.\n- Gate, Predator crowd=2.5&dayCycle=0&sunShadows=map&lampShadows=map&backend=webgpu from one save, 4 pairs, ended 22:23: KEPT, pre-render 11.52 -> 6.92 ms (-38.5 %, 4/4), renderer 10.76 -> 7.90 ms (-23.9 %, 4/4), spatial -13.7 %, physics -10.6 %, logic -3.8 %; drawn 59.0 -> 59.8 fps.\n- Node 3433/3433, demos 143/143.\nLeft: the columns over keyed rows (scenes with height maps keep the full rows), and a kind carried in the keyed row."
     }
   ],
   "leads": [
