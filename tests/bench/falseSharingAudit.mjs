@@ -142,7 +142,7 @@ export const WRITERS = {
     r: [c('preRender', 'entity', 'wasm/preRenderEmit.c:571')],
   },
   'SpriteRenderer.renderDirty': {
-    w: [c('logic', 'tick', 'src/components/directionalSprite.js:370', 'set to 1 with keyedDirty'), c('preRender', 'entity', 'wasm/preRenderEmit.c:1595', 'persist_remember clears it for the rows it keeps')],
+    w: [c('logic', 'tick', 'src/components/directionalSprite.js:370', 'set to 1 with keyedDirty'), c('preRender', 'entity', 'wasm/preRenderEmit.c:1595', 'persist_take_dirty takes it (atomic exchange) for the rows a full emit rewrites')],
     r: [c('preRender', 'entity', 'wasm/preRenderEmit.c:1440')],
   },
   'SpriteRenderer.animationState': { w: [c('logic', 'tick', 'src/components/directionalSprite.js:369', 'when the animation changes (setState)')], r: [c('preRender', 'entity', 'wasm/preRenderEmit.c:1442')] },

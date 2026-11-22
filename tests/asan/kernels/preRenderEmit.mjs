@@ -435,8 +435,8 @@ function kernels(session, b) {
   };
   return {
     counter,
-    shipped: { emitRows: b.emitRows, persistFrame: b.persistFrame, persistRemember: b.persistRemember },
-    asan: { emitRows: wrap('emit_rows'), persistFrame: wrap('persist_frame'), persistRemember: wrap('persist_remember') },
+    shipped: { emitRows: b.emitRows, persistFrame: b.persistFrame, persistTakeDirty: b.persistTakeDirty, persistRemember: b.persistRemember },
+    asan: { emitRows: wrap('emit_rows'), persistFrame: wrap('persist_frame'), persistTakeDirty: wrap('persist_take_dirty'), persistRemember: wrap('persist_remember') },
   };
 }
 
@@ -525,7 +525,10 @@ function persistSchedule(S, k, { inQueue, seed }) {
   };
 }
 
-/** The test's persistFrames, the kernel half: persist_frame where the buffer holds the frame, else emit_rows and persist_remember. */
+/**
+ * The test's persistFrames, the kernel half: persist_frame where the buffer holds the frame, else persist_take_dirty,
+ * emit_rows and persist_remember.
+ */
 function persistCase(S, opts, frames) {
   return async (ctx) => {
     const { session } = ctx;
@@ -571,6 +574,9 @@ function persistCase(S, opts, frames) {
           if (hit) hits++;
         }
         if (!hit) {
+          const targs = [b.tableByte, count, maxItems];
+          const take = dualCall(session, `frame ${f} persist_take_dirty`, () => K.asan.persistTakeDirty(...targs), () => K.shipped.persistTakeDirty(...targs));
+          if (take.mismatch) return { calls: K.counter.n, rows, mismatch: take.mismatch };
           const tilesDirty = worker.renderQueueTileMode !== null && worker._tiledTileColumns.has(worker.renderQueueTileMode);
           const args = [b.tableByte, count, maxItems, flags | (tilesDirty ? C.EMIT_TILES_DIRTY : 0), DT / 1000, worker._decorationZoomAlpha, worker._zBand];
           const d = dualCall(session, `frame ${f} emit_rows`, () => K.asan.emitRows(...args), () => K.shipped.emitRows(...args));
@@ -582,7 +588,7 @@ function persistCase(S, opts, frames) {
           const rem = dualCall(session, `frame ${f} persist_remember`, () => K.asan.persistRemember(...rargs), () => K.shipped.persistRemember(...rargs));
           if (rem.mismatch) return { calls: K.counter.n, rows, mismatch: rem.mismatch };
           worker._persistCount[buf] = count;
-          if (rem.value) worker._persistCount[buf ^ 1] = -1;
+          if (take.value) worker._persistCount[buf ^ 1] = -1;
         } else {
           rows += count;
         }
@@ -625,7 +631,7 @@ const PERSIST_CASES = [
 export default {
   name: 'preRenderEmit',
   sources: ['wasm/preRenderEmit.c'],
-  exports: ['emit_rows', 'persist_frame', 'persist_remember', 'adobe_advance'],
+  exports: ['emit_rows', 'persist_frame', 'persist_take_dirty', 'persist_remember', 'adobe_advance'],
 
   async groups(ctx) {
     const S = await imports(ctx);

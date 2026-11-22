@@ -4285,6 +4285,10 @@ class PreRenderWorker extends AbstractWorker {
             persistHit = persistOthers >= 0;
             if (!persistHit) persistOthers = 0;
         }
+        // N-408: a frame the persist path missed takes the sprites' renderDirty before the full emit reads their rows (a
+        // setter after that marks its sprite again); clearing them after the emit lost a mark set while it ran.
+        const b = this._emitWasm;
+        const dirtyTaken = persistWasm && !persistHit && b.persistTakeDirty(b.tableByte, count, maxItems) !== 0;
         let tiledRows = false;
         if (persistHit && persistOthers === 0) {
             // E-98b. A persist frame of sprites only: persist_frame wrote them.
@@ -4300,7 +4304,7 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
         // E-102b: from now on this queue's other rows must clear what a repeating sprite left.
         if (tiledRows && rqTileMode !== null) this._tiledTileColumns.add(rqTileMode);
-        if (persistWasm && !persistHit) this._rememberType0SetWasm(persistBuf, count, maxItems);
+        if (persistWasm && !persistHit) this._rememberType0SetWasm(persistBuf, count, maxItems, dirtyTaken);
         if (source.persist) {
             // E-82. A frame that only moved sprites keeps the count; anything else is a new one
             // (0 is skipped: it means unknown).
@@ -4412,13 +4416,16 @@ class PreRenderWorker extends AbstractWorker {
         return others;
     }
 
-    /** W4c. _rememberType0Set in preRenderEmit.wasm (persist_remember). */
-    _rememberType0SetWasm(bufIdx, count, maxItems) {
+    /**
+     * W4c. _rememberType0Set in preRenderEmit.wasm (persist_remember); `dirtyTaken`: persist_take_dirty took a sprite's
+     * renderDirty before this frame's emit (N-408).
+     */
+    _rememberType0SetWasm(bufIdx, count, maxItems, dirtyTaken) {
         const b = this._emitWasm;
-        const cleared = b.persistRemember(b.tableByte, count, maxItems);
+        b.persistRemember(b.tableByte, count, maxItems);
         this._persistCount[bufIdx] = count;
         // As in _rememberType0Set: the other buffer still holds the old columns of a sprite that changed.
-        if (cleared) this._persistCount[bufIdx ^ 1] = -1;
+        if (dirtyTaken) this._persistCount[bufIdx ^ 1] = -1;
     }
 
     /**

@@ -977,6 +977,7 @@ test('N-238: a sprite out of view in the frame Pixi drew keyed is marked as it c
     assert.ok(writePersistColumns(b, w, SpriteRenderer, buf));
     const got = b.persistFrame(b.tableByte, count, maxItems, flags, DT / 1000, w._zBand);
     if (got === EMIT_PERSIST_MISS) {
+      b.persistTakeDirty(b.tableByte, count, maxItems);
       assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
       b.persistRemember(b.tableByte, count, maxItems);
     }
@@ -1609,8 +1610,9 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
       }
     }
     if (!hit) {
+      const cleared = b.persistTakeDirty(b.tableByte, count, maxItems);
       fullEmit(flags, ends);
-      const cleared = b.persistRemember(b.tableByte, count, maxItems);
+      b.persistRemember(b.tableByte, count, maxItems);
       worker._persistCount[buf] = count;
       if (cleared) worker._persistCount[buf ^ 1] = -1;
     }

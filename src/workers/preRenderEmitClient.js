@@ -8,7 +8,7 @@
 // missing textures come back as lists, and pre-render acts on them in JS.
 // W4c: persist_frame (the check and the poses-only pass in one walk, E-116) and persist_remember are the
 // entity queue's persist path, on the same table with the rows each queue buffer last held
-// (writePersistColumns).
+// (writePersistColumns); persist_take_dirty takes the sprites' renderDirty before a full emit (N-408).
 // W27: with the Adobe regions, emit_rows also expands Adobe Animate roots into their pieces, from
 // AdobeAnimComponent (writeEmitAdobeColumns) and a copy of the registry's assets (writeEmitAdobeAssets), and
 // adobe_advance advances their clips (advanceAdobeAnimations).
@@ -171,7 +171,7 @@ export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
  * @param {Record<string, number>} emit createRenderQueueMemory's layout.emit
  */
 export async function bindPreRenderEmit(memory, emit) {
-  const k = await loadWasmKernel('preRenderEmit', engineWasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_remember', 'adobe_advance']);
+  const k = await loadWasmKernel('preRenderEmit', engineWasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_take_dirty', 'persist_remember', 'adobe_advance']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, emit.tableByte, EMIT_SLOTS.length);
   table[SLOT.rEnds] = emit.endsByte;
@@ -188,6 +188,7 @@ export async function bindPreRenderEmit(memory, emit) {
     buffer,
     emitRows: k.emit_rows,
     persistFrame: k.persist_frame,
+    persistTakeDirty: k.persist_take_dirty,
     persistRemember: k.persist_remember,
     adobeAdvance: k.adobe_advance,
     layout: emit,
