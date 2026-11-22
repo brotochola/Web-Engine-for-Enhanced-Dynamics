@@ -24521,7 +24521,8 @@
         "R-1623",
         "R-1687",
         "R-1688",
-        "R-1696"
+        "R-1696",
+        "R-1802"
       ],
       "refs": [],
       "id": "E-531",
@@ -24530,7 +24531,7 @@
       "kind": "hypothesis",
       "area": "render speed",
       "date": "2026-11-20",
-      "statusText": "Filed 2026-11-20 from the cheap-light3d study (R-1573): the owner wants one shadow mode; B looks better than A without extra art. 2026-11-21: the engine skips a light at brightness 0 (no tile, no light-pass slot: 136a9667, merged 49967f18).",
+      "statusText": "2026-11-22 (R-1802): after E-395 and the lamps off by day, map shadows cost +10 % GPU by day (+0.3 ms on the GTX 1650) and the classic layer's CPU; the owner decides the default. Left: the G-buffer pass (0.32 ms) and the light pass (+0.09).",
       "result": "",
       "next": "Owner 2026-11-21: (a) Predator turns its TallLights off by day, switched at once, no fade (\"como las luces normales\"), after E-538 merges (it edits tallLight.js too); (b) the engine must be optimal whatever a game does: lamps lit by day included. So, measured on a quiet machine: (1) E-517 (a lamp tile nothing changed is neither cleared nor drawn) against E-460 (still casters cached per tile, movers over it), read first how many of Predator's 48 tiles have a moving caster each frame; (2) the sun map is laid out on the screen, so caching its still casters only holds with a still camera: lowest priority. Before: B 4.09/4.11 ms by day (lamps' map 0.51, sun map 0.36-0.38).",
       "rank": 12,
@@ -41172,6 +41173,15 @@
       "commits": [
         "6645b189"
       ]
+    },
+    {
+      "id": "R-1802",
+      "date": "2026-11-22",
+      "time": "00:10",
+      "timeFrom": "recorded",
+      "title": "E-531 by day after E-395 and lamps off: map shadows cost +0.3 ms GPU (+10 %, draws 2.79/3.20 -> 3.19/3.45 ms) and the classic layer's CPU (pre-render -8 %, renderer +4 %); left: the G-buffer pass 0.32 ms",
+      "verdict": "note",
+      "text": "**E-531 by day after E-395 and the lamps off by day (2026-11-22, main 095d6041, GTX 1650, Predator default crowd, headed Chrome 1920x1080): map shadows now cost the classic layer's CPU and about +0.3 ms of GPU (+10 %).** A = `dayCycle=0` (the shadows' layer), B = `dayCycle=0&sunShadows=map&lampShadows=map`.\n\n- **GPU, glFrameRecorder --gpu-draws** (a timer per draw, no idle gaps; 3 s windows after 12 s, A B B A, 00:04-00:05): draws 2.788 / 3.195 ms a frame (A) against 3.186 / 3.449 (B). Off the screen pass: A 0.46 / 0.53 ms (shadows' layer 480x270 0.31-0.33 for 14 200-14 500 instances, strip 0.08-0.11, light 0.04-0.06, clears 0.03); B 0.89 / 0.90 ms (G-buffer 478x268 0.315 for 13 300 instances, sun map 576x366 0.26-0.27 for 13 000, light pass 0.13-0.15, strip 0.08-0.09, clears 0.06-0.08). No lamps' map by day. The screen pass (2.3-2.7 ms) moves with the clocks (median 750-870 MHz, P3; 23-29 % busy). --gpu-passes (00:03-00:04) read the same shape: off-screen passes 1.08-1.09 (A) against 1.20-1.44 ms (B).\n- **CPU, runPredatorAbab --query-b** (4 pairs, to 00:10, every worker under the 6 ms floor): pre-render 1.975 -> 1.809 ms (B cheaper, -8 %), renderer 1.694 -> 1.764 (+4 %), logic, spatial and physics within 3 %, presented 60 = 60. (R-1573 before E-395, lamps lit by day: renderer 1.39 -> 2.16, pre-render 2.09 -> 2.75.) The sitting's FAIL (load) is GPU_SHADOW_LIGHTS 17.5 -> 0: the counter counts the classic layer's light cookies (flashes and fires lit by day), which map mode does not draw: a different counter, not a different load.\n\nSo the day gap went from +57 % GPU and +55 % renderer (R-1573) to +10 % GPU and parity on the CPU. What is left is one more pass over every sprite (the G-buffer: ids and heights at the light's size, 0.32 ms) and a heavier light pass (+0.09 ms). Making map shadows the default and dropping the layer mode is the owner's step (E-531's plan); the HD 620 was last read before E-395 (R-1623: +12-19 %)."
     }
   ],
   "leads": [
