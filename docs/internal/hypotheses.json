@@ -24994,6 +24994,20 @@
       "date": "2026-11-22",
       "statusText": "2026-11-22 (R-1819): the premise does not hold in stationarySpatialScene (ids row-ordered). Branch perf/e545-first-age-by-cell kept, unmeasured; Predator never runs this path (E-200's schedule).",
       "next": "The first-build age from the entity's home cell (a block of cells per frame, rows of the grid in turn) instead of its id block; same flat tail. stationarySpatialScene ?entities=40000 exact-frame mean and p95 on both PCs, then Predator mix=1 spatial."
+    },
+    {
+      "records": [
+        "R-1823"
+      ],
+      "refs": [],
+      "id": "E-546",
+      "title": "Predator's capacity past its knob: crowd 2.5 (57 633 entities, 16-bit ids) now passes every rule (R-1823), so the real limit is unknown; a crowd past 2.5 needs 32-bit ids, and at maxNeighbors 1024 the spatial rows alone grow to about 740 MB at 90 000 entities",
+      "status": "open",
+      "kind": "speed",
+      "area": "capacity",
+      "date": "2026-11-22",
+      "statusText": "Filed 2026-11-22 from R-1823: the capacity search ended at the knob's top (PREDATOR_CROWD_MAX 2.5).",
+      "next": "A crowd cap past 2.5 with entityIdWidth 'auto' going to 32; first the memory bill (spatial rows at maxNeighbors 1024, Box2D's wasmMemoryMB past 256, the render queue), maybe a smaller maxNeighbors for the soldiers' 250 px sight; then runCapacity to the new top, and the 16- against 32-bit cost at crowd 2.5 (the same scene both ways)."
     }
   ],
   "records": [
