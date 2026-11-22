@@ -415,35 +415,3 @@ export function lightEdgesQuad(positionBuffer) {
     indexBuffer: [0, 1, 2, 0, 2, 3],
   });
 }
-
-/**
- * JS twin of edgeLight, for the tests: the light at a canvas point `(u, v)` (0..1) from `texels` (RGBA floats, row-major,
- * `width` x `height`), the texels of kind `kind` only (all four when none is).
- */
-export function edgeLightAt(texels, width, height, u, v, kind) {
-  const px = u * width - 0.5;
-  const py = v * height - 0.5;
-  const bx = Math.floor(px);
-  const by = Math.floor(py);
-  const fx = px - bx;
-  const fy = py - by;
-  const at = (x, y) => {
-    const cx = Math.min(width - 1, Math.max(0, x));
-    const cy = Math.min(height - 1, Math.max(0, y));
-    return (cy * width + cx) * 4;
-  };
-  const taps = [[bx, by, (1 - fx) * (1 - fy)], [bx + 1, by, fx * (1 - fy)], [bx, by + 1, (1 - fx) * fy], [bx + 1, by + 1, fx * fy]];
-  let sum = 0;
-  const own = taps.map(([x, y, w]) => {
-    const keep = Math.abs(texels[at(x, y) + 3] - kind) <= 0.5 ? w : 0;
-    sum += keep;
-    return keep;
-  });
-  const weights = sum < 1e-5 ? taps.map((t) => t[2]) : own;
-  const total = sum < 1e-5 ? 1 : sum;
-  const out = [0, 0, 0];
-  taps.forEach(([x, y], k) => {
-    for (let c = 0; c < 3; c++) out[c] += (texels[at(x, y) + c] * weights[k]) / total;
-  });
-  return out;
-}

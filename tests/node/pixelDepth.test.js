@@ -7,10 +7,10 @@ import {
   PIXEL_DEPTH_MARGIN,
   pixelDepthFragment,
   pixelDepthTerms,
-  pixelDepthValue,
   pixelDepthVertex,
   pixelDepthWgsl,
 } from '../../src/render/pixelDepth.js';
+import { pixelDepthValue } from '../reference/renderMathJs.mjs';
 import { spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
 
 const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');

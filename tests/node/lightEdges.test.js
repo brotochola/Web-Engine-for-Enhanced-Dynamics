@@ -7,9 +7,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import {
-  LIGHT_EDGES_ENTITY, LIGHT_EDGES_FLOOR, LIGHT_EDGES_KINDS, LIGHT_EDGES_MARK_DEPTH, edgeLightAt, lightEdgesGlsl, lightEdgesWgsl, rgbOnlyHost,
+  LIGHT_EDGES_ENTITY, LIGHT_EDGES_FLOOR, LIGHT_EDGES_KINDS, LIGHT_EDGES_MARK_DEPTH, lightEdgesGlsl, lightEdgesWgsl, rgbOnlyHost,
   wallEdgesWanted,
 } from '../../src/render/lightEdges.js';
+import { edgeLightAt } from '../reference/renderMathJs.mjs';
 import { lightingSource } from '../../src/render/faceMap.js';
 import { Container } from '../../src/vendor/pixi.min.js';
 

@@ -297,19 +297,6 @@ export function clearUnusedLightDataTexels(data, maxLights, liveCount, upTo = ma
   for (let row = 0; row < LIGHT_DATA_TEX_HEIGHT; row++) data.fill(0, row * n * 4 + live * 4, row * n * 4 + end * 4);
 }
 
-/** Read back a packed light (for tests / debug). Writes into `out` and returns it. */
-export function readLightDataTexel(data, maxLights, lightIndex, out = {}) {
-  const i0 = lightIndex * 4;
-  const i1 = maxLights * 4 + lightIndex * 4;
-  out.x = data[i0];
-  out.y = data[i0 + 1];
-  out.intensity = data[i0 + 2];
-  out.r = data[i1];
-  out.g = data[i1 + 1];
-  out.b = data[i1 + 2];
-  return out;
-}
-
 /** Instanced sprite scale so cookie world radius == lightInfluenceRadius. */
 export function lightCookieScale(sqrtIntensity) {
   return lightInfluenceRadius(sqrtIntensity) / LIGHT_GRADIENT_TEXTURE_RADIUS;

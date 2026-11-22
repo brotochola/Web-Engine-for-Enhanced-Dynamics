@@ -765,26 +765,6 @@ export function decodeFaceNormal(code, out) {
 }
 
 /**
- * N-258: the face pass's turnNormal in JS (faceMap.frag.glsl, faceFunctionsWgsl), for tests: a frame's normal (its own
- * camera space, x right, y up) as a sprite with rotation (cos, sin) and scale signs (sx, sy) draws it: mirrored where its
- * scale is negative, then turned with it (the screen's rotation, y down, is the opposite turn with y up).
- * @param {[number, number, number]|Float32Array} n
- * @param {number} c the sprite's rotation's cosine (1 for a shear: DX-DECOSKEW turns no normal)
- * @param {number} s its sine (0 for a shear)
- * @param {number} sx -1 for a negative scale x (flipX), else 1
- * @param {number} sy -1 for a negative scale y (flipY), else 1
- * @param {number[]|Float32Array} out
- */
-export function turnFrameNormal(n, c, s, sx, sy, out) {
-  const fx = n[0] * sx;
-  const fy = n[1] * sy;
-  out[0] = fx * c + fy * s;
-  out[1] = fy * c - fx * s;
-  out[2] = n[2];
-  return out;
-}
-
-/**
  * @param {number} z the face's height at its position, px (0 to FACE_Z_HEIGHT_MAX_CODE / FACE_ROW_Z_UNITS)
  * @param {number} [innerZ] DX-FACEDEPTH: 0 a wall, 1 to FACE_INNER_Z_MAX what is stuck on it (clamped)
  * @returns {number} faceZ, 24 bits: the height in its low FACE_INNER_Z_SHIFT bits, innerZ above

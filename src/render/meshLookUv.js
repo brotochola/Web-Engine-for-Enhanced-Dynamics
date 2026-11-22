@@ -14,11 +14,3 @@ export function meshLookFullscreenUvs(flipV) {
     ? new Float32Array([0, 1, 1, 1, 1, 0, 0, 0])
     : new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
 }
-
-/**
- * One convention for a look *pass* (no Mesh-on-stage). Both backends.
- * @returns {Float32Array}
- */
-export function meshLookPassUvs() {
-  return meshLookFullscreenUvs(false);
-}

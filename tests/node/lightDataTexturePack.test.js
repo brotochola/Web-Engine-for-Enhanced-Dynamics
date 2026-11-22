@@ -4,9 +4,9 @@ import {
   LIGHT_DATA_TEX_HEIGHT,
   lightDataTextureFloatCount,
   packLightDataTexel,
-  readLightDataTexel,
   clearUnusedLightDataTexels,
 } from '../../src/util/utils.js';
+import { readLightDataTexel } from '../reference/renderMathJs.mjs';
 
 test('light data texture pack/read matches the RGBA32F layout (row 2: DX-SPOT\'s cones, row 3: N-212\'s fades)', () => {
   const maxLights = 4;
