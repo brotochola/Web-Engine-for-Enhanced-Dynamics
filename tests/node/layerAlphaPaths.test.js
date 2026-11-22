@@ -31,7 +31,7 @@ async function opaqueAllowedAt(alpha) {
   px._gpuQueueRead = null;
   px._opaqueOn = true;
   px._entityChunksActive = false;
-  px._screenLayersShown = () => false;
+  px.screenLayers.shown = () => false;
   px._refusePackedFrame = () => 0;
   px._proxiesOn = false;
   px.entitiesGlowBatch = null;

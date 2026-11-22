@@ -144,7 +144,7 @@ export class PixiCustomLayers {
       }
     }
     this.destroyAllCompute();
-    this.worker._destroyScreenLayers();
+    this.worker.screenLayers.destroyAll();
     this.byId = {};
     this.worker._gpuParticleBatches = [];
     if (!meshMemoryBound) await this.worker.meshLayers.bindMemory(data);
@@ -174,7 +174,7 @@ export class PixiCustomLayers {
       const isWorldRect = !!(config.worldRect && config.shaderTextures && config.shaderTextures.length);
       const isGpu = config.kind === LAYER_KIND.GPU_PARTICLES;
       if (config.kind === LAYER_KIND.SCREEN) {
-        this.worker._initScreenLayer(config);
+        this.worker.screenLayers.initLayer(config);
         continue;
       }
       if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh && !isWorldRect && !isGpu) continue;

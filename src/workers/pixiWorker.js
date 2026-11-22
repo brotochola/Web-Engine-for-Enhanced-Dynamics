@@ -156,7 +156,6 @@ import {
   normalizeRendererBackend,
   errorPixiTypeMismatch,
   errorMissingGpuDevice,
-  errorCompileFailed,
   errorShaderFetchFailed,
   shaderSourceLf,
   pixiRendererTypeName,
@@ -177,7 +176,8 @@ import { PixiGlowLayer } from '../render/pixi/glowLayer.js';
 import { PixiShadowMaps } from '../render/pixi/shadowMaps.js';
 import { PixiLighting } from '../render/pixi/lighting.js';
 import { PixiDecalTiles } from '../render/pixi/decalTiles.js';
-import { finiteOrZero, layerIsVisible, applyEngineLookUniforms } from '../render/pixi/layerHelpers.js';
+import { PixiScreenLayers } from '../render/pixi/screenLayers.js';
+import { layerIsVisible } from '../render/pixi/layerHelpers.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
 import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
@@ -539,12 +539,8 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueCamera = null; // Float32Array[3] -> [zoom, x, y]
     this.renderQueuePoseReady = null; // Int32Array[1] -> pose generation stamped with this queue slot
 
-    // DX-POST: the LAYER_KIND.SCREEN passes in zIndex order, and the frame they read (the stage drawn into a target).
-    this._screenLayers = [];
-    this._screenSceneRT = null;
-    // DX-DEPTH: the frame target given a depth attachment for the entities' pixel depth (WebGPU), so it is asked once.
-    this._screenSceneDepth = null;
-    this._screenClear = [0, 0, 0, 1];
+    // N-256 PW-10: the SCREEN layers' passes over the finished frame (src/render/pixi/screenLayers.js).
+    this.screenLayers = new PixiScreenLayers(this);
     this._layerRuntime = Object.create(null); // layerName -> display object
     this._sunLayers = []; // layers with alphaBySun: { layerId, name, spec }
     this._layerSunFactor = new Float32Array(0); // by layer id: the sun's factor on its alpha (1 without alphaBySun)
@@ -1393,7 +1389,7 @@ class PixiRenderer extends AbstractWorker {
     // opaque (only the soft edges faded) until 0, where Pixi skips the container. The batch then blends every pixel.
     const root = this._entitiesRoot;
     this.entitiesBatch.setOpaqueAllowed(
-      this._opaqueOn && !this._entityChunksActive && !this._screenLayersShown() && (root === null || root.alpha >= 1),
+      this._opaqueOn && !this._entityChunksActive && !this.screenLayers.shown() && (root === null || root.alpha >= 1),
     );
     // And it draws when its rows cover enough of the canvas at the camera's zoom to pay for their second vertex pass.
     this.entitiesBatch.setOpaqueView(this._renderZoom || 1, this.canvasWidth * this.canvasHeight);
@@ -2955,7 +2951,7 @@ class PixiRenderer extends AbstractWorker {
     if (!this._gpuLive()) return;
     if (this._renderView !== 0) this._syncRenderView();
     // DX-POST: one test a frame without SCREEN layers; the present as before.
-    const throughScreenLayers = this._screenLayers.length > 0 && this._presentThroughScreenLayers();
+    const throughScreenLayers = this.screenLayers.passes.length > 0 && this.screenLayers.present();
     if (!throughScreenLayers) {
       if (this._pixiPresent !== null) {
         this._pixiPresent();
@@ -2978,83 +2974,6 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * DX-POST: a LAYER_KIND.SCREEN layer. Its look reads the frame below it (uTexture, bound each frame by
-   * _presentThroughScreenLayers), through one full-screen mesh that draws into a target or onto the canvas alike: every
-   * frame the passes read is laid out as the canvas is (on WebGL the stage is drawn into it with the canvas's
-   * projection), so the mesh copies texel for pixel, no V flip. It is not on the stage: the stage is what the passes read.
-   * @param {object} config the layer's worker metadata
-   */
-  _initScreenLayer(config) {
-    const layerId = config.id;
-    const layerName = config.name;
-    const name = config.shaderName || layerName;
-    const uniformDefs = this.customLayers.buildUniformDefs(layerId, config.uniformMap, config.uniformTypes);
-    // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it).
-    const usesScene = typeof config.shaderFragment === 'string' && /\buScene\b/.test(config.shaderFragment);
-    let shader;
-    try {
-      const empty = PIXI.Texture.EMPTY.source;
-      shader = this.customLayers.createLookShader(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null);
-    } catch (err) {
-      if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
-      throw errorCompileFailed('look', name, layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
-    }
-    const resolution = Layer._resolution?.[layerId];
-    this._screenLayers.push({
-      layerId,
-      layerName,
-      zIndex: Layer._zIndex?.[layerId] ?? 0,
-      resolution: resolution > 0 ? resolution : 1,
-      // How it samples the frame it reads ('linear', or 'nearest' for pixel art).
-      scaleMode: Layer.scaleModeString(Layer._normalizeScaleMode(config.scaleMode)),
-      shader,
-      uniformStore: shader.resources?.customUniforms?.uniforms || null,
-      uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
-      mesh: this.customLayers.makeLookShaderMesh(shader, false),
-      usesScene,
-      // Its output when it is not the last visible pass: the canvas's size times its resolution.
-      target: null,
-    });
-    this._screenLayers.sort((a, b) => a.zIndex - b.zIndex);
-    debugWorkerLog(`PIXI WORKER: SCREEN layer "${layerName}" initialized`);
-  }
-
-  _destroyScreenLayers() {
-    const layers = this._screenLayers;
-    for (let i = 0; i < layers.length; i++) {
-      const cl = layers[i];
-      this._unbindScreenLayerTextures(cl);
-      if (cl.target) {
-        this._releaseTextureBindGroups(cl.target);
-        cl.target.destroy(true);
-      }
-      cl.mesh.destroy();
-    }
-    this._screenLayers = [];
-    if (this._screenSceneRT) {
-      this._releaseTextureBindGroups(this._screenSceneRT);
-      this._screenSceneRT.destroy(true);
-      this._screenSceneRT = null;
-    }
-    this._screenSceneDepth = null;
-  }
-
-  /**
-   * A target of width × height: `rt` when it has that size, else a new one. The old one is unbound from every pass
-   * first and destroyed (a resized source keeps a stale framebuffer, as the other viewport targets found).
-   */
-  _screenTarget(rt, width, height) {
-    if (rt && rt.width === width && rt.height === height) return rt;
-    if (rt) {
-      const layers = this._screenLayers;
-      for (let i = 0; i < layers.length; i++) this._unbindScreenLayerTextures(layers[i]);
-      this._releaseTextureBindGroups(rt);
-      rt.destroy(true);
-    }
-    return PIXI.RenderTexture.create({ width, height });
-  }
-
-  /**
    * DX-DEPTH: `rt`'s render target with a depth-stencil attachment (Pixi makes it at its size and clears it with the
    * colour), for programs that test or write depth there: the entities' pixel depth on WebGPU.
    */
@@ -3063,127 +2982,6 @@ class PixiRenderer extends AbstractWorker {
     const target = system && typeof system.getRenderTarget === 'function' ? system.getRenderTarget(rt) : null;
     if (target && !target.depthStencilAttachment && typeof target.ensureDepthStencilTexture === 'function') {
       target.ensureDepthStencilTexture();
-    }
-  }
-
-  /** DX-POST: whether a SCREEN layer is visible, so the stage goes into a target of its own (_presentThroughScreenLayers). */
-  _screenLayersShown() {
-    const layers = this._screenLayers;
-    for (let i = 0; i < layers.length; i++) if (layerIsVisible(layers[i].layerId)) return true;
-    return false;
-  }
-
-  /**
-   * DX-POST: with a visible SCREEN layer, the stage goes into a target the canvas's size, cleared to the canvas's
-   * background. Each visible SCREEN layer then, in zIndex order, reads what came before it and draws into its own
-   * target, and the last onto the canvas. Without a visible one: false, and the present is the stage's as before.
-   */
-  _presentThroughScreenLayers() {
-    const layers = this._screenLayers;
-    let last = -1;
-    for (let i = 0; i < layers.length; i++) if (layerIsVisible(layers[i].layerId)) last = i;
-    if (last < 0) return false;
-    const app = this.pixiApp;
-    if (!app?.renderer || !app.stage) return false;
-    // E-448: the stage's target here has no depth buffer on WebGL, which the opaque pass draws with.
-    if (this.entitiesBatch !== null) this.entitiesBatch.dropOpaquePass();
-    const width = this.canvasWidth;
-    const height = this.canvasHeight;
-    this._screenSceneRT = this._screenTarget(this._screenSceneRT, width, height);
-    // DX-DEPTH: the entities' pixel depth writes frag_depth on WebGPU, and a pipeline that does needs a depth attachment
-    // in its target (WebGL draws the painter alone in a target without one).
-    if (this._screenSceneDepth !== this._screenSceneRT && this._useWebGpu && this.entitiesBatch !== null
-      && this.entitiesBatch.pixelDepthOn) {
-      this._ensureTargetDepth(this._screenSceneRT);
-      this._screenSceneDepth = this._screenSceneRT;
-    }
-
-    const opts = this._rtRenderOpts;
-    const background = app.renderer.background?.colorRgba;
-    const clear = this._screenClear;
-    if (background) {
-      clear[0] = background[0];
-      clear[1] = background[1];
-      clear[2] = background[2];
-      clear[3] = background[3];
-    }
-    opts.transform = null;
-    opts.container = app.stage;
-    opts.target = this._screenSceneRT;
-    opts.clear = true;
-    opts.clearColor = clear;
-    // WebGL draws into a texture upside down from the canvas (Pixi flips the projection): flipY undoes it, so the
-    // stage lands as on the canvas, pixel for pixel, and a copy pass is exact. WebGPU has no such flip.
-    opts.flipY = !this._useWebGpu;
-    this._submitRender(opts);
-    opts.flipY = false;
-
-    const frame = this._computeFrame;
-    frame.dt = this._lastDt || 1 / 60;
-    frame.cameraX = this._renderCameraX;
-    frame.cameraY = this._renderCameraY;
-    frame.canvasW = width;
-    frame.canvasH = height;
-    frame.zoom = this._renderZoom;
-    frame.time = (this.accumulatedTime || 0) * 0.001;
-    frame.worldW = finiteOrZero(this.worldWidth);
-    frame.worldH = finiteOrZero(this.worldHeight);
-
-    let source = this._screenSceneRT;
-    for (let i = 0; i <= last; i++) {
-      const cl = layers[i];
-      if (!layerIsVisible(cl.layerId)) continue;
-      this._syncScreenLayerUniforms(cl);
-      applyEngineLookUniforms(cl, frame);
-      const input = source.source;
-      if (input.scaleMode !== cl.scaleMode) input.scaleMode = cl.scaleMode;
-      const res = cl.shader.resources;
-      if (res.uTexture !== input) res.uTexture = input;
-      if (res.uSampler !== undefined && res.uSampler !== input.style) res.uSampler = input.style;
-      if (cl.usesScene && res.uScene !== this._screenSceneRT.source) res.uScene = this._screenSceneRT.source;
-      if (i === last) {
-        // The canvas, cleared to its background first: a pass that copies gives the frame the stage would have.
-        this._submitRender(cl.mesh);
-      } else {
-        cl.target = this._screenTarget(cl.target, rtPixelSize(width, cl.resolution), rtPixelSize(height, cl.resolution));
-        opts.container = cl.mesh;
-        opts.target = cl.target;
-        opts.clear = true;
-        opts.clearColor = this._clearTransparent;
-        this._submitRender(opts);
-        source = cl.target;
-      }
-    }
-    opts.container = null;
-    opts.target = null;
-    opts.clearColor = this._clearTransparent;
-    return true;
-  }
-
-  _unbindScreenLayerTextures(cl) {
-    this.customLayers.unbindLookShaderTexture(cl.shader);
-    if (cl.usesScene) cl.shader.resources.uScene = PIXI.Texture.EMPTY.source;
-  }
-
-  /** A SCREEN layer's uniforms written from any thread (Layer.x.setUniform), as updateCustomLayers does for looks. */
-  _syncScreenLayerUniforms(cl) {
-    const dirtyRef = Layer._uniformDirty?.[cl.layerId];
-    if (!dirtyRef || Atomics.load(dirtyRef, 0) !== 1) return;
-    Atomics.store(dirtyRef, 0, 0);
-    const floats = Layer._uniformFloats[cl.layerId];
-    const entries = cl.uniformEntries;
-    const u = cl.uniformStore;
-    if (!floats || !entries || !u) return;
-    for (let ei = 0; ei < entries.length; ei++) {
-      const [uName, entry] = entries[ei];
-      if (entry.size === 1) {
-        u[uName] = floats[entry.offset];
-      } else {
-        const target = u[uName];
-        if (target && typeof target === 'object' && target.length) {
-          for (let k = 0; k < entry.size; k++) target[k] = floats[entry.offset + k];
-        }
-      }
     }
   }
 

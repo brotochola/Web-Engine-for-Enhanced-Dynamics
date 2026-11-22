@@ -80,7 +80,7 @@ async function pixiWith(layers) {
     },
   });
   px.customLayers.list = [];
-  px._screenLayers = [];
+  px.screenLayers.passes = [];
   px.globalEntityCount = 0;
   const staged = [];
   px.pixiApp = { stage: { addChild: (c) => staged.push(c), sortChildren() {} }, renderer: null };
@@ -90,9 +90,9 @@ async function pixiWith(layers) {
 
 test('the Pixi worker keeps the SCREEN passes off the stage, in zIndex order', async () => {
   const { px, staged } = await pixiWith({ crt: screen(100), grade: screen(90) });
-  assert.deepEqual(px._screenLayers.map((cl) => cl.layerName), ['grade', 'crt']);
+  assert.deepEqual(px.screenLayers.passes.map((cl) => cl.layerName), ['grade', 'crt']);
   assert.equal(staged.length, 0, 'nothing on the stage: the stage is what the passes read');
-  const crt = px._screenLayers[1];
+  const crt = px.screenLayers.passes[1];
   assert.equal(crt.scaleMode, 'linear');
   assert.equal(crt.uniformStore.uAmount, 0.25);
   assert.ok(crt.mesh, 'one full-screen mesh');
@@ -106,16 +106,16 @@ test('with no SCREEN layer visible, the present is the stage\'s as before', asyn
   Layer.get('crt').visible = false;
   px._presentStage();
   assert.equal(presented, 1);
-  assert.equal(px._screenSceneRT, null, 'no frame target made');
+  assert.equal(px.screenLayers.sceneRT, null, 'no frame target made');
 });
 
 test('re-initializing the layers drops the passes of the scene before', async () => {
   const { px } = await pixiWith({ crt: screen(100) });
-  assert.equal(px._screenLayers.length, 1);
+  assert.equal(px.screenLayers.passes.length, 1);
   Layer.reset();
   Layer.initializeFromConfig({ fx: { zIndex: 5 } }, BUILT_IN);
   await quietly(() => px.customLayers.initialize({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
-  assert.equal(px._screenLayers.length, 0);
+  assert.equal(px.screenLayers.passes.length, 0);
 });
 
 test('a SCREEN pass that names uScene gets the frame before the first pass bound; one that does not, nothing more', async () => {
@@ -132,5 +132,5 @@ test('a SCREEN pass that names uScene gets the frame before the first pass bound
   Layer._metadata.layers[Layer.get('crt').id].shaderFragment = COPY;
   await quietly(() => px.customLayers.initialize({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
   assert.deepEqual(calls, [{ layerName: 'bloom', scene: true }, { layerName: 'crt', scene: false }]);
-  assert.deepEqual(px._screenLayers.map((cl) => cl.usesScene), [true, false]);
+  assert.deepEqual(px.screenLayers.passes.map((cl) => cl.usesScene), [true, false]);
 });
