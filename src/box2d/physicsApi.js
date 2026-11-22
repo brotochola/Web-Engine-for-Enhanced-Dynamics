@@ -33,11 +33,8 @@ function createPhysicsApi(Module) {
   const bodySetFilter = wrap("body_set_filter");
   const overlapAabbIntoFn = wrap("overlap_aabb_into");
   const overlapCircleFn = wrap("overlap_circle");
-  const overlapBoxFn = wrap("overlap_box");
   const castRayClosestFn = wrap("cast_ray_closest");
   const castRayAllFn = wrap("cast_ray_all");
-  const castMoverFn = wrap("cast_mover");
-  const collideMoverFn = wrap("collide_mover");
   const createRevoluteJoint = wrap("create_revolute_joint");
   const createDistanceJoint = wrap("create_distance_joint");
   const createPrismaticJoint = wrap("create_prismatic_joint");
@@ -661,20 +658,6 @@ function createPhysicsApi(Module) {
       );
     }
 
-    overlapBox(cx, cy, hx, hy, angle, filter = {}) {
-      const f = filterArgs(filter);
-      return overlapBoxFn(
-        this.worldId,
-        cx,
-        cy,
-        hx,
-        hy,
-        angle,
-        f.categoryBits,
-        f.maskBits,
-      );
-    }
-
     castRayClosest(ox, oy, dx, dy, filter = {}) {
       const f = filterArgs(filter);
       return this.castRayClosestBits(
@@ -707,34 +690,6 @@ function createPhysicsApi(Module) {
         oy,
         dx,
         dy,
-        f.categoryBits,
-        f.maskBits,
-      );
-    }
-
-    castMover(cx, cy, halfHeight, radius, dx, dy, filter = {}) {
-      const f = filterArgs(filter);
-      return castMoverFn(
-        this.worldId,
-        cx,
-        cy,
-        halfHeight,
-        radius,
-        dx,
-        dy,
-        f.categoryBits,
-        f.maskBits,
-      );
-    }
-
-    collideMover(cx, cy, halfHeight, radius, filter = {}) {
-      const f = filterArgs(filter);
-      return collideMoverFn(
-        this.worldId,
-        cx,
-        cy,
-        halfHeight,
-        radius,
         f.categoryBits,
         f.maskBits,
       );
@@ -997,10 +952,6 @@ function createPhysicsApi(Module) {
         maskBits >>> 0,
         0,
       );
-    }
-
-    configureJoint(handle, userDataInt, forceThreshold, torqueThreshold) {
-      jointConfigure(handle, userDataInt, forceThreshold, torqueThreshold);
     }
 
     step(dt, subSteps = 2) {
@@ -1637,10 +1588,6 @@ function createPhysicsApi(Module) {
 
     getLiquidFunStepMs() {
       return getLiquidFunStepMs();
-    }
-
-    getLfPassMs(id) {
-      return Module.ccall("get_lf_pass_ms", "number", ["number"], [id | 0]);
     }
 
     getLfParticleContactCount() {
