@@ -24763,17 +24763,17 @@
     },
     {
       "records": [
-        "R-1679"
+        "R-1679",
+        "R-1803"
       ],
       "refs": [],
       "id": "N-328",
       "title": "The object way's spawn costs a little more since the ECS campaign: spawnStormScene ?storm=6000 logic +2.7 % on every pair (6.27 -> 6.39 ms), with E-534's kernel at 2.73 -> 2.51 M spawns/s",
-      "status": "open",
+      "status": "answered",
       "kind": "speed",
       "area": "logic",
       "date": "2026-11-21",
-      "statusText": "Found 2026-11-21 measuring the object way across the ECS campaign (R-1679): under the 3 % bar but 4/4, with BODY_COUNT -5.2 % on B (the load did not match). The per-frame object way got 16.6 % faster in the same sitting set.",
-      "next": "A CPU profile pair of spawnStormScene ?storm=6000, c01c6d51 against main: where the instance spawn's time moved (the TypePlan, the static core's bits read per key, onSpawned's lookup, the lazy instance tables); spawnPathMicrobench's object form with more runs."
+      "statusText": "Answered 2026-11-22 (R-1803): CPU-traced pairs show main's spawn cheaper than before the ECS campaign; R-1679's +2.7 % came with a 5 % load mismatch."
     },
     {
       "records": [
@@ -41182,6 +41182,15 @@
       "title": "E-531 by day after E-395 and lamps off: map shadows cost +0.3 ms GPU (+10 %, draws 2.79/3.20 -> 3.19/3.45 ms) and the classic layer's CPU (pre-render -8 %, renderer +4 %); left: the G-buffer pass 0.32 ms",
       "verdict": "note",
       "text": "**E-531 by day after E-395 and the lamps off by day (2026-11-22, main 095d6041, GTX 1650, Predator default crowd, headed Chrome 1920x1080): map shadows now cost the classic layer's CPU and about +0.3 ms of GPU (+10 %).** A = `dayCycle=0` (the shadows' layer), B = `dayCycle=0&sunShadows=map&lampShadows=map`.\n\n- **GPU, glFrameRecorder --gpu-draws** (a timer per draw, no idle gaps; 3 s windows after 12 s, A B B A, 00:04-00:05): draws 2.788 / 3.195 ms a frame (A) against 3.186 / 3.449 (B). Off the screen pass: A 0.46 / 0.53 ms (shadows' layer 480x270 0.31-0.33 for 14 200-14 500 instances, strip 0.08-0.11, light 0.04-0.06, clears 0.03); B 0.89 / 0.90 ms (G-buffer 478x268 0.315 for 13 300 instances, sun map 576x366 0.26-0.27 for 13 000, light pass 0.13-0.15, strip 0.08-0.09, clears 0.06-0.08). No lamps' map by day. The screen pass (2.3-2.7 ms) moves with the clocks (median 750-870 MHz, P3; 23-29 % busy). --gpu-passes (00:03-00:04) read the same shape: off-screen passes 1.08-1.09 (A) against 1.20-1.44 ms (B).\n- **CPU, runPredatorAbab --query-b** (4 pairs, to 00:10, every worker under the 6 ms floor): pre-render 1.975 -> 1.809 ms (B cheaper, -8 %), renderer 1.694 -> 1.764 (+4 %), logic, spatial and physics within 3 %, presented 60 = 60. (R-1573 before E-395, lamps lit by day: renderer 1.39 -> 2.16, pre-render 2.09 -> 2.75.) The sitting's FAIL (load) is GPU_SHADOW_LIGHTS 17.5 -> 0: the counter counts the classic layer's light cookies (flashes and fires lit by day), which map mode does not draw: a different counter, not a different load.\n\nSo the day gap went from +57 % GPU and +55 % renderer (R-1573) to +10 % GPU and parity on the CPU. What is left is one more pass over every sprite (the G-buffer: ids and heights at the light's size, 0.32 ms) and a heavier light pass (+0.09 ms). Making map shadows the default and dropping the layer mode is the owner's step (E-531's plan); the HD 620 was last read before E-395 (R-1623: +12-19 %)."
+    },
+    {
+      "id": "R-1803",
+      "date": "2026-11-22",
+      "time": "00:22",
+      "timeFrom": "recorded",
+      "title": "N-328 not reproduced: CPU traces of spawnStorm 6000 read main's logic 4 % less busy than c01c6d51 (540/557 against 594/565 ms/s), _spawnAt -20 %; R-1679's +2.7 % failed on its load (BODY_COUNT -5.2 %)",
+      "verdict": "answered",
+      "text": "**N-328 not reproduced in CPU traces: the object way's spawn is not slower on main.** spawnStormScene `?storm=6000`, c01c6d51 (the register commit before E-532, its own worktree) against main 1d6df46c, single headed runs with `--trace-cpu`, 8 s warm-up and 8 s window, old new old new (00:21-00:22), summarized by summarizeChromeCpuTrace over the window:\n\n| | old 1 | old 3 | new 2 | new 4 |\n| --- | --- | --- | --- | --- |\n| logic busy (ms/s) | 594 | 565 | 540 | 557 |\n| logic0 exact step (ms, traced) | 10.08 | 9.28 | 8.85 | 9.37 |\n| `_spawnAt` self (ms in 8 s) | 1 136 | 1 092 | 864 | 921 |\n| publishBodyDirty + advanceBodyGeneration | 817 | 794 | 778 | 755 |\n| `_despawnAt` + `_deactivateSlotComponents` | 301 | 290 | 291 | 266 |\n\nMain is 4 % less busy on logic and its `_spawnAt` 20 % cheaper; new in its list: `hasParent` (DX-PARENT's link check on despawn and spawn, 92 ms in one trace, under the top 12 in the other) and the scene entity's `onSpawned` (125 ms in one). R-1679's +2.7 % (4/4) came with BODY_COUNT -5.2 % on the new side: the sitting failed on its load, and the two sides did not hold the same bodies. Closed as answered: no slower spawn to chase. Traces are not STEP_MS; a scene sitting could still read a percent either way, inside the 3 % bar."
     }
   ],
   "leads": [
