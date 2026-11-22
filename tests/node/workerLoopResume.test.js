@@ -68,6 +68,7 @@ test('a worker paused and resumed within one frame runs one loop', async () => {
 
 function loadPhysicsHost(frames) {
   const host = readFileSync(new URL('../../src/box2d/physicsHostImpl.js', import.meta.url), 'utf8');
+  const constants = readFileSync(new URL('../../src/box2d/box2dConstantsImpl.js', import.meta.url), 'utf8');
   const context = vm.createContext({
     name: 'physics pages=1024',
     Module: { HEAPF32: { buffer: { byteLength: 64 * 1048576 } } },
@@ -85,6 +86,8 @@ function loadPhysicsHost(frames) {
     cancelAnimationFrame: frames.cancelAnimationFrame,
   });
   vm.runInContext('var self = globalThis;', context);
+  // The constants (PHYSICS_STATS among them) the physics worker loads before the host (weedjsPost.js, CR-20).
+  vm.runInContext(constants, context);
   vm.runInContext(host, context);
   return (msg) => context.onmessage({ data: { msg } });
 }

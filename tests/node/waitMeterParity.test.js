@@ -211,7 +211,9 @@ test('the physics host publishes IDLE_MS from its own loop', () => {
   // physicsHostImpl.js is not an AbstractWorker, so it cannot inherit the idle
   // measurement and has to do its own bookkeeping.
   const src = read('src/box2d/physicsHostImpl.js');
-  assert.match(src, /IDLE_MS:\s*48/, 'PS mirror does not carry IDLE_MS');
+  // CR-20: the slots are box2dConstantsImpl.js's one table, which the host reads.
+  assert.match(read('src/box2d/box2dConstantsImpl.js'), /IDLE_MS:\s*48/, 'PHYSICS_STATS does not carry IDLE_MS');
+  assert.match(src, /var PS = global\.Box2dConstants\.PHYSICS_STATS;/, 'the host does not read the stats table');
   assert.match(src, /_lastFrameEndAt/, 'physics host never stamps its frame end');
   assert.match(src, /PS\.IDLE_MS\]\s*=\s*Math\.max\(0, frameStart - state\._lastFrameEndAt\)/);
 });

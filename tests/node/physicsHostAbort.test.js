@@ -8,6 +8,7 @@ import vm from 'node:vm';
 // fatal error, naming physics.wasmMemoryMB, stops its loop, and stops calling into the dead module.
 
 const host = readFileSync(new URL('../../src/box2d/physicsHostImpl.js', import.meta.url), 'utf8');
+const constants = readFileSync(new URL('../../src/box2d/box2dConstantsImpl.js', import.meta.url), 'utf8');
 
 test('the message names the key and the size for "OOM", and passes other aborts through', () => {
   const start = host.indexOf('// bm8-abort-start');
@@ -43,6 +44,8 @@ function loadHost({ name = 'physics pages=1024', heapMB = 64 } = {}) {
     clearInterval,
   });
   vm.runInContext('var self = globalThis;', context);
+  // The constants (PHYSICS_STATS among them) the physics worker loads before the host (weedjsPost.js, CR-20).
+  vm.runInContext(constants, context);
   vm.runInContext(host, context);
   return { context, posted: () => posted.filter((m) => m.msg !== 'log'), steps: () => steps };
 }

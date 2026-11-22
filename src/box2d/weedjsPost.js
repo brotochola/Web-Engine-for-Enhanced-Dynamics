@@ -252,54 +252,8 @@
   let posePublishTotal = 0;
   let poseSkipTotal = 0;
 
-  // Mirrors PHYSICS_STATS in src/util/workersUtils.js (nested classic worker — no ESM import).
-  const PS = {
-    BODY_COUNT: 3,
-    JOINT_COUNT: 4,
-    CONTACT_BEGIN: 5,
-    CONTACT_END: 6,
-    SENSOR_BEGIN: 7,
-    SENSOR_END: 8,
-    WEED_JOINTS: 9,
-    BODY_SYNC_MS: 10,
-    JOINT_SYNC_MS: 11,
-    COMMAND_MS: 12,
-    FORCE_MS: 13,
-    BOX2D_MS: 14,
-    POST_MS: 15,
-    BODY_SYNC_CHANGES: 16,
-    BODY_SYNC_VISITED: 17,
-    JOINT_SYNC_CHANGES: 18,
-    COMMAND_COUNT: 19,
-    COMMAND_OVERFLOW_TOTAL: 20,
-    CONTACT_DROPPED: 21,
-    SENSOR_DROPPED: 22,
-    HEAP_USED_KB: 23,
-    HEAP_HIGH_WATER_KB: 24,
-    BODY_MOVED_COUNT: 25,
-    AWAKE_COUNT: 26,
-    PROFILE_STEP_MS: 27,
-    PROFILE_COLLIDE_MS: 28,
-    PROFILE_SOLVE_MS: 29,
-    PROFILE_SLEEP_MS: 30,
-    PROFILE_SENSORS_MS: 31,
-    COUNTER_CONTACTS: 32,
-    COUNTER_ISLANDS: 33,
-    COUNTER_AWAKE_CONTACTS: 34,
-    COUNTER_TREE_HEIGHT: 35,
-    POSE_SKIP_TOTAL: 45,
-    POSE_PUBLISH_TOTAL: 46,
-    LIQUIDFUN_MS: 36,
-    LF_PASS_GRID_MS: 37,
-    LF_PASS_FIND_CONTACTS_MS: 38,
-    LF_PASS_BODY_MS: 39,
-    LF_PASS_WEIGHT_MS: 40,
-    LF_PASS_STATIC_PRESSURE_MS: 41,
-    LF_PASS_PRESSURE_MS: 42,
-    LF_PASS_CONTACT_SOLVERS_MS: 43,
-    LF_PASS_REST_MS: 44,
-    MEMORY_PEAK_KB: 50,
-  };
+  // The stats slots (box2dConstantsImpl.js, loaded above: CR-20).
+  const PS = Box2dConstants.PHYSICS_STATS;
 
   let heapHighWaterKb = 0;
   // HEAP_USED_KB is mallinfo, which walks every chunk of the heap under its lock: read every HEAP_READ_STEPS
