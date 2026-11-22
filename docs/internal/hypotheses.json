@@ -23973,7 +23973,8 @@
         "R-1430",
         "R-1431",
         "R-1816",
-        "R-1818"
+        "R-1818",
+        "R-1820"
       ]
     },
     {
@@ -41671,6 +41672,13 @@
       "title": "E-545 read: stationarySpatialScene's ids are already row-ordered, so N-323's id blocks are compact bands there; the ASUS's +41 % is not cold cells; branch kept unmerged for a random-placement scene",
       "verdict": "note",
       "text": "**E-545 read against the scene that showed N-403: its premise does not hold there.** stationarySpatialScene spawns its entities on a grid row by row in id order (100 columns, 45 px apart), so N-323's blocks of contiguous ids are already bands of rows: a frame's rebuilds there are as compact in space as E-545's cell-order runs would make them, and the first frame's rebuild list in home-cell order assigns nearly the same ages. So the ASUS's +41 % exact mean after N-323 (R-1746: 3.06 -> 4.32 ms a worker; about 1 170 lists a frame at about 2.9 us each against about 1.75 us each when all 20 000 went on one frame) is not cold cells from scattered ids. Candidates left: the all-at-once frame's reuse of each candidate's pose across all its neighbours' rebuilds in one pass (the 2-core laptop's 4 MB L3 holds one frame's working set, not sixteen), and the per-frame publish of the rebuilt rows. On the main PC N-323 read level by exact mean (R-1574: 2.44 -> 2.54 ms).\n\nE-545 as written (branch perf/e545-first-age-by-cell, 982f728d: the first-build age from the list's place in the cell-ordered rebuild list; spatial suites green) changes scenes where ids are not placed in order and neighborTickInterval is 1. Predator takes E-200's schedule and never runs this path. Not measured, not merged: worth a sitting only with a scene of still entities spawned at random places (stationarySpatialHunt or a random-placement knob for stationarySpatial)."
+    },
+    {
+      "id": "R-1820",
+      "date": "2026-11-22",
+      "title": "N-303 progress: CR-33, CR-9, CR-10, CR-6, CR-1, CR-12 (part), CR-2 (part), CR-34 on main, about 1 150 lines out of src/ net; suites green; the rest split with the ASUS session",
+      "verdict": "note",
+      "text": "**N-303 phase A and D items done on main (2026-11-22), about 1 150 lines out of src/ net** (each commit's `git show --shortstat -- src`, insertions taken off; src/version.js's one line in each included). src/ as a whole grew meanwhile (the ASUS's batch2, the debug UI's DBG items, +3 200), so the campaign is counted by its commits, not by codeSize.mjs's total.\n\n| item | commit | src/ lines (+/-) | what went |\n| --- | --- | --- | --- |\n| CR-33 | 9652f2b9 | +6 / -74 | META's layout hint (format 9), Layer.maskFromLegacy |\n| CR-9 | 4c7d1511 | +4 / -28 | saveGame's eight unused re-exports and double import, decodeUtf8, the file format's JSON JSDoc |\n| CR-10 | c67c3e91 | +1 / -111 | 24 exports and functions no file references (_cantorResult kept: types declare it) |\n| CR-6 | 4f9d2a02 | +25 / -64 | the mixer's direct path and null branches (SoundManager always sends both buffers); the old direct-path tests mix through a unity bus |\n| CR-1 | 7f0a9815 | +177 / -711 | physicsApi's cwrap type lists (172 wraps) |\n| CR-12 (part) | 33fb37e3 | +1 / -276 | decalBlitPack, sceneryCamPack, meshFillCamera, poseQueueInterp to tests/reference; the catalog's rows point at the product code |\n| CR-2 (part) | 3612177b | +1 / -54 | five PhysicsWorld methods nothing calls, three wraps |\n| CR-34 | f776b30e | +2 / -51 | Mouse's 12 aliases (5 demos moved to isButton*), loadStaticFlowfieldsFromJSON, getParticleViews/Groups, DECORATION_NO_PARENT, resolveYSort; types, guide, NEXT_RELEASE.md |\n\nSuites at f776b30e: node 3481/3481, demos 143/143, check:types clean. The first five went through R-1818's gate (NEUTRAL in 8 pairs); CR-2 and CR-34 change no per-frame code. Left for later in A and D: CR-2's other methods (each name checked against the facades of the same name), CR-3, CR-5 (after N-214's logic changes), CR-11, CR-12's shader math and toyWorldBounce (a stress scene imports it in the browser), CR-34's physics.maxFixtures and BODY_TYPE (with the ASUS's CR-20 in the physics host). Split with the ASUS session: it takes CR-14/15/16, CR-19, CR-20, CR-22, CR-23 (and CR-4, CR-8, CR-17 after N-256)."
     }
   ],
   "leads": [
