@@ -59,7 +59,7 @@ test('castedShadows hidden in map mode: the sun and lamp maps cleared once, draw
   px.shadowBatch = {};
   px.shadowRT = { name: 'shadowRT' };
   px.sunMapRT = { name: 'sunMap' };
-  px.lampMapRT = { name: 'lampMap' };
+  px.lighting.lampMapRT = { name: 'lampMap' };
   px._sunMapOn = true;
   px._lampMapOn = true;
   px.shadowMaps.shadowUpdateInterval = 3;
@@ -101,12 +101,12 @@ async function shadowPass(counts) {
     setTargetSpace() {},
   };
   px.shadowRT = { name: 'shadowRT' };
-  px.lampMapRT = { name: 'lampMap' };
+  px.lighting.lampMapRT = { name: 'lampMap' };
   px._lampMapOn = true;
   px._sunMapOn = false;
   px.shadowMaps.lampTileCount = 0;
   px.shadowMaps._ensureKeyedCasters = () => {};
-  px._shadowPixelScale = () => 1;
+  px.lighting.shadowPixelScale = () => 1;
   px.shadowMaps._drawLampMap = (batch, gpu, n) => { lampDraws.push(n); return true; };
   return { px, lampDraws };
 }
@@ -140,16 +140,16 @@ test('entities hidden: no caster row is drawn, and the lamps\' map is cleared in
 
 test('lighting hidden: the unshaded composite is hidden with it', async () => {
   const px = await pixi();
-  px.lightingRT = {};
-  px.lightingMesh = {};
-  px._unshadedOn = true;
-  px._unshadedComposite = { visible: true };
+  px.lighting.lightingRT = {};
+  px.lighting.lightingMesh = {};
+  px.lighting.unshadedOn = true;
+  px.lighting.unshadedComposite = { visible: true };
   let unshadedRenders = 0;
-  px._renderUnshaded = () => { unshadedRenders++; };
+  px.lighting._renderUnshaded = () => { unshadedRenders++; };
   const layers = withLayers(['lighting']);
   try {
-    px.renderLightingToTexture();
-    assert.equal(px._unshadedComposite.visible, false);
+    px.lighting.renderLightingToTexture();
+    assert.equal(px.lighting.unshadedComposite.visible, false);
     assert.equal(unshadedRenders, 0);
   } finally {
     layers.restore();

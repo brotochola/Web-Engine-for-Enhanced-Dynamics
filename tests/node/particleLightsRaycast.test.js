@@ -25,8 +25,9 @@ test('Pixi decides before it builds the lighting system and the splat', () => {
   const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
   const resolve = pixi.indexOf('resolveParticleLights(');
   // The init's call, the last (DX-BARRIOS: _rebuildLightPass calls it again when faces turn on later).
-  const build = pixi.lastIndexOf('this.createLightingSystem();');
-  const splat = pixi.indexOf('this._createParticleLightSplat(this._particleLightMax);');
+  // N-256 PW-6: the light pass is the worker's lighting (src/render/pixi/lighting.js), which _initLighting calls.
+  const build = pixi.lastIndexOf('this.lighting.createLightingSystem();');
+  const splat = pixi.indexOf('this.lighting.createParticleLightSplat(this._particleLightMax);');
   assert.ok(resolve > 0 && resolve < build && build < splat);
   // From the scene's particleLights alone: walls (visibilityPolygons) do not switch them off.
   const call = pixi.slice(resolve, pixi.indexOf(');', resolve));

@@ -14,7 +14,12 @@ const { RENDER_VIEW, availableRenderViews, renderViewTextures } = real;
 
 test('each view samples its buffer; the flags read the face map and the ids map', () => {
   const t = (name) => ({ name });
-  const w = { faceRT: t('face'), faceIdsRT: t('ids'), lightingRT: t('light'), unshadedRT: null, shadowRT: t('shadows'), sunMapRT: null, lampMapRT: t('lamps') };
+  // N-256 PW-6: the light pass's targets are the worker's lighting's.
+  const w = {
+    lighting: { faceRT: t('face'), faceIdsRT: t('ids'), lightingRT: t('light'), unshadedRT: null, lampMapRT: t('lamps') },
+    shadowRT: t('shadows'),
+    sunMapRT: null,
+  };
   const out = [null, null];
   const names = (view) => renderViewTextures(w, view, out).map((x) => (x ? x.name : null));
   assert.deepEqual(names(RENDER_VIEW.NORMALS), ['face', null]);
@@ -30,13 +35,14 @@ test('each view samples its buffer; the flags read the face map and the ids map'
   // DBG-7: the tiles view reads the tiles' texture once the light pass by tiles has made it.
   const tiles = t('tiles');
   assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), [null, null]);
-  Object.assign(w, { _lightTilesOn: true, _lightTilesMade: false, _lightTilesSource: tiles });
+  w._lightTilesOn = true;
+  Object.assign(w.lighting, { lightTilesMade: false, lightTilesSource: tiles });
   assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), [null, null], 'not made yet');
-  w._lightTilesMade = true;
+  w.lighting.lightTilesMade = true;
   assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), ['tiles', null]);
-  const gpu = { _useWebGpu: true, _lightTilesOn: true, _lightTilesMade: false, _lightTilesSource: tiles, _lightTiles: { texWidth: 0 } };
+  const gpu = { _useWebGpu: true, _lightTilesOn: true, lighting: { lightTilesMade: false, lightTilesSource: tiles, lightTiles: { texWidth: 0 } } };
   assert.deepEqual(renderViewTextures(gpu, RENDER_VIEW.LIGHT_TILES, out).map((x) => (x ? x.name : null)), [null, null], 'WebGPU: no grid yet');
-  gpu._lightTiles.texWidth = 64;
+  gpu.lighting.lightTiles.texWidth = 64;
   assert.deepEqual(renderViewTextures(gpu, RENDER_VIEW.LIGHT_TILES, out).map((x) => (x ? x.name : null)), ['tiles', null], 'WebGPU: laid out');
   assert.deepEqual(availableRenderViews(w), [0, 1, 2, 3, 4, 5, 7, 9, 10]);
 });
@@ -53,13 +59,13 @@ test('the worker: setRenderView takes a view only where its buffer exists, and m
   const px = cloneWorker(shared);
   assert.equal(px._renderView, 0);
   assert.ok(Number.isNaN(px._renderViewOpacity), 'a double field from the constructor');
-  px.lightingRT = null;
-  px.faceRT = null;
-  px.faceIdsRT = null;
-  px.unshadedRT = null;
+  px.lighting.lightingRT = null;
+  px.lighting.faceRT = null;
+  px.lighting.faceIdsRT = null;
+  px.lighting.unshadedRT = null;
   px.shadowRT = null;
   px.sunMapRT = null;
-  px.lampMapRT = null;
+  px.lighting.lampMapRT = null;
 
   const before = postedMessages().length;
   px.handleCustomMessage({ msg: 'setRenderView', view: RENDER_VIEW.LIGHT, opacity: 0.5 });
@@ -68,7 +74,7 @@ test('the worker: setRenderView takes a view only where its buffer exists, and m
   assert.deepEqual(answer, { msg: 'renderViews', views: [0], view: 0 });
   assert.equal(px._renderViewMesh, null);
 
-  px.lightingRT = { source: {} };
+  px.lighting.lightingRT = { source: {} };
   px.handleCustomMessage({ msg: 'setRenderView', view: RENDER_VIEW.LIGHT, opacity: 0.5 });
   assert.equal(px._renderView, RENDER_VIEW.LIGHT);
   assert.equal(px._renderViewOpacity, 0.5);
@@ -89,8 +95,8 @@ test('the worker: setRenderView takes a view only where its buffer exists, and m
 
   // DBG-7: the tiles view has its own quad; Final releases it too.
   px._lightTilesOn = true;
-  px._lightTilesMade = true;
-  px._lightTilesSource = {};
+  px.lighting.lightTilesMade = true;
+  px.lighting.lightTilesSource = {};
   px.handleCustomMessage({ msg: 'setRenderView', view: RENDER_VIEW.LIGHT_TILES, opacity: 1 });
   assert.equal(px._renderView, RENDER_VIEW.LIGHT_TILES);
   assert.equal(px._renderTilesMesh, null, 'made at the next present');
@@ -115,7 +121,7 @@ test('the worker: lightTileAt names the tile under a canvas point and the lights
   };
   word(2, 1, 0, (1 << 0) | (1 << 5) | (1 << 31));
   word(2, 1, 1, 1 << 2);
-  px._lightTiles = t;
+  px.lighting.lightTiles = t;
   px._lightTilesOn = true;
   px.lightingResolution = 0.5;
   // Canvas (40, 10) at half resolution is light-pass (20, 5): tile 1, 0 plus the border, 2, 1.

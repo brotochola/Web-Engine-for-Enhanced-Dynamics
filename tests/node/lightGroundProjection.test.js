@@ -55,19 +55,19 @@ async function lightingWorker(groundScaleY, lights) {
   px._groundScaleY = resolveGroundScaleY(groundScaleY);
   px._groundInvScaleY = 1 / px._groundScaleY;
   px.maxLights = MAX_LIGHTS;
-  px._lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS));
-  px._lightDataSource = null;
-  px._visibleLightsAll = lights.map((entityId) => ({ entityId, distSq: 0 }));
-  px._visibleLightsAllCount = lights.length;
-  px._stampLightCamera = () => {};
-  px._applyLightingViewport = () => {};
-  px.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0 }, update() {} } } };
+  px.lighting.lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS));
+  px.lighting.lightDataSource = null;
+  px.lighting.visibleLightsAll = lights.map((entityId) => ({ entityId, distSq: 0 }));
+  px.lighting.visibleLightsAllCount = lights.length;
+  px.lighting._stampLightCamera = () => {};
+  px.lighting.applyLightingViewport = () => {};
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0 }, update() {} } } };
   return px;
 }
 
 /** lightingBasic's loop for one light and one fragment at world (wx, wy): the red channel it adds. */
 function shadeRed(px, slot, wx, wy) {
-  const d = px._lightDataFloats;
+  const d = px.lighting.lightDataFloats;
   const lx = d[slot * 4];
   const ly = d[slot * 4 + 1];
   const intensity = d[slot * 4 + 2];
@@ -100,11 +100,11 @@ test('a floor light uploads I = (radius / 10)² and its colour untouched; offset
   bindComponents();
   light(0, 100, 200, 1400, 0xff8040, { offsetY: -30 });
   const px = await lightingWorker(undefined, [0]);
-  px.updateLighting();
-  const d = px._lightDataFloats;
+  px.lighting.updateLighting();
+  const d = px.lighting.lightDataFloats;
   assert.deepEqual(Array.from(d.subarray(0, 3)), [100, 170, 19600]);
   assert.deepEqual(Array.from(d.subarray(MAX_LIGHTS * 4, MAX_LIGHTS * 4 + 3)), [1, Math.fround(0x80 / 255), Math.fround(0x40 / 255)]);
-  assert.equal(px.lightingShader.resources.uniforms.uniforms.uLightCount, 1);
+  assert.equal(px.lighting.lightingShader.resources.uniforms.uniforms.uLightCount, 1);
 });
 
 test('the uploaded light shades I / (I + h² + dx² + (dy / groundScaleY)²) through the lighting shader', async () => {
@@ -113,7 +113,7 @@ test('the uploaded light shades I / (I + h² + dx² + (dy / groundScaleY)²) thr
   light(1, -50, 80, 950, 0xff0000, { offsetY: -25 });
   const g = 0.5;
   const px = await lightingWorker(g, [0, 1]);
-  px.updateLighting();
+  px.lighting.updateLighting();
   for (const [slot, e] of [[0, 0], [1, 1]]) {
     const lx = Transform.x[e];
     const ly = Transform.y[e] + LightEmitter.offsetY[e];
@@ -132,7 +132,7 @@ test('the pool is an ellipse: R across matches R * groundScaleY up and down', as
   light(0, 0, 0, 1000, 0xff0000);
   const g = 0.6;
   const px = await lightingWorker(g, [0]);
-  px.updateLighting();
+  px.lighting.updateLighting();
   const across = shadeRed(px, 0, 250, 0);
   const down = shadeRed(px, 0, 0, 250 * g);
   const up = shadeRed(px, 0, 0, -250 * g);
@@ -145,7 +145,7 @@ test('elevation lowers the peak to I / (I + h²) and keeps the far field', async
   light(0, 0, 0, 1400, 0xff0000, { elevation: 110 });
   light(1, 0, 0, 1400, 0xff0000);
   const px = await lightingWorker(1, [0, 1]);
-  px.updateLighting();
+  px.lighting.updateLighting();
   const raisedPeak = shadeRed(px, 0, 0, 0);
   assert.ok(Math.abs(raisedPeak - 19600 / (19600 + 110 * 110)) < 1e-6);
   assert.ok(Math.abs(shadeRed(px, 1, 0, 0) - 1) < 1e-6, 'a floor light peaks at 1');
@@ -159,8 +159,8 @@ test('brightness scales the uploaded colour and nothing else', async () => {
   light(0, 100, 200, 1000, 0xff8040, { brightness: 0.5 });
   light(1, 100, 200, 1000, 0xff8040);
   const px = await lightingWorker(undefined, [0, 1]);
-  px.updateLighting();
-  const d = px._lightDataFloats;
+  px.lighting.updateLighting();
+  const d = px.lighting.lightDataFloats;
   assert.deepEqual(Array.from(d.subarray(0, 3)), Array.from(d.subarray(4, 7)), 'position and I');
   for (let c = 0; c < 3; c++) {
     assert.equal(d[MAX_LIGHTS * 4 + c], Math.fround(d[MAX_LIGHTS * 4 + 4 + c] * 0.5));

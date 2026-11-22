@@ -66,11 +66,13 @@ test('pixi: WebGPU injects a device with timestamp-query', () => {
 });
 
 test('pixi: lighting binds uShadowSampler to the live shadow RT, not Texture.WHITE', () => {
-  assert.match(pixi, /_lightingShadowResources\(\)/);
-  assert.match(pixi, /res\.uShadowSampler = src\.style/);
-  assert.match(pixi, /this\._unbindLightingShadowMap\(\)/);
-  assert.match(pixi, /this\._bindLightingShadowMap\(\)/);
-  assert.doesNotMatch(pixi, /uShadowMap: PIXI\.Texture\.WHITE\.source/);
+  // N-256 PW-6: the light pass binds it (src/render/pixi/lighting.js); the worker's resize unbinds and binds it again.
+  const lighting = readFileSync(join(root, 'src/render/pixi/lighting.js'), 'utf8');
+  assert.match(lighting, /_lightingShadowResources\(\)/);
+  assert.match(lighting, /res\.uShadowSampler = src\.style/);
+  assert.match(pixi, /this\.lighting\.unbindLightingShadowMap\(\)/);
+  assert.match(pixi, /this\.lighting\.bindLightingShadowMap\(\)/);
+  assert.doesNotMatch(lighting, /uShadowMap: PIXI\.Texture\.WHITE\.source/);
 });
 
 test('pixi: entities share one root so layer zIndex cannot invert the mesh', () => {

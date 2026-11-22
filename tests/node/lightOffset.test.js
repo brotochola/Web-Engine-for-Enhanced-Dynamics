@@ -52,15 +52,15 @@ async function uploaded(lights) {
   px._groundScaleY = 1;
   px._groundInvScaleY = 1;
   px.maxLights = MAX_LIGHTS;
-  px._lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS));
-  px._lightDataSource = null;
-  px._visibleLightsAll = lights.map((entityId) => ({ entityId, distSq: 0 }));
-  px._visibleLightsAllCount = lights.length;
-  px._stampLightCamera = () => {};
-  px._applyLightingViewport = () => {};
-  px.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0 }, update() {} } } };
-  px.updateLighting();
-  return px._lightDataFloats;
+  px.lighting.lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS));
+  px.lighting.lightDataSource = null;
+  px.lighting.visibleLightsAll = lights.map((entityId) => ({ entityId, distSq: 0 }));
+  px.lighting.visibleLightsAllCount = lights.length;
+  px.lighting._stampLightCamera = () => {};
+  px.lighting.applyLightingViewport = () => {};
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0 }, update() {} } } };
+  px.lighting.updateLighting();
+  return px.lighting.lightDataFloats;
 }
 
 test('an offset of (10, 0) on an entity turned 90 degrees lands 10 px down from it', async () => {

@@ -52,7 +52,7 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   px._groundScaleY = 1;
   px._groundInvScaleY = 1;
   px.maxLights = MAX_LIGHTS;
-  px._faceIdsOn = false;
+  px.lighting.faceIdsOn = false;
   // Pre-render's stamp lights this frame: light 1 has tile 0 and fades at 0.25.
   const caps = gpuQueueCaps(64, { enabled: true, shadowsEnabled: true, maxLights: 16, maxShadowCastingLights: 4 });
   const gpu = createGpuQueueViews(new SharedArrayBuffer(computeGpuQueueBufferSize(caps)), caps);
@@ -64,19 +64,19 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   px._gpuQueueRead = gpu;
   px.shadowMaps._uploadLampTiles = () => {};
   px.shadowMaps.readLampTiles();
-  assert.equal(px._lampTileOf[1], 0);
-  assert.equal(px._lampFadeOf[1], 0.25);
-  assert.equal(px._lampFadeOf[0], 1);
+  assert.equal(px.lighting.lampTileOf[1], 0);
+  assert.equal(px.lighting.lampFadeOf[1], 0.25);
+  assert.equal(px.lighting.lampFadeOf[0], 1);
 
-  px._lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS));
-  px._lightDataSource = null;
-  px._visibleLightsAll = [{ entityId: 0, distSq: 0 }, { entityId: 1, distSq: 0 }];
-  px._visibleLightsAllCount = 2;
-  px._stampLightCamera = () => {};
-  px._applyLightingViewport = () => {};
-  px.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0, uConeCount: 0 }, update() {} } } };
-  px.updateLighting();
-  const d = px._lightDataFloats;
+  px.lighting.lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS));
+  px.lighting.lightDataSource = null;
+  px.lighting.visibleLightsAll = [{ entityId: 0, distSq: 0 }, { entityId: 1, distSq: 0 }];
+  px.lighting.visibleLightsAllCount = 2;
+  px.lighting._stampLightCamera = () => {};
+  px.lighting.applyLightingViewport = () => {};
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0, uConeCount: 0 }, update() {} } } };
+  px.lighting.updateLighting();
+  const d = px.lighting.lightDataFloats;
   const slotOf = (x) => (d[0] === x ? 0 : 1);
   const lamp = slotOf(300);
   const plain = 1 - lamp;
@@ -87,7 +87,7 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   // The next frame, the lamp out of the cut's band: back to 1.
   gpu.stampLightFade[0] = 1;
   px.shadowMaps.readLampTiles();
-  px.updateLighting();
+  px.lighting.updateLighting();
   assert.equal(d[MAX_LIGHTS * 12 + lamp * 4], 1);
 });
 
@@ -103,11 +103,11 @@ test('N-212: a light that loses its tile goes back to fade 1', async () => {
   px._gpuQueueRead = gpu;
   px.shadowMaps._uploadLampTiles = () => {};
   px.shadowMaps.readLampTiles();
-  assert.equal(px._lampFadeOf[1], 0.5);
+  assert.equal(px.lighting.lampFadeOf[1], 0.5);
   gpu.stampLightIds[0] = 0;
   gpu.stampLightFade[0] = 0.75;
   px.shadowMaps.readLampTiles();
-  assert.equal(px._lampTileOf[1], -1);
-  assert.equal(px._lampFadeOf[1], 1);
-  assert.equal(px._lampFadeOf[0], 0.75);
+  assert.equal(px.lighting.lampTileOf[1], -1);
+  assert.equal(px.lighting.lampFadeOf[1], 1);
+  assert.equal(px.lighting.lampFadeOf[0], 0.75);
 });

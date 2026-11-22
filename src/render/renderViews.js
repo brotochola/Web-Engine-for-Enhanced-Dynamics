@@ -54,34 +54,39 @@ export const RENDER_VIEW_Z = 1e9;
 /** The height view's ramp: 0 to this many px. */
 export const RENDER_VIEW_HEIGHT_PX = 256;
 
+/** A worker without a light pass (a test's): no light targets. */
+const NO_LIGHTING = Object.freeze({});
+
 /**
  * The textures a view samples, from the worker's targets (null where the scene has none), into `out` ([main, second]);
- * out[0] null: the view has nothing to show now.
- * @param {{ faceRT?: object|null, faceIdsRT?: object|null, lightingRT?: object|null, unshadedRT?: object|null,
- *   shadowRT?: object|null, sunMapRT?: object|null, lampMapRT?: object|null }} w
+ * out[0] null: the view has nothing to show now. N-256 PW-6: the light pass's targets are the worker's lighting's
+ * (src/render/pixi/lighting.js); the shadows' and the sun map's stay the worker's.
+ * @param {{ lighting?: { faceRT?: object|null, faceIdsRT?: object|null, lightingRT?: object|null, unshadedRT?: object|null,
+ *   lampMapRT?: object|null }, shadowRT?: object|null, sunMapRT?: object|null }} w
  * @param {number} view
  * @param {Array<object|null>} out
  */
 export function renderViewTextures(w, view, out) {
+  const l = w.lighting ?? NO_LIGHTING;
   out[0] = null;
   out[1] = null;
   switch (view) {
     case RENDER_VIEW.NORMALS:
     case RENDER_VIEW.HEIGHT:
-      out[0] = w.faceRT ?? null;
+      out[0] = l.faceRT ?? null;
       break;
     case RENDER_VIEW.IDS:
-      out[0] = w.faceIdsRT ?? null;
+      out[0] = l.faceIdsRT ?? null;
       break;
     case RENDER_VIEW.FLAGS:
-      out[0] = w.faceRT ?? null;
-      out[1] = w.faceIdsRT ?? null;
+      out[0] = l.faceRT ?? null;
+      out[1] = l.faceIdsRT ?? null;
       break;
     case RENDER_VIEW.LIGHT:
-      out[0] = w.lightingRT ?? null;
+      out[0] = l.lightingRT ?? null;
       break;
     case RENDER_VIEW.UNSHADED:
-      out[0] = w.unshadedRT ?? null;
+      out[0] = l.unshadedRT ?? null;
       break;
     case RENDER_VIEW.SHADOWS:
       out[0] = w.shadowRT ?? null;
@@ -90,14 +95,14 @@ export function renderViewTextures(w, view, out) {
       out[0] = w.sunMapRT ?? null;
       break;
     case RENDER_VIEW.LAMP_MAP:
-      out[0] = w.lampMapRT ?? null;
+      out[0] = l.lampMapRT ?? null;
       break;
     case RENDER_VIEW.LIGHT_TILES:
       // DBG-7: the tiles' R32UI texture itself (a TextureSource, not a target), while the light pass bins by tile and has
       // made it (WebGL: allocated; WebGPU, which keeps no such flag: the grid laid out, its texture made at that upload).
       // The worker draws this view with a program of its own (RENDER_TILES_*).
-      out[0] = w._lightTilesOn && w._lightTilesSource
-        && (w._lightTilesMade || (w._useWebGpu === true && w._lightTiles.texWidth > 0)) ? w._lightTilesSource : null;
+      out[0] = w._lightTilesOn && l.lightTilesSource
+        && (l.lightTilesMade || (w._useWebGpu === true && l.lightTiles.texWidth > 0)) ? l.lightTilesSource : null;
       break;
     default:
       break;

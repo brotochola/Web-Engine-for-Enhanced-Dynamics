@@ -31,14 +31,15 @@ test('N-272: the self-shadow march has no edge code of its own (the ring does it
 });
 
 test('N-272: the face map pass draws inside a frame a texel in from each edge, its transform a texel back', () => {
-  const src = read('src/workers/pixiWorker.js');
-  const create = src.slice(src.indexOf('  _createFaceMap('), src.indexOf('  _createFaceMap(') + 900);
-  assert.ok(create.includes('this._faceRtFrame.width = Math.max(1, this.faceRT.width - 2);'));
-  assert.ok(create.includes('this._faceRtFrame.height = Math.max(1, this.faceRT.height - 2);'));
-  assert.ok(src.includes('this._faceRtFrame = new PIXI.Rectangle(1, 1, 1, 1);'));
-  const pass = src.slice(src.indexOf('  _renderFaceMap() {'), src.indexOf('  _ensureGbufTarget() {'));
+  // N-256 PW-6: the face map is the light pass's (src/render/pixi/lighting.js).
+  const src = read('src/render/pixi/lighting.js');
+  const create = src.slice(src.indexOf('  createFaceMap('), src.indexOf('  createFaceMap(') + 900);
+  assert.ok(create.includes('this.faceRtFrame.width = Math.max(1, this.faceRT.width - 2);'));
+  assert.ok(create.includes('this.faceRtFrame.height = Math.max(1, this.faceRT.height - 2);'));
+  assert.ok(src.includes('this.faceRtFrame = new PIXI.Rectangle(1, 1, 1, 1);'));
+  const pass = src.slice(src.indexOf('  _renderFaceMap() {'), src.indexOf('  ensureGbufTarget() {'));
   assert.ok(/mx\.tx -= 1;\s+mx\.ty -= 1;/.test(pass), 'the transform moved a texel');
-  assert.ok(pass.includes('opts.frame = this._faceRtFrame;'));
+  assert.ok(pass.includes('opts.frame = this.faceRtFrame;'));
   // Both ways out of the pass hand the shared options back without the frame.
   assert.equal(pass.split('opts.frame = null;').length - 1, 2);
 });

@@ -81,8 +81,8 @@ test('the worker applies a run-time blend to the entities\' batch and a layer\'s
     const fxPiece = { blendMode: 'normal' };
     px._layerRuntime = { entities: root, fx: fxSprite };
     px.entitiesBatch = { setLayerBlend: (mode) => batchBlends.push(mode) };
-    px._lightEdges = null;
-    px._unshadedComposite = null;
+    px.lighting.lightEdges = null;
+    px.lighting.unshadedComposite = null;
     px.customLayers.byId = { 1: { batch: { mesh: fxPiece }, rt: {}, containerBlendSet: false } };
 
     layers.entities.blendMode = 'add';

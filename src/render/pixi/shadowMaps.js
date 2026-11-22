@@ -285,7 +285,7 @@ export class PixiShadowMaps {
       this.worker.canvasWidth / this.worker.shadowRT.width,
       this.worker.canvasHeight / this.worker.shadowRT.height
     );
-    this.worker._bindLightingShadowMap();
+    this.worker.lighting.bindLightingShadowMap();
     this.worker._registerLayerDisplayObject('castedShadows', this.worker.shadowDisplaySprite);
     this.worker.pixiApp.stage.addChild(this.worker.shadowDisplaySprite);
 
@@ -379,7 +379,7 @@ export class PixiShadowMaps {
     this.worker._gpuShadowLightsThisFrame = cookieN;
 
     const zoom = this.worker._renderZoom || 1;
-    const res = this.worker._shadowPixelScale();
+    const res = this.worker.lighting.shadowPixelScale();
     u.uCam[0] = this.worker._renderCameraX;
     u.uCam[1] = this.worker._renderCameraY;
     u.uCam[2] = zoom * res;
@@ -391,8 +391,8 @@ export class PixiShadowMaps {
       u.uSun[3] = Sun.shadowOpacity;
       // DX-SHADOW3D: the sun's card, in both shadow modes: each picture point lands along the sun's ray (no longer than
       // shadowMaxLengthRatio per px of height), its columns across the sun.
-      this.worker._writeFaceSun();
-      const t = sunMapTerms(this.worker._faceSun, this.sunMapTerms, Sun.shadowMaxLengthRatio);
+      this.worker.lighting.writeFaceSun();
+      const t = sunMapTerms(this.worker.lighting.faceSun, this.sunMapTerms, Sun.shadowMaxLengthRatio);
       u.uSunK[0] = t[0];
       u.uSunK[1] = t[1];
       u.uSunK[3] = this.worker._heightScaleY > 0 ? this.worker._heightScaleY : 1;
@@ -602,7 +602,7 @@ export class PixiShadowMaps {
     }
     const W = w + m[0] + m[2];
     const H = h + m[1] + m[3];
-    const r = this.worker._sunMapRect;
+    const r = this.worker.lighting.sunMapRect;
     r[0] = w / W;
     r[1] = h / H;
     r[2] = m[0] / W;
@@ -617,7 +617,7 @@ export class PixiShadowMaps {
     this.worker.sunMapRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
     // DX-GBUF: its programs keep the highest caster point by a depth test (sunShadowMap.frag.glsl).
     this.worker._ensureTargetDepth(this.worker.sunMapRT);
-    const res = this.worker.lightingShader?.resources;
+    const res = this.worker.lighting.lightingShader?.resources;
     if (res) res.uSunMap = this.worker.sunMapRT.source;
   }
 
@@ -630,8 +630,8 @@ export class PixiShadowMaps {
     const shaders = this.worker._engineShaders;
     if (!this.worker.shadowRT || !(this.worker._useWebGpu ? shaders?.shadowWgsl : shaders?.shadowVert && shaders?.sunMapFrag)) return false;
     // Made here (the shadow layer is created before the lighting config is read), to the margins the sun asks for now.
-    this.worker._writeFaceSun();
-    sunMapTerms(this.worker._faceSun, this.sunMapTerms, Sun.shadowMaxLengthRatio);
+    this.worker.lighting.writeFaceSun();
+    sunMapTerms(this.worker.lighting.faceSun, this.sunMapTerms, Sun.shadowMaxLengthRatio);
     this._fitSunMap(screenScale);
     if (this.sunMapMesh === null) {
       const r = batch.shadowShader.resources;
@@ -668,7 +668,7 @@ export class PixiShadowMaps {
             uTexture: r.uTexture,
             uSampler: r.uSampler,
             uTexLut: r.uTexLut,
-            uMaps: this.worker.assets.atlasMapsSource ?? this.worker._emptyMapsSource(),
+            uMaps: this.worker.assets.atlasMapsSource ?? this.worker.lighting.emptyMapsSource(),
             uMapsLut: this.worker.assets.mapsTableSourceOrEmpty(),
             uFoot: this.worker.assets.footSourceOrEmpty(),
             uniforms: this.sunMapUniforms,
@@ -716,7 +716,7 @@ export class PixiShadowMaps {
     u.uSunPerp[0] = this.sunMapTerms[2];
     u.uSunPerp[1] = this.sunMapTerms[3];
     this.sunMapUniforms.update();
-    const k = this.worker._sunMapK;
+    const k = this.worker.lighting.sunMapK;
     k[0] = this.sunMapTerms[0];
     k[1] = this.sunMapTerms[1];
     k[2] = this.worker._groundScaleY || 1;
@@ -853,7 +853,7 @@ export class PixiShadowMaps {
             ...this.sunShadowProgram('columns'),
             resources: {
               ...resources(),
-              uMaps: this.worker.assets.atlasMapsSource ?? this.worker._emptyMapsSource(),
+              uMaps: this.worker.assets.atlasMapsSource ?? this.worker.lighting.emptyMapsSource(),
               uMapsLut: this.worker.assets.mapsTableSourceOrEmpty(),
               uFoot: this.worker.assets.footSourceOrEmpty(),
             },
@@ -1005,10 +1005,10 @@ export class PixiShadowMaps {
     // are there to draw into them: every pixel of a lamp reads its tile, and an empty one is read for nothing.
     if (n > 0 && (gpu.header[GPU_HDR_STAMP] | 0) <= 0 && !this._volumesCast()) n = 0;
     const entities = Transform.x ? Transform.x.length : 0;
-    if (this.worker._lampTileOf.length !== entities) this.worker._lampTileOf = new Int16Array(entities).fill(-1);
-    if (this.worker._lampFadeOf.length !== entities) this.worker._lampFadeOf = new Float32Array(entities).fill(1);
-    const of = this.worker._lampTileOf;
-    const fadeOf = this.worker._lampFadeOf;
+    if (this.worker.lighting.lampTileOf.length !== entities) this.worker.lighting.lampTileOf = new Int16Array(entities).fill(-1);
+    if (this.worker.lighting.lampFadeOf.length !== entities) this.worker.lighting.lampFadeOf = new Float32Array(entities).fill(1);
+    const of = this.worker.lighting.lampTileOf;
+    const fadeOf = this.worker.lighting.lampFadeOf;
     // N-212: pre-render's fades beside the ids (a queue without them: none fade).
     const fades = gpu && gpu.stampLightFade && gpu.stampLightFade.length >= n ? gpu.stampLightFade : null;
     const last = this.lampTileIds;
@@ -1136,20 +1136,20 @@ export class PixiShadowMaps {
       // art's pixels rather than on pairs of them, as far as the map's room allows.
       size = autoLampTileSize(this.lampMaxReach, this.worker.shadowResolution * (this.worker._pixelArtLight ? 2 : 1), lights);
     }
-    if (this.worker.lampMapRT !== null && this.lampMapLights === lights && this.worker._lampTileSize === size) return true;
+    if (this.worker.lighting.lampMapRT !== null && this.lampMapLights === lights && this.worker._lampTileSize === size) return true;
     this.worker._lampTileSize = size;
     const layout = lampTileLayout(lights, size, 4096);
     // The light pass lets go of the old map before it goes (Pixi warns of a source destroyed while bound).
-    const old = this.worker.lampMapRT;
-    this.worker.lampMapRT = PIXI.RenderTexture.create({ width: layout.width, height: layout.height, scaleMode: 'nearest' });
-    const bound = this.worker.lightingShader?.resources;
-    if (bound) bound.uLampMap = this.worker.lampMapRT.source;
+    const old = this.worker.lighting.lampMapRT;
+    this.worker.lighting.lampMapRT = PIXI.RenderTexture.create({ width: layout.width, height: layout.height, scaleMode: 'nearest' });
+    const bound = this.worker.lighting.lightingShader?.resources;
+    if (bound) bound.uLampMap = this.worker.lighting.lampMapRT.source;
     if (old) old.destroy(true);
     // DX-GBUF: its programs keep the highest caster point by a depth test, as the sun's.
-    this.worker._ensureTargetDepth(this.worker.lampMapRT);
+    this.worker._ensureTargetDepth(this.worker.lighting.lampMapRT);
     this.lampMapLights = lights;
     this.lampTilesPerRow = layout.perRow;
-    const a = this.worker._lampAtlas;
+    const a = this.worker.lighting.lampAtlas;
     a[0] = layout.perRow;
     a[1] = layout.size;
     a[2] = layout.width;
@@ -1229,7 +1229,7 @@ export class PixiShadowMaps {
           uTexture: r.uTexture,
           uSampler: r.uSampler,
           uTexLut: r.uTexLut,
-          uMaps: this.worker.assets.atlasMapsSource ?? this.worker._emptyMapsSource(),
+          uMaps: this.worker.assets.atlasMapsSource ?? this.worker.lighting.emptyMapsSource(),
           uMapsLut: this.worker.assets.mapsTableSourceOrEmpty(),
           uFoot: this.worker.assets.footSourceOrEmpty(),
           uLampTiles: this.lampTileSource,
@@ -1296,7 +1296,7 @@ export class PixiShadowMaps {
     }
     const rtOpts = this.worker._rtRenderOpts;
     rtOpts.container = this.lampMapHost;
-    rtOpts.target = this.worker.lampMapRT;
+    rtOpts.target = this.worker.lighting.lampMapRT;
     rtOpts.clear = true;
     rtOpts.clearColor = this.worker._clearTransparent;
     this.worker._submitRender(rtOpts);
@@ -1378,7 +1378,7 @@ export class PixiShadowMaps {
     }
     const rtOpts = this.worker._rtRenderOpts;
     rtOpts.container = this.lampMapKeyedHost;
-    rtOpts.target = this.worker.lampMapRT;
+    rtOpts.target = this.worker.lighting.lampMapRT;
     rtOpts.clear = true;
     rtOpts.clearColor = this.worker._clearTransparent;
     this.worker._submitRender(rtOpts);
@@ -1423,7 +1423,7 @@ export class PixiShadowMaps {
     if (this.lampTileSource === null) this._uploadLampTiles();
     const rtOpts = this.worker._rtRenderOpts;
     rtOpts.container = this.worker._rtEmptyContainer;
-    rtOpts.target = this.worker.lampMapRT;
+    rtOpts.target = this.worker.lighting.lampMapRT;
     rtOpts.clear = true;
     rtOpts.clearColor = this.worker._clearTransparent;
     this.worker._submitRender(rtOpts);
@@ -1796,10 +1796,10 @@ export class PixiShadowMaps {
 
   /** DX-SHADOW3D (F7): a frame with no stamp rows clears the lamps' map (once). */
   _clearLampMapIfEmpty() {
-    if (!this.worker.lampMapRT || this.lampMapClear === true) return;
+    if (!this.worker.lighting.lampMapRT || this.lampMapClear === true) return;
     const rtOpts = this.worker._rtRenderOpts;
     rtOpts.container = this.worker._rtEmptyContainer;
-    rtOpts.target = this.worker.lampMapRT;
+    rtOpts.target = this.worker.lighting.lampMapRT;
     rtOpts.clear = true;
     rtOpts.clearColor = this.worker._clearTransparent;
     this.worker._submitRender(rtOpts);
@@ -1839,7 +1839,7 @@ export class PixiShadowMaps {
       uTexture: r.uTexture,
       uSampler: r.uSampler,
       uTexLut: r.uTexLut,
-      uMaps: this.worker.assets.atlasMapsSource ?? this.worker._emptyMapsSource(),
+      uMaps: this.worker.assets.atlasMapsSource ?? this.worker.lighting.emptyMapsSource(),
       uMapsLut: this.worker.assets.mapsTableSourceOrEmpty(),
       uFoot: this.worker.assets.footSourceOrEmpty(),
       ...(lamp ? { uLampTiles: this.lampTileSource } : {}),

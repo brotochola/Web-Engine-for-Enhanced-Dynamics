@@ -62,13 +62,13 @@ test('the lighting layer\'s alpha reaches the unshaded composite', async () => {
   px._layerRuntime = { lighting: { alpha: 1 } };
   px.customLayers.byId = {};
   px._sunLayers = [];
-  px._unshadedComposite = { alpha: 1 };
+  px.lighting.unshadedComposite = { alpha: 1 };
   try {
     Layer._alpha[0] = 0.25;
     Layer._alphaDirty[0] = 1;
     px.syncLayerAlphaFromSharedState();
     assert.equal(px._layerRuntime.lighting.alpha, 0.25);
-    assert.equal(px._unshadedComposite.alpha, 0.25);
+    assert.equal(px.lighting.unshadedComposite.alpha, 0.25);
   } finally {
     Layer._byId = saved.byId;
     Layer._alpha = saved.alpha;

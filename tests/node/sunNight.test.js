@@ -151,7 +151,8 @@ test('sun.maxElevation is how high the day cycle takes the sun; left out, the ol
 test('both lighting shaders add the night term, and the WGSL struct lists what the uniform group does, in order', () => {
   const glsl = readEngineShader('lightingBasic.frag.glsl');
   const wgsl = readEngineShader('lightingBasic.wgsl');
-  const pixi = fs.readFileSync(new URL('../../src/workers/pixiWorker.js', import.meta.url), 'utf8');
+  // N-256 PW-6: the light pass's uniforms are src/render/pixi/lighting.js's.
+  const pixi = fs.readFileSync(new URL('../../src/render/pixi/lighting.js', import.meta.url), 'utf8');
   assert.match(glsl, /totalLight \+= vec3\(uNightR, uNightG, uNightB\)/);
   assert.match(wgsl, /totalLight \+= vec3<f32>\(uniforms\.uNightR, uniforms\.uNightG, uniforms\.uNightB\)/);
   const fields = (source) => [...source.match(/struct LightingUniforms \{([^}]*)\}/)[1].matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);

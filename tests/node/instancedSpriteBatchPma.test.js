@@ -180,7 +180,8 @@ test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
   const lighting = readEngineShader('lightingBasic.frag.glsl');
   assert.match(lighting, /for \(int i = 0; i < MAX_LIGHTS; i\+\+\)/);
   assert.doesNotMatch(lighting, /\$\{this\.maxLights\}/);
-  assert.match(pixiSrc, /\/MAX_LIGHTS\/g/);
+  // N-256 PW-6: the light pass is src/render/pixi/lighting.js's.
+  assert.match(readFileSync(join(dir, '../../src/render/pixi/lighting.js'), 'utf8'), /\/MAX_LIGHTS\/g/);
   assert.match(pixiSrc, /lightingBasic\.frag\.glsl/);
   assert.match(pixiSrc, /instancedSprite\.wgsl/);
   assert.match(pixiSrc, /instancedSprite\.vert\.glsl/);

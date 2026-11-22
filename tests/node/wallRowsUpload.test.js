@@ -93,14 +93,14 @@ async function pixiWithRows() {
       f32: new Float32Array(sab, layout.rowsByte, layout.lights * layout.rowFloats),
     };
   });
-  px._wallRowBuffers = buffers;
-  px._wallSignatureAt = layout.signatureAt;
-  px._wallRowFloats = layout.rowFloats;
-  px._wallRowTexels = layout.rowTexels;
-  px._wallRowsData = new Float32Array(layout.lights * layout.rowFloats);
-  px._wallRowLamps = new Int32Array(layout.lights);
-  px._wallRowLampCount = 0;
-  px._wallRowsSource = {};
+  px.lighting.wallRowBuffers = buffers;
+  px.lighting.wallSignatureAt = layout.signatureAt;
+  px.lighting.wallRowFloats = layout.rowFloats;
+  px.lighting.wallRowTexels = layout.rowTexels;
+  px.lighting.wallRowsData = new Float32Array(layout.lights * layout.rowFloats);
+  px.lighting.wallRowLamps = new Int32Array(layout.lights);
+  px.lighting.wallRowLampCount = 0;
+  px.lighting.wallRowsSource = {};
   px._useWebGpu = false;
   px.renderQueueSync = new Int32Array(new SharedArrayBuffer(8));
   const calls = { uploads: 0 };
@@ -126,7 +126,7 @@ function publish(buffers, layout, b, lamps, sig) {
 /** Pixi reads the frame pre-render wrote into buffer `b` (the sync word names the frame after it). */
 function read(px, b) {
   px.renderQueueSync[0] = b + 1;
-  px._readWallRows();
+  px.lighting.readWallRows();
 }
 
 test('OL-10: Pixi sends up a frame\'s rows once, and again only when the signature changes or there is none', async () => {
@@ -135,9 +135,9 @@ test('OL-10: Pixi sends up a frame\'s rows once, and again only when the signatu
   publish(buffers, layout, 0, [4, 9], A);
   read(px, 0);
   assert.equal(calls.uploads, 1);
-  assert.equal(px._wallRowOf[4], 1);
-  assert.equal(px._wallRowOf[9], 2);
-  assert.equal(px._wallRowsData[4 * WALL_VERT0], 40);
+  assert.equal(px.lighting.wallRowOf[4], 1);
+  assert.equal(px.lighting.wallRowOf[9], 2);
+  assert.equal(px.lighting.wallRowsData[4 * WALL_VERT0], 40);
 
   // The other buffer, the same signature: the same rows. Nothing is copied (the buffer's floats are different here on
   // purpose: Pixi must not read them) and nothing uploaded; the lamps' tags stand.
@@ -147,20 +147,20 @@ test('OL-10: Pixi sends up a frame\'s rows once, and again only when the signatu
   read(px, 0);
   read(px, 1);
   assert.equal(calls.uploads, 1, 'three more frames, no upload');
-  assert.equal(px._wallRowsSkipped, 3);
-  assert.equal(px._wallRowsData[4 * WALL_VERT0], 40, 'not copied');
-  assert.equal(px._wallRowOf[4], 1);
-  assert.equal(px._wallRowOf[9], 2);
+  assert.equal(px.lighting.wallRowsSkipped, 3);
+  assert.equal(px.lighting.wallRowsData[4 * WALL_VERT0], 40, 'not copied');
+  assert.equal(px.lighting.wallRowOf[4], 1);
+  assert.equal(px.lighting.wallRowOf[9], 2);
 
   // Another signature: the rows changed.
   const B = [0x9999, 0x0101];
   publish(buffers, layout, 0, [9, 5], B);
   read(px, 0);
   assert.equal(calls.uploads, 2);
-  assert.equal(px._wallRowOf[4], 0, 'the lamp without a row now has no tag');
-  assert.equal(px._wallRowOf[9], 1);
-  assert.equal(px._wallRowOf[5], 2);
-  assert.equal(px._wallRowsData[4 * WALL_VERT0], 90);
+  assert.equal(px.lighting.wallRowOf[4], 0, 'the lamp without a row now has no tag');
+  assert.equal(px.lighting.wallRowOf[9], 1);
+  assert.equal(px.lighting.wallRowOf[5], 2);
+  assert.equal(px.lighting.wallRowsData[4 * WALL_VERT0], 90);
 
   // No signature (second word 0): sent every frame, the same count twice included.
   publish(buffers, layout, 1, [9, 5], [77, 0]);
@@ -183,8 +183,8 @@ test('OL-10: more entities than the tags were made for: the frame is read again 
   Transform.x = new Float32Array(64);
   read(px, 0);
   assert.equal(calls.uploads, 2);
-  assert.equal(px._wallRowOf.length, 64);
-  assert.equal(px._wallRowOf[4], 1);
+  assert.equal(px.lighting.wallRowOf.length, 64);
+  assert.equal(px.lighting.wallRowOf[4], 1);
 });
 
 // OL-13: Pixi copies a row out with one set() from a view of it, the shortest of 512, 1024 ... floats that holds what
@@ -198,14 +198,14 @@ test('OL-13: rows of every length are copied whole, each within its own width', 
     header: new Int32Array(sab, 0, layout.headerInts),
     f32: new Float32Array(sab, layout.rowsByte, layout.lights * layout.rowFloats),
   };
-  px._wallRowBuffers = [buf, buf];
-  px._wallSignatureAt = layout.signatureAt;
-  px._wallRowFloats = layout.rowFloats;
-  px._wallRowTexels = layout.rowTexels;
-  px._wallRowsData = new Float32Array(layout.lights * layout.rowFloats).fill(-5);
-  px._wallRowLamps = new Int32Array(layout.lights);
-  px._wallRowLampCount = 0;
-  px._wallRowsSource = {};
+  px.lighting.wallRowBuffers = [buf, buf];
+  px.lighting.wallSignatureAt = layout.signatureAt;
+  px.lighting.wallRowFloats = layout.rowFloats;
+  px.lighting.wallRowTexels = layout.rowTexels;
+  px.lighting.wallRowsData = new Float32Array(layout.lights * layout.rowFloats).fill(-5);
+  px.lighting.wallRowLamps = new Int32Array(layout.lights);
+  px.lighting.wallRowLampCount = 0;
+  px.lighting.wallRowsSource = {};
   px._useWebGpu = false;
   px.renderQueueSync = new Int32Array(new SharedArrayBuffer(8));
   px._uploadRgba32FloatGl = () => {};
@@ -222,15 +222,15 @@ test('OL-13: rows of every length are copied whole, each within its own width', 
   });
   buf.header[layout.signatureAt + 1] = 0;
   px.renderQueueSync[0] = 1;
-  px._readWallRows();
+  px.lighting.readWallRows();
   sizes.forEach((n, r) => {
     const o = r * layout.rowFloats;
     const used = 4 * (WALL_VERT0 + n + 1);
-    assert.equal(px._wallRowsData[o], n, `row ${r}: its vertex count`);
+    assert.equal(px.lighting.wallRowsData[o], n, `row ${r}: its vertex count`);
     for (let f = 1; f < used; f++) {
-      if (px._wallRowsData[o + f] !== o + f) assert.fail(`row ${r} (${n} vertices): float ${f} of ${used} was not copied`);
+      if (px.lighting.wallRowsData[o + f] !== o + f) assert.fail(`row ${r} (${n} vertices): float ${f} of ${used} was not copied`);
     }
   });
   // The row after the last one read was never touched.
-  assert.equal(px._wallRowsData[sizes.length * layout.rowFloats], -5);
+  assert.equal(px.lighting.wallRowsData[sizes.length * layout.rowFloats], -5);
 });
