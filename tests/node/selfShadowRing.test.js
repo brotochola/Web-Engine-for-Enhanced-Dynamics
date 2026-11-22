@@ -7,23 +7,24 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { lightingSource } from '../../src/render/faceMap.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const read = (path) => fs.readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 
 test('N-272: the light pass reads a pixel\'s own face and id a texel inside the edge ring, GLSL and WGSL', () => {
   const flags = { faces: true, sunMap: true, selfShadow: true, ids: true };
-  const glsl = lightingSource(read('src/shaders/lightingBasic.frag.glsl'), flags);
+  const glsl = lightingSource(readEngineShader('lightingBasic.frag.glsl'), flags);
   assert.ok(glsl.includes('vec2 faceAt = clamp(gl_FragCoord.xy, vec2(1.5), uViewport - 1.5) / uViewport;'));
   assert.ok(glsl.includes('textureLod(uFaceMap, faceAt, 0.0)') && glsl.includes('textureLod(uFaceIds, faceAt, 0.0)'));
   assert.ok(!glsl.includes('gl_FragCoord.xy / uViewport'), 'no unclamped read of the face map is left');
-  const wgsl = lightingSource(read('src/shaders/lightingBasic.wgsl'), flags);
+  const wgsl = lightingSource(readEngineShader('lightingBasic.wgsl'), flags);
   assert.ok(wgsl.includes('clamp(in.position.xy, vec2<f32>(1.5), vec2<f32>(textureDimensions(uFaceMap, 0)) - 1.5)'));
   assert.ok(wgsl.includes('textureLoad(uFaceMap, faceAt, 0)') && wgsl.includes('textureLoad(uFaceIds, faceAt, 0)'));
   assert.ok(!wgsl.includes('vec2<i32>(in.position.xy)'), 'no unclamped read of the face map is left');
 });
 
 test('N-272: the self-shadow march has no edge code of its own (the ring does it)', () => {
-  const glsl = read('src/shaders/lightingBasic.frag.glsl');
+  const glsl = readEngineShader('lightingBasic.frag.glsl');
   const march = glsl.slice(glsl.indexOf('float selfShadowToward('), glsl.indexOf('float selfShadow(vec3'));
   assert.ok(march.includes('if (t >= reach) break;'));
   assert.ok(!/mapExit|tEnd|fc0/.test(march), 'the loop as before N-272');

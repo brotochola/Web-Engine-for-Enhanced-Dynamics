@@ -22,6 +22,7 @@
 import { resolveHeightScaleY } from '../util/cameraView.js';
 import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl, withTwinGlsl } from './twinTexel.js';
 import { hasOnce, requireMarks } from './shaderEdit.js';
+import { WEED_UV_GLSL } from './shaderChunks.js';
 
 /** The face map texel's height steps a px (15 bits: 4 095 px). */
 export const FACE_Z_UNITS = 8;
@@ -68,15 +69,6 @@ export const FACE_Z_MAX_CODE = FACE_K_BIT - 1;
  * which keep their highest caster's id: a caster's own shadow never paints its own sprite.
  */
 export const FACE_IDS_SELF = 1;
-
-const WEED_UV_GLSL = `vec2 weedUv() {
-  vec2 t = vLocal;
-  if (vTileInv.x > 0.0) t.x = fract(vWorld.x * vTileInv.x + vTileOff.x);
-  else if (vTileInv.x < 0.0) t.x = fract(vLocal.x * (-vTileInv.x) + vTileOff.x);
-  if (vTileInv.y > 0.0) t.y = fract(vWorld.y * vTileInv.y + vTileOff.y);
-  else if (vTileInv.y < 0.0) t.y = fract(vLocal.y * (-vTileInv.y) + vTileOff.y);
-  return mix(vAtlasUV.xy, vAtlasUV.zw, t);
-}`;
 
 /**
  * The ids map's texel of a word (GLSL 300, after weedUv's alpha test): the entity's id and its flags. A word's own

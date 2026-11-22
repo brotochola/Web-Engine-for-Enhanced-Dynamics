@@ -1,7 +1,6 @@
 // OL-4: a lamp's row (lampWallRow.js) against the polygon it was made from: a point is lit, in a wall's shadow or of the
 // wall itself exactly where the sweep's polygon says, whatever the polygon's shape.
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import test from 'node:test';
 
 import { lightingSource } from '../../src/render/faceMap.js';
@@ -9,6 +8,7 @@ import {
   WALL_BINS, WALL_ROW_ARGS, WALL_UMBRA, WALL_VERT0, WALL_WALK, wallAngle, wallEdgeCode, wallRowLight, wallRowTexels, wallRowsLayout,
   writeEmptyWallRow, writeWallRow,
 } from '../../src/render/visibility/lampWallRow.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -228,7 +228,7 @@ test('the layout: a header, the directions, the vertices and the closing one', (
 
 test('the light pass reads rows by the module\'s numbers, in the WALLS variant alone', () => {
   for (const name of ['lightingBasic.frag.glsl', 'lightingBasic.wgsl']) {
-    const source = fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+    const source = readEngineShader(name);
     const on = lightingSource(source, { faces: true, sunMap: false, ids: true, tiles: true, walls: true });
     const number = (id) => Number(on.match(new RegExp(`const (?:int |float )?${id}(?:: (?:i32|f32))? = ([0-9.]+);`))[1]);
     assert.equal(number('WALL_BINS'), WALL_BINS, `${name}: WALL_BINS`);

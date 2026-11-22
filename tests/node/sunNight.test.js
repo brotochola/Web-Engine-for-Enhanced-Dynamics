@@ -7,6 +7,7 @@ import { Sun } from '../../src/core/sun.js';
 import { shaderWithFlag } from '../../src/render/faceMap.js';
 import { Scene } from '../../src/core/scene.js';
 import { SUN_DEFAULTS } from '../../src/util/configDefaults.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const NIGHT = { intensity: 0.3, color: 0x5473f2, from: 0.4, to: 0.1 };
 
@@ -148,8 +149,8 @@ test('sun.maxElevation is how high the day cycle takes the sun; left out, the ol
 });
 
 test('both lighting shaders add the night term, and the WGSL struct lists what the uniform group does, in order', () => {
-  const glsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.frag.glsl', import.meta.url), 'utf8');
-  const wgsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.wgsl', import.meta.url), 'utf8');
+  const glsl = readEngineShader('lightingBasic.frag.glsl');
+  const wgsl = readEngineShader('lightingBasic.wgsl');
   const pixi = fs.readFileSync(new URL('../../src/workers/pixiWorker.js', import.meta.url), 'utf8');
   assert.match(glsl, /totalLight \+= vec3\(uNightR, uNightG, uNightB\)/);
   assert.match(wgsl, /totalLight \+= vec3<f32>\(uniforms\.uNightR, uniforms\.uNightG, uniforms\.uNightB\)/);

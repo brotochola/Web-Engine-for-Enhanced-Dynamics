@@ -10,14 +10,7 @@ in float vHasTex;
 uniform sampler2D uTexture;
 out vec4 finalColor;
 
-vec2 weedUv() {
-  vec2 t = vLocal;
-  if (vTileInv.x > 0.0) t.x = fract(vWorld.x * vTileInv.x + vTileOff.x);
-  else if (vTileInv.x < 0.0) t.x = fract(vLocal.x * (-vTileInv.x) + vTileOff.x);
-  if (vTileInv.y > 0.0) t.y = fract(vWorld.y * vTileInv.y + vTileOff.y);
-  else if (vTileInv.y < 0.0) t.y = fract(vLocal.y * (-vTileInv.y) + vTileOff.y);
-  return mix(vAtlasUV.xy, vAtlasUV.zw, t);
-}
+// #include weedUv.glsl
 
 void main() {
   if (vHasTex < 0.5) {

@@ -1,12 +1,14 @@
 /**
  * The engine's shader sources for tests, as the renderer holds them: a file of src/shaders, or one of the variants it
- * makes from a base at load (src/render/shaderVariants.js, N-303 CR-14), read here under the name its file had.
+ * makes from a base at load (src/render/shaderVariants.js, N-303 CR-14), read here under the name its file had; the
+ * chunks a file includes put in (shaderChunks.js, CR-15).
  */
 import fs from 'node:fs';
 import { additiveFragGlsl, spritePoseGlsl, spritePoseWgsl } from '../../src/render/shaderVariants.js';
+import { withShaderChunks } from '../../src/render/shaderChunks.js';
 
 const SHADER_DIR = new URL('../../src/shaders/', import.meta.url);
-const file = (name) => fs.readFileSync(new URL(name, SHADER_DIR), 'utf8');
+const file = (name) => withShaderChunks(fs.readFileSync(new URL(name, SHADER_DIR), 'utf8'));
 
 /** The variants the renderer makes, by the name each one's file had. */
 const MADE = {

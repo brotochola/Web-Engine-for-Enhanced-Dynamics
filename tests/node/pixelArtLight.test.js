@@ -2,12 +2,12 @@
 // off, the five-tap pass as before. Both backends' sources.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { lightingSource } from '../../src/render/faceMap.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const GLSL = fs.readFileSync('src/shaders/lightingBasic.frag.glsl', 'utf8');
-const WGSL = fs.readFileSync('src/shaders/lightingBasic.wgsl', 'utf8');
+const GLSL = readEngineShader('lightingBasic.frag.glsl');
+const WGSL = readEngineShader('lightingBasic.wgsl');
 const FLAGS = { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true };
 
 for (const [name, source] of [['GLSL', GLSL], ['WGSL', WGSL]]) {

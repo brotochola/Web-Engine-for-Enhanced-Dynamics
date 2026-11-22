@@ -10,7 +10,6 @@
 // record's poses and must leave the texels sampling left, bit for bit.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { loadWorker, quietly } from '../bench/workerHarness.mjs';
 import { Transform } from '../../src/components/transform.js';
@@ -34,6 +33,7 @@ import {
   ColliderFillBatch,
 } from '../../src/render/colliderFillBatch.js';
 import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 // --- The reference: src/render/colliderFillBatch.js's pose functions at a43899ed. ---
 
@@ -646,8 +646,8 @@ test('a record that holds fewer entities than the views is grown, and everything
 const W_N = 64;
 const W_FRAMES = 160;
 const W_SHADERS = {
-  colliderFill: fs.readFileSync(new URL('../../src/shaders/colliderFill.wgsl', import.meta.url), 'utf8'),
-  meshUvFill: fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'),
+  colliderFill: readEngineShader('colliderFill.wgsl'),
+  meshUvFill: readEngineShader('meshUvFill.wgsl'),
 };
 
 class PoseThing extends GameObject {}

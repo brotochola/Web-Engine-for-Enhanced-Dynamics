@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,6 +28,7 @@ import { EntityChunks, assignGaps, rangeGeometryOf } from '../../src/render/gpuP
 import { GpuParticleLayerBatch } from '../../src/render/gpuParticleBatch.js';
 import { Container, Texture } from '../../src/vendor/pixi.min.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 // GPU particles in the y-sort painter: each emitGpu call (a group) is drawn among the entities at the place its
 // sortY takes in the painter's order. These check where that place is (a binary search over the packed order),
@@ -36,7 +36,7 @@ import { loadWorker } from '../bench/workerHarness.mjs';
 // itself is checked in Chromium (tests/bench/stressScenes/gpuParticlesStressScene.js, ?sort=1).
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.wgsl'), 'utf8');
+const WGSL = readEngineShader('gpuParticle.wgsl');
 const BUILT_INS = { decals: {}, castedShadows: {}, entities: {}, lighting: {} };
 const WORLD_H = 720;
 const BAND = zSortBand(WORLD_H);

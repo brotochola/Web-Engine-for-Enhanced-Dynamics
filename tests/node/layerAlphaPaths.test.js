@@ -8,12 +8,12 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
 import { Layer } from '../../src/core/layer.js';
 import { lightEdgesGlsl, lightEdgesWgsl } from '../../src/render/lightEdges.js';
 import { UNSHADED_COMPOSITE_FRAG, UNSHADED_COMPOSITE_WGSL } from '../../src/render/unshadedComposite.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 /** The worker's own copy for one test: the harness hands out one instance, and a stub put on it would outlive the test. */
 async function pixi() {
@@ -88,8 +88,8 @@ test('the light\'s meshes read the layer\'s alpha, GLSL and WGSL', () => {
   }
   assert.match(UNSHADED_COMPOSITE_FRAG, /\* uColor\.a, 0\.0\)/);
   assert.match(UNSHADED_COMPOSITE_WGSL, /\* localUniforms\.uColor\.a, 0\.0\)/);
-  const glsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.frag.glsl', import.meta.url), 'utf8');
-  const wgsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.wgsl', import.meta.url), 'utf8');
+  const glsl = readEngineShader('lightingBasic.frag.glsl');
+  const wgsl = readEngineShader('lightingBasic.wgsl');
   assert.match(glsl, /finalColor = vec4\(mix\(vec3\(1\.0\), totalLight, uColor\.a\), 1\.0\);/);
   assert.match(wgsl, /return vec4<f32>\(mix\(vec3<f32>\(1\.0\), totalLight, localUniforms\.uColor\.a\), 1\.0\);/);
 });

@@ -1,19 +1,6 @@
 // GPU particles (LAYER_KIND.GPU_PARTICLES), WebGPU: the same evaluation as gpuParticle.vert.glsl, from the spawn
 // record (src/util/gpuParticleLayout.js GPU_REC) and the particle's age. src/util/gpuParticleEval.js is the JS twin.
-struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+// #include pixiGroups.wgsl
 
 struct GpuParticleUniforms {
   uGpuParticles: vec4<f32>, // x: now (ms on this ring's epoch), y: pixel snap

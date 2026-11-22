@@ -26,6 +26,7 @@ import {
 } from './lampShadowMap.js';
 import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
 import { hasOnce } from './shaderEdit.js';
+import { PIXI_GROUPS_WGSL } from './shaderChunks.js';
 
 /** The source with `add` after its one `find`, or a clear error. */
 function after(source, find, add, what) {
@@ -466,20 +467,7 @@ void main() {
 `;
 
 /** E-508: the copy in WGSL (WebGPU), LAMP_CACHE_COPY_VERTEX's and LAMP_CACHE_COPY_FRAGMENT's twin. */
-export const LAMP_CACHE_COPY_WGSL = `struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+export const LAMP_CACHE_COPY_WGSL = `${PIXI_GROUPS_WGSL}
 
 struct LampCopyUniforms {
   uLampVolume: vec4<f32>,

@@ -10,7 +10,6 @@
 // before the GPU.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
 import { Transform } from '../../src/components/transform.js';
@@ -27,6 +26,7 @@ import { rewriteMeshUvVerts } from '../reference/meshUvVerts.mjs';
 import { LAYER_KIND, WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { createWeedPosePayload, initWeedPoseDefaults } from '../../src/box2d/box2dHotFields.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const N = 48;
 const MAX_VERTS = 4096;
@@ -34,8 +34,8 @@ const MAX_INDICES = 12288;
 const FRAMES = 120;
 
 const SHADERS = {
-  colliderFill: fs.readFileSync(new URL('../../src/shaders/colliderFill.wgsl', import.meta.url), 'utf8'),
-  meshUvFill: fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'),
+  colliderFill: readEngineShader('colliderFill.wgsl'),
+  meshUvFill: readEngineShader('meshUvFill.wgsl'),
 };
 
 class MeshThing extends GameObject {}

@@ -413,12 +413,13 @@ import {
 } from '../render/gpuClass.js';
 
 // Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
-// install has no /src/shaders to fetch. Source builds fetch them.
+// install has no /src/shaders to fetch. Source builds fetch them. Either way their includes are resolved here
+// (N-303 CR-15, shaderChunks.js).
 let embeddedEngineShaders = null;
 
 function fetchEngineShader(path) {
   if (embeddedEngineShaders !== null && embeddedEngineShaders[path] !== undefined) {
-    return Promise.resolve(shaderSourceLf(embeddedEngineShaders[path]));
+    return Promise.resolve(withShaderChunks(shaderSourceLf(embeddedEngineShaders[path])));
   }
   const slash = path.lastIndexOf('/');
   const name = slash >= 0 ? path.slice(slash + 1) : path;
@@ -430,7 +431,7 @@ function fetchEngineShader(path) {
     if (!r.ok) throw errorShaderFetchFailed(name, path, r.status);
     const s = await r.text();
     if (!String(s).trim()) throw errorShaderFetchFailed(name, path, 'empty');
-    return shaderSourceLf(s);
+    return withShaderChunks(shaderSourceLf(s));
   });
 }
 
@@ -472,6 +473,7 @@ import {
 import { EntityChunks, RegionQuads } from '../render/gpuParticleChunks.js';
 import { LagMeter, stampNow } from '../util/latencyStamp.js';
 import { addWaitMs, waitMeterMs } from '../util/waitMeter.js';
+import { withShaderChunks } from '../render/shaderChunks.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {

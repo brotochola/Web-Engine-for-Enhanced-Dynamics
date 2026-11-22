@@ -41,9 +41,10 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
+import { withShaderChunks } from '../../src/render/shaderChunks.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const readShader = (root, name) => fs.readFileSync(path.join(root, 'src/shaders', name), 'utf8').replace(/\r\n?/g, '\n');
+const readShader = (root, name) => withShaderChunks(fs.readFileSync(path.join(root, 'src/shaders', name), 'utf8').replace(/\r\n?/g, '\n'));
 
 /** Runs in the page. */
 async function benchInPage({ vert, frag, vertVs, fragVs, colVert, colFrag, colVertVs, colFragVs, n, zoom, ways, scissor, draws, rounds, width, height }) {

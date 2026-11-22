@@ -11,7 +11,7 @@ import {
   VOLUME_LAMP_CACHE_FRAGMENT, VOLUME_LAMP_FRAGMENT, volumeLampVertex, volumeLampWgsl, writeVolumeLampTerms,
 } from '../../src/render/volumeShadowMap.js';
 import { lampLanding, lampPanoLanding, lampPanoTexel, lampPanoUv, lampRayDepth, lampVolumeRayT } from '../reference/lightMapsJs.mjs';
-import fs from 'node:fs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 
@@ -96,7 +96,7 @@ test('N-276: a volume\'s texel is where its own ray meets the face, whatever poi
     assert.ok(glsl.indexOf('dFdx(vLampP)') < glsl.indexOf('discard'), 'the derivatives before any discard');
   }
   assert.ok(VOLUME_LAMP_CACHE_FRAGMENT.includes('floatBitsToUint(depth)'), 'the cache keeps the depth written');
-  const wgsl = volumeLampWgsl(fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'));
+  const wgsl = volumeLampWgsl(readEngineShader('meshUvFill.wgsl'));
   assert.equal(wgsl.split('@builtin(frag_depth) depth: f32,').length, 3, 'both lamp entries write their depth');
   assert.ok(wgsl.includes('let b = bitcast<u32>(texel.y);'));
 });
@@ -154,8 +154,8 @@ test('N-211: a texel keeps the place along the ray, finest around the lamp\'s he
 test('E-389, E-453: the volumes go into every lamp tile in one draw, an instance a tile, a mesh left out whole by its reach', () => {
   // The batch draws each mesh's vertices once through its index buffer (E-453); the lamps' map draws that with an
   // instance a tile in use, so each triangle reaches each tile with the same vertices, tile after tile.
-  const glsl = volumeLampVertex(fs.readFileSync(new URL('../../src/shaders/meshUvFill.vert.glsl', import.meta.url), 'utf8'));
-  const wgsl = volumeLampWgsl(fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'));
+  const glsl = volumeLampVertex(readEngineShader('meshUvFill.vert.glsl'));
+  const wgsl = volumeLampWgsl(readEngineShader('meshUvFill.wgsl'));
   // The tile from the instance's entry in its draw's list (E-508: the tiles' texture's row 2, from uLampVolume.x), the
   // half tile it draws into beside it; no vertex number, no corner.
   assert.ok(glsl.includes('ivec2(int(uLampVolume.x + 0.5) + gl_InstanceID, 2)') && glsl.includes('int lampTile = int(lampEntry.x + 0.5);'));

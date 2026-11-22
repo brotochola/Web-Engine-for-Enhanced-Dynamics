@@ -1,17 +1,4 @@
-struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+// #include pixiGroups.wgsl
 
 @group(2) @binding(0) var uTexture: texture_2d<f32>;
 @group(2) @binding(1) var uSampler: sampler;
@@ -29,14 +16,7 @@ struct VertexOut {
   @location(6) vHasTex: f32,
 }
 
-fn weedUv(vLocal: vec2<f32>, vWorld: vec2<f32>, vAtlasUV: vec4<f32>, vTileInv: vec2<f32>, vTileOff: vec2<f32>) -> vec2<f32> {
-  var t = vLocal;
-  if (vTileInv.x > 0.0) { t.x = fract(vWorld.x * vTileInv.x + vTileOff.x); }
-  else if (vTileInv.x < 0.0) { t.x = fract(vLocal.x * (-vTileInv.x) + vTileOff.x); }
-  if (vTileInv.y > 0.0) { t.y = fract(vWorld.y * vTileInv.y + vTileOff.y); }
-  else if (vTileInv.y < 0.0) { t.y = fract(vLocal.y * (-vTileInv.y) + vTileOff.y); }
-  return mix(vAtlasUV.xy, vAtlasUV.zw, t);
-}
+// #include weedUv.wgsl
 
 @vertex
 fn mainVert(

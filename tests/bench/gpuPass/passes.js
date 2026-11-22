@@ -40,6 +40,7 @@ import {
   TILE_CAM_ZOOM, binLightTiles, layoutLightTiles, writeLightTileUniforms,
 } from '../../../src/render/lightTiles.js';
 import { projection } from './scenery.js';
+import { withShaderChunks } from '../../../src/render/shaderChunks.js';
 
 const SHADER_FILES = {
   spriteVert: 'instancedSprite.vert.glsl',
@@ -53,14 +54,14 @@ const SHADER_FILES = {
   lightWgsl: 'lightingBasic.wgsl',
 };
 
-/** The engine's shader files, as pixiWorker fetches them (line ends made LF: rendererBackend.js shaderSourceLf). */
+/** The engine's shader files, as pixiWorker fetches them (line ends made LF: rendererBackend.js shaderSourceLf; includes resolved). */
 export async function loadShaders() {
   const out = {};
   await Promise.all(
     Object.entries(SHADER_FILES).map(async ([key, file]) => {
       const response = await fetch(`/src/shaders/${file}`);
       if (!response.ok) throw new Error(`gpuPassBench: /src/shaders/${file} answered ${response.status}`);
-      out[key] = (await response.text()).replace(/\r\n?/g, '\n');
+      out[key] = withShaderChunks((await response.text()).replace(/\r\n?/g, '\n'));
     }),
   );
   return out;

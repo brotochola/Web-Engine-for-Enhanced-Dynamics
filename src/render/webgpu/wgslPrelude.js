@@ -1,4 +1,5 @@
 import { RESERVED_LOOK_UNIFORMS } from '../../core/layer.js';
+import { PIXI_GROUPS_WGSL } from '../shaderChunks.js';
 
 /**
  * Engine WGSL preludes. Structs are generated from the layer uniform map so
@@ -92,19 +93,7 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
  * @param {{ scene?: boolean }} [options] scene: bind uScene (DX-POST: the frame before the first SCREEN pass)
  */
 export function buildLookPrelude(uniformMap, uniformTypes, options = {}) {
-  let s = 'struct GlobalUniforms {\n';
-  s += '  uProjectionMatrix: mat3x3<f32>,\n';
-  s += '  uWorldTransformMatrix: mat3x3<f32>,\n';
-  s += '  uWorldColorAlpha: vec4<f32>,\n';
-  s += '  uResolution: vec2<f32>,\n';
-  s += '}\n';
-  s += '@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;\n\n';
-  s += 'struct LocalUniforms {\n';
-  s += '  uTransformMatrix: mat3x3<f32>,\n';
-  s += '  uColor: vec4<f32>,\n';
-  s += '  uRound: f32,\n';
-  s += '}\n';
-  s += '@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;\n\n';
+  let s = `${PIXI_GROUPS_WGSL}\n\n`;
   s += 'struct CustomUniforms {\n';
   const tail = tailLines(uniformMap, uniformTypes, '  ');
   s += tail || '  _pad: f32,\n';
@@ -141,20 +130,7 @@ export function prependLookPrelude(code, uniformMap, uniformTypes, options = {})
   return buildLookPrelude(uniformMap, uniformTypes, options) + code;
 }
 
-const WORLD_RECT_VERT = `struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+const WORLD_RECT_VERT = `${PIXI_GROUPS_WGSL}
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,

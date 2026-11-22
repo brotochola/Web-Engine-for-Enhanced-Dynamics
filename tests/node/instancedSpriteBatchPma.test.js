@@ -8,7 +8,7 @@ import { readEngineShader } from './engineShaderSources.mjs';
 const dir = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(dir, '../../src/render/instancedSpriteBatch.js'), 'utf8');
 const gpuJs = readFileSync(join(dir, '../../src/render/webgpu/instancedSpriteWgsl.js'), 'utf8');
-const wgsl = readFileSync(join(dir, '../../src/shaders/instancedSprite.wgsl'), 'utf8');
+const wgsl = readEngineShader('instancedSprite.wgsl');
 // N-303 CR-18: the upload's call setup (camera terms, type filters, indices) is gpuQueueLayout.js's makePackContext.
 const packContext = readFileSync(join(dir, '../../src/render/gpuQueueLayout.js'), 'utf8');
 
@@ -136,9 +136,8 @@ test('entity and custom-layer uploads pass queue repeatX/Y and tile fields', () 
 });
 
 test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
-  const shaderDir = join(dir, '../../src/shaders');
   const glsl = [
-    readFileSync(join(shaderDir, 'instancedSprite.frag.glsl'), 'utf8'),
+    readEngineShader('instancedSprite.frag.glsl'),
     readEngineShader('instancedSpriteAdditive.frag.glsl'),
   ].join('\n');
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
@@ -172,7 +171,7 @@ test('packTextureLutRgba writes 12 floats (the last two the frame base) into 3 R
 });
 
 test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
-  const lighting = readFileSync(join(dir, '../../src/shaders/lightingBasic.frag.glsl'), 'utf8');
+  const lighting = readEngineShader('lightingBasic.frag.glsl');
   assert.match(lighting, /for \(int i = 0; i < MAX_LIGHTS; i\+\+\)/);
   assert.doesNotMatch(lighting, /\$\{this\.maxLights\}/);
   assert.match(pixiSrc, /\/MAX_LIGHTS\/g/);
@@ -182,8 +181,8 @@ test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
 });
 
 test('lighting WGSL reconstructs world from framebuffer Y without flip', () => {
-  const glsl = readFileSync(join(dir, '../../src/shaders/lightingBasic.frag.glsl'), 'utf8');
-  const wgsl = readFileSync(join(dir, '../../src/shaders/lightingBasic.wgsl'), 'utf8');
+  const glsl = readEngineShader('lightingBasic.frag.glsl');
+  const wgsl = readEngineShader('lightingBasic.wgsl');
   assert.match(glsl, /normCoord = vec2\(gl_FragCoord\.x, y\) \/ uViewport/);
   assert.match(wgsl, /let normCoord = vec2<f32>\(in\.position\.x, y\) \/ vp/);
   assert.doesNotMatch(wgsl, /1\.0 - in\.position\.y/);

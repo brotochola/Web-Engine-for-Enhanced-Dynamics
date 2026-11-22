@@ -2,7 +2,6 @@
 import { HEIGHT_UNITS } from '../../src/render/spriteMaps.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import {
   FACE_DEFAULTS,
@@ -195,7 +194,7 @@ test('spawnMany takes a face per decoration', () => {
 test('the face programs name the twin page in their WebGPU layout', async () => {
   const { instancedSpriteGpuProgram, instancedSpriteIndexedGpuProgram } = await import('../../src/render/webgpu/instancedSpriteWgsl.js');
   const GpuProgram = { from: (o) => o };
-  const wgsl = faceMapWgsl(fs.readFileSync(new URL('../../src/shaders/instancedSprite.wgsl', import.meta.url), 'utf8'));
+  const wgsl = faceMapWgsl(readEngineShader('instancedSprite.wgsl'));
   assert.match(wgsl, /@group\(2\) @binding\(5\) var uMaps: texture_2d<f32>;/);
   for (const make of [instancedSpriteGpuProgram, instancedSpriteIndexedGpuProgram]) {
     const plain = make(GpuProgram, wgsl, 'mainFragFace', 'p');

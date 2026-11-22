@@ -18,6 +18,7 @@
  */
 
 import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
+import { PIXI_GROUPS_WGSL } from './shaderChunks.js';
 
 export const RENDER_VIEW = Object.freeze({
   FINAL: 0,
@@ -192,20 +193,7 @@ void main() {
 }
 `;
 
-export const RENDER_VIEW_WGSL = `struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+export const RENDER_VIEW_WGSL = `${PIXI_GROUPS_WGSL}
 
 struct ViewUniforms {
   uView: vec4<f32>,
@@ -340,20 +328,7 @@ void main() {
 }
 `;
 
-export const RENDER_TILES_WGSL = `struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+export const RENDER_TILES_WGSL = `${PIXI_GROUPS_WGSL}
 
 struct TileUniforms {
   uGrid: vec4<f32>,

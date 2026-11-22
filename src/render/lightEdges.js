@@ -25,6 +25,7 @@
 import { Container, Geometry, Mesh, Shader, State } from '../vendor/pixi.min.js';
 import { STENCIL_INVERSE_ACTIVE, STENCIL_MASK_ACTIVE, STENCIL_MASK_ADD, STENCIL_OFF, colorMaskStep, stencilStep } from './renderStep.js';
 import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
+import { PIXI_GROUPS_WGSL } from './shaderChunks.js';
 
 /**
  * OL-14: whether a scene's walls ask for the entities' depth (pixel depth, with an oblique camera). A wall's own picture
@@ -183,20 +184,7 @@ ${unshaded ? '@group(2) @binding(1) var uUnshaded: texture_2d<f32>;\n@group(2) @
 ${unshaded
     ? '  return vec4<f32>(unshaded * (vec3<f32>(1.0) - min(light, vec3<f32>(1.0))) * localUniforms.uColor.a, 0.0);'
     : '  return vec4<f32>(mix(vec3<f32>(1.0), light, localUniforms.uColor.a), 1.0);'}`;
-  return `struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+  return `${PIXI_GROUPS_WGSL}
 
 ${textures}
 struct VertexOut {

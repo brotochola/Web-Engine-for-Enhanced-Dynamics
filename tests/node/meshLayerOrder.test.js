@@ -3,12 +3,12 @@
 // tests/bench/stressScenes/meshLayerOrderScene.js shows the picture.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { ColliderFillBatch } from '../../src/render/colliderFillBatch.js';
 import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const wgsl = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}.wgsl`, import.meta.url), 'utf8');
+const wgsl = (name) => readEngineShader(`${name}.wgsl`);
 const shaders = { colliderFill: wgsl('colliderFill'), meshUvFill: wgsl('meshUvFill') };
 
 for (const [name, Batch] of [['fill', ColliderFillBatch], ['UV', MeshUvFillBatch]]) {

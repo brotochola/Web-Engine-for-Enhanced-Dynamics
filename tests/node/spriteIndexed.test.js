@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 
 import { GPU_INDEXED_STATIC_FLOATS, GPU_STATIC_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import {
@@ -11,15 +10,16 @@ import {
   spriteIndexedWgsl,
   staticsTextureHeight,
 } from '../../src/render/spriteIndexed.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 // E-162: the indexed sprite vertex shader takes its statics from three texels of a statics row (WebGL) or three
 // vec4<u32> of a storage buffer (WebGPU), the row from one instance attribute (the slot; E-186: no depth, a constant 0).
 // tests/bench/spriteIndexedCompileCheck.mjs compiles both in a browser.
 
-const shipped = readFileSync(new URL('../../src/shaders/instancedSprite.vert.glsl', import.meta.url), 'utf8');
-const shippedWgsl = readFileSync(new URL('../../src/shaders/instancedSprite.wgsl', import.meta.url), 'utf8');
-const shippedShadow = readFileSync(new URL('../../src/shaders/instancedSpriteShadow.vert.glsl', import.meta.url), 'utf8');
-const shippedShadowWgsl = readFileSync(new URL('../../src/shaders/instancedSpriteShadow.wgsl', import.meta.url), 'utf8');
+const shipped = readEngineShader('instancedSprite.vert.glsl');
+const shippedWgsl = readEngineShader('instancedSprite.wgsl');
+const shippedShadow = readEngineShader('instancedSpriteShadow.vert.glsl');
+const shippedShadowWgsl = readEngineShader('instancedSpriteShadow.wgsl');
 const STATICS = ['aInstScale', 'aInstAnchor', 'aInstDepth', 'aInstTexId', 'aInstTileInv', 'aInstTileOff'];
 
 test('a statics row is three RGBA texels: the 11 words of the split statics and a zero', () => {

@@ -2,7 +2,6 @@
 // shader made from the layer shadows' one, and the light pass's blocks for it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { SUN_MAP_ZMAX, sunMapMargins, sunMapTerms, sunMapVertex } from '../../src/render/sunShadowMap.js';
 import { sunMapLanding } from '../reference/lightMapsJs.mjs';
@@ -10,8 +9,9 @@ import { shaderWithFlag } from '../../src/render/faceMap.js';
 import { HEIGHT_PER_ROW_CODES, HEIGHT_PER_ROW_STEPS } from '../../src/render/frameBase.js';
 import { LIGHTING_DEFAULTS } from '../../src/util/configDefaults.js';
 import { unknownConfigKeys } from '../../src/util/configKeys.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = (name) => readEngineShader(name);
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 
 test('the sun\'s terms: a px of height shifts its landing away from the sun, and cards run across it', () => {

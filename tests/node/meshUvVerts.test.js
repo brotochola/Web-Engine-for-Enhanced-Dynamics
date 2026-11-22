@@ -39,8 +39,9 @@ import { SPRITE_TILE_MODE } from '../../src/util/configDefaults.js';
 import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
 import { expandMeshUvVerts, rewriteMeshUvVerts } from '../reference/meshUvVerts.mjs';
 import { rng } from '../helpers/meshCornerFrames.mjs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = (name) => readEngineShader(name);
 const F = MESH_UV_VERT_FLOATS;
 
 function words(view) {

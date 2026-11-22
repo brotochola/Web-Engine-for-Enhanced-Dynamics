@@ -9,7 +9,6 @@
 // runs it: the JS rewrite and the kernel draw the same rows frame after frame.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { MESH_UV_FILL_FLOATS, MESH_UV_VERT_FLOATS, COLLIDER_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
 import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
@@ -34,6 +33,7 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { LAYER_KIND, WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { createWeedPosePayload, initWeedPoseDefaults } from '../../src/box2d/box2dHotFields.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 test('a 16-bit arena binds rewrite_corners, a 32-bit one rewrite_corners_u32, and mixed widths are refused', async () => {
   const narrow = await setup();
@@ -187,8 +187,8 @@ const FRAMES = 40;
 const BIG_SEGS = [257, 256];
 
 const SHADERS = {
-  colliderFill: fs.readFileSync(new URL('../../src/shaders/colliderFill.wgsl', import.meta.url), 'utf8'),
-  meshUvFill: fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'),
+  colliderFill: readEngineShader('colliderFill.wgsl'),
+  meshUvFill: readEngineShader('meshUvFill.wgsl'),
 };
 
 class WideMeshThing extends GameObject {}

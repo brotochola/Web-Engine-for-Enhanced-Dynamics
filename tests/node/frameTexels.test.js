@@ -7,7 +7,6 @@
 // the edge pass leaves a solid pixel of a frame with neither (a plain one) before reading the twin page.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { HEIGHT_UNITS, frameTwinTexels } from '../../src/render/spriteMaps.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
@@ -19,8 +18,9 @@ import {
   buildTextureLut, packTextureLutRgba, textureLutLayout, textureLutSolid, textureLutTexels,
 } from '../../src/render/instancedSpriteBatch.js';
 import { pixelDepthFragment, pixelDepthVertex, pixelDepthWgsl } from '../../src/render/pixelDepth.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = (name) => readEngineShader(name);
 
 /** A frame's colour, w × h RGBA: alpha(x, y) a texel's alpha. */
 function colour(w, h, alpha) {

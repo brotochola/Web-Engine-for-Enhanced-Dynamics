@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,13 +20,14 @@ import {
 } from '../../src/render/gpuParticleBatch.js';
 import { installInstanceRangeDraw } from '../../src/render/instanceRangeDraw.js';
 import { Texture, TextureSource } from '../../src/vendor/pixi.min.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 // The renderer's side of a GPU particle layer, without a GPU: what it uploads each frame (only what was published,
 // copied out of the shared memory first) and which slice of each ring it draws (the live window, two ranges when it
 // wraps the ring end). The draw itself is checked in Chromium (tests/bench/stressScenes/gpuParticlesStressScene.js).
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.wgsl'), 'utf8');
+const WGSL = readEngineShader('gpuParticle.wgsl');
 
 function setup(maxParticles = 64 * 3, batchOpts = {}) {
   const layers = { smoke: { kind: LAYER_KIND.GPU_PARTICLES, maxParticles } };
@@ -269,8 +269,8 @@ test('instance ranges: WebGL without the extension points the instance attribute
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
-const VERT = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.vert.glsl'), 'utf8');
-const FRAG = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.frag.glsl'), 'utf8');
+const VERT = readEngineShader('gpuParticle.vert.glsl');
+const FRAG = readEngineShader('gpuParticle.frag.glsl');
 
 test('the texture vertex shader reads the seven record vec4 from texels of record uFirstInstance + gl_InstanceID', () => {
   const tex = gpuParticleTextureVertex(VERT);

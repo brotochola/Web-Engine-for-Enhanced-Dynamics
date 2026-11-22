@@ -3,11 +3,11 @@
 // pixelArt the noise is the art pixel's, so each art pixel stays one colour; without the option the light is as it was.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { lightingSource } from '../../src/render/faceMap.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = (name) => readEngineShader(name);
 
 // The shaders' noise in JS (interleaved gradient noise of a pixel's coordinates), as weedDither adds it.
 const noise = (x, y) => {

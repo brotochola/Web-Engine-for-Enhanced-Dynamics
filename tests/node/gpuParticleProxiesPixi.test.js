@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +14,7 @@ import { PROXY, PROXY_KIND, ProxyCollector, localProxyHalf } from '../../src/ren
 import { EntityChunks, RegionQuads } from '../../src/render/gpuParticleChunks.js';
 import { GpuParticleLayerBatch } from '../../src/render/gpuParticleBatch.js';
 import { Container, Matrix, RenderTexture, Texture } from '../../src/vendor/pixi.min.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 // The Pixi worker's side of the y-sort proxies: the entries of the frame it draws put the groups' meshes between
 // chunks of the entities batch under the entities root, a hidden layer's groups are left out, and the layers go
@@ -32,8 +32,8 @@ test.after(() => {
 });
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.wgsl'), 'utf8');
-const REGION_WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuRegion.wgsl'), 'utf8');
+const WGSL = readEngineShader('gpuParticle.wgsl');
+const REGION_WGSL = readEngineShader('gpuRegion.wgsl');
 const BAND = zSortBand(720);
 const clock = new Float64Array(1);
 /** Time.simNowMs as the Pixi worker passes it (Time.readSimNowInto). */

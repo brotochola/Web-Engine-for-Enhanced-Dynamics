@@ -2,12 +2,12 @@
 // or a sunProjected one at night, would lose every range but the last, so each goes out when it is written.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { ColliderFillBatch } from '../../src/render/colliderFillBatch.js';
 import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const wgsl = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}.wgsl`, import.meta.url), 'utf8');
+const wgsl = (name) => readEngineShader(`${name}.wgsl`);
 const shaders = { colliderFill: wgsl('colliderFill'), meshUvFill: wgsl('meshUvFill') };
 const ROWS = 8;
 

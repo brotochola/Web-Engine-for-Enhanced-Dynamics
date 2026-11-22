@@ -4,7 +4,6 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import {
   LIGHT_EDGES_ENTITY, LIGHT_EDGES_FLOOR, LIGHT_EDGES_KINDS, LIGHT_EDGES_MARK_DEPTH, lightEdgesGlsl, lightEdgesWgsl, rgbOnlyHost,
@@ -13,8 +12,9 @@ import {
 import { edgeLightAt } from '../reference/renderMathJs.mjs';
 import { lightingSource } from '../../src/render/faceMap.js';
 import { Container } from '../../src/vendor/pixi.min.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = (name) => readEngineShader(name);
 
 /** RGBA floats of a row of texels: [light, alpha] each (grey light). */
 function row(...texels) {

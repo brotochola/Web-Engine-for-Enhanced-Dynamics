@@ -28,6 +28,7 @@ import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometr
 import { triangulateSimplePolygon } from '../../src/render/meshTriangulate.js';
 import { Collider } from '../../src/components/collider.js';
 import { SPRITE_TILE_MODE } from '../../src/util/configDefaults.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const INV = 0xffff;
 
@@ -396,7 +397,7 @@ test('pixiWorker has no Graphics fixture fill', () => {
 
 test('colliderFill.wgsl samples the atlas in uniform control flow', () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const wgsl = fs.readFileSync(path.join(here, '../../src/shaders/colliderFill.wgsl'), 'utf8');
+  const wgsl = readEngineShader('colliderFill.wgsl');
   const frag = wgsl.slice(wgsl.indexOf('fn mainFrag'));
   const sampleAt = frag.indexOf('textureSample');
   const branchAt = frag.indexOf('vHasTex');
@@ -697,7 +698,7 @@ test('setPolygon, setPlane, and setRope write a mesh', () => {
 
 test('meshUvFill.wgsl samples the atlas before the vHasTex branch', () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const wgsl = fs.readFileSync(path.join(here, '../../src/shaders/meshUvFill.wgsl'), 'utf8');
+  const wgsl = readEngineShader('meshUvFill.wgsl');
   const frag = wgsl.slice(wgsl.indexOf('fn mainFrag'));
   const sampleAt = frag.indexOf('textureSample');
   const branchAt = frag.indexOf('vHasTex');
@@ -935,7 +936,7 @@ const ROW_ATTR = {
 
 function wgslFillBatch(Batch) {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const shader = (name) => fs.readFileSync(path.join(here, '../../src/shaders', name), 'utf8');
+  const shader = (name) => readEngineShader(name);
   return new Batch({
     capacity: 2,
     useWebGpu: true,
@@ -1009,7 +1010,7 @@ function rowFloats(source, name, what) {
 /** Each field the batch's shaders name from aRow0.. (GLSL and WGSL) reads the floats FILL_ROW puts it at. */
 function expectShaderFields(files) {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const shader = (name) => fs.readFileSync(path.join(here, '../../src/shaders', name), 'utf8');
+  const shader = (name) => readEngineShader(name);
   for (const file of files) {
     const source = shader(file);
     for (const [name, field] of Object.entries(ROW_ATTR)) {

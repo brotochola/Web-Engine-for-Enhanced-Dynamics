@@ -4,7 +4,6 @@
 // height), the light's reachWindow there, and the tile the shader looks the point up in.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import {
   LIGHT_TILE_BORDER,
@@ -28,6 +27,7 @@ import {
 import { lightingSource } from '../../src/render/faceMap.js';
 import { lightingGpuProgram } from '../../src/render/webgpu/pixiMeshWgsl.js';
 import { LIGHT_DATA_TEX_HEIGHT } from '../../src/util/utils.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const f32 = Math.fround;
 
@@ -319,7 +319,7 @@ test('both shaders: with tiles each path walks its tile\'s bits in one loop, wit
     ['lightingBasic.wgsl', 'firstTrailingBit(bits)', 'if (i < nCones) {'],
   ];
   for (const [name, bit, cone] of cases) {
-    const source = fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+    const source = readEngineShader(name);
     const old = lightingSource(source, flags);
     const tiled = lightingSource(source, { ...flags, tiles: true });
     assert.equal(old.match(/< MAX_LIGHTS/g).length, 4, `${name}: the cones' loop and the others', in the faces' path and the floor's`);
@@ -333,7 +333,7 @@ test('both shaders: with tiles each path walks its tile\'s bits in one loop, wit
 });
 
 test('the tiled WebGPU program binds the tiles\' texture at group 2, binding 8, as the WGSL declares it', () => {
-  const wgsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.wgsl', import.meta.url), 'utf8');
+  const wgsl = readEngineShader('lightingBasic.wgsl');
   const source = lightingSource(wgsl, { faces: true, sunMap: true, lampMap: true, tiles: true });
   assert.match(source, /@group\(2\) @binding\(8\) var uLightTiles: texture_2d<u32>;/);
   const GpuProgram = { from: (o) => o };

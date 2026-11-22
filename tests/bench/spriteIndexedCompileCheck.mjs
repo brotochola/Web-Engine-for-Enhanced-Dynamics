@@ -9,7 +9,8 @@
  */
 export async function run({ root = '' } = {}) {
   const { spriteIndexedVertex, spriteIndexedWgsl } = await import(`${root}/src/render/spriteIndexed.js`);
-  const text = async (p) => (await fetch(`${root}${p}`)).text();
+  const { withShaderChunks } = await import(`${root}/src/render/shaderChunks.js`);
+  const text = async (p) => withShaderChunks(await (await fetch(`${root}${p}`)).text());
   const vert = await text('/src/shaders/instancedSprite.vert.glsl');
   const frag = await text('/src/shaders/instancedSprite.frag.glsl');
   const gl = new OffscreenCanvas(4, 4).getContext('webgl2');

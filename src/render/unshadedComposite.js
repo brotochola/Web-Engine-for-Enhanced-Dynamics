@@ -12,6 +12,7 @@
  */
 
 import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
+import { PIXI_GROUPS_WGSL } from './shaderChunks.js';
 
 export const UNSHADED_COMPOSITE_VERT = `in vec2 aPosition;
 in vec2 aUV;
@@ -45,20 +46,7 @@ void main() {
 }
 `;
 
-export const UNSHADED_COMPOSITE_WGSL = `struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+export const UNSHADED_COMPOSITE_WGSL = `${PIXI_GROUPS_WGSL}
 
 @group(2) @binding(0) var uUnshaded: texture_2d<f32>;
 @group(2) @binding(1) var uUnshadedSampler: sampler;

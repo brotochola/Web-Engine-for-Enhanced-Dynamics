@@ -4,16 +4,16 @@
 // The engine's fetches (pixiWorker fetchEngineShader, the scene's shader assets) pass what they read through it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { shaderSourceLf } from '../../src/render/rendererBackend.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
 import { faceMapVertex, faceMapWgsl } from '../../src/render/faceMap.js';
 import { gpuParticleTextureVertex } from '../../src/render/gpuParticleBatch.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 /** A shader of src/shaders as LF (whatever this clone's checkout wrote) and as the CR LF a Windows clone had. */
 function shader(name) {
-  const lf = shaderSourceLf(fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8'));
+  const lf = shaderSourceLf(readEngineShader(name));
   return { lf, crlf: lf.replace(/\n/g, '\r\n') };
 }
 

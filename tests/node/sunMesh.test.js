@@ -7,8 +7,9 @@ import fs from 'node:fs';
 import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
 import { normalizeAlphaBySun } from '../../src/core/layer.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const read = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const read = (name) => readEngineShader(name);
 
 function geometry(entities = 4, verts = 64, indices = 96) {
   const bytes = MeshGeometry.getBufferSize(verts, indices, entities);

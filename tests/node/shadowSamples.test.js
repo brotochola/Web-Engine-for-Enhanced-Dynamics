@@ -3,12 +3,12 @@
 // the cross the pass always read, in its order; pixelArt reads one. lighting.lightCullingTileSize's range beside it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { lightingSource, shadowTapsOf } from '../../src/render/faceMap.js';
 import { LIGHTING_DEFAULTS, lightCullingTileSizeOf, shadowSamplesOf } from '../../src/util/configDefaults.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = (name) => readEngineShader(name);
 const FLAGS = { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true, tiles: true };
 
 // Each language's three lookups: the call each tap makes and the offsets as the language writes them, in texels.

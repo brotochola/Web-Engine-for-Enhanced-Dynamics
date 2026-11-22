@@ -4,17 +4,17 @@
 // leaves the frame exact is tests/bench/screenIdentityCheck.mjs (Chromium, WebGL and WebGPU).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { Layer } from '../../src/core/layer.js';
 import { LAYER_KIND, isSkipSubscribeKind } from '../../src/util/configDefaults.js';
 
 import { loadWorker, quietly } from '../bench/workerHarness.mjs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const BUILT_IN = { decals: { zIndex: 1 }, castedShadows: { zIndex: 2 }, entities: { zIndex: 3 }, lighting: { zIndex: 4 } };
 const COPY = 'precision mediump float;\nvarying vec2 vTextureCoord;\nuniform sampler2D uTexture;\nuniform float uAmount;\n' +
   'void main() { gl_FragColor = texture2D(uTexture, vTextureCoord) * (1.0 - uAmount); }\n';
-const LOOK_VERT = fs.readFileSync(new URL('../../src/shaders/fullscreenLook.vert.glsl', import.meta.url), 'utf8');
+const LOOK_VERT = readEngineShader('fullscreenLook.vert.glsl');
 
 const screen = (zIndex, extra = {}) => ({
   kind: LAYER_KIND.SCREEN,
