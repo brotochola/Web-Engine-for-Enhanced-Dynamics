@@ -218,13 +218,13 @@ export function assertPayloadCompatible(scene, payload) {
       `SaveGame: scene mismatch (save=${payload.sceneName}, live=${scene.constructor.name})`
     );
   }
-  const registered = new Set((scene.registeredClasses || []).map((r) => r.class.name));
+  const registered = new Map((scene.registeredClasses || []).map((r) => [r.class.name, r.class]));
   for (const table of payload.entities || []) {
-    if (!registered.has(table.typeName)) {
+    const entityClass = registered.get(table.typeName);
+    if (!entityClass) {
       throw new Error(`SaveGame: missing entity type ${table.typeName}`);
     }
-    const reg = scene.registeredClasses.find((r) => r.class.name === table.typeName);
-    if (reg && !isEntityClassSerializable(reg.class)) {
+    if (!isEntityClassSerializable(entityClass)) {
       throw new Error(`SaveGame: ${table.typeName} is not serializable in this build`);
     }
   }

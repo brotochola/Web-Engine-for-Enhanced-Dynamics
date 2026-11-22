@@ -280,14 +280,16 @@ function readValue(r) {
   throw new Error(`SaveGame: bad value kind ${kind}`);
 }
 
+/** The kinds writeTyped writes: F32, U32, U16, I32 and U8 (a Uint8ClampedArray goes as U8). */
+function typedKindOf(code) {
+  return code >= TYPED.F32 && code <= TYPED.U8 ? TYPED_KIND[code] : null;
+}
+
 function typedCode(arr) {
   if (!arr || !arr.length) return TYPED.NONE;
-  if (arr instanceof Float32Array) return TYPED.F32;
-  if (arr instanceof Uint32Array) return TYPED.U32;
-  if (arr instanceof Uint16Array) return TYPED.U16;
-  if (arr instanceof Int32Array) return TYPED.I32;
-  if (arr instanceof Uint8Array || arr instanceof Uint8ClampedArray) return TYPED.U8;
-  throw new Error(`SaveGame: unsupported typed array ${arr.constructor?.name}`);
+  const code = arr.constructor === Uint8ClampedArray ? TYPED.U8 : TYPED_KIND.indexOf(arr.constructor);
+  if (!typedKindOf(code)) throw new Error(`SaveGame: unsupported typed array ${arr.constructor?.name}`);
+  return code;
 }
 
 /** An entity column's kind, exactly (a column restores into an array of its own kind). */
@@ -311,25 +313,24 @@ function writeTyped(w, arr) {
 function readTyped(r) {
   const code = r.u8();
   const n = r.u32();
-  if (code === TYPED.NONE || n === 0) {
-    if (code === TYPED.F32) return new Float32Array(0);
-    if (code === TYPED.U32) return new Uint32Array(0);
-    if (code === TYPED.U16) return new Uint16Array(0);
-    if (code === TYPED.I32) return new Int32Array(0);
-    return new Uint8Array(0);
-  }
-  let bytesPer = 1;
-  if (code === TYPED.F32 || code === TYPED.U32 || code === TYPED.I32) bytesPer = 4;
-  else if (code === TYPED.U16) bytesPer = 2;
-  else if (code !== TYPED.U8) throw new Error(`SaveGame: bad typed code ${code}`);
-  const raw = r.raw(n * bytesPer);
+  const Kind = typedKindOf(code);
+  if (code === TYPED.NONE || n === 0) return new (Kind || Uint8Array)(0);
+  if (!Kind) throw new Error(`SaveGame: bad typed code ${code}`);
+  const raw = r.raw(n * Kind.BYTES_PER_ELEMENT);
   const aligned = new ArrayBuffer(raw.byteLength);
   new Uint8Array(aligned).set(raw);
-  if (code === TYPED.F32) return new Float32Array(aligned);
-  if (code === TYPED.U32) return new Uint32Array(aligned);
-  if (code === TYPED.U16) return new Uint16Array(aligned);
-  if (code === TYPED.I32) return new Int32Array(aligned);
-  return new Uint8Array(aligned);
+  return new Kind(aligned);
+}
+
+/** A typed array that may be missing: a flag byte, then writeTyped's record when it is there. */
+function writeOptTyped(w, arr) {
+  w.u8(arr ? 1 : 0);
+  if (arr) writeTyped(w, arr);
+}
+
+/** writeOptTyped's array, or null. */
+function readOptTyped(r) {
+  return r.u8() ? readTyped(r) : null;
 }
 
 function pushSection(sections, tag, buildFn) {
@@ -501,10 +502,8 @@ function writeLiquidFun(w, lf) {
   writeTyped(w, lf.vx);
   writeTyped(w, lf.vy);
   writeTyped(w, lf.flags);
-  w.u8(lf.groupIndex ? 1 : 0);
-  if (lf.groupIndex) writeTyped(w, lf.groupIndex);
-  w.u8(lf.restOffset ? 1 : 0);
-  if (lf.restOffset) writeTyped(w, lf.restOffset);
+  writeOptTyped(w, lf.groupIndex);
+  writeOptTyped(w, lf.restOffset);
 
   const groups = lf.groups;
   if (!groups || !(groups.slotCount > 0)) {
@@ -544,20 +543,14 @@ function writeLiquidFun(w, lf) {
     writeTyped(w, render.scaleX);
     writeTyped(w, render.scaleY);
     writeTyped(w, render.alpha);
-    w.u8(render.rotC ? 1 : 0);
-    if (render.rotC) writeTyped(w, render.rotC);
-    w.u8(render.rotS ? 1 : 0);
-    if (render.rotS) writeTyped(w, render.rotS);
-    w.u8(render.layerMask ? 1 : 0);
-    if (render.layerMask) writeTyped(w, render.layerMask);
+    writeOptTyped(w, render.rotC);
+    writeOptTyped(w, render.rotS);
+    writeOptTyped(w, render.layerMask);
   }
 
-  w.u8(lf.groupsLightIntensity ? 1 : 0);
-  if (lf.groupsLightIntensity) writeTyped(w, lf.groupsLightIntensity);
-  w.u8(lf.userData ? 1 : 0);
-  if (lf.userData) writeTyped(w, lf.userData);
-  w.u8(lf.color ? 1 : 0);
-  if (lf.color) writeTyped(w, lf.color);
+  writeOptTyped(w, lf.groupsLightIntensity);
+  writeOptTyped(w, lf.userData);
+  writeOptTyped(w, lf.color);
 }
 
 function readLiquidFun(r) {
@@ -569,8 +562,8 @@ function readLiquidFun(r) {
   const vx = readTyped(r);
   const vy = readTyped(r);
   const flags = readTyped(r);
-  const groupIndex = r.u8() ? readTyped(r) : null;
-  const restOffset = r.u8() ? readTyped(r) : null;
+  const groupIndex = readOptTyped(r);
+  const restOffset = readOptTyped(r);
 
   let groups = null;
   if (r.u8()) {
@@ -606,15 +599,15 @@ function readLiquidFun(r) {
       scaleX: readTyped(r),
       scaleY: readTyped(r),
       alpha: readTyped(r),
-      rotC: r.u8() ? readTyped(r) : null,
-      rotS: r.u8() ? readTyped(r) : null,
-      layerMask: r.u8() ? readTyped(r) : null,
+      rotC: readOptTyped(r),
+      rotS: readOptTyped(r),
+      layerMask: readOptTyped(r),
     };
   }
 
-  const groupsLightIntensity = r.u8() ? readTyped(r) : null;
-  const userData = r.u8() ? readTyped(r) : null;
-  const color = r.u8() ? readTyped(r) : null;
+  const groupsLightIntensity = readOptTyped(r);
+  const userData = readOptTyped(r);
+  const color = readOptTyped(r);
 
   return {
     count,
@@ -756,10 +749,8 @@ function writeMeshes(w, records) {
     const rec = list[i];
     w.u32(rec.entityIndex | 0);
     writeTyped(w, rec.xy);
-    w.u8(rec.uv ? 1 : 0);
-    if (rec.uv) writeTyped(w, rec.uv);
-    w.u8(rec.indices ? 1 : 0);
-    if (rec.indices) writeTyped(w, rec.indices);
+    writeOptTyped(w, rec.uv);
+    writeOptTyped(w, rec.indices);
   }
 }
 
@@ -769,8 +760,8 @@ function readMeshes(r) {
   for (let i = 0; i < n; i++) {
     const entityIndex = r.u32();
     const xy = readTyped(r);
-    const uv = r.u8() ? readTyped(r) : null;
-    const indices = r.u8() ? readTyped(r) : null;
+    const uv = readOptTyped(r);
+    const indices = readOptTyped(r);
     out.push({ entityIndex, xy, uv, indices });
   }
   return out;

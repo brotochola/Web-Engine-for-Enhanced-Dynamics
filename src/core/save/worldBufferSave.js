@@ -116,23 +116,13 @@ export function packChains(entityIndices) {
  * @param {Array<{old:number, neu:number}>} restored
  */
 export function applyChains(records, restored) {
-  // null: the save has no such section (the pool was unbound):
-  // leave what onSpawned built. [] means none of the saved entities had one.
-  if (records == null || !restored || !restored.length) return;
-  const byOld = indexRecords(records);
-  for (let i = 0; i < restored.length; i++) {
-    const neu = restored[i].neu | 0;
-    const rec = byOld.get(restored[i].old | 0);
+  applyPerEntity(records, restored, (neu, rec) => {
     if (!rec) {
       if (ChainPoints.count && (ChainPoints.count[neu] | 0) > 0) ChainPoints.clearForEntity(neu);
-      continue;
+    } else if (!ChainPoints.setForEntity(neu, rec.xy, rec.count | 0, rec.loop)) {
+      console.warn(`[SaveGame] chain restore failed for entity ${neu}: ${ChainPoints.lastError.code}`);
     }
-    if (!ChainPoints.setForEntity(neu, rec.xy, rec.count | 0, rec.loop)) {
-      console.warn(
-        `[SaveGame] chain restore failed for entity ${neu}: ${ChainPoints.lastError.code}`
-      );
-    }
-  }
+  });
 }
 
 export function packFixtures(entityIndices) {
@@ -163,26 +153,15 @@ export function packFixtures(entityIndices) {
 }
 
 export function applyFixtures(records, restored) {
-  // null: the save has no such section (the pool was unbound):
-  // leave what onSpawned built. [] means none of the saved entities had one.
-  if (records == null || !restored || !restored.length) return;
-  const byOld = indexRecords(records);
-  for (let i = 0; i < restored.length; i++) {
-    const neu = restored[i].neu | 0;
-    const rec = byOld.get(restored[i].old | 0);
+  applyPerEntity(records, restored, (neu, rec) => {
     if (!rec || !rec.counts || !rec.counts.length) {
       const hasExtras = (Collider.fixtureCount && (Collider.fixtureCount[neu] | 0) > 0)
         || (ColliderFixture.head && ColliderFixture.headOf(neu) !== ColliderFixture.INVALID_INDEX);
       if (hasExtras) Collider.clearFixtures(neu);
-      continue;
+    } else if (!Collider.replacePolygonsFlat(neu, rec.xy, rec.counts, rec.counts.length)) {
+      console.warn(`[SaveGame] fixture restore failed for entity ${neu}: ${ColliderFixture.lastReplaceError.code}`);
     }
-    const ok = Collider.replacePolygonsFlat(neu, rec.xy, rec.counts, rec.counts.length);
-    if (!ok) {
-      console.warn(
-        `[SaveGame] fixture restore failed for entity ${neu}: ${ColliderFixture.lastReplaceError.code}`
-      );
-    }
-  }
+  });
 }
 
 export function packMeshes(entityIndices) {
@@ -222,20 +201,12 @@ export function packMeshes(entityIndices) {
 }
 
 export function applyMeshes(records, restored) {
-  // null: the save has no such section (the pool was unbound):
-  // leave what onSpawned built. [] means none of the saved entities had one.
-  if (records == null || !restored || !restored.length) return;
-  const byOld = indexRecords(records);
-  for (let i = 0; i < restored.length; i++) {
-    const neu = restored[i].neu | 0;
-    const rec = byOld.get(restored[i].old | 0);
-    if (!rec || !rec.xy) {
-      MeshGeometry.clearEntity(neu);
-      continue;
+  applyPerEntity(records, restored, (neu, rec) => {
+    if (!rec || !rec.xy) MeshGeometry.clearEntity(neu);
+    else if (!MeshGeometry.replace(neu, rec.xy, rec.indices || null, rec.uv || null)) {
+      console.warn(`[SaveGame] mesh restore failed for entity ${neu}`);
     }
-    const ok = MeshGeometry.replace(neu, rec.xy, rec.indices || null, rec.uv || null);
-    if (!ok) console.warn(`[SaveGame] mesh restore failed for entity ${neu}`);
-  }
+  });
 }
 
 export function packNav() {
@@ -428,6 +399,17 @@ export function idMapGetter(pairs) {
     const key = old | 0;
     return key >= 0 && key < known && neu[key] >= 0 ? neu[key] : null;
   };
+}
+
+/**
+ * The apply functions' walk: `apply(neu, rec)` for each restored entity, with the record saved under its old index
+ * (undefined when it had none). Null records: the save has no such section (the pool was unbound), so what onSpawned
+ * built stays; [] means none of the saved entities had one.
+ */
+function applyPerEntity(records, restored, apply) {
+  if (records == null || !restored || !restored.length) return;
+  const byOld = indexRecords(records);
+  for (let i = 0; i < restored.length; i++) apply(restored[i].neu | 0, byOld.get(restored[i].old | 0));
 }
 
 function indexRecords(records) {
