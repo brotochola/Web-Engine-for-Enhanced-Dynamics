@@ -16925,8 +16925,8 @@
     {
       "id": "E-319",
       "title": "Box2D's pool size and spin at crowd 2.5: 4 physics threads plus E-298's spin keep about 3.1 cores busy while about 10 threads are runnable on 8 cores in the frame's first 7 ms",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "answered",
+      "statusText": "Answered 2026-11-21 (R-1691): 4 threads stay (3: physics +18.7 % 4/4, the others -3 to -12 %); the spin's cost went with E-493.",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -16952,7 +16952,8 @@
         "R-1238",
         "R-1244",
         "R-1250",
-        "R-1252"
+        "R-1252",
+        "R-1691"
       ]
     },
     {
@@ -40895,6 +40896,15 @@
       "title": "A restored Predator is lighter than a fresh one at the same time: Awake 12 229 -> 5 996, Moved 3 824 -> 3 050, physics 6.7 -> 2.9 ms (crowd 2.5)",
       "verdict": "note",
       "text": "**A restored Predator is lighter than a fresh one at the same game time (found 2026-11-21 gating E-493).** Predator `crowd=2.5&dayCycle=0` (two logic workers), single runs, 6 s windows: fresh at 10-16 s physics 7.9 ms, Moved 6 968, Awake 15 989; fresh at 30-36 s physics 6.7 ms of work, Moved 3 824, Awake 12 229, spatial 7.1, logic 4.1; restored from a save taken at 20 s and measured at 30-36 s: physics 2.9 ms of work (5.85 step, 2.95 wait), Moved 3 050, Awake 5 996, spatial 5.2, logic 2.6. Half the bodies awake and a fifth fewer moving: the save brings the bodies back asleep or some walkers stand after a load. The mixed battle restored still fights (physics 19 ms, R-1682)."
+    },
+    {
+      "id": "R-1691",
+      "date": "2026-11-21",
+      "time": "21:27",
+      "timeFrom": "recorded",
+      "title": "Box2D keeps 4 threads: 3 make Predator's battle physics +18.7 % (4/4) while the freed core makes the others 3-12 % cheaper",
+      "verdict": "answered",
+      "text": "**E-319 answered: Box2D keeps 4 threads in Predator.** The same build (main cdd5d071, E-493 in), `--query-a physicsWorkers=4 --query-b physicsWorkers=3`, Predator crowd 2.5, one logic worker, the mixed battle, from one save, 4 pairs, ended 21:27: physics 18.47 -> 22.31 ms (+18.7 %, worse 4/4) with 3 threads, while the core it frees makes the others cheaper (logic -11.6 %, spatial -4.0 %, renderer -4.0 %, pre-render -2.8 %, 0-1/4 worse); ACTIVE_PARTICLES +6.0 % (FAIL (load) on it alone). Physics is the CPU's critical path (the strategy, physics first), so 4 stay. The spin's half of the 2x2 is moot: E-493 (R-1689) took its scan away."
     }
   ],
   "leads": [
