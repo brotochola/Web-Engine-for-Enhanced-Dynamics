@@ -12713,13 +12713,13 @@
     {
       "id": "N-155",
       "title": "lightGalleryScene draws differently on WebGL and WebGPU: up to 52/255 on about 80 000 to 98 000 pixels",
-      "status": "open",
-      "statusText": "narrowed 2026-11-22 on the ASUS (R-1756): one lamp, its radius and glow; the light loop's text is the same on both",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-22 on the ASUS (2731a1d8, R-1757)",
       "date": "2026-11-12",
       "area": "render",
       "kind": "bug",
-      "result": "The same count with and without cones (raycast 79 499 both; basic 97 951 and 96 252); traced in the session to the lamp whose halo is on its own layer (glowLayer); predates the light API change.",
-      "next": "Lamp 8's light data texel as each backend uploads it and a 1 x 1 readback of the light pass at its core, to tell the data from the output stage; then weedDither and the target around values near 1.",
+      "result": "The WebGPU canvas was configured premultiplied; Pixi's add blend lowers the canvas alpha on WebGPU (src-alpha, one-minus-src-alpha) where WebGL keeps it at 1, so an ADD layer let the page through. Opaque now: lightGallery agrees within 5/255.",
+      "next": "",
       "refs": [
         "REVIEW_PLAN.md#N-155"
       ],
@@ -12733,7 +12733,9 @@
       "records": [
         "R-0940",
         "R-1741",
-        "R-1756"
+        "R-1756",
+        "R-1757",
+        "R-1759"
       ]
     },
     {
@@ -12788,12 +12790,12 @@
       "id": "N-158",
       "title": "Per-frame allocations left in pre-render (61 KB/s) and Pixi in the flashlight trace: frame loop, waits, camera bounds, gather columns",
       "status": "open",
-      "statusText": "found 2026-11-12 in DX-SPOT's engine trace",
+      "statusText": "round 3 2026-11-22 on the ASUS (9c1f02c9, R-1758): the gather's doubles through its table",
       "date": "2026-11-12",
       "area": "engine",
       "kind": "speed",
       "result": "_runFrame 7–9 KB/s per worker, _waitForPose/_waitForQueue 6–8, pre-render camera bounds ~20 (doubles in shared-map objects), writeGatherColumns put closure 4.9, renderVisibilityLighting clear colour and options 5.4.",
-      "next": "The visibility gather's doubles through an args block in the kernel's memory (a C change and a wasm build); Predator crowd 2.5 sampled again with a longer warm-up.",
+      "next": "sweep_light_* and wall_row's three doubles a lamp the same way (with the sweep kernel's tests and microbench); Predator crowd 2.5 sampled with a longer warm-up.",
       "refs": [
         "REVIEW_PLAN.md#N-158"
       ],
@@ -12807,7 +12809,8 @@
       "records": [
         "R-0958",
         "R-0960",
-        "R-1742"
+        "R-1742",
+        "R-1758"
       ]
     },
     {
@@ -22250,11 +22253,11 @@
     {
       "id": "N-270",
       "title": "On WebGPU, Pixi before 8.23 blends add with src-alpha / one-minus-src-alpha alpha factors: an additive pass drawn into a transparent target writes half WebGL's alpha (127 against 254), so it may composite dimmer (to check)",
-      "status": "open",
-      "statusText": "found 2026-11-17 reading Pixi 8.23's release notes (#12290; DX-PIXI823); not yet seen in the engine",
+      "status": "answered",
+      "statusText": "answered 2026-11-22 on the ASUS (R-1759): no visible effect once the canvas is opaque (N-155)",
       "date": "2026-11-17",
-      "result": "",
-      "next": "WebGL and WebGPU captures of flashlightStressScene and lightGallery (the glows at half resolution, E-404); fixed by DX-PIXI823, or by a blend-table patch if that waits.",
+      "result": "The add alpha factors mattered where they reached the page (N-155, fixed by the opaque canvas); a one, one patch changed 0 pixels in lightGallery on WebGPU.",
+      "next": "",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -22266,7 +22269,8 @@
         "blend parity"
       ],
       "records": [
-        "R-1315"
+        "R-1315",
+        "R-1759"
       ]
     },
     {
@@ -24807,6 +24811,45 @@
     },
     {
       "records": [
+        "R-1720"
+      ],
+      "refs": [],
+      "id": "N-400",
+      "title": "queryWake.test.js and waitMeterClaimBurst.test.js time a cross-thread event by a fixed wait and fail now and then under the suite's parallel files on 2 cores",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-21",
+      "result": "Fixed: the claim test's peer releases at a wall-clock time given ahead and a try counts only when this thread began before it (wallClockWait.mjs); the wake test waits for its callback up to 2 s. 24 parallel files, 4 rounds on the ASUS: 28 failures in 384 before, 0 after.",
+      "statusText": "fixed 2026-11-21 (4e7bb7b7), on fix/n400-two-core-test-waits (R-1720)",
+      "next": "Nothing left.",
+      "aliases": [
+        "queryWake",
+        "waitMeterClaimBurst",
+        "two-core flaky test"
+      ]
+    },
+    {
+      "records": [
+        "R-1722"
+      ],
+      "refs": [],
+      "id": "N-401",
+      "title": "physicsChainWait.test.js's bell test lets its ringer ring on its own clock, so on 2 cores several rings land in one sleep and the pass count reads 1 or 2",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-21",
+      "result": "Fixed: the ringer waits up to 500 ms for one service pass per ring so far before ringing again. 24 copies at once, 4 rounds on the ASUS: 7 failures in 384 before, 0 after.",
+      "statusText": "fixed 2026-11-21 (dde5b572), on fix/n401-physics-bell-test (R-1722)",
+      "next": "Nothing left.",
+      "aliases": [
+        "physicsChainWait",
+        "physics bell test"
+      ]
+    },
+    {
+      "records": [
         "R-1679",
         "R-1803"
       ],
@@ -24860,45 +24903,6 @@
       "date": "2026-11-21",
       "statusText": "Filed 2026-11-21 from N-212 (R-1694): the maxShadowCastingLights cut fades since R-1151; these two cuts do not.",
       "next": "Design read 2026-11-22 (not a quick fix): the per-entity cut fades the last kept light by how close the next one is, f = min(1, (dNext - dLast) / (0.2 dNext)), applied as DX-SPOT's cone_intensity applies its f (lane 2 of the row's light vec4, so the shaders do not change). It needs the (maxPE + 1)-th nearest distance: note_nearest keeps one pair more a caster (the near records' stride and region in wasmMemoryMap), caster_rows reads it, the JS twin and the float32 test module follow, and the lamps' map's keyed stamp rows take the same vec4. The per-light caster cut (ring_select / the radix select) fades its lim-th caster the same way by the (lim + 1)-th candidate. Both builds of the kernel, the parity tests, then a film of Predator at night where walkers cross between lamps, before and after."
-    },
-    {
-      "records": [
-        "R-1720"
-      ],
-      "refs": [],
-      "id": "N-400",
-      "title": "queryWake.test.js and waitMeterClaimBurst.test.js time a cross-thread event by a fixed wait and fail now and then under the suite's parallel files on 2 cores",
-      "status": "kept-hygiene",
-      "kind": "bug",
-      "area": "tests",
-      "date": "2026-11-21",
-      "result": "Fixed: the claim test's peer releases at a wall-clock time given ahead and a try counts only when this thread began before it (wallClockWait.mjs); the wake test waits for its callback up to 2 s. 24 parallel files, 4 rounds on the ASUS: 28 failures in 384 before, 0 after.",
-      "statusText": "fixed 2026-11-21 (4e7bb7b7), on fix/n400-two-core-test-waits (R-1720)",
-      "next": "Nothing left.",
-      "aliases": [
-        "queryWake",
-        "waitMeterClaimBurst",
-        "two-core flaky test"
-      ]
-    },
-    {
-      "records": [
-        "R-1722"
-      ],
-      "refs": [],
-      "id": "N-401",
-      "title": "physicsChainWait.test.js's bell test lets its ringer ring on its own clock, so on 2 cores several rings land in one sleep and the pass count reads 1 or 2",
-      "status": "kept-hygiene",
-      "kind": "bug",
-      "area": "tests",
-      "date": "2026-11-21",
-      "result": "Fixed: the ringer waits up to 500 ms for one service pass per ring so far before ringing again. 24 copies at once, 4 rounds on the ASUS: 7 failures in 384 before, 0 after.",
-      "statusText": "fixed 2026-11-21 (dde5b572), on fix/n401-physics-bell-test (R-1722)",
-      "next": "Nothing left.",
-      "aliases": [
-        "physicsChainWait",
-        "physics bell test"
-      ]
     },
     {
       "records": [
@@ -24999,6 +25003,25 @@
     },
     {
       "records": [
+        "R-1747"
+      ],
+      "refs": [],
+      "id": "N-407",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-22",
+      "result": "The scoreboard reads each primary's exact-frame mean (exact.workMs, plus extraMs on physics) when both sides have one; runPredatorAbab did already.",
+      "title": "The scoreboard judges each row by the sampled STEP_MS mean (statsSamplesAverage, one frame in six), which misses periodic spike frames: N-403's spatial worker read 0.91 ms sampled against 3.11 ms exact",
+      "statusText": "fixed 2026-11-22 on the ASUS (18306d97, R-1747)",
+      "next": "",
+      "aliases": [
+        "scoreboard sampled mean",
+        "exact-frame primary"
+      ]
+    },
+    {
+      "records": [
         "R-1819"
       ],
       "refs": [],
@@ -25024,25 +25047,6 @@
       "date": "2026-11-22",
       "statusText": "Filed 2026-11-22 from R-1823: the capacity search ended at the knob's top (PREDATOR_CROWD_MAX 2.5).",
       "next": "A crowd cap past 2.5 with entityIdWidth 'auto' going to 32; first the memory bill (spatial rows at maxNeighbors 1024, Box2D's wasmMemoryMB past 256, the render queue), maybe a smaller maxNeighbors for the soldiers' 250 px sight; then runCapacity to the new top, and the 16- against 32-bit cost at crowd 2.5 (the same scene both ways)."
-    },
-    {
-      "records": [
-        "R-1747"
-      ],
-      "refs": [],
-      "id": "N-407",
-      "status": "kept-hygiene",
-      "kind": "bug",
-      "area": "tests",
-      "date": "2026-11-22",
-      "result": "The scoreboard reads each primary's exact-frame mean (exact.workMs, plus extraMs on physics) when both sides have one; runPredatorAbab did already.",
-      "title": "The scoreboard judges each row by the sampled STEP_MS mean (statsSamplesAverage, one frame in six), which misses periodic spike frames: N-403's spatial worker read 0.91 ms sampled against 3.11 ms exact",
-      "statusText": "fixed 2026-11-22 on the ASUS (18306d97, R-1747)",
-      "next": "",
-      "aliases": [
-        "scoreboard sampled mean",
-        "exact-frame primary"
-      ]
     }
   ],
   "records": [
@@ -41052,6 +41056,119 @@
       "text": "**Backlog triage, 2026-11-21 evening: the 192 active items (178 open, 9 running, 5 blocked) read one by one against the register and the code they name.** Most are real and current: 184 of them were filed from 2026-11-10 on, from the trace harvests.\n\nClosed or changed:\n- E-171 dropped: its own record (R-0733) dropped it on 2026-10-29; the status had stayed open.\n- E-238, E-321, E-352 superseded by E-538: Predator's emits are presets, an emit from a preset allocates nothing, and the draws come in batches. The heap samples of E-541 to E-543 show no emit allocation left.\n- E-382, E-383 superseded: they compared DirectionalSprite against main's hand-picked directions, which are gone since DX-LIGHT3D merged.\n- E-210 unblocked: a restored Predator now keeps its state (E-530, E-535; R-1663 ran the mixed battle from a save).\n\nGroups worth one owner each, so the count overstates the work:\n- Chrome's GPU process on light3d: E-407, E-412, E-414, E-415, E-416, E-417, E-428 (and E-340): one trace of GL commands answers most of them.\n- The 3D light pass's shader: E-405, E-406, E-408, E-409, E-410 (register count, divisions, taps): one shader rewrite.\n- The debug UI: DX-DEBUGUI and DBG-1 to DBG-12, one plan.\n- WebGL against WebGPU gaps: E-373, E-465, E-466, E-467, N-155.\n\nStatuses to check with the owner, not changed here: DX-DIRSPRITE, DX-SHADOW3D, DX-DEPTH, DX-SELFSHADOW, DX-EMISSIVE and DX-CASTER have read \"running\" since 2026-11-15, but DX-LIGHT3D merged that day; what is left of each (emissive v2, the casters' second part, the static cache) would be clearer as its own row."
     },
     {
+      "id": "R-1715",
+      "date": "2026-11-21",
+      "time": "20:04",
+      "timeFrom": "recorded",
+      "title": "N-243's WebGPU half fixed: webgpuFrameRecorder keeps rates a frame unrounded, with totals and ms a draw",
+      "verdict": "kept-hygiene",
+      "text": "**N-243's WebGPU half fixed: webgpuFrameRecorder's result holds unrounded rates a frame, their totals and ms a draw; only the printed table rounds.** Branch fix/n243-webgpu-unrounded, dff643d5, made on the ASUS by the main PC's session over ssh.\n\n- **Cause:** webgpuRecorderWorker.mjs rounded passes and draws a frame to 0.1, instances to a whole number and ms to 0.001 in the result, as glFrameRecorder did before 289933e0 (R-1712).\n- **Fix:** the GPU pass rows carry passesPerFrame, drawsPerFrame, instancesPerFrame and the ms rates unrounded, with the instance total and, per pass, msPerDraw; the draw rows the same. The frame-span medians are unrounded too. The printed tables round as before.\n- **Checked by a real recording** on the ASUS (Intel HD 620, Chrome 158, bunnyMark ?backend=webgpu, --gpu-draws, 3 s): 18 draws in 69 frames; drawsPerFrame 0.26087 = 18 / 69 (the old result said 0.3, +15 %); msPerDraw 157.7.",
+      "commits": [
+        "dff643d5"
+      ]
+    },
+    {
+      "id": "R-1716",
+      "date": "2026-11-21",
+      "time": "20:22",
+      "timeFrom": "recorded",
+      "title": "DBG-1 fixed: a hidden layer hides all it draws (map shadows cleared, hidden entities cast nothing, unshaded and uvFill follow)",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-1 fixed: the Layers panel's Vis box now hides everything a layer draws.** Branch fix/dbg1-layer-vis (b131532c, on the ASUS, by the main PC's session over ssh), after the probe's commit daafa628.\n\n- **Confirmed on screen before fixing** (layerPropsProbe on the light bench, ?still=1, Intel HD 620): hiding castedShadows changed 0.00 % of the picture in shadow-map mode, so the shadows stood.\n- **Causes and fixes (pixiWorker.js):**\n  - castedShadows in map mode: hiding it stopped the shadow pass, the only code that draws or clears the sun's and the lamps' maps, and the light pass kept sampling them. Hidden, the maps are cleared once; the tick restarts, so the first frame shown again draws them whatever shadowUpdateInterval is.\n  - Hidden entities still cast: the sun and stamp rows are the entities' (pre-render takes them from the render queue). A hidden entities layer now casts nothing, its cookies go too, and volumes still cast. One per-frame check.\n  - Hidden lighting left the unshaded composite on screen with last frame's pixels: hidden with it now.\n  - A MESH layer's uvFill mesh on the stage ignored Vis: it follows it (its instanceCount still says whether it has triangles).\n  - The plan's suspect 3.1.5, confirmed by reading only: in Pixi's own pack mode, entities hidden with their glows shown were packed and shown again with the glows. Hidden again after the pack.\n  - The castedShadows row's tip in map mode says it stands for the maps' shadows.\n- **On screen, old -> new** (light bench ?still=1, HD 620, WebGL and WebGPU gave the same numbers, different pictures): castedShadows hidden 0.00 % -> 10.76 % of the picture (the shadows go); entities hidden 17.82 % -> 28.57 % (their shadows go too); lighting hidden 99.83 % both. Shown again, each step gave the first picture back exactly (0.00 %). The pictures show no shadow left with castedShadows hidden, and bare grass with entities hidden.\n- **dxCaptureScene ?shadowMaps=1 showed nothing either way:** a flat top-down scene, whose casters throw no map shadow at 12 h, 16 h or 22 h. The light bench is the scene for map shadows.\n- **Test:** layerVisibilityPaths.test.js, the real Pixi worker in Node, its passes stubbed: 4 of its 5 tests fail on the old code. Node suite on the ASUS 3434 of 3434.\n- **Not measured:** a bug fix off the hot path (one visibility read a frame), hygiene keep; nothing timed.",
+      "commits": [
+        "daafa628",
+        "b131532c"
+      ]
+    },
+    {
+      "id": "R-1717",
+      "date": "2026-11-21",
+      "time": "20:31",
+      "timeFrom": "recorded",
+      "title": "DBG-3 fixed: a layer's alpha fades the light's meshes, the unshaded pixels and the entities' solid pixels",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-3 fixed: a layer's alpha fades the light's meshes, the unshaded pixels and the entities' solid pixels.** Branch fix/dbg3-layer-alpha (on top of fix/dbg1-layer-vis), on the ASUS, by the main PC's session over ssh.\n\n- **Confirmed on screen before fixing** (layerPropsProbe, Intel HD 620): with lightEdges (light bench ?res=0.5&depth=1) lighting alpha 0.5 and 0.25 changed 0.00 % of the picture, WebGL and WebGPU; the light pass drawn on the canvas (dxCaptureScene, no render target) also 0.00 % at alpha 0.5. The plain light sprite (light bench at res 1) already faded.\n- **Fixes:**\n  - lightEdges.js (GLSL and WGSL): the multiplied halves mix the light toward white by uColor.a (alpha 0 applies no light), the unshaded halves scale by it.\n  - lightingBasic (GLSL and WGSL), the !EDGES output: the same mix, which only matters when the pass is drawn on the canvas (a render target's pass draws at alpha 1).\n  - unshadedComposite.js: scales by uColor.a; the worker gives the unshaded composite the lighting layer's alpha (at creation and on each change), since it makes up for that light.\n  - The entities' opaque pass (E-448) is not allowed while the entities root's alpha is under 1 (a per-frame test in updateSpritesFromRenderQueue); alpha 1 is unchanged.\n- **On screen, before -> after:** lightEdges, lighting alpha 0.5: 0.00 % -> 99.84 % (max 88), alpha 0.25: 0.00 % -> 99.84 % (max 132), WebGL and WebGPU; the canvas pass, alpha 0.5: 0.00 % -> 21.29 % (max 22). Each step gave the first picture back on restore. At lighting 0.5 the shadows show at half strength; at entities 0.5 the grass shows through the entities with no jump.\n- **Not shown on screen:** the opaque pass's gate. That pass is off on Intel's integrated GPUs (E-502), and with ?opaquePass=1 it did not pay in dxCaptureScene (small sprites), so entities alpha read the same before and after there. layerAlphaPaths.test.js covers it on the real worker.\n- **Left:** worldRect layers' stage mesh (plan 3.3.3) still runs the game's own fragment without uColor, so such a layer fades only while its cached picture is shown; a fix needs a GLSL wrapper round the game's shader.\n- **Test:** layerAlphaPaths.test.js (3 tests, all fail on the old code; the shaders by source, as the plan allows for a GPU blend).\n- **Not measured:** the lightEdges halves gain one mix a pixel at alpha 1; a hygiene keep unless the owner scene's drawn frames move on the GTX 1650 (not run: this session's runs are on the ASUS).",
+      "commits": [
+        "43d6b7ac"
+      ]
+    },
+    {
+      "id": "R-1718",
+      "date": "2026-11-21",
+      "time": "20:45",
+      "timeFrom": "recorded",
+      "title": "DBG-2 fixed: layer blendMode, containerBlendMode and zIndex setters, applied to every object of the layer; the blend list trimmed",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-2 fixed: a layer's blend modes and z change at run time and stay changed.** Branch fix/dbg2-layer-blend (on top of fix/dbg3-layer-alpha), on the ASUS, by the main PC's session over ssh.\n\n- **Causes (the plan's section 3.2, all read in the code before fixing):** the panel posted setLayerProps, which set the blend on the layer's display object only; the entities' meshes and the light's meshes set their own, so nothing inherited it; Cont Blend reached custom layers only; the panel never wrote the Layer SAB, so registering a layer's object again (a shader swap, a look composite, the light pass rebuilt) put the config's value back; about 22 of the 33 names drew as normal (Pixi's advanced modes are not registered in this build).\n- **Fix:**\n  - Layer setters for blendMode and containerBlendMode (by name) and zIndex: the config SAB plus a presentation dirty flag (a new Int32 view at the config SAB's end), as alpha and visible. An unknown name throws with the list; a config id out of range throws at registration.\n  - The Pixi worker's syncLayerPresentationFromSharedState applies a dirty layer each frame to every object that draws it: the display object; the entities' batch mesh and edge pass (InstancedSpriteBatch.setLayerBlend; the opaque pass drops itself off 'normal'); a custom layer's pieces drawn into its RT take the container blend; a MESH layer's uvFill mesh on the stage follows the fill mesh (blend and z); the unshaded composite's z follows the light's. _applyLayerPresentation reads the same SAB, so a re-registration keeps them.\n  - setLayerProps keeps only the shader swap and the splat radius (one API, no aliases).\n  - The list is trimmed (the owner's decision 4, 2026-11-18): normal, add, multiply, screen, erase, normal-npm, add-npm, screen-npm, none, min, max; BLEND_MODES renumbered 0 to 10. Nothing in src, demos, tests or the guide used a removed mode (the code names modes, never numbers).\n  - The panel calls the setters. The lighting layer's blend select is off with a tip (its meshes multiply and add by themselves, so a blend on the host would break or do nothing); Cont Blend is off on built-in layers.\n  - types/weed.d.ts and the guide's blend paragraph follow.\n- **Test:** layerBlendPaths.test.js (4 tests: the list, the setters, the worker on run-time changes and a re-registration, setLayerProps without blend fields) and layerBlendSinglePass.test.js's run-time case through the setter: 5 fail on the old code.\n- **Not measured:** off the hot path (a dirty-flag loop over the layers a frame); hygiene keep.\n- **On screen** (layerPropsProbe, dxCaptureScene ?hour=16&deco=1&shade=1, Intel HD 620, WebGL and WebGPU alike; the old code had no setter to probe): entities blendMode add changed 1.21 % of the picture (max 70: white balls over the floor), multiply 3.70 % (max 255); the overlay decorations' layer add 6.08 % (the black squares vanish); the MESH layer's add 11.17 % and zIndex -1 11.17 % (under the ground). Each step gave the first picture back on restore (0.00 %).",
+      "commits": [
+        "830450f4",
+        "893571c1"
+      ]
+    },
+    {
+      "id": "R-1719",
+      "date": "2026-11-21",
+      "time": "21:17",
+      "timeFrom": "recorded",
+      "title": "DX-SCORELOAD built and used on the ASUS: rows at a load calibrated per machine; ray and rayVsBox2d decide (tie), bullets and spawn kept, spatial still under the floor",
+      "verdict": "kept-hygiene",
+      "text": "**DX-SCORELOAD built and used on the ASUS: the scoreboard's stress rows at a load calibrated per machine.** Branch tools/dx-scoreload (6c1e852a scene knobs, 49fc08e0 the calibration and runScoreboard --loads), on the ASUS, by the main PC's session over ssh.\n\n- **What:** the catalog names each floor-bound row's load knob (scene.loadKnob: query key, default, cap): ray, rayVsBox2d (casts), spatial (entities, new), queryAabb (queries, new), bullets (bullets), spawn (storm). calibrateScoreboardLoads.mjs runs a row's baseline side once on the machine at hand, as the scoreboard does, and raises the knob in a straight line toward 9 ms while the primary reads under 7.5 ms (1.25 x the floor), up to three runs or the cap; it writes a loads file (rows it leaves out are kept from an --out of the same baseline). runScoreboard --loads runs both sides of each row at that load and records the query in the row's verdict.\n- **Calibration on the ASUS** (jobs 0900m 20:57-21:04 and 0900n 21:06-21:07; v0.14.0's src under main 0b260fd7's scenes, headless, one run a step), the baseline primary at the default -> at the chosen load: ray casts 3072 -> 6218: logic0 4.45 -> 7.54 ms; rayVsBox2d casts 3072 -> 5640: 4.90 -> 7.53; bullets 40000 -> 54226: particle 6.64 -> 8.01; spawn storm 1800 -> 3635 -> 4883: logic0 4.46 -> 6.70 -> 8.38; queryAabb queries 1 -> 90 -> 512 -> 1106: logic0 0.06 -> 0.76 -> 3.40 -> 8.00 (about 7 us of own work a query, linear); spatial entities 9000 -> 40000 (the cap): spatialMax 0.47 -> 2.71 ms, still under the floor (about 110 000 would be needed, past what the grid's buffers allow).\n- **box2dRayJs has no knob:** ?casts sends its Box2D rays to the physics worker; logic0, its primary, read 0.18 -> 0.74 ms from 3 072 to 49 152 casts.\n- **queryAabb at 1106 queries is wait-bound:** each query is a round trip to physics, so logic0 runs at about 21 fps with 40 ms of waits a frame; its own work is what the row compares.\n- **A loaded scoreboard of those six rows** (main 0b260fd7 against v0.14.0, 2 runs a side, --skip-kernels --no-recheck, job 0900o, 21:07-21:17): ray TIE (logic0 -2.4 %), rayVsBox2d TIE (+2.3 %), bullets KEPT (particle -16.4 %), spawn KEPT (logic0 -13.5 %), queryAabb WORSE (logic0 +5.5 %, not rechecked, in the wait-bound regime above), spatial FAIL (floor). Before, all six read FAIL on this machine (floor, or spawn's load not comparable).\n- **A lead, not a verdict:** at 40 000 stationary entities spatial read main 3.99 ms against v0.14.0's 2.62 ms (+52 %), where at 9 000 earlier ASUS scoreboards had main 55 to 65 % cheaper. Under the floor and one sitting of 2 runs: worth a look at a large entity count on the main PC before calling it anything.\n- **Test:** scoreboardLoads.test.js (the scene at a load, the linear step, the primary, the loads file, the catalog's knobs).\n- The loads file of the ASUS is C:\\weedlab\\scoreboard-loads.json (not in the repo: a machine's calibration).",
+      "commits": [
+        "6c1e852a",
+        "49fc08e0"
+      ]
+    },
+    {
+      "id": "R-1720",
+      "date": "2026-11-21",
+      "time": "21:30",
+      "timeFrom": "recorded",
+      "title": "N-400 fixed: the claim-wait and query-wake tests wait for their cross-thread event (28 failures in 384 under 24 parallel files before, 0 after)",
+      "verdict": "kept-hygiene",
+      "text": "**N-400 fixed: two node tests timed a cross-thread event by a fixed wait and failed now and then under the suite's parallel files on the ASUS's 2 cores.** Branch fix/n400-two-core-test-waits (4e7bb7b7), on the ASUS, by the main PC's session over ssh.\n\n- **Found** in this session's full suites on the ASUS (3437 and 3434 tests): queryWake.test.js \"a request on every sync query kind wakes physics\" once, waitMeterClaimBurst.test.js \"a blocked claim counts as wait\" once; each 3 of 3 alone.\n- **Causes:** the claim test's peer released the slot 30 ms after its own start, and this thread sometimes reached the call after that (its 'up' message and the event loop ran late), so nothing was metered. The wake test waited a fixed 10 ms for an Atomics.waitAsync callback that comes when this thread next runs its event loop.\n- **Fixes:** the claim test's peer releases at a wall-clock time given ahead, and a try counts only when this thread began before it (tests/helpers/wallClockWait.mjs's waitedUntil, as N-326), up to 5 tries; the wake test waits for the callback, up to 2 s.\n- **Checked under load:** 12 copies of each file at once (24 files, --test-concurrency=24), 4 rounds on the ASUS (C:\\weedlab\\flakeStress.cmd): 28 failures in 384 before (26 claim, 2 wake), 0 in 384 after. Node suite 3429 of 3429.",
+      "commits": [
+        "4e7bb7b7"
+      ]
+    },
+    {
+      "id": "R-1721",
+      "date": "2026-11-21",
+      "time": "21:44",
+      "timeFrom": "recorded",
+      "title": "N-226 screened by wasmTierCompare (default against --no-liftoff, 56 benches): liquidFunExtract timed Liftoff 2 to 3.6x slow, fixed; four left",
+      "verdict": "note",
+      "text": "**N-226 screened: which WASM kernel benches time Liftoff, by a tool that runs each one as shipped and under node --no-liftoff in pairs; one fixed, four left.** Branch tools/n226-wasm-tier (42aa376d and a2c9c8e9 the tool, 47ac1aab the first fix), on the ASUS, by the main PC's session over ssh.\n\n- **The tool:** wasmTierCompare.mjs runs every *Microbench.mjs whose source mentions wasm, as it ships and under --no-liftoff (every WASM function compiled by TurboFan from the start), alternating which runs first, and compares each case's rate (opsPerSec, or 1000 / ms). LIFTOFF: the median ratio over 1.05 with every pair agreeing.\n- **Screen, 2 pairs, 56 benches (job 0900p, 21:22-21:28):** LIFTOFF flags on 7 (decalStampWasm x1.28, solidSegmentsWasm x1.20, painterRadixWasm x1.15-1.20, bodyForceCall up to x1.24, spatialGridMovers x1.14, shadowStamp x1.13, preRenderEmitAdobe x1.08), the reverse on 8 others; 20 benches that report ms read nothing (fixed in a2c9c8e9).\n- **Confirmation, 4 pairs (job 0900q, 21:34-21:40):** the ASUS's kernel noise (about +-20 %, R-1580) explains most of the screen: decalStampWasm, solidSegmentsWasm, painterRadixWasm, spatialGridMovers, preRenderEmitAdobe and every reverse flag read even. Left LIFTOFF: shadowStamp's stamp x1.19, bodyForceCall's batch r1 x1.10. The ms benches (2 pairs): liquidFunExtract x2.78 at k=64 and x1.76 at k=1024, liquidFunComputeDepth x1.21, sunFrames x1.17, liquidFunPassProfile x1.08 to x1.14 on every pass, decorationVisibilityGrid x1.06.\n- **Why warmWasm did not cover them:** five of the seven first flags already warm through wasmKernelHelpers.warmWasm, which checks that the timed export reached TurboFan; V8 tiers each WASM function up on its own work, so a callee inside the module can still run Liftoff code. The benches that stay flagged time one-shot calls (a fresh world or system a sample) or few calls, which a callee never warms in.\n- **Fixed: liquidFunExtractMicrobench** warms 1.5 s before each k, on one world for the process (the module has no world destroy). ASUS, median ms at k = 64 / 512 / 1024: before 0.250 / 0.144 / 0.159 (0.09 to 0.27 apart), before under --no-liftoff 0.090 / 0.090 / 0.091, now 0.069 / 0.070 / 0.071; the tool, 4 pairs: k=64 x1.064, the others even. Its old numbers read the extract 2 to 3.6 times too slow.\n- **Left (the next):** liquidFunComputeDepth, liquidFunPassProfile, sunFrames and shadowStamp's stamp case (confirm each with --pairs 4 on a quiet machine, then a time-based warm-up as above), bodyForceCall's batch r1; and the kernels' records that used those benches read Liftoff-inflated numbers before the fix. A kernel claim compares two variants under the same warm-up, so its ratio stood unless one variant tiered sooner.",
+      "commits": [
+        "42aa376d",
+        "a2c9c8e9",
+        "47ac1aab"
+      ]
+    },
+    {
+      "id": "R-1722",
+      "date": "2026-11-21",
+      "time": "21:50",
+      "timeFrom": "recorded",
+      "title": "N-401 fixed: physicsChainWait's ringer waits for the waiter's pass after each ring (7 failures in 384 under 24 copies before, 0 after)",
+      "verdict": "kept-hygiene",
+      "text": "**N-401 fixed: physicsChainWait's bell test let its ringer outrun the waiter on 2 cores.** Branch fix/n401-physics-bell-test, on the ASUS, by the main PC's session over ssh.\n\n- **Found** in the batch's full suite on the ASUS (3446 tests): \"physics sleeps until the bell rings: a query posted mid-wait is answered, the frames end the wait\" read 2 service passes (3 to 5 expected); 3 of 3 alone. Under 24 copies at once, 4 rounds: 7 failures in 384, each reading 1 pass.\n- **Cause:** the ringer rang on its own clock (3, 6 and 9 ms after go), spinning; on 2 cores under parallel files it rang twice or three times while the waiter was still asleep, or before it first slept, so the waiter woke once (or never) for several rings.\n- **Fix:** before each ring the ringer waits, up to 500 ms, until the waiter has made one pass per ring so far (the test's service counts passes in a shared word). Each ring now meets an awake waiter; a waiter that stopped serving on a ring still fails the count (the ringer rings anyway after 500 ms).\n- **Checked:** 24 copies at once, 4 rounds on the ASUS (C:\\weedlab\\flakeStress2.cmd): 7 failures in 384 before, 0 in 384 after. The same class as N-400 (a cross-thread test timed on one thread's own clock).",
+      "commits": [
+        "dde5b572"
+      ]
+    },
+    {
+      "id": "R-1723",
+      "date": "2026-11-21",
+      "time": "21:53",
+      "timeFrom": "recorded",
+      "title": "N-226 finished on the ASUS: only liquidFunComputeDepth held at 4 pairs (x1.145), now warmed to TurboFan (3.574 -> 3.094 ms); the other flags were noise",
+      "verdict": "kept-hygiene",
+      "text": "**N-226 finished on the ASUS: of the screen's flags, only liquidFunComputeDepth held at 4 pairs, and it now warms to TurboFan; nothing else left.** Branch tools/n226-compute-depth-warm, on the ASUS, by the main PC's session over ssh.\n\n- **Confirmation, 4 pairs** (job 0900r): liquidFunComputeDepth x1.145 LIFTOFF; liquidFunPassProfile (x1.017), sunFrames (x1.067), shadowStamp (x1.083) and decorationVisibilityGrid (x1.032) even: their 2-pair flags were the ASUS's noise.\n- **Fixed: liquidFunComputeDepthMicrobench** warms 1.5 s on one world for the process, as liquidFunExtract's. ASUS, median ms of the first step after the ice: before 3.574 (3.11 to 3.73), before under --no-liftoff 3.121, now 3.094 (3.09 to 3.20); the tool, 4 pairs: even (x1.002).\n- **Left of the earlier rounds:** bodyForceCall's batch r1 read x1.10 in one 4-pair round (one case of nine); not chased (one case, a 15 W CPU's noise of about +-20 %).\n- **How to use the tool:** wasmTierCompare.mjs --pairs 2 screens every WASM bench in about 6 minutes on the ASUS; confirm a flag with --pairs 4 before acting on it.",
+      "commits": [
+        "6645b189"
+      ]
+    },
+    {
       "id": "R-1679",
       "date": "2026-11-21",
       "time": "20:08",
@@ -41239,252 +41356,6 @@
       "title": "N-329 fixed: a loaded game's guns stayed on cooldown (performance.now() stamps); the save keeps the sim clock (format 8) and Predator times guns on it; restored battle now tracks the fresh one (impacts 370 -> 7 500/s)",
       "verdict": "kept-hygiene",
       "text": "**N-329 found: after a load every gun stayed on cooldown.** Person stamped `PersonComponent.lastShotTime` with the logic worker's `performance.now()`; the save kept the stamps and a new page's `performance.now()` starts near 0, so `canFire` stayed false until the new clock passed the old stamps (tens of seconds). No bullets, no new deaths, no new panic: the restored world calmed down. Found with `tests/bench/restoreFidelity.mjs` (new: the same battle fresh, saved, and restored from that save beside it), Predator `crowd=2.5&dayCycle=0`:\n\n- saved at 12 s (mid-battle): bullet impacts published ~9 000/s fresh against ~370/s restored; live bullets 60-250 against 9-16.\n- saved at 20 s: civilians killed in the next 10 s, 29 fresh against 1 restored; soldiers in RANGED_ATTACKING were alike (10-20), so they aimed and never fired.\n- Per-entity sight, neighbours, guns and FSM state times came back right (probed by type): only the stamp was wrong.\n\n**Fix.** Engine (1bde21d5): the save keeps the sim clock and a load goes on from it (TIME section: scale f32 + `Time.simNowMs` f64; format 7 -> 8; `Time._setSimNow`). Demo (935a7ba9): Person's cooldown reads `Time.simNowMs`; the car scene's hit throttle, which shares the column, too. After it, same battles: saved at 12 s, ~7 500 impacts/s restored and civilians dying at the fresh rate (1 083 against 947 in 5 s); saved at 20 s, the restored series tracks the fresh one (deaths 27 against 28, panic 1 585 against 1 503 eight seconds on).\n\n**Load left after the fix** (same battle, the bench page's 6 s window 10 s after a 20 s save, three sittings): physics 15.0 / 15.5 / 15.6 ms fresh against 13.9 / 12.8 / 14.0 restored; Awake 18 116 / 16 887 / 18 348 against 16 675 / 16 276 / 17 525 (-4 to -8 %); Moved mixed (6 824 / 4 614 / 6 271 against 6 534 / 5 649 / 5 771); spatial -1 to -8 %, logic -4 to -8 %. Per awake body restored physics costs 6-14 % less: likely the Box2D world rebuilt in one pass against one grown over 30 s of spawns and deaths (not measured). Both sides of a from-save sitting load the same save, so the comparison stays even; the cached format 7 saves no longer match (the runner's key holds the format) and are remade."
-    },
-    {
-      "id": "R-1801",
-      "date": "2026-11-21",
-      "time": "23:59",
-      "timeFrom": "recorded",
-      "title": "N-313 fixed: the awake reorder gathers into the step's stack and copies back; Predator crowd 2.5 Box2D memory peak 553-557 -> 518-519 MB, harness heap top 129.6 -> 109.6 MB; physics +0.8 % NEUTRAL, LiquidFun neutral",
-      "verdict": "kept-hygiene",
-      "text": "**N-313 fixed: E-322's awake reorder gathers into the step's stack and copies back, instead of into new buffers.** Box2D a87c81e (branch weed/n313-reorder-in-stack), shipped as the wasm of WeedJS fix/n313-reorder-in-stack 06f7d849. The reorder runs before any other task of the step uses the stack, which the solver already sized; it now gathers the body sims, body states and each sorted contact array there when the stack has the room (`b2GetStackRoom`), then copies back in a parallel pass. An array the stack cannot hold still goes to a new buffer, as before, rather than growing the stack.\n\n- **Crowd harness** (weed mode, 38 000 walkers, order 2, churn 100, idle 20, 960 steps, reorder -30, one round, 23:40-23:46): heap top 107.2 MB with no reorder; reordering, 129.6 MB on main against 109.6 MB with the fix (bytes in use 96.3 MB on every arm). poseHash 963cbc7b036c09c5 and weedHash identical to main's for each setting. The copy costs the reorder 5.27 -> 6.43 ms per 30-step cycle (median of 32 cycles), its longest step 3.43 -> 4.79 ms: about 0.04 ms a step on average.\n- **Predator crowd 2.5** (`dayCycle=0`, from the E-210 save, owner physics, 4 pairs, to 23:52): NEUTRAL; physics 14.102 -> 14.308 ms (+0.8 %, worse 2/4), logic +1.4 %, spatial -0.2 %, pre-render -1.0 %, presented 60 = 60; loads within 1 %. Box2D's memory peak (MEMORY_PEAK_KB): 552.9 to 556.8 MB on main against 518.2 to 518.9 MB with the fix, every run (-38 MB).\n- **LiquidFun** (the Box2D rule): liquidFunStressScene `water=1.5`, owner physics, 4 pairs, to 23:56: NEUTRAL, physics 9.239 -> 9.333 ms (+2.5 %, worse 2/4; 3 bodies, which the reorder cannot reach); liquidFunBodyCoupleStressScene, to 23:59: NEUTRAL, physics 8.001 -> 7.791 ms (-1.6 %, worse 1/4).\n\nKept as hygiene (no primary worker 3 % worse). Merged: Box2D 0f0fa10, WeedJS 3f9f23f2. Node suite 3434/3434, demos 143/143."
-    },
-    {
-      "id": "R-1715",
-      "date": "2026-11-21",
-      "time": "20:04",
-      "timeFrom": "recorded",
-      "title": "N-243's WebGPU half fixed: webgpuFrameRecorder keeps rates a frame unrounded, with totals and ms a draw",
-      "verdict": "kept-hygiene",
-      "text": "**N-243's WebGPU half fixed: webgpuFrameRecorder's result holds unrounded rates a frame, their totals and ms a draw; only the printed table rounds.** Branch fix/n243-webgpu-unrounded, dff643d5, made on the ASUS by the main PC's session over ssh.\n\n- **Cause:** webgpuRecorderWorker.mjs rounded passes and draws a frame to 0.1, instances to a whole number and ms to 0.001 in the result, as glFrameRecorder did before 289933e0 (R-1712).\n- **Fix:** the GPU pass rows carry passesPerFrame, drawsPerFrame, instancesPerFrame and the ms rates unrounded, with the instance total and, per pass, msPerDraw; the draw rows the same. The frame-span medians are unrounded too. The printed tables round as before.\n- **Checked by a real recording** on the ASUS (Intel HD 620, Chrome 158, bunnyMark ?backend=webgpu, --gpu-draws, 3 s): 18 draws in 69 frames; drawsPerFrame 0.26087 = 18 / 69 (the old result said 0.3, +15 %); msPerDraw 157.7.",
-      "commits": [
-        "dff643d5"
-      ]
-    },
-    {
-      "id": "R-1716",
-      "date": "2026-11-21",
-      "time": "20:22",
-      "timeFrom": "recorded",
-      "title": "DBG-1 fixed: a hidden layer hides all it draws (map shadows cleared, hidden entities cast nothing, unshaded and uvFill follow)",
-      "verdict": "kept-hygiene",
-      "text": "**DBG-1 fixed: the Layers panel's Vis box now hides everything a layer draws.** Branch fix/dbg1-layer-vis (b131532c, on the ASUS, by the main PC's session over ssh), after the probe's commit daafa628.\n\n- **Confirmed on screen before fixing** (layerPropsProbe on the light bench, ?still=1, Intel HD 620): hiding castedShadows changed 0.00 % of the picture in shadow-map mode, so the shadows stood.\n- **Causes and fixes (pixiWorker.js):**\n  - castedShadows in map mode: hiding it stopped the shadow pass, the only code that draws or clears the sun's and the lamps' maps, and the light pass kept sampling them. Hidden, the maps are cleared once; the tick restarts, so the first frame shown again draws them whatever shadowUpdateInterval is.\n  - Hidden entities still cast: the sun and stamp rows are the entities' (pre-render takes them from the render queue). A hidden entities layer now casts nothing, its cookies go too, and volumes still cast. One per-frame check.\n  - Hidden lighting left the unshaded composite on screen with last frame's pixels: hidden with it now.\n  - A MESH layer's uvFill mesh on the stage ignored Vis: it follows it (its instanceCount still says whether it has triangles).\n  - The plan's suspect 3.1.5, confirmed by reading only: in Pixi's own pack mode, entities hidden with their glows shown were packed and shown again with the glows. Hidden again after the pack.\n  - The castedShadows row's tip in map mode says it stands for the maps' shadows.\n- **On screen, old -> new** (light bench ?still=1, HD 620, WebGL and WebGPU gave the same numbers, different pictures): castedShadows hidden 0.00 % -> 10.76 % of the picture (the shadows go); entities hidden 17.82 % -> 28.57 % (their shadows go too); lighting hidden 99.83 % both. Shown again, each step gave the first picture back exactly (0.00 %). The pictures show no shadow left with castedShadows hidden, and bare grass with entities hidden.\n- **dxCaptureScene ?shadowMaps=1 showed nothing either way:** a flat top-down scene, whose casters throw no map shadow at 12 h, 16 h or 22 h. The light bench is the scene for map shadows.\n- **Test:** layerVisibilityPaths.test.js, the real Pixi worker in Node, its passes stubbed: 4 of its 5 tests fail on the old code. Node suite on the ASUS 3434 of 3434.\n- **Not measured:** a bug fix off the hot path (one visibility read a frame), hygiene keep; nothing timed.",
-      "commits": [
-        "daafa628",
-        "b131532c"
-      ]
-    },
-    {
-      "id": "R-1717",
-      "date": "2026-11-21",
-      "time": "20:31",
-      "timeFrom": "recorded",
-      "title": "DBG-3 fixed: a layer's alpha fades the light's meshes, the unshaded pixels and the entities' solid pixels",
-      "verdict": "kept-hygiene",
-      "text": "**DBG-3 fixed: a layer's alpha fades the light's meshes, the unshaded pixels and the entities' solid pixels.** Branch fix/dbg3-layer-alpha (on top of fix/dbg1-layer-vis), on the ASUS, by the main PC's session over ssh.\n\n- **Confirmed on screen before fixing** (layerPropsProbe, Intel HD 620): with lightEdges (light bench ?res=0.5&depth=1) lighting alpha 0.5 and 0.25 changed 0.00 % of the picture, WebGL and WebGPU; the light pass drawn on the canvas (dxCaptureScene, no render target) also 0.00 % at alpha 0.5. The plain light sprite (light bench at res 1) already faded.\n- **Fixes:**\n  - lightEdges.js (GLSL and WGSL): the multiplied halves mix the light toward white by uColor.a (alpha 0 applies no light), the unshaded halves scale by it.\n  - lightingBasic (GLSL and WGSL), the !EDGES output: the same mix, which only matters when the pass is drawn on the canvas (a render target's pass draws at alpha 1).\n  - unshadedComposite.js: scales by uColor.a; the worker gives the unshaded composite the lighting layer's alpha (at creation and on each change), since it makes up for that light.\n  - The entities' opaque pass (E-448) is not allowed while the entities root's alpha is under 1 (a per-frame test in updateSpritesFromRenderQueue); alpha 1 is unchanged.\n- **On screen, before -> after:** lightEdges, lighting alpha 0.5: 0.00 % -> 99.84 % (max 88), alpha 0.25: 0.00 % -> 99.84 % (max 132), WebGL and WebGPU; the canvas pass, alpha 0.5: 0.00 % -> 21.29 % (max 22). Each step gave the first picture back on restore. At lighting 0.5 the shadows show at half strength; at entities 0.5 the grass shows through the entities with no jump.\n- **Not shown on screen:** the opaque pass's gate. That pass is off on Intel's integrated GPUs (E-502), and with ?opaquePass=1 it did not pay in dxCaptureScene (small sprites), so entities alpha read the same before and after there. layerAlphaPaths.test.js covers it on the real worker.\n- **Left:** worldRect layers' stage mesh (plan 3.3.3) still runs the game's own fragment without uColor, so such a layer fades only while its cached picture is shown; a fix needs a GLSL wrapper round the game's shader.\n- **Test:** layerAlphaPaths.test.js (3 tests, all fail on the old code; the shaders by source, as the plan allows for a GPU blend).\n- **Not measured:** the lightEdges halves gain one mix a pixel at alpha 1; a hygiene keep unless the owner scene's drawn frames move on the GTX 1650 (not run: this session's runs are on the ASUS).",
-      "commits": [
-        "43d6b7ac"
-      ]
-    },
-    {
-      "id": "R-1718",
-      "date": "2026-11-21",
-      "time": "20:45",
-      "timeFrom": "recorded",
-      "title": "DBG-2 fixed: layer blendMode, containerBlendMode and zIndex setters, applied to every object of the layer; the blend list trimmed",
-      "verdict": "kept-hygiene",
-      "text": "**DBG-2 fixed: a layer's blend modes and z change at run time and stay changed.** Branch fix/dbg2-layer-blend (on top of fix/dbg3-layer-alpha), on the ASUS, by the main PC's session over ssh.\n\n- **Causes (the plan's section 3.2, all read in the code before fixing):** the panel posted setLayerProps, which set the blend on the layer's display object only; the entities' meshes and the light's meshes set their own, so nothing inherited it; Cont Blend reached custom layers only; the panel never wrote the Layer SAB, so registering a layer's object again (a shader swap, a look composite, the light pass rebuilt) put the config's value back; about 22 of the 33 names drew as normal (Pixi's advanced modes are not registered in this build).\n- **Fix:**\n  - Layer setters for blendMode and containerBlendMode (by name) and zIndex: the config SAB plus a presentation dirty flag (a new Int32 view at the config SAB's end), as alpha and visible. An unknown name throws with the list; a config id out of range throws at registration.\n  - The Pixi worker's syncLayerPresentationFromSharedState applies a dirty layer each frame to every object that draws it: the display object; the entities' batch mesh and edge pass (InstancedSpriteBatch.setLayerBlend; the opaque pass drops itself off 'normal'); a custom layer's pieces drawn into its RT take the container blend; a MESH layer's uvFill mesh on the stage follows the fill mesh (blend and z); the unshaded composite's z follows the light's. _applyLayerPresentation reads the same SAB, so a re-registration keeps them.\n  - setLayerProps keeps only the shader swap and the splat radius (one API, no aliases).\n  - The list is trimmed (the owner's decision 4, 2026-11-18): normal, add, multiply, screen, erase, normal-npm, add-npm, screen-npm, none, min, max; BLEND_MODES renumbered 0 to 10. Nothing in src, demos, tests or the guide used a removed mode (the code names modes, never numbers).\n  - The panel calls the setters. The lighting layer's blend select is off with a tip (its meshes multiply and add by themselves, so a blend on the host would break or do nothing); Cont Blend is off on built-in layers.\n  - types/weed.d.ts and the guide's blend paragraph follow.\n- **Test:** layerBlendPaths.test.js (4 tests: the list, the setters, the worker on run-time changes and a re-registration, setLayerProps without blend fields) and layerBlendSinglePass.test.js's run-time case through the setter: 5 fail on the old code.\n- **Not measured:** off the hot path (a dirty-flag loop over the layers a frame); hygiene keep.\n- **On screen** (layerPropsProbe, dxCaptureScene ?hour=16&deco=1&shade=1, Intel HD 620, WebGL and WebGPU alike; the old code had no setter to probe): entities blendMode add changed 1.21 % of the picture (max 70: white balls over the floor), multiply 3.70 % (max 255); the overlay decorations' layer add 6.08 % (the black squares vanish); the MESH layer's add 11.17 % and zIndex -1 11.17 % (under the ground). Each step gave the first picture back on restore (0.00 %).",
-      "commits": [
-        "830450f4",
-        "893571c1"
-      ]
-    },
-    {
-      "id": "R-1719",
-      "date": "2026-11-21",
-      "time": "21:17",
-      "timeFrom": "recorded",
-      "title": "DX-SCORELOAD built and used on the ASUS: rows at a load calibrated per machine; ray and rayVsBox2d decide (tie), bullets and spawn kept, spatial still under the floor",
-      "verdict": "kept-hygiene",
-      "text": "**DX-SCORELOAD built and used on the ASUS: the scoreboard's stress rows at a load calibrated per machine.** Branch tools/dx-scoreload (6c1e852a scene knobs, 49fc08e0 the calibration and runScoreboard --loads), on the ASUS, by the main PC's session over ssh.\n\n- **What:** the catalog names each floor-bound row's load knob (scene.loadKnob: query key, default, cap): ray, rayVsBox2d (casts), spatial (entities, new), queryAabb (queries, new), bullets (bullets), spawn (storm). calibrateScoreboardLoads.mjs runs a row's baseline side once on the machine at hand, as the scoreboard does, and raises the knob in a straight line toward 9 ms while the primary reads under 7.5 ms (1.25 x the floor), up to three runs or the cap; it writes a loads file (rows it leaves out are kept from an --out of the same baseline). runScoreboard --loads runs both sides of each row at that load and records the query in the row's verdict.\n- **Calibration on the ASUS** (jobs 0900m 20:57-21:04 and 0900n 21:06-21:07; v0.14.0's src under main 0b260fd7's scenes, headless, one run a step), the baseline primary at the default -> at the chosen load: ray casts 3072 -> 6218: logic0 4.45 -> 7.54 ms; rayVsBox2d casts 3072 -> 5640: 4.90 -> 7.53; bullets 40000 -> 54226: particle 6.64 -> 8.01; spawn storm 1800 -> 3635 -> 4883: logic0 4.46 -> 6.70 -> 8.38; queryAabb queries 1 -> 90 -> 512 -> 1106: logic0 0.06 -> 0.76 -> 3.40 -> 8.00 (about 7 us of own work a query, linear); spatial entities 9000 -> 40000 (the cap): spatialMax 0.47 -> 2.71 ms, still under the floor (about 110 000 would be needed, past what the grid's buffers allow).\n- **box2dRayJs has no knob:** ?casts sends its Box2D rays to the physics worker; logic0, its primary, read 0.18 -> 0.74 ms from 3 072 to 49 152 casts.\n- **queryAabb at 1106 queries is wait-bound:** each query is a round trip to physics, so logic0 runs at about 21 fps with 40 ms of waits a frame; its own work is what the row compares.\n- **A loaded scoreboard of those six rows** (main 0b260fd7 against v0.14.0, 2 runs a side, --skip-kernels --no-recheck, job 0900o, 21:07-21:17): ray TIE (logic0 -2.4 %), rayVsBox2d TIE (+2.3 %), bullets KEPT (particle -16.4 %), spawn KEPT (logic0 -13.5 %), queryAabb WORSE (logic0 +5.5 %, not rechecked, in the wait-bound regime above), spatial FAIL (floor). Before, all six read FAIL on this machine (floor, or spawn's load not comparable).\n- **A lead, not a verdict:** at 40 000 stationary entities spatial read main 3.99 ms against v0.14.0's 2.62 ms (+52 %), where at 9 000 earlier ASUS scoreboards had main 55 to 65 % cheaper. Under the floor and one sitting of 2 runs: worth a look at a large entity count on the main PC before calling it anything.\n- **Test:** scoreboardLoads.test.js (the scene at a load, the linear step, the primary, the loads file, the catalog's knobs).\n- The loads file of the ASUS is C:\\weedlab\\scoreboard-loads.json (not in the repo: a machine's calibration).",
-      "commits": [
-        "6c1e852a",
-        "49fc08e0"
-      ]
-    },
-    {
-      "id": "R-1720",
-      "date": "2026-11-21",
-      "time": "21:30",
-      "timeFrom": "recorded",
-      "title": "N-400 fixed: the claim-wait and query-wake tests wait for their cross-thread event (28 failures in 384 under 24 parallel files before, 0 after)",
-      "verdict": "kept-hygiene",
-      "text": "**N-400 fixed: two node tests timed a cross-thread event by a fixed wait and failed now and then under the suite's parallel files on the ASUS's 2 cores.** Branch fix/n400-two-core-test-waits (4e7bb7b7), on the ASUS, by the main PC's session over ssh.\n\n- **Found** in this session's full suites on the ASUS (3437 and 3434 tests): queryWake.test.js \"a request on every sync query kind wakes physics\" once, waitMeterClaimBurst.test.js \"a blocked claim counts as wait\" once; each 3 of 3 alone.\n- **Causes:** the claim test's peer released the slot 30 ms after its own start, and this thread sometimes reached the call after that (its 'up' message and the event loop ran late), so nothing was metered. The wake test waited a fixed 10 ms for an Atomics.waitAsync callback that comes when this thread next runs its event loop.\n- **Fixes:** the claim test's peer releases at a wall-clock time given ahead, and a try counts only when this thread began before it (tests/helpers/wallClockWait.mjs's waitedUntil, as N-326), up to 5 tries; the wake test waits for the callback, up to 2 s.\n- **Checked under load:** 12 copies of each file at once (24 files, --test-concurrency=24), 4 rounds on the ASUS (C:\\weedlab\\flakeStress.cmd): 28 failures in 384 before (26 claim, 2 wake), 0 in 384 after. Node suite 3429 of 3429.",
-      "commits": [
-        "4e7bb7b7"
-      ]
-    },
-    {
-      "id": "R-1721",
-      "date": "2026-11-21",
-      "time": "21:44",
-      "timeFrom": "recorded",
-      "title": "N-226 screened by wasmTierCompare (default against --no-liftoff, 56 benches): liquidFunExtract timed Liftoff 2 to 3.6x slow, fixed; four left",
-      "verdict": "note",
-      "text": "**N-226 screened: which WASM kernel benches time Liftoff, by a tool that runs each one as shipped and under node --no-liftoff in pairs; one fixed, four left.** Branch tools/n226-wasm-tier (42aa376d and a2c9c8e9 the tool, 47ac1aab the first fix), on the ASUS, by the main PC's session over ssh.\n\n- **The tool:** wasmTierCompare.mjs runs every *Microbench.mjs whose source mentions wasm, as it ships and under --no-liftoff (every WASM function compiled by TurboFan from the start), alternating which runs first, and compares each case's rate (opsPerSec, or 1000 / ms). LIFTOFF: the median ratio over 1.05 with every pair agreeing.\n- **Screen, 2 pairs, 56 benches (job 0900p, 21:22-21:28):** LIFTOFF flags on 7 (decalStampWasm x1.28, solidSegmentsWasm x1.20, painterRadixWasm x1.15-1.20, bodyForceCall up to x1.24, spatialGridMovers x1.14, shadowStamp x1.13, preRenderEmitAdobe x1.08), the reverse on 8 others; 20 benches that report ms read nothing (fixed in a2c9c8e9).\n- **Confirmation, 4 pairs (job 0900q, 21:34-21:40):** the ASUS's kernel noise (about +-20 %, R-1580) explains most of the screen: decalStampWasm, solidSegmentsWasm, painterRadixWasm, spatialGridMovers, preRenderEmitAdobe and every reverse flag read even. Left LIFTOFF: shadowStamp's stamp x1.19, bodyForceCall's batch r1 x1.10. The ms benches (2 pairs): liquidFunExtract x2.78 at k=64 and x1.76 at k=1024, liquidFunComputeDepth x1.21, sunFrames x1.17, liquidFunPassProfile x1.08 to x1.14 on every pass, decorationVisibilityGrid x1.06.\n- **Why warmWasm did not cover them:** five of the seven first flags already warm through wasmKernelHelpers.warmWasm, which checks that the timed export reached TurboFan; V8 tiers each WASM function up on its own work, so a callee inside the module can still run Liftoff code. The benches that stay flagged time one-shot calls (a fresh world or system a sample) or few calls, which a callee never warms in.\n- **Fixed: liquidFunExtractMicrobench** warms 1.5 s before each k, on one world for the process (the module has no world destroy). ASUS, median ms at k = 64 / 512 / 1024: before 0.250 / 0.144 / 0.159 (0.09 to 0.27 apart), before under --no-liftoff 0.090 / 0.090 / 0.091, now 0.069 / 0.070 / 0.071; the tool, 4 pairs: k=64 x1.064, the others even. Its old numbers read the extract 2 to 3.6 times too slow.\n- **Left (the next):** liquidFunComputeDepth, liquidFunPassProfile, sunFrames and shadowStamp's stamp case (confirm each with --pairs 4 on a quiet machine, then a time-based warm-up as above), bodyForceCall's batch r1; and the kernels' records that used those benches read Liftoff-inflated numbers before the fix. A kernel claim compares two variants under the same warm-up, so its ratio stood unless one variant tiered sooner.",
-      "commits": [
-        "42aa376d",
-        "a2c9c8e9",
-        "47ac1aab"
-      ]
-    },
-    {
-      "id": "R-1722",
-      "date": "2026-11-21",
-      "time": "21:50",
-      "timeFrom": "recorded",
-      "title": "N-401 fixed: physicsChainWait's ringer waits for the waiter's pass after each ring (7 failures in 384 under 24 copies before, 0 after)",
-      "verdict": "kept-hygiene",
-      "text": "**N-401 fixed: physicsChainWait's bell test let its ringer outrun the waiter on 2 cores.** Branch fix/n401-physics-bell-test, on the ASUS, by the main PC's session over ssh.\n\n- **Found** in the batch's full suite on the ASUS (3446 tests): \"physics sleeps until the bell rings: a query posted mid-wait is answered, the frames end the wait\" read 2 service passes (3 to 5 expected); 3 of 3 alone. Under 24 copies at once, 4 rounds: 7 failures in 384, each reading 1 pass.\n- **Cause:** the ringer rang on its own clock (3, 6 and 9 ms after go), spinning; on 2 cores under parallel files it rang twice or three times while the waiter was still asleep, or before it first slept, so the waiter woke once (or never) for several rings.\n- **Fix:** before each ring the ringer waits, up to 500 ms, until the waiter has made one pass per ring so far (the test's service counts passes in a shared word). Each ring now meets an awake waiter; a waiter that stopped serving on a ring still fails the count (the ringer rings anyway after 500 ms).\n- **Checked:** 24 copies at once, 4 rounds on the ASUS (C:\\weedlab\\flakeStress2.cmd): 7 failures in 384 before, 0 in 384 after. The same class as N-400 (a cross-thread test timed on one thread's own clock).",
-      "commits": [
-        "dde5b572"
-      ]
-    },
-    {
-      "id": "R-1723",
-      "date": "2026-11-21",
-      "time": "21:53",
-      "timeFrom": "recorded",
-      "title": "N-226 finished on the ASUS: only liquidFunComputeDepth held at 4 pairs (x1.145), now warmed to TurboFan (3.574 -> 3.094 ms); the other flags were noise",
-      "verdict": "kept-hygiene",
-      "text": "**N-226 finished on the ASUS: of the screen's flags, only liquidFunComputeDepth held at 4 pairs, and it now warms to TurboFan; nothing else left.** Branch tools/n226-compute-depth-warm, on the ASUS, by the main PC's session over ssh.\n\n- **Confirmation, 4 pairs** (job 0900r): liquidFunComputeDepth x1.145 LIFTOFF; liquidFunPassProfile (x1.017), sunFrames (x1.067), shadowStamp (x1.083) and decorationVisibilityGrid (x1.032) even: their 2-pair flags were the ASUS's noise.\n- **Fixed: liquidFunComputeDepthMicrobench** warms 1.5 s on one world for the process, as liquidFunExtract's. ASUS, median ms of the first step after the ice: before 3.574 (3.11 to 3.73), before under --no-liftoff 3.121, now 3.094 (3.09 to 3.20); the tool, 4 pairs: even (x1.002).\n- **Left of the earlier rounds:** bodyForceCall's batch r1 read x1.10 in one 4-pair round (one case of nine); not chased (one case, a 15 W CPU's noise of about +-20 %).\n- **How to use the tool:** wasmTierCompare.mjs --pairs 2 screens every WASM bench in about 6 minutes on the ASUS; confirm a flag with --pairs 4 before acting on it.",
-      "commits": [
-        "6645b189"
-      ]
-    },
-    {
-      "id": "R-1802",
-      "date": "2026-11-22",
-      "time": "00:10",
-      "timeFrom": "recorded",
-      "title": "E-531 by day after E-395 and lamps off: map shadows cost +0.3 ms GPU (+10 %, draws 2.79/3.20 -> 3.19/3.45 ms) and the classic layer's CPU (pre-render -8 %, renderer +4 %); left: the G-buffer pass 0.32 ms",
-      "verdict": "note",
-      "text": "**E-531 by day after E-395 and the lamps off by day (2026-11-22, main 095d6041, GTX 1650, Predator default crowd, headed Chrome 1920x1080): map shadows now cost the classic layer's CPU and about +0.3 ms of GPU (+10 %).** A = `dayCycle=0` (the shadows' layer), B = `dayCycle=0&sunShadows=map&lampShadows=map`.\n\n- **GPU, glFrameRecorder --gpu-draws** (a timer per draw, no idle gaps; 3 s windows after 12 s, A B B A, 00:04-00:05): draws 2.788 / 3.195 ms a frame (A) against 3.186 / 3.449 (B). Off the screen pass: A 0.46 / 0.53 ms (shadows' layer 480x270 0.31-0.33 for 14 200-14 500 instances, strip 0.08-0.11, light 0.04-0.06, clears 0.03); B 0.89 / 0.90 ms (G-buffer 478x268 0.315 for 13 300 instances, sun map 576x366 0.26-0.27 for 13 000, light pass 0.13-0.15, strip 0.08-0.09, clears 0.06-0.08). No lamps' map by day. The screen pass (2.3-2.7 ms) moves with the clocks (median 750-870 MHz, P3; 23-29 % busy). --gpu-passes (00:03-00:04) read the same shape: off-screen passes 1.08-1.09 (A) against 1.20-1.44 ms (B).\n- **CPU, runPredatorAbab --query-b** (4 pairs, to 00:10, every worker under the 6 ms floor): pre-render 1.975 -> 1.809 ms (B cheaper, -8 %), renderer 1.694 -> 1.764 (+4 %), logic, spatial and physics within 3 %, presented 60 = 60. (R-1573 before E-395, lamps lit by day: renderer 1.39 -> 2.16, pre-render 2.09 -> 2.75.) The sitting's FAIL (load) is GPU_SHADOW_LIGHTS 17.5 -> 0: the counter counts the classic layer's light cookies (flashes and fires lit by day), which map mode does not draw: a different counter, not a different load.\n\nSo the day gap went from +57 % GPU and +55 % renderer (R-1573) to +10 % GPU and parity on the CPU. What is left is one more pass over every sprite (the G-buffer: ids and heights at the light's size, 0.32 ms) and a heavier light pass (+0.09 ms). Making map shadows the default and dropping the layer mode is the owner's step (E-531's plan); the HD 620 was last read before E-395 (R-1623: +12-19 %)."
-    },
-    {
-      "id": "R-1803",
-      "date": "2026-11-22",
-      "time": "00:22",
-      "timeFrom": "recorded",
-      "title": "N-328 not reproduced: CPU traces of spawnStorm 6000 read main's logic 4 % less busy than c01c6d51 (540/557 against 594/565 ms/s), _spawnAt -20 %; R-1679's +2.7 % failed on its load (BODY_COUNT -5.2 %)",
-      "verdict": "answered",
-      "text": "**N-328 not reproduced in CPU traces: the object way's spawn is not slower on main.** spawnStormScene `?storm=6000`, c01c6d51 (the register commit before E-532, its own worktree) against main 1d6df46c, single headed runs with `--trace-cpu`, 8 s warm-up and 8 s window, old new old new (00:21-00:22), summarized by summarizeChromeCpuTrace over the window:\n\n| | old 1 | old 3 | new 2 | new 4 |\n| --- | --- | --- | --- | --- |\n| logic busy (ms/s) | 594 | 565 | 540 | 557 |\n| logic0 exact step (ms, traced) | 10.08 | 9.28 | 8.85 | 9.37 |\n| `_spawnAt` self (ms in 8 s) | 1 136 | 1 092 | 864 | 921 |\n| publishBodyDirty + advanceBodyGeneration | 817 | 794 | 778 | 755 |\n| `_despawnAt` + `_deactivateSlotComponents` | 301 | 290 | 291 | 266 |\n\nMain is 4 % less busy on logic and its `_spawnAt` 20 % cheaper; new in its list: `hasParent` (DX-PARENT's link check on despawn and spawn, 92 ms in one trace, under the top 12 in the other) and the scene entity's `onSpawned` (125 ms in one). R-1679's +2.7 % (4/4) came with BODY_COUNT -5.2 % on the new side: the sitting failed on its load, and the two sides did not hold the same bodies. Closed as answered: no slower spawn to chase. Traces are not STEP_MS; a scene sitting could still read a percent either way, inside the 3 % bar."
-    },
-    {
-      "id": "R-1804",
-      "date": "2026-11-22",
-      "time": "00:29",
-      "timeFrom": "recorded",
-      "title": "E-310 at crowd 2.5: two spatial workers spatial 14.985 -> 9.982 ms (-34.2 %, 4/4), logic +3.3 %, others alike; Predator takes two from crowd 2 on 12+ logical CPUs",
-      "verdict": "kept",
-      "text": "**E-310 at crowd 2.5 now: a second spatial worker takes spatial off the long pole for 3.3 % of logic (it cost 8.3 % on 2026-11-14).** runPredatorAbab e310-sw2, `--vs main` (229429d6) with `--query-b spatialWorkers=2`, Predator `crowd=2.5&dayCycle=0` from the E-210 save, owner spatial, 4 pairs, to 00:29:\n\n- spatial 14.985 -> 9.982 ms (-34.2 %, worse 0/4, cv 3/2 %), each of the two workers 9.8-10.1 ms; spatial0's p99 28.9 -> 15.9 to 18.3 ms, long frames 18 -> 5 to 17.\n- logic 7.071 -> 7.237 (+3.3 %, worse 3/4, cv 6/1 %), physics 15.554 -> 15.665 (-0.3 % paired), renderer -1.7 %, pre-render -1.5 %, presented 60 = 60.\n- The sitting's FAIL (load) is ENTITIES_PROCESSED -48.4 %: a per-worker counter, each of two workers processes half; BODY_COUNT, VISIBLE_ENTITIES and RENDER_QUEUE_SIZE within 0.5 %.\n\nKept for Predator (01555a16, the demo's config): `predatorSpatialWorkers()` gives two from crowd 2 where navigator.hardwareConcurrency is 12 or more (this PC 16; the ASUS's 4 keeps one), one otherwise; `?spatialWorkers=` still sets it. Checked: crowd 2.5 boots spatial0 and spatial1, crowd 1 one. Physics (15.6 ms) is now the frame's one long pole at crowd 2.5. The engine's own choice by entity count and CPUs stays with DX-AUTOQUALITY."
-    },
-    {
-      "id": "R-1805",
-      "date": "2026-11-22",
-      "time": "00:35",
-      "timeFrom": "recorded",
-      "title": "Five Box2D threads at crowd 2.5 (two spatial workers): physics -5.0 %, spatial +5.9 %, pre-render +5.4 %, logic +4.5 %, renderer +3.4 %: a trade, Predator keeps 4",
-      "verdict": "rejected",
-      "text": "**Five Box2D threads at crowd 2.5 with two spatial workers: physics -5.0 %, every other judged worker +3.4 to +5.9 %: a trade, not a gain; Predator keeps 4.** runPredatorAbab pw5, `--vs main` (8a6177a5, the knob taking up to 8) with `--query-b physicsWorkers=5`, Predator `crowd=2.5&dayCycle=0` from the E-210 save (two spatial workers since R-1804), owner physics, 4 pairs, to 00:35: REGRESSION. physics 15.445 -> 14.602 ms (-5.0 %, worse 0/4), spatial 9.852 -> 10.349 (+5.9 %, 3/4), pre-render 8.510 -> 8.767 (+5.4 %, 3/4), logic 7.165 -> 7.241 (+4.5 %, 3/4), renderer 6.265 -> 6.485 (+3.4 %, 3/4), presented 60 = 60. The fifth pool thread takes a core the others were using (16 logical CPUs, about 13 engine threads busy). With E-319's 3-thread result (+18.7 % physics, others -3 to -12 %), 4 is where the trade balances on this machine."
-    },
-    {
-      "id": "R-1806",
-      "date": "2026-11-22",
-      "time": "00:43",
-      "timeFrom": "recorded",
-      "title": "Box2D by name at crowd 2.5 after N-313: physics thread collide 29.8 %, solve 20.7 %, finalize 7.6 %, serial refit 4.1 % + step/glue ~13 %; pool threads idle ~29 % (futex 19 %, scheduler 10 %)",
-      "verdict": "note",
-      "text": "**Box2D by name at Predator crowd 2.5 after N-313 and with two spatial workers (2026-11-22, main 32b8dff2 with the --profiling-funcs build of Box2D 0f0fa10 swapped in a worktree; from the E-210 save, 6 s warm-up, 8 s traced window, to 00:43).** The names build is not wasm-opt'ed and the trace costs: physics read 19.1 ms (shape, not a ruler).\n\nThe physics thread (the one whose STEP_MS counts): b2CollideTask 29.8 %, b2ExecuteBlock 20.7 %, b2FinalizeBodiesTask 7.6 %, b2World_Step's own code 4.5 %, **b2DynamicTree_Refit 4.1 % (serial, after the finalize)**, publishPose (JS) 3.8 %, b2ComputeFatShapeAABB 3.7 %, b2SolverTask 3.5 %, bodies_apply_accelerations 2.7 %, step_world 2.0 %. Each of the three pool threads: b2CollideTask 21 %, b2ExecuteBlock 20 %, **futex waits 19 % and b2SchedulerWorkerMain 10 %** (idle while the physics thread runs the serial parts), b2FinalizeBodiesTask 7.7 %, b2PlaceLeaf 6.6 % (the tree rebuild task), b2ComputeFatShapeAABB 3.5 %, b2SolverTask 3 %.\n\nSo about 17 % of the physics thread is serial work with the pool waiting (the refit, the step's own code, the glue's accelerations and pose publish), and the two parallel stages (collide, solve) are about half of every thread. Levers seen, none tried: the refit as a task beside the bullets and islands, or the kinematic tree's refit on a pool thread; the glue's publishPose overlapped with the next step's setup. The AABB margin was tried (E-306, dropped) and a fifth thread trades (R-1805)."
-    },
-    {
-      "id": "R-1807",
-      "date": "2026-11-22",
-      "title": "E-392 read: the pose texture is by queue row in painter order, so any mover shifts the rows after it; a dirty range pays only in a still scene; E-362 (12-byte rows) is the cheaper step",
-      "verdict": "note",
-      "text": "**E-392 read against the code: a dirty range pays only in a still scene, since the pose texture is laid out by queue row, in painter order.** `InstancedSpriteBatch._uploadPoseRows` (E-201) copies x, y, rotC and rotS of every queue row into four blocks and uploads the texture rows they reach; the instance stream holds the row index. The rows are the frame's sorted queue: when one walker crosses another's y, every row between them shifts, so the rows that change are, in any scene with movers, nearly all of them. Predator's frame (glFrameRecorder, R-1802's A runs, 2026-11-22): 4 texSubImage2D of 1024 x 4 RGBA32UI a frame, 256 KB at the default crowd, the queue's trees, houses and rocks interleaved with the walkers in y.\n\nSo the levers are: (1) a still scene stops uploading (compare the blocks with the last frame's while copying: about 0.1 ms of JS a frame at 40 000 rows in a moving scene, for nothing); (2) E-362 (the rotation as one u32, 16 -> 12 bytes a row) cuts every frame's upload by a quarter; (3) poses by key instead of by row (the keyed frames' pose stream, E-191/E-201), where a still entity's pose never changes. None is worth a sitting before a scene shows the upload in its renderer's time: E-392 drops in rank; E-362 is the cheaper first step."
-    },
-    {
-      "id": "R-1808",
-      "date": "2026-11-22",
-      "title": "N-147 closed: the prod bundle reads as fast as its sources since (R-1161: f025d0c9 bundles NEUTRAL on Predator and Boids, Boids spatial 4.756 -> 4.660 ms; R-1183, R-1665)",
-      "verdict": "answered",
-      "text": "Closed in the 2026-11-22 backlog triage. Every bundle sitting after the report found the prod bundle no slower than its sources: R-1161 (f025d0c9: Predator and Boids NEUTRAL, Boids 8 pairs spatial 4.756 -> 4.660 ms), R-1183 (Boids bundle against sources NEUTRAL) and R-1665 (the ECS-way merge: prod ESM logic -7.2 % against src in Predator, Boids below the floor). The 4 % seen after E-198 did not hold; bundle-against-source runs read -3 to +10 % from noise alone (bundle-vs-src memory)."
-    },
-    {
-      "id": "R-1809",
-      "date": "2026-11-22",
-      "title": "N-207 closed: the owner left the render cards as they are (2026-11-15 \"está todo bien ahora, dejemos todo así\"); the anchor attempt was reverted (6f2d17e5)",
-      "verdict": "answered",
-      "text": "Closed in the 2026-11-22 backlog triage. The owner saw the frames side by side on 2026-11-15 and decided (\"está todo bien ahora, dejemos todo así\", about 20:00); the card-anchor attempt of that evening was reverted (6f2d17e5) and DX-LAMPPANO shipped its lamps' cards (2b19d9f8). Nothing left to do unless the owner reopens it."
-    },
-    {
-      "id": "R-1810",
-      "date": "2026-11-22",
-      "title": "E-386 closed: the light's stress scenes exist and were run (light3dCompareScene, lampShadowStressScene, sunShadowMap ?lamps=, selfShadow, spriteMaps; R-1152, R-1157, R-1164 kept)",
-      "verdict": "kept",
-      "text": "Closed in the 2026-11-22 backlog triage. The scenes the owner asked for are in tests/bench/stressScenes (light3dCompareScene, lampShadowStressScene's knobs, sunShadowMapStressScene ?lamps=, selfShadowStressScene, spriteMapsStressScene; R-1152), and they drove that night's batches: R-1157 (the lamps' frames a ninth of pre-render), R-1164 (light3dCompare KEPT, pre-render -24.7 % and -18.7 %). The traces they feed are separate items (E-405 to E-424)."
-    },
-    {
-      "id": "R-1811",
-      "date": "2026-11-22",
-      "title": "E-495 closed: WebGPU's pipelines are built ahead with createRenderPipelineAsync since SST-7 step 3 (67bead52, Pixi patch PipelineSystem.weedPipelineAhead)",
-      "verdict": "superseded",
-      "text": "Closed in the 2026-11-22 backlog triage: done by SST-7 step 3 (67bead52): Pixi's PipelineSystem.weedPipelineAhead (scripts/buildPixi.mjs) builds the pipelines a draw will ask for with createRenderPipelineAsync, and pixiWorker.js warms the scene's main ones at init."
-    },
-    {
-      "id": "R-1812",
-      "date": "2026-11-22",
-      "title": "SST-3 closed: the workers evaluate from posted texts (3ce60f3f), merged with DX-STARTUP (R-1451: Predator night first frame 3 545 -> 3 392 ms, the barrio 3 866 -> 3 499)",
-      "verdict": "kept",
-      "text": "Closed in the 2026-11-22 backlog triage. Built 2026-11-18 (3ce60f3f) and merged with DX-STARTUP, whose sitting timed the batch it was in (R-1451: Predator by night first frame 3 545 -> 3 392 ms, the barrio 3 866 -> 3 499, bunnyMark a tie). Its own share of that gain was not split out."
-    },
-    {
-      "id": "R-1813",
-      "date": "2026-11-22",
-      "title": "E-451 closed: not reproduced after E-419 (R-1204: P0 at 1 590-1 785 MHz); glFrameRecorder logs nvidia-smi's pstate and clock with every recording",
-      "verdict": "answered",
-      "text": "Closed in the 2026-11-22 backlog triage. After E-419 the GPU ran at P0 through bunnyMark (1 590 MHz) and volumeStressScene (1 785 MHz) (R-1204), and the asked step is in: glFrameRecorder prints the window's pstates and median clock (nvidia-smi) with each recording, as R-1802's runs show."
-    },
-    {
-      "id": "R-1814",
-      "date": "2026-11-22",
-      "title": "N-221 closed: Defender excludes C: and D: whole (the owner's choice); sittings run with the agents idle, by practice",
-      "verdict": "answered",
-      "text": "Closed in the 2026-11-22 backlog triage. The owner's call was made: Microsoft Defender excludes C:\\ and D:\\ whole (machine profile, 2026-11-21: MsMpEng under 90 CPU-s in 2.4 days). The other half is practice, not code: sittings run while the agents' builds and tests are idle (this session's sittings of 2026-11-22 ran with nothing else busy)."
-    },
-    {
-      "id": "R-1815",
-      "date": "2026-11-22",
-      "title": "N-235/N-236 done in d8kit: the two thread flags (+10-13 % on bodyPack) and a native-src mode (D8KIT_NATIVE=1); bundled stays default, since bodyPack ran faster bundled (187-191 vs 114-117 ops/s), the opposite of rebuildChecked",
-      "verdict": "kept-hygiene",
-      "text": "**N-235 and N-236 done in D:/perf-tools/d8kit (outside the repo; the perf-tools memory says how to use it).**\n\n- N-235: runKernels.sh runs d8 with `--concurrent-maglev-high-priority-threads --single-threaded-gc`. Re-timed in the release d8 (16.0.39), bodyPackMicrobench bundled into the repo's tests/bench: 103.5 ops/s without the flags against 113.7 and 117.0 with them (+10 to 13 %).\n- N-236: build.mjs gets a native mode (`D8KIT_NATIVE=1`): the repo's src/ stays native ES modules that d8 loads by absolute path, the kernel and its tests/ helpers are bundled, and the shims go to `<out>.prelude.js`, which d8 runs first (a native module evaluates before any banner; runKernels.sh passes it). The default stays the bundle: the same kernel ran 186.7 / 191.2 ops/s bundled against 113.7 / 117.0 native, the opposite of R-1222's rebuildChecked (43 ns bundled, 25 native). So esbuild's const-to-var does change TurboFan's code, but in both directions: a d8 timing says its mode, and a claim about the shipped code is read in Chrome (the prod bundle is webpack's, not esbuild's). Kernels that load a real worker (workerHarness: rebuildOwnedRowsMicrobench) throw in d8 in both modes, as before."
-    },
-    {
-      "id": "R-1816",
-      "date": "2026-11-22",
-      "title": "N-303 CR-0: codeSize.mjs and the baseline: src/ 103 551 code lines (362 files), engine.wasm 356 323 B, box2dWasm.wasm 429 737 B, prod bundle 4 039 052 B (1 298 549 gzipped); suite 3 453 tests, 121.5 s",
-      "verdict": "note",
-      "text": "**N-303 CR-0: the ruler (scripts/codeSize.mjs, f633d272) and the campaign's baseline on main 3bacfda5..f633d272 (2026-11-22).** Counted by the script: a line is blank when it holds only white space, a comment line when all it holds is a comment, code otherwise; the generated and vendored files are left out. The audit's 97 517 (fa12bc91) was counted another way and src/ has grown since; the campaign is measured against this table.\n\n| folder | files | code lines | comment lines | blank lines |\n| --- | --- | --- | --- | --- |\n| `src/core` | 69 | 25 581 | 8 646 | 3 544 |\n| `src/workers` | 19 | 23 088 | 5 260 | 1 804 |\n| `src/render` | 76 | 16 321 | 5 189 | 1 326 |\n| `src/box2d` | 36 | 10 653 | 1 024 | 830 |\n| `src/util` | 65 | 10 139 | 4 028 | 1 234 |\n| `src/core/debug` | 31 | 7 604 | 547 | 1 051 |\n| `src/components` | 19 | 4 235 | 1 645 | 691 |\n| `src/shaders` | 37 | 3 100 | 733 | 262 |\n| `src/core/save` | 9 | 2 434 | 452 | 221 |\n| `src/(src root)` | 1 | 396 | 46 | 32 |\n| **`src/` in all** | **362** | **103 551** | **27 570** | **10 995** |\n\nLeft out (generated or vendored): `src/box2d/box2dWasm.js`, `src/wasm/engine.js`, `src/vendor/pixi.min.js`, `src/version.js`.\n\n| file | bytes | gzipped (level 9) |\n| --- | --- | --- |\n| `src/wasm/engine.wasm` | 356 323 | 89 283 |\n| `src/box2d/box2dWasm.wasm` | 429 737 | 164 787 |\n| `dist/weed.bundle.min.js` | 4 275 796 | 1 367 035 |\n| `dist/weed.prod.bundle.min.js` | 4 039 052 | 1 298 549 |\n| `dist/weed.bundle.esm.min.js` | 4 278 745 | 1 368 230 |\n| `dist/weed.prod.bundle.esm.min.js` | 4 041 782 | 1 299 798 |\n\nNode suite (--suite, the same morning): 3 453 tests, 3 453 pass, 121.5 s by the runner (122.1 s wall)."
-    },
-    {
-      "id": "R-1817",
-      "date": "2026-11-22",
-      "time": "01:28",
-      "timeFrom": "recorded",
-      "title": "N-245's spatial sites fixed: _findNeighbors' loops split into _finishRebuiltRows and _scanOwnedEntities (ASUS: 274 steady OSR deopts -> 0); mix=1 crowd 2.5 NEUTRAL (spatial +0.6 %); the squad battle now ends before the 20 s save",
-      "verdict": "kept-hygiene",
-      "text": "**N-245's spatial sites fixed: _findNeighbors' two per-frame loops are methods of their own (merged 325c8b3a).** The ASUS's deopt pass (20 s warm-up, the last 8 s of each log, N-405's window) found Predator's spatial worker deoptimized \"prepare for OSR\" 274 times in 8 s at the loop over the rows the gather rebuilt (spatialWorker.js:2253 at 56c6a147): _findNeighbors is entered once a frame and ran its loops in OSR code. Split 1 (_finishRebuiltRows, its arrays in locals): that site 274 -> 0, and the OSR entry moved up to the owned-entity loop (:2143, 0 -> 84). Split 2 (_scanOwnedEntities, the owned pass with its setup): the kept-row mutant tests now patch that method. Boids, bichos and renderQueueStress showed no steady spatial deopt on either side; the :2222 site (944 in the first sweep) was start-up only. Here (16 threads) neither site showed in an 8 s window at the default crowd.\n\nGates, owner spatial, 4 pairs: from E-210's auto save at crowd 2.5 (to 01:20) every worker but physics fell under the 6 ms floor (physics 7.498 -> 7.569 ms, +1.6 %); from a 14 s save (to 01:24) the same (physics 6.217 -> 6.765, +9.0 % 4/4 at cv 12/2 %, a light world); **the mixed battle** `crowd=2.5&dayCycle=0&mix=1` (to 01:28): NEUTRAL, logic 15.699 -> 15.713 ms (+0.5 %), spatial 7.466 -> 7.520 (+0.6 %), physics 15.248 -> 15.367 (+0.8 %), renderer +2.5 %, pre-render +2.3 % (cv 4/5 %), presented 60 = 60, BODY_COUNT within 0.3 %. Kept as hygiene. Node suite 3452/3452.\n\nFound on the way: Predator's squad battle at crowd 2.5 is now over by the auto save's 20 s (34 700 bodies left against about 35 900 on 2026-11-21, physics 7.5 ms from the save against 15 ms): most likely E-310's second spatial worker (fresher neighbour lists, soldiers finding targets sooner). From-save sittings at crowd 2.5 that need load take mix=1."
     },
     {
       "id": "R-1724",
@@ -41710,70 +41581,6 @@
       "text": "**N-245, the ASUS's numbers for the main PC's spatial fix** (fix/n245-spatial-rebuilt-rows, 7ea3fe24, against its base c8599a69). Deopt pass, one run a side, a 20 s warm-up, steady = the last 8 s of each log.\n\n- **Predator default:** spatialWorker.js:2253 (\"prepare for OSR\", the rows the gather rebuilt) went 274 -> 0. The per-frame OSR entry moved to the owned-entity loop of the same function (:2143, 0 -> 84), which the main PC plans to split the same way.\n- **bichos, Boids, renderQueueStress:** no steady spatial deopt either side. The sweep's spatialWorker.js:2222 (944) and Boids' 2253 were start-up (N-405).\n- **Boids:** weedjsPost.js:665, N-245's other site, is gone (N-214's fix, R-1158).\n\nCounts move a lot from run to run in code neither side changed, so one run each gives the shape."
     },
     {
-      "id": "R-1818",
-      "date": "2026-11-22",
-      "title": "N-303's first cold batch (CR-9/10/6/1/12) through Predator mix=1: NEUTRAL in 8 pairs (worst pre-render +2.4 %); the session's A/A on the scene reads up to 3.2 % a worker",
-      "verdict": "kept-hygiene",
-      "text": "**N-303's first cold batch through Predator: NEUTRAL in 8 pairs, at this session's noise.** runPredatorAbab cr-batch1, `--vs 710ce2e8 --hyp-rev 33fb37e3` (CR-9, CR-10, CR-6, CR-1, CR-12's first part; CR-33 was in both), `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, owner logic. After 4 pairs it read REGRESSION (spatial +3.9 % 4/4, pre-render +3.9 % 4/4, renderer +13.9 % at cv 11/6 %); 4 more (--append) made it NEUTRAL: logic 15.071 -> 15.381 ms (+1.7 %, worse 5/8), spatial +1.6 % (6/8), physics +0.1 %, renderer +1.5 % (cv 9/9 %), pre-render +2.4 % (5/8), presented 60 = 60, BODY_COUNT +0.1 %. The changes remove dead code and move test-only modules: nothing a worker runs per frame changed.\n\n**The session's A/A** (aa-mix-0122, 710ce2e8 against itself, the same scene, 4 pairs): NEUTRAL, logic -2.0 %, spatial +0.7 %, physics -0.9 %, renderer -2.0 % (cv 3/9 %), pre-render -3.2 % (worse 0/4: one side lower in every pair). So this scene's detection limit today is about 3 % a worker, and a 4-pair 4/4 reading of +3.9 % on a worker the change cannot reach is not a verdict.",
-      "time": "02:10",
-      "timeFrom": "recorded"
-    },
-    {
-      "id": "R-1819",
-      "date": "2026-11-22",
-      "title": "E-545 read: stationarySpatialScene's ids are already row-ordered, so N-323's id blocks are compact bands there; the ASUS's +41 % is not cold cells; branch kept unmerged for a random-placement scene",
-      "verdict": "note",
-      "text": "**E-545 read against the scene that showed N-403: its premise does not hold there.** stationarySpatialScene spawns its entities on a grid row by row in id order (100 columns, 45 px apart), so N-323's blocks of contiguous ids are already bands of rows: a frame's rebuilds there are as compact in space as E-545's cell-order runs would make them, and the first frame's rebuild list in home-cell order assigns nearly the same ages. So the ASUS's +41 % exact mean after N-323 (R-1746: 3.06 -> 4.32 ms a worker; about 1 170 lists a frame at about 2.9 us each against about 1.75 us each when all 20 000 went on one frame) is not cold cells from scattered ids. Candidates left: the all-at-once frame's reuse of each candidate's pose across all its neighbours' rebuilds in one pass (the 2-core laptop's 4 MB L3 holds one frame's working set, not sixteen), and the per-frame publish of the rebuilt rows. On the main PC N-323 read level by exact mean (R-1574: 2.44 -> 2.54 ms).\n\nE-545 as written (branch perf/e545-first-age-by-cell, 982f728d: the first-build age from the list's place in the cell-ordered rebuild list; spatial suites green) changes scenes where ids are not placed in order and neighborTickInterval is 1. Predator takes E-200's schedule and never runs this path. Not measured, not merged: worth a sitting only with a scene of still entities spawned at random places (stationarySpatialHunt or a random-placement knob for stationarySpatial)."
-    },
-    {
-      "id": "R-1820",
-      "date": "2026-11-22",
-      "title": "N-303 progress: CR-33, CR-9, CR-10, CR-6, CR-1, CR-12 (part), CR-2 (part), CR-34 on main, about 1 150 lines out of src/ net; suites green; the rest split with the ASUS session",
-      "verdict": "note",
-      "text": "**N-303 phase A and D items done on main (2026-11-22), about 1 150 lines out of src/ net** (each commit's `git show --shortstat -- src`, insertions taken off; src/version.js's one line in each included). src/ as a whole grew meanwhile (the ASUS's batch2, the debug UI's DBG items, +3 200), so the campaign is counted by its commits, not by codeSize.mjs's total.\n\n| item | commit | src/ lines (+/-) | what went |\n| --- | --- | --- | --- |\n| CR-33 | 9652f2b9 | +6 / -74 | META's layout hint (format 9), Layer.maskFromLegacy |\n| CR-9 | 4c7d1511 | +4 / -28 | saveGame's eight unused re-exports and double import, decodeUtf8, the file format's JSON JSDoc |\n| CR-10 | c67c3e91 | +1 / -111 | 24 exports and functions no file references (_cantorResult kept: types declare it) |\n| CR-6 | 4f9d2a02 | +25 / -64 | the mixer's direct path and null branches (SoundManager always sends both buffers); the old direct-path tests mix through a unity bus |\n| CR-1 | 7f0a9815 | +177 / -711 | physicsApi's cwrap type lists (172 wraps) |\n| CR-12 (part) | 33fb37e3 | +1 / -276 | decalBlitPack, sceneryCamPack, meshFillCamera, poseQueueInterp to tests/reference; the catalog's rows point at the product code |\n| CR-2 (part) | 3612177b | +1 / -54 | five PhysicsWorld methods nothing calls, three wraps |\n| CR-34 | f776b30e | +2 / -51 | Mouse's 12 aliases (5 demos moved to isButton*), loadStaticFlowfieldsFromJSON, getParticleViews/Groups, DECORATION_NO_PARENT, resolveYSort; types, guide, NEXT_RELEASE.md |\n\nSuites at f776b30e: node 3481/3481, demos 143/143, check:types clean. The first five went through R-1818's gate (NEUTRAL in 8 pairs); CR-2 and CR-34 change no per-frame code. Left for later in A and D: CR-2's other methods (each name checked against the facades of the same name), CR-3, CR-5 (after N-214's logic changes), CR-11, CR-12's shader math and toyWorldBounce (a stress scene imports it in the browser), CR-34's physics.maxFixtures and BODY_TYPE (with the ASUS's CR-20 in the physics host). Split with the ASUS session: it takes CR-14/15/16, CR-19, CR-20, CR-22, CR-23 (and CR-4, CR-8, CR-17 after N-256)."
-    },
-    {
-      "id": "R-1821",
-      "date": "2026-11-22",
-      "time": "02:54",
-      "timeFrom": "recorded",
-      "title": "N-303 batch 2: CR-3 (the unread query SABs; 65 queries no longer throw), CR-5 (part), CR-11 (engine.wasm 356 323 -> 329 082 B: losing variants to test modules); Predator mix=1 gate NEUTRAL in 8 pairs (logic +1.5 %)",
-      "verdict": "kept-hygiene",
-      "text": "**N-303's second batch on main and through Predator: CR-3, CR-5 (part), CR-11, with CR-2 and CR-34 (R-1820) in the same range.**\n\n- CR-3 (813a3f48, src +6 / -137): the query system's entityMetadataSAB and queryCacheSAB, written and never read (the workers rebuild both from the serialized data), their sizes, writers and plumbing (sceneSharedBuffers, the bootstrap, scene.buffers, AbstractWorker, types, MEMORY_STRUCTURE.md). Test first: a scene with 65 precomputed queries threw a RangeError while making the buffers (the cache was sized for 64); now it does not. sceneCycleSmoke OK (4 cycles, heap flat).\n- CR-5, abstract/spatial/logic (c116ae1c, src +1 / -44): AbstractWorker's getActiveEntityCount/Index, emptyQueryWarnings, _emptyUint16Array, _queryEntityMetadata; spatial's _getCirclePattern; logic's activeEntityCount and frameStartTime (a performance.now() a frame with detailed stats on). particleWorker's and pre-render's share waits for the ASUS session, which works in them.\n- CR-11 (e2f694e0, src +14 / -18, wasm/ and tests/ the rest): engine.wasm ships what won only: bullet_tick_lean with its 32-bit forms, the painter's simd_inplace (radix_sort_simd, painter_order_simd, reinsert_simd_inplace), premultiply_simd. The variants they beat move to test modules (wasm/test/bulletTickVariants.c, painterRadixVariants.c, decalPremultiplyVariants.c, each including the shipped source, built into tests/fixtures/wasm/), which the parity tests and benches load. The engine no longer readies ray stamps before each bullet tick (the lean tick reads none) nor reserves their 4 bytes an entity. **engine.wasm 356 323 -> 329 082 B (-7.6 %; 84 965 B gzipped)**; buildWasm --check identical for every module; Predator and bulletStorm boot on it with no error.\n\nGate cr-batch2, `--vs ad97960c --hyp-rev e2f694e0`, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, owner logic: 4 pairs read REGRESSION with every worker up together (logic +3.4 %, pre-render +3.3 %, spatial +2.5 %, physics +1.8 %, each within 0.4 % of the others: drift); 4 more (to 02:54) made it NEUTRAL: logic 15.122 -> 15.292 ms (+1.5 %, worse 5/8), spatial +0.4 %, physics -0.2 %, renderer -1.9 %, pre-render +0.1 %, presented 60 = 60, BODY_COUNT +0.2 %. Inside R-1818's A/A (up to 3.2 % a worker). Kept as hygiene. Node 3482/3482, demos 143/143; dist rebuilt (cac1bd6f)."
-    },
-    {
-      "id": "R-1822",
-      "date": "2026-11-22",
-      "title": "N-303: CR-24 first part (one save framing, one LiquidFun request skeleton) and CR-21 first two parts (one createWasmMemory for five kernel memories); CR-13 left for a closer session",
-      "verdict": "kept-hygiene",
-      "text": "**N-303, more phase A and B items on main (2026-11-22, after R-1821), suites green each time.**\n\n- CR-24, first part (a4c1c25b, src +63 / -99 over 2 files): one framing (frameSave / unframeSave / payloadOf) for encodeSave, decodeSave and their uncompressed twins; one request skeleton (askPhysicsWorker) for LiquidFun's snapshot and restore. The instance-field requests keep their own (scene callbacks, not a message reply). Left: the codec's constructor table and writeOptTyped/readOptTyped, worldBufferSave's apply skeleton, assertPayloadCompatible's per-entity find.\n- CR-21, first two parts (af5d6ae9, 872340e0, src +78 / -120 over 6 files): one createWasmMemory in wasmMemoryMap.js (the 32768-page cap, the try/catch and their texts, the advice optional) for the decal, navigation, mesh, particle and spatial publish memories, every error text as before. The render queue's and visibility's memories fall back (return null) instead of throwing and keep their own. sceneCycleSmoke OK after each. Left: columnSlots and the column writers, the nine \"did not load\" wrappers, logicWorker's box2dReady through super, AbstractWorker's published-list bindings, pre-render's null-emitLayout fallbacks, the double fixedFps reads.\n- Not taken tonight: CR-13 (one WEED name list): it rebuilds the public entry (index.js, workerWeed.js) the bundles and the type drift check read; left for a session that can watch the bundle smokes and checkTypesDrift closely.\n\nNone of these changes per-frame code; they ride on R-1821's gate."
-    },
-    {
-      "id": "R-1823",
-      "date": "2026-11-22",
-      "time": "03:06",
-      "timeFrom": "recorded",
-      "title": "Predator's capacity: crowd 2.5 (40 000 civilians and soldiers, the knob's top) holds p99 <= 16.7 ms on every worker (worst physics 12.6-13.1 ms), against crowd 1.55 on 2026-11-16 (spatial0 p99 17.5); the squad battle ends sooner now (caveat)",
-      "verdict": "note",
-      "text": "**Predator's capacity is now its knob's top: crowd 2.5 (40 000 civilians and soldiers) holds every rule, against crowd 1.55 (about 24 800) on 2026-11-16.** runCapacity --scene predator on main 2bd32ca8 (headed Chrome, --src, detailed stats off, warm-up 9 s, window 10 s, the pinned camera; on AC), 03:05 to 03:06, history in D:/claude/weed-capacity-history.jsonl:\n\n| crowd | result | worst p99 | worst p95 | presented / drawn |\n| --- | --- | --- | --- | --- |\n| 1.5 | PASS | spatial0 6.75 ms | spatial0 5.83 ms | 59.99 / 59.99 fps |\n| 2.5 | PASS | physics 12.62 ms | physics 11.6 ms | 59.99 / 59.99 fps |\n| 2.5 (again) | PASS | physics 13.12 ms | physics 11.82 ms | 59.98 / 59.98 fps |\n\nOn 2026-11-16 (9fbd6d46) the search stopped at crowd 1.55, spatial0's p99 17.5 ms over the 16.7 budget. What moved it since, measured one by one (none of them alone a capacity claim): E-310's two spatial workers from crowd 2 (crowd 2.5 spatial -34 %, p99 28.9 -> 16-18 ms, R-1804), N-217's slot walks (physics -4.4 %, logic -5 %, R-1744), E-493's scheduler count (physics -7.1 %, R-1690's sitting), E-395 (pre-render and renderer at crowd 2.5 with light3d) and the week's spatial and logic work. At crowd 1.5 (one spatial worker by E-310's rule) spatial0's p99 is 6.75 ms, far from 17.5.\n\nCaveats: (1) the squad battle now ends sooner (R-1817: about 1 200 more bodies gone by 20 s, most likely E-310), so the window from 9 to 19 s holds less fighting than it did; the mixed battle (mix=1) is the heavier test and is not this search's scene; (2) the knob tops at 2.5 because Predator's pools fit 16-bit ids (57 633 entities): the real limit is past it, and finding it needs the scene on 32-bit ids with a higher crowd cap (a scene change, not made)."
-    },
-    {
-      "id": "R-1824",
-      "date": "2026-11-22",
-      "time": "03:15",
-      "timeFrom": "recorded",
-      "title": "keyedPack's capacity 275 000 sprites (265 000 on 2026-11-16), set by the frames drawn (GPU), pre-render's p99 10.4-10.9 ms; inside a search's swing",
-      "verdict": "note",
-      "text": "**keyedPack's capacity: 275 000 sprites (265 000 on 2026-11-16), limited by the frames drawn, not by a worker's tail.** runCapacity --scene keyedPack on main d3836ee7, 03:12 to 03:15: 150 000 pass, 300 000 FAIL (drawn 58.69 fps), 210 000 pass, 250 000 pass, 275 000 pass, 285 000 FAIL (drawn 58.98), 275 000 pass again. At the capacity the worst p99 is pre-render's 10.4 to 10.9 ms (p95 9.6 to 9.7 ms), far inside the 16.7 budget: the GPU (renderer frames drawn under 59) sets the edge. +3.8 %, inside a search's swing (about 10 %, R-1236's baseline note): no claim. Predator's capacity is R-1823."
-    },
-    {
-      "id": "R-1825",
-      "date": "2026-11-22",
-      "title": "N-303: CR-12 parts 2-3 (shader math twins and the GID shader twin to tests/reference) and CR-2 part 2 (24 PhysicsWorld methods, 17 wraps), about 370 lines out of src/",
-      "verdict": "kept-hygiene",
-      "text": "**N-303, more test-only code and unused physicsApi surface out of src/ (2026-11-22, after R-1822), suites green each time.**\n\n- CR-12, second part (de92285b, src +1 / -94): the shaders' JS twins that only tests read move to tests/reference/renderMathJs.mjs: pixelDepthValue (pixelDepth.js), turnFrameNormal (faceMap.js), edgeLightAt (lightEdges.js), readLightDataTexel (utils.js); meshLookPassUvs and TWIN_GLSL/TWIN_WGSL go, their tests call meshLookFullscreenUvs(false) and twinGlsl/twinWgsl('A').\n- CR-12, third part (1d18a50e, src +1 / -96): tilemapGid's JS twin of the GID shaders (unpackGidRgba8, decodeTiledGid, the page UV epsilon, pageUvToLocalTile, applyTiledLocalUv, tiledGidAtlasUv) to tests/reference/tilemapGidJs.mjs; packGidPageRgba8 stays (the catalog's tilemap row times it). tilemapGidMicrobench runs.\n- CR-2, second part (29168eaa, src -183): 24 more PhysicsWorld methods no file calls as a method (no dynamic dispatch onto the world anywhere): the world-anchor joint creators, ten particle group getters, the particle query and ray cast wrappers, createOverlapBuffer, getSlotCount, setParticleSubSteps and others, with the 17 wraps left unused. Predator and liquidFunStress boot and step with no error.\n\nLeft in CR-12: lampShadowMap's and volumeShadowMap's JS math and sunMapLanding (the files the ASUS's CR-16 changed: after its batch 3 merges), computeSunFramesInto (pre-render, the ASUS's), toyWorldBounce (a stress scene imports it in the browser). Left in CR-2: BodyHandle with create/createBox/createCircle (the createBodyDirect test's oracle moves into the test) and createPolygon's handle (weedjsPost uses it: with CR-20 part 4)."
-    },
-    {
       "id": "R-1744",
       "date": "2026-11-22",
       "time": "01:47",
@@ -41848,11 +41655,11 @@
     {
       "id": "R-1756",
       "date": "2026-11-22",
-      "time": "03:33",
+      "time": "03:45",
       "timeFrom": "recorded",
-      "title": "N-155 narrowed: lightGallery's WebGL/WebGPU difference is lamp 8's light alone (radius 260, glow 0), a brighter core on WebGPU; not its shadows, place or colour; the light loop is the same text",
+      "title": "N-155 narrowed: lightGallery's WebGL/WebGPU difference is lamp 8's halo on its own ADD layer ('glows', glow 0.288), a brighter core on WebGPU; not its shadows, place or colour",
       "verdict": "note",
-      "text": "**N-155 narrowed: lightGallery's WebGL/WebGPU difference is one lamp's light, lamp 8 (radius 260, no glow, the bottom-left cell at 160, 600); the other eleven agree within 5/255.** On the ASUS (HD 620), 2026-11-22: the gallery's finals compared pixel by pixel (pngDiffMap.mjs, a block map of the largest channel delta), then a probe copy of the scene (not committed) with knobs to keep one lamp and change its fields, each variant drawn on both backends.\n\n- **The full gallery:** 100 425 pixels differ, max 52, but the block map puts everything above 5 in one disc around (160, 590); WebGPU is the brighter (mean +6.3 to +6.9 where they differ).\n- **Lamp 8 alone:** 82 262 pixels, max 52, the same with no Collider (no shadows of its own) and with no barrels: not the shadows.\n- **Its fields, crossed with lamp 0 (radius 500, glow 0.05, which alone differs on 11 pixels by 1):** lamp 8 at radius 520: 17 254 pixels, max 52; with glow 0.05: 43 808, max 12; glow 0.05 and radius 500: 7 607, max 12; lamp 0 with glow 0: still 11 pixels.\n\n- **Not where it is, not its colour, not the shadows:** lamp 8 moved to lamp 0's place (160, 120) or to the middle: the same 82 299 and 91 820 pixels, max 52; lamp 8 in lamp 0's colour: the same 82 262; lamp 0 moved to lamp 8's place, with or without its glow: 0 pixels; lamp 8 with lighting.shadowsEnabled false: the same 82 262 (and 43 808 with glow 0.05), so neither its shadow map nor the barrels' shadows.\n- **The picture:** WebGPU draws a brighter core of about 40 px around the lamp (its pool's centre, 10 px above its foot); the rest of its reach matches.\n- **The light loop is the same text:** the GLSL and WGSL accumulate a lamp the same way (I / (I + d²) times reachWindow, the same reachWindow, min(total, 1) then weedDither). So the difference comes from what feeds or follows that loop for this lamp: its light data, the pass's target and blend, or the dither, not the loop's arithmetic.\n\nNext: dump lamp 8's light data texel (rows 0 to 3) as each backend uploads it, and read the light pass's output for one pixel of the core on each (a 1 x 1 readback), to tell the data from the output stage; then the dither (weedDither) and the target format around values near 1."
+      "text": "**N-155 narrowed to one lamp: lightGallery's WebGL/WebGPU difference is lamp 8, { radius: 1200, color: 0xffcc88, glow: 0.288, layer: 'glows' }, the lamp whose halo is on a layer of its own (the bottom-left cell, 160, 600); the other eleven agree within 5/255.** (This record first called it \"radius 260, glow 0\": LAMPS[0] is { radius: 200 } and I read the list one row off; the numbers below are as measured.) On the ASUS (HD 620), 2026-11-22, 03:00 to 03:45: the gallery's finals compared pixel by pixel (pngDiffMap.mjs), then a probe copy of the scene (not committed) with knobs to keep one lamp and change its fields, each variant drawn on both backends.\n\n- **The full gallery:** 100 425 pixels differ, max 52, but the block map puts everything above 5 in one disc around (160, 590); WebGPU is the brighter (mean +6.3 to +6.9 where they differ).\n- **Lamp 8 alone:** 82 262 pixels, max 52; the same with no Collider, no barrels, lighting.shadowsEnabled false, moved to another cell or in another colour: not its shadows, place or colour.\n- **Its glow drives it:** glow 0.05 instead of 0.288: 43 808 pixels, max 12; a smaller radius shrinks the halo and the count (200: 2 553, 500: 15 947), max 52 throughout.\n- **Its layer decides it:** its halo on the default glow layer (layer cleared): 13 pixels, max 1; the 'glows' layer in normal blend instead of ADD: 13, max 1; glowMode sorted: the same 82 262.\n- **The light loop is the same text** in GLSL and WGSL; the difference was in the canvas (R-1757)."
     },
     {
       "id": "R-1749",
@@ -41931,6 +41738,215 @@
       ]
     },
     {
+      "id": "R-1757",
+      "date": "2026-11-22",
+      "time": "03:58",
+      "timeFrom": "recorded",
+      "title": "N-155 fixed: the WebGPU canvas opaque; an ADD layer's glow no longer lets the page through (lightGallery 100 425 px, max 52 -> 18 563 px, max 5)",
+      "verdict": "kept-hygiene",
+      "text": "**N-155 fixed: the WebGPU canvas is configured opaque (2731a1d8); lightGallery's WebGL and WebGPU pictures now agree within 5/255 (was 52).**\n\n**The cause.** Pixi's 'add' blend has the same colour factors on both backends (one, one) but not the same alpha: WebGL's is one, one, so the back buffer's alpha stays at 1; WebGPU's is src-alpha, one-minus-src-alpha, so a sprite added at alpha a leaves the canvas alpha at a² + (1 - a), 0.79 under lamp 8's halo (a = 0.288). The Pixi worker configured the WebGPU canvas with alphaMode 'premultiplied', so the page behind showed through wherever an ADD layer drew: the brighter core of R-1756. Pixi's own adaptor configures a non-transparent canvas 'opaque', and the engine's app is opaque (backgroundColor 0x000000); the swapchain bind now does the same.\n\n**Checked on the ASUS (job 0900zzzzzzzzzzzzz, 03:46 to 03:58), pngDiffMap between the backends:**\n\n| | before | after |\n| --- | --- | --- |\n| lamp 8 alone | 82 262 px, max 52 | 13 px, max 1 |\n| the whole gallery | 100 425 px, max 52 | 18 563 px, max 5 |\n| the gallery, sorted glows | 100 222 px, max 52 | 18 359 px, max 6 |\n\nNode 3496/3496, make_bundle clean, the bundle smoke 8/8. What is left between the backends is at most 5/255 (rounding along lamps' edges), as the other lamps already were.\n\nNo speed effect expected: it changes how the browser composites the canvas (opaque can only be cheaper), not the GPU's work.",
+      "commits": [
+        "2731a1d8"
+      ]
+    },
+    {
+      "id": "R-1801",
+      "date": "2026-11-21",
+      "time": "23:59",
+      "timeFrom": "recorded",
+      "title": "N-313 fixed: the awake reorder gathers into the step's stack and copies back; Predator crowd 2.5 Box2D memory peak 553-557 -> 518-519 MB, harness heap top 129.6 -> 109.6 MB; physics +0.8 % NEUTRAL, LiquidFun neutral",
+      "verdict": "kept-hygiene",
+      "text": "**N-313 fixed: E-322's awake reorder gathers into the step's stack and copies back, instead of into new buffers.** Box2D a87c81e (branch weed/n313-reorder-in-stack), shipped as the wasm of WeedJS fix/n313-reorder-in-stack 06f7d849. The reorder runs before any other task of the step uses the stack, which the solver already sized; it now gathers the body sims, body states and each sorted contact array there when the stack has the room (`b2GetStackRoom`), then copies back in a parallel pass. An array the stack cannot hold still goes to a new buffer, as before, rather than growing the stack.\n\n- **Crowd harness** (weed mode, 38 000 walkers, order 2, churn 100, idle 20, 960 steps, reorder -30, one round, 23:40-23:46): heap top 107.2 MB with no reorder; reordering, 129.6 MB on main against 109.6 MB with the fix (bytes in use 96.3 MB on every arm). poseHash 963cbc7b036c09c5 and weedHash identical to main's for each setting. The copy costs the reorder 5.27 -> 6.43 ms per 30-step cycle (median of 32 cycles), its longest step 3.43 -> 4.79 ms: about 0.04 ms a step on average.\n- **Predator crowd 2.5** (`dayCycle=0`, from the E-210 save, owner physics, 4 pairs, to 23:52): NEUTRAL; physics 14.102 -> 14.308 ms (+0.8 %, worse 2/4), logic +1.4 %, spatial -0.2 %, pre-render -1.0 %, presented 60 = 60; loads within 1 %. Box2D's memory peak (MEMORY_PEAK_KB): 552.9 to 556.8 MB on main against 518.2 to 518.9 MB with the fix, every run (-38 MB).\n- **LiquidFun** (the Box2D rule): liquidFunStressScene `water=1.5`, owner physics, 4 pairs, to 23:56: NEUTRAL, physics 9.239 -> 9.333 ms (+2.5 %, worse 2/4; 3 bodies, which the reorder cannot reach); liquidFunBodyCoupleStressScene, to 23:59: NEUTRAL, physics 8.001 -> 7.791 ms (-1.6 %, worse 1/4).\n\nKept as hygiene (no primary worker 3 % worse). Merged: Box2D 0f0fa10, WeedJS 3f9f23f2. Node suite 3434/3434, demos 143/143."
+    },
+    {
+      "id": "R-1802",
+      "date": "2026-11-22",
+      "time": "00:10",
+      "timeFrom": "recorded",
+      "title": "E-531 by day after E-395 and lamps off: map shadows cost +0.3 ms GPU (+10 %, draws 2.79/3.20 -> 3.19/3.45 ms) and the classic layer's CPU (pre-render -8 %, renderer +4 %); left: the G-buffer pass 0.32 ms",
+      "verdict": "note",
+      "text": "**E-531 by day after E-395 and the lamps off by day (2026-11-22, main 095d6041, GTX 1650, Predator default crowd, headed Chrome 1920x1080): map shadows now cost the classic layer's CPU and about +0.3 ms of GPU (+10 %).** A = `dayCycle=0` (the shadows' layer), B = `dayCycle=0&sunShadows=map&lampShadows=map`.\n\n- **GPU, glFrameRecorder --gpu-draws** (a timer per draw, no idle gaps; 3 s windows after 12 s, A B B A, 00:04-00:05): draws 2.788 / 3.195 ms a frame (A) against 3.186 / 3.449 (B). Off the screen pass: A 0.46 / 0.53 ms (shadows' layer 480x270 0.31-0.33 for 14 200-14 500 instances, strip 0.08-0.11, light 0.04-0.06, clears 0.03); B 0.89 / 0.90 ms (G-buffer 478x268 0.315 for 13 300 instances, sun map 576x366 0.26-0.27 for 13 000, light pass 0.13-0.15, strip 0.08-0.09, clears 0.06-0.08). No lamps' map by day. The screen pass (2.3-2.7 ms) moves with the clocks (median 750-870 MHz, P3; 23-29 % busy). --gpu-passes (00:03-00:04) read the same shape: off-screen passes 1.08-1.09 (A) against 1.20-1.44 ms (B).\n- **CPU, runPredatorAbab --query-b** (4 pairs, to 00:10, every worker under the 6 ms floor): pre-render 1.975 -> 1.809 ms (B cheaper, -8 %), renderer 1.694 -> 1.764 (+4 %), logic, spatial and physics within 3 %, presented 60 = 60. (R-1573 before E-395, lamps lit by day: renderer 1.39 -> 2.16, pre-render 2.09 -> 2.75.) The sitting's FAIL (load) is GPU_SHADOW_LIGHTS 17.5 -> 0: the counter counts the classic layer's light cookies (flashes and fires lit by day), which map mode does not draw: a different counter, not a different load.\n\nSo the day gap went from +57 % GPU and +55 % renderer (R-1573) to +10 % GPU and parity on the CPU. What is left is one more pass over every sprite (the G-buffer: ids and heights at the light's size, 0.32 ms) and a heavier light pass (+0.09 ms). Making map shadows the default and dropping the layer mode is the owner's step (E-531's plan); the HD 620 was last read before E-395 (R-1623: +12-19 %)."
+    },
+    {
+      "id": "R-1803",
+      "date": "2026-11-22",
+      "time": "00:22",
+      "timeFrom": "recorded",
+      "title": "N-328 not reproduced: CPU traces of spawnStorm 6000 read main's logic 4 % less busy than c01c6d51 (540/557 against 594/565 ms/s), _spawnAt -20 %; R-1679's +2.7 % failed on its load (BODY_COUNT -5.2 %)",
+      "verdict": "answered",
+      "text": "**N-328 not reproduced in CPU traces: the object way's spawn is not slower on main.** spawnStormScene `?storm=6000`, c01c6d51 (the register commit before E-532, its own worktree) against main 1d6df46c, single headed runs with `--trace-cpu`, 8 s warm-up and 8 s window, old new old new (00:21-00:22), summarized by summarizeChromeCpuTrace over the window:\n\n| | old 1 | old 3 | new 2 | new 4 |\n| --- | --- | --- | --- | --- |\n| logic busy (ms/s) | 594 | 565 | 540 | 557 |\n| logic0 exact step (ms, traced) | 10.08 | 9.28 | 8.85 | 9.37 |\n| `_spawnAt` self (ms in 8 s) | 1 136 | 1 092 | 864 | 921 |\n| publishBodyDirty + advanceBodyGeneration | 817 | 794 | 778 | 755 |\n| `_despawnAt` + `_deactivateSlotComponents` | 301 | 290 | 291 | 266 |\n\nMain is 4 % less busy on logic and its `_spawnAt` 20 % cheaper; new in its list: `hasParent` (DX-PARENT's link check on despawn and spawn, 92 ms in one trace, under the top 12 in the other) and the scene entity's `onSpawned` (125 ms in one). R-1679's +2.7 % (4/4) came with BODY_COUNT -5.2 % on the new side: the sitting failed on its load, and the two sides did not hold the same bodies. Closed as answered: no slower spawn to chase. Traces are not STEP_MS; a scene sitting could still read a percent either way, inside the 3 % bar."
+    },
+    {
+      "id": "R-1804",
+      "date": "2026-11-22",
+      "time": "00:29",
+      "timeFrom": "recorded",
+      "title": "E-310 at crowd 2.5: two spatial workers spatial 14.985 -> 9.982 ms (-34.2 %, 4/4), logic +3.3 %, others alike; Predator takes two from crowd 2 on 12+ logical CPUs",
+      "verdict": "kept",
+      "text": "**E-310 at crowd 2.5 now: a second spatial worker takes spatial off the long pole for 3.3 % of logic (it cost 8.3 % on 2026-11-14).** runPredatorAbab e310-sw2, `--vs main` (229429d6) with `--query-b spatialWorkers=2`, Predator `crowd=2.5&dayCycle=0` from the E-210 save, owner spatial, 4 pairs, to 00:29:\n\n- spatial 14.985 -> 9.982 ms (-34.2 %, worse 0/4, cv 3/2 %), each of the two workers 9.8-10.1 ms; spatial0's p99 28.9 -> 15.9 to 18.3 ms, long frames 18 -> 5 to 17.\n- logic 7.071 -> 7.237 (+3.3 %, worse 3/4, cv 6/1 %), physics 15.554 -> 15.665 (-0.3 % paired), renderer -1.7 %, pre-render -1.5 %, presented 60 = 60.\n- The sitting's FAIL (load) is ENTITIES_PROCESSED -48.4 %: a per-worker counter, each of two workers processes half; BODY_COUNT, VISIBLE_ENTITIES and RENDER_QUEUE_SIZE within 0.5 %.\n\nKept for Predator (01555a16, the demo's config): `predatorSpatialWorkers()` gives two from crowd 2 where navigator.hardwareConcurrency is 12 or more (this PC 16; the ASUS's 4 keeps one), one otherwise; `?spatialWorkers=` still sets it. Checked: crowd 2.5 boots spatial0 and spatial1, crowd 1 one. Physics (15.6 ms) is now the frame's one long pole at crowd 2.5. The engine's own choice by entity count and CPUs stays with DX-AUTOQUALITY."
+    },
+    {
+      "id": "R-1805",
+      "date": "2026-11-22",
+      "time": "00:35",
+      "timeFrom": "recorded",
+      "title": "Five Box2D threads at crowd 2.5 (two spatial workers): physics -5.0 %, spatial +5.9 %, pre-render +5.4 %, logic +4.5 %, renderer +3.4 %: a trade, Predator keeps 4",
+      "verdict": "rejected",
+      "text": "**Five Box2D threads at crowd 2.5 with two spatial workers: physics -5.0 %, every other judged worker +3.4 to +5.9 %: a trade, not a gain; Predator keeps 4.** runPredatorAbab pw5, `--vs main` (8a6177a5, the knob taking up to 8) with `--query-b physicsWorkers=5`, Predator `crowd=2.5&dayCycle=0` from the E-210 save (two spatial workers since R-1804), owner physics, 4 pairs, to 00:35: REGRESSION. physics 15.445 -> 14.602 ms (-5.0 %, worse 0/4), spatial 9.852 -> 10.349 (+5.9 %, 3/4), pre-render 8.510 -> 8.767 (+5.4 %, 3/4), logic 7.165 -> 7.241 (+4.5 %, 3/4), renderer 6.265 -> 6.485 (+3.4 %, 3/4), presented 60 = 60. The fifth pool thread takes a core the others were using (16 logical CPUs, about 13 engine threads busy). With E-319's 3-thread result (+18.7 % physics, others -3 to -12 %), 4 is where the trade balances on this machine."
+    },
+    {
+      "id": "R-1806",
+      "date": "2026-11-22",
+      "time": "00:43",
+      "timeFrom": "recorded",
+      "title": "Box2D by name at crowd 2.5 after N-313: physics thread collide 29.8 %, solve 20.7 %, finalize 7.6 %, serial refit 4.1 % + step/glue ~13 %; pool threads idle ~29 % (futex 19 %, scheduler 10 %)",
+      "verdict": "note",
+      "text": "**Box2D by name at Predator crowd 2.5 after N-313 and with two spatial workers (2026-11-22, main 32b8dff2 with the --profiling-funcs build of Box2D 0f0fa10 swapped in a worktree; from the E-210 save, 6 s warm-up, 8 s traced window, to 00:43).** The names build is not wasm-opt'ed and the trace costs: physics read 19.1 ms (shape, not a ruler).\n\nThe physics thread (the one whose STEP_MS counts): b2CollideTask 29.8 %, b2ExecuteBlock 20.7 %, b2FinalizeBodiesTask 7.6 %, b2World_Step's own code 4.5 %, **b2DynamicTree_Refit 4.1 % (serial, after the finalize)**, publishPose (JS) 3.8 %, b2ComputeFatShapeAABB 3.7 %, b2SolverTask 3.5 %, bodies_apply_accelerations 2.7 %, step_world 2.0 %. Each of the three pool threads: b2CollideTask 21 %, b2ExecuteBlock 20 %, **futex waits 19 % and b2SchedulerWorkerMain 10 %** (idle while the physics thread runs the serial parts), b2FinalizeBodiesTask 7.7 %, b2PlaceLeaf 6.6 % (the tree rebuild task), b2ComputeFatShapeAABB 3.5 %, b2SolverTask 3 %.\n\nSo about 17 % of the physics thread is serial work with the pool waiting (the refit, the step's own code, the glue's accelerations and pose publish), and the two parallel stages (collide, solve) are about half of every thread. Levers seen, none tried: the refit as a task beside the bullets and islands, or the kinematic tree's refit on a pool thread; the glue's publishPose overlapped with the next step's setup. The AABB margin was tried (E-306, dropped) and a fifth thread trades (R-1805)."
+    },
+    {
+      "id": "R-1807",
+      "date": "2026-11-22",
+      "title": "E-392 read: the pose texture is by queue row in painter order, so any mover shifts the rows after it; a dirty range pays only in a still scene; E-362 (12-byte rows) is the cheaper step",
+      "verdict": "note",
+      "text": "**E-392 read against the code: a dirty range pays only in a still scene, since the pose texture is laid out by queue row, in painter order.** `InstancedSpriteBatch._uploadPoseRows` (E-201) copies x, y, rotC and rotS of every queue row into four blocks and uploads the texture rows they reach; the instance stream holds the row index. The rows are the frame's sorted queue: when one walker crosses another's y, every row between them shifts, so the rows that change are, in any scene with movers, nearly all of them. Predator's frame (glFrameRecorder, R-1802's A runs, 2026-11-22): 4 texSubImage2D of 1024 x 4 RGBA32UI a frame, 256 KB at the default crowd, the queue's trees, houses and rocks interleaved with the walkers in y.\n\nSo the levers are: (1) a still scene stops uploading (compare the blocks with the last frame's while copying: about 0.1 ms of JS a frame at 40 000 rows in a moving scene, for nothing); (2) E-362 (the rotation as one u32, 16 -> 12 bytes a row) cuts every frame's upload by a quarter; (3) poses by key instead of by row (the keyed frames' pose stream, E-191/E-201), where a still entity's pose never changes. None is worth a sitting before a scene shows the upload in its renderer's time: E-392 drops in rank; E-362 is the cheaper first step."
+    },
+    {
+      "id": "R-1808",
+      "date": "2026-11-22",
+      "title": "N-147 closed: the prod bundle reads as fast as its sources since (R-1161: f025d0c9 bundles NEUTRAL on Predator and Boids, Boids spatial 4.756 -> 4.660 ms; R-1183, R-1665)",
+      "verdict": "answered",
+      "text": "Closed in the 2026-11-22 backlog triage. Every bundle sitting after the report found the prod bundle no slower than its sources: R-1161 (f025d0c9: Predator and Boids NEUTRAL, Boids 8 pairs spatial 4.756 -> 4.660 ms), R-1183 (Boids bundle against sources NEUTRAL) and R-1665 (the ECS-way merge: prod ESM logic -7.2 % against src in Predator, Boids below the floor). The 4 % seen after E-198 did not hold; bundle-against-source runs read -3 to +10 % from noise alone (bundle-vs-src memory)."
+    },
+    {
+      "id": "R-1809",
+      "date": "2026-11-22",
+      "title": "N-207 closed: the owner left the render cards as they are (2026-11-15 \"está todo bien ahora, dejemos todo así\"); the anchor attempt was reverted (6f2d17e5)",
+      "verdict": "answered",
+      "text": "Closed in the 2026-11-22 backlog triage. The owner saw the frames side by side on 2026-11-15 and decided (\"está todo bien ahora, dejemos todo así\", about 20:00); the card-anchor attempt of that evening was reverted (6f2d17e5) and DX-LAMPPANO shipped its lamps' cards (2b19d9f8). Nothing left to do unless the owner reopens it."
+    },
+    {
+      "id": "R-1810",
+      "date": "2026-11-22",
+      "title": "E-386 closed: the light's stress scenes exist and were run (light3dCompareScene, lampShadowStressScene, sunShadowMap ?lamps=, selfShadow, spriteMaps; R-1152, R-1157, R-1164 kept)",
+      "verdict": "kept",
+      "text": "Closed in the 2026-11-22 backlog triage. The scenes the owner asked for are in tests/bench/stressScenes (light3dCompareScene, lampShadowStressScene's knobs, sunShadowMapStressScene ?lamps=, selfShadowStressScene, spriteMapsStressScene; R-1152), and they drove that night's batches: R-1157 (the lamps' frames a ninth of pre-render), R-1164 (light3dCompare KEPT, pre-render -24.7 % and -18.7 %). The traces they feed are separate items (E-405 to E-424)."
+    },
+    {
+      "id": "R-1811",
+      "date": "2026-11-22",
+      "title": "E-495 closed: WebGPU's pipelines are built ahead with createRenderPipelineAsync since SST-7 step 3 (67bead52, Pixi patch PipelineSystem.weedPipelineAhead)",
+      "verdict": "superseded",
+      "text": "Closed in the 2026-11-22 backlog triage: done by SST-7 step 3 (67bead52): Pixi's PipelineSystem.weedPipelineAhead (scripts/buildPixi.mjs) builds the pipelines a draw will ask for with createRenderPipelineAsync, and pixiWorker.js warms the scene's main ones at init."
+    },
+    {
+      "id": "R-1812",
+      "date": "2026-11-22",
+      "title": "SST-3 closed: the workers evaluate from posted texts (3ce60f3f), merged with DX-STARTUP (R-1451: Predator night first frame 3 545 -> 3 392 ms, the barrio 3 866 -> 3 499)",
+      "verdict": "kept",
+      "text": "Closed in the 2026-11-22 backlog triage. Built 2026-11-18 (3ce60f3f) and merged with DX-STARTUP, whose sitting timed the batch it was in (R-1451: Predator by night first frame 3 545 -> 3 392 ms, the barrio 3 866 -> 3 499, bunnyMark a tie). Its own share of that gain was not split out."
+    },
+    {
+      "id": "R-1813",
+      "date": "2026-11-22",
+      "title": "E-451 closed: not reproduced after E-419 (R-1204: P0 at 1 590-1 785 MHz); glFrameRecorder logs nvidia-smi's pstate and clock with every recording",
+      "verdict": "answered",
+      "text": "Closed in the 2026-11-22 backlog triage. After E-419 the GPU ran at P0 through bunnyMark (1 590 MHz) and volumeStressScene (1 785 MHz) (R-1204), and the asked step is in: glFrameRecorder prints the window's pstates and median clock (nvidia-smi) with each recording, as R-1802's runs show."
+    },
+    {
+      "id": "R-1814",
+      "date": "2026-11-22",
+      "title": "N-221 closed: Defender excludes C: and D: whole (the owner's choice); sittings run with the agents idle, by practice",
+      "verdict": "answered",
+      "text": "Closed in the 2026-11-22 backlog triage. The owner's call was made: Microsoft Defender excludes C:\\ and D:\\ whole (machine profile, 2026-11-21: MsMpEng under 90 CPU-s in 2.4 days). The other half is practice, not code: sittings run while the agents' builds and tests are idle (this session's sittings of 2026-11-22 ran with nothing else busy)."
+    },
+    {
+      "id": "R-1815",
+      "date": "2026-11-22",
+      "title": "N-235/N-236 done in d8kit: the two thread flags (+10-13 % on bodyPack) and a native-src mode (D8KIT_NATIVE=1); bundled stays default, since bodyPack ran faster bundled (187-191 vs 114-117 ops/s), the opposite of rebuildChecked",
+      "verdict": "kept-hygiene",
+      "text": "**N-235 and N-236 done in D:/perf-tools/d8kit (outside the repo; the perf-tools memory says how to use it).**\n\n- N-235: runKernels.sh runs d8 with `--concurrent-maglev-high-priority-threads --single-threaded-gc`. Re-timed in the release d8 (16.0.39), bodyPackMicrobench bundled into the repo's tests/bench: 103.5 ops/s without the flags against 113.7 and 117.0 with them (+10 to 13 %).\n- N-236: build.mjs gets a native mode (`D8KIT_NATIVE=1`): the repo's src/ stays native ES modules that d8 loads by absolute path, the kernel and its tests/ helpers are bundled, and the shims go to `<out>.prelude.js`, which d8 runs first (a native module evaluates before any banner; runKernels.sh passes it). The default stays the bundle: the same kernel ran 186.7 / 191.2 ops/s bundled against 113.7 / 117.0 native, the opposite of R-1222's rebuildChecked (43 ns bundled, 25 native). So esbuild's const-to-var does change TurboFan's code, but in both directions: a d8 timing says its mode, and a claim about the shipped code is read in Chrome (the prod bundle is webpack's, not esbuild's). Kernels that load a real worker (workerHarness: rebuildOwnedRowsMicrobench) throw in d8 in both modes, as before."
+    },
+    {
+      "id": "R-1816",
+      "date": "2026-11-22",
+      "title": "N-303 CR-0: codeSize.mjs and the baseline: src/ 103 551 code lines (362 files), engine.wasm 356 323 B, box2dWasm.wasm 429 737 B, prod bundle 4 039 052 B (1 298 549 gzipped); suite 3 453 tests, 121.5 s",
+      "verdict": "note",
+      "text": "**N-303 CR-0: the ruler (scripts/codeSize.mjs, f633d272) and the campaign's baseline on main 3bacfda5..f633d272 (2026-11-22).** Counted by the script: a line is blank when it holds only white space, a comment line when all it holds is a comment, code otherwise; the generated and vendored files are left out. The audit's 97 517 (fa12bc91) was counted another way and src/ has grown since; the campaign is measured against this table.\n\n| folder | files | code lines | comment lines | blank lines |\n| --- | --- | --- | --- | --- |\n| `src/core` | 69 | 25 581 | 8 646 | 3 544 |\n| `src/workers` | 19 | 23 088 | 5 260 | 1 804 |\n| `src/render` | 76 | 16 321 | 5 189 | 1 326 |\n| `src/box2d` | 36 | 10 653 | 1 024 | 830 |\n| `src/util` | 65 | 10 139 | 4 028 | 1 234 |\n| `src/core/debug` | 31 | 7 604 | 547 | 1 051 |\n| `src/components` | 19 | 4 235 | 1 645 | 691 |\n| `src/shaders` | 37 | 3 100 | 733 | 262 |\n| `src/core/save` | 9 | 2 434 | 452 | 221 |\n| `src/(src root)` | 1 | 396 | 46 | 32 |\n| **`src/` in all** | **362** | **103 551** | **27 570** | **10 995** |\n\nLeft out (generated or vendored): `src/box2d/box2dWasm.js`, `src/wasm/engine.js`, `src/vendor/pixi.min.js`, `src/version.js`.\n\n| file | bytes | gzipped (level 9) |\n| --- | --- | --- |\n| `src/wasm/engine.wasm` | 356 323 | 89 283 |\n| `src/box2d/box2dWasm.wasm` | 429 737 | 164 787 |\n| `dist/weed.bundle.min.js` | 4 275 796 | 1 367 035 |\n| `dist/weed.prod.bundle.min.js` | 4 039 052 | 1 298 549 |\n| `dist/weed.bundle.esm.min.js` | 4 278 745 | 1 368 230 |\n| `dist/weed.prod.bundle.esm.min.js` | 4 041 782 | 1 299 798 |\n\nNode suite (--suite, the same morning): 3 453 tests, 3 453 pass, 121.5 s by the runner (122.1 s wall)."
+    },
+    {
+      "id": "R-1817",
+      "date": "2026-11-22",
+      "time": "01:28",
+      "timeFrom": "recorded",
+      "title": "N-245's spatial sites fixed: _findNeighbors' loops split into _finishRebuiltRows and _scanOwnedEntities (ASUS: 274 steady OSR deopts -> 0); mix=1 crowd 2.5 NEUTRAL (spatial +0.6 %); the squad battle now ends before the 20 s save",
+      "verdict": "kept-hygiene",
+      "text": "**N-245's spatial sites fixed: _findNeighbors' two per-frame loops are methods of their own (merged 325c8b3a).** The ASUS's deopt pass (20 s warm-up, the last 8 s of each log, N-405's window) found Predator's spatial worker deoptimized \"prepare for OSR\" 274 times in 8 s at the loop over the rows the gather rebuilt (spatialWorker.js:2253 at 56c6a147): _findNeighbors is entered once a frame and ran its loops in OSR code. Split 1 (_finishRebuiltRows, its arrays in locals): that site 274 -> 0, and the OSR entry moved up to the owned-entity loop (:2143, 0 -> 84). Split 2 (_scanOwnedEntities, the owned pass with its setup): the kept-row mutant tests now patch that method. Boids, bichos and renderQueueStress showed no steady spatial deopt on either side; the :2222 site (944 in the first sweep) was start-up only. Here (16 threads) neither site showed in an 8 s window at the default crowd.\n\nGates, owner spatial, 4 pairs: from E-210's auto save at crowd 2.5 (to 01:20) every worker but physics fell under the 6 ms floor (physics 7.498 -> 7.569 ms, +1.6 %); from a 14 s save (to 01:24) the same (physics 6.217 -> 6.765, +9.0 % 4/4 at cv 12/2 %, a light world); **the mixed battle** `crowd=2.5&dayCycle=0&mix=1` (to 01:28): NEUTRAL, logic 15.699 -> 15.713 ms (+0.5 %), spatial 7.466 -> 7.520 (+0.6 %), physics 15.248 -> 15.367 (+0.8 %), renderer +2.5 %, pre-render +2.3 % (cv 4/5 %), presented 60 = 60, BODY_COUNT within 0.3 %. Kept as hygiene. Node suite 3452/3452.\n\nFound on the way: Predator's squad battle at crowd 2.5 is now over by the auto save's 20 s (34 700 bodies left against about 35 900 on 2026-11-21, physics 7.5 ms from the save against 15 ms): most likely E-310's second spatial worker (fresher neighbour lists, soldiers finding targets sooner). From-save sittings at crowd 2.5 that need load take mix=1."
+    },
+    {
+      "id": "R-1818",
+      "date": "2026-11-22",
+      "title": "N-303's first cold batch (CR-9/10/6/1/12) through Predator mix=1: NEUTRAL in 8 pairs (worst pre-render +2.4 %); the session's A/A on the scene reads up to 3.2 % a worker",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's first cold batch through Predator: NEUTRAL in 8 pairs, at this session's noise.** runPredatorAbab cr-batch1, `--vs 710ce2e8 --hyp-rev 33fb37e3` (CR-9, CR-10, CR-6, CR-1, CR-12's first part; CR-33 was in both), `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, owner logic. After 4 pairs it read REGRESSION (spatial +3.9 % 4/4, pre-render +3.9 % 4/4, renderer +13.9 % at cv 11/6 %); 4 more (--append) made it NEUTRAL: logic 15.071 -> 15.381 ms (+1.7 %, worse 5/8), spatial +1.6 % (6/8), physics +0.1 %, renderer +1.5 % (cv 9/9 %), pre-render +2.4 % (5/8), presented 60 = 60, BODY_COUNT +0.1 %. The changes remove dead code and move test-only modules: nothing a worker runs per frame changed.\n\n**The session's A/A** (aa-mix-0122, 710ce2e8 against itself, the same scene, 4 pairs): NEUTRAL, logic -2.0 %, spatial +0.7 %, physics -0.9 %, renderer -2.0 % (cv 3/9 %), pre-render -3.2 % (worse 0/4: one side lower in every pair). So this scene's detection limit today is about 3 % a worker, and a 4-pair 4/4 reading of +3.9 % on a worker the change cannot reach is not a verdict.",
+      "time": "02:10",
+      "timeFrom": "recorded"
+    },
+    {
+      "id": "R-1819",
+      "date": "2026-11-22",
+      "title": "E-545 read: stationarySpatialScene's ids are already row-ordered, so N-323's id blocks are compact bands there; the ASUS's +41 % is not cold cells; branch kept unmerged for a random-placement scene",
+      "verdict": "note",
+      "text": "**E-545 read against the scene that showed N-403: its premise does not hold there.** stationarySpatialScene spawns its entities on a grid row by row in id order (100 columns, 45 px apart), so N-323's blocks of contiguous ids are already bands of rows: a frame's rebuilds there are as compact in space as E-545's cell-order runs would make them, and the first frame's rebuild list in home-cell order assigns nearly the same ages. So the ASUS's +41 % exact mean after N-323 (R-1746: 3.06 -> 4.32 ms a worker; about 1 170 lists a frame at about 2.9 us each against about 1.75 us each when all 20 000 went on one frame) is not cold cells from scattered ids. Candidates left: the all-at-once frame's reuse of each candidate's pose across all its neighbours' rebuilds in one pass (the 2-core laptop's 4 MB L3 holds one frame's working set, not sixteen), and the per-frame publish of the rebuilt rows. On the main PC N-323 read level by exact mean (R-1574: 2.44 -> 2.54 ms).\n\nE-545 as written (branch perf/e545-first-age-by-cell, 982f728d: the first-build age from the list's place in the cell-ordered rebuild list; spatial suites green) changes scenes where ids are not placed in order and neighborTickInterval is 1. Predator takes E-200's schedule and never runs this path. Not measured, not merged: worth a sitting only with a scene of still entities spawned at random places (stationarySpatialHunt or a random-placement knob for stationarySpatial)."
+    },
+    {
+      "id": "R-1820",
+      "date": "2026-11-22",
+      "title": "N-303 progress: CR-33, CR-9, CR-10, CR-6, CR-1, CR-12 (part), CR-2 (part), CR-34 on main, about 1 150 lines out of src/ net; suites green; the rest split with the ASUS session",
+      "verdict": "note",
+      "text": "**N-303 phase A and D items done on main (2026-11-22), about 1 150 lines out of src/ net** (each commit's `git show --shortstat -- src`, insertions taken off; src/version.js's one line in each included). src/ as a whole grew meanwhile (the ASUS's batch2, the debug UI's DBG items, +3 200), so the campaign is counted by its commits, not by codeSize.mjs's total.\n\n| item | commit | src/ lines (+/-) | what went |\n| --- | --- | --- | --- |\n| CR-33 | 9652f2b9 | +6 / -74 | META's layout hint (format 9), Layer.maskFromLegacy |\n| CR-9 | 4c7d1511 | +4 / -28 | saveGame's eight unused re-exports and double import, decodeUtf8, the file format's JSON JSDoc |\n| CR-10 | c67c3e91 | +1 / -111 | 24 exports and functions no file references (_cantorResult kept: types declare it) |\n| CR-6 | 4f9d2a02 | +25 / -64 | the mixer's direct path and null branches (SoundManager always sends both buffers); the old direct-path tests mix through a unity bus |\n| CR-1 | 7f0a9815 | +177 / -711 | physicsApi's cwrap type lists (172 wraps) |\n| CR-12 (part) | 33fb37e3 | +1 / -276 | decalBlitPack, sceneryCamPack, meshFillCamera, poseQueueInterp to tests/reference; the catalog's rows point at the product code |\n| CR-2 (part) | 3612177b | +1 / -54 | five PhysicsWorld methods nothing calls, three wraps |\n| CR-34 | f776b30e | +2 / -51 | Mouse's 12 aliases (5 demos moved to isButton*), loadStaticFlowfieldsFromJSON, getParticleViews/Groups, DECORATION_NO_PARENT, resolveYSort; types, guide, NEXT_RELEASE.md |\n\nSuites at f776b30e: node 3481/3481, demos 143/143, check:types clean. The first five went through R-1818's gate (NEUTRAL in 8 pairs); CR-2 and CR-34 change no per-frame code. Left for later in A and D: CR-2's other methods (each name checked against the facades of the same name), CR-3, CR-5 (after N-214's logic changes), CR-11, CR-12's shader math and toyWorldBounce (a stress scene imports it in the browser), CR-34's physics.maxFixtures and BODY_TYPE (with the ASUS's CR-20 in the physics host). Split with the ASUS session: it takes CR-14/15/16, CR-19, CR-20, CR-22, CR-23 (and CR-4, CR-8, CR-17 after N-256)."
+    },
+    {
+      "id": "R-1821",
+      "date": "2026-11-22",
+      "time": "02:54",
+      "timeFrom": "recorded",
+      "title": "N-303 batch 2: CR-3 (the unread query SABs; 65 queries no longer throw), CR-5 (part), CR-11 (engine.wasm 356 323 -> 329 082 B: losing variants to test modules); Predator mix=1 gate NEUTRAL in 8 pairs (logic +1.5 %)",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's second batch on main and through Predator: CR-3, CR-5 (part), CR-11, with CR-2 and CR-34 (R-1820) in the same range.**\n\n- CR-3 (813a3f48, src +6 / -137): the query system's entityMetadataSAB and queryCacheSAB, written and never read (the workers rebuild both from the serialized data), their sizes, writers and plumbing (sceneSharedBuffers, the bootstrap, scene.buffers, AbstractWorker, types, MEMORY_STRUCTURE.md). Test first: a scene with 65 precomputed queries threw a RangeError while making the buffers (the cache was sized for 64); now it does not. sceneCycleSmoke OK (4 cycles, heap flat).\n- CR-5, abstract/spatial/logic (c116ae1c, src +1 / -44): AbstractWorker's getActiveEntityCount/Index, emptyQueryWarnings, _emptyUint16Array, _queryEntityMetadata; spatial's _getCirclePattern; logic's activeEntityCount and frameStartTime (a performance.now() a frame with detailed stats on). particleWorker's and pre-render's share waits for the ASUS session, which works in them.\n- CR-11 (e2f694e0, src +14 / -18, wasm/ and tests/ the rest): engine.wasm ships what won only: bullet_tick_lean with its 32-bit forms, the painter's simd_inplace (radix_sort_simd, painter_order_simd, reinsert_simd_inplace), premultiply_simd. The variants they beat move to test modules (wasm/test/bulletTickVariants.c, painterRadixVariants.c, decalPremultiplyVariants.c, each including the shipped source, built into tests/fixtures/wasm/), which the parity tests and benches load. The engine no longer readies ray stamps before each bullet tick (the lean tick reads none) nor reserves their 4 bytes an entity. **engine.wasm 356 323 -> 329 082 B (-7.6 %; 84 965 B gzipped)**; buildWasm --check identical for every module; Predator and bulletStorm boot on it with no error.\n\nGate cr-batch2, `--vs ad97960c --hyp-rev e2f694e0`, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, owner logic: 4 pairs read REGRESSION with every worker up together (logic +3.4 %, pre-render +3.3 %, spatial +2.5 %, physics +1.8 %, each within 0.4 % of the others: drift); 4 more (to 02:54) made it NEUTRAL: logic 15.122 -> 15.292 ms (+1.5 %, worse 5/8), spatial +0.4 %, physics -0.2 %, renderer -1.9 %, pre-render +0.1 %, presented 60 = 60, BODY_COUNT +0.2 %. Inside R-1818's A/A (up to 3.2 % a worker). Kept as hygiene. Node 3482/3482, demos 143/143; dist rebuilt (cac1bd6f)."
+    },
+    {
+      "id": "R-1822",
+      "date": "2026-11-22",
+      "title": "N-303: CR-24 first part (one save framing, one LiquidFun request skeleton) and CR-21 first two parts (one createWasmMemory for five kernel memories); CR-13 left for a closer session",
+      "verdict": "kept-hygiene",
+      "text": "**N-303, more phase A and B items on main (2026-11-22, after R-1821), suites green each time.**\n\n- CR-24, first part (a4c1c25b, src +63 / -99 over 2 files): one framing (frameSave / unframeSave / payloadOf) for encodeSave, decodeSave and their uncompressed twins; one request skeleton (askPhysicsWorker) for LiquidFun's snapshot and restore. The instance-field requests keep their own (scene callbacks, not a message reply). Left: the codec's constructor table and writeOptTyped/readOptTyped, worldBufferSave's apply skeleton, assertPayloadCompatible's per-entity find.\n- CR-21, first two parts (af5d6ae9, 872340e0, src +78 / -120 over 6 files): one createWasmMemory in wasmMemoryMap.js (the 32768-page cap, the try/catch and their texts, the advice optional) for the decal, navigation, mesh, particle and spatial publish memories, every error text as before. The render queue's and visibility's memories fall back (return null) instead of throwing and keep their own. sceneCycleSmoke OK after each. Left: columnSlots and the column writers, the nine \"did not load\" wrappers, logicWorker's box2dReady through super, AbstractWorker's published-list bindings, pre-render's null-emitLayout fallbacks, the double fixedFps reads.\n- Not taken tonight: CR-13 (one WEED name list): it rebuilds the public entry (index.js, workerWeed.js) the bundles and the type drift check read; left for a session that can watch the bundle smokes and checkTypesDrift closely.\n\nNone of these changes per-frame code; they ride on R-1821's gate."
+    },
+    {
+      "id": "R-1823",
+      "date": "2026-11-22",
+      "time": "03:06",
+      "timeFrom": "recorded",
+      "title": "Predator's capacity: crowd 2.5 (40 000 civilians and soldiers, the knob's top) holds p99 <= 16.7 ms on every worker (worst physics 12.6-13.1 ms), against crowd 1.55 on 2026-11-16 (spatial0 p99 17.5); the squad battle ends sooner now (caveat)",
+      "verdict": "note",
+      "text": "**Predator's capacity is now its knob's top: crowd 2.5 (40 000 civilians and soldiers) holds every rule, against crowd 1.55 (about 24 800) on 2026-11-16.** runCapacity --scene predator on main 2bd32ca8 (headed Chrome, --src, detailed stats off, warm-up 9 s, window 10 s, the pinned camera; on AC), 03:05 to 03:06, history in D:/claude/weed-capacity-history.jsonl:\n\n| crowd | result | worst p99 | worst p95 | presented / drawn |\n| --- | --- | --- | --- | --- |\n| 1.5 | PASS | spatial0 6.75 ms | spatial0 5.83 ms | 59.99 / 59.99 fps |\n| 2.5 | PASS | physics 12.62 ms | physics 11.6 ms | 59.99 / 59.99 fps |\n| 2.5 (again) | PASS | physics 13.12 ms | physics 11.82 ms | 59.98 / 59.98 fps |\n\nOn 2026-11-16 (9fbd6d46) the search stopped at crowd 1.55, spatial0's p99 17.5 ms over the 16.7 budget. What moved it since, measured one by one (none of them alone a capacity claim): E-310's two spatial workers from crowd 2 (crowd 2.5 spatial -34 %, p99 28.9 -> 16-18 ms, R-1804), N-217's slot walks (physics -4.4 %, logic -5 %, R-1744), E-493's scheduler count (physics -7.1 %, R-1690's sitting), E-395 (pre-render and renderer at crowd 2.5 with light3d) and the week's spatial and logic work. At crowd 1.5 (one spatial worker by E-310's rule) spatial0's p99 is 6.75 ms, far from 17.5.\n\nCaveats: (1) the squad battle now ends sooner (R-1817: about 1 200 more bodies gone by 20 s, most likely E-310), so the window from 9 to 19 s holds less fighting than it did; the mixed battle (mix=1) is the heavier test and is not this search's scene; (2) the knob tops at 2.5 because Predator's pools fit 16-bit ids (57 633 entities): the real limit is past it, and finding it needs the scene on 32-bit ids with a higher crowd cap (a scene change, not made)."
+    },
+    {
+      "id": "R-1824",
+      "date": "2026-11-22",
+      "time": "03:15",
+      "timeFrom": "recorded",
+      "title": "keyedPack's capacity 275 000 sprites (265 000 on 2026-11-16), set by the frames drawn (GPU), pre-render's p99 10.4-10.9 ms; inside a search's swing",
+      "verdict": "note",
+      "text": "**keyedPack's capacity: 275 000 sprites (265 000 on 2026-11-16), limited by the frames drawn, not by a worker's tail.** runCapacity --scene keyedPack on main d3836ee7, 03:12 to 03:15: 150 000 pass, 300 000 FAIL (drawn 58.69 fps), 210 000 pass, 250 000 pass, 275 000 pass, 285 000 FAIL (drawn 58.98), 275 000 pass again. At the capacity the worst p99 is pre-render's 10.4 to 10.9 ms (p95 9.6 to 9.7 ms), far inside the 16.7 budget: the GPU (renderer frames drawn under 59) sets the edge. +3.8 %, inside a search's swing (about 10 %, R-1236's baseline note): no claim. Predator's capacity is R-1823."
+    },
+    {
+      "id": "R-1825",
+      "date": "2026-11-22",
+      "title": "N-303: CR-12 parts 2-3 (shader math twins and the GID shader twin to tests/reference) and CR-2 part 2 (24 PhysicsWorld methods, 17 wraps), about 370 lines out of src/",
+      "verdict": "kept-hygiene",
+      "text": "**N-303, more test-only code and unused physicsApi surface out of src/ (2026-11-22, after R-1822), suites green each time.**\n\n- CR-12, second part (de92285b, src +1 / -94): the shaders' JS twins that only tests read move to tests/reference/renderMathJs.mjs: pixelDepthValue (pixelDepth.js), turnFrameNormal (faceMap.js), edgeLightAt (lightEdges.js), readLightDataTexel (utils.js); meshLookPassUvs and TWIN_GLSL/TWIN_WGSL go, their tests call meshLookFullscreenUvs(false) and twinGlsl/twinWgsl('A').\n- CR-12, third part (1d18a50e, src +1 / -96): tilemapGid's JS twin of the GID shaders (unpackGidRgba8, decodeTiledGid, the page UV epsilon, pageUvToLocalTile, applyTiledLocalUv, tiledGidAtlasUv) to tests/reference/tilemapGidJs.mjs; packGidPageRgba8 stays (the catalog's tilemap row times it). tilemapGidMicrobench runs.\n- CR-2, second part (29168eaa, src -183): 24 more PhysicsWorld methods no file calls as a method (no dynamic dispatch onto the world anywhere): the world-anchor joint creators, ten particle group getters, the particle query and ray cast wrappers, createOverlapBuffer, getSlotCount, setParticleSubSteps and others, with the 17 wraps left unused. Predator and liquidFunStress boot and step with no error.\n\nLeft in CR-12: lampShadowMap's and volumeShadowMap's JS math and sunMapLanding (the files the ASUS's CR-16 changed: after its batch 3 merges), computeSunFramesInto (pre-render, the ASUS's), toyWorldBounce (a stress scene imports it in the browser). Left in CR-2: BodyHandle with create/createBox/createCircle (the createBodyDirect test's oracle moves into the test) and createPolygon's handle (weedjsPost uses it: with CR-20 part 4)."
+    },
+    {
       "id": "R-1826",
       "date": "2026-11-22",
       "time": "03:59",
@@ -41938,6 +41954,27 @@
       "title": "The ASUS's batch 3 through Predator mix=1: the first gate's renderer +9.6 % (8 pairs) did not hold: both bisect halves NEUTRAL on their base, the merge again NEUTRAL (renderer -4.9 %, cv 14/12 %); this scene's renderer swings about ±10 %",
       "verdict": "kept-hygiene",
       "text": "**The ASUS's batch 3 (merged 233839ad) passes Predator: the first gate's renderer +9.6 % was noise.** All on Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, 4 pairs unless said, to 03:59:\n\n- batch3-gate (a63b7af2 -> 233839ad, owner physics, 8 pairs): REGRESSION on the renderer, 6.777 -> 7.458 ms (+9.6 %, worse 7/8, cv 10/5 %, +7.4 % against the other workers); pre-render +4.8 %, logic +3.2 %, spatial +2.5 %, physics +1.6 % (each -1.5 to -2.8 % against the others: drift).\n- Bisect on the batch's own base, --full-rev, owner renderer: d5d5140c -> 58312a98 (CR-4, CR-8, DBG-7, CR-23, CR-22, CR-19): NEUTRAL, renderer -2.0 % (worse 0/4); 58312a98 -> 647a1fdb (N-407, CR-16, DBG-7's readout, DBG-6, CR-20 parts 1-3): NEUTRAL, renderer -0.8 %.\n- batch3-gate2, the merge again in a fresh sitting (owner renderer): NEUTRAL, renderer 7.688 -> 6.675 ms (-4.9 %, cv 14/12 %), logic +1.3 %, spatial -2.2 %, physics +0.7 %, pre-render -0.6 %.\n\nSo in this scene the renderer reads within about ±10 % from sitting to sitting at 4 to 8 pairs (today also +13.9 % -> +1.5 % and +6.9 % -> -1.9 % when pairs were added, R-1818, R-1821): a renderer claim here needs more pairs or a GPU-bound scene of its own. Batch 3 kept as hygiene."
+    },
+    {
+      "id": "R-1758",
+      "date": "2026-11-22",
+      "time": "04:13",
+      "timeFrom": "recorded",
+      "title": "N-158 round 3: the visibility gather's doubles through its column table (E-85); pre-render on the flashlight scene 127 -> 83 KB/s, the swept visibility 1 362 -> 360 B a frame; pictures pixel-equal",
+      "verdict": "kept-hygiene",
+      "text": "**N-158 round 3: the visibility gather's doubles go through its column table, not as call arguments (9c1f02c9); pre-render's garbage on the flashlight scene 127 -> 83 KB/s.**\n\n- **The change:** gather_light / gather_light_cone took four to eight doubles a lamp a frame (lx, ly, the radius, the pose alpha, a cone's edges). A JS-to-wasm call TurboFan does not inline boxes each double it passes (E-85). The doubles now go into an args block of the gather's column table (slots 48 to 63, free: the table has 64 and used 46), which the kernel reads; the exports take integers only. engine.wasm was built on the ASUS with the emsdk clang the main PC uses (copied to C:\\weedlab\\llvm), which reproduces the committed module byte for byte (buildWasm --check: identical, 329 082 B), then 329 321 B with the change.\n- **Heap census** (heapSampleWorkers, Chrome on the ASUS, flashlightStressScene ?cone=1&lights=360&crates=320, 10 s after 10 s, 04:10): pre-render 127 -> 83 KB/s, 2 605 -> 1 460 B a frame; _buildVisibilityPolygonsSwept 1 362 -> 360 B a frame.\n- **Same result:** lightGallery with walls and cones (the swept visibility and gather_light_cone), before and after: 0 pixels differ on WebGL and on WebGPU. Node 3497/3497, demos 143/143.\n\nLeft in _buildVisibilityPolygonsSwept (360 B a frame): sweep_light_* and wall_row take three doubles each a lamp (lx, ly, the radius or the floor's inverse scale). The same fix fits (the sweep's consts region can carry them), but those exports are called with doubles by the sweep kernel's test fleet (visibilitySweepWasm.test.js, visibilitySweepHits, wallRowKernel, the microbench and its variants), so it moves with them.",
+      "commits": [
+        "9c1f02c9"
+      ]
+    },
+    {
+      "id": "R-1759",
+      "date": "2026-11-22",
+      "time": "04:20",
+      "timeFrom": "recorded",
+      "title": "N-270 answered: with the WebGPU canvas opaque (N-155), Pixi's WebGPU add alpha factors change nothing shown; a patch to one, one changed 0 pixels in lightGallery, so it stays out",
+      "verdict": "answered",
+      "text": "**N-270 answered: with the WebGPU canvas opaque (N-155, 2731a1d8), Pixi's WebGPU 'add' alpha factors change nothing the engine shows; a build patch to WebGL's one, one changed 0 pixels, so it does not go in.**\n\nOn the ASUS, 2026-11-22 04:17 to 04:20 (job 0901c): the vendored Pixi rebuilt as it is came out byte for byte (scripts/buildPixi.mjs), then with a patch giving GpuBlendModesToPixi.add the alpha factors one, one (WebGL's, as Pixi 8.23 has them, #12290). lightGallery (its glows at half resolution, E-404), with sorted glows and with walls, each on both backends in both trees:\n\n- WebGPU before against after the patch: 0 pixels differ in all three; WebGL: 0.\n- WebGL against WebGPU, before and after alike: 18 563, 18 359 and 18 361 pixels, max 5, 6 and 26 (the 26 is two pixels of one cell; the rest rounding along lamps' edges).\n\nThe alpha the 'add' factors wrote mattered where it reached the page: N-155's canvas, fixed by making it opaque. An additive pass into a transparent target that is later composited by its colour alone shows no difference here. DX-PIXI823 brings Pixi's own fix with the upgrade."
     }
   ],
   "leads": [

@@ -5996,6 +5996,8 @@ class PreRenderWorker extends AbstractWorker {
         const gatherRes = gatherOn ? gk.results : null;
         const evI32 = gatherOn ? gk.eventsI32 : null;
         const evF64 = gatherOn ? gk.eventsF64 : null;
+        // N-158: each light's doubles go to the kernel through this block, not as arguments (E-85).
+        const gatherArgs = gatherOn ? gk.args : null;
 
         // The sweep marks no seen owner (the old fan pass's self-lit fills read them).
         sweepTable[SWEEP_OWNER_SEEN] = 0;
@@ -6060,9 +6062,19 @@ class PreRenderWorker extends AbstractWorker {
                 // The bins are cleared before the light's first solid rasters; a light with none leaves them.
                 skipPolarBins();
                 let binsCleared = false;
+                gatherArgs[0] = lx;
+                gatherArgs[1] = ly;
+                gatherArgs[2] = influenceRadius;
+                gatherArgs[3] = this._poseAlpha;
+                if (cone) {
+                    gatherArgs[4] = e1x;
+                    gatherArgs[5] = e1y;
+                    gatherArgs[6] = e2x;
+                    gatherArgs[7] = e2y;
+                }
                 occCount = cone
-                    ? gk.gatherCone(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha, e1x, e1y, e2x, e2y, coneCos < 0 ? 1 : 0)
-                    : gk.gather(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha);
+                    ? gk.gatherCone(gk.tableByte, lightIdx, coneCos < 0 ? 1 : 0)
+                    : gk.gather(gk.tableByte, lightIdx);
                 occluderLimitHit = gatherRes[3] !== 0;
                 const events = gatherRes[2];
                 for (let e = 0; e < events; e++) {

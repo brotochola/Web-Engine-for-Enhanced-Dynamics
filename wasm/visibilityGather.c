@@ -344,25 +344,36 @@ INLINE int32_t gather(uint32_t table, uint32_t light, double lx, double ly, doub
   return (int32_t)occ;
 }
 
+/* N-158: the light's doubles, in the column table's args block from slot GATHER_ARGS_SLOT (8-byte aligned: the table
+   is): lx, ly, radius, alpha, then a cone's edges e1x, e1y, e2x, e2y. Not call arguments: a JS-to-wasm call TurboFan
+   does not inline boxes every double it passes (E-85), and pre-render calls this once a lamp a frame. */
+#define GATHER_ARGS_SLOT 48u
+
+static inline const double *gather_args(uint32_t table) {
+  return (const double *)(uintptr_t)(table + GATHER_ARGS_SLOT * 4u);
+}
+
 __attribute__((export_name("gather_light")))
-int32_t gather_light(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha) {
-  return gather(table, light, lx, ly, radius, alpha, 0, 0, 0.0, 0.0, 0.0, 0.0);
+int32_t gather_light(uint32_t table, uint32_t light) {
+  const double *a = gather_args(table);
+  return gather(table, light, a[0], a[1], a[2], a[3], 0, 0, 0.0, 0.0, 0.0, 0.0);
 }
 
 __attribute__((export_name("gather_light_u32")))
-int32_t gather_light_u32(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha) {
-  return gather(table, light, lx, ly, radius, alpha, 1, 0, 0.0, 0.0, 0.0, 0.0);
+int32_t gather_light_u32(uint32_t table, uint32_t light) {
+  const double *a = gather_args(table);
+  return gather(table, light, a[0], a[1], a[2], a[3], 1, 0, 0.0, 0.0, 0.0, 0.0);
 }
 
 /* DX-SPOT: a cone light's walk; wideCone 1 when its aperture passes 180 degrees. */
 __attribute__((export_name("gather_light_cone")))
-int32_t gather_light_cone(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha,
-                          double e1x, double e1y, double e2x, double e2y, int32_t wideCone) {
-  return gather(table, light, lx, ly, radius, alpha, 0, wideCone ? 2 : 1, e1x, e1y, e2x, e2y);
+int32_t gather_light_cone(uint32_t table, uint32_t light, int32_t wideCone) {
+  const double *a = gather_args(table);
+  return gather(table, light, a[0], a[1], a[2], a[3], 0, wideCone ? 2 : 1, a[4], a[5], a[6], a[7]);
 }
 
 __attribute__((export_name("gather_light_cone_u32")))
-int32_t gather_light_cone_u32(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha,
-                              double e1x, double e1y, double e2x, double e2y, int32_t wideCone) {
-  return gather(table, light, lx, ly, radius, alpha, 1, wideCone ? 2 : 1, e1x, e1y, e2x, e2y);
+int32_t gather_light_cone_u32(uint32_t table, uint32_t light, int32_t wideCone) {
+  const double *a = gather_args(table);
+  return gather(table, light, a[0], a[1], a[2], a[3], 1, wideCone ? 2 : 1, a[4], a[5], a[6], a[7]);
 }
