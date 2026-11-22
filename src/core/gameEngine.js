@@ -87,6 +87,8 @@ class GameEngine {
     this.debugUI = null;
     /** SST-14: the debug overlay's load (debug: true), until it resolves into debugUI; null when off or destroyed. */
     this._debugUILoad = null;
+    /** The debug overlay's scene switcher entries (registerScenes): kept here, the overlay loads after the page's code runs. */
+    this.registeredScenes = [];
     /**
      * N-301: a GPU loss being recovered: { scene, backend, save (the world's save, a promise), timer (WebGL: the wait
      * for the context's restore) }; null otherwise.
@@ -107,6 +109,7 @@ class GameEngine {
             return;
           }
           this.debugUI = overlay;
+          overlay.registerScenes(this.registeredScenes);
         })
         .catch((error) => console.warn('[GameEngine] the debug UI did not load:', error));
       this._debugUILoad = load;
@@ -332,6 +335,17 @@ class GameEngine {
 
   get isFullscreen() {
     return !!document.fullscreenElement;
+  }
+
+  /**
+   * The scenes the debug overlay's Scene tab offers, one button each. `{ name, url, export? }` (workers import that
+   * module), or `{ name, class }` / `{ name, load }`. Call it any time: the overlay loads after the page's code runs
+   * (SST-14) and takes the list when it is in.
+   * @param {{ name: string, url?: string, export?: string, class?: Function, load?: () => Promise<Function>|Function }[]} scenes
+   */
+  registerScenes(scenes) {
+    this.registeredScenes = scenes;
+    if (this.debugUI) this.debugUI.registerScenes(scenes);
   }
 
   /**

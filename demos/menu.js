@@ -165,9 +165,8 @@ function layoutSceneList() {
 const requested = params.get('scene');
 const direct = requested ? findScene(requested) : null;
 
-if (game.debugUI) {
-  game.debugUI.registerScenes(scenes);
-}
+// The debug bar's Scene tab: the overlay loads after this runs, and the engine hands it the list when it is in.
+game.registerScenes(scenes);
 
 if (direct) {
   startScene(direct);

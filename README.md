@@ -300,7 +300,7 @@ Import **the scene you are about to run**. Do not barrel every level in `main`. 
 Several scenes in the debug overlay: register `{ name, url }` (same shape as `demos/index.html`).
 
 ```javascript
-game.debugUI.registerScenes([
+game.registerScenes([
   { name: 'Dungeon', url: new URL('./scenes/dungeonScene.js', import.meta.url).href },
   { name: 'Town', url: new URL('./scenes/townScene.js', import.meta.url).href },
 ]);

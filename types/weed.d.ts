@@ -2030,8 +2030,13 @@ export declare class GameEngine {
   state: number;
   transitionCooldown: number;
   debugEnabled: boolean;
+  /** The debug overlay's loaded module, once it is in (it loads after the page's code runs); null with debug off. */
   debugUI: DebugUI | null;
+  /** What registerScenes was given. */
+  registeredScenes: DebugSceneEntry[];
   constructor(config?: GameEngineConfig);
+  /** The scenes the debug overlay's Scene tab offers, one button each; any time, before or after the overlay loads. */
+  registerScenes(scenes: DebugSceneEntry[]): void;
   /** data: handed to the scene as scene.data and as the argument of preload / create / createNewGame. */
   loadScene(source: string | typeof Scene, options?: { data?: unknown; onProgress?: (done: number, total: number, stage: string) => void; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
   readonly presenting: boolean;
@@ -2548,6 +2553,15 @@ export declare class DebugFlags {
   getState(): DebugFlagsStateSnapshot;
 }
 
+/** A debug overlay scene switcher entry: a module URL (workers import it), a class, or a loader. */
+export interface DebugSceneEntry {
+  name: string;
+  url?: string;
+  export?: string;
+  class?: typeof Scene;
+  load?: () => Promise<typeof Scene> | typeof Scene;
+}
+
 export declare class DebugUI {
   scene: Scene | null;
   debugFlags: DebugFlags | null;
@@ -2555,14 +2569,15 @@ export declare class DebugUI {
   updateInterval: number;
   openSection: string | null;
   sections: Record<string, { tab: HTMLElement; panel?: HTMLElement }>;
-  registeredScenes: unknown[];
+  registeredScenes: DebugSceneEntry[];
   container: HTMLDivElement | null;
   stats: unknown;
   canvas: unknown;
   tools: unknown;
   panels: Record<string, unknown>;
   constructor(options?: DebugUIOptions);
-  registerScenes(scenes: unknown[]): void;
+  /** GameEngine.registerScenes hands its list here when the overlay is in. */
+  registerScenes(scenes: DebugSceneEntry[]): void;
   attach(gameEngine: GameEngine, scene: Scene): void;
   detach(): void;
   start(): void;
