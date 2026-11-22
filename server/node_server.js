@@ -107,6 +107,13 @@ const handleRequest = (req, res) => {
     req.on('close', () => reloadClients.delete(res));
     return;
   }
+  // The served folder on disk, for pages that link into the editor (docs/internal/hypotheses.html opens a
+  // doc's row in VS Code at its line).
+  if (urlPath === '/__weed/root') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', ...ISOLATION_HEADERS });
+    res.end(process.cwd());
+    return;
+  }
   // A file of the served folder (staticFiles.js keeps the path inside it: review N-80). From source the engine
   // looks for its isolation service worker at the site root.
   serveStaticFile(req, res, {
