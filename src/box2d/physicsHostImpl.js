@@ -354,14 +354,6 @@
     return views;
   }
 
-  function packView(arr) {
-    return {
-      sab: arr.buffer,
-      byteOffset: arr.byteOffset,
-      length: arr.length,
-    };
-  }
-
   function bindJointViews(buffer, maxJoints, entityIdWidth) {
     var n = maxJoints;
     var offset = 0;
@@ -825,7 +817,7 @@
       hitEventThreshold: s.hitEventThreshold,
       publishContactRing: (state.config.physics || {}).publishContactRing !== false,
       liquidFun: s.liquidFun,
-      stats: state.stats ? packView(state.stats) : null,
+      stats: state.stats,
       collectDetailedStats: !!state.collectDetailedStats,
       posePublish: state.posePublish
         ? {
@@ -840,171 +832,81 @@
           capacity: state.posePublish.capacity | 0,
         }
         : null,
-      bodySync: state.bodySyncViews
-        ? {
-          dirtyFlags: packView(state.bodySyncViews.dirtyFlags),
-          dirtyWords: packView(state.bodySyncViews.dirtyWords),
-          generation: packView(state.bodySyncViews.generation),
-          epoch: state.bodySyncViews.epoch ? packView(state.bodySyncViews.epoch) : null,
-        }
-        : null,
+      bodySync: state.bodySyncViews,
       // DX-PARENT: what weedjsPost's writeChildPoses reads and writes.
       links: state.transformLinks
         ? {
-          words: packView(state.transformLinks.words),
-          parent: packView(T.parent),
+          words: state.transformLinks.words,
+          parent: T.parent,
           parentWidth: state.transformIdWidth,
-          localX: packView(T.localX),
-          localY: packView(T.localY),
-          localRotation: packView(T.localRotation),
-          parentGen: packView(state.transformLinks.parentGen),
-          list: packView(state.transformLinks.list),
-          orphans: packView(state.transformLinks.orphans),
+          localX: T.localX,
+          localY: T.localY,
+          localRotation: T.localRotation,
+          parentGen: state.transformLinks.parentGen,
+          list: state.transformLinks.list,
+          orphans: state.transformLinks.orphans,
         }
         : null,
       views: {
-        entityActive: packView(T.active),
-        rbActive: packView(R.active),
-        rbStatic: packView(R.static),
-        ax: packView(R.ax),
-        ay: packView(R.ay),
-        px: packView(R.px),
-        py: packView(R.py),
-        pRotation: packView(R.pRotation),
-        angularAccel: packView(R.angularAccel),
-        mass: packView(R.mass),
-        inertia: packView(R.inertia),
-        linearDamping: packView(R.linearDamping),
-        angularDamping: packView(R.angularDamping),
-        fixedRotation: packView(R.fixedRotation),
-        sleepThreshold: packView(R.sleepThreshold),
-        colActive: packView(C.active),
-        offsetX: packView(C.offsetX),
-        offsetY: packView(C.offsetY),
-        shapeType: packView(C.shapeType),
-        radius: packView(C.radius),
-        width: packView(C.width),
-        height: packView(C.height),
-        isTrigger: packView(C.isTrigger),
-        collisionLayer: packView(C.collisionLayer),
-        collisionMask: packView(C.collisionMask),
-        collisionGroupIndex: packView(C.collisionGroupIndex),
-        friction: packView(C.friction),
-        restitution: packView(C.restitution),
-        enableHitEvents: packView(C.enableHitEvents),
-        polyCount: packView(C.polyCount),
-        polyVertexX: packView(C.polyVertexX),
-        polyVertexY: packView(C.polyVertexY),
-        fixtureCount: C.fixtureCount ? packView(C.fixtureCount) : null,
+        entityActive: T.active,
+        rbActive: R.active,
+        rbStatic: R.static,
+        ax: R.ax,
+        ay: R.ay,
+        px: R.px,
+        py: R.py,
+        pRotation: R.pRotation,
+        angularAccel: R.angularAccel,
+        mass: R.mass,
+        inertia: R.inertia,
+        linearDamping: R.linearDamping,
+        angularDamping: R.angularDamping,
+        fixedRotation: R.fixedRotation,
+        sleepThreshold: R.sleepThreshold,
+        colActive: C.active,
+        offsetX: C.offsetX,
+        offsetY: C.offsetY,
+        shapeType: C.shapeType,
+        radius: C.radius,
+        width: C.width,
+        height: C.height,
+        isTrigger: C.isTrigger,
+        collisionLayer: C.collisionLayer,
+        collisionMask: C.collisionMask,
+        collisionGroupIndex: C.collisionGroupIndex,
+        friction: C.friction,
+        restitution: C.restitution,
+        enableHitEvents: C.enableHitEvents,
+        polyCount: C.polyCount,
+        polyVertexX: C.polyVertexX,
+        polyVertexY: C.polyVertexY,
+        fixtureCount: C.fixtureCount || null,
       },
     };
 
     if (state.jointsEnabled && state.jointViews) {
-      var J = state.jointViews;
       initPayload.maxJoints = state.maxJoints;
       initPayload.entityIdWidth = state.entityIdWidth || 16;
-      initPayload.jointViews = {
-        type: packView(J.type),
-        pairs: J.pairs ? packView(J.pairs) : null,
-        entityA: J.entityA ? packView(J.entityA) : null,
-        entityB: J.entityB ? packView(J.entityB) : null,
-        localAnchorAX: packView(J.localAnchorAX),
-        localAnchorAY: packView(J.localAnchorAY),
-        localAnchorBX: packView(J.localAnchorBX),
-        localAnchorBY: packView(J.localAnchorBY),
-        forceThreshold: packView(J.forceThreshold),
-        torqueThreshold: packView(J.torqueThreshold),
-        active: packView(J.active),
-        length: packView(J.length),
-        enableSpring: packView(J.enableSpring),
-        hertz: packView(J.hertz),
-        dampingRatio: packView(J.dampingRatio),
-        enableLimit: packView(J.enableLimit),
-        lowerAngle: packView(J.lowerAngle),
-        upperAngle: packView(J.upperAngle),
-        enableMotor: packView(J.enableMotor),
-        motorSpeed: packView(J.motorSpeed),
-        maxMotorTorque: packView(J.maxMotorTorque),
-        linearHertz: packView(J.linearHertz),
-        angularHertz: packView(J.angularHertz),
-        linearDampingRatio: packView(J.linearDampingRatio),
-        angularDampingRatio: packView(J.angularDampingRatio),
-        activeIndices: packView(J.activeIndices),
-        activeIndexPositions: packView(J.activeIndexPositions),
-        activeCount: packView(J.activeCount),
-        activeListLock: packView(J.activeListLock),
-        revision: packView(J.revision),
-      };
+      initPayload.jointViews = state.jointViews;
     }
 
     if (state.chainsEnabled && state.chainViews) {
-      var Ch = state.chainViews;
       initPayload.maxChainPoints = state.maxChainPoints;
-      initPayload.chainViews = {
-        xy: packView(Ch.xy),
-        begin: packView(Ch.begin),
-        count: packView(Ch.count),
-        loop: packView(Ch.loop),
-      };
+      initPayload.chainViews = state.chainViews;
     }
 
     if (state.fixturesEnabled && state.fixtureViews) {
-      var F = state.fixtureViews;
       initPayload.maxFixturePoolSize = state.maxFixtures;
-      initPayload.fixtureViews = {
-        active: packView(F.active),
-        entity: packView(F.entity),
-        next: packView(F.next),
-        vertCount: packView(F.vertCount),
-        vertexX: packView(F.vertexX),
-        vertexY: packView(F.vertexY),
-        head: F.head ? packView(F.head) : null,
-        revision: packView(F.revision),
-      };
+      initPayload.fixtureViews = state.fixtureViews;
     }
 
     if (state.liquidFun) {
-      var L = state.liquidFun;
       initPayload.liquidFunMaxCount = state.liquidFunMaxCount;
-      initPayload.liquidFunViews = {
-        count: packView(L.count),
-        x: packView(L.x),
-        y: packView(L.y),
-        scaleX: packView(L.scaleX),
-        scaleY: packView(L.scaleY),
-        rotC: packView(L.rotC),
-        rotS: packView(L.rotS),
-        alpha: packView(L.alpha),
-        px: packView(L.px),
-        py: packView(L.py),
-        tint: packView(L.tint),
-        textureId: packView(L.textureId),
-        baseAlpha: packView(L.baseAlpha),
-        layerMask: packView(L.layerMask),
-        staticsEpoch: L.staticsEpoch ? packView(L.staticsEpoch) : null,
-      };
+      initPayload.liquidFunViews = state.liquidFun;
     }
 
     if (state.liquidFunGroups) {
-      var G = state.liquidFunGroups;
-      initPayload.liquidFunGroupsMax = G.maxGroups;
-      initPayload.liquidFunGroupsViews = {
-        count: packView(G.count),
-        id: packView(G.id),
-        particleCount: packView(G.particleCount),
-        firstIndex: packView(G.firstIndex),
-        lastIndex: packView(G.lastIndex),
-        groupFlags: packView(G.groupFlags),
-        viscousScale: packView(G.viscousScale),
-        x: packView(G.x),
-        y: packView(G.y),
-        vx: packView(G.vx),
-        vy: packView(G.vy),
-        angularVelocity: packView(G.angularVelocity),
-        angle: packView(G.angle),
-        lightIntensity: packView(G.lightIntensity),
-        sqrtLightIntensity: packView(G.sqrtLightIntensity),
-      };
+      initPayload.liquidFunGroupsViews = state.liquidFunGroups;
     }
 
     global.weedjsOnReady = function (ready) {

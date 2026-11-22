@@ -833,8 +833,9 @@ test('physicsHostImpl group SAB layout matches util bindLiquidFunGroups', () => 
     bind,
     /lastIndex[\s\S]*groupFlags[\s\S]*viscousScale[\s\S]*lightIntensity[\s\S]*sqrtLightIntensity/,
   );
-  assert.match(host, /groupFlags: packView\(G\.groupFlags\)/);
-  assert.match(post, /groupFlags: data\.liquidFunGroupsViews\.groupFlags/);
+  // CR-20: one realm, so the host hands its bound group views to the glue as they are.
+  assert.match(host, /initPayload\.liquidFunGroupsViews = state\.liquidFunGroups;/);
+  assert.match(post, /liquidFunGroupsViews = data\.liquidFunGroupsViews;/);
 });
 
 test('LiquidFun mutators enqueue opaque userData on i32 slots', () => {

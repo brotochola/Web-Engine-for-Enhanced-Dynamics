@@ -262,59 +262,49 @@
   let memoryWarnKb = 0;
   let memoryWarned = false;
 
-  function viewFromDesc(desc, TypedArray) {
-    return new TypedArray(desc.sab, desc.byteOffset, desc.length);
-  }
-
   function bindWeedViews(desc) {
-    // Pose/vel/sleeping are HEAP-only (bound in bindStateChannels). SoA supplies the rest.
+    // Pose/vel/sleeping are HEAP-only (bound in bindStateChannels). The host's component columns supply the rest.
     views = {
-      entityActive: viewFromDesc(desc.entityActive, Uint8Array),
+      entityActive: desc.entityActive,
       x: null,
       y: null,
       rotation: null,
-      rbActive: viewFromDesc(desc.rbActive, Uint8Array),
-      rbStatic: viewFromDesc(desc.rbStatic, Uint8Array),
+      rbActive: desc.rbActive,
+      rbStatic: desc.rbStatic,
       vx: null,
       vy: null,
-      ax: viewFromDesc(desc.ax, Float32Array),
-      ay: viewFromDesc(desc.ay, Float32Array),
-      px: desc.px ? viewFromDesc(desc.px, Float32Array) : null,
-      py: desc.py ? viewFromDesc(desc.py, Float32Array) : null,
-      pRotation: desc.pRotation
-        ? viewFromDesc(desc.pRotation, Float32Array)
-        : null,
+      ax: desc.ax,
+      ay: desc.ay,
+      px: desc.px || null,
+      py: desc.py || null,
+      pRotation: desc.pRotation || null,
       angularVelocity: null,
-      angularAccel: viewFromDesc(desc.angularAccel, Float32Array),
-      mass: viewFromDesc(desc.mass, Float32Array),
-      inertia: desc.inertia ? viewFromDesc(desc.inertia, Float32Array) : null,
-      linearDamping: viewFromDesc(desc.linearDamping, Float32Array),
-      angularDamping: viewFromDesc(desc.angularDamping, Float32Array),
+      angularAccel: desc.angularAccel,
+      mass: desc.mass,
+      inertia: desc.inertia || null,
+      linearDamping: desc.linearDamping,
+      angularDamping: desc.angularDamping,
       sleeping: null,
-      fixedRotation: desc.fixedRotation
-        ? viewFromDesc(desc.fixedRotation, Uint8Array)
-        : null,
-      sleepThreshold: desc.sleepThreshold
-        ? viewFromDesc(desc.sleepThreshold, Float32Array)
-        : null,
-      colActive: viewFromDesc(desc.colActive, Uint8Array),
-      offsetX: viewFromDesc(desc.offsetX, Float32Array),
-      offsetY: viewFromDesc(desc.offsetY, Float32Array),
-      shapeType: viewFromDesc(desc.shapeType, Uint8Array),
-      radius: viewFromDesc(desc.radius, Float32Array),
-      width: viewFromDesc(desc.width, Float32Array),
-      height: viewFromDesc(desc.height, Float32Array),
-      isTrigger: viewFromDesc(desc.isTrigger, Uint8Array),
-      collisionLayer: viewFromDesc(desc.collisionLayer, Uint8Array),
-      collisionMask: viewFromDesc(desc.collisionMask, Uint32Array),
-      collisionGroupIndex: viewFromDesc(desc.collisionGroupIndex, Int32Array),
-      friction: viewFromDesc(desc.friction, Float32Array),
-      restitution: viewFromDesc(desc.restitution, Float32Array),
-      enableHitEvents: viewFromDesc(desc.enableHitEvents, Uint8Array),
-      polyCount: viewFromDesc(desc.polyCount, Uint8Array),
-      polyVertexX: viewFromDesc(desc.polyVertexX, Float32Array),
-      polyVertexY: viewFromDesc(desc.polyVertexY, Float32Array),
-      fixtureCount: desc.fixtureCount ? viewFromDesc(desc.fixtureCount, Uint16Array) : null,
+      fixedRotation: desc.fixedRotation || null,
+      sleepThreshold: desc.sleepThreshold || null,
+      colActive: desc.colActive,
+      offsetX: desc.offsetX,
+      offsetY: desc.offsetY,
+      shapeType: desc.shapeType,
+      radius: desc.radius,
+      width: desc.width,
+      height: desc.height,
+      isTrigger: desc.isTrigger,
+      collisionLayer: desc.collisionLayer,
+      collisionMask: desc.collisionMask,
+      collisionGroupIndex: desc.collisionGroupIndex,
+      friction: desc.friction,
+      restitution: desc.restitution,
+      enableHitEvents: desc.enableHitEvents,
+      polyCount: desc.polyCount,
+      polyVertexX: desc.polyVertexX,
+      polyVertexY: desc.polyVertexY,
+      fixtureCount: desc.fixtureCount || null,
     };
   }
 
@@ -325,15 +315,7 @@
       return;
     }
     maxFixtures = maxF | 0;
-    fixtureViews = {
-      active: viewFromDesc(desc.active, Uint8Array),
-      entity: viewFromDesc(desc.entity, Uint16Array),
-      next: viewFromDesc(desc.next, Uint16Array),
-      vertCount: viewFromDesc(desc.vertCount, Uint8Array),
-      vertexX: viewFromDesc(desc.vertexX, Float32Array),
-      vertexY: viewFromDesc(desc.vertexY, Float32Array),
-      head: desc.head ? viewFromDesc(desc.head, Uint16Array) : null,
-    };
+    fixtureViews = desc;
   }
 
   function bindChainViews(desc, maxPoints) {
@@ -344,12 +326,7 @@
       return;
     }
     maxChainPoints = maxPoints | 0;
-    chainViews = {
-      xy: viewFromDesc(desc.xy, Float32Array),
-      begin: viewFromDesc(desc.begin, Int32Array),
-      count: viewFromDesc(desc.count, Uint16Array),
-      loop: viewFromDesc(desc.loop, Uint8Array),
-    };
+    chainViews = desc;
   }
 
   function bindBodySyncViews(desc) {
@@ -361,11 +338,11 @@
       poseGenEpoch = null;
       return;
     }
-    bodyDirtyFlags = viewFromDesc(desc.dirtyFlags, Int32Array);
-    bodyDirtyWords = viewFromDesc(desc.dirtyWords, Int32Array);
-    bodyDirtyHalves = new Uint16Array(desc.dirtyWords.sab, desc.dirtyWords.byteOffset, desc.dirtyWords.length * 2);
-    bodyGeneration = viewFromDesc(desc.generation, Int32Array);
-    poseGenEpoch = desc.epoch ? viewFromDesc(desc.epoch, Int32Array) : null;
+    bodyDirtyFlags = desc.dirtyFlags;
+    bodyDirtyWords = desc.dirtyWords;
+    bodyDirtyHalves = new Uint16Array(desc.dirtyWords.buffer, desc.dirtyWords.byteOffset, desc.dirtyWords.length * 2);
+    bodyGeneration = desc.generation;
+    poseGenEpoch = desc.epoch || null;
   }
 
   function bindJointViews(desc, maxJ) {
@@ -381,38 +358,7 @@
       return;
     }
     maxJoints = maxJ | 0;
-    jointViews = {
-      type: viewFromDesc(desc.type, Uint8Array),
-      pairs: desc.pairs ? viewFromDesc(desc.pairs, Uint32Array) : null,
-      entityA: desc.entityA ? viewFromDesc(desc.entityA, Uint32Array) : null,
-      entityB: desc.entityB ? viewFromDesc(desc.entityB, Uint32Array) : null,
-      localAnchorAX: viewFromDesc(desc.localAnchorAX, Float32Array),
-      localAnchorAY: viewFromDesc(desc.localAnchorAY, Float32Array),
-      localAnchorBX: viewFromDesc(desc.localAnchorBX, Float32Array),
-      localAnchorBY: viewFromDesc(desc.localAnchorBY, Float32Array),
-      forceThreshold: viewFromDesc(desc.forceThreshold, Float32Array),
-      torqueThreshold: viewFromDesc(desc.torqueThreshold, Float32Array),
-      active: viewFromDesc(desc.active, Uint8Array),
-      length: viewFromDesc(desc.length, Float32Array),
-      enableSpring: viewFromDesc(desc.enableSpring, Uint8Array),
-      hertz: viewFromDesc(desc.hertz, Float32Array),
-      dampingRatio: viewFromDesc(desc.dampingRatio, Float32Array),
-      enableLimit: viewFromDesc(desc.enableLimit, Uint8Array),
-      lowerAngle: viewFromDesc(desc.lowerAngle, Float32Array),
-      upperAngle: viewFromDesc(desc.upperAngle, Float32Array),
-      enableMotor: viewFromDesc(desc.enableMotor, Uint8Array),
-      motorSpeed: viewFromDesc(desc.motorSpeed, Float32Array),
-      maxMotorTorque: viewFromDesc(desc.maxMotorTorque, Float32Array),
-      linearHertz: viewFromDesc(desc.linearHertz, Float32Array),
-      angularHertz: viewFromDesc(desc.angularHertz, Float32Array),
-      linearDampingRatio: viewFromDesc(desc.linearDampingRatio, Float32Array),
-      angularDampingRatio: viewFromDesc(desc.angularDampingRatio, Float32Array),
-      activeIndices: viewFromDesc(desc.activeIndices, Uint16Array),
-      activeIndexPositions: viewFromDesc(desc.activeIndexPositions, Uint16Array),
-      activeCount: viewFromDesc(desc.activeCount, Int32Array),
-      activeListLock: viewFromDesc(desc.activeListLock, Int32Array),
-      revision: viewFromDesc(desc.revision, Uint32Array),
-    };
+    jointViews = desc;
     jointHandle = new Int32Array(maxJoints);
     jointHandle.fill(-1);
     jointSeenRev = new Uint32Array(maxJoints);
@@ -858,17 +804,16 @@
       useChildLinks(null, null, 0xffff, null, null, null, null, null, null, 0);
       return;
     }
-    const wide = desc.parentWidth === 32;
     useChildLinks(
-      viewFromDesc(desc.words, Int32Array),
-      viewFromDesc(desc.parent, wide ? Uint32Array : Uint16Array),
-      wide ? 0xffffffff : 0xffff,
-      viewFromDesc(desc.localX, Float32Array),
-      viewFromDesc(desc.localY, Float32Array),
-      viewFromDesc(desc.localRotation, Float32Array),
-      viewFromDesc(desc.parentGen, Int32Array),
-      viewFromDesc(desc.list, Int32Array),
-      viewFromDesc(desc.orphans, Int32Array),
+      desc.words,
+      desc.parent,
+      desc.parentWidth === 32 ? 0xffffffff : 0xffff,
+      desc.localX,
+      desc.localY,
+      desc.localRotation,
+      desc.parentGen,
+      desc.list,
+      desc.orphans,
       entityCount,
     );
   }
@@ -3651,39 +3596,7 @@
     bindFixtureViews(data.fixtureViews, data.maxFixturePoolSize | 0);
     bindChainViews(data.chainViews, data.maxChainPoints | 0);
     if (data.liquidFunViews) {
-      liquidFunViews = {
-        count: data.liquidFunViews.count
-          ? viewFromDesc(data.liquidFunViews.count, Int32Array)
-          : null,
-        x: viewFromDesc(data.liquidFunViews.x, Float32Array),
-        y: viewFromDesc(data.liquidFunViews.y, Float32Array),
-        scaleX: viewFromDesc(data.liquidFunViews.scaleX, Float32Array),
-        scaleY: viewFromDesc(data.liquidFunViews.scaleY, Float32Array),
-        rotC: data.liquidFunViews.rotC
-          ? viewFromDesc(data.liquidFunViews.rotC, Float32Array)
-          : null,
-        rotS: data.liquidFunViews.rotS
-          ? viewFromDesc(data.liquidFunViews.rotS, Float32Array)
-          : null,
-        alpha: viewFromDesc(data.liquidFunViews.alpha, Float32Array),
-        px: data.liquidFunViews.px
-          ? viewFromDesc(data.liquidFunViews.px, Float32Array)
-          : null,
-        py: data.liquidFunViews.py
-          ? viewFromDesc(data.liquidFunViews.py, Float32Array)
-          : null,
-        tint: viewFromDesc(data.liquidFunViews.tint, Uint32Array),
-        textureId: viewFromDesc(data.liquidFunViews.textureId, Uint16Array),
-        baseAlpha: data.liquidFunViews.baseAlpha
-          ? viewFromDesc(data.liquidFunViews.baseAlpha, Float32Array)
-          : null,
-        layerMask: data.liquidFunViews.layerMask
-          ? viewFromDesc(data.liquidFunViews.layerMask, Uint16Array)
-          : null,
-        staticsEpoch: data.liquidFunViews.staticsEpoch
-          ? viewFromDesc(data.liquidFunViews.staticsEpoch, Int32Array)
-          : null,
-      };
+      liquidFunViews = data.liquidFunViews;
       liquidFunMaxCount = data.liquidFunMaxCount | 0;
       liquidFunXFloatOffset = 0;
       liquidFunYFloatOffset = 0;
@@ -3691,44 +3604,11 @@
       liquidFunPaintedHighWater = 0;
     }
     if (data.liquidFunGroupsViews) {
-      liquidFunGroupsViews = {
-        count: data.liquidFunGroupsViews.count
-          ? viewFromDesc(data.liquidFunGroupsViews.count, Int32Array)
-          : null,
-        id: viewFromDesc(data.liquidFunGroupsViews.id, Int32Array),
-        particleCount: viewFromDesc(data.liquidFunGroupsViews.particleCount, Int32Array),
-        firstIndex: data.liquidFunGroupsViews.firstIndex
-          ? viewFromDesc(data.liquidFunGroupsViews.firstIndex, Int32Array)
-          : null,
-        lastIndex: data.liquidFunGroupsViews.lastIndex
-          ? viewFromDesc(data.liquidFunGroupsViews.lastIndex, Int32Array)
-          : null,
-        groupFlags: data.liquidFunGroupsViews.groupFlags
-          ? viewFromDesc(data.liquidFunGroupsViews.groupFlags, Int32Array)
-          : null,
-        viscousScale: viewFromDesc(data.liquidFunGroupsViews.viscousScale, Float32Array),
-        x: viewFromDesc(data.liquidFunGroupsViews.x, Float32Array),
-        y: viewFromDesc(data.liquidFunGroupsViews.y, Float32Array),
-        vx: viewFromDesc(data.liquidFunGroupsViews.vx, Float32Array),
-        vy: viewFromDesc(data.liquidFunGroupsViews.vy, Float32Array),
-        angularVelocity: viewFromDesc(data.liquidFunGroupsViews.angularVelocity, Float32Array),
-        angle: viewFromDesc(data.liquidFunGroupsViews.angle, Float32Array),
-        lightIntensity: data.liquidFunGroupsViews.lightIntensity
-          ? viewFromDesc(data.liquidFunGroupsViews.lightIntensity, Float32Array)
-          : null,
-        sqrtLightIntensity: data.liquidFunGroupsViews.sqrtLightIntensity
-          ? viewFromDesc(data.liquidFunGroupsViews.sqrtLightIntensity, Float32Array)
-          : null,
-        maxGroups: data.liquidFunGroupsMax | 0,
-      };
+      liquidFunGroupsViews = data.liquidFunGroupsViews;
     } else {
       liquidFunGroupsViews = null;
     }
-    if (data.stats) {
-      statsF32 = viewFromDesc(data.stats, Float32Array);
-    } else {
-      statsF32 = null;
-    }
+    statsF32 = data.stats || null;
     collectDetailedStats = !!data.collectDetailedStats;
     const entityCount = data.entityCount | 0;
     hasBody = new Uint8Array(entityCount);
