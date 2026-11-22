@@ -12735,7 +12735,8 @@
         "R-1741",
         "R-1756",
         "R-1757",
-        "R-1759"
+        "R-1759",
+        "R-1828"
       ]
     },
     {
@@ -12811,7 +12812,9 @@
         "R-0960",
         "R-1742",
         "R-1758",
-        "R-1760"
+        "R-1760",
+        "R-1828",
+        "R-1829"
       ]
     },
     {
@@ -23996,7 +23999,10 @@
         "R-1752",
         "R-1753",
         "R-1754",
-        "R-1826"
+        "R-1826",
+        "R-1827",
+        "R-1828",
+        "R-1829"
       ]
     },
     {
@@ -41988,6 +41994,33 @@
       "commits": [
         "d4e750af"
       ]
+    },
+    {
+      "id": "R-1827",
+      "date": "2026-11-22",
+      "time": "04:31",
+      "timeFrom": "recorded",
+      "title": "N-303: CR-34's rest, CR-20 part 4, CR-2's option body API, CR-12's light maps math and toyWorldBounce, CR-24's rest, CR-21's kernel wrappers, renderer config key and logic's box2dReady: about 780 lines out of src/",
+      "verdict": "kept-hygiene",
+      "text": "**N-303, another batch of code reduction on main (2026-11-22, 04:05 to 04:31), about 730 lines out of src/ (+213 / -947), suites green each time.**\n\n- CR-34, the rest (6961d6d5, src +13 / -36): the `physics.maxFixtures` config alias and its five fallbacks (scene, shared buffers, abstractWorker, Pixi, the physics host and glue) go, and the key is a RETIRED_CONFIG_KEYS entry, so a config that still has it is told the new name; `BODY_TYPE` (an alias of `Box2dBodyType`) goes from the constants and physicsApi. `BODY_DIRTY.BODY_TYPE`, a dirty bit, stays. NEXT_RELEASE.md says both.\n- CR-20 part 4 (fd38bc0a, src +102 / -320): the physics host and weedjsPost run in one realm (the host calls weedjsHandleInit itself), so the host hands over its bound views (the component columns, body sync, links, joints, chains, fixtures, LiquidFun's render and group views, the stats) instead of packing each as { sab, byteOffset, length } for the glue to rebuild; packView and viewFromDesc are gone. Every type was checked to match. (The glue rebuilt the fixtures' entity column as Uint16 at 32-bit ids too; it never read it.) 12 physics scenes ran clean: joints, chains, LiquidFun (liquidFunStress ?water=1.5 and the body couple), parents, 32-bit ids, fixtures.\n- CR-2, third part (b61e986a, src +14 / -276): polygon bodies go straight to create_body_polygon as boxes and circles do, their vertices through the fixtures' heap scratch (it built a JS array and malloc'd a copy per body); PhysicsWorld's option body API (create, createBox, createCircle, createPolygon), BodyHandle, DEFAULT_MATERIAL, three statics nobody read and 18 wraps leave physicsApi. createBodyDirect.test.js keeps the old merging as its reference (checked against HEAD's API on 4 000 random option sets) and now covers polygons. 8 polygon scenes, Buenos Aires included (20 094 bodies), ran clean.\n- CR-12, fourth and fifth parts (979c4e42, 8c08568e + 36d5c6b6, src -190): the light maps' test-only JS math (lampRayDepth, lampLanding, lampPanoUv, lampPanoLanding, lampPanoTexel, lampVolumeRayT, sunMapLanding) to tests/reference/lightMapsJs.mjs; toyWorldBounce from src/util to the bunny stress scenes (36d5c6b6 fixed the node test I had missed: a search cut at 10 lines).\n- CR-24, the rest (e9587105, src +72 / -99): writeTyped/readTyped through the TYPED_KIND table, writeOptTyped/readOptTyped for the ten flagged arrays, one apply walk for chains, fixtures and meshes, assertPayloadCompatible with one Map instead of a find per table. saveEncodeGolden: same bytes. The two instance-field fans stay as they are (one gathers per worker and warns, the other counts: a shared helper would cost what it saves).\n- CR-21, part (cb21f94f, src +10 / -26): the particle and Pixi workers' five \"<name>.wasm did not load\" wrappers go (the binders and loadWasmKernel name the kernel in every error). renderQueueMemory and visibilityMemory keep their own memory creation: they return null for a JS fallback, not an error.\n- CR-21, more (dd5ab466, src +7 / -54): AbstractWorker reads each worker's fixedFps / noLimitFPS from its config key by the class name, and the renderer's class is PixiRenderer, so its alias was 'pixi' in name only and the Pixi worker read renderer.fixedFps again itself: the alias is 'pixirenderer' now and Pixi's copy goes (a balls scene with renderer.fixedFps 20 draws at 20.2 fps); the fallback to keys the config schema does not have goes too. Logic's box2dReady binds the hot fields, the command ring, the query buffers, the moved list and LiquidFun's heap through AbstractWorker's handler and keeps only its event rings; it bound the hot fields on the posted buffer, the other workers on their own handle of the same memory (the engine block's kernels need that one), now it does as they do. The four published-list bindings stay as they are (a helper with computed names saves 8 lines and hides the fields from a search).\n- Tooling: the integrated bench runner launches Chromium with --mute-audio (8b91b0ab).\n\nLeft: CR-12's computeSunFramesInto and CR-21's pre-render pieces (preRenderWorker, the ASUS's area while it works there), CR-21's binder table and published-list bindings, CR-13, CR-18. The batch gate (with the ASUS's batch 4) follows in the next record."
+    },
+    {
+      "id": "R-1828",
+      "date": "2026-11-22",
+      "time": "04:44",
+      "timeFrom": "recorded",
+      "title": "Predator gate over the ASUS's batch 4 and R-1827's batch (aeddffd7 -> 3d98325b): NEUTRAL, preRender -2.5 %",
+      "verdict": "kept-hygiene",
+      "text": "**The ASUS's batch 4 (N-155, N-158 round 3) and the R-1827 code reduction pass Predator: NEUTRAL.** batch5-gate, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, aeddffd7 -> 3d98325b, owner preRender (N-158 round 3 is on its per-lamp gather call), 4 pairs, 04:41 to 04:44:\n\n- preRender 8.245 -> 8.035 ms (-2.5 %, worse 1/4, cv 3/1 %, +0.7 % against the other workers);\n- logic -1.6 %, spatial -3.8 %, physics -1.1 %; renderer 7.224 -> 6.740 ms (-12.1 %, worse 0/4, cv 7/7 %), this scene's renderer swing (about ±10 % sitting to sitting, R-1826), not a claim; particle under the floor.\n- Load keys within 0.5 % (BODY_COUNT, GPU_CASTERS, VISIBLE_ENTITIES, RENDER_QUEUE_SIZE).\n\nNo worker worse past the session's A/A (up to 3.2 %): both batches kept, as hygiene (N-158's round is an allocation change: its measure is the ASUS's heap sample, 127 -> 83 KB/s in pre-render on the flashlight scene, R-1758)."
+    },
+    {
+      "id": "R-1829",
+      "date": "2026-11-22",
+      "time": "04:53",
+      "timeFrom": "recorded",
+      "title": "Predator gate over the ASUS's batch 5 and dd5ab466 (3d98325b -> 3fdbd5ba): NEUTRAL, preRender +0.6 %",
+      "verdict": "kept-hygiene",
+      "text": "**The ASUS's batch 5 (N-158 round 4, the sweep's doubles through its consts) and dd5ab466 (CR-21: the renderer's config key, logic's box2dReady through super) pass Predator: NEUTRAL.** batch6-gate, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, 3d98325b -> 3fdbd5ba, owner preRender, 4 pairs, 04:50 to 04:53:\n\n- preRender 8.091 -> 8.141 ms (+0.6 %, worse 2/4, cv 2/3 %);\n- logic +2.1 % (worse 3/4, cv 3/2 %, under the session's A/A of 3.2 %), spatial +0.4 %, physics -0.1 %, renderer +5.4 % (cv 6/11 %, its swing); particle under the floor.\n- Load keys within 0.7 %.\n\nKept as hygiene: N-158's measure is the heap sample (R-1760: _buildVisibilityPolygonsSwept 360 -> 19 B/frame, pre-render 83 -> 54.6 KB/s on the flashlight scene). Over the two gates (aeddffd7 -> 3fdbd5ba) pre-render read -2.5 % then +0.6 %."
     }
   ],
   "leads": [
