@@ -24978,7 +24978,9 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-1819"
+      ],
       "refs": [],
       "id": "E-545",
       "title": "N-323's first-build stagger by place, not by id: a frame's rebuilds in one compact region of the map, so the gather keeps E-81's cell locality (the ASUS read N-323's spread at +41 % exact mean, about 2.5 times a rebuild, against all lists at once)",
@@ -24986,7 +24988,7 @@
       "kind": "speed",
       "area": "spatial",
       "date": "2026-11-22",
-      "statusText": "Filed 2026-11-22 from N-403 (the ASUS bisect: first bad 546c5afc, N-323). Before N-323 all of a worker's lists were rebuilt on one frame in 16, walked in home-cell order (E-81); N-323 gives each list a first-build age by its block of ids, so a frame's ~1 170 rebuilds are scattered over the map and walk cold cells.",
+      "statusText": "2026-11-22 (R-1819): the premise does not hold in stationarySpatialScene (ids row-ordered). Branch perf/e545-first-age-by-cell kept, unmeasured; Predator never runs this path (E-200's schedule).",
       "next": "The first-build age from the entity's home cell (a block of cells per frame, rows of the grid in turn) instead of its id block; same flat tail. stationarySpatialScene ?entities=40000 exact-frame mean and p95 on both PCs, then Predator mix=1 spatial."
     }
   ],
@@ -41662,6 +41664,13 @@
       "text": "**N-303's first cold batch through Predator: NEUTRAL in 8 pairs, at this session's noise.** runPredatorAbab cr-batch1, `--vs 710ce2e8 --hyp-rev 33fb37e3` (CR-9, CR-10, CR-6, CR-1, CR-12's first part; CR-33 was in both), `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, owner logic. After 4 pairs it read REGRESSION (spatial +3.9 % 4/4, pre-render +3.9 % 4/4, renderer +13.9 % at cv 11/6 %); 4 more (--append) made it NEUTRAL: logic 15.071 -> 15.381 ms (+1.7 %, worse 5/8), spatial +1.6 % (6/8), physics +0.1 %, renderer +1.5 % (cv 9/9 %), pre-render +2.4 % (5/8), presented 60 = 60, BODY_COUNT +0.1 %. The changes remove dead code and move test-only modules: nothing a worker runs per frame changed.\n\n**The session's A/A** (aa-mix-0122, 710ce2e8 against itself, the same scene, 4 pairs): NEUTRAL, logic -2.0 %, spatial +0.7 %, physics -0.9 %, renderer -2.0 % (cv 3/9 %), pre-render -3.2 % (worse 0/4: one side lower in every pair). So this scene's detection limit today is about 3 % a worker, and a 4-pair 4/4 reading of +3.9 % on a worker the change cannot reach is not a verdict.",
       "time": "02:10",
       "timeFrom": "recorded"
+    },
+    {
+      "id": "R-1819",
+      "date": "2026-11-22",
+      "title": "E-545 read: stationarySpatialScene's ids are already row-ordered, so N-323's id blocks are compact bands there; the ASUS's +41 % is not cold cells; branch kept unmerged for a random-placement scene",
+      "verdict": "note",
+      "text": "**E-545 read against the scene that showed N-403: its premise does not hold there.** stationarySpatialScene spawns its entities on a grid row by row in id order (100 columns, 45 px apart), so N-323's blocks of contiguous ids are already bands of rows: a frame's rebuilds there are as compact in space as E-545's cell-order runs would make them, and the first frame's rebuild list in home-cell order assigns nearly the same ages. So the ASUS's +41 % exact mean after N-323 (R-1746: 3.06 -> 4.32 ms a worker; about 1 170 lists a frame at about 2.9 us each against about 1.75 us each when all 20 000 went on one frame) is not cold cells from scattered ids. Candidates left: the all-at-once frame's reuse of each candidate's pose across all its neighbours' rebuilds in one pass (the 2-core laptop's 4 MB L3 holds one frame's working set, not sixteen), and the per-frame publish of the rebuilt rows. On the main PC N-323 read level by exact mean (R-1574: 2.44 -> 2.54 ms).\n\nE-545 as written (branch perf/e545-first-age-by-cell, 982f728d: the first-build age from the list's place in the cell-ordered rebuild list; spatial suites green) changes scenes where ids are not placed in order and neighborTickInterval is 1. Predator takes E-200's schedule and never runs this path. Not measured, not merged: worth a sitting only with a scene of still entities spawned at random places (stationarySpatialHunt or a random-placement knob for stationarySpatial)."
     }
   ],
   "leads": [
