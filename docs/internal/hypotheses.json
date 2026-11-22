@@ -14552,13 +14552,13 @@
     {
       "id": "E-281",
       "title": "BunnyMark's tickAll allocates 1.5 MB/s in a typed-array loop",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-22 on the ASUS (R-1779): a warm-up tier, gone once the loop reaches TurboFan",
       "date": "2026-11-13",
       "area": "demo",
       "kind": "speed",
-      "result": "Heap pass: bunnyMarkScene's logic allocates 1.54 MB/s, 1.51 of it in `Bunny.tickAll`, a loop over typed arrays that should allocate nothing; likely a tier (interpreted or Maglev code after a deopt, or an OSR entry each frame).",
-      "next": "The sweep's deopt pass (fixed in 9d9908d6) on bunnyMark first; then `--trace-opt --trace-deopt` on tickAll; the fix where the reading points (engine if the cause is how logic calls tickAll); bunnyMark's logic STEP_MS.",
+      "result": "bunnyMarkScene logic: tickAll 1493 KB/s after 10 s of warm-up, absent after 70 s (the worker 11.1 KB/s).",
+      "next": "",
       "refs": [
         "EXECUTION_PLAN.md#E-281"
       ],
@@ -14567,7 +14567,8 @@
         "Bunny.tickAll"
       ],
       "records": [
-        "R-0980"
+        "R-0980",
+        "R-1779"
       ]
     },
     {
@@ -42544,6 +42545,15 @@
         "4320882e",
         "b582144e"
       ]
+    },
+    {
+      "id": "R-1779",
+      "date": "2026-11-22",
+      "time": "10:48",
+      "timeFrom": "recorded",
+      "title": "E-281 answered: Bunny.tickAll allocates 1.5 MB/s at 10 s of warm-up and nothing at 70 s: the boxed doubles of code not yet in TurboFan, not a bug",
+      "verdict": "answered",
+      "text": "**E-281 answered on the ASUS: Bunny.tickAll allocates only while it warms up.** heapSampleWorkers on bunnyMarkScene's logic\nworker (batch 10's HEAD 3025aac4), 8 s samples: after the usual 10 s warm-up the worker allocates 1511 KB/s, 1493 of\nthem (25.7 KB a frame, about one heap number a bunny) in tickAll (demos/bunnyMarkScene/gameObjects/bunny.js:29); after\na 70 s warm-up the whole worker allocates 11.1 KB/s and tickAll is not in the list. The 2026-11-13 heap pass that filed\nthis took its samples after 8 s, before a loop run once a frame reaches TurboFan (over a minute, R-1830): the\ninterpreter's and baseline's doubles are boxed. Nothing to change in the demo or the engine's tickAll dispatch."
     }
   ],
   "leads": [
