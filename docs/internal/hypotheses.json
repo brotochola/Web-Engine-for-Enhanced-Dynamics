@@ -23952,7 +23952,8 @@
       ],
       "records": [
         "R-1430",
-        "R-1431"
+        "R-1431",
+        "R-1816"
       ]
     },
     {
@@ -41285,6 +41286,13 @@
       "title": "N-235/N-236 done in d8kit: the two thread flags (+10-13 % on bodyPack) and a native-src mode (D8KIT_NATIVE=1); bundled stays default, since bodyPack ran faster bundled (187-191 vs 114-117 ops/s), the opposite of rebuildChecked",
       "verdict": "kept-hygiene",
       "text": "**N-235 and N-236 done in D:/perf-tools/d8kit (outside the repo; the perf-tools memory says how to use it).**\n\n- N-235: runKernels.sh runs d8 with `--concurrent-maglev-high-priority-threads --single-threaded-gc`. Re-timed in the release d8 (16.0.39), bodyPackMicrobench bundled into the repo's tests/bench: 103.5 ops/s without the flags against 113.7 and 117.0 with them (+10 to 13 %).\n- N-236: build.mjs gets a native mode (`D8KIT_NATIVE=1`): the repo's src/ stays native ES modules that d8 loads by absolute path, the kernel and its tests/ helpers are bundled, and the shims go to `<out>.prelude.js`, which d8 runs first (a native module evaluates before any banner; runKernels.sh passes it). The default stays the bundle: the same kernel ran 186.7 / 191.2 ops/s bundled against 113.7 / 117.0 native, the opposite of R-1222's rebuildChecked (43 ns bundled, 25 native). So esbuild's const-to-var does change TurboFan's code, but in both directions: a d8 timing says its mode, and a claim about the shipped code is read in Chrome (the prod bundle is webpack's, not esbuild's). Kernels that load a real worker (workerHarness: rebuildOwnedRowsMicrobench) throw in d8 in both modes, as before."
+    },
+    {
+      "id": "R-1816",
+      "date": "2026-11-22",
+      "title": "N-303 CR-0: codeSize.mjs and the baseline: src/ 103 551 code lines (362 files), engine.wasm 356 323 B, box2dWasm.wasm 429 737 B, prod bundle 4 039 052 B (1 298 549 gzipped); suite 3 453 tests, 121.5 s",
+      "verdict": "note",
+      "text": "**N-303 CR-0: the ruler (scripts/codeSize.mjs, f633d272) and the campaign's baseline on main 3bacfda5..f633d272 (2026-11-22).** Counted by the script: a line is blank when it holds only white space, a comment line when all it holds is a comment, code otherwise; the generated and vendored files are left out. The audit's 97 517 (fa12bc91) was counted another way and src/ has grown since; the campaign is measured against this table.\n\n| folder | files | code lines | comment lines | blank lines |\n| --- | --- | --- | --- | --- |\n| `src/core` | 69 | 25 581 | 8 646 | 3 544 |\n| `src/workers` | 19 | 23 088 | 5 260 | 1 804 |\n| `src/render` | 76 | 16 321 | 5 189 | 1 326 |\n| `src/box2d` | 36 | 10 653 | 1 024 | 830 |\n| `src/util` | 65 | 10 139 | 4 028 | 1 234 |\n| `src/core/debug` | 31 | 7 604 | 547 | 1 051 |\n| `src/components` | 19 | 4 235 | 1 645 | 691 |\n| `src/shaders` | 37 | 3 100 | 733 | 262 |\n| `src/core/save` | 9 | 2 434 | 452 | 221 |\n| `src/(src root)` | 1 | 396 | 46 | 32 |\n| **`src/` in all** | **362** | **103 551** | **27 570** | **10 995** |\n\nLeft out (generated or vendored): `src/box2d/box2dWasm.js`, `src/wasm/engine.js`, `src/vendor/pixi.min.js`, `src/version.js`.\n\n| file | bytes | gzipped (level 9) |\n| --- | --- | --- |\n| `src/wasm/engine.wasm` | 356 323 | 89 283 |\n| `src/box2d/box2dWasm.wasm` | 429 737 | 164 787 |\n| `dist/weed.bundle.min.js` | 4 275 796 | 1 367 035 |\n| `dist/weed.prod.bundle.min.js` | 4 039 052 | 1 298 549 |\n| `dist/weed.bundle.esm.min.js` | 4 278 745 | 1 368 230 |\n| `dist/weed.prod.bundle.esm.min.js` | 4 041 782 | 1 299 798 |\n\nNode suite (--suite, the same morning): 3 453 tests, 3 453 pass, 121.5 s by the runner (122.1 s wall)."
     }
   ],
   "leads": [
