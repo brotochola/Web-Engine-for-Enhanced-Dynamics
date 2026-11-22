@@ -24033,7 +24033,8 @@
         "R-1775",
         "R-1844",
         "R-1845",
-        "R-1847"
+        "R-1847",
+        "R-1848"
       ]
     },
     {
@@ -42423,6 +42424,15 @@
       "title": "N-303 CR-7 done: shader code never chosen (instancedSpriteBlend.frag.glsl, mainFragBlend, alphaDiscard/alphaCut) and colliderFillGlProgram's copy go, one glProgramFrom; src -77 lines, byte for byte in captures",
       "verdict": "kept-hygiene",
       "text": "**N-303 CR-7 done (shader code that is never chosen): src/ -77 lines in two commits, byte for byte in captures.**\n\n- 8450cde5: `instancedSpriteBlend.frag.glsl` goes (it was byte for byte `instancedSprite.frag.glsl`), with `mainFragBlend`\n  in both sprite WGSL files (no pipeline named it) and the `alphaDiscard` / `alphaCut` options: `alphaDiscard` only\n  chose between the two identical files, `alphaCut` reached `_makeSpriteShader` and stopped there.\n  `pickInstancedSpriteFragmentGlsl(premultiplyAlpha, shaders)` picks premultiplied or additive.\n- c9d0989e: `colliderFillGlProgram` was a copy of `instancedSpriteGlProgram`, which already made the sun's and the\n  lamps' map programs. One `glProgramFrom` (`src/render/webgl/glProgram.js`) serves the 21 callers; its error names the\n  program whose source did not arrive.\n\nCaptures against main, 0 of 921600 pixels differ on each: dxCapture hour=22 and light3dCompare all=1 hour=22 still=1\non WebGL and WebGPU, depthPair on both (part 1); dxCapture and light3dCompare on WebGL (part 2, a WebGL-only helper).\nSuites: node 3507/0, demos 143/0. Cold code at load: no timing; the next Predator gate covers it with the batch."
+    },
+    {
+      "id": "R-1848",
+      "date": "2026-11-22",
+      "time": "08:49",
+      "timeFrom": "recorded",
+      "title": "Predator gate over CR-18 parts 6-7, the DX-CONFIGCHECK loss warnings and CR-7 (56ab3fae -> 69b356d0), 8 pairs: NEUTRAL, every worker within 3 % (renderer -2.6 %, preRender +1.3 %); R-1844's renderer +6.6 % did not come back",
+      "verdict": "kept-hygiene",
+      "text": "**Predator gate over CR-18 parts 6-7, the DX-CONFIGCHECK loss warnings and CR-7 (56ab3fae -> 69b356d0, both bundles'\nsources): NEUTRAL in 8 pairs.**\n\n`runPredatorAbab.mjs --name batch11 --vs 56ab3fae --hyp-rev 69b356d0 --pairs 8 --query \"crowd=2.5&dayCycle=0&mix=1\"`,\nheaded, from the save, on AC power; 08:42 to 08:49.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.909 -> 16.261 | +0.8 % | 5/8 | -0.3 % |\n| spatial | 7.455 -> 7.440 | -0.4 % | 2/8 | -0.7 % |\n| physics | 15.540 -> 15.722 | -0.4 % | 4/8 | +0.1 % |\n| renderer | 7.543 -> 7.297 | -2.6 % | 3/8 | -3.0 % |\n| preRender | 8.726 -> 8.955 | +1.3 % | 5/8 | +2.4 % |\n\nParticle is under the 6 ms floor (1.39 -> 1.36). Load keys within 1 % (BODY_COUNT -0.7 %, VISIBLE_ENTITIES -0.7 %).\nThe renderer's +6.6 % in R-1844 did not come back: it reads -2.6 % here, so no bisect of CR-18 parts 3-5. The sitting\nnamed `--owner pixi`, which is not a row name. With every row inside ±3 % the verdict is the same without an owner."
     }
   ],
   "leads": [
