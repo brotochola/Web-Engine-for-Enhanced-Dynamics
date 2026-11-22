@@ -9957,7 +9957,9 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-1761"
+      ],
       "status": "kept",
       "date": "2026-11-01",
       "kind": "bug",
@@ -22387,10 +22389,10 @@
       "id": "DX-STATICSGEN",
       "title": "renderDirty and keyedDirty: a debug check for statics written without a mark first, then E-436 measured, then one statics generation per sprite only if it pays (nice to have, low priority)",
       "status": "open",
-      "statusText": "Nice to have, no rush (owner, 2026-11-17); from PixiJS 3D's change counters (a DirtyId, and a watermark that moves only where the work ran); joins N-103's trap and E-436's shared lines",
+      "statusText": "step 1 done 2026-11-22 on the ASUS (dd9b3ed5, R-1761); steps 2 and 3 open. Nice to have, no rush (owner, 2026-11-17)",
       "date": "2026-11-17",
       "result": "Every statics setter (SpriteRenderer's, gameObject.markDirty, tweens, DirectionalSprite) writes renderDirty and keyedDirty together; pre-render's persist path misses on renderDirty and clears it at the emit, the keyed frames exchange keyedDirty, and pre-render fetch_or's its texture bit at each frame advance (wasm/preRenderEmit.c). A direct SoA write that forgets either flag shows only on the frames the emit runs in full (N-103).",
-      "next": "In order: (1) in debug builds, pre-render keeps a shadow copy of each drawn sprite's statics and warns once per entity type when they changed on a frame where renderDirty or keyedDirty was not set (works with today's flags; a node test that writes a statics column without a mark); (2) E-436 measured (pre-render and logic STEP_MS); (3) only if (2) pays: one generation logic bumps, two last-seen copies pre-render owns (persist, keyed) and the texture bit in pre-render's own region.",
+      "next": "In order: (2) E-436 measured (pre-render and logic STEP_MS); (3) only if (2) pays: one generation logic bumps, two last-seen copies pre-render owns (persist, keyed) and the texture bit in pre-render's own region (it would also remove the shared column N-408 had to take with an exchange).",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22402,7 +22404,10 @@
         "renderDirty keyedDirty",
         "markDirty trap"
       ],
-      "records": []
+      "records": [
+        "R-1761",
+        "R-1762"
+      ]
     },
     {
       "refs": [],
@@ -25048,6 +25053,26 @@
       "date": "2026-11-22",
       "statusText": "Filed 2026-11-22 from R-1823: the capacity search ended at the knob's top (PREDATOR_CROWD_MAX 2.5).",
       "next": "A crowd cap past 2.5 with entityIdWidth 'auto' going to 32; first the memory bill (spatial rows at maxNeighbors 1024, Box2D's wasmMemoryMB past 256, the render queue), maybe a smaller maxNeighbors for the soldiers' 250 px sight; then runCapacity to the new top, and the 16- against 32-bit cost at crowd 2.5 (the same scene both ways)."
+    },
+    {
+      "records": [
+        "R-1762"
+      ],
+      "refs": [],
+      "id": "N-408",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-22",
+      "title": "A sprite statics change whose setter lands while pre-render's full emit runs loses its renderDirty (persist_remember cleared it after the emit read the row): the buffer that emitted keeps the old row on its persist frames, the other draws the new one, and the sprite alternates every frame",
+      "statusText": "found 2026-11-22 writing DX-STATICSGEN step 1, fixed the same day on the ASUS (77de23be, R-1762)",
+      "result": "persist_take_dirty takes the queued sprites' renderDirty (atomic exchange) before emit_rows on a persist miss; persist_remember no longer touches it. persistDirtyDuringEmit.test.js read 0.25 1 0.25 1 0.25 1 on 7ec1b260, 0.25 on every frame with the fix.",
+      "next": "Rides the next Predator gate (one more walk over the queued rows on a miss frame, every frame there: E-333).",
+      "aliases": [
+        "renderDirty lost during the emit",
+        "persist_take_dirty",
+        "persist flicker"
+      ]
     }
   ],
   "records": [
@@ -41987,6 +42012,30 @@
       "text": "**N-158 round 4: the visibility sweep's and the wall row's doubles go through the sweep's consts region (d4e750af); the swept visibility's garbage 360 -> 19 B a frame, pre-render's on the flashlight scene 83 -> 54.6 KB/s (127 before round 3).**\n\n- **The change:** sweep_light_* took three doubles a lamp a frame (lx, ly, the radius) and wall_row three more (lx, ly, the floor's inverse scale), boxed at a call TurboFan does not inline (E-85). The consts region grows from its three constants to seven doubles; pre-render writes the light's four after the constants (the client's args view) and the exports take integers only. The tests that call the shipped exports write the doubles first; the screening module (wasm/test/visibilitySweep.c) keeps its signatures and the shipped-module test calls the new exports through a wrapper of the old signature. engine.wasm and the visibilitySweep test fixture rebuilt on the ASUS (buildWasm --check over every module clean).\n- **Heap census** (heapSampleWorkers, Chrome on the ASUS, flashlightStressScene ?cone=1&lights=360&crates=320, 10 s after 10 s, 04:42): _buildVisibilityPolygonsSwept 360 -> 19 B a frame; pre-render 1 460 -> 930 B a frame, 83 -> 54.6 KB/s.\n- **Same result:** lightGallery with walls and cones before and after, pixel-equal on WebGL and WebGPU. Node 3497/3497, demos 143/143.\n\nPre-render's top allocators now: _waitForPose 122 B a frame, _runFrame 120, reportFPS 105, resolveDrawnCamera 51, _collectVisibleEntitiesWasm 51 (abstractWorker's frame loop and stats are every worker's).",
       "commits": [
         "d4e750af"
+      ]
+    },
+    {
+      "id": "R-1761",
+      "date": "2026-11-22",
+      "time": "05:30",
+      "timeFrom": "recorded",
+      "title": "DX-STATICSGEN step 1: in debug builds pre-render names a class whose sprite statics changed without renderDirty and keyedDirty, once, after unmarked changes on two frames; no warning in twelve demos, the warning once in a probe whose bunnies write alpha into the column",
+      "verdict": "kept-hygiene",
+      "text": "**DX-STATICSGEN step 1: with the debug checks on, pre-render names a class whose sprite statics changed without renderDirty and keyedDirty (the N-103 trap: a direct SoA write that the persist path and the keyed frames do not draw).**\n\nHow it works (dd9b3ed5):\n- The checks are in devChecks.js: staticsBeforeEmit and staticsAfterEmit, with no-op stubs for the production bundle. Pre-render calls them in buildRenderQueue, around the main queue's emit, when devChecksOn() was true at init.\n- After the emit, a window of up to 4 096 collector rows has its sprites' statics copied, by entity, into arrays of each column's own class. The columns are scaleX, scaleY, alpha, tint, anchorX, anchorY, repeatX, repeatY, tileMode, tileOffsetU and tileOffsetV. The texture is left out: an animation moves it, and pre-render marks that itself.\n- Before the next emit (which takes the marks), the same rows are compared with the copy. A changed value with renderDirty clear, or keyedDirty's bit 1 clear, is a miss.\n- The copy is taken after the emit, so a change whose marks the emit took is already in it.\n- Logic writes beside pre-render, a setter's value before its marks. So a miss's marks are read after its value and again after the whole compare, and a class is named only after misses on two different frames.\n- The warning is once per class (warnOnce). It names the column and says to use the setters or call markDirty().\n- Cost: two passes over at most 4 096 rows a frame, debug checks only. The bench page turns the checks off.\n\nTests: `tests/node/staticsUnmarked.test.js` boots a real pre-render (bootEmitWorker) and covers five cases:\n- an unmarked alpha on two frames warns once;\n- one unmarked frame says nothing;\n- statics written with both marks say nothing;\n- renderDirty alone warns (the keyed frames read keyedDirty);\n- with the checks off, nothing runs.\n\nIn pages (the bench page with the debug checks on, the ASUS): Predator, balls, BunnyMark, boids, the platformer, Adobe, headlights, littleCity, Buenos Aires, the car, Mamushka and Blastforge ran 10 s each, and no warning came. A probe scene (BunnyMark with 2 000 bunnies, plus 200 bunnies whose tickAll writes SpriteRenderer.alpha straight into the column) gave the warning once, naming UnmarkedBunny and not Bunny, interpolated and keyed (interpolation=0). With 250 000 bunnies the queue was full and the 200 were never drawn (their renderDirty never taken), so nothing was said: right, since nothing drew them.\n\nSuites with DX-STATICSGEN step 1 and N-408 together (C:\\weedtest3, engine wasm built there, buildWasm --check clean): node 3503/3503, demos 143/143.",
+      "commits": [
+        "dd9b3ed5"
+      ]
+    },
+    {
+      "id": "R-1762",
+      "date": "2026-11-22",
+      "time": "05:31",
+      "timeFrom": "recorded",
+      "title": "N-408 filed and fixed: the persist path takes renderDirty before the full emit reads the rows (persist_take_dirty), not after; a mark set while the emit ran was lost and the sprite alternated old and new rows every frame",
+      "verdict": "kept-hygiene",
+      "text": "**N-408: a sprite statics change whose setter lands while pre-render's full emit runs loses its renderDirty mark. Found while writing DX-STATICSGEN step 1, reproduced on HEAD in a node test, fixed by taking the marks before the emit reads the rows.**\n\nThe persist path (W4c) keeps a queue buffer's sprite rows on frames where no queued sprite is renderDirty. persist_remember cleared renderDirty for the queued sprites after the full emit. Logic writes beside pre-render, so a setter could land after the emit read its sprite's row and before that clear. Its mark was then lost:\n- the buffer that emitted held the old row and took the persist path from then on;\n- the other buffer was due a full emit (the clear invalidates it), so it read the new value.\n\nThe sprite alternated old and new values every frame until something else marked it. The reproduction is `tests/node/persistDirtyDuringEmit.test.js`: it hooks emitRows and, right after it returns, writes alpha 0.25 with both marks. On HEAD (7ec1b260) the following six frames read `0.25 1 0.25 1 0.25 1`.\n\n**Fix (77de23be):**\n- A new export, persist_take_dirty, takes the queued sprites' renderDirty with an atomic exchange, as sprite_row takes keyedDirty. It runs before emit_rows, on frames the persist path missed. A setter after that marks its sprite again for the next frame.\n- persist_remember no longer touches renderDirty (it is now void).\n- Pre-render invalidates the other buffer from the take's result.\n- The tests that drive the kernel's persist path by hand (preRenderEmitWasm, the ASan harness) and the persist microbench take the marks first, as pre-render does.\n\nWith the fix, the test reads 0.25 on every frame.\n\nCost: one more walk over the queued rows on frames the persist path missed (it reads the row's type, entity and flag). Predator misses on every frame (E-333).\n\nSuites with DX-STATICSGEN step 1 and N-408 together (C:\\weedtest3, engine wasm built there, buildWasm --check clean): node 3503/3503, demos 143/143.",
+      "commits": [
+        "77de23be"
       ]
     }
   ],
