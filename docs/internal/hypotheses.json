@@ -13152,7 +13152,8 @@
         "knee"
       ],
       "records": [
-        "R-1252"
+        "R-1252",
+        "R-1824"
       ]
     },
     {
@@ -24844,7 +24845,7 @@
       "area": "render",
       "date": "2026-11-21",
       "statusText": "Filed 2026-11-21 from N-212 (R-1694): the maxShadowCastingLights cut fades since R-1151; these two cuts do not.",
-      "next": "A fade in shadowStamp.c's per-entity and per-light cuts as the light cut has (the last share of the cut distance), both builds of the kernel; a film of Predator at night where walkers cross between lamps, before and after."
+      "next": "Design read 2026-11-22 (not a quick fix): the per-entity cut fades the last kept light by how close the next one is, f = min(1, (dNext - dLast) / (0.2 dNext)), applied as DX-SPOT's cone_intensity applies its f (lane 2 of the row's light vec4, so the shaders do not change). It needs the (maxPE + 1)-th nearest distance: note_nearest keeps one pair more a caster (the near records' stride and region in wasmMemoryMap), caster_rows reads it, the JS twin and the float32 test module follow, and the lamps' map's keyed stamp rows take the same vec4. The per-light caster cut (ring_select / the radix select) fades its lim-th caster the same way by the (lim + 1)-th candidate. Both builds of the kernel, the parity tests, then a film of Predator at night where walkers cross between lamps, before and after."
     },
     {
       "records": [
@@ -41721,6 +41722,15 @@
       "title": "Predator's capacity: crowd 2.5 (40 000 civilians and soldiers, the knob's top) holds p99 <= 16.7 ms on every worker (worst physics 12.6-13.1 ms), against crowd 1.55 on 2026-11-16 (spatial0 p99 17.5); the squad battle ends sooner now (caveat)",
       "verdict": "note",
       "text": "**Predator's capacity is now its knob's top: crowd 2.5 (40 000 civilians and soldiers) holds every rule, against crowd 1.55 (about 24 800) on 2026-11-16.** runCapacity --scene predator on main 2bd32ca8 (headed Chrome, --src, detailed stats off, warm-up 9 s, window 10 s, the pinned camera; on AC), 03:05 to 03:06, history in D:/claude/weed-capacity-history.jsonl:\n\n| crowd | result | worst p99 | worst p95 | presented / drawn |\n| --- | --- | --- | --- | --- |\n| 1.5 | PASS | spatial0 6.75 ms | spatial0 5.83 ms | 59.99 / 59.99 fps |\n| 2.5 | PASS | physics 12.62 ms | physics 11.6 ms | 59.99 / 59.99 fps |\n| 2.5 (again) | PASS | physics 13.12 ms | physics 11.82 ms | 59.98 / 59.98 fps |\n\nOn 2026-11-16 (9fbd6d46) the search stopped at crowd 1.55, spatial0's p99 17.5 ms over the 16.7 budget. What moved it since, measured one by one (none of them alone a capacity claim): E-310's two spatial workers from crowd 2 (crowd 2.5 spatial -34 %, p99 28.9 -> 16-18 ms, R-1804), N-217's slot walks (physics -4.4 %, logic -5 %, R-1744), E-493's scheduler count (physics -7.1 %, R-1690's sitting), E-395 (pre-render and renderer at crowd 2.5 with light3d) and the week's spatial and logic work. At crowd 1.5 (one spatial worker by E-310's rule) spatial0's p99 is 6.75 ms, far from 17.5.\n\nCaveats: (1) the squad battle now ends sooner (R-1817: about 1 200 more bodies gone by 20 s, most likely E-310), so the window from 9 to 19 s holds less fighting than it did; the mixed battle (mix=1) is the heavier test and is not this search's scene; (2) the knob tops at 2.5 because Predator's pools fit 16-bit ids (57 633 entities): the real limit is past it, and finding it needs the scene on 32-bit ids with a higher crowd cap (a scene change, not made)."
+    },
+    {
+      "id": "R-1824",
+      "date": "2026-11-22",
+      "time": "03:15",
+      "timeFrom": "recorded",
+      "title": "keyedPack's capacity 275 000 sprites (265 000 on 2026-11-16), set by the frames drawn (GPU), pre-render's p99 10.4-10.9 ms; inside a search's swing",
+      "verdict": "note",
+      "text": "**keyedPack's capacity: 275 000 sprites (265 000 on 2026-11-16), limited by the frames drawn, not by a worker's tail.** runCapacity --scene keyedPack on main d3836ee7, 03:12 to 03:15: 150 000 pass, 300 000 FAIL (drawn 58.69 fps), 210 000 pass, 250 000 pass, 275 000 pass, 285 000 FAIL (drawn 58.98), 275 000 pass again. At the capacity the worst p99 is pre-render's 10.4 to 10.9 ms (p95 9.6 to 9.7 ms), far inside the 16.7 budget: the GPU (renderer frames drawn under 59) sets the edge. +3.8 %, inside a search's swing (about 10 %, R-1236's baseline note): no claim. Predator's capacity is R-1823."
     }
   ],
   "leads": [
