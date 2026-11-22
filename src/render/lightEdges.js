@@ -22,7 +22,8 @@
  * pixel instead of one filtered read.
  */
 
-import { Container, Geometry, Mesh, Shader, State, ViewContainer } from '../vendor/pixi.min.js';
+import { Container, Geometry, Mesh, Shader, State } from '../vendor/pixi.min.js';
+import { STENCIL_INVERSE_ACTIVE, STENCIL_MASK_ACTIVE, STENCIL_MASK_ADD, STENCIL_OFF, colorMaskStep, stencilStep } from './renderStep.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 
 /**
@@ -44,12 +45,6 @@ export const LIGHT_EDGES_MARK_DEPTH = 0.999;
 /** What a light texel's alpha says it lit (lightingSource's EDGES). */
 export const LIGHT_EDGES_FLOOR = 0;
 export const LIGHT_EDGES_ENTITY = 1;
-
-/** Pixi's STENCIL_MODES (the bundle does not export them). */
-const STENCIL_OFF = 0;
-const STENCIL_MASK_ADD = 1;
-const STENCIL_MASK_ACTIVE = 2;
-const STENCIL_INVERSE_ACTIVE = 3;
 
 /** The variants: the mark, the light's two halves, the unshaded layer's two halves. */
 export const LIGHT_EDGES_KINDS = Object.freeze(['mark', 'lightFloor', 'lightEntity', 'unshadedFloor', 'unshadedEntity']);
@@ -260,27 +255,6 @@ export function lightEdgesGpuProgram(GpuProgram, kind) {
  * The stencil between the hosts' meshes, run by Pixi's custom render pipe (as the unshaded pass's step): the stencil
  * mode, its reference and the colour mask for what follows.
  */
-class LightEdgesStencilStep extends ViewContainer {
-  constructor(mode, reference, colorMask) {
-    super({ label: 'weed-light-edges-stencil' });
-    this.renderPipeId = 'customRender';
-    this.batched = false;
-    this.cullable = false;
-    this._mode = mode;
-    this._reference = reference;
-    this._colorMask = colorMask;
-  }
-
-  updateBounds() {
-    this._bounds.clear();
-  }
-
-  render(renderer) {
-    renderer.stencil.setStencilMode(this._mode, this._reference);
-    renderer.colorMask.setMask(this._colorMask);
-  }
-}
-
 function meshState(kind) {
   const state = new State();
   state.culling = false;
@@ -318,24 +292,6 @@ function variantMesh(env, kind, geometry, resources) {
 }
 
 /** A colour mask for what follows (Pixi's ColorMaskSystem), as a step of the custom render pipe. */
-class ColorMaskStep extends ViewContainer {
-  constructor(mask) {
-    super({ label: 'weed-colour-mask' });
-    this.renderPipeId = 'customRender';
-    this.batched = false;
-    this.cullable = false;
-    this._mask = mask;
-  }
-
-  updateBounds() {
-    this._bounds.clear();
-  }
-
-  render(renderer) {
-    renderer.colorMask.setMask(this._mask);
-  }
-}
-
 /**
  * A light splat's host (particle and LiquidFun lights, drawn into the light pass's target): the mesh in RGB alone, so
  * the target's alpha stays what the light pass wrote (the floor's mark). Pixi hands the same number to WebGL's colorMask
@@ -348,9 +304,9 @@ class ColorMaskStep extends ViewContainer {
 export function rgbOnlyHost(mesh, useWebGpu) {
   const host = new Container();
   host.label = 'weed-rgb-only';
-  host.addChild(new ColorMaskStep(useWebGpu ? 7 : 14));
+  host.addChild(colorMaskStep(useWebGpu ? 7 : 14));
   host.addChild(mesh);
-  host.addChild(new ColorMaskStep(15));
+  host.addChild(colorMaskStep(15));
   return host;
 }
 
@@ -366,13 +322,13 @@ export function lightEdgesHost(env, geometry, light) {
   host.label = 'weed-light-edges';
   const floor = variantMesh(env, 'lightFloor', geometry, { uLight: light });
   const entity = variantMesh(env, 'lightEntity', geometry, { uLight: light });
-  host.addChild(new LightEdgesStencilStep(STENCIL_MASK_ADD, 0, 0));
+  host.addChild(stencilStep('weed-light-edges-stencil', STENCIL_MASK_ADD, 0, 0));
   host.addChild(variantMesh(env, 'mark', geometry, {}));
-  host.addChild(new LightEdgesStencilStep(STENCIL_MASK_ACTIVE, 1, 15));
+  host.addChild(stencilStep('weed-light-edges-stencil', STENCIL_MASK_ACTIVE, 1, 15));
   host.addChild(floor);
-  host.addChild(new LightEdgesStencilStep(STENCIL_INVERSE_ACTIVE, 1, 15));
+  host.addChild(stencilStep('weed-light-edges-stencil', STENCIL_INVERSE_ACTIVE, 1, 15));
   host.addChild(entity);
-  host.addChild(new LightEdgesStencilStep(STENCIL_OFF, 0, 15));
+  host.addChild(stencilStep('weed-light-edges-stencil', STENCIL_OFF, 0, 15));
   return { host, meshes: [floor, entity] };
 }
 
@@ -393,11 +349,11 @@ export function unshadedEdgesHost(env, geometry, light, unshaded) {
     : { uLight: light, uUnshaded: unshaded });
   const floor = variantMesh(env, 'unshadedFloor', geometry, resources());
   const entity = variantMesh(env, 'unshadedEntity', geometry, resources());
-  host.addChild(new LightEdgesStencilStep(STENCIL_MASK_ACTIVE, 1, 15));
+  host.addChild(stencilStep('weed-light-edges-stencil', STENCIL_MASK_ACTIVE, 1, 15));
   host.addChild(floor);
-  host.addChild(new LightEdgesStencilStep(STENCIL_INVERSE_ACTIVE, 1, 15));
+  host.addChild(stencilStep('weed-light-edges-stencil', STENCIL_INVERSE_ACTIVE, 1, 15));
   host.addChild(entity);
-  host.addChild(new LightEdgesStencilStep(STENCIL_OFF, 0, 15));
+  host.addChild(stencilStep('weed-light-edges-stencil', STENCIL_OFF, 0, 15));
   return { host, meshes: [floor, entity] };
 }
 

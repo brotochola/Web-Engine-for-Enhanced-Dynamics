@@ -22,7 +22,6 @@ import {
   State,
   Texture,
   TextureSource,
-  ViewContainer,
 } from '../vendor/pixi.min.js';
 
 import {
@@ -39,6 +38,7 @@ import {
   GPU_GBUF_FLOATS, GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS,
   GPU_INDEXED_TEX_WORD, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows, gpuIndexedUpdateRows, makePackContext,
 } from './gpuQueueLayout.js';
+import { RenderStep, STENCIL_MASK_ACTIVE, STENCIL_MASK_ADD, STENCIL_OFF, stencilStep } from './renderStep.js';
 import {
   GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
   packPoseRowsWasm, packSplitRowsWasm,
@@ -97,65 +97,19 @@ export const AUX_UNSHADED_MASK = 4;
 export const AUX_UNSHADED_EDGE = 5;
 const AUX_NAMES = ['face', 'ids', 'gbuf', 'unshaded', 'unshadedMask', 'unshadedEdge'];
 const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragUnshaded', 'mainFragUnshadedMask', 'mainFragUnshadedEdge'];
-/** Pixi's STENCIL_MODES (the bundle does not export them): off, a mask drawn (equal to the reference, +1), a mask in use. */
-const STENCIL_OFF = 0;
-const STENCIL_MASK_ADD = 1;
-const STENCIL_MASK_ACTIVE = 2;
-
 /**
- * E-457: the unshaded pass's stencil between its meshes, run by Pixi's custom render pipe as a RenderContainer is (the bundle
- * exports ViewContainer, not RenderContainer): the stencil mode, its reference and the colour mask for the meshes after it.
- * The mask is not popped: the target's next render clears the stencil, and the last step turns the test off.
+ * E-457: the unshaded pass's stencil between its meshes (renderStep.js): the stencil mode, its reference and the colour mask
+ * for the meshes after it. The mask is not popped: the target's next render clears the stencil, and the last step turns the
+ * test off.
  */
-class UnshadedStencilStep extends ViewContainer {
-  constructor(mode, reference, colorMask) {
-    super({ label: 'weed-unshaded-stencil' });
-    this.renderPipeId = 'customRender';
-    this.batched = false;
-    this.cullable = false;
-    this._mode = mode;
-    this._reference = reference;
-    this._colorMask = colorMask;
-  }
-
-  updateBounds() {
-    this._bounds.clear();
-  }
-
-  render(renderer) {
-    if (this._mode === STENCIL_MASK_ADD) renderer.renderTarget.ensureDepthStencil();
-    renderer.stencil.setStencilMode(this._mode, this._reference);
-    renderer.colorMask.setMask(this._colorMask);
-  }
-}
+const unshadedStencilStep = (mode, reference, colorMask) =>
+  stencilStep('weed-unshaded-stencil', mode, reference, colorMask, true);
 
 /** E-448: what the opaque mesh draws: a pose or split frame's rows (its poses copied each frame), a by-row keyed frame's. */
 const OPAQUE_KIND_POSE = 0;
 const OPAQUE_KIND_KEYED_ROWS = 1;
 /** E-448: frames a by-row batch skips building its opaque rows after a frame where the pass did not pay (a quarter second). */
 const OPAQUE_RECHECK_FRAMES = 15;
-
-/**
- * E-448: the opaque pass's step before its mesh, run by Pixi's custom render pipe where the mesh's draw is: this frame's
- * poses into the pass's pose texture (InstancedSpriteBatch._copyOpaquePoses), on the GPU.
- */
-class OpaquePoseStep extends ViewContainer {
-  constructor(batch) {
-    super({ label: 'weed-opaque-poses' });
-    this.renderPipeId = 'customRender';
-    this.batched = false;
-    this.cullable = false;
-    this._batch = batch;
-  }
-
-  updateBounds() {
-    this._bounds.clear();
-  }
-
-  render(renderer) {
-    this._batch._copyOpaquePoses(renderer);
-  }
-}
 
 // E-177. A keyed frame saves KEYED_SAVED_BYTES a row against a split one (the slot pair instead of the statics) and
 // spends an update's bytes on each row it sends. When the updates outweigh the saving for KEYED_LOSS_FRAMES frames in a
@@ -1617,7 +1571,9 @@ export class InstancedSpriteBatch {
     this.opaqueMesh.cullable = false;
     this.opaqueHost = new Container();
     this.opaqueHost.label = `${name}-opaque-pass`;
-    this.opaqueHost.addChild(new OpaquePoseStep(this));
+    // E-448: the opaque pass's step before its mesh, where the mesh's draw is: this frame's poses into the pass's pose
+    // texture (_copyOpaquePoses), on the GPU.
+    this.opaqueHost.addChild(new RenderStep('weed-opaque-poses', (renderer) => this._copyOpaquePoses(renderer)));
     this.opaqueHost.addChild(this.opaqueMesh);
     this.opaqueHost.visible = false;
     const tested = new State();
@@ -2275,12 +2231,12 @@ export class InstancedSpriteBatch {
     // N-266: with pixel depth, the edge pass after the opaque one (the stencil step makes the target's depth).
     const edge = this._pixelDepth !== null ? this._auxMesh(AUX_UNSHADED_EDGE, heightScaleY, groundScaleY, maps) : null;
     const host = new Container();
-    host.addChild(new UnshadedStencilStep(STENCIL_MASK_ADD, 0, 0));
+    host.addChild(unshadedStencilStep(STENCIL_MASK_ADD, 0, 0));
     host.addChild(mask);
-    host.addChild(new UnshadedStencilStep(STENCIL_MASK_ACTIVE, 1, 15));
+    host.addChild(unshadedStencilStep(STENCIL_MASK_ACTIVE, 1, 15));
     host.addChild(mesh);
     if (edge !== null) host.addChild(edge);
-    host.addChild(new UnshadedStencilStep(STENCIL_OFF, 0, 15));
+    host.addChild(unshadedStencilStep(STENCIL_OFF, 0, 15));
     passes.push({ mesh, host });
     return host;
   }
