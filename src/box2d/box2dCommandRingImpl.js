@@ -148,6 +148,43 @@
     }
   }
 
+  /** The sequence number of the slot a cold writer claimed last (claimSlot sets it; publishSlot publishes it + 1). */
+  var claimedSeq = 0;
+
+  /**
+   * CR-20: a ring slot for a cold writer: the index of its first word, or -1 when the ring is unbound or full (the
+   * overflow counted). The writer fills words 1 to 6 and calls publishSlot(base). enqueue, the hot path, keeps its own
+   * copy of this loop.
+   * @returns {number}
+   */
+  function claimSlot() {
+    if (!ringI32) return -1;
+    var cap = capacity;
+    for (;;) {
+      var write = Atomics.load(ringI32, HDR_WRITE);
+      var read = Atomics.load(ringI32, HDR_READ);
+      if (write - read >= cap) {
+        Atomics.add(ringI32, HDR_OVERFLOW, 1);
+        return -1;
+      }
+      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
+        continue;
+      }
+      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
+      // Slot free when seq == claim (producer owns after CAS).
+      while (Atomics.load(ringI32, base) !== write) {
+        /* wait prior lap consumer / slower peer publish */
+      }
+      claimedSeq = write;
+      return base;
+    }
+  }
+
+  /** The slot claimSlot gave, filled: the consumer may take it. */
+  function publishSlot(base) {
+    Atomics.store(ringI32, base, claimedSeq + 1);
+  }
+
   function enqueueSetTransform(entity, x, y, rotC, rotS) {
     var c = rotC == null ? 1 : rotC;
     var s = rotS == null ? 0 : rotS;
@@ -308,59 +345,29 @@
   }
 
   function enqueueBits(opcode, entity, bits) {
-    if (!ringI32) return false;
-    var cap = capacity;
-    for (;;) {
-      var write = Atomics.load(ringI32, HDR_WRITE);
-      var read = Atomics.load(ringI32, HDR_READ);
-      if (write - read >= cap) {
-        Atomics.add(ringI32, HDR_OVERFLOW, 1);
-        return false;
-      }
-      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
-        continue;
-      }
-      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
-      while (Atomics.load(ringI32, base) !== write) {
-        /* wait */
-      }
-      ringI32[base + 1] = opcode | 0;
-      ringI32[base + 2] = entity | 0;
-      ringI32[base + 3] = bits >>> 0;
-      ringF32[base + 4] = 0;
-      ringF32[base + 5] = 0;
-      ringF32[base + 6] = 0;
-      Atomics.store(ringI32, base, write + 1);
-      return true;
-    }
+    var base = claimSlot();
+    if (base < 0) return false;
+    ringI32[base + 1] = opcode | 0;
+    ringI32[base + 2] = entity | 0;
+    ringI32[base + 3] = bits >>> 0;
+    ringF32[base + 4] = 0;
+    ringF32[base + 5] = 0;
+    ringF32[base + 6] = 0;
+    publishSlot(base);
+    return true;
   }
 
   function enqueueRangeBits(opcode, first, last, bits) {
-    if (!ringI32) return false;
-    var cap = capacity;
-    for (;;) {
-      var write = Atomics.load(ringI32, HDR_WRITE);
-      var read = Atomics.load(ringI32, HDR_READ);
-      if (write - read >= cap) {
-        Atomics.add(ringI32, HDR_OVERFLOW, 1);
-        return false;
-      }
-      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
-        continue;
-      }
-      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
-      while (Atomics.load(ringI32, base) !== write) {
-        /* wait */
-      }
-      ringI32[base + 1] = opcode | 0;
-      ringI32[base + 2] = first | 0;
-      ringI32[base + 3] = last | 0;
-      ringI32[base + 4] = bits >>> 0;
-      ringF32[base + 5] = 0;
-      ringF32[base + 6] = 0;
-      Atomics.store(ringI32, base, write + 1);
-      return true;
-    }
+    var base = claimSlot();
+    if (base < 0) return false;
+    ringI32[base + 1] = opcode | 0;
+    ringI32[base + 2] = first | 0;
+    ringI32[base + 3] = last | 0;
+    ringI32[base + 4] = bits >>> 0;
+    ringF32[base + 5] = 0;
+    ringF32[base + 6] = 0;
+    publishSlot(base);
+    return true;
   }
 
   function enqueueSetParticleUserData(index, bits) {
@@ -411,87 +418,42 @@
   }
 
   function enqueueSetLiquidFunPayload(userData, color, vx, vy, omega) {
-    if (!ringI32) return false;
-    var cap = capacity;
-    for (;;) {
-      var write = Atomics.load(ringI32, HDR_WRITE);
-      var read = Atomics.load(ringI32, HDR_READ);
-      if (write - read >= cap) {
-        Atomics.add(ringI32, HDR_OVERFLOW, 1);
-        return false;
-      }
-      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
-        continue;
-      }
-      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
-      while (Atomics.load(ringI32, base) !== write) {
-        /* wait */
-      }
-      ringI32[base + 1] = BOX2D_CMD.SET_LIQUIDFUN_PAYLOAD;
-      ringI32[base + 2] = userData >>> 0;
-      ringI32[base + 3] = color >>> 0;
-      ringF32[base + 4] = vx || 0;
-      ringF32[base + 5] = vy || 0;
-      ringF32[base + 6] = omega || 0;
-      Atomics.store(ringI32, base, write + 1);
-      return true;
-    }
+    var base = claimSlot();
+    if (base < 0) return false;
+    ringI32[base + 1] = BOX2D_CMD.SET_LIQUIDFUN_PAYLOAD;
+    ringI32[base + 2] = userData >>> 0;
+    ringI32[base + 3] = color >>> 0;
+    ringF32[base + 4] = vx || 0;
+    ringF32[base + 5] = vy || 0;
+    ringF32[base + 6] = omega || 0;
+    publishSlot(base);
+    return true;
   }
 
   function enqueueParticleApplyForceRange(first, last, fx, fy) {
-    if (!ringI32) return false;
-    var cap = capacity;
-    for (;;) {
-      var write = Atomics.load(ringI32, HDR_WRITE);
-      var read = Atomics.load(ringI32, HDR_READ);
-      if (write - read >= cap) {
-        Atomics.add(ringI32, HDR_OVERFLOW, 1);
-        return false;
-      }
-      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
-        continue;
-      }
-      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
-      while (Atomics.load(ringI32, base) !== write) {
-        /* wait */
-      }
-      ringI32[base + 1] = BOX2D_CMD.PARTICLE_APPLY_FORCE_RANGE;
-      ringI32[base + 2] = first | 0;
-      ringI32[base + 3] = last | 0;
-      ringF32[base + 4] = fx;
-      ringF32[base + 5] = fy;
-      ringF32[base + 6] = 0;
-      Atomics.store(ringI32, base, write + 1);
-      return true;
-    }
+    var base = claimSlot();
+    if (base < 0) return false;
+    ringI32[base + 1] = BOX2D_CMD.PARTICLE_APPLY_FORCE_RANGE;
+    ringI32[base + 2] = first | 0;
+    ringI32[base + 3] = last | 0;
+    ringF32[base + 4] = fx;
+    ringF32[base + 5] = fy;
+    ringF32[base + 6] = 0;
+    publishSlot(base);
+    return true;
   }
 
   function enqueueParticleApplyImpulseRange(first, last, ix, iy) {
-    if (!ringI32) return false;
-    var cap = capacity;
-    for (;;) {
-      var write = Atomics.load(ringI32, HDR_WRITE);
-      var read = Atomics.load(ringI32, HDR_READ);
-      if (write - read >= cap) {
-        Atomics.add(ringI32, HDR_OVERFLOW, 1);
-        return false;
-      }
-      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
-        continue;
-      }
-      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
-      while (Atomics.load(ringI32, base) !== write) {
-        /* wait */
-      }
-      ringI32[base + 1] = BOX2D_CMD.PARTICLE_APPLY_IMPULSE_RANGE;
-      ringI32[base + 2] = first | 0;
-      ringI32[base + 3] = last | 0;
-      ringF32[base + 4] = ix;
-      ringF32[base + 5] = iy;
-      ringF32[base + 6] = 0;
-      Atomics.store(ringI32, base, write + 1);
-      return true;
-    }
+    var base = claimSlot();
+    if (base < 0) return false;
+    ringI32[base + 1] = BOX2D_CMD.PARTICLE_APPLY_IMPULSE_RANGE;
+    ringI32[base + 2] = first | 0;
+    ringI32[base + 3] = last | 0;
+    ringF32[base + 4] = ix;
+    ringF32[base + 5] = iy;
+    ringF32[base + 6] = 0;
+    publishSlot(base);
+    return true;
   }
 
   function enqueueSetParticleUserDataList() {
