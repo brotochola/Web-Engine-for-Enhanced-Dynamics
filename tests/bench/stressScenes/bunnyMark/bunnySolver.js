@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { TOY_HALF_SIZE } from '/src/util/toyWorldBounce.js';
+import { TOY_HALF_SIZE } from './toyWorldBounce.js';
 
 const { GameObject, SpriteRenderer, RigidBody, Collider, enums } = WEED;
 const { ShapeType } = enums;

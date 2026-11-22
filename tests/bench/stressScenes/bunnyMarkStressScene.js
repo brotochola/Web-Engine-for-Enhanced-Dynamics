@@ -9,7 +9,7 @@ import WEED from '/src/index.js';
 import { Bunny } from '/demos/bunnyMarkScene/gameObjects/bunny.js';
 import { BunnySolver } from './bunnyMark/bunnySolver.js';
 import { WorldWall } from './bunnyMark/worldWall.js';
-import { TOY_WORLD_W, TOY_WORLD_H } from '/src/util/toyWorldBounce.js';
+import { TOY_WORLD_W, TOY_WORLD_H } from './bunnyMark/toyWorldBounce.js';
 
 const { Scene, Camera } = WEED;
 

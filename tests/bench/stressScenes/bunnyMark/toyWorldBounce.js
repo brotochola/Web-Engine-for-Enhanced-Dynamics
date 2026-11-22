@@ -1,4 +1,5 @@
-// Toy box bounce for Bunny Mark A/B/C. No gravity. No floor damp.
+// Toy box bounce for Bunny Mark A/B/C (the bunny stress scenes and their microbench; N-303 CR-12: out of src/util).
+// No gravity. No floor damp.
 // World is the cached 1920×1080 box, not Camera.getViewportBounds().
 
 export const TOY_WORLD_W = 1920;

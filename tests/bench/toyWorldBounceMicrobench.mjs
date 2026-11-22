@@ -6,7 +6,7 @@ import {
   TOY_RIGHT,
   TOY_TOP,
   TOY_BOTTOM,
-} from '../../src/util/toyWorldBounce.js';
+} from './stressScenes/bunnyMark/toyWorldBounce.js';
 
 const N = 20000;
 const STEPS = 120;
