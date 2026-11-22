@@ -18623,12 +18623,12 @@
       "id": "E-412",
       "title": "Chrome's GPU process main thread spends 295 ms a second in CommandBufferService:PutChanged on Predator ?light3d=1 (4.9 ms a frame) against 135 ms without light3d: light3d's GL command stream costs the GPU process 2.7 ms a frame more",
       "status": "open",
-      "statusText": "proposed 2026-11-16 from gpuProcessTrace on Predator (zoom 0.3, headed, 3 s after 12 s)",
+      "statusText": "2026-11-21 (R-1692): PutChanged broken down: its own 87 ms/s (command count), instanced draws 34, glFlush 16, buffer uploads 14, texture uploads 12, plain draws 12, texture binds 10; the levers are fewer uploads (E-395, E-392) and fewer draws.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "CrGpuMain: light3d day 364.1 ms/s in slices, PutChanged 295.2 self (251 a second), CommandBufferStub::PerformWork 16.2, SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass 9.0, DXGISwapChainImageBacking::Present 8.3; plain 171.4 ms/s, PutChanged 135.2 (153 a second). VizCompositorThread about 55 ms/s in both.",
-      "next": "Break PutChanged down by command (--enable-gpu-service-tracing for the decoder's per-command slices) and cut the costly ones (E-389's redundant uniforms, E-391's draws, the uploads E-390/E-392/E-396).",
+      "next": "After E-395 lands, the same traced pair: PutChanged and the uploads against today's 185 ms/s untraced.",
       "refs": [],
       "aliases": [
         "gpu process putchanged",
@@ -18636,7 +18636,8 @@
       ],
       "records": [
         "R-1177",
-        "R-1181"
+        "R-1181",
+        "R-1692"
       ]
     },
     {
@@ -18682,38 +18683,40 @@
     {
       "id": "E-415",
       "title": "Chrome's GPU process calls glObjectLabelKHR 180 to 254 times a frame (10 781 to 15 223 a second) though the page creates no GL object a frame: Chrome labelling resources, perhaps only with service tracing on",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "status": "answered",
+      "statusText": "Answered 2026-11-21 (R-1692): glObjectLabelKHR shows only under --enable-gpu-service-tracing (Chrome labels for its own trace); untraced, PutChanged is 41 ms/s lighter. Not the game's cost.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "light3d day glObjectLabelKHR 23.20 ms/s self, 15 223 a second; plain 16.67 ms/s, 10 781 a second; the page side (glFrameRecorder) creates no texture, buffer or vertex array a frame.",
-      "next": "The same trace without --enable-gpu-service-tracing (the labels show as ANGLE calls in a gpu.angle category, or nsys) to tell an artifact from a real cost; if real, which resources (transfer buffers, shared images).",
+      "next": "",
       "refs": [],
       "aliases": [
         "object label gpu process"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1692"
       ]
     },
     {
       "id": "E-416",
       "title": "With light3d the GPU process waits on fences 13 times a frame (glClientWaitSync, 792 a second; 334 without) behind the page's one fenceSync and getSyncParameter a frame",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "status": "answered",
+      "statusText": "Answered 2026-11-21 (R-1692): the fence waits are 1.9 ms/s of the GPU process (0.03 ms a frame): not worth a change.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "light3d day glClientWaitSync 6.38 ms/s self, 792 a second; plain 2.38 ms/s, 334 a second. The page: fenceSync 1, getSyncParameter 1, deleteSync 1 a frame (glFrameRecorder).",
-      "next": "Who polls (the engine's GPU readback or frame fence, Pixi, Chrome's own shared-image sync) and whether light3d's extra targets add waits; poll once a frame or not at all.",
+      "next": "",
       "refs": [],
       "aliases": [
         "client wait sync",
         "fence polling"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1692"
       ]
     },
     {
@@ -18732,7 +18735,8 @@
       ],
       "records": [
         "R-1181",
-        "R-1425"
+        "R-1425",
+        "R-1692"
       ]
     },
     {
@@ -40905,6 +40909,15 @@
       "title": "Box2D keeps 4 threads: 3 make Predator's battle physics +18.7 % (4/4) while the freed core makes the others 3-12 % cheaper",
       "verdict": "answered",
       "text": "**E-319 answered: Box2D keeps 4 threads in Predator.** The same build (main cdd5d071, E-493 in), `--query-a physicsWorkers=4 --query-b physicsWorkers=3`, Predator crowd 2.5, one logic worker, the mixed battle, from one save, 4 pairs, ended 21:27: physics 18.47 -> 22.31 ms (+18.7 %, worse 4/4) with 3 threads, while the core it frees makes the others cheaper (logic -11.6 %, spatial -4.0 %, renderer -4.0 %, pre-render -2.8 %, 0-1/4 worse); ACTIVE_PARTICLES +6.0 % (FAIL (load) on it alone). Physics is the CPU's critical path (the strategy, physics first), so 4 stay. The spin's half of the 2x2 is moot: E-493 (R-1689) took its scan away."
+    },
+    {
+      "id": "R-1692",
+      "date": "2026-11-21",
+      "time": "21:27",
+      "timeFrom": "recorded",
+      "title": "Chrome's GPU process traced with and without decoder tracing: glObjectLabelKHR is the tracing's own (E-415), fences 1.9 ms/s (E-416), the time goes with commands, draws and uploads (E-412)",
+      "verdict": "note",
+      "text": "**Chrome's GPU process on Predator light3d by day, traced again (2026-11-21, main e1ebf567, gpuProcessTrace, `light3d=1&hour=12&zoom=0.3`, 3 s after 12 s, GTX 1650), without and with --enable-gpu-service-tracing.**\n\n- CrGpuMain: 252.4 ms/s in slices untraced, 273.6 traced; CommandBufferService:PutChanged 185.2 ms/s total untraced, 226.6 traced. The decoder's tracing costs about 21 ms/s of the thread and 41 of PutChanged.\n- E-415 answered: glObjectLabelKHR (16.3 ms/s, 10 892 a second) shows only in the traced run, inside that 41 ms/s: Chrome labels resources for its own tracing; the page creates none a frame (glFrameRecorder). Not a cost of the game.\n- E-412's breakdown (traced): PutChanged's own 87.2 ms/s (decoding and validating commands, by count), glDrawElementsInstancedANGLE 33.9 (718 a second, 12 a frame), glFlush 16.3 (one a frame), glBufferSubData 13.7 (599 a second), glTexSubImage2D 12.1 (559 a second), glDrawElements 11.6 (19 a frame), glBindTexture 6.1 + glActiveTexture 3.8 (95 and 61 a frame), glGetGraphicsResetStatusARB 2.7, uniforms about 4, glClientWaitSync 1.9 (387 a second). So the GPU process's time goes with commands, draws and uploads: fewer uploads (E-395's caster rows, 1.14 MB a frame in map mode; E-392's pose texture) and fewer draws move it; texture binds (E-417) are about 4 % of the thread.\n- E-416 answered: the fence waits are 1.9 ms/s (0.03 ms a frame): not worth a change."
     }
   ],
   "leads": [
