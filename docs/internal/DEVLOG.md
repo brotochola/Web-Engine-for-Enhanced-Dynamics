@@ -27,6 +27,10 @@ The stress scenes built to hit those caps hit them, and Predator stays quiet (DX
 - With pixel depth and GPU particles drawn among the entities, the entity batch is drawn in chunks, and WebGL restarts
   the instance index at every chunk. A sprite the painter drew later could then lose the depth test to the one before
   it. The painter's step now counts from the batch's first instance (N-189).
+- The owner saw the light bench's bus cast half a shadow at one facing. Seen from behind, the bus's near wheels hide
+  under its body, so the card the sun casts measured its contact on the far wheels and stood on the wrong side of the
+  bus. The contact now takes in the low body too. Thirty of the repo's car sheets had frames like that. Against the
+  exact shadow from the height maps, the cards' error drops 13 % over twelve facings, and no facing gets worse (N-410).
 
 **Pixi stops sending what did not change.** Keyed sprites' G-buffer words went up to the GPU every frame. Now they go up
 only when they change: Pixi is 15 % faster at 150 000 sprites and 25 % faster at 80 000 (E-455). The same idea on
