@@ -46,7 +46,11 @@ async function lights(vm, f32) {
     const lx = 500 + rng() * 1000;
     const ly = 400 + rng() * 800;
     const occ = loadLight(vm, rng, lx, ly);
-    const n = k.sweep(k.tableByte, lx, ly, 150 + rng() * 250, occ, 0);
+    // N-158: the light's doubles go in through the args view; the call takes integers.
+    k.args[0] = lx;
+    k.args[1] = ly;
+    k.args[2] = 150 + rng() * 250;
+    const n = k.sweep(k.tableByte, occ, 0);
     out.push([n, ...vm.views.outX.subarray(0, n), ...vm.views.outY.subarray(0, n)]);
   }
   return out;

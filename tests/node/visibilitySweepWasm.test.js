@@ -586,7 +586,18 @@ const SHIPPED = { f32: 'sweep_light_f32', simd: 'sweep_light_simd' };
 test('W2a sweep: the shipped visibilitySweep.wasm writes the screening module\'s f32 and simd bits', async () => {
   const OWNER_CAP = 64;
   const k = await createSweepKernel({ sets: [{ occluders: 48, poolVerts: 48 * 8 }], maxVerts: 512, ownerSeenCap: OWNER_CAP });
-  const shipped = await loadWasmKernel('visibilitySweep', SHIPPED_URL, k.memory, Object.values(SHIPPED));
+  const raw = await loadWasmKernel('visibilitySweep', SHIPPED_URL, k.memory, Object.values(SHIPPED));
+  // N-158: the shipped exports read the light's doubles from the consts region (doubles 3 to 5); the screening module's
+  // take them as arguments, so the shipped ones are called through the same signature here.
+  const shipped = {};
+  for (const name of Object.values(SHIPPED)) {
+    shipped[name] = (tableByte, lx, ly, radius, occCount, polar) => {
+      k.consts[3] = lx;
+      k.consts[4] = ly;
+      k.consts[5] = radius;
+      return raw[name](tableByte, occCount, polar);
+    };
+  }
   const polarCos = new Float64Array(k.buffer, k.regions.polarCos.byte, POLAR_BINS * 2 + 1);
   const polarSin = new Float64Array(k.buffer, k.regions.polarSin.byte, POLAR_BINS * 2 + 1);
   const rng = mulberry32(0x5b1b);

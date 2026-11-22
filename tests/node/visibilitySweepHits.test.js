@@ -48,7 +48,10 @@ test('each vertex names the occluder its ray hit, and a free ray names none', as
   const v = vm.views;
   const occluders = pack(v);
   v.outOcc.fill(77);
-  const n = sweep.sweep(sweep.tableByte, 0, 0, RADIUS, occluders, 0);
+  sweep.args[0] = 0;
+  sweep.args[1] = 0;
+  sweep.args[2] = RADIUS;
+  const n = sweep.sweep(sweep.tableByte, occluders, 0);
   assert.ok(n >= 8 && n <= 128, `a polygon (${n} vertices)`);
   const seen = { free: 0, circle: 0, box: 0 };
   for (let i = 0; i < n; i++) {
@@ -77,7 +80,10 @@ test('each vertex names the occluder its ray hit, and a free ray names none', as
 test('a light with nothing around it gets the full circle, every vertex free', async () => {
   const { vm, sweep } = await boot();
   vm.views.outOcc.fill(77);
-  const n = sweep.sweep(sweep.tableByte, 40, -15, RADIUS, 0, 0);
+  sweep.args[0] = 40;
+  sweep.args[1] = -15;
+  sweep.args[2] = RADIUS;
+  const n = sweep.sweep(sweep.tableByte, 0, 0);
   assert.equal(n, 32);
   for (let i = 0; i < n; i++) assert.equal(vm.views.outOcc[i], -1, `vertex ${i}`);
 });

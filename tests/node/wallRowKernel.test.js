@@ -57,7 +57,10 @@ function jsRow(views, p) {
 
 function assertKernelRow(boot, p, label) {
   const { vm, sweep } = boot;
-  const used = sweep.row(sweep.tableByte, p.lx, p.ly, p.floorInv, p.n);
+  sweep.args[0] = p.lx;
+  sweep.args[1] = p.ly;
+  sweep.args[3] = p.floorInv;
+  const used = sweep.row(sweep.tableByte, p.n);
   const ref = jsRow(vm.views, p);
   const expected = p.n >= 3 ? 4 * (WALL_VERT0 + p.n + 1) : 4;
   assert.equal(used, expected, `${label}: the floats written`);

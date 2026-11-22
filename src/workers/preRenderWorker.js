@@ -5978,6 +5978,8 @@ class PreRenderWorker extends AbstractWorker {
         const sweepTable = sweepK.table;
         const sweepTableByte = sweepK.tableByte;
         const sweepResults = sweepK.results;
+        // N-158: the sweep's and the row's doubles go to the kernel through this block, not as arguments (E-85).
+        const sweepArgs = sweepK.args;
         // W1: solidSegments.wasm (collectSolidWasm), bound at init; the doubles go through SOLID_ARGS.
         const collectSolid = this._visCollectSolid;
 
@@ -6293,7 +6295,10 @@ class PreRenderWorker extends AbstractWorker {
                     lampR[lightIdx] = influenceRadius;
                 }
             }
-            const vertCount = sweepLight(sweepTableByte, lx, ly, influenceRadius, occCount, polarActive);
+            sweepArgs[0] = lx;
+            sweepArgs[1] = ly;
+            sweepArgs[2] = influenceRadius;
+            const vertCount = sweepLight(sweepTableByte, occCount, polarActive);
             // A light the sweep gave up on (its event or active cap): the JS sweep's warning, once.
             if (sweepResults[SWEEP_R_SEEN_VALID] === 0) {
                 warnSweepOverflow(sweepResults[SWEEP_R_EVENT_OVERFLOW] !== 0, occCount);
@@ -6304,7 +6309,8 @@ class PreRenderWorker extends AbstractWorker {
                 // OL-11: the kernel writes the row from the polygon it just left (no compound solid in reach: its
                 // vertices name occluders of the list, whose codes are in the memory), and the row's floats go to
                 // the frame's buffer in one copy.
-                const used = sweepK.row(sweepTableByte, lx, ly, groundInvY, vertCount);
+                sweepArgs[3] = groundInvY;
+                const used = sweepK.row(sweepTableByte, vertCount);
                 let c = 0;
                 while (rowCopies[c].length < used) c++;
                 rowsBuf.f32.set(rowCopies[c], rowsWritten * rowFloats);
