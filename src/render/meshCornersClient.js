@@ -17,7 +17,6 @@ import { MESH_CORNER_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
 import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS, MESH_UV_VERT_FLOATS } from './colliderFillBatch.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
-
 /** wasm/meshCorners.c's column table, slot for slot. */
 export const MESH_CORNER_SLOTS = [
   'out', 'count', 'step', 'uvOn', 'entity', 'gen', 'genLen', 'last', 'lastLen',
@@ -155,6 +154,28 @@ function u32In(b, a, n) {
   return a instanceof Uint32Array && a.buffer === b.buffer && a.length >= n;
 }
 
+/** The MeshGeometry columns in `views` are the ones bound in the mesh memory (`g`), UVs aside. */
+function geometryBound(g, views) {
+  return views.meshVertOffset === g.vertOffset && views.meshVertCount === g.vertCount &&
+    views.meshIndexOffset === g.indexOffset && views.meshIndexCount === g.indexCount &&
+    views.meshVertexX === g.vertexX && views.meshVertexY === g.vertexY && views.meshIndices === g.indices;
+}
+
+/**
+ * Both calls' generation slots: the vertex generations now and drawn, and the UV ones when the caller keeps them (E-118;
+ * byte 0 is the MeshGeometry block, never a generation array, so the table takes 0 as "none").
+ */
+function writeGenerationSlots(t, gen, lastVertGen, uvGen, lastUvGen) {
+  t[GEN] = gen.byteOffset;
+  t[GEN_LEN] = gen.length;
+  t[LAST] = lastVertGen.byteOffset;
+  t[LAST_LEN] = lastVertGen.length;
+  t[UV_GEN] = uvGen !== null ? uvGen.byteOffset : 0;
+  t[UV_GEN_LEN] = uvGen !== null ? uvGen.length : 0;
+  t[LAST_UV] = uvGen !== null ? lastUvGen.byteOffset : 0;
+  t[LAST_UV_LEN] = uvGen !== null ? lastUvGen.length : 0;
+}
+
 /**
  * rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen,
  * uvGenNow) through the kernel: same arguments, same result, same bits. `b.calls` counts the calls the kernel
@@ -175,9 +196,7 @@ export function rewriteCornersWasm(b, out, count, entityOfInstance, views, strid
     !(out instanceof Float32Array) || out.buffer !== b.buffer ||
     (n - 1) * step + (uvOn ? MESH_UV_FILL_FLOATS : 6) > out.length ||
     !u32In(b, entityOfInstance, n) || !u32In(b, gen, 0) || !u32In(b, lastVertGen, 0) ||
-    views.meshVertOffset !== g.vertOffset || views.meshVertCount !== g.vertCount ||
-    views.meshIndexOffset !== g.indexOffset || views.meshIndexCount !== g.indexCount ||
-    views.meshVertexX !== g.vertexX || views.meshVertexY !== g.vertexY || views.meshIndices !== g.indices ||
+    !geometryBound(g, views) ||
     (uvOn && (views.meshUvU !== g.uvU || views.meshUvV !== g.uvV)) ||
     (uvGen !== null && (!u32In(b, uvGen, 0) || uvGen.byteOffset === 0 || !u32In(b, lastUvGen, 0)))
   ) {
@@ -192,21 +211,7 @@ export function rewriteCornersWasm(b, out, count, entityOfInstance, views, strid
   t[STEP] = step;
   t[UV_ON] = uvOn ? 1 : 0;
   t[ENTITY] = entityOfInstance.byteOffset;
-  t[GEN] = gen.byteOffset;
-  t[GEN_LEN] = gen.length;
-  t[LAST] = lastVertGen.byteOffset;
-  t[LAST_LEN] = lastVertGen.length;
-  if (uvGen !== null) {
-    t[UV_GEN] = uvGen.byteOffset;
-    t[UV_GEN_LEN] = uvGen.length;
-    t[LAST_UV] = lastUvGen.byteOffset;
-    t[LAST_UV_LEN] = lastUvGen.length;
-  } else {
-    t[UV_GEN] = 0;
-    t[UV_GEN_LEN] = 0;
-    t[LAST_UV] = 0;
-    t[LAST_UV_LEN] = 0;
-  }
+  writeGenerationSlots(t, gen, lastVertGen, uvGen, lastUvGen);
   b.calls++;
   return b.rewrite(b.tableByte);
 }
@@ -232,9 +237,7 @@ export function rewriteVertsWasm(b, target, count, views, lastVertGen, genNow, l
     !(out instanceof Float32Array) || out.buffer !== b.buffer || n * MESH_UV_VERT_FLOATS > out.length ||
     !u32In(b, target.vertexEntity, n) || !u32In(b, target.indices, 0) || !u32In(b, target.indexSpan, 0) ||
     !u32In(b, gen, 0) || !u32In(b, lastVertGen, 0) ||
-    views.meshVertOffset !== g.vertOffset || views.meshVertCount !== g.vertCount ||
-    views.meshIndexOffset !== g.indexOffset || views.meshIndexCount !== g.indexCount ||
-    views.meshVertexX !== g.vertexX || views.meshVertexY !== g.vertexY || views.meshIndices !== g.indices ||
+    !geometryBound(g, views) ||
     views.meshUvU !== g.uvU || views.meshUvV !== g.uvV ||
     (uvGen !== null && (!u32In(b, uvGen, 0) || uvGen.byteOffset === 0 || !u32In(b, lastUvGen, 0)))
   ) {
@@ -249,21 +252,7 @@ export function rewriteVertsWasm(b, target, count, views, lastVertGen, genNow, l
   t[STEP] = MESH_UV_VERT_FLOATS;
   t[UV_ON] = 1;
   t[ENTITY] = target.vertexEntity.byteOffset;
-  t[GEN] = gen.byteOffset;
-  t[GEN_LEN] = gen.length;
-  t[LAST] = lastVertGen.byteOffset;
-  t[LAST_LEN] = lastVertGen.length;
-  if (uvGen !== null) {
-    t[UV_GEN] = uvGen.byteOffset;
-    t[UV_GEN_LEN] = uvGen.length;
-    t[LAST_UV] = lastUvGen.byteOffset;
-    t[LAST_UV_LEN] = lastUvGen.length;
-  } else {
-    t[UV_GEN] = 0;
-    t[UV_GEN_LEN] = 0;
-    t[LAST_UV] = 0;
-    t[LAST_UV_LEN] = 0;
-  }
+  writeGenerationSlots(t, gen, lastVertGen, uvGen, lastUvGen);
   t[DRAW_INDICES] = target.indices.byteOffset;
   t[SPAN] = target.indexSpan.byteOffset;
   t[SPAN_LEN] = target.indexSpan.length >> 1;
