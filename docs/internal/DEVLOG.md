@@ -6,6 +6,60 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Sunday 22 November 2026 (morning to afternoon): The Engine Says What It Drops, Shadows Come Back, and the Renderer Comes Apart
+
+**The engine now says when it drops something.** Several of its rings and caps fill up silently, and a game that hit
+one just lost work without being told. Now each loss is reported once, in both builds:
+- the physics command ring fills;
+- a logic worker falls a whole contact ring behind;
+- Box2D reports more than its 10 000 contacts of one kind in a step;
+- a frame fills `bullet.maxImpactsPerFrame`.
+
+The stress scenes built to hit those caps hit them, and Predator stays quiet (DX-CONFIGCHECK).
+
+**Shadows and light that were wrong on screen.**
+- A thin wall beside a rock or another compound solid cast no shadow. The lamp's polygon near the solid was 512 rays
+  0.7° apart, and a wall standing between two rays was on none of them. The merge now keeps the sweep's own polygon
+  wherever no solid is, and takes rays only along the solid. The shadows come back, the merge runs 20 % faster, and
+  the polygon has 57 % fewer vertices (N-300).
+- The light pass drew thin dark diagonal lines across a lit floor, from each lamp past each shadow side. It now
+  measures a point against the covering edge's segment rather than the edge's whole line (N-409).
+- With pixel depth and GPU particles drawn among the entities, the entity batch is drawn in chunks, and WebGL restarts
+  the instance index at every chunk. A sprite the painter drew later could then lose the depth test to the one before
+  it. The painter's step now counts from the batch's first instance (N-189).
+
+**Pixi stops sending what did not change.** Keyed sprites' G-buffer words went up to the GPU every frame. Now they go up
+only when they change: Pixi is 15 % faster at 150 000 sprites and 25 % faster at 80 000 (E-455). The same idea on
+pre-render's path lost, because comparing cost more than the upload saved, so it was dropped.
+
+**One shader, one file.** The sprite shaders had copies:
+- a blend fragment byte for byte the normal one;
+- pose and additive variants that repeated their base but for three to five lines;
+- the 14-line header of Pixi's uniform groups in eleven shader files and six programs written in JavaScript;
+- the tiled-UV function in seven places.
+
+The variants are now made from their base when the renderer loads it. A shader file includes a shared chunk with one
+line, `// #include pixiGroups.wgsl`. Every shader comes out byte for byte the text it had (N-303 CR-7, CR-14, CR-15).
+
+**pixiWorker.js comes apart.** At over 11 000 lines, the renderer worker was the file every rendering change touched,
+so only one person or agent could work on it at a time. Whole subsystems moved into classes of their own under
+`src/render/pixi/`, as pure moves:
+- the assets;
+- the scenery and the tilemap;
+- the MESH layers and the custom layers;
+- the glow layer;
+- the 3D shadow maps;
+- the light pass with its G-buffer.
+
+The worker's `initialize` became thirteen named steps. The worker is down from 11 481 lines to 4 844. Every capture
+is byte for byte what it was, on both backends, and the Predator sittings over each step read unchanged (N-256).
+
+Two lessons from the move:
+- Code that reaches a field by name (`this[key]`) or is handed the whole worker as an object is invisible to a
+  rename by text. Both happened once, and the captures caught them.
+- A method's end is the parser's to say, not the first `}` at its indent: a shader's text inside a template string
+  has those too.
+
 ## Sunday 22 November 2026 (early morning) — A Sprite That Stops Flickering, and Glows That Stay Inside the Canvas
 
 **A sprite could flicker between two looks forever.** Pre-render keeps a sprite's row from one frame to the next when
