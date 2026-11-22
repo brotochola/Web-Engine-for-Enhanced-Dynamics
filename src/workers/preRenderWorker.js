@@ -2082,14 +2082,7 @@ class PreRenderWorker extends AbstractWorker {
             );
         }
 
-        // Configure scheduling from preRender config (camelCase key)
-        const fixedFps = Number(preRenderConfig.fixedFps);
-        if (fixedFps > 0) {
-            this.fixedFps = fixedFps;
-            this.noLimitFPS = false;
-        } else if (preRenderConfig.noLimitFPS === true) {
-            this.noLimitFPS = true;
-        }
+        // preRender.fixedFps and noLimitFPS: AbstractWorker reads them (its 'prerender' key alias).
         this.backpressure = preRenderConfig.backpressure !== false;
 
         // Physics-pose blend while packing. preRender.interpolation is a boolean.
@@ -2187,7 +2180,13 @@ class PreRenderWorker extends AbstractWorker {
                 && data.renderQueueLayout.emit.entities === this.globalEntityCount
                 ? data.renderQueueLayout.emit
                 : null;
-            const emitBuffer = emitLayout ? data.renderQueueMemory.buffer : null;
+            // E-112, close-out group B: the emit is preRenderEmit.wasm, on the render-queue memory where every column
+            // it reads is (the scene makes the memory, or fails to start when it cannot).
+            if (!emitLayout) {
+                throw new Error('[PRE_RENDER] the render queue has no emit regions in the render-queue memory '
+                    + '(renderQueueLayout.emit for this entity count): the emit kernel has nothing to run on');
+            }
+            const emitBuffer = data.renderQueueMemory.buffer;
 
             // Entity texture lookup buffer
             if (data.renderQueue.entityTextureData) {
@@ -2201,12 +2200,8 @@ class PreRenderWorker extends AbstractWorker {
 
             // Animation state buffers
             if (this.globalEntityCount > 0) {
-                this.entityFrameIndex = emitLayout
-                    ? new Uint16Array(emitBuffer, emitLayout.frameByte, this.globalEntityCount)
-                    : new Uint16Array(this.globalEntityCount);
-                this.entityFrameAccumulator = emitLayout
-                    ? new Float32Array(emitBuffer, emitLayout.accumByte, this.globalEntityCount)
-                    : new Float32Array(this.globalEntityCount);
+                this.entityFrameIndex = new Uint16Array(emitBuffer, emitLayout.frameByte, this.globalEntityCount);
+                this.entityFrameAccumulator = new Float32Array(emitBuffer, emitLayout.accumByte, this.globalEntityCount);
             }
             this._bindAnimationEndTypes(data.registeredClasses);
             this._staticGrid.bindTypes(data.registeredClasses, this.globalEntityCount);
@@ -2214,27 +2209,15 @@ class PreRenderWorker extends AbstractWorker {
             this._staticsCheck = devChecksOn();
 
             // Pre-allocate renderable collector buffers
-            this._renderableY = emitLayout
-                ? new Float32Array(emitBuffer, emitLayout.collectorYByte, maxItems)
-                : new Float32Array(maxItems);
-            this._renderableType = emitLayout
-                ? new Uint8Array(emitBuffer, emitLayout.collectorTypeByte, maxItems)
-                : new Uint8Array(maxItems);
-            this._renderableIndex = emitLayout
-                ? new Int32Array(emitBuffer, emitLayout.collectorIndexByte, maxItems)
-                : new Int32Array(maxItems);
+            this._renderableY = new Float32Array(emitBuffer, emitLayout.collectorYByte, maxItems);
+            this._renderableType = new Uint8Array(emitBuffer, emitLayout.collectorTypeByte, maxItems);
+            this._renderableIndex = new Int32Array(emitBuffer, emitLayout.collectorIndexByte, maxItems);
             // The LiquidFun rows' previous positions, where the emit kernel reads them (_latchLiquidFunPrevPose
             // keeps arrays of this length).
-            if (emitLayout && emitLayout.lfPrevByte >= 0) {
+            if (emitLayout.lfPrevByte >= 0) {
                 const lfN = emitLayout.lfMaxCount;
                 this._prevLfX = new Float32Array(emitBuffer, emitLayout.lfPrevByte, lfN);
                 this._prevLfY = new Float32Array(emitBuffer, emitLayout.lfPrevByte + 4 * lfN, lfN);
-            }
-            // E-112, close-out group B: the emit is preRenderEmit.wasm, on the render-queue memory where every column
-            // it reads is (the scene makes the memory, or fails to start when it cannot).
-            if (!emitLayout) {
-                throw new Error('[PRE_RENDER] the render queue has no emit regions in the render-queue memory '
-                    + '(renderQueueLayout.emit for this entity count): the emit kernel has nothing to run on');
             }
             // SST-2: every kernel on the render-queue memory bound side by side (none needs another's), each one's
             // result taken below where it was awaited alone: the emit, the sprite collect (W4b), and with a GPU queue
@@ -2248,14 +2231,12 @@ class PreRenderWorker extends AbstractWorker {
             }
             const packOn = gpuQueueOn && !!data.renderQueueMemory && !!data.renderQueueLayout;
             const stampOn = packOn && !!data.renderQueueLayout.stamp;
-            const notLoaded = (name) => (err) => {
-                throw new Error(`[PRE_RENDER] ${name}.wasm did not load: ${err?.message ?? err}`, { cause: err });
-            };
+            // The binders and loadWasmKernel name the kernel in every error they throw (N-303 CR-21).
             const [emitBound, collectBound, painterBound, packBound, stampBound] = await Promise.all([
-                bindPreRenderEmit(data.renderQueueMemory, emitLayout).catch(notLoaded('preRenderEmit')),
-                collectLayout ? bindPreRenderCollect(data.renderQueueMemory, collectLayout).catch(notLoaded('preRenderCollect')) : null,
-                painterOn ? bindPainterRadix(data.renderQueueMemory, painterLayout).catch(notLoaded('painterRadix')) : null,
-                packOn ? bindGpuPack(data.renderQueueMemory, data.renderQueueLayout).catch(notLoaded('gpuPack')) : null,
+                bindPreRenderEmit(data.renderQueueMemory, emitLayout),
+                collectLayout ? bindPreRenderCollect(data.renderQueueMemory, collectLayout) : null,
+                painterOn ? bindPainterRadix(data.renderQueueMemory, painterLayout) : null,
+                packOn ? bindGpuPack(data.renderQueueMemory, data.renderQueueLayout) : null,
                 stampOn ? bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp) : null,
             ]);
             this._emitWasm = emitBound;
@@ -2614,14 +2595,12 @@ class PreRenderWorker extends AbstractWorker {
             throw new Error('[PRE_RENDER] the visibility memory could not be made (a shared WebAssembly.Memory was refused): '
                 + 'lighting.walls needs it');
         }
-        const notLoaded = (name) => (err) => {
-            throw new Error(`[PRE_RENDER] ${name}.wasm did not load: ${err?.message ?? err}`, { cause: err });
-        };
-        // SST-2: the sweep, the solids' raster and the gather bound side by side (none needs another's).
+        // SST-2: the sweep, the solids' raster and the gather bound side by side (none needs another's); their errors
+        // name the kernel (N-303 CR-21).
         const [sweep, solid, gather] = await Promise.all([
-            bindVisibilitySweep(vm, { maxVerts, f32: this.config?.wasm?.visibilitySweepF32 !== false }).catch(notLoaded('visibilitySweep')),
-            vm.layout.solidBytes > 0 ? bindSolidSegments(vm).catch(notLoaded('solidSegments')) : null,
-            place ? bindVisibilityGather(memory, v, vm).catch(notLoaded('visibilityGather')) : null,
+            bindVisibilitySweep(vm, { maxVerts, f32: this.config?.wasm?.visibilitySweepF32 !== false }),
+            vm.layout.solidBytes > 0 ? bindSolidSegments(vm) : null,
+            place ? bindVisibilityGather(memory, v, vm) : null,
         ]);
         this._visSweep = sweep;
         this._visMemory = vm.memory;
