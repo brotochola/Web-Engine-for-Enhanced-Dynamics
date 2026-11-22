@@ -119,9 +119,11 @@ test('pixi_worker: cover type + look RT transparent clear', () => {
     join(dirname(fileURLToPath(import.meta.url)), '../../src/workers/pixiWorker.js'),
     'utf8'
   );
+  // N-256 PW-5: the scenery layers are src/render/pixi/scenery.js's.
+  const scenery = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../src/render/pixi/scenery.js'), 'utf8');
   assert.match(pixi, /case 'cover':/);
-  assert.match(pixi, /_createCoverScenery/);
-  assert.match(pixi, /_applyCoverTransform/);
+  assert.match(pixi, /this\.scenery\.createCover\(/);
+  assert.match(scenery, /_applyCoverTransform/);
   assert.match(pixi, /_clearTransparent = \[0, 0, 0, 0\]/);
   assert.match(pixi, /clearColor: this\._clearTransparent/);
 });

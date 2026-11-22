@@ -180,10 +180,11 @@ test('tilemapGid is a distinct scene from getTileId tilemap', () => {
   const gidSrc = fs.readFileSync(path.join(root, 'src/render/tilemapGid.js'), 'utf8');
   assert.match(gidSrc, /TILEMAP_GID_PAGE_TILES/);
   assert.match(gidSrc, /packGidPageRgba8/);
-  const pixi = fs.readFileSync(path.join(root, 'src/workers/pixiWorker.js'), 'utf8');
-  assert.match(pixi, /_fillTilemapPages/);
-  assert.match(pixi, /tilemapGid/);
-  assert.doesNotMatch(pixi, /CompositeTilemap/);
+  // N-256 PW-5: the tilemap's pages are the scenery's (src/render/pixi/scenery.js).
+  const scenery = fs.readFileSync(path.join(root, 'src/render/pixi/scenery.js'), 'utf8');
+  assert.match(scenery, /_fillTilemapPages/);
+  assert.match(scenery, /tilemapGid/);
+  assert.doesNotMatch(scenery, /CompositeTilemap/);
 });
 
 test('contactDrain scene uses CollisionListener pile', () => {
