@@ -2622,18 +2622,35 @@ export class InstancedSpriteBatch {
    * them), or null for none or more than the batch holds. The batch's own mesh and geometry stay as they were.
    * @returns {Geometry|null}
    */
-  commitKeyedCasterRows(src, count, floats) {
+  commitKeyedCasterRows(src, count, floats, tiles = null) {
     const f = floats | 0;
     const n = count | 0;
     const keep = n > this.capacity ? this.capacity : n;
     if (keep <= 0 || !src || keep * f > this.data.length) return null;
     this.copyIn(this.data, src, keep * f);
+    // E-395: the lamps' map's stamp rows carry their lamp's tile + 1 in the light's z, which its programs read as the tile.
+    if (tiles !== null) {
+      const data = this.data;
+      for (let k = 0, at = GPU_KEYED_CASTER_FLOATS + 2; k < keep; k++, at += f) data[at] = tiles[k] + 1;
+    }
     const ring = this._ring;
     this._ring = ring ^ 1;
     this._buffers[ring].update(keep * f * 4);
     const geometry = this.keyedCasterGeometry(f > GPU_KEYED_CASTER_FLOATS, ring);
     geometry.instanceCount = keep;
     return geometry;
+  }
+
+  /**
+   * E-395: a shader of `program` (a shadow map's, composed over spriteIndexedVertex's keyed caster rows) with `resources`
+   * and this batch's statics texture, which those rows read by key. Null where the keyed frames are off.
+   * @param {object} program a Shader's program options ({ glProgram } or { gpuProgram })
+   * @param {object} resources the map's own resources (atlas, sampler, LUT, uniform group, ...)
+   * @returns {Shader|null}
+   */
+  makeKeyedRowsShader(program, resources) {
+    if (!this.keyed || !program) return null;
+    return new Shader({ ...program, resources: { ...resources, uStatics: this._staticsSource } });
   }
 
   /** E-191 step 2: a ring slot's geometry for keyed caster rows (the stamps' with `light`), made on first use. */

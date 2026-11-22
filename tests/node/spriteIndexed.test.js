@@ -143,7 +143,9 @@ test('the shadow WGSL forms read the statics by key and keep what each pass stre
     assert.equal(new Set(locations).size, locations.length, `${form}: one input a location (${locations})`);
     assert.match(out, /^@group\(2\) @binding\(4\) var<storage, read> uStatics: array<vec4<u32>>;/m, form);
     for (const name of STATICS) assert.match(out, new RegExp(`^  let ${name} = `, 'm'), `${form}: ${name} is a let`);
-    assert.match(out, /^  let aInstTintBits = 0\.0;/m, `${form}: the tint read nowhere`);
+    // E-395: a keyed caster row's tint float holds its entity (its key), which the shadow maps keep; the instances' none.
+    if (form === 'sun') assert.match(out, /^  let aInstTintBits = 0\.0;/m, `${form}: the tint read nowhere`);
+    else assert.match(out, /^  let aInstTintBits = aInstSlot;/m, `${form}: the row's entity, its key`);
     assert.equal(/^  let aInstRotCS = /m.test(out), form !== 'sun', `${form}: the rotation`);
     assert.equal(/^  let aInstLight = /m.test(out), form !== 'stampRows', `${form}: the light`);
     // DX-SHADOW3D (plan §17.2): a caster row's frame, when it carries one, replaces the sprite's and mirrors it.

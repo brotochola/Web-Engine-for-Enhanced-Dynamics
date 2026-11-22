@@ -98,6 +98,12 @@ export function sunMapLanding({ footX, footY, localX, localY, heightScaleY, heig
  * frame could not match keeps its tint's bits there, which this reads as none unless they happen to be a whole number.
  * The shadow maps keep it with their highest caster (a depth test), and the light pass skips a pixel's own.
  */
+/**
+ * E-395: the sprite shadow vertex shader's first statement of main, which follows a keyed source's prologue: where the maps
+ * read a row's own values (its entity) once spriteIndexedVertex has set them.
+ */
+export const FIRST_LINE = '  float height = aInstShadow.x;\n';
+
 export const CASTER_ID_GLSL = `float casterEntityId(float e) {
   return e >= 0.0 && e < 16777216.0 && e == floor(e) ? float(int(e) % 65535 + 1) : 0.0;
 }
@@ -379,7 +385,9 @@ export function sunMapVertex(source, { heights = true } = {}) {
   if (!heights) return skipped.replace(decl, `${decl}${MAPPED_GLSL}`);
   return skipped
     .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n${MAPPED_GLSL}${CASTER_ID_GLSL}`)
-    .replace(main, `${main}  vSunZ = 0.0;\n  vSunId = casterEntityId(aInstTintBits);\n`)
+    .replace(main, `${main}  vSunZ = 0.0;\n`)
+    // E-395: after a keyed source's prologue (spriteIndexedVertex sets aInstTintBits there), before main's own first line.
+    .replace(FIRST_LINE, `  vSunId = casterEntityId(aInstTintBits);\n${FIRST_LINE}`)
     .replace(out, `${out}    vSunZ = sunZ;\n`)
     // The depth that keeps the highest point (sunShadowMap.frag.glsl), from the vertex: NDC z = 2 (1 - h) - 1.
     .replace(color, `  vColor = vec4(1.0, castOpacity, 1.0, 1.0);\n  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);\n`);
@@ -442,7 +450,8 @@ export function sunMapWgsl(source, { heights = true } = {}) {
 `,
   );
   if (!heights) return skipped;
-  const body = ') -> VertexOut {\n  var out: VertexOut;\n';
+  // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
+  const body = '  var out: VertexOut;\n';
   if (skipped.split(body).length !== 2) throw new Error('WeedJS: the sun shadow map needs the sprite shadow WGSL (mainVert)');
   return (
     skipped
