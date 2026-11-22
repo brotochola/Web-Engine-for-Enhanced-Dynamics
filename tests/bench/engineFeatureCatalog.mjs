@@ -6,6 +6,11 @@
  * scene.loadKnob (DX-SCORELOAD): the scene's query key that scales its primary worker's load, its default (base) and a
  * cap (max). calibrateScoreboardLoads.mjs raises it on a machine where the baseline's primary sits under the stress
  * floor, and runScoreboard --loads runs both sides at that load.
+ *
+ * scene.since (N-402): the oldest commit the scene runs on as written, when it uses an API a release before lacks. A
+ * base that predates it would load a scene with less work in it (an ignored config key) or none (a missing export),
+ * and the load keys need not see it: runScoreboard skips the scene there (unless --full-rev, where each side runs its
+ * own scenes).
  */
 
 export const ENGINE_FEATURES = [
@@ -267,6 +272,7 @@ export const ENGINE_FEATURES = [
     module: 'src/render/visibility/angularSweep.js',
     scene: {
       key: 'flashlights',
+      since: '94e31445', // lighting.walls (OL-4): an older base computes no wall visibility at all
       path: '/tests/bench/stressScenes/flashlightStressScene.js',
       exportName: 'FlashlightStressScene',
       headed: true,
@@ -286,6 +292,7 @@ export const ENGINE_FEATURES = [
     },
     scene: {
       key: 'visPoly',
+      since: '94e31445', // lighting.walls (OL-4): an older base computes no wall visibility at all
       path: '/tests/bench/stressScenes/visPolyStressScene.js',
       exportName: 'VisPolyStressScene',
       headed: true,
@@ -588,6 +595,7 @@ export const ENGINE_FEATURES = [
     kernel: null,
     scene: {
       key: 'sunShadowMap',
+      since: '4bf4d21a', // DirectionalSprite (DX-DIRSPRITE): an older base throws on the scene's load
       path: '/tests/bench/stressScenes/sunShadowMapStressScene.js',
       exportName: 'SunShadowMapStressScene',
       headed: true,
@@ -605,6 +613,7 @@ export const ENGINE_FEATURES = [
     kernel: null,
     scene: {
       key: 'selfShadow',
+      since: '4bf4d21a', // DirectionalSprite (DX-DIRSPRITE): an older base throws on the scene's load
       path: '/tests/bench/stressScenes/selfShadowStressScene.js',
       exportName: 'SelfShadowStressScene',
       headed: true,
@@ -621,6 +630,7 @@ export const ENGINE_FEATURES = [
     kernel: null,
     scene: {
       key: 'depthSort',
+      since: '4bf4d21a', // DirectionalSprite (DX-DIRSPRITE): an older base throws on the scene's load
       path: '/tests/bench/stressScenes/depthSortStressScene.js',
       exportName: 'DepthSortStressScene',
       headed: true,
@@ -637,6 +647,7 @@ export const ENGINE_FEATURES = [
     kernel: null,
     scene: {
       key: 'unshaded',
+      since: '4bf4d21a', // DirectionalSprite (DX-DIRSPRITE): an older base throws on the scene's load
       path: '/tests/bench/stressScenes/unshadedStressScene.js',
       exportName: 'UnshadedStressScene',
       headed: true,
