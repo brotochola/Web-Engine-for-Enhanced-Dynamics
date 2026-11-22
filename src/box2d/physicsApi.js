@@ -35,10 +35,7 @@ function createPhysicsApi(Module) {
   const overlapCircleFn = wrap("overlap_circle");
   const castRayClosestFn = wrap("cast_ray_closest");
   const castRayAllFn = wrap("cast_ray_all");
-  const createRevoluteJoint = wrap("create_revolute_joint");
-  const createDistanceJoint = wrap("create_distance_joint");
   const createPrismaticJoint = wrap("create_prismatic_joint");
-  const createWeldJoint = wrap("create_weld_joint");
   const createDistanceJointLocal = wrap("create_distance_joint_local");
   const createRevoluteJointLocal = wrap("create_revolute_joint_local");
   const createWeldJointLocal = wrap("create_weld_joint_local");
@@ -107,17 +104,6 @@ function createPhysicsApi(Module) {
   const setGroupViscousScale = wrap("set_group_viscous_scale");
   const getParticleGroupSlotCount = wrap("get_particle_group_slot_count");
   const getParticleGroupAlive = wrap("get_particle_group_alive");
-  const getParticleGroupParticleCount = wrap("get_particle_group_particle_count");
-  const getParticleGroupCenterX = wrap("get_particle_group_center_x");
-  const getParticleGroupCenterY = wrap("get_particle_group_center_y");
-  const getParticleGroupVx = wrap("get_particle_group_vx");
-  const getParticleGroupVy = wrap("get_particle_group_vy");
-  const getParticleGroupAngularVelocity = wrap("get_particle_group_angular_velocity");
-  const getParticleGroupAngle = wrap("get_particle_group_angle");
-  const getParticleGroupViscousScale = wrap("get_particle_group_viscous_scale");
-  const getParticleGroupFirstIndex = wrap("get_particle_group_first_index");
-  const getParticleGroupLastIndex = wrap("get_particle_group_last_index");
-  const getParticleGroupFlags = wrap("get_particle_group_flags");
   const joinParticleGroups = wrap("join_particle_groups");
   const splitParticleGroup = wrap("split_particle_group");
   const particleApplyForce = wrap("particle_apply_force");
@@ -147,12 +133,9 @@ function createPhysicsApi(Module) {
   const heapU16 = () => new Uint16Array(heapBuf());
   const heapU32 = () => new Uint32Array(heapBuf());
   const getLiquidFunStepMs = wrap("get_liquidfun_step_ms");
-  const getLfParticleContactCount = wrap("get_lf_particle_contact_count");
   const getParticleCapacity = wrap("get_particle_capacity");
   const getParticleRadius = wrap("get_particle_radius");
   const getParticleCountByteOffset = wrap("get_particle_count_byte_offset");
-  const getParticlePosByteOffset = wrap("get_particle_pos_byte_offset");
-  const getParticleVelByteOffset = wrap("get_particle_vel_byte_offset");
   const getParticleFlagsByteOffset = wrap("get_particle_flags_byte_offset");
   const getParticleXByteOffset = wrap("get_particle_x_byte_offset");
   const getParticleYByteOffset = wrap("get_particle_y_byte_offset");
@@ -638,14 +621,6 @@ function createPhysicsApi(Module) {
       );
     }
 
-    createOverlapBuffer(capacity = getQueryCapacity()) {
-      const ptr = Module._malloc(capacity * 4);
-      return {
-        view: Module.HEAP32.subarray(ptr >> 2, (ptr >> 2) + capacity),
-        free: () => Module._free(ptr),
-      };
-    }
-
     overlapCircle(cx, cy, radius, filter = {}) {
       const f = filterArgs(filter);
       return overlapCircleFn(
@@ -693,56 +668,6 @@ function createPhysicsApi(Module) {
         f.categoryBits,
         f.maskBits,
       );
-    }
-
-    createRevoluteJoint(options = {}) {
-      const slotA = options.bodyA?.slot;
-      const slotB = options.bodyB?.slot;
-      if (slotA === undefined || slotB === undefined) {
-        throw new Error("createRevoluteJoint requires bodyA and bodyB");
-      }
-
-      const handle = createRevoluteJoint(
-        this.worldId,
-        slotA,
-        slotB,
-        options.anchorX ?? 0,
-        options.anchorY ?? 0,
-        options.enableLimit ? 1 : 0,
-        options.lowerAngle ?? 0,
-        options.upperAngle ?? 0,
-        options.enableMotor ? 1 : 0,
-        options.motorSpeed ?? 0,
-        options.maxMotorTorque ?? 0,
-      );
-      if (handle < 0) {
-        throw new Error("createRevoluteJoint failed");
-      }
-      return new JointHandle(this, handle);
-    }
-
-    createDistanceJoint(options = {}) {
-      const slotA = options.bodyA?.slot;
-      const slotB = options.bodyB?.slot;
-      if (slotA === undefined || slotB === undefined) {
-        throw new Error("createDistanceJoint requires bodyA and bodyB");
-      }
-
-      const handle = createDistanceJoint(
-        this.worldId,
-        slotA,
-        slotB,
-        options.anchorX ?? 0,
-        options.anchorY ?? 0,
-        options.length ?? 1,
-        options.enableSpring ? 1 : 0,
-        options.hertz ?? 1,
-        options.dampingRatio ?? 0.7,
-      );
-      if (handle < 0) {
-        throw new Error("createDistanceJoint failed");
-      }
-      return new JointHandle(this, handle);
     }
 
     createPrismaticJoint(options = {}) {
@@ -803,30 +728,6 @@ function createPhysicsApi(Module) {
         maxMotorForce: options.maxMotorForce,
         maxMotorTorque: options.maxMotorTorque,
       });
-    }
-
-    createWeldJoint(options = {}) {
-      const slotA = options.bodyA?.slot;
-      const slotB = options.bodyB?.slot;
-      if (slotA === undefined || slotB === undefined) {
-        throw new Error("createWeldJoint requires bodyA and bodyB");
-      }
-
-      const handle = createWeldJoint(
-        this.worldId,
-        slotA,
-        slotB,
-        options.anchorX ?? 0,
-        options.anchorY ?? 0,
-        options.linearHertz ?? 0,
-        options.angularHertz ?? 0,
-        options.linearDampingRatio ?? 1,
-        options.angularDampingRatio ?? 1,
-      );
-      if (handle < 0) {
-        throw new Error("createWeldJoint failed");
-      }
-      return new JointHandle(this, handle);
     }
 
     createDistanceJointLocal(options = {}) {
@@ -921,10 +822,6 @@ function createPhysicsApi(Module) {
 
     getJointCount() {
       return getJointCount();
-    }
-
-    getSlotCount() {
-      return getSlotCount();
     }
 
     setHitEventThreshold(value) {
@@ -1143,10 +1040,6 @@ function createPhysicsApi(Module) {
       destroyParticleGroup(groupId);
     }
 
-    setParticleSubSteps(steps) {
-      setParticleSubSteps(steps);
-    }
-
     setParticleTuning(tuning) {
       const t = tuning || {};
       setParticleTuning(
@@ -1179,50 +1072,6 @@ function createPhysicsApi(Module) {
       return getParticleGroupAlive(groupId | 0) | 0;
     }
 
-    getParticleGroupParticleCount(groupId) {
-      return getParticleGroupParticleCount(groupId | 0) | 0;
-    }
-
-    getParticleGroupCenterX(groupId) {
-      return getParticleGroupCenterX(groupId | 0);
-    }
-
-    getParticleGroupCenterY(groupId) {
-      return getParticleGroupCenterY(groupId | 0);
-    }
-
-    getParticleGroupVx(groupId) {
-      return getParticleGroupVx(groupId | 0);
-    }
-
-    getParticleGroupVy(groupId) {
-      return getParticleGroupVy(groupId | 0);
-    }
-
-    getParticleGroupAngularVelocity(groupId) {
-      return getParticleGroupAngularVelocity(groupId | 0);
-    }
-
-    getParticleGroupAngle(groupId) {
-      return getParticleGroupAngle(groupId | 0);
-    }
-
-    getParticleGroupViscousScale(groupId) {
-      return getParticleGroupViscousScale(groupId | 0);
-    }
-
-    getParticleGroupFirstIndex(groupId) {
-      return getParticleGroupFirstIndex(groupId | 0) | 0;
-    }
-
-    getParticleGroupLastIndex(groupId) {
-      return getParticleGroupLastIndex(groupId | 0) | 0;
-    }
-
-    getParticleGroupFlags(groupId) {
-      return getParticleGroupFlags(groupId | 0) >>> 0;
-    }
-
     joinParticleGroups(groupA, groupB) {
       joinParticleGroups(groupA | 0, groupB | 0);
     }
@@ -1245,18 +1094,6 @@ function createPhysicsApi(Module) {
 
     particleGroupApplyLinearImpulse(groupId, ix, iy) {
       particleGroupApplyLinearImpulse(groupId | 0, ix, iy);
-    }
-
-    particleQueryAabb(x0, y0, x1, y1) {
-      const n = particleQueryAabb(x0, y0, x1, y1) | 0;
-      if (n <= 0) return [];
-      return Array.from(Module.HEAP32.subarray(particleQueryHitsI32, particleQueryHitsI32 + n));
-    }
-
-    particleRayCast(x1, y1, x2, y2) {
-      const n = particleRayCast(x1, y1, x2, y2) | 0;
-      if (n <= 0) return [];
-      return Array.from(Module.HEAP32.subarray(particleQueryHitsI32, particleQueryHitsI32 + n));
     }
 
     /** Fill Int32Array results without allocating; returns the hit count (the WASM stops at 4096). */
@@ -1590,28 +1427,8 @@ function createPhysicsApi(Module) {
       return getLiquidFunStepMs();
     }
 
-    getLfParticleContactCount() {
-      return getLfParticleContactCount();
-    }
-
-    getParticleCapacity() {
-      return getParticleCapacity();
-    }
-
-    getParticleRadius() {
-      return getParticleRadius();
-    }
-
     getParticleCountByteOffset() {
       return getParticleCountByteOffset();
-    }
-
-    getParticlePosByteOffset() {
-      return getParticlePosByteOffset();
-    }
-
-    getParticleVelByteOffset() {
-      return getParticleVelByteOffset();
     }
 
     getParticleFlagsByteOffset() {
