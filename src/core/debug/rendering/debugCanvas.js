@@ -185,6 +185,8 @@ export class DebugCanvas {
   }
 
   _bindVisPoly(scene) {
+    // The lamps' pools and cones are drawn on the floor with or without wall rows: the floor's scale is the camera's.
+    this._vpFloorScaleY = cameraFloorScaleY(scene?.config);
     const buffers = scene?.buffers;
     const a = buffers?.wallRowsDataA;
     const b = buffers?.wallRowsDataB;
@@ -196,7 +198,6 @@ export class DebugCanvas {
     const maxVerts = scene.maxPolygonVertices || scene.config?.lighting?.maxPolygonVertices || 128;
     const rows = wallRowsLayout(scene.config?.lighting?.maxLights || 128, maxVerts);
     this._vpRowFloats = rows.rowFloats;
-    this._vpFloorScaleY = cameraFloorScaleY(scene.config);
     const views = (sab) => ({
       header: new Int32Array(sab, 0, rows.headerInts),
       f32: new Float32Array(sab, rows.rowsByte, rows.lights * rows.rowFloats),

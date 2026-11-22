@@ -1171,32 +1171,62 @@ export class PhysicsDebugRenderer {
     this._uprightLabel(ctx, camera, text, lx, ly, 'rgba(0, 0, 0, 1.0)', 'rgba(255, 200, 100, 0.9)', tw, 4, -12, 16);
   }
 
+  /**
+   * Each lamp where the light pass puts it: its floor point (the entity's, moved by its offset, which the entity's turn
+   * turns), its reach as the pool on the floor (an ellipse floorScaleY as tall as wide), and a cone light's wedge on
+   * the floor (the entity's facing turns the light's direction, as in lighting.js). Then, with lighting.walls, what
+   * each lamp sees past the walls.
+   */
   drawLights(ctx, canvas, camera, zoom, flags, pose, visPoly) {
     const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
     const pos = this._pos;
     const active = LightEmitter.active;
+    const floorScaleY = visPoly && visPoly.floorScaleY > 0 ? visPoly.floorScaleY : 1;
     if (active) {
       const n = active.length;
-      ctx.strokeStyle = 'rgba(255, 220, 80, 0.7)';
+      const offX = LightEmitter.offsetX;
+      const offY = LightEmitter.offsetY;
+      const rotC = Transform.rotC;
+      const rotS = Transform.rotS;
       ctx.lineWidth = 1.5;
       for (let i = 0; i < n; i++) {
         if (!active[i] || !Transform.active[i]) continue;
         if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
         this._worldXY(i, pose, pos);
-        const sx = (pos.x - camera.x) * zoom;
-        const sy = (pos.y - camera.y) * zoom;
-        ctx.fillStyle = 'rgba(255, 220, 80, 0.95)';
+        const rc = rotC ? rotC[i] : 1;
+        const rs = rotS ? rotS[i] : 0;
+        const ox = offX ? offX[i] : 0;
+        const oy = offY ? offY[i] : 0;
+        const sx = (pos.x + ox * rc - oy * rs - camera.x) * zoom;
+        const sy = (pos.y + ox * rs + oy * rc - camera.y) * zoom;
+        const on = LightEmitter.brightness[i] > 0;
+        ctx.fillStyle = on ? 'rgba(255, 220, 80, 0.95)' : 'rgba(160, 160, 160, 0.8)';
         ctx.beginPath();
         ctx.arc(sx, sy, 4, 0, Math.PI * 2);
         ctx.fill();
-        const range = Collider.visualRange?.[i] || 0;
-        const influence = LightEmitter.radius?.[i] || 0;
-        const r = (range > influence ? range : influence) * zoom;
-        if (r > 2) {
+        const r = (LightEmitter.radius[i] || 0) * zoom;
+        if (!(r > 2)) continue;
+        ctx.strokeStyle = on ? 'rgba(255, 220, 80, 0.75)' : 'rgba(160, 160, 160, 0.5)';
+        const half = LightEmitter.coneHalf[i];
+        if (!(half < Math.PI - 1e-4)) {
           ctx.beginPath();
-          ctx.arc(sx, sy, r, 0, Math.PI * 2);
+          ctx.ellipse(sx, sy, r, r * floorScaleY, 0, 0, Math.PI * 2);
           ctx.stroke();
+          continue;
         }
+        // The cone's axis on the floor (y over floorScaleY), then its wedge there, drawn back with y times floorScaleY.
+        const dc = LightEmitter.dirC[i];
+        const ds = LightEmitter.dirS[i];
+        const axis = Math.atan2((rs * dc + rc * ds) / floorScaleY, rc * dc - rs * ds);
+        const steps = 24;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        for (let k = 0; k <= steps; k++) {
+          const a = axis - half + (2 * half * k) / steps;
+          ctx.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r * floorScaleY);
+        }
+        ctx.closePath();
+        ctx.stroke();
       }
     }
 
@@ -1205,10 +1235,10 @@ export class PhysicsDebugRenderer {
     if (!visPoly || !visPoly.buf || visPoly.lightCount < 1) return;
     const f32 = visPoly.buf.f32;
     const rowFloats = visPoly.rowFloats;
-    const floorScaleY = visPoly.floorScaleY;
     const lightCount = visPoly.lightCount;
-    ctx.strokeStyle = 'rgba(255, 180, 40, 0.85)';
-    ctx.lineWidth = 1.5;
+    // Fainter than the pools and cones above: with many lamps the walls' outlines would hide them.
+    ctx.strokeStyle = 'rgba(255, 150, 40, 0.35)';
+    ctx.lineWidth = 1;
     for (let li = 0; li < lightCount; li++) {
       const row = li * rowFloats;
       const vertCount = f32[row] | 0;
