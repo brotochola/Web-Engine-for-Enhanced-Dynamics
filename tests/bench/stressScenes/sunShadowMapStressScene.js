@@ -40,6 +40,8 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
  * - `?lamps=` (E-386 c; default 0): that many raised lamps on a grid, casting into the lamps' map (lighting.lampShadows
  *   'map') over the same renders, each through its columns or card as `?kind=` says; with `?hour=22` the night, the
  *   lamps alone. `?lampElevation=` their height (default 110 px). Left at 0, the scene is as its sittings ran it.
+ * - `?shadows=layer` (E-531): the sun's and the lamps' shadows on the classic shadows' layer instead of their maps (the
+ *   default `map`), the arm that weighs one against the other; with `?kind=sprite` both cast the same silhouettes.
  */
 const W = 3840;
 const H = 2160;
@@ -64,6 +66,8 @@ export const HOUR = paramNumber('hour', DAY_CYCLE > 0 ? 13 : 16);
 export const BACKEND = paramBackend();
 export const LAMPS = paramCount('lamps', 0, 0, 256);
 export const LAMP_ELEVATION = Math.max(1, paramNumber('lampElevation', 110));
+/** E-531: `?shadows=layer` the sun's and the lamps' shadows on the classic shadows' layer, to weigh against the maps. */
+export const SHADOWS = param('shadows') === 'layer' ? 'layer' : 'map';
 
 export const stressSceneConfig = {
   requested: {
@@ -78,6 +82,7 @@ export const stressSceneConfig = {
     backend: BACKEND,
     lamps: LAMPS,
     lampElevation: LAMP_ELEVATION,
+    shadows: SHADOWS,
   },
 };
 
@@ -90,7 +95,7 @@ const lighting = {
   resolution: 0.5,
   shadowResolution: MAP_RES,
   shadowsEnabled: true,
-  sunShadows: 'map',
+  sunShadows: SHADOWS,
   // Shadows as dark as the light bench's (the owner approved them): a strong alpha, long shadows not lightened.
   sun: {
     enabled: true,
@@ -102,7 +107,7 @@ const lighting = {
   },
 };
 if (LAMPS > 0) {
-  lighting.lampShadows = 'map';
+  lighting.lampShadows = SHADOWS;
   lighting.maxLights = Math.max(64, LAMPS + 8);
   lighting.maxShadowCastingLights = LAMPS;
 }
