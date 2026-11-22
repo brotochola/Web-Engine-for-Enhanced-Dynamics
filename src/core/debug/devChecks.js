@@ -164,6 +164,25 @@ export function cellOverflow(entries, cap) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// DX-CONFIGCHECK: neighbour lists cut at spatial.maxNeighbors.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * A spatial worker's frame rebuilt `rows` neighbour lists whose candidates passed spatial.maxNeighbors: each keeps the
+ * first `cap` the grid scan met, in cell order, not the nearest, so neighbours in range go missing, silently.
+ */
+export function neighborCapHit(rows, cap) {
+  if (!on || !(rows > 0)) return;
+  warnOnce(
+    'spatial',
+    'neighbor-cap',
+    `${rows} neighbour lists in a frame reached spatial.maxNeighbors (${cap}): each holds the first ${cap} candidates the ` +
+      'grid scan met, in cell order, not the nearest, so some neighbours in range are missing from it. Raise ' +
+      'spatial.maxNeighbors, or give those entities a smaller range (visualRange or their light\'s reach).',
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // DX-STATICSGEN: a sprite's statics written without renderDirty and keyedDirty.
 // ---------------------------------------------------------------------------------------------------------------------
 

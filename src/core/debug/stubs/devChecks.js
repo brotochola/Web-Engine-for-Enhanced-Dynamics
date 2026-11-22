@@ -14,5 +14,6 @@ export function slotReleased() {}
 export function checkEmit() {}
 export function unknownKey() {}
 export function cellOverflow() {}
+export function neighborCapHit() {}
 export function staticsBeforeEmit() {}
 export function staticsAfterEmit() {}

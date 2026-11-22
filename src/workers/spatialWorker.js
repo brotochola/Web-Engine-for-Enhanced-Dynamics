@@ -44,7 +44,7 @@ import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRend
 import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { Grid as GridImport } from '../core/grid.js';
-import { cellOverflow } from '../core/debug/devChecks.js';
+import { cellOverflow, neighborCapHit } from '../core/debug/devChecks.js';
 import {
   SPATIAL_STATS,
   createMultiWorkerStatsWriter,
@@ -279,6 +279,8 @@ class SpatialWorker extends AbstractWorker {
     this._noBodyCount = 0;
     /** N-325: entries past maxEntitiesPerCell in this worker's rows, kept by every grid pass (SPATIAL_STATS.CELL_OVERFLOW). */
     this._cellOverflow = 0;
+    /** DX-CONFIGCHECK: rows rebuilt this frame whose candidates passed maxNeighbors (a debug warning, neighborCapHit). */
+    this._neighborCapHits = 0;
     this._neighborCandidateTruncated = null;
     this._entityFramesSinceBuild = null;
 
@@ -2282,6 +2284,7 @@ class SpatialWorker extends AbstractWorker {
     const framesSinceBuild = this._entityFramesSinceBuild;
     const entityPosData = this.entityPosData;
     let queued = pub.queued;
+    let capped = 0;
     for (let k = 0; k < rebuilds; k++) {
       const entityA = rebuild[k];
       candCountOf[entityA] = cand[entityA * stride];
@@ -2295,9 +2298,11 @@ class SpatialWorker extends AbstractWorker {
         // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
         reuseInitialized[entityA] = 0;
         framesSinceBuild[entityA] = 0;
+        capped++;
       }
     }
     pub.queued = queued;
+    this._neighborCapHits += capped;
   }
 
   /** The WASM publish of every entity queued this frame (the search ends here). */
@@ -2365,6 +2370,8 @@ class SpatialWorker extends AbstractWorker {
     this.stats[SPATIAL_STATS.NEIGHBORS_PUBLISHED] = this.neighborsPublishedThisFrame;
     this.stats[SPATIAL_STATS.CELL_OVERFLOW] = this._cellOverflow;
     cellOverflow(this._cellOverflow, Grid.maxEntitiesPerCell);
+    neighborCapHit(this._neighborCapHits, Grid.maxNeighbors);
+    this._neighborCapHits = 0;
     if (!this.collectDetailedStats) return;
     this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
     this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;

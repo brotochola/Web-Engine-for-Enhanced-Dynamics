@@ -466,3 +466,21 @@ test('entities past a full grid cell warn once, with the count and the fix; none
   });
   assert.deepEqual(off, []);
 });
+
+// DX-CONFIGCHECK: a neighbour list cut at maxNeighbors keeps the grid scan's first candidates, and nothing said so.
+test('neighbour lists cut at spatial.maxNeighbors warn once, with the count and the fix; none cut, nothing', () => {
+  const lines = warningsOf(() => {
+    real.neighborCapHit(0, 64);
+    real.neighborCapHit(37, 64);
+    real.neighborCapHit(40, 64);
+  });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /37 neighbour lists in a frame reached spatial\.maxNeighbors \(64\)/);
+  assert.match(lines[0], /not the nearest/);
+  assert.match(lines[0], /Raise spatial\.maxNeighbors/);
+  const off = warningsOf(() => {
+    real.setDevChecks(false);
+    real.neighborCapHit(37, 64);
+  });
+  assert.deepEqual(off, []);
+});
