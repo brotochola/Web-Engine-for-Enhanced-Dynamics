@@ -335,6 +335,8 @@ export class PerformancePanel extends DebugPanel {
     }
 
     if (!hasClock) {
+      // Its own layout (debugUi.css .no-clock): the title on a line of its own, the counters wrapped below it.
+      row.classList.add('no-clock');
       for (let s = 0; s < config.stats.length; s++) {
         const stat = config.stats[s];
         const cell = this._metricCell(config.color, stat.key);

@@ -430,6 +430,32 @@
   opacity: 0.62;
 }
 
+/* A row with no clock (the GPU row): its title, the GPU's whole name, on a line of its own and its counters wrapped
+   below it; the clock rows' grid has no room for either. */
+.debug-ui-worker-row.no-clock .debug-ui-worker-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 16px;
+  width: auto;
+}
+
+.debug-ui-worker-row.no-clock .debug-ui-worker-chevron,
+.debug-ui-worker-row.no-clock .debug-ui-worker-load-track {
+  display: none;
+}
+
+.debug-ui-worker-row.no-clock .debug-ui-worker-row-label {
+  flex-basis: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.debug-ui-worker-row.no-clock .debug-ui-worker-metric {
+  overflow: visible;
+  font-size: 11px;
+}
+
 @media (max-width: 900px) {
   .debug-ui-worker-row-head {
     grid-template-columns: 1.1rem 6rem 6.25rem 6.25rem 6.25rem 120px;
