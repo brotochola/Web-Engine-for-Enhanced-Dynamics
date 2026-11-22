@@ -62,29 +62,34 @@ let _lfRequestSeq = 1;
  * @param {number} [timeoutMs]
  */
 export function requestLiquidFunSnapshot(physicsWorker, timeoutMs = 5000) {
+  if (!physicsWorker) return Promise.resolve(null);
+  return askPhysicsWorker(physicsWorker, { msg: 'snapshotLiquidFun' }, 'liquidFunSnapshot', timeoutMs, 'LiquidFun snapshot timeout')
+    .then((data) => data.snapshot || null);
+}
+
+/**
+ * Post `message` (with a new requestId) to the physics worker and resolve with the data of its `replyMsg` for that id,
+ * or reject with `timeoutText` after timeoutMs (N-303 CR-24: one skeleton for the snapshot and the restore).
+ */
+function askPhysicsWorker(physicsWorker, message, replyMsg, timeoutMs, timeoutText, transfer = []) {
   return new Promise((resolve, reject) => {
-    if (!physicsWorker) {
-      resolve(null);
-      return;
-    }
     const requestId = _lfRequestSeq++;
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error('LiquidFun snapshot timeout'));
+      reject(new Error(timeoutText));
     }, timeoutMs);
-
     function onMessage(e) {
-      if (!e?.data || e.data.msg !== 'liquidFunSnapshot') return;
+      if (!e?.data || e.data.msg !== replyMsg) return;
       if ((e.data.requestId | 0) !== requestId) return;
       cleanup();
-      resolve(e.data.snapshot || null);
+      resolve(e.data);
     }
     function cleanup() {
       clearTimeout(timer);
       physicsWorker.removeEventListener('message', onMessage);
     }
     physicsWorker.addEventListener('message', onMessage);
-    physicsWorker.postMessage({ msg: 'snapshotLiquidFun', requestId });
+    physicsWorker.postMessage({ ...message, requestId }, transfer);
   });
 }
 
@@ -95,52 +100,30 @@ export function requestLiquidFunSnapshot(physicsWorker, timeoutMs = 5000) {
  * @param {number} [timeoutMs]
  */
 export function requestLiquidFunRestore(physicsWorker, payload, timeoutMs = 5000) {
-  return new Promise((resolve, reject) => {
-    if (!physicsWorker) {
-      resolve({ ok: false, reason: 'no-worker' });
-      return;
-    }
-    const requestId = _lfRequestSeq++;
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('LiquidFun restore timeout'));
-    }, timeoutMs);
-
-    function onMessage(e) {
-      if (!e?.data || e.data.msg !== 'liquidFunRestoreComplete') return;
-      if ((e.data.requestId | 0) !== requestId) return;
-      cleanup();
-      resolve(e.data.result || { ok: false });
-    }
-    function cleanup() {
-      clearTimeout(timer);
-      physicsWorker.removeEventListener('message', onMessage);
-    }
-
-    const transfer = [];
-    const pushBuf = (a) => {
-      if (a && a.buffer) transfer.push(a.buffer);
-    };
-    pushBuf(payload?.x);
-    pushBuf(payload?.y);
-    pushBuf(payload?.vx);
-    pushBuf(payload?.vy);
-    pushBuf(payload?.flags);
-    pushBuf(payload?.userData);
-    pushBuf(payload?.color);
-    pushBuf(payload?.groupIndex);
-    pushBuf(payload?.restOffset);
-    if (payload?.groups) {
-      for (const k of Object.keys(payload.groups)) pushBuf(payload.groups[k]);
-    }
-    if (payload?.pairs) {
-      for (const k of Object.keys(payload.pairs)) pushBuf(payload.pairs[k]);
-    }
-    if (payload?.render) {
-      for (const k of Object.keys(payload.render)) pushBuf(payload.render[k]);
-    }
-    pushBuf(payload?.groupsLightIntensity);
-    physicsWorker.addEventListener('message', onMessage);
-    physicsWorker.postMessage({ msg: 'restoreLiquidFun', requestId, payload }, transfer);
-  });
+  if (!physicsWorker) return Promise.resolve({ ok: false, reason: 'no-worker' });
+  const transfer = [];
+  const pushBuf = (a) => {
+    if (a && a.buffer) transfer.push(a.buffer);
+  };
+  pushBuf(payload?.x);
+  pushBuf(payload?.y);
+  pushBuf(payload?.vx);
+  pushBuf(payload?.vy);
+  pushBuf(payload?.flags);
+  pushBuf(payload?.userData);
+  pushBuf(payload?.color);
+  pushBuf(payload?.groupIndex);
+  pushBuf(payload?.restOffset);
+  if (payload?.groups) {
+    for (const k of Object.keys(payload.groups)) pushBuf(payload.groups[k]);
+  }
+  if (payload?.pairs) {
+    for (const k of Object.keys(payload.pairs)) pushBuf(payload.pairs[k]);
+  }
+  if (payload?.render) {
+    for (const k of Object.keys(payload.render)) pushBuf(payload.render[k]);
+  }
+  pushBuf(payload?.groupsLightIntensity);
+  return askPhysicsWorker(physicsWorker, { msg: 'restoreLiquidFun', payload }, 'liquidFunRestoreComplete', timeoutMs,
+    'LiquidFun restore timeout', transfer).then((data) => data.result || { ok: false });
 }

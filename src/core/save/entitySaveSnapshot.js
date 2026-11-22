@@ -617,14 +617,7 @@ function encodeUtf8(str) {
  * @returns {Uint8Array}
  */
 export function encodeSaveUncompressed(payload) {
-  const body = encodeBinarySaveBody(payload);
-  const magicBytes = encodeUtf8(SAVE_MAGIC);
-  const out = new Uint8Array(magicBytes.length + 4 + body.byteLength);
-  out.set(magicBytes, 0);
-  const view = new DataView(out.buffer);
-  view.setUint32(magicBytes.length, SAVE_FORMAT_VERSION, true);
-  out.set(body, magicBytes.length + 4);
-  return out;
+  return frameSave(encodeBinarySaveBody(payload));
 }
 
 /**
@@ -632,6 +625,21 @@ export function encodeSaveUncompressed(payload) {
  * @returns {object}
  */
 export function decodeSaveUncompressed(data) {
+  return payloadOf(decodeBinarySaveBody(unframeSave(data)));
+}
+
+/** The file around a body (N-303 CR-24: one framing for both forms): the magic, the u32 format version, the body. */
+function frameSave(body) {
+  const magicBytes = encodeUtf8(SAVE_MAGIC);
+  const out = new Uint8Array(magicBytes.length + 4 + body.byteLength);
+  out.set(magicBytes, 0);
+  new DataView(out.buffer).setUint32(magicBytes.length, SAVE_FORMAT_VERSION, true);
+  out.set(body, magicBytes.length + 4);
+  return out;
+}
+
+/** The body of a file, once its magic and version are this build's (any other throws). */
+function unframeSave(data) {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   const magicBytes = encodeUtf8(SAVE_MAGIC);
   for (let i = 0; i < magicBytes.length; i++) {
@@ -644,13 +652,11 @@ export function decodeSaveUncompressed(data) {
   if (formatVersion !== SAVE_FORMAT_VERSION) {
     throw new Error(`SaveGame: unsupported formatVersion ${formatVersion}`);
   }
-  const body = bytes.subarray(magicBytes.length + 4);
-  const decoded = decodeBinarySaveBody(body);
-  return {
-    magic: SAVE_MAGIC,
-    formatVersion: SAVE_FORMAT_VERSION,
-    ...decoded,
-  };
+  return bytes.subarray(magicBytes.length + 4);
+}
+
+function payloadOf(decoded) {
+  return { magic: SAVE_MAGIC, formatVersion: SAVE_FORMAT_VERSION, ...decoded };
 }
 
 export async function deflateBytes(input) {
@@ -680,14 +686,7 @@ export async function inflateBytes(input) {
  * @returns {Promise<Uint8Array>}
  */
 export async function encodeSave(payload) {
-  const body = encodeBinarySaveBody(payload);
-  const compressed = await deflateBytes(body);
-  const magicBytes = encodeUtf8(SAVE_MAGIC);
-  const out = new Uint8Array(magicBytes.length + 4 + compressed.byteLength);
-  out.set(magicBytes, 0);
-  new DataView(out.buffer).setUint32(magicBytes.length, SAVE_FORMAT_VERSION, true);
-  out.set(compressed, magicBytes.length + 4);
-  return out;
+  return frameSave(await deflateBytes(encodeBinarySaveBody(payload)));
 }
 
 /**
@@ -695,25 +694,7 @@ export async function encodeSave(payload) {
  * @returns {Promise<object>}
  */
 export async function decodeSave(compressed) {
-  const bytes = compressed instanceof Uint8Array ? compressed : new Uint8Array(compressed);
-  const magicBytes = encodeUtf8(SAVE_MAGIC);
-  for (let i = 0; i < magicBytes.length; i++) {
-    if (bytes[i] !== magicBytes[i]) {
-      throw new Error('SaveGame: bad magic');
-    }
-  }
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const formatVersion = view.getUint32(magicBytes.length, true);
-  if (formatVersion !== SAVE_FORMAT_VERSION) {
-    throw new Error(`SaveGame: unsupported formatVersion ${formatVersion}`);
-  }
-  const body = await inflateBytes(bytes.subarray(magicBytes.length + 4));
-  const decoded = decodeBinarySaveBody(body);
-  return {
-    magic: SAVE_MAGIC,
-    formatVersion: SAVE_FORMAT_VERSION,
-    ...decoded,
-  };
+  return payloadOf(decodeBinarySaveBody(await inflateBytes(unframeSave(compressed))));
 }
 
 export function shouldSaveEntity(EntityClass, entityIndex, transformLike = Transform) {
