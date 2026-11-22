@@ -23087,8 +23087,8 @@
     {
       "id": "N-291",
       "title": "Moving the camera changes the shading of things near the screen's right edge, as it did near the bottom edge: likely N-272's (the self-shadow march reads the face map's edge texel past the screen) with the sun's march toward that edge",
-      "status": "open",
-      "statusText": "2026-11-21 (R-1684): N-272 v3 is on main now; films of the barrio panning (main beside v3, WebGL and WebGPU, D:/tmp/films/n272-barrio-*.mp4) wait for the owner's eye. If the right edge still drifts, find what else reads past the screen there (light tiles, lightEdges, the half-resolution light pass).",
+      "status": "kept",
+      "statusText": "Closed 2026-11-21 (R-1693) with N-272: the owner saw the barrio films, no drift at the edges.",
       "date": "2026-11-18",
       "result": "",
       "next": "Pan the barrio by day with the sun's march toward the right edge (film the drift), main against exp/n272-ring (N-272 v3, the empty ring), WebGL and WebGPU. If v3 fixes both edges, close it with N-272; if not, find what else reads past the screen on that side (the light tiles, lightEdges, the half-resolution light pass).",
@@ -23100,7 +23100,8 @@
         "screen edge shading drifts"
       ],
       "records": [
-        "R-1684"
+        "R-1684",
+        "R-1693"
       ]
     },
     {
@@ -40918,6 +40919,15 @@
       "title": "Chrome's GPU process traced with and without decoder tracing: glObjectLabelKHR is the tracing's own (E-415), fences 1.9 ms/s (E-416), the time goes with commands, draws and uploads (E-412)",
       "verdict": "note",
       "text": "**Chrome's GPU process on Predator light3d by day, traced again (2026-11-21, main e1ebf567, gpuProcessTrace, `light3d=1&hour=12&zoom=0.3`, 3 s after 12 s, GTX 1650), without and with --enable-gpu-service-tracing.**\n\n- CrGpuMain: 252.4 ms/s in slices untraced, 273.6 traced; CommandBufferService:PutChanged 185.2 ms/s total untraced, 226.6 traced. The decoder's tracing costs about 21 ms/s of the thread and 41 of PutChanged.\n- E-415 answered: glObjectLabelKHR (16.3 ms/s, 10 892 a second) shows only in the traced run, inside that 41 ms/s: Chrome labels resources for its own tracing; the page creates none a frame (glFrameRecorder). Not a cost of the game.\n- E-412's breakdown (traced): PutChanged's own 87.2 ms/s (decoding and validating commands, by count), glDrawElementsInstancedANGLE 33.9 (718 a second, 12 a frame), glFlush 16.3 (one a frame), glBufferSubData 13.7 (599 a second), glTexSubImage2D 12.1 (559 a second), glDrawElements 11.6 (19 a frame), glBindTexture 6.1 + glActiveTexture 3.8 (95 and 61 a frame), glGetGraphicsResetStatusARB 2.7, uniforms about 4, glClientWaitSync 1.9 (387 a second). So the GPU process's time goes with commands, draws and uploads: fewer uploads (E-395's caster rows, 1.14 MB a frame in map mode; E-392's pose texture) and fewer draws move it; texture binds (E-417) are about 4 % of the thread.\n- E-416 answered: the fence waits are 1.9 ms/s (0.03 ms a frame): not worth a change."
+    },
+    {
+      "id": "R-1693",
+      "date": "2026-11-21",
+      "time": "21:33",
+      "timeFrom": "recorded",
+      "title": "N-291 closed: the owner saw the barrio films and the edges hold (N-272 v3)",
+      "verdict": "kept",
+      "text": "**N-291 closed with N-272 (the owner, 2026-11-21: \"N-291 está ok ... en los mp4 se ve todo bien\").** The barrio films (pan=60, panY=60, noon; main beside N-272 v3, WebGL and WebGPU, R-1684) showed the owner no shading that drifts near the right or the bottom edge as the camera moves: the self-shadow march reads the face map's empty ring past the screen since v3."
     }
   ],
   "leads": [
