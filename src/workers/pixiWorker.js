@@ -5703,13 +5703,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightData[i3] = 1;
       lightData[i3 + 1] = 0;
       lightData[i3 + 2] = entityIndex < wallRowOf.length ? wallRowOf[entityIndex] : 0;
+      lightData[i3 + 3] = 0;
       if (entityIndex < tileOf.length) {
         const tile = tileOf[entityIndex];
-        // DX-GBUF: with the ids map, -(tile + 1 + 256 · its entity's id), so a pixel of its own entity does not shade from
-        // it (lightingBasic lampOwner); tiles from 256 on go untagged there.
         if (tile >= 0 && h > 0) {
-          if (!ids) lightData[i0 + 3] = -(tile + 1);
-          else if (tile < 256) lightData[i0 + 3] = -(tile + 1 + 256 * gbufEntityId(entityIndex));
+          lightData[i0 + 3] = -(tile + 1);
+          // DX-GBUF: with the ids map, its entity's id in the fourth row's w, so a pixel of its own entity does not shade
+          // from it (lightingBasic lampOwner). N-189: it rode in the tag, -(tile + 1 + 256 · id), which held 256 tiles.
+          if (ids) lightData[i3 + 3] = gbufEntityId(entityIndex);
           if (entityIndex < fadeOf.length) lightData[i3] = fadeOf[entityIndex];
           // E-510: how far its shadows reach, where its shadowRange is under its radius (its tile spans that).
           const shadowRange = lightShadowRange[entityIndex];

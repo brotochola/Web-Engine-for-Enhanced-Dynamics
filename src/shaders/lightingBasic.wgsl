@@ -266,23 +266,14 @@ fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
 
 // #if LAMPMAP
 // DX-SHADOW3D (F7): the lamps' shadow map (lightingBasic.frag.glsl's lampVisibility, the atlas read texel by texel).
-// DX-GBUF: with the ids map a tag is -(tile + 1 + 256 · the lamp's entity id) (lampTile, lampOwner).
+// A tag is -(tile + 1). DX-GBUF: the lamp's entity id is in its light's fourth row's w (lampOwner; N-189: it rode in the
+// tag, which held 256 tiles only).
 fn lampTile(tag: f32) -> i32 {
-// #if IDS
-  return i32((-tag - 1.0) % 256.0 + 0.5);
-// #endif IDS
-// #if !IDS
   return i32(-tag - 1.0 + 0.5);
-// #endif !IDS
 }
 
-fn lampOwner(tag: f32) -> f32 {
-// #if IDS
-  return select(0.0, floor((-tag - 1.0) / 256.0), tag < 0.0);
-// #endif IDS
-// #if !IDS
-  return 0.0;
-// #endif !IDS
+fn lampOwner(li: i32) -> f32 {
+  return textureLoad(uLightData, vec2<i32>(li, 3), 0).w;
 }
 
 // DX-LAMPPANO: a landing into its half tile, 0..1 (lightingBasic.frag.glsl's lampPanoUv).
@@ -561,7 +552,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #if SELFSHADOW
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
     // of the lamp's own entity.
-    let lampOwn = selfId > 0.5 && abs(lampOwner(posInt.w) - selfId) < 0.5;
+    let lampOwn = selfId > 0.5 && abs(lampOwner(i) - selfId) < 0.5;
     // Only inside the lamp's radius (its tile's reach: I' = (radius / 10)² + h²): past it the lamp gives under
     // 1 % of its light and its map casts nothing, while the steps cost what they cost near it (E-365: with 32 lamps they were
     // 96 % of the pass).

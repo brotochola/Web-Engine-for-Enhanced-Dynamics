@@ -224,29 +224,19 @@ float sunVisibility(vec3 p, float selfId) {
 // side, the floor's (what is lower than the lamp) and the ceiling's (what is higher, mirrored in the lamp's height: there
 // a texel keeps the lowest caster point), each landing compressed into its half out to the horizon (lampPanoUv). A light with a tile carries -(tile + 1) in its first row's w
 // (its range's square otherwise, which this pass does not read); its tile reaches its radius, which its intensity and
-// height give back (I' = (radius / 10)² + h²). DX-GBUF: with the ids map the tag is -(tile + 1 + 256 · the lamp's entity
-// id): tiles under 256, and a pixel of the lamp's own entity does not step towards it (lampOwner).
+// height give back (I' = (radius / 10)² + h²). DX-GBUF: with the ids map a pixel of the lamp's own entity does not step
+// towards it (lampOwner: its id in the light's fourth row's w, N-189; it rode in the tag, which held 256 tiles only).
 uniform sampler2D uLampMap;
 uniform vec4 uLampAtlas; // tiles a row, a tile's texels, the atlas's width and height in texels
 
 // A lamp's tile from its tag.
 float lampTile(float tag) {
-// #if IDS
-  return mod(-tag - 1.0, 256.0);
-// #endif IDS
-// #if !IDS
   return -tag - 1.0;
-// #endif !IDS
 }
 
-// A lamp's entity id from its tag (0 none).
-float lampOwner(float tag) {
-// #if IDS
-  return tag < 0.0 ? floor((-tag - 1.0) / 256.0) : 0.0;
-// #endif IDS
-// #if !IDS
-  return 0.0;
-// #endif !IDS
+// Light li's entity id in the G-buffer (0 none, and always 0 without the ids map): its fourth row's w.
+float lampOwner(int li) {
+  return texelFetch(uLightData, ivec2(li, 3), 0).w;
 }
 
 // DX-LAMPPANO: a landing (its offset from the lamp on the floor) into its half tile, 0..1 (lampShadowMap.js lampPanoUv:
@@ -545,7 +535,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #if SELFSHADOW
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
     // of the lamp's own entity (a lamp post's own top, a car's own headlights).
-    bool lampOwn = selfId > 0.5 && abs(lampOwner(posInt.w) - selfId) < 0.5;
+    bool lampOwn = selfId > 0.5 && abs(lampOwner(i) - selfId) < 0.5;
     // Only inside the lamp's radius (its tile's reach: I' = (radius / 10)² + h²): past it the lamp gives under
     // 1 % of its light and its map casts nothing, while the steps cost what they cost near it (E-365: with 32 lamps they were
     // 96 % of the pass).
