@@ -16,9 +16,9 @@ test('Query.queryActiveEntities throws when the pair is not precomputed', { conc
   );
 });
 
-test('Query.bindWorker uses SAB closures instead of the main-thread system', { concurrency: false }, () => {
+test('Query calls the system it is bound to (a worker\'s QuerySystem.fromSerialized, or a stand-in)', { concurrency: false }, () => {
   Query.reset();
-  Query.bindWorker({
+  Query.bindSystem({
     query: () => new Uint16Array([7, 8]),
     queryActiveEntities: () => new Uint16Array([9]),
     queryActiveEntitiesSlow: () => new Uint16Array([10, 11, 12]),
@@ -28,8 +28,8 @@ test('Query.bindWorker uses SAB closures instead of the main-thread system', { c
   assert.deepEqual(Array.from(Query.queryActiveEntitiesSlow([])), [10, 11, 12]);
 });
 
-test('Query.reset clears worker bind and starts a fresh system', { concurrency: false }, () => {
-  Query.bindWorker({
+test('Query.reset drops the bound system and starts a fresh one', { concurrency: false }, () => {
+  Query.bindSystem({
     query: () => new Uint16Array([1]),
     queryActiveEntities: () => new Uint16Array([2]),
     queryActiveEntitiesSlow: () => new Uint16Array([3]),

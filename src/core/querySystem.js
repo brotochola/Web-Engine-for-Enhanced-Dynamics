@@ -71,6 +71,8 @@ const QUERY_VERSION_BUFFER_SIZE = Int32Array.BYTES_PER_ELEMENT;
 
 /** Reusable empty result view for query misses */
 const EMPTY_QUERY_RESULT = new Uint16Array(0);
+/** Result buffers query() and queryActiveEntitiesSlow() take in turn. */
+const QUERY_BUFFER_POOL_SIZE = 4;
 
 // E-265: query masks by the classes themselves, for a classes array the identity cache has not seen (a literal written
 // in a tick, `Query.queryActiveEntities([SpriteRenderer])`, is a new array every call): one Map level per class, in
@@ -388,11 +390,80 @@ export class QuerySystem {
     this._typeActiveListOf = (typeIndex) => this._getTypeActiveList(typeIndex);
 
     /**
-     * Reusable buffer for query() results - avoids GC pressure from repeated allocations.
-     * Initialized in buildQueries() when entityMetadata is known.
-     * Result is a temporary view - consume immediately, do not store.
+     * Reusable buffers for query() and queryActiveEntitiesSlow() results, taken in turn (QUERY_BUFFER_POOL_SIZE: a few
+     * queries in one tick keep their results). Made once entityMetadata is known (buildQueries, fromSerialized). A
+     * result is a temporary view: consume it at once, do not store it.
      */
-    this._queryResultBuffer = null;
+    this._queryResultBuffers = [];
+    this._queryResultBufferIndex = 0;
+    /** The active entity list the walks read; null: GameObject.activeEntitiesData (fromSerialized may give its own). */
+    this.activeEntitiesData = null;
+    /** Each type's active list, found once: its class's _activeList (a worker finds the class on its global scope). */
+    this._typeActiveLists = [];
+    /** Component classes already warned about (no componentId, or one past MAX_COMPONENTS): once each. */
+    this._warnedComponents = new Set();
+  }
+
+  /**
+   * N-303 CR-26: a worker's QuerySystem, from the page's serialize() and the shared buffers: the same class the page
+   * runs, reading the published snapshots (queryActiveEntities), the type ranges (query) and the active list
+   * (queryActiveEntitiesSlow, publishPrecomputedActiveQueries).
+   * @param {Object} queryData - serialize()'s output
+   * @param {{ queryResultsSAB: SharedArrayBuffer }} buffers
+   * @param {Uint16Array|Uint32Array|null} activeEntitiesData - the active entity list (null: GameObject's)
+   * @param {Int32Array|null} queryVersionData - the shared invalidation counter of the slow queries' caches
+   * @returns {QuerySystem}
+   */
+  static fromSerialized(queryData, buffers, activeEntitiesData, queryVersionData = null) {
+    const system = new QuerySystem();
+    system.entityMetadata = queryData.metadata.map((m) => ({ ...m, componentMask: BigInt(m.componentMask) }));
+    system.precomputedQueries = queryData.precomputedQueries.map((q) => ({
+      ...q,
+      queryMask: BigInt(q.queryMask),
+      typeMask: BigInt(q.typeMask),
+      typeIndices: typeIndicesOf(BigInt(q.typeMask)),
+    }));
+    for (let i = 0; i < system.precomputedQueries.length; i++) {
+      const q = system.precomputedQueries[i];
+      system.queryMaskToIndex.set(q.queryMask, i);
+      system.queryToTypeIndices.set(q.queryMask, q.typeIndices);
+    }
+    system.queryEntityCapacity =
+      queryData.queryEntityCapacity ?? system.entityMetadata.reduce((sum, m) => sum + (m.poolSize || 0), 0);
+    system.queryResultsSAB = buffers.queryResultsSAB;
+    system._initializeQueryResultViews();
+    system.activeEntitiesData = activeEntitiesData || null;
+    system.queryVersionData = queryVersionData;
+    system._makeResultBuffers(system.entityMetadata.reduce((sum, m) => sum + m.poolSize, 0));
+    return system;
+  }
+
+  /** The result buffers, each `totalEntities` long. @private */
+  _makeResultBuffers(totalEntities) {
+    this._queryResultBuffers = [];
+    for (let i = 0; i < QUERY_BUFFER_POOL_SIZE; i++) this._queryResultBuffers.push(new (EntityIdArray())(totalEntities));
+    this._queryResultBufferIndex = 0;
+  }
+
+  /** The next result buffer in turn, or null before they are made. @private */
+  _nextResultBuffer() {
+    const buffers = this._queryResultBuffers;
+    if (buffers.length === 0) return null;
+    const buffer = buffers[this._queryResultBufferIndex];
+    this._queryResultBufferIndex = (this._queryResultBufferIndex + 1) % buffers.length;
+    return buffer;
+  }
+
+  /** The active entity list the walks read. @private */
+  _activeData() {
+    return this.activeEntitiesData || GameObject.activeEntitiesData;
+  }
+
+  /** One warning per component class. @private */
+  _warnComponent(ComponentClass, text) {
+    if (this._warnedComponents.has(ComponentClass)) return;
+    this._warnedComponents.add(ComponentClass);
+    console.warn(text);
   }
 
   /**
@@ -448,9 +519,9 @@ export class QuerySystem {
       );
     }
 
-    // Initialize reusable buffer for query() results (max size = total entities)
+    // The reusable result buffers (max size = total entities)
     const totalEntities = this.entityMetadata.reduce((sum, meta) => sum + meta.poolSize, 0);
-    this._queryResultBuffer = new (EntityIdArray())(totalEntities);
+    this._makeResultBuffers(totalEntities);
 
     this._logStatistics();
   }
@@ -628,13 +699,15 @@ export class QuerySystem {
     for (const ComponentClass of componentClasses) {
       const componentId = ComponentClass.componentId;
       if (componentId == null || typeof componentId !== 'number') {
-        console.warn(
+        this._warnComponent(
+          ComponentClass,
           `[QuerySystem] Component ${ComponentClass?.name || 'unknown'} has no componentId (got: ${componentId}). Was it registered?`
         );
         continue;
       }
       if (componentId >= MAX_COMPONENTS) {
-        console.warn(
+        this._warnComponent(
+          ComponentClass,
           `[QuerySystem] Component ${ComponentClass.name} has componentId ${componentId} >= MAX_COMPONENTS (${MAX_COMPONENTS})`
         );
         continue;
@@ -736,8 +809,8 @@ export class QuerySystem {
    * @private
    */
   _buildQueryResult(typeIndices) {
-    const buffer = this._queryResultBuffer;
-    if (!buffer) return new Uint16Array(0);
+    const buffer = this._nextResultBuffer();
+    if (!buffer) return EMPTY_QUERY_RESULT;
 
     let writeIndex = 0;
 
@@ -811,11 +884,10 @@ export class QuerySystem {
       return cachedEntry.subarray;
     }
 
-    // Get activeEntitiesData from GameObject
-    const activeData = GameObject.activeEntitiesData;
+    const activeData = this._activeData();
     if (currentVersion !== -1) {
       if (!cachedEntry) {
-        cachedEntry = createCachedQueryEntry(this._queryResultBuffer?.length || 0);
+        cachedEntry = createCachedQueryEntry(this._queryResultBuffers.length > 0 ? this._queryResultBuffers[0].length : 0);
         this._fallbackActiveQueryCache.set(queryMask, cachedEntry);
       }
       if (activeData && activeData[0] === 0) {
@@ -831,11 +903,11 @@ export class QuerySystem {
       return updateCachedQueryEntry(cachedEntry, count, currentVersion);
     }
 
-    const buffer = this._queryResultBuffer;
-    if (!buffer) return EMPTY_QUERY_RESULT;
     if (activeData && activeData[0] === 0) {
       return EMPTY_QUERY_RESULT;
     }
+    const buffer = this._nextResultBuffer();
+    if (!buffer) return EMPTY_QUERY_RESULT;
 
     const count = copyActiveMatchesToBuffer(
       typeIndices,
@@ -849,12 +921,19 @@ export class QuerySystem {
   }
 
   _getTypeActiveList(typeIndex) {
+    const cached = this._typeActiveLists[typeIndex];
+    if (cached) return cached;
     const meta = this.entityMetadata[typeIndex];
-    return meta?.entityClass?._activeList || null;
+    if (!meta) return null;
+    // The page's metadata holds the class; a worker's (serialized) names it, and the worker's scope has it.
+    const EntityClass = meta.entityClass || globalThis[meta.className];
+    const activeList = EntityClass?._activeList || null;
+    if (activeList) this._typeActiveLists[typeIndex] = activeList;
+    return activeList;
   }
 
   publishPrecomputedActiveQueries(frameNumber = 0) {
-    const activeData = GameObject.activeEntitiesData;
+    const activeData = this._activeData();
 
     for (let q = 0; q < this.precomputedQueries.length; q++) {
       const query = this.precomputedQueries[q];
@@ -922,290 +1001,4 @@ export class QuerySystem {
   getPrecomputedQueryCount() {
     return this.precomputedQueries.length;
   }
-}
-
-// =============================================================================
-// WORKER-SIDE QUERY FUNCTION FACTORY
-// =============================================================================
-
-/**
- * Create query functions for use in workers
- * Called after receiving SAB references from main thread
- *
- * @param {Object} queryData - Serialized query data from main thread
- * @param {Object} buffers - SAB references { queryResultsSAB }
- * @param {Uint16Array} activeEntitiesData - Reference to active entities SAB
- * @param {Int32Array|null} queryVersionData - Shared invalidation counter for active-query result caches
- * @returns {Object} - { query, queryActiveEntities }
- */
-export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesData, queryVersionData = null) {
-  // Reconstruct metadata from serialized data
-  const entityMetadata = queryData.metadata.map((m) => ({
-    ...m,
-    componentMask: BigInt(m.componentMask), // string → BigInt
-  }));
-
-  // Reconstruct pre-computed queries
-  const precomputedQueries = queryData.precomputedQueries.map((q) => ({
-    ...q,
-    queryMask: BigInt(q.queryMask),
-    typeMask: BigInt(q.typeMask),
-    typeIndices: typeIndicesOf(BigInt(q.typeMask)),
-  }));
-
-  // Build queryMask → index lookup
-  const queryMaskToIndex = new Map();
-  precomputedQueries.forEach((q, i) => {
-    queryMaskToIndex.set(q.queryMask, i);
-  });
-
-  // Build queryMask → type indices cache (E-104: the walks read index lists, not BigInt masks)
-  const queryToTypeIndices = new Map();
-  precomputedQueries.forEach((q) => {
-    queryToTypeIndices.set(q.queryMask, q.typeIndices);
-  });
-
-  function typeIndicesForQuery(queryMask) {
-    let typeIndices = queryToTypeIndices.get(queryMask);
-    if (typeIndices === undefined) {
-      typeIndices = typeIndicesOf(computeTypeMask(queryMask));
-      queryToTypeIndices.set(queryMask, typeIndices);
-    }
-    return typeIndices;
-  }
-
-  // Create result views for pre-computed queries
-  const queryEntityCapacity =
-    queryData.queryEntityCapacity ??
-    entityMetadata.reduce((sum, m) => sum + (m.poolSize || 0), 0);
-  const queryResultViews = precomputedQueries.map((q, i) => {
-    return createQuerySnapshotViews(buffers.queryResultsSAB, i, queryEntityCapacity);
-  });
-
-  // OPTIMIZATION: Cache queryMask generation to avoid repeated BigInt allocations
-  // Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
-  const queryMaskCache = new Map();
-  // Identity cache for hoisted componentClasses arrays (see QuerySystem.queryMaskByClasses)
-  const queryMaskByClasses = new WeakMap();
-  // E-265: by the classes themselves (maskFromTrie).
-  const queryMaskByTrie = new Map();
-
-  // Cache per-type active list SAB views once entity classes are attached to global scope.
-  const cachedTypeActiveLists = new Array(entityMetadata.length);
-  const fallbackActiveQueryCache = queryVersionData ? new Map() : null;
-
-  // OPTIMIZATION: Reusable buffers for query() and queryActiveEntitiesSlow() - avoids GC pressure
-  // Multiple buffers allow several queries in the same tick without overwriting
-  // Result is a temporary view - consume immediately, do not store
-  const totalEntityCount = entityMetadata.reduce((sum, m) => sum + m.poolSize, 0);
-  const QUERY_BUFFER_POOL_SIZE = 4;
-  const queryResultBuffers = Array.from({ length: QUERY_BUFFER_POOL_SIZE }, () =>
-    new (EntityIdArray())(totalEntityCount)
-  );
-  let queryResultBufferIndex = 0;
-
-  // Helper: generate queryMask from component classes (with caching)
-  function generateQueryMask(componentClasses) {
-    const identityHit = queryMaskByClasses.get(componentClasses);
-    if (identityHit !== undefined) return identityHit;
-    const trieHit = maskFromTrie(queryMaskByTrie, componentClasses);
-    if (trieHit !== undefined) return trieHit;
-
-    // Extract and validate component IDs (cheap number operations)
-    const ids = [];
-    for (const ComponentClass of componentClasses) {
-      const componentId = ComponentClass.componentId;
-      if (componentId == null || typeof componentId !== 'number') {
-        // console.warn(
-        //   `[QuerySystem] Component ${ComponentClass?.name || 'unknown'} has no componentId (got: ${componentId}). Was it registered?`
-        // );
-        continue;
-      }
-      if (componentId >= MAX_COMPONENTS) {
-        continue;
-      }
-      ids.push(componentId);
-    }
-
-    // Generate cache key from sorted IDs (string ops are cheaper than BigInt)
-    ids.sort((a, b) => a - b);
-    const cacheKey = ids.join(',');
-
-    // Check cache first
-    const cached = queryMaskCache.get(cacheKey);
-    if (cached !== undefined) {
-      queryMaskByClasses.set(componentClasses, cached);
-      if (ids.length === componentClasses.length) maskIntoTrie(queryMaskByTrie, componentClasses, cached);
-      return cached;
-    }
-
-    // Compute mask (expensive BigInt operations - only done once per unique query)
-    let mask = 0n;
-    for (const id of ids) {
-      mask |= 1n << BigInt(id);
-    }
-
-    // Cache and return
-    queryMaskCache.set(cacheKey, mask);
-    queryMaskByClasses.set(componentClasses, mask);
-    if (ids.length === componentClasses.length) maskIntoTrie(queryMaskByTrie, componentClasses, mask);
-    return mask;
-  }
-
-  // Helper: compute typeMask for a queryMask
-  function computeTypeMask(queryMask) {
-    let typeMask = 0n;
-    for (let i = 0; i < entityMetadata.length; i++) {
-      const meta = entityMetadata[i];
-      if ((meta.componentMask & queryMask) === queryMask) {
-        typeMask |= 1n << BigInt(i);
-      }
-    }
-    return typeMask;
-  }
-
-  function getTypeActiveList(typeIndex) {
-    const cached = cachedTypeActiveLists[typeIndex];
-    if (cached) {
-      return cached;
-    }
-
-    const className = entityMetadata[typeIndex]?.className;
-    if (!className) {
-      return null;
-    }
-
-    const EntityClass = globalThis[className];
-    const activeList = EntityClass?._activeList || null;
-    if (activeList) {
-      cachedTypeActiveLists[typeIndex] = activeList;
-    }
-    return activeList;
-  }
-
-  /**
-   * Query for ALL entities with specified components
-   * including inactive entities.
-   * Result is a temporary view - consume immediately, do not store.
-   */
-  function query(componentClasses) {
-    const typeIndices = typeIndicesForQuery(generateQueryMask(componentClasses));
-
-    const buffer = queryResultBuffers[queryResultBufferIndex];
-    queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
-    let writeIndex = 0;
-
-    for (let t = 0; t < typeIndices.length; t++) {
-      const meta = entityMetadata[typeIndices[t]];
-      for (let i = meta.startIndex; i < meta.endIndex; i++) {
-        buffer[writeIndex++] = i;
-      }
-    }
-
-    return buffer.subarray(0, writeIndex);
-  }
-
-  /**
-   * Query for ACTIVE entities with specified components
-   * Returns view into pre-populated SAB for pre-computed queries.
-   * Throws for ad hoc combinations; use queryActiveEntitiesSlow() explicitly.
-   */
-  function queryActiveEntities(componentClasses) {
-    const queryMask = generateQueryMask(componentClasses);
-
-    // Check if pre-computed
-    const queryIndex = queryMaskToIndex.get(queryMask);
-
-    if (queryIndex !== undefined) {
-      return readPublishedQuerySnapshot(queryResultViews[queryIndex]);
-    }
-
-    throw new Error(
-      `[QuerySystem] queryActiveEntities([${getQueryComponentNames(componentClasses)}]) is not precomputed. ` +
-      `Declare it as a scene query or call queryActiveEntitiesSlow() explicitly.`
-    );
-  }
-
-  function queryPublishedFrame(componentClasses) {
-    const queryMask = generateQueryMask(componentClasses);
-    const queryIndex = queryMaskToIndex.get(queryMask);
-    if (queryIndex === undefined) return -1;
-    const header = queryResultViews[queryIndex]?.header;
-    if (!header) return -1;
-    return Atomics.load(header, 2);
-  }
-
-  function queryActiveEntitiesSlow(componentClasses) {
-    const queryMask = generateQueryMask(componentClasses);
-    const typeIndices = typeIndicesForQuery(queryMask);
-
-    const currentVersion = queryVersionData ? Atomics.load(queryVersionData, 0) : -1;
-    let cachedEntry = currentVersion !== -1 ? fallbackActiveQueryCache.get(queryMask) : null;
-
-    if (cachedEntry && cachedEntry.version === currentVersion) {
-      return cachedEntry.subarray;
-    }
-
-    if (currentVersion !== -1) {
-      if (!cachedEntry) {
-        cachedEntry = createCachedQueryEntry(totalEntityCount);
-        fallbackActiveQueryCache.set(queryMask, cachedEntry);
-      }
-      if (activeEntitiesData && activeEntitiesData[0] === 0) {
-        return updateCachedQueryEntry(cachedEntry, 0, currentVersion);
-      }
-      const count = copyActiveMatchesToBuffer(
-        typeIndices,
-        entityMetadata,
-        activeEntitiesData,
-        cachedEntry.buffer,
-        getTypeActiveList
-      );
-      return updateCachedQueryEntry(cachedEntry, count, currentVersion);
-    }
-
-    if (activeEntitiesData && activeEntitiesData[0] === 0) {
-      return EMPTY_QUERY_RESULT;
-    }
-
-    const buffer = queryResultBuffers[queryResultBufferIndex];
-    queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
-    const count = copyActiveMatchesToBuffer(
-      typeIndices,
-      entityMetadata,
-      activeEntitiesData,
-      buffer,
-      getTypeActiveList
-    );
-
-    return count === 0 ? EMPTY_QUERY_RESULT : buffer.subarray(0, count);
-  }
-
-  return {
-    query,
-    queryActiveEntities,
-    queryPublishedFrame,
-    queryActiveEntitiesSlow,
-    publishPrecomputedActiveQueries(frameNumber = 0) {
-      for (let q = 0; q < precomputedQueries.length; q++) {
-        const queryDef = precomputedQueries[q];
-        const snapshotView = queryResultViews[q];
-        const writeSnapshot =
-          (Atomics.load(snapshotView.header, 0) + 1) % QUERY_SNAPSHOT_COUNT;
-        const buffer = snapshotView.snapshots[writeSnapshot];
-        const count =
-          copyActiveMatchesToBuffer(
-            queryTypeIndices(queryDef),
-            entityMetadata,
-            activeEntitiesData,
-            buffer,
-            getTypeActiveList,
-            1
-          ) - 1;
-        publishQuerySnapshot(snapshotView, count, frameNumber);
-      }
-    },
-    _precomputedQueries: precomputedQueries,
-    _entityMetadata: entityMetadata,
-  };
 }

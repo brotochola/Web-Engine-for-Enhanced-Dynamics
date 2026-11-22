@@ -57,7 +57,7 @@ import { Joint } from '../core/joint.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
 import { ChainPoints } from '../core/chainPoints.js';
 import { SoundManager } from '../core/soundManager.js';
-import { createWorkerQueryFunctions } from '../core/querySystem.js';
+import { QuerySystem } from '../core/querySystem.js';
 import { Query } from '../core/query.js';
 import { Box2d } from '../core/box2d.js';
 import { Decal } from '../core/decal.js';
@@ -994,17 +994,18 @@ export class AbstractWorker {
 
     // Initialize query system for component-based entity filtering (SAB-based only)
     if (data.queries && data.buffers?.queryResults) {
-      const queryFunctions = createWorkerQueryFunctions(
+      // N-303 CR-26: the page's QuerySystem class, made from its serialized data over the shared snapshots.
+      const querySystem = QuerySystem.fromSerialized(
         data.queries,
         { queryResultsSAB: data.buffers.queryResults },
         this.activeEntitiesData,
         this.queryVersionData
       );
 
-      this._publishPrecomputedActiveQueries = queryFunctions.publishPrecomputedActiveQueries;
-      this._precomputedQueries = queryFunctions._precomputedQueries;
+      this._publishPrecomputedActiveQueries = (frameNumber) => querySystem.publishPrecomputedActiveQueries(frameNumber);
+      this._precomputedQueries = querySystem.precomputedQueries;
 
-      Query.bindWorker(queryFunctions);
+      Query.bindSystem(querySystem);
 
       this.reportLog(
         `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries`

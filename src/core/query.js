@@ -1,4 +1,5 @@
-// Query.js — static gameplay facade over QuerySystem (main) / SAB closures (workers).
+// Query.js — static gameplay facade over the thread's QuerySystem: the page's, built from the scene, or a worker's,
+// QuerySystem.fromSerialized over the shared snapshots (N-303 CR-26: one class, one receiver on every thread).
 // QuerySystem stays internal. Box2d.queryAABB is fixtures; Query.query is ECS.
 
 import { QuerySystem } from './querySystem.js';
@@ -7,17 +8,9 @@ const EMPTY = new Uint16Array(0);
 
 export class Query {
   static _system = null;
-  static _query = null;
-  static _queryActiveEntities = null;
-  static _queryActiveEntitiesSlow = null;
-  static _queryPublishedFrame = null;
 
   static reset() {
     this._system = new QuerySystem();
-    this._query = null;
-    this._queryActiveEntities = null;
-    this._queryActiveEntitiesSlow = null;
-    this._queryPublishedFrame = null;
     return this._system;
   }
 
@@ -26,21 +19,9 @@ export class Query {
     return this._system;
   }
 
-  /** Main-thread tests / bootstrap: use this QuerySystem instance. */
+  /** This thread's QuerySystem: a worker's from QuerySystem.fromSerialized (tests may pass a stand-in). */
   static bindSystem(system) {
     this._system = system;
-    this._query = null;
-    this._queryActiveEntities = null;
-    this._queryActiveEntitiesSlow = null;
-    this._queryPublishedFrame = null;
-  }
-
-  /** Worker SAB closures from createWorkerQueryFunctions. */
-  static bindWorker(fns) {
-    this._query = fns.query;
-    this._queryActiveEntities = fns.queryActiveEntities;
-    this._queryActiveEntitiesSlow = fns.queryActiveEntitiesSlow;
-    this._queryPublishedFrame = fns.queryPublishedFrame || null;
   }
 
   static buildQueries(registeredClasses) {
@@ -72,27 +53,19 @@ export class Query {
   }
 
   static query(componentClasses) {
-    if (this._query) return this._query(componentClasses);
-    if (this._system) return this._system.query(componentClasses);
-    return EMPTY;
+    return this._system ? this._system.query(componentClasses) : EMPTY;
   }
 
   static queryActiveEntities(componentClasses) {
-    if (this._queryActiveEntities) return this._queryActiveEntities(componentClasses);
-    if (this._system) return this._system.queryActiveEntities(componentClasses);
-    return EMPTY;
+    return this._system ? this._system.queryActiveEntities(componentClasses) : EMPTY;
   }
 
   /** Logic frame that last published this precomputed active query. -1 if unknown. */
   static queryPublishedFrame(componentClasses) {
-    if (this._queryPublishedFrame) return this._queryPublishedFrame(componentClasses);
-    if (this._system?.queryPublishedFrame) return this._system.queryPublishedFrame(componentClasses);
-    return -1;
+    return this._system?.queryPublishedFrame ? this._system.queryPublishedFrame(componentClasses) : -1;
   }
 
   static queryActiveEntitiesSlow(componentClasses) {
-    if (this._queryActiveEntitiesSlow) return this._queryActiveEntitiesSlow(componentClasses);
-    if (this._system) return this._system.queryActiveEntitiesSlow(componentClasses);
-    return EMPTY;
+    return this._system ? this._system.queryActiveEntitiesSlow(componentClasses) : EMPTY;
   }
 }

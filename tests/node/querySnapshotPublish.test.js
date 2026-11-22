@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   calculateQueryResultBufferSize,
-  createWorkerQueryFunctions,
+  QuerySystem,
   getQuerySnapshotBytes,
   getQuerySnapshotElements,
   QUERY_SNAPSHOT_COUNT,
@@ -23,7 +23,7 @@ import {
  * tail is stale entity ids from an earlier frame - slots that may since have
  * been despawned and recycled.
  *
- * These tests drive the real worker closures from createWorkerQueryFunctions and
+ * These tests drive a worker's real QuerySystem (QuerySystem.fromSerialized) and
  * assert the reader's contract: the count it returns must belong to the snapshot
  * it names. The torn state is constructed directly in the SAB, which is what the
  * race leaves behind.
@@ -67,7 +67,7 @@ function setup(capacity) {
   const sab = new SharedArrayBuffer(calculateQueryResultBufferSize(capacity));
   const buffers = { queryResultsSAB: sab };
   const activeEntitiesData = new Uint16Array(capacity + 1);
-  const fns = createWorkerQueryFunctions(makeQueryData(capacity), buffers, activeEntitiesData);
+  const fns = QuerySystem.fromSerialized(makeQueryData(capacity), buffers, activeEntitiesData);
   const view = makeViews(sab, capacity);
   const classes = [{ componentId: 0, name: 'Probe' }];
   return { view, fns, classes };

@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {
   QuerySystem,
   calculateQueryResultsSABSize,
-  createWorkerQueryFunctions,
 } from '../../src/core/querySystem.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Transform } from '../../src/components/transform.js';
@@ -316,7 +315,7 @@ test('main-thread queryActiveEntitiesSlow caches until query version changes', (
       ...meta,
       entityClass: globalThis[meta.className],
     }));
-    querySystem._queryResultBuffer = new Uint16Array(3000);
+    querySystem._makeResultBuffers(3000);
     querySystem.queryVersionData = queryVersionData;
 
     GameObject.activeEntitiesData = null;
@@ -427,7 +426,7 @@ test('publish with more matches than snapshot room keeps the prefix and does not
 });
 
 test('worker queryActiveEntities requires precomputed queries', () => {
-  const queryFunctions = createWorkerQueryFunctions(
+  const queryFunctions = QuerySystem.fromSerialized(
     {
       metadata: createFallbackMetadata().map((meta) => ({
         ...meta,
@@ -453,7 +452,7 @@ test('worker queryActiveEntitiesSlow caches until query version changes', () => 
   const queryVersionData = createQueryVersionData();
 
   try {
-    const queryFunctions = createWorkerQueryFunctions(
+    const queryFunctions = QuerySystem.fromSerialized(
       {
         metadata: createFallbackMetadata().map((meta) => ({
           ...meta,
@@ -512,7 +511,7 @@ test('worker queries visit a sparse 64-type mask in ascending type order', () =>
   const activeEntitiesData = createUint16View([active.length, ...active]);
   let typeMask = 0n;
   for (const t of matching) typeMask |= 1n << BigInt(t);
-  const queryFunctions = createWorkerQueryFunctions(
+  const queryFunctions = QuerySystem.fromSerialized(
     {
       metadata,
       queryEntityCapacity: capacity,
