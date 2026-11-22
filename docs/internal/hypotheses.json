@@ -25191,17 +25191,19 @@
       "records": []
     },
     {
-      "records": [],
+      "records": [
+        "R-1858"
+      ],
       "refs": [],
       "id": "N-410",
       "title": "The yellow bus's sun shadow is cut at one facing: in the light bench, colectivo_amarillo at 172.5° casts a silhouette shadow with a part missing",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "date": "2026-11-22",
-      "result": "",
-      "statusText": "reported 2026-11-22 by the owner, from a screenshot of the light bench (demos/?scene=lightbenchscene&debug=1)",
-      "next": "Reproduce: lightbenchscene. Hour 16:00, day cycle stopped, Direction 0°, Height at noon 90°, Intensity 1.00, lamps on. Select colectivo_amarillo (car, 48 views, half a turn mirrored) and set Facing 172.5°. Shadow with the sun: silhouette; shadow with lamps: height map; card orientation: faces each light. Capture the bus's shadow on both backends, at this facing and at its neighbours. Then find where it is cut, against three candidates: the sun map's rect or margins (_fitSunMap's tallest-frame bound, N-317); the silhouette card's frame for that view (the mirrored half turn: a frame trimmed or flipped short); or the caster row's tile in the map.",
+      "result": "Fixed 2026-11-22 (f97f9370): the sun card's contact (frameBase.js measureLowestContact) was the far wheels: seen from behind, the bus's near wheels hide under its body, 3 to 5 px up, past the 1.5 px tolerance, and the card stood past the anchor. Now within max(1.5, a fifth of the frame's heights); 30 car sheets had such frames. Card vs height map, three farm cars, 12 facings: 40 661 -> 35 255 px apart (172.5 degrees 6 437 -> 3 638), none worse",
+      "statusText": "fixed 2026-11-22 (f97f9370)",
+      "next": "",
       "aliases": [
         "bus shadow cut",
         "colectivo shadow missing part",
@@ -42674,6 +42676,15 @@
       "title": "N-256 PW-6, batch 11 (N-409) and PW-10 through the plain Predator sitting again on a quiet machine (82848a4c -> c59113bb): NEUTRAL in 16 pairs, renderer +0.8 %; R-1856's plain REGRESSION was drift",
       "verdict": "kept-hygiene",
       "text": "**The plain Predator sitting again, on a quiet machine: N-256 PW-6 (lighting.js), the ASUS's batch 11 (N-409) and\nPW-10 (decalTiles.js, screenLayers.js), 82848a4c -> c59113bb: NEUTRAL in 16 pairs.** R-1856's plain sitting drifted.\n\nThe sitting: `runPredatorAbab.mjs --name n256pw610-plain --vs 82848a4c --hyp-rev c59113bb --owner renderer --pairs 16`,\nwith `--query \"crowd=2.5&dayCycle=0&mix=1\"`. It ran headed, from the save, on AC power, 15:07 to 15:20. The CPU load\nread 5 to 15 % before it.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.438 -> 15.557 | +1.0 % | 10/16 | +0.3 % |\n| spatial | 7.369 -> 7.533 | +0.3 % | 8/16 | -0.0 % |\n| physics | 14.956 -> 15.109 | +0.2 % | 9/16 | -0.7 % |\n| renderer | 6.964 -> 7.305 | +0.8 % | 9/16 | +2.0 % |\n| preRender | 8.621 -> 8.880 | +1.6 % | 10/16 | +0.8 % |\n\nParticle stays under the 6 ms floor. The load keys are within 0.3 %.\n\nR-1856 read every worker +5..+9 % together while the owner started heavy work on the PC. Here none moves past 1.6 %,\nso that sitting's REGRESSION was drift, as read then. R-1856's night sitting (light3d, NEUTRAL) stands for the light\npass by night."
+    },
+    {
+      "id": "R-1858",
+      "date": "2026-11-22",
+      "time": "15:47",
+      "timeFrom": "recorded",
+      "title": "N-410 fixed (f97f9370): the bus's sun card stood on its far wheels (contact within 1.5 px; the near wheels hide under the body), now within max(1.5, a fifth of the frame's heights); card vs height map 40 661 -> 35 255 px over 12 facings, none worse",
+      "verdict": "kept-hygiene",
+      "text": "**N-410 fixed (f97f9370): the cut was the sun card's contact, measured on the bus's far wheels.**\n\nReproduced by captures of the light bench (`only=colectivo_amarillo`, `carSun=sprite`, `hour=16`, `still=1`, zoom 2.5 on\nthe bus). At 172.5° the shadow is cut along a straight line, on both backends and with the full caster rows too\n(`fullRows=1`). With `sun=layer` or the height map the shadow is whole. At 180° it is whole, and at 150° the card and the\nheight map agree: the sun comes along the bus there.\n\nBisected by temporary shader changes. Without the card's turn (N-297) nothing changed (1 410 px). Without the card's\nalpha cut, the whole card showed: its edge towards the sun crossed the middle of the bus, not its rear.\n\nThe sun's frame at 172.5° is `colectivo_amarillo_41` (heading 297.5°, seen from behind). Its contact, as atlasBuild\nmeasures it (`measureLowestContact`: opaque pixels within 1.5 px of the lowest point), was row 62.5: the far (front)\nwheels. Seen from behind and above, the near wheels hide under the body, whose lowest pixels stand 3 to 5 px up. The\ncontact sat above the anchor's row 81, so the card stood on the far side of the bus. Its rear half cast nothing.\n\nA survey of every render sheet in the repo (`demos/img/autos` and the bench's farm) found 30 car sheets with frames whose\ncontact is above their anchor's row (deportivo 7 frames, muscle 6, colectivo 4, lujo 4, superauto 4, …). A tolerance of\nmax(1.5, share × the frame's height range) was tried at shares of 0.08 to 0.4. 0.16 still left deportivo_rojo_07 on its\nfar wheels; 0.2 fixes every frame. None of the farm's renders (vaca, mesa, granero, …) moves even at 0.4.\n\nKept at 0.2 (`CONTACT_SHARE`). The measure: the light bench's three farm cars at 16:00 without lamps, pixels apart from\ntheir height map's shadow (compareCaptures, card against height map, as N-297 measured it), HEAD against the fix:\n\n| facing | 0 | 30 | 60 | 90 | 120 | 150 | 172.5 | 210 | 240 | 270 | 300 | 330 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| HEAD | 2804 | 2199 | 2090 | 4662 | 4382 | 4074 | 6437 | 2017 | 1946 | 2461 | 3663 | 3926 |\n| fix | 2791 | 2198 | 2086 | 2460 | 4234 | 4039 | 3638 | 1953 | 1946 | 2454 | 3570 | 3926 |\n\nThe total goes 40 661 -> 35 255 (-13 %), and no facing is worse.\n\nThe atlas cache's key holds frameBase.js's text, so no cached base survives. Tests: `npm run test:node` 3 579 / 3 579 and\n`npm run test:demos` 143 / 143. A new frameBase test covers a bus seen from behind and a cow's head held out below its\nhooves."
     }
   ],
   "leads": [
