@@ -514,7 +514,8 @@ function splitGbufByte(b, gbuf, n, rows) {
  * too, and `keyed.shadowed` says whether they did. E-189: with `keyed.texUpdatesByte` (0 for none), a row whose key also
  * carries GPU_KEYED_TEX_ONLY goes there as a texture update (GPU_KEYED_TEX_WORDS) instead, counted in `keyed.texUpdates`.
  * E-387: with `keyed.gbufOut` and `keyed.gbufFlags` (keyedGbufByte's columns), each slot's G-buffer words go there too,
- * the words gbufWord.js writeGbufWords writes from the key column, and `keyed.gbufWritten` says whether they did.
+ * the words gbufWord.js writeGbufWords writes from the key column, and `keyed.gbufWritten` says whether they did. E-455:
+ * `keyed.gbufChanged` says whether any slot's words differ from what its place held (always true without the words).
  * E-337: the type column (ctx.typeArr) goes to the kernel only with the shadow terms, whose glow test reads it; the
  * count of type-1 rows it also gives (ctx.particleCount) is read by no caller of a keyed pack, so it is 0 without them.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
@@ -571,6 +572,7 @@ function keyedPack(b, q, ctx, at, slots, keyed, capacity, pack, packGbuf) {
   ctx.particleCount = b.u32[r];
   keyed.updates = b.u32[r + 1];
   keyed.texUpdates = keyed.texUpdatesByte > 0 ? b.u32[r + 2] : 0;
+  keyed.gbufChanged = gbufByte > 0 ? b.u32[r + 3] !== 0 : true;
   return out;
 }
 

@@ -411,7 +411,9 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
 #define KEY_FLAGS (KEY_CHANGED | KEY_TEX_ONLY)
 
 /* E-387: with withGbuf, each drawn instance's G-buffer words from the key column and the block at G (GB_*, defined with
-   the split pack above, whose E-444 forms write the same words from the collector's columns). */
+   the split pack above, whose E-444 forms write the same words from the collector's columns). E-455: results[3] says
+   whether any slot's words differ from what its place held (the frame before's words, where that frame wrote them
+   there too), so the renderer leaves its copy, and the buffers that hold it, as they are when none does. */
 
 /* E-201: byRow (a constant, so each form is a copy) writes each drawn instance's queue row at rows (as a float) instead
    of its pose: the shader fetches the pose from the queue's own pose columns by that row. */
@@ -428,6 +430,7 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
   const uint32_t entities = withGbuf ? G[GB_ENTITIES] : 0;
   uint32_t band = 0;
   int32_t lastZ = -32769;
+  uint32_t gbufChanged = 0;
   const float *SH = withShadow ? F32(t, COL_SHADOW_H) : 0;
   const float *SOX = withShadow ? F32(t, COL_SHADOW_OFF_X) : 0;
   const float *SOY = withShadow ? F32(t, COL_SHADOW_OFF_Y) : 0;
@@ -492,14 +495,21 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
         if (lastZ != -32769 && band < GBUF_MAX_BANDS - 1) band++;
         lastZ = z;
       }
-      GW[k * GBUF_FLOATS] = (float)word;
-      GW[k * GBUF_FLOATS + 1] = (float)band;
-      GW[k * GBUF_FLOATS + 2] = GBUF_FOOT_NONE;
+      float *gw = GW + k * GBUF_FLOATS;
+      const float fw = (float)word;
+      const float fb = (float)band;
+      /* The word and the band; the foot is always GBUF_FOOT_NONE here, and the renderer takes the answer only after a
+         frame drawn keyed with the words (which wrote the same foot). */
+      gbufChanged |= (uint32_t)(gw[0] != fw) | (uint32_t)(gw[1] != fb);
+      gw[0] = fw;
+      gw[1] = fb;
+      gw[2] = GBUF_FOOT_NONE;
     }
   }
   results[0] = p;
   results[1] = u;
   results[2] = tu;
+  if (withGbuf) results[3] = gbufChanged;
   return n;
 }
 

@@ -433,6 +433,16 @@ export class InstancedSpriteBatch {
     this._gbufZeros = 0;
     // E-387: whether the last upload's keyed pack wrote this frame's words (packedGbuf), from setGbufColumns' columns.
     this.gbufPacked = false;
+    // E-455: the batch's drawn frames (each _finishUpload, so every pack that writes its shared rows counts), the one whose
+    // commit took the keyed pack's words (-1: none; the frame after compares with them in place), the CPU copy's count at
+    // the last commit, its generation (one more each time it changes), and each ring slot's: the generation its buffer
+    // holds and how many instances' words it holds of it.
+    this._drawSerial = 0;
+    this._gbufPackedSerial = -1;
+    this._gbufCount = 0;
+    this._gbufGen = 1;
+    this._ringGbufGen = new Int32Array(2);
+    this._ringGbufCount = new Int32Array(2);
     // The ring slot the last upload drew from: its gbuf buffer is the one this frame's words go to.
     this._lastRing = 0;
     // E-162: a split batch given `statics` also takes indexed frames: the poses, a slot stream (each instance's statics
@@ -551,6 +561,8 @@ export class InstancedSpriteBatch {
       gbufSelf: NO_GBUF_U8,
       gbufZ: NO_GBUF_I16,
       gbufWritten: false,
+      // E-455: whether any slot's words differ from what its place held.
+      gbufChanged: true,
     };
     this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
     const updateWords = k ? this.capacity * GPU_KEYED_ROW_WORDS : 0;
@@ -871,7 +883,9 @@ export class InstancedSpriteBatch {
   /**
    * DX-GBUF: this frame's G-buffer words for the `count` instances the last upload drew, into the gbuf buffer of the ring
    * slot it drew from. `src` holds them in draw order (the GPU queue's gbuf region, or gbufData that the caller wrote);
-   * null: none this frame, each instance is lit as it always was (its words zero).
+   * null: none this frame, each instance is lit as it always was (its words zero). E-455: a keyed frame whose pack found
+   * every slot's words as the frame before's (drawn keyed with them too, and committed here whole) leaves the CPU copy
+   * as it is; a ring slot's buffer goes up only when it holds an older copy, or fewer instances of it.
    * @param {Float32Array|null} src
    * @param {number} count
    */
@@ -882,14 +896,28 @@ export class InstancedSpriteBatch {
     const floats = n * GPU_GBUF_FLOATS;
     if (src === this._gbufData) {
       this._gbufZeros = 0;
+      this._gbufGen++;
     } else if (src !== null && src.length >= floats) {
-      this.copyIn(this._gbufData, src, floats);
-      this._gbufZeros = 0;
+      const same = src === this._sharedGbuf && this.gbufPacked && !this._keyedPack.gbufChanged
+        && this._gbufPackedSerial === this._drawSerial - 1 && this._gbufCount === n;
+      if (!same) {
+        this.copyIn(this._gbufData, src, floats);
+        this._gbufZeros = 0;
+        this._gbufGen++;
+      }
     } else if (this._gbufZeros < n) {
       this._gbufData.fill(0, 0, floats);
       this._gbufZeros = n;
+      this._gbufGen++;
     }
-    this._gbufBuffers[this._lastRing].update(floats * 4);
+    this._gbufPackedSerial = src === this._sharedGbuf && this.gbufPacked ? this._drawSerial : -1;
+    this._gbufCount = n;
+    const ring = this._lastRing;
+    if (this._ringGbufGen[ring] !== this._gbufGen || this._ringGbufCount[ring] < n) {
+      this._gbufBuffers[ring].update(floats * 4);
+      this._ringGbufGen[ring] = this._gbufGen;
+      this._ringGbufCount[ring] = n;
+    }
   }
 
   /** DX-GBUF: the words' CPU copy, for a caller that writes them itself (gbufWord.js writeGbufWords), then commitGbuf. */
@@ -1896,6 +1924,7 @@ export class InstancedSpriteBatch {
 
   /** `indexed`: true for an indexed or keyed frame, 'rows' for a keyed frame drawn by queue row (E-201). */
   _finishUpload(out, stride, indexed = false) {
+    this._drawSerial++;
     if (out <= 0) {
       this.geometry.instanceCount = 0;
       this._show(false);

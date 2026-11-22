@@ -158,6 +158,7 @@ function checkWords(s, label, { opts, cap = N, byRow = false, shadow = false, te
   const n = pack(s.b, s.q, makePackContext(s.q, opts, cap, {}), first, s.slots, keyed, cap);
   assert.equal(n, Math.min(opts.indices ? opts.indexCount : N, cap), `${label}: rows`);
   assert.equal(keyed.gbufWritten, false, `${label}: no columns, no words`);
+  assert.equal(keyed.gbufChanged, true, `${label}: no words, none to keep (E-455)`);
   const plain = packOutput(s, n, byRow, keyed);
   s.gbufOut.fill(-7);
   keyed.gbufOut = s.gbufOut;
@@ -180,6 +181,17 @@ function checkWords(s, label, { opts, cap = N, byRow = false, shadow = false, te
     }
   }
   if (n < N) assert.equal(s.gbufOut[n * GPU_GBUF_FLOATS], -7, `${label}: nothing past the rows packed`);
+  // E-455: over the -7s the words changed; the same frame again finds every slot's in place, and one slot's word
+  // touched in between is found.
+  assert.equal(keyed.gbufChanged, n === 0 ? false : true, `${label}: the words changed`);
+  pack(s.b, s.q, makePackContext(s.q, opts, cap, {}), first, s.slots, keyed, cap);
+  assert.equal(keyed.gbufChanged, false, `${label}: the same words again`);
+  if (n > 0) {
+    s.gbufOut[(n - 1) * GPU_GBUF_FLOATS + 1] += 1;
+    pack(s.b, s.q, makePackContext(s.q, opts, cap, {}), first, s.slots, keyed, cap);
+    assert.equal(keyed.gbufChanged, true, `${label}: a band touched in place`);
+    assert.deepEqual(Array.from(u32(s.gbufOut, n * GPU_GBUF_FLOATS)), Array.from(wantBits), `${label}: and written again`);
+  }
   let entityRows = 0;
   let maxBand = 0;
   for (let k = 0; k < n; k++) {
