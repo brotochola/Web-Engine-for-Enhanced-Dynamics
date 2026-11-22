@@ -79,7 +79,7 @@ test('the engine sets no instance field outside ENGINE_INSTANCE_KEYS', () => {
 });
 
 test('the save codec keeps instance fields, and writes no section without them', () => {
-  const base = { sceneName: 'S', engineVersion: '0', layout: { types: [], totalEntityCount: 0 }, camera: null, sun: null, entities: [], joints: [] };
+  const base = { sceneName: 'S', engineVersion: '0', camera: null, sun: null, entities: [], joints: [] };
   const instanceFields = { perWorker: [[[3, { tool: 'draw', pts: { $typed: 'Float32Array', v: [1, 2] } }]], []] };
   const withFields = decodeBinarySaveBody(encodeBinarySaveBody({ ...base, instanceFields }));
   assert.deepEqual(withFields.instanceFields, instanceFields);

@@ -167,7 +167,7 @@ test('the GPU loss\'s restore (the payload as built, every entity at its own ind
 test('a stored save (through the codec and deflate) brings every column back bit for bit, NaN payloads included', async () => {
   const before = savedColumnsChecksum(scene);
   const decoded = await decodeSave(await encodeSave(await captureSavePayload(scene, CAPTURE)));
-  assert.equal(decoded.formatVersion, 8);
+  assert.equal(decoded.formatVersion, 9);
   await applySavePayloadToScene(scene, decoded, { allTypes: true });
   assert.equal(savedColumnsChecksum(scene).checksum, before.checksum);
   const words = new Uint32Array(Gauge.wide.buffer, Gauge.wide.byteOffset, Gauge.wide.length * 2);

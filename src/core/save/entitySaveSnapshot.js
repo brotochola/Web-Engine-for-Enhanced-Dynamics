@@ -25,9 +25,9 @@ import {
 } from './worldBufferSave.js';
 
 export const SAVE_MAGIC = 'WEEDSAVE1';
-/** 8: the sim clock's time (N-329); 7: decal tiles deflated, not PNG (N-314); 6: entities by columns, one table per type
- * (E-539). A save of any other version does not load. */
-export const SAVE_FORMAT_VERSION = 8;
+/** 9: META without the layout hint nothing read (N-303 CR-33); 8: the sim clock's time (N-329); 7: decal tiles deflated, not
+ * PNG (N-314); 6: entities by columns, one table per type (E-539). A save of any other version does not load. */
+export const SAVE_FORMAT_VERSION = 9;
 
 /** @param {Function} EntityClass */
 export function isEntityClassSerializable(EntityClass) {
@@ -505,20 +505,6 @@ export function collectSerializableEntities(scene, options = {}) {
   return tables;
 }
 
-/**
- * Soft layout hint from scene registry (detect missing types on load).
- * @param {object} scene
- */
-export function buildLayoutHint(scene, allEntities = false) {
-  const types = [];
-  for (const reg of scene.registeredClasses || []) {
-    if (!allEntities && !isEntityClassSerializable(reg.class)) continue;
-    types.push({ name: reg.class.name, poolSize: reg.count | 0 });
-  }
-  types.sort((a, b) => a.name.localeCompare(b.name));
-  return { types, totalEntityCount: scene.totalEntityCount | 0 };
-}
-
 export function readCameraGlobals() {
   if (!Camera._data) return null;
   // The tail slot is the follow seqlock, not camera state.
@@ -575,7 +561,6 @@ export function buildSavePayload(scene, globals = {}, options = {}) {
     formatVersion: SAVE_FORMAT_VERSION,
     engineVersion: VERSION,
     sceneName: scene.constructor?.name || 'Scene',
-    layout: buildLayoutHint(scene, allEntities),
     camera: globals.camera !== undefined ? globals.camera : readCameraGlobals(),
     sun: globals.sun !== undefined ? globals.sun : readSunGlobals(),
     entities,

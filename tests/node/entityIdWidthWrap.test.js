@@ -291,7 +291,6 @@ test('save codec stores the entity indices as u32 (70000 survives)', () => {
   const body = encodeBinarySaveBody({
     sceneName: 'Wrap',
     engineVersion: '0.0.0-test',
-    layout: { types: [{ name: 'WrapEntity', poolSize: 80000 }], totalEntityCount: 80000 },
     camera: null,
     sun: null,
     entities: [{ typeName: 'WrapEntity', indices: Uint32Array.of(70000), components: [] }],

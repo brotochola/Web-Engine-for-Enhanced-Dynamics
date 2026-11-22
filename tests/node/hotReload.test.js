@@ -130,7 +130,6 @@ test('a lost or unreadable hot-reload save reads as null: the scene starts fresh
     const blob = await encodeSave({
       sceneName: 'Level',
       engineVersion: '0',
-      layout: { types: [], totalEntityCount: 0 },
       camera: null,
       sun: null,
       entities: [],

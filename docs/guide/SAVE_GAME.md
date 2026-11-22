@@ -91,9 +91,9 @@ Save code lives under `src/core/save/`:
 | IndexedDB (`weed-saves`) | Compressed save blobs |
 | `localStorage` (`weed.save.catalog`) | Slot metadata only (`id`, `scene`, `savedAt`, `bytes`, `engineVersion`, `entityCount`) |
 
-## Wire format (`SAVE_FORMAT_VERSION = 8`)
+## Wire format (`SAVE_FORMAT_VERSION = 9`)
 
-`SAVE_FORMAT_VERSION` lives in `src/core/save/entitySaveSnapshot.js`. The current value is **8** (8: the sim clock; 7: decal tiles deflated; 6: entities by columns). Decode throws on any other version: a save made by an older build does not load.
+`SAVE_FORMAT_VERSION` lives in `src/core/save/entitySaveSnapshot.js`. The current value is **9** (9: META without the layout hint; 8: the sim clock; 7: decal tiles deflated; 6: entities by columns). Decode throws on any other version: a save made by an older build does not load.
 
 Outer file (little-endian):
 
@@ -113,7 +113,7 @@ repeat:
 
 | Tag | Name | Contents |
 |-----|------|----------|
-| 1 | META | sceneName, engineVersion, layout hint |
+| 1 | META | sceneName, engineVersion |
 | 2 | CAMERA | raw camera floats |
 | 3 | SUN | enabled + f32[] + color |
 | 4 | ENTITIES | u8 layout, then one table per entity type: its indices, then per component its fingerprint and per field its kind, elements per entity, entity-id flag and values (see below) |
@@ -238,4 +238,4 @@ LiquidFun WASM source: the sibling `Box2d_3.2_C_-_liquidfun` tree (`wasm_wrapper
 - No decoration / CPU particle / bullet / playing-sound dumps.
 - Schema fingerprint mismatch warns once per type and component and applies best-effort: each saved field goes to the live field of the same name, as bits when its kind and length did not change, value by value (as far as both go) when they did. Adding `entityId: true` changes the fingerprint.
 - Cross-scene load is rejected (`payload.sceneName` must match).
-- Only format version `8` is accepted; other versions throw.
+- Only format version `9` is accepted; other versions throw.

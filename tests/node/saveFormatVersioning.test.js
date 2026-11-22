@@ -22,7 +22,6 @@ import { fnv1a32 } from '../../src/core/save/schemaHash.js';
 const base = () => ({
   sceneName: 'T',
   engineVersion: '0',
-  layout: { types: [], totalEntityCount: 0 },
   camera: null,
   sun: null,
   entities: [],

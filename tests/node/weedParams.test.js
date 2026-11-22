@@ -92,7 +92,6 @@ test('a scene remounted from a save keeps the params it was loaded with, even wi
   const blob = await encodeSave({
     sceneName: 'Level',
     engineVersion: '0',
-    layout: { types: [], totalEntityCount: 0 },
     camera: null,
     sun: null,
     entities: [],
