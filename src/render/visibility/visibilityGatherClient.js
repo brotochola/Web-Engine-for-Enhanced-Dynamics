@@ -26,7 +26,15 @@ export const GATHER_SLOTS = [
   // OL-12: where each packed occluder's code for the walls' rows goes (0: not asked for).
   'vOccCode',
 ];
-if (GATHER_SLOTS.length > GATHER_TABLE_SLOTS) throw new Error('visibilityGather: the column table outgrew its region');
+/**
+ * N-158: where the light's doubles go in the table (wasm/visibilityGather.c GATHER_ARGS_SLOT): lx, ly, radius, alpha, then
+ * a cone's edges e1x, e1y, e2x, e2y, written before each gather call (the calls take integers only: E-85).
+ */
+export const GATHER_ARGS_SLOT = 48;
+export const GATHER_ARGS = 8;
+if (GATHER_SLOTS.length > GATHER_ARGS_SLOT || GATHER_ARGS_SLOT + GATHER_ARGS * 2 > GATHER_TABLE_SLOTS) {
+  throw new Error('visibilityGather: the column table outgrew its region');
+}
 const SLOT = Object.fromEntries(GATHER_SLOTS.map((name, k) => [name, k]));
 
 // The kernel's shape codes (visibilityGather.c) are ShapeType's.
@@ -51,6 +59,7 @@ export async function bindVisibilityGather(memory, v, vm) {
     'gather_light', 'gather_light_u32', 'gather_light_cone', 'gather_light_cone_u32',
   ]);
   const buffer = memory.buffer;
+  if ((v.tableByte & 7) !== 0) throw new Error('visibilityGather: the column table must start on 8 bytes (its args are doubles)');
   const table = new Uint32Array(buffer, v.tableByte, GATHER_SLOTS.length);
   table.fill(0);
   const L = vm.layout;
@@ -69,16 +78,19 @@ export async function bindVisibilityGather(memory, v, vm) {
     buffer,
     gather16: k.gather_light,
     gather32: k.gather_light_u32,
-    /** gather_light(tableByte, light, lx, ly, radius, alpha): the occluders packed. The export for the rows' width. */
+    /** gather_light(tableByte, light), the light's doubles in args first: the occluders packed. The export for the rows' width. */
     gather: k.gather_light,
     gatherCone16: k.gather_light_cone,
     gatherCone32: k.gather_light_cone_u32,
     /**
-     * DX-SPOT: gather_light_cone(tableByte, light, lx, ly, radius, alpha, e1x, e1y, e2x, e2y, wideCone): a cone light's
-     * gather, which also drops what lies wholly outside its wedge (edges e1 to e2 counter-clockwise, unit, world space).
+     * DX-SPOT: gather_light_cone(tableByte, light, wideCone), args[0..7] written first (lx, ly, radius, alpha, e1x, e1y,
+     * e2x, e2y): a cone light's gather, which also drops what lies wholly outside its wedge (edges e1 to e2
+     * counter-clockwise, unit, world space).
      */
     gatherCone: k.gather_light_cone,
     table,
+    /** N-158: the light's doubles for the next gather call (the table's args block). */
+    args: new Float64Array(buffer, v.tableByte + GATHER_ARGS_SLOT * 4, GATHER_ARGS),
     tableByte: v.tableByte,
     /** [0] occluders, [1] vertices, [2] events, [3] 1 when the occluder cap stopped the walk. */
     results: new Int32Array(buffer, v.resultsByte, 4),
