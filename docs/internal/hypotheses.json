@@ -24995,7 +24995,8 @@
     },
     {
       "records": [
-        "R-1739"
+        "R-1739",
+        "R-1836"
       ],
       "refs": [],
       "id": "N-406",
@@ -25005,7 +25006,7 @@
       "date": "2026-11-22",
       "result": "24 tries instead of 8: 49 -> 13 failures of 72 under 24 parallel copies on the ASUS.",
       "title": "frameChainWait.test.js's input-wait test needs the publisher's thread on a core within logic's 0.95 ms wait; on a loaded 2-core machine every try can miss",
-      "statusText": "mitigated 2026-11-22 (3d064a53, R-1739)",
+      "statusText": "fixed 2026-11-22 (3a3ce144, R-1836): awaiting the ASUS's 24-parallel check",
       "next": "A full fix lets the test widen logic's wait budget (an engine field for a test), or times the publish differently.",
       "aliases": [
         "frameChainWait flaky",
@@ -42079,6 +42080,15 @@
       "title": "E-270 re-read: stamp rows only pay for sparse stamps (tens of µs); decalBlit's cost is over a thousand 1 KB tile uploads a frame, so the lever is fewer calls (tiles as the world lays them out, a dirty run as one rectangle)",
       "verdict": "note",
       "text": "**E-270 re-read before building it: uploading only a stamp's rows does not pay where the decal cost is.** 2026-11-22, 05:55, the two stress scenes on main (6 s, detailed stats off):\n\n- decalBlitStressScene (the owner pair: renderer 7.69 ms): 32-world tiles at resolution 0.5 are 16 px, and each of the 1 024 stamps a tick is 36.8 world (the 32 px blood at 1.15) centred on its tile: it covers its whole tile and spills into the neighbours. Its cost is the number of uploads, over a thousand texSubImage2D calls of 1 KB a frame (68 % of Pixi in the CPU sweep), not their size.\n- decalStampStressScene at resolution=1 (renderer 3.22 ms; 1.67 at the default 0.5, under the floor): 768 stamps a tick over 40 tiles of 256 px, about 19 a tile a frame, whose rows together cover the tile.\n- Where rows would pay, a few splats a frame on big tiles (a stamp of 6 to 32 rows of 128), a tile's premultiply and upload is tens of microseconds: a range would save about that.\n- The copy after the premultiply stays (E-123: an upload straight from the shared memory cost the other workers).\n\nSo the plan's lever for the scene that has the cost is fewer calls: tiles laid out as the world is in a few large textures, so a run of dirty tiles (decalBlit's cursor walks them in order) goes up as one rectangle. That changes how decal tiles are drawn (one sprite per tile today): a bigger change, kept as E-270's next."
+    },
+    {
+      "id": "R-1836",
+      "date": "2026-11-22",
+      "time": "06:03",
+      "timeFrom": "recorded",
+      "title": "N-406: logic's input-wait cap is a field the test widens to 20 ms (3a3ce144); this PC passes either version, the ASUS's parallel check decides",
+      "verdict": "note",
+      "text": "**N-406, the full fix (3a3ce144): the test widens logic's input-wait cap instead of retrying.** logicWorker's cap is a field now, `_inputWaitCapMs = 0.95` (declared in the constructor; beforeUpdate's budget is min(period / 8, cap), as before). frameChainWait.test.js's input-wait test sets it to 20 ms on a 160 ms period (its eighth the same 20 ms), main's last frame a period back, publishes 0.3 ms out and asserts the publish ended the wait (waited < 20 ms); 8 tries left for a thread kept off a core. The engine keeps 0.95 ms (Windows: a timed-out Atomics.wait of 1 ms or more sleeps to the timer period).\n\nOn this PC (16 threads) neither version fails: old and new 0 of 96 runs at 48 in parallel (05:59 to 06:03). The check that decides is the ASUS's 24 in parallel (13 of 72 failed with 24 tries, R-1739): asked of the ASUS session."
     }
   ],
   "leads": [
