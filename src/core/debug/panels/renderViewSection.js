@@ -1,10 +1,10 @@
-// renderPanel.js — DBG-5: the Render tab. A View select draws one of the frame's buffers decoded over the picture (the
-// Pixi worker's render views, src/render/renderViews.js); the views the scene has no buffer for are disabled, each with
-// the config that would make it. An opacity slider blends the view over the final picture.
+// renderViewSection.js — DBG-5: the render views, in the Light tab (every view is a buffer of the light pass or what
+// feeds it). A View select draws one of the frame's buffers decoded over the picture (the Pixi worker's render views,
+// src/render/renderViews.js); the views the scene has no buffer for are disabled, each with the config that would make
+// it. An opacity slider blends the view over the final picture. One line: the legend sits beside the controls.
 
-import { createPanel, createRow, createStat } from '../ui/debugDom.js';
+import { createStat, elem } from '../ui/debugDom.js';
 import { RENDER_VIEW, RENDER_VIEWS } from '../../../render/renderViews.js';
-import { DebugPanel } from '../ui/debugPanel.js';
 import { Mouse } from '../../mouse.js';
 
 const LEGENDS = Object.freeze({
@@ -20,9 +20,10 @@ const LEGENDS = Object.freeze({
   [RENDER_VIEW.LIGHT_TILES]: 'lights per light tile: black none, the ramp up to 32 (or lighting.maxLights) white; the tile grid in grey',
 });
 
-export class RenderPanel extends DebugPanel {
+export class RenderViewSection {
   constructor(debugUI) {
-    super(debugUI);
+    this.debugUI = debugUI;
+    this.root = null;
     this.select = null;
     this.opacity = null;
     this.opacityVal = null;
@@ -37,13 +38,12 @@ export class RenderPanel extends DebugPanel {
     };
   }
 
+  /** The controls' line (View, opacity, legend); the light tile read-out is `tileReadout`, for the tab to place. */
   create() {
-    this.panel = createPanel();
-    const row = createRow('gap:8px;align-items:center');
+    const row = elem('div', 'debug-ui-render-view');
     row.appendChild(createStat('View'));
     this.select = document.createElement('select');
-    this.select.style.cssText = 'font-size:10px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;'
-      + 'border:1px solid rgba(255,255,255,0.3);border-radius:3px';
+    this.select.className = 'debug-ui-select';
     for (const v of RENDER_VIEWS) {
       const opt = document.createElement('option');
       opt.value = String(v.id);
@@ -69,17 +69,15 @@ export class RenderPanel extends DebugPanel {
     };
     row.appendChild(this.opacity);
     row.appendChild(this.opacityVal);
-    this.panel.appendChild(row);
 
-    this.legend = createStat('');
-    this.legend.style.cssText = 'display:block;margin-top:6px;font-size:10px;color:rgba(255,255,255,0.55)';
-    this.panel.appendChild(this.legend);
+    this.legend = createStat('', 'debug-ui-render-view-legend');
+    row.appendChild(this.legend);
     // DBG-7: the light tile under the mouse, while the Light tiles view is on.
-    this.tileReadout = createStat('');
-    this.tileReadout.style.cssText = 'display:none;margin-top:4px;font-size:10px;font-family:monospace;color:rgba(255,255,255,0.8)';
-    this.panel.appendChild(this.tileReadout);
+    this.tileReadout = createStat('', 'debug-ui-render-view-tile');
+    this.tileReadout.style.display = 'none';
+    this.root = row;
     this._syncOptions();
-    return this.panel;
+    return row;
   }
 
   attach() {
@@ -148,7 +146,10 @@ export class RenderPanel extends DebugPanel {
     }
     if (document.activeElement !== this.select && this.select.value !== String(this.view)) this.select.value = String(this.view);
     const legend = LEGENDS[this.view] || 'The final picture.';
-    if (this.legend.textContent !== legend) this.legend.textContent = legend;
+    if (this.legend.textContent !== legend) {
+      this.legend.textContent = legend;
+      this.legend.title = legend;
+    }
     const tiles = this.view === RENDER_VIEW.LIGHT_TILES ? 'block' : 'none';
     if (this.tileReadout && this.tileReadout.style.display !== tiles) this.tileReadout.style.display = tiles;
   }

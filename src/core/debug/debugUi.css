@@ -1416,3 +1416,170 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* The Light tab (DBG-8): one line (status, Show lights, the render view), the sun's controls in a grid, two folds. */
+.debug-ui-panel.debug-ui-light {
+  padding: 8px 16px;
+  font-size: 11px;
+}
+
+.debug-ui-light-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.debug-ui-light-status {
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+
+.debug-ui-light-head .debug-ui-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.debug-ui-render-view {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.debug-ui-render-view .debug-ui-range {
+  width: 80px;
+  flex: none;
+}
+
+.debug-ui-select {
+  font-size: 11px;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.debug-ui-render-view-legend {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.debug-ui-render-view-tile {
+  margin-top: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.debug-ui-light-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.debug-ui-light-grid {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 3px 18px;
+  align-items: center;
+}
+
+.debug-ui-light-cell {
+  display: grid;
+  grid-template-columns: 78px minmax(40px, 1fr) 40px;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.debug-ui-light-cell .debug-ui-range {
+  width: 100%;
+}
+
+.debug-ui-light-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-ui-light-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.debug-ui-light-inline input[type='color'] {
+  width: 28px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: none;
+  cursor: pointer;
+}
+
+.debug-ui-light-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.debug-ui-light-number {
+  width: 48px;
+  font-size: 10px;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.debug-ui-light-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 20px;
+  margin-top: 6px;
+  font-size: 10px;
+}
+
+.debug-ui-light-foot details[open] {
+  flex-basis: 100%;
+}
+
+.debug-ui-light-foot summary {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.debug-ui-light-lamps {
+  max-height: 96px;
+  overflow: auto;
+  margin-top: 2px;
+}
+
+
+.debug-ui-light-gpu {
+  display: block;
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.debug-ui-light-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  column-gap: 10px;
+  margin-top: 2px;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.45);
+}

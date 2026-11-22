@@ -18,7 +18,6 @@ import { PoolsPanel } from './panels/poolsPanel.js';
 import { LayersPanel } from './panels/layersPanel.js';
 import { NavigationPanel } from './panels/navigationPanel.js';
 import { LightPanel } from './panels/lightPanel.js';
-import { RenderPanel } from './panels/renderPanel.js';
 import { MemoryPanel } from './panels/memoryPanel.js';
 import { SavesPanel } from './panels/savesPanel.js';
 
@@ -33,8 +32,8 @@ const PANEL_DEFS = [
   ['entities', '📦', 'Entities', EntitiesPanel],
   ['pools', '🌿', 'Pools', PoolsPanel],
   ['layers', '📚', 'Layers', LayersPanel],
+  // The Light tab holds the render views too (DBG-5): each is a buffer of the light pass or what feeds it.
   ['light', '☀', 'Light', LightPanel],
-  ['render', '🖼', 'Render', RenderPanel],
   ['navigation', '🧭', 'Nav', NavigationPanel],
 ];
 

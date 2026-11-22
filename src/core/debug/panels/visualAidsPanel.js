@@ -6,7 +6,6 @@ import { DebugPanel } from '../ui/debugPanel.js';
 
 const TIP_PHYSICS = 'Requires config.physics.enabled';
 const TIP_SPATIAL = 'Requires spatial.numberOfSpatialWorkers > 0';
-const TIP_LIGHTING = 'Requires config.lighting.enabled';
 const TIP_JOINTS = 'Requires config.physics.enabled and physics.maxJoints > 0';
 
 const VISUAL_CAP = {
@@ -19,7 +18,6 @@ const VISUAL_CAP = {
   spatialGrid: 'spatial',
   sleepingCells: 'spatial',
   entityInfo: 'spatial',
-  lights: 'lighting',
 };
 
 const AID_TITLE = {
@@ -30,7 +28,6 @@ const AID_TITLE = {
 const VISUAL_TIP = {
   physics: TIP_PHYSICS,
   spatial: TIP_SPATIAL,
-  lighting: TIP_LIGHTING,
   joints: TIP_JOINTS,
 };
 
@@ -78,7 +75,6 @@ export class VisualAidsPanel extends DebugPanel {
     const extras = [
       { key: 'entityInfo', label: 'Hover info' },
       { key: 'activeOnly', label: 'Selected only' },
-      { key: 'lights', label: 'Lights' },
       { key: 'fpsGraph', label: 'FPS graph' },
     ];
     for (const aid of extras) row2.appendChild(this._toggleButton(aid));

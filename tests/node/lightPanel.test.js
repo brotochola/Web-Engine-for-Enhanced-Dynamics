@@ -1,6 +1,7 @@
 /**
  * DBG-8: the Light tab. Each sun slider calls the Sun setter with its value; the options table lists every key of
- * LIGHTING_DEFAULTS but those it says it leaves out; the lamps list reads LightEmitter's columns.
+ * LIGHTING_DEFAULTS but those it says it leaves out; the lamps list reads LightEmitter's columns; Show lights turns the
+ * lamps' marks on the debug canvas on and off, and only where the scene lights.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,6 +9,7 @@ import assert from 'node:assert/strict';
 import { Sun } from '../../src/core/sun.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { LIGHTING_DEFAULTS } from '../../src/util/configDefaults.js';
+import { DebugFlags, DEBUG_FLAGS } from '../../src/core/debug/debugFlags.js';
 import {
   LIGHT_OPTIONS_NOT_SHOWN,
   LightPanel,
@@ -27,6 +29,19 @@ class El {
     this.value = '';
     this.title = '';
     this.checked = false;
+    this.className = '';
+    const classes = new Set();
+    this.classList = {
+      add: (c) => classes.add(c),
+      remove: (c) => classes.delete(c),
+      contains: (c) => classes.has(c),
+      toggle: (c, on) => {
+        const want = on === undefined ? !classes.has(c) : !!on;
+        if (want) classes.add(c);
+        else classes.delete(c);
+        return want;
+      },
+    };
   }
   appendChild(node) {
     this.children.push(node);
@@ -112,4 +127,34 @@ test('the lamps: the active LightEmitters, each line its radius, brightness, ele
   } finally {
     Object.assign(LightEmitter, saved);
   }
+});
+
+test('Show lights turns the lamps\' marks on and off, and is off where the scene draws no light', () => {
+  withDom(() => {
+    const flags = new DebugFlags(new SharedArrayBuffer(64));
+    let synced = 0;
+    const debugUI = {
+      scene: { config: { lighting: { enabled: true } } },
+      debugFlags: flags,
+      caps: { lighting: true },
+      canvas: { syncLoop: () => synced++ },
+    };
+    const panel = new LightPanel(debugUI);
+    panel.create();
+    panel.attach();
+    assert.equal(panel.lightsBtn.disabled, false);
+    panel.lightsBtn.onclick();
+    assert.equal(flags.isEnabled(DEBUG_FLAGS.SHOW_LIGHTS), true);
+    assert.equal(panel.lightsBtn.classList.contains('active'), true);
+    assert.equal(synced, 1, 'the debug canvas starts its loop');
+    panel.lightsBtn.onclick();
+    assert.equal(flags.isEnabled(DEBUG_FLAGS.SHOW_LIGHTS), false);
+    assert.equal(panel.lightsBtn.classList.contains('active'), false);
+
+    debugUI.caps.lighting = false;
+    panel.update();
+    assert.equal(panel.lightsBtn.disabled, true);
+    panel.lightsBtn.onclick();
+    assert.equal(flags.isEnabled(DEBUG_FLAGS.SHOW_LIGHTS), false, 'no marks where nothing lights');
+  });
 });

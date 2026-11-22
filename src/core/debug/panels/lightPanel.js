@@ -1,12 +1,16 @@
-// lightPanel.js — DBG-8: the Light tab.
+// lightPanel.js — DBG-8: the Light tab, kept short so it covers little of the scene: one line, a grid, two folds.
+// - The line: the status, "Show lights" (each lamp's floor pool or cone on the debug canvas, DebugFlags.showLights) and
+//   the render views (DBG-5, renderViewSection.js: every view is a buffer of the light pass or what feeds it).
 // - The sun: sliders over Sun's own setters (they work at run time from the main thread's staged copy, published once
 //   a frame), the hour (Sun.setTimeOfDay), the day cycle (config.lighting.sun.dayCycle, which the scene reads each
 //   frame), the night light, and a dial with the sun's direction and the shadows'.
-// - The light pass: the scene's lighting options as the scene resolved them, read-only (DEBUG_UI_PLAN section 6,
-//   decision 2), with the GPU, the backend and the opaque pass.
-// - The lamps: every LightEmitter, each a link that inspects its entity.
+// - Folded: the lamps (every LightEmitter, each a link that inspects its entity), and the scene's lighting options as
+//   the scene resolved them, read-only (DEBUG_UI_PLAN section 6, decision 2), with the GPU, the backend and the opaque
+//   pass.
 
-import { createPanel, createRow, createStat, elem } from '../ui/debugDom.js';
+import { createPanel, createStat, createButton, elem } from '../ui/debugDom.js';
+import { DEBUG_FLAGS } from '../debugFlags.js';
+import { RenderViewSection } from './renderViewSection.js';
 import { Sun } from '../../sun.js';
 import { LightEmitter } from '../../../components/lightEmitter.js';
 import { LIGHTING_DEFAULTS } from '../../../util/configDefaults.js';
@@ -16,6 +20,8 @@ import { DebugPanel } from '../ui/debugPanel.js';
 const DEG = 180 / Math.PI;
 /** How many lamps the list names (it counts them all). */
 const LAMPS_SHOWN = 32;
+const LIGHTS_TIP = 'Each lamp on the debug canvas: its reach as a pool on the floor, a cone light\'s wedge, and with '
+  + 'lighting.walls what it sees past them';
 
 /** The sun's sliders: each a Sun property with a setter. */
 export const SUN_SLIDERS = Object.freeze([
@@ -93,6 +99,8 @@ export class LightPanel extends DebugPanel {
     this.daySpeed = null;
     this.dial = null;
     this.status = null;
+    this.lightsBtn = null;
+    this.views = new RenderViewSection(debugUI);
     this.options = null;
     this.gpu = null;
     this.lampsHead = null;
@@ -102,121 +110,127 @@ export class LightPanel extends DebugPanel {
     this._lampRows = [];
   }
 
+  /**
+   * One line (the status, the lamps' marks on the canvas, the render view), the sun's controls in a grid beside the
+   * dial, then the lamps and the options folded: the tab covers as little of the scene as it can.
+   */
   create() {
     this.panel = createPanel();
+    this.panel.className = 'debug-ui-panel debug-ui-light';
 
-    this.status = createStat('');
-    this.status.style.cssText = 'display:block;margin-bottom:6px;color:rgba(255,255,255,0.5)';
-    this.panel.appendChild(this.status);
+    const head = elem('div', 'debug-ui-light-head');
+    this.status = createStat('', 'debug-ui-light-status');
+    head.appendChild(this.status);
+    this.lightsBtn = createButton('Show lights', '', () => this._toggleLights());
+    this.lightsBtn.title = LIGHTS_TIP;
+    head.appendChild(this.lightsBtn);
+    head.appendChild(this.views.create());
+    this.panel.appendChild(head);
+    this.panel.appendChild(this.views.tileReadout);
 
-    const top = document.createElement('div');
-    top.style.cssText = 'display:flex;gap:12px;align-items:flex-start';
-    const sliders = document.createElement('div');
-    sliders.style.cssText = 'flex:1;min-width:0';
-    for (const spec of SUN_SLIDERS) sliders.appendChild(this._slider(spec));
-    sliders.appendChild(this._hourRow());
-    sliders.appendChild(this._colorsRow());
-    sliders.appendChild(this._dayCycleRow());
-    top.appendChild(sliders);
-
+    const body = elem('div', 'debug-ui-light-body');
+    const grid = elem('div', 'debug-ui-light-grid');
+    for (const spec of SUN_SLIDERS) grid.appendChild(this._slider(spec));
+    grid.appendChild(this._hourRow());
+    grid.appendChild(this._colorsRow());
+    grid.appendChild(this._dayCycleRow());
+    body.appendChild(grid);
     this.dial = document.createElement('canvas');
-    this.dial.width = 72;
-    this.dial.height = 72;
+    this.dial.width = 44;
+    this.dial.height = 44;
     this.dial.title = 'The sun (yellow, where its light comes from) and the shadows (grey, where they fall), seen from above';
-    top.appendChild(this.dial);
-    this.panel.appendChild(top);
+    body.appendChild(this.dial);
+    this.panel.appendChild(body);
 
-    this.gpu = createStat('');
-    this.gpu.style.cssText = 'display:block;margin-top:8px;font-size:10px;color:rgba(255,255,255,0.6)';
-    this.panel.appendChild(this.gpu);
+    const foot = elem('div', 'debug-ui-light-foot');
+    const lamps = document.createElement('details');
+    this.lampsHead = document.createElement('summary');
+    this.lampsHead.textContent = 'Lamps';
+    lamps.appendChild(this.lampsHead);
+    this.lampsList = elem('div', 'debug-ui-light-lamps');
+    lamps.appendChild(this.lampsList);
+    foot.appendChild(lamps);
 
-    this.options = document.createElement('div');
-    this.options.style.cssText = 'margin-top:4px;font-size:9px;color:rgba(255,255,255,0.45);'
-      + 'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));column-gap:10px';
-    this.options.title = 'config.lighting as the scene resolved it: read-only (fixed when the renderer builds its programs)';
-    this.panel.appendChild(this.options);
-
-    this.lampsHead = createStat('Lamps');
-    this.lampsHead.style.cssText = 'display:block;margin-top:8px';
-    this.panel.appendChild(this.lampsHead);
-    this.lampsList = document.createElement('div');
-    this.lampsList.style.cssText = 'font-size:10px;max-height:160px;overflow:auto';
-    this.panel.appendChild(this.lampsList);
+    const options = document.createElement('details');
+    const optionsHead = document.createElement('summary');
+    optionsHead.textContent = 'Options and GPU';
+    optionsHead.title = 'config.lighting as the scene resolved it: read-only (fixed when the renderer builds its programs)';
+    options.appendChild(optionsHead);
+    this.gpu = createStat('', 'debug-ui-light-gpu');
+    options.appendChild(this.gpu);
+    this.options = elem('div', 'debug-ui-light-options');
+    options.appendChild(this.options);
+    foot.appendChild(options);
+    this.panel.appendChild(foot);
     return this.panel;
   }
 
-  _slider(spec) {
-    const row = createRow('gap:6px;align-items:center;margin:1px 0');
-    const label = createStat(spec.label);
-    label.style.cssText = 'min-width:84px';
+  /** A grid cell: its label, its control, its value. */
+  _cell(labelText, control, valueEl) {
+    const cell = elem('div', 'debug-ui-light-cell');
+    cell.appendChild(createStat(labelText));
+    cell.appendChild(control);
+    if (valueEl) cell.appendChild(valueEl);
+    return cell;
+  }
+
+  _range(min, max, step, title) {
     const input = document.createElement('input');
     input.type = 'range';
     input.className = 'debug-ui-range';
-    input.min = String(spec.min);
-    input.max = String(spec.max);
-    input.step = String(spec.step);
-    input.title = `Sun.${spec.key}`;
-    const val = createStat('—');
-    val.style.cssText = 'min-width:40px;text-align:right';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.title = title;
+    return input;
+  }
+
+  _slider(spec) {
+    const input = this._range(spec.min, spec.max, spec.step, `Sun.${spec.key}`);
+    const val = createStat('—', 'debug-ui-light-value');
     input.oninput = () => {
       Sun[spec.key] = Number(input.value);
       val.textContent = sliderText(Number(input.value), spec.step);
     };
-    row.appendChild(label);
-    row.appendChild(input);
-    row.appendChild(val);
     this.sliders.push({ spec, input, val });
-    return row;
+    return this._cell(spec.label, input, val);
   }
 
   _hourRow() {
-    const row = createRow('gap:6px;align-items:center;margin:1px 0');
-    const label = createStat('Hour');
-    label.style.cssText = 'min-width:84px';
-    this.hour = document.createElement('input');
-    this.hour.type = 'range';
-    this.hour.className = 'debug-ui-range';
-    this.hour.min = '0';
-    this.hour.max = '24';
-    this.hour.step = '0.05';
-    this.hour.title = 'Sun.setTimeOfDay: angle, elevation, intensity and colour from the hour';
-    this.hourVal = createStat('—');
-    this.hourVal.style.cssText = 'min-width:40px;text-align:right';
+    this.hour = this._range(0, 24, 0.05, 'Sun.setTimeOfDay: angle, elevation, intensity and colour from the hour');
+    this.hourVal = createStat('—', 'debug-ui-light-value');
     this.hour.oninput = () => {
       Sun.setTimeOfDay(Number(this.hour.value));
       this.hourVal.textContent = Number(this.hour.value).toFixed(2);
     };
-    row.appendChild(label);
-    row.appendChild(this.hour);
-    row.appendChild(this.hourVal);
-    return row;
+    return this._cell('Hour', this.hour, this.hourVal);
   }
 
   _colorsRow() {
-    const row = createRow('gap:6px;align-items:center;margin:3px 0');
-    row.appendChild(createStat('Colour'));
+    const cell = elem('div', 'debug-ui-light-inline');
+    cell.appendChild(createStat('Colour'));
     this.color = document.createElement('input');
     this.color.type = 'color';
     this.color.title = 'Sun.color';
     this.color.oninput = () => {
       Sun.color = parseInt(this.color.value.slice(1), 16);
     };
-    row.appendChild(this.color);
-    row.appendChild(createStat('Night colour'));
+    cell.appendChild(this.color);
+    cell.appendChild(createStat('Night'));
     this.nightColor = document.createElement('input');
     this.nightColor.type = 'color';
     this.nightColor.title = 'Sun.nightColor';
     this.nightColor.oninput = () => {
       Sun.nightColor = parseInt(this.nightColor.value.slice(1), 16);
     };
-    row.appendChild(this.nightColor);
-    return row;
+    cell.appendChild(this.nightColor);
+    return cell;
   }
 
   _dayCycleRow() {
-    const row = createRow('gap:6px;align-items:center;margin:3px 0');
+    const cell = elem('div', 'debug-ui-light-inline');
     const label = document.createElement('label');
-    label.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer';
+    label.className = 'debug-ui-light-check';
     label.title = 'config.lighting.sun.dayCycle.enabled: the scene advances the hour each frame (and overrides the sliders)';
     this.dayCycle = document.createElement('input');
     this.dayCycle.type = 'checkbox';
@@ -227,26 +241,44 @@ export class LightPanel extends DebugPanel {
     };
     label.appendChild(this.dayCycle);
     label.appendChild(createStat('Day cycle'));
-    row.appendChild(label);
-    row.appendChild(createStat('speed'));
+    cell.appendChild(label);
+    cell.appendChild(createStat('speed'));
     this.daySpeed = document.createElement('input');
     this.daySpeed.type = 'number';
     this.daySpeed.step = '0.5';
     this.daySpeed.min = '0';
-    this.daySpeed.style.cssText = 'width:56px;font-size:10px;padding:1px 4px;background:rgba(0,0,0,0.5);color:white;'
-      + 'border:1px solid rgba(255,255,255,0.3);border-radius:3px';
+    this.daySpeed.className = 'debug-ui-light-number';
     this.daySpeed.title = 'config.lighting.sun.dayCycle.speed';
     this.daySpeed.onchange = () => {
       const cycle = this._dayCycleConfig();
       const v = Number(this.daySpeed.value);
       if (cycle && Number.isFinite(v) && v >= 0) cycle.speed = v;
     };
-    row.appendChild(this.daySpeed);
-    return row;
+    cell.appendChild(this.daySpeed);
+    return cell;
   }
 
   _dayCycleConfig() {
     return this.debugUI.scene?.config?.lighting?.sun?.dayCycle ?? null;
+  }
+
+  /** The lamps' marks on the debug canvas (DebugFlags.showLights): each lamp's floor pool or cone. */
+  _toggleLights() {
+    const flags = this.debugUI.debugFlags;
+    if (!flags || !this.debugUI.caps?.lighting) return;
+    flags.setFlag(DEBUG_FLAGS.SHOW_LIGHTS, !flags.isEnabled(DEBUG_FLAGS.SHOW_LIGHTS));
+    this.debugUI.canvas?.syncLoop();
+    this._syncLightsButton();
+  }
+
+  _syncLightsButton() {
+    const can = !!this.debugUI.caps?.lighting;
+    const on = can && !!this.debugUI.debugFlags?.isEnabled(DEBUG_FLAGS.SHOW_LIGHTS);
+    if (this.lightsBtn.disabled !== !can) {
+      this.lightsBtn.disabled = !can;
+      this.lightsBtn.title = can ? LIGHTS_TIP : 'Requires config.lighting.enabled';
+    }
+    this.lightsBtn.classList.toggle('active', on);
   }
 
   attach() {
@@ -257,6 +289,8 @@ export class LightPanel extends DebugPanel {
       this.options.appendChild(cell);
     }
     this._lampsKey = '';
+    this.views.attach();
+    this._syncLightsButton();
   }
 
   update() {
@@ -269,6 +303,8 @@ export class LightPanel extends DebugPanel {
     if (this.gpu.textContent !== gpu) this.gpu.textContent = gpu;
     if (Sun.isInitialized) this._syncSun();
     this._syncLamps();
+    this._syncLightsButton();
+    this.views.update();
   }
 
   _syncSun() {
@@ -326,7 +362,7 @@ export class LightPanel extends DebugPanel {
     const key = `${count}:${this._lamps.join(',')}`;
     if (key !== this._lampsKey) {
       this._lampsKey = key;
-      this.lampsHead.textContent = count > this._lamps.length ? `Lamps: ${count} (the first ${this._lamps.length})` : `Lamps: ${count}`;
+      this.lampsHead.textContent = count > this._lamps.length ? `Lamps (${count}, the first ${this._lamps.length})` : `Lamps (${count})`;
       this.lampsList.innerHTML = '';
       this._lampRows.length = 0;
       for (let k = 0; k < this._lamps.length; k++) {
