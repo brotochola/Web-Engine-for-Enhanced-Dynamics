@@ -23990,7 +23990,8 @@
         "R-1751",
         "R-1752",
         "R-1753",
-        "R-1754"
+        "R-1754",
+        "R-1826"
       ]
     },
     {
@@ -41928,6 +41929,15 @@
       "commits": [
         "b167ca2c"
       ]
+    },
+    {
+      "id": "R-1826",
+      "date": "2026-11-22",
+      "time": "03:59",
+      "timeFrom": "recorded",
+      "title": "The ASUS's batch 3 through Predator mix=1: the first gate's renderer +9.6 % (8 pairs) did not hold: both bisect halves NEUTRAL on their base, the merge again NEUTRAL (renderer -4.9 %, cv 14/12 %); this scene's renderer swings about ±10 %",
+      "verdict": "kept-hygiene",
+      "text": "**The ASUS's batch 3 (merged 233839ad) passes Predator: the first gate's renderer +9.6 % was noise.** All on Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, 4 pairs unless said, to 03:59:\n\n- batch3-gate (a63b7af2 -> 233839ad, owner physics, 8 pairs): REGRESSION on the renderer, 6.777 -> 7.458 ms (+9.6 %, worse 7/8, cv 10/5 %, +7.4 % against the other workers); pre-render +4.8 %, logic +3.2 %, spatial +2.5 %, physics +1.6 % (each -1.5 to -2.8 % against the others: drift).\n- Bisect on the batch's own base, --full-rev, owner renderer: d5d5140c -> 58312a98 (CR-4, CR-8, DBG-7, CR-23, CR-22, CR-19): NEUTRAL, renderer -2.0 % (worse 0/4); 58312a98 -> 647a1fdb (N-407, CR-16, DBG-7's readout, DBG-6, CR-20 parts 1-3): NEUTRAL, renderer -0.8 %.\n- batch3-gate2, the merge again in a fresh sitting (owner renderer): NEUTRAL, renderer 7.688 -> 6.675 ms (-4.9 %, cv 14/12 %), logic +1.3 %, spatial -2.2 %, physics +0.7 %, pre-render -0.6 %.\n\nSo in this scene the renderer reads within about ±10 % from sitting to sitting at 4 to 8 pairs (today also +13.9 % -> +1.5 % and +6.9 % -> -1.9 % when pairs were added, R-1818, R-1821): a renderer claim here needs more pairs or a GPU-bound scene of its own. Batch 3 kept as hygiene."
     }
   ],
   "leads": [
