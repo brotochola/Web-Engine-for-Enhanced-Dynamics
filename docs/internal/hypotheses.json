@@ -24630,7 +24630,7 @@
       "kind": "hypothesis",
       "area": "render speed",
       "date": "2026-11-20",
-      "statusText": "2026-11-22 (R-1802): after E-395 and the lamps off by day, map shadows cost +10 % GPU by day (+0.3 ms on the GTX 1650) and the classic layer's CPU; the owner decides the default. Left: the G-buffer pass (0.32 ms) and the light pass (+0.09).",
+      "statusText": "held for the end (owner 2026-11-22): unifying the light and shadow systems is to be discussed with the owner once the rest of the backlog is done; nothing starts before. 2026-11-22 (R-1802): after E-395 and the lamps off by day, map shadows cost +10 % GPU by day (+0.3 ms on the GTX 1650) and the classic layer's CPU; the owner decides the default.",
       "result": "",
       "next": "Owner 2026-11-21: (a) Predator turns its TallLights off by day, switched at once, no fade (\"como las luces normales\"), after E-538 merges (it edits tallLight.js too); (b) the engine must be optimal whatever a game does: lamps lit by day included. So, measured on a quiet machine: (1) E-517 (a lamp tile nothing changed is neither cleared nor drawn) against E-460 (still casters cached per tile, movers over it), read first how many of Predator's 48 tiles have a moving caster each frame; (2) the sun map is laid out on the screen, so caching its still casters only holds with a still camera: lowest priority. Before: B 4.09/4.11 ms by day (lamps' map 0.51, sun map 0.36-0.38).",
       "rank": 12,
