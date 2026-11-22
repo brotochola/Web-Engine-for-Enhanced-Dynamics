@@ -24,8 +24,8 @@ of `docs/internal/` (≈13k lines); follow the linked documents for detail.
   with its date, its time when known, its verdict and its numbers). After a sitting, the same day:
   `node scripts/hypotheses.mjs record --hyp <id> --title "…" --verdict <word> [--status <word>]
   --text-file <note.md>`, a few lines (numbers, verdict, why in one sentence), committed once per session
-  or batch, not one commit per record; `show <id>` and `log` read it, and `node scripts/buildHypothesesPage.mjs --open`
-  builds the page with its timeline (`hypotheses.html`, not committed). Its links into the docs name a row
+  or batch, not one commit per record; `show <id>` and `log` read it, and so does the page (`hypotheses.html`, committed:
+  under `npm run dev` it reads the JSON itself, bugs and timeline included, and again when it changes). Its links into the docs name a row
   by key, never by line (`EXECUTION_PLAN.md#E-82b`); a node test fails when a key finds no row or several.
   `HYPOTHESIS_LOG.md` is only a pointer now: its rows are records. Branches merge the register by key
   (`scripts/mergeRegister.mjs`, the merge driver `.gitattributes` names; define it once per clone, as that file says).

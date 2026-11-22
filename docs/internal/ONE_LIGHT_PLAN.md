@@ -66,8 +66,7 @@ light pass as every other camera, and the code that only it uses is deleted.
   to the new API in the same work. Games in other repositories take the change with their next
   bundle; do not edit them from this work.
 - Tick the item here (`[x]` plus the commit hash) in the commit that finishes it, write what was found
-  under section 7, update its row in `hypotheses.json` and write its record (then
-  `node scripts/buildHypothesesPage.mjs`).
+  under section 7, update its row in `hypotheses.json` and write its record.
 
 ---
 

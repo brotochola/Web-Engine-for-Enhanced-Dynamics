@@ -18,8 +18,7 @@ the first visit. It applies coi-serviceworker's principles; it does not vendor t
 - Work on a branch in this folder (no worktrees).
 - One item per commit; the node suite is green before each commit.
 - Tick the item here (`[x]` plus the commit hash) in the same commit, add anything new under
-  "Found during implementation", and update `DX-SW` in `hypotheses.json` (then run
-  `node scripts/buildHypothesesPage.mjs`).
+  "Found during implementation", and update `DX-SW` in `hypotheses.json`.
 - Before any browser run, check that no other session is benchmarking.
 
 ---

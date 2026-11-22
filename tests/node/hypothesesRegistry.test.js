@@ -6,7 +6,6 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { renderPage } from '../../scripts/buildHypothesesPage.mjs';
 import {
   RECORD_DATE, RECORD_ID, RECORD_TIME, REGISTRY_PATH, docRows, findRows, parseJournal, parseLogRows, resolveRefs, verdictOf,
 } from '../../scripts/hypothesesRegister.mjs';
@@ -14,7 +13,7 @@ import {
 // docs/internal/hypotheses.json is the register: every speed hypothesis, and every record of the work on
 // them (a sitting, a kernel run, a gate, a decision) with its date and time. Its doc refs name rows by key
 // (`EXECUTION_PLAN.md#E-82b`), never by line, so new rows above them do not move them. The page
-// (hypotheses.html) is built from it on demand and is not committed.
+// (docs/internal/hypotheses.html) reads the register itself, with the pure parts in scripts/hypothesesRows.mjs.
 
 const registry = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
 const PENDING = new Set(['open', 'running', 'blocked']);
@@ -183,17 +182,14 @@ test('import-log moves rows written into HYPOTHESIS_LOG.md into the register and
   assert.equal(fs.readFileSync(log, 'utf8'), '# Hypothesis log (moved)\n\nThe records live in the register.\n');
 });
 
-test('the page builds from the register, its resolved rows and the journal', () => {
-  const { resolved } = resolveRefs(registry);
-  const journal = [{ date: '2026-10-24', part: 'morning', title: 'A day', text: 'Text with a </script> inside.' }];
-  const page = renderPage(registry, resolved, journal, '2026-10-24 12:00');
-  assert.match(page, /<title>WeedJS hypotheses<\/title>/);
-  // The embedded data reads back whole (a `<` inside it cannot end its script tag).
-  const open = '<script id="data" type="application/json">';
-  const start = page.indexOf(open) + open.length;
-  const data = JSON.parse(page.slice(start, page.indexOf('</script>', start)));
-  assert.equal(data.registry.hypotheses.length, registry.hypotheses.length);
-  assert.equal((data.registry.records || []).length, (registry.records || []).length);
-  assert.equal(Object.keys(data.resolved).length, Object.keys(resolved).length);
-  assert.equal(data.journal[0].text, journal[0].text);
+test('the page imports only what scripts/hypothesesRows.mjs exports, and that module can load in a browser', async () => {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const page = fs.readFileSync(path.join(dir, '../../docs/internal/hypotheses.html'), 'utf8');
+  const named = /import \{([^}]+)\} from '\.\.\/\.\.\/scripts\/hypothesesRows\.mjs'/.exec(page);
+  assert.ok(named, 'the page imports scripts/hypothesesRows.mjs by its path from docs/internal');
+  const rows = await import('../../scripts/hypothesesRows.mjs');
+  for (const name of named[1].split(',').map((s) => s.trim()).filter(Boolean)) assert.equal(typeof rows[name], 'function', `hypothesesRows.mjs exports ${name}`);
+  // A browser cannot load node: modules, so the module imports nothing.
+  const source = fs.readFileSync(path.join(dir, '../../scripts/hypothesesRows.mjs'), 'utf8');
+  assert.doesNotMatch(source, /^\s*import\b/m);
 });

@@ -9,7 +9,7 @@ tried, what is planned, and the journal of building the engine. They are not the
 | File | Use it for |
 | --- | --- |
 | [`hypotheses.json`](./hypotheses.json) | **The register.** Every speed hypothesis (its status, a one-line result, its rank while pending) and every record of the work on it: each sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers. Read and write it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`, `record`). Two branches merge it by key, not as text: `.gitattributes` names `scripts/mergeRegister.mjs` as its merge driver, defined once per clone (`git config merge.hypotheses.driver "node scripts/mergeRegister.mjs %O %A %B"`). |
-| `hypotheses.html` | The register as a page: a timeline of every record and journal entry by day and time, the ranked queue, every hypothesis with its records, and the leads for new ones. Built locally by `node scripts/buildHypothesesPage.mjs --open`; not committed. |
+| [`hypotheses.html`](./hypotheses.html) | The register as a page: the backlog (running, the ranked queue, open bugs, the rest by kind), the bugs, every entry with its records and the rows of the docs it names, a timeline of every record and journal entry by day and time, and the leads for new ones. It reads `hypotheses.json` and `DEVLOG.md` itself, so open it through a server: `npm run dev`, then `/docs/internal/hypotheses.html`; there it reads the register again when the file changes and opens a doc's row in VS Code. |
 | [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) | Where the records used to be: a pointer to the register. |
 
 ## How we work
