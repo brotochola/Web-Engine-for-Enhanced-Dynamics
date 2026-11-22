@@ -6,6 +6,29 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Sunday 22 November 2026 (small hours) — Forty Thousand at Sixty, and a Lighter Engine
+
+**Predator holds its whole crowd now.** The capacity test asks how big a crowd Predator takes at 60 frames a second with
+every worker's slowest frames inside the budget. Six days ago the answer was 1.55 times the normal crowd, about 24 800
+people, and the spatial worker (the one that finds each entity's neighbours) was the one that broke. Tonight every size
+up to the scene's top, 2.5 times (40 000 civilians and soldiers), passes, with the slowest worker's worst frames at 13 ms
+of the 16.7 available. A second spatial worker for big crowds took the neighbour search off the critical path (spatial
+-34 %), and physics got cheaper twice: its idle threads stopped scanning every task, and the pose it publishes each
+frame is walked without nested loops. The scene can hold more than it can ask for: its pools stop at 2.5 because its
+ids are 16-bit.
+
+**Box2D keeps its memory.** Reordering the awake bodies every 30 steps used to take new buffers before freeing the old
+ones, and the heap kept the room of both: at the biggest crowd Box2D's memory was 92 % full. It now sorts inside the
+step's own scratch space and copies back. The peak fell 38 MB, physics did not get slower.
+
+**Less engine to carry.** The code-reduction plan the owner approved started: about 1 400 lines out of the engine, the
+shipped WebAssembly 27 KB smaller (variants that lost their races moved to the tests), the deprecated names gone, and a
+real bug found on the way: a scene with 65 precomputed queries crashed, because a buffer nobody read was sized for 64.
+Every step ran the full test suites, and the Predator gate read the batches as unchanged within its noise.
+
+**A loaded battle shoots again**, and the gate that starts from a save now measures the mixed battle, where the fighting
+lasts: the ordinary battle finishes sooner now that soldiers find their targets faster.
+
 ## Saturday 21 November 2026 (before midnight) — Shadow Maps Read the Short Form, a Loaded Battle Shoots Again
 
 **The shadow maps stopped re-sending every caster.** With shadow maps on, the renderer sent every caster's full
