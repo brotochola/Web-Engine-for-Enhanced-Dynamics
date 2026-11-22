@@ -10,6 +10,8 @@
  * --seconds: how long each demo runs once started (default 8: the first spawns, the first pools filled).
  * --root: serve that tree instead of this one (a worktree under test).
  * --allow <text>[,<text>]: messages holding one of these are listed apart and do not fail the run.
+ * --scene <url> --export <Class>: that one scene instead of the start page's (a stress or probe scene, say).
+ * --dev-checks: with the debug checks on (config.debug.checks, DX-GUARDS), which the bench page leaves off.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,7 +35,7 @@ export function menuScenes(root = repoRoot) {
 /** Chrome's own notes, not the engine's or the demo's. */
 const BROWSER_NOISE = [/GPU stall due to ReadPixels/, /Automatic fallback to software WebGL/, /\[\.WebGL-/];
 
-async function runDemo(browser, port, { file, exportName }, seconds) {
+async function runDemo(browser, port, { file, exportName }, seconds, devChecks = false) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const found = [];
   page.on('pageerror', (e) => found.push(`[page error] ${String(e).slice(0, 300)}`));
@@ -49,8 +51,8 @@ async function runDemo(browser, port, { file, exportName }, seconds) {
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 30000 });
     await page.evaluate((a) => window.__WEED_BENCHMARK__.prepare({
       warmupMs: 600000, durationMs: 1000, sampleIntervalMs: 100, sceneModule: a.file, sceneExport: a.exportName,
-      canvasWidth: 1280, canvasHeight: 720,
-    }), { file, exportName });
+      canvasWidth: 1280, canvasHeight: 720, devChecks: a.devChecks,
+    }), { file, exportName, devChecks });
     await page.waitForTimeout(seconds * 1000);
   } catch (err) {
     found.push(`[harness] ${String(err?.message ?? err).split('\n')[0].slice(0, 300)}`);
@@ -69,7 +71,9 @@ async function main() {
   const only = args.only ? new Set(String(args.only).split(',')) : null;
   const allow = args.allow ? String(args.allow).split(',') : [];
   const root = args.root ? path.resolve(String(args.root)) : repoRoot;
-  const files = menuScenes(root).filter((s) => !only || only.has(path.basename(s.file, '.js')));
+  const files = args.scene
+    ? [{ file: String(args.scene), exportName: args.export ? String(args.export) : sceneExport(String(args.scene)) }]
+    : menuScenes(root).filter((s) => !only || only.has(path.basename(s.file, '.js')));
   if (files.length === 0) throw new Error('no demo matches --only');
   const server = await createStaticBenchmarkServer(root);
   const browser = await chromium.launch({ headless: false, args: ['--mute-audio'] });
@@ -77,7 +81,7 @@ async function main() {
   try {
     for (const scene of files) {
       const name = path.basename(scene.file, '.js');
-      const all = await runDemo(browser, server.port, scene, seconds);
+      const all = await runDemo(browser, server.port, scene, seconds, Boolean(args['dev-checks']));
       const allowed = all.filter((t) => allow.some((a) => t.includes(a)));
       const bad = all.filter((t) => !allowed.includes(t));
       if (bad.length) failing++;
