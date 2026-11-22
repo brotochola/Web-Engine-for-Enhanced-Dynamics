@@ -25234,6 +25234,26 @@
         "castedShadows composite in map mode",
         "transparent multiply pass"
       ]
+    },
+    {
+      "records": [
+        "R-1865"
+      ],
+      "refs": [],
+      "id": "N-412",
+      "title": "A render with no height map (a sheet of many directions) cast its silhouette below itself, detached: its frames were measured as pictures of one view, so the card stood towards the camera instead of the light",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-22",
+      "result": "Fixed 2026-11-22 (3a2bbdbf, R-1865): such frames stand on a render contact at their lowest row (MAPLESS_ROW_CODE, card for every light); left: every row is height for them, a per-sheet height share to decide with the owner.",
+      "statusText": "fixed 2026-11-22 (3a2bbdbf); a height share per sheet for mapless renders left to the owner",
+      "next": "",
+      "aliases": [
+        "mapless render shadow",
+        "barn shadow detached",
+        "silhouette shadow below the object"
+      ]
     }
   ],
   "records": [
@@ -42758,6 +42778,13 @@
       "title": "N-411 fixed (6aabbee3): the casted shadows' composite skips a frame whose target holds nothing; captures 0 px apart, 34 -> 32 draws and 776.5 -> 722.5 GL calls a frame in light3d Predator",
       "verdict": "kept-hygiene",
       "text": "**N-411 fixed (6aabbee3): the casted shadows' composite skips a frame whose shadows' target holds nothing.**\n\nIn map mode the sun's and the lamps' casters go to their maps, so most frames drew nothing into the shadows' target.\nStill, the castedShadows sprite multiplied that transparent target over the whole canvas, and the target was cleared\nevery frame. Both changed no pixel.\n\nThe composite now draws only when a pass drew into the target (`renderable`). The target is cleared once when it empties:\na debug view shows it, and the light pass never reads it (`uShadowComposite` stays 0, a dead branch of the light shader).\n\nCaptures against the parent, 0 px apart: the light bench by day and by night on WebGL and WebGPU, by day with\n`sun=layer`, and dxCaptureScene.\n\nglFrameRecorder `--gpu-draws` on Predator `dayCycle=0&light3d=1&hour=12&zoom=0.3`, 180 frames each:\n\n| | before | after |\n| --- | --- | --- |\n| draws a frame | 34 | 32 (the screen pass 20 -> 18) |\n| GL calls a frame | 776.5 | 722.5 |\n| GPU time in draws | 5.120 ms | 5.172 ms |\n\nThe GPU time is one run each, within the clocks' noise: the empty composite cost a few hundredths of a ms.\n\nKept as hygiene. Node suite 3 582 / 3 582, with a behavioural test (`shadowCompositeSkip.test.js`: cleared once, the\ncomposite off while empty, back on with the cookies' pass, cleared once when emptied again).\n\nThe light pass's dead `uShadowComposite` branch and its `uShadowMap` binding go with E-531's decision on the classic\nlayer."
+    },
+    {
+      "id": "R-1865",
+      "date": "2026-11-22",
+      "title": "N-412 fixed (3a2bbdbf): a render with no height map stands on its lowest row towards the light (a mapless contact code, its card for every light); light bench maps=0 shadows now hug the barn, cars and furniture in both modes, with maps 0 px apart",
+      "verdict": "kept-hygiene",
+      "text": "**N-412 fixed (3a2bbdbf): a render with no height map stands on its lowest row, towards the light, for its card.**\n\nThe owner saw it on the light bench with `maps=0`: the barn's, the cars' and the furniture's shadows lay below them,\ndetached, in the map and the layer modes alike.\n\nA sheet drawn from many directions shows each light the frame that light sees (pre-render's sunFrameFor and the lamp\nframes). With a height map, its card stands on its contact, that far from its anchor towards the light (N-297). Without\none, the atlas measured its frames as pictures of one view (measureStandingBase), and the card stood that far towards the\ncamera. A first try with the card fixed along the barn did not help: it shows the front frame along the wall, and the sun\nruns nearly along that wall, so the shadow came out thin.\n\nThe fix: such a frame's base is now a render's contact at its lowest opaque row, with its own code\n(`frameBase.js MAPLESS_ROW_CODE`: every row height, as a render with no measure) and the card flag.\n- The sun's card and the lamps' card stand towards their light.\n- The lamps' programs and the CPU column compaction treat it as a card caster, never columns: there are no heights to\n  build them from.\n- `sheetStandsOnContact` and `sheetCastsSolid` skip it, so pre-render keeps showing each light its own frame.\n- A measured code now stops one short of the new one: the shaders' share saturates long before.\n\nThe light bench against the parent:\n\n| case | px apart |\n| --- | --- |\n| `maps=0` by day, map mode | 119 040: the shadows now hug the barn, the table, the bed, the cars and the bus, as the height maps' do |\n| `maps=0` by day, layer mode | 117 016, the same picture |\n| `maps=0` by night (the lamp cards), WebGL and WebGPU | 2 641 |\n| with maps, by day and by night | 0 |\n\nNode suite 3 583, demos 143.\n\n**Left:** every row is height for such a frame, so a low wide object's shadow (a car's roof seen from above) still runs\nlong. A height share declared per sheet is the owner's call (the option filed with this item)."
     }
   ],
   "leads": [
