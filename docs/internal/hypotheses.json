@@ -23978,7 +23978,8 @@
         "R-1818",
         "R-1820",
         "R-1821",
-        "R-1822"
+        "R-1822",
+        "R-1825"
       ]
     },
     {
@@ -41731,6 +41732,13 @@
       "title": "keyedPack's capacity 275 000 sprites (265 000 on 2026-11-16), set by the frames drawn (GPU), pre-render's p99 10.4-10.9 ms; inside a search's swing",
       "verdict": "note",
       "text": "**keyedPack's capacity: 275 000 sprites (265 000 on 2026-11-16), limited by the frames drawn, not by a worker's tail.** runCapacity --scene keyedPack on main d3836ee7, 03:12 to 03:15: 150 000 pass, 300 000 FAIL (drawn 58.69 fps), 210 000 pass, 250 000 pass, 275 000 pass, 285 000 FAIL (drawn 58.98), 275 000 pass again. At the capacity the worst p99 is pre-render's 10.4 to 10.9 ms (p95 9.6 to 9.7 ms), far inside the 16.7 budget: the GPU (renderer frames drawn under 59) sets the edge. +3.8 %, inside a search's swing (about 10 %, R-1236's baseline note): no claim. Predator's capacity is R-1823."
+    },
+    {
+      "id": "R-1825",
+      "date": "2026-11-22",
+      "title": "N-303: CR-12 parts 2-3 (shader math twins and the GID shader twin to tests/reference) and CR-2 part 2 (24 PhysicsWorld methods, 17 wraps), about 370 lines out of src/",
+      "verdict": "kept-hygiene",
+      "text": "**N-303, more test-only code and unused physicsApi surface out of src/ (2026-11-22, after R-1822), suites green each time.**\n\n- CR-12, second part (de92285b, src +1 / -94): the shaders' JS twins that only tests read move to tests/reference/renderMathJs.mjs: pixelDepthValue (pixelDepth.js), turnFrameNormal (faceMap.js), edgeLightAt (lightEdges.js), readLightDataTexel (utils.js); meshLookPassUvs and TWIN_GLSL/TWIN_WGSL go, their tests call meshLookFullscreenUvs(false) and twinGlsl/twinWgsl('A').\n- CR-12, third part (1d18a50e, src +1 / -96): tilemapGid's JS twin of the GID shaders (unpackGidRgba8, decodeTiledGid, the page UV epsilon, pageUvToLocalTile, applyTiledLocalUv, tiledGidAtlasUv) to tests/reference/tilemapGidJs.mjs; packGidPageRgba8 stays (the catalog's tilemap row times it). tilemapGidMicrobench runs.\n- CR-2, second part (29168eaa, src -183): 24 more PhysicsWorld methods no file calls as a method (no dynamic dispatch onto the world anywhere): the world-anchor joint creators, ten particle group getters, the particle query and ray cast wrappers, createOverlapBuffer, getSlotCount, setParticleSubSteps and others, with the 17 wraps left unused. Predator and liquidFunStress boot and step with no error.\n\nLeft in CR-12: lampShadowMap's and volumeShadowMap's JS math and sunMapLanding (the files the ASUS's CR-16 changed: after its batch 3 merges), computeSunFramesInto (pre-render, the ASUS's), toyWorldBounce (a stress scene imports it in the browser). Left in CR-2: BodyHandle with create/createBox/createCircle (the createBodyDirect test's oracle moves into the test) and createPolygon's handle (weedjsPost uses it: with CR-20 part 4)."
     }
   ],
   "leads": [
