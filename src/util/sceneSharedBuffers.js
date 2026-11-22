@@ -155,7 +155,7 @@ export function validateSceneSharedBufferConfig(scene) {
   assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, Math.min(maxEnt, 65535));
   assertIntegerInRange(
     'physics.maxFixturePoolSize',
-    config.physics.maxFixturePoolSize || config.physics.maxFixtures || 0,
+    config.physics.maxFixturePoolSize || 0,
     0,
     MAX_ENTITIES,
   );
@@ -1131,7 +1131,7 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
     // E-76 W11: the block is byte 0 of the mesh memory, which also holds every MESH layer's batches the way Pixi
     // sizes them (meshMemory.js), where the corner kernel rewrites them. No MESH layer: a buffer of its own (nothing
     // rewrites corners).
-    const maxFixtures = (config.physics?.maxFixturePoolSize | 0) || (config.physics?.maxFixtures | 0);
+    const maxFixtures = config.physics?.maxFixturePoolSize | 0;
     scene.meshMemory = createMeshMemory(
       meshGeomBytes,
       totalEntityCount,

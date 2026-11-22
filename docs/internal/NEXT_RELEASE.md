@@ -9,7 +9,9 @@ empties it.
   `isButton2Down` (right), their `Pressed`/`Released` forms, and `isPresent`.
 - **Other deprecated names are gone** (N-303 CR-34): `NavGrid.loadStaticFlowfieldsFromJSON` (use
   `loadStaticFlowfields`), `LiquidFun.getParticleViews` and `getParticleGroups` (use `getViews` and `getGroups`), and
-  `DECORATION_NO_PARENT`, a fixed `0xffff` that was wrong with 32-bit entity ids (use `decorationNoParent()`).
+  `DECORATION_NO_PARENT`, a fixed `0xffff` that was wrong with 32-bit entity ids (use `decorationNoParent()`),
+  `BODY_TYPE` (use `Box2dBodyType`), and the config key `physics.maxFixtures` (use `physics.maxFixturePoolSize`; the
+  old key is now reported as retired).
 - **A layer drawn in one pass takes its `blendMode`** (N-79). A sprite layer without a look, a MESH layer without a
   look and a world-rect layer used to draw with `shader.containerBlend`, normal when the config had no shader, so
   `blendMode` did nothing on them. They now draw with `blendMode`, unless the config sets `shader.containerBlend`. A MESH

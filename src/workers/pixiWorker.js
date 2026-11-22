@@ -10742,9 +10742,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (isMesh) {
         const maxFx =
           (data.config?.physics?.maxFixturePoolSize | 0) ||
-          (this.config?.physics?.maxFixturePoolSize | 0) ||
-          (data.config?.physics?.maxFixtures | 0) ||
-          (this.config?.physics?.maxFixtures | 0);
+          (this.config?.physics?.maxFixturePoolSize | 0);
         const entitySlots = this.globalEntityCount | 0;
         const maxMeshVerts =
           (data.config?.renderer?.maxMeshVerts | 0) ||

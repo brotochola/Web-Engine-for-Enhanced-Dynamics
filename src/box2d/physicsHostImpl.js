@@ -1202,7 +1202,7 @@
 
     if (data.fixtures && data.fixtures.enabled) {
       state.fixturesEnabled = true;
-      state.maxFixtures = data.fixtures.maxFixturePoolSize | data.fixtures.maxFixtures | 0;
+      state.maxFixtures = data.fixtures.maxFixturePoolSize | 0;
       state.fixtureViews = bindFixtureViews(
         data.fixtures.data,
         state.maxFixtures,

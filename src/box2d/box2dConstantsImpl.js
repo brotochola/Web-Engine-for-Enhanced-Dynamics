@@ -24,9 +24,6 @@
     KINEMATIC: 2,
   });
 
-  /** @deprecated use Box2dBodyType */
-  var BODY_TYPE = Box2dBodyType;
-
   var META_FLAG = Object.freeze({
     STATIC: 1,
     DISABLED: 2,
@@ -166,7 +163,6 @@
   global.Box2dConstants = {
     ShapeType: ShapeType,
     Box2dBodyType: Box2dBodyType,
-    BODY_TYPE: BODY_TYPE,
     META_FLAG: META_FLAG,
     STATE_CHANNELS: STATE_CHANNELS,
     STATE_CHANNEL_COUNT: STATE_CHANNEL_COUNT,
@@ -181,7 +177,6 @@
   // Classic globals (weedjsPost / physicsApi importScripts)
   global.ShapeType = ShapeType;
   global.Box2dBodyType = Box2dBodyType;
-  global.BODY_TYPE = BODY_TYPE;
   global.META_FLAG = META_FLAG;
   global.STATE_CHANNELS = STATE_CHANNELS;
   global.STATE_CHANNEL_COUNT = STATE_CHANNEL_COUNT;

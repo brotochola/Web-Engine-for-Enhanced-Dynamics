@@ -5,7 +5,6 @@ const C = globalThis.Box2dConstants;
 
 export const ShapeType = C.ShapeType;
 export const Box2dBodyType = C.Box2dBodyType;
-export const BODY_TYPE = C.BODY_TYPE;
 export const META_FLAG = C.META_FLAG;
 export const STATE_CHANNELS = C.STATE_CHANNELS;
 export const STATE_CHANNEL_COUNT = C.STATE_CHANNEL_COUNT;

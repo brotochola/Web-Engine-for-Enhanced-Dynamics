@@ -120,6 +120,7 @@ export const RETIRED_CONFIG_KEYS = Object.freeze({
   'lighting.maxOccluderSelfLit':
     'it capped the fills the old raycast pass drew over its walls; the light pass lights a wall\'s own pixels itself now, ' +
     'and every wall a light reaches is named, without a cap (OL-15)',
+  'physics.maxFixtures': 'it is physics.maxFixturePoolSize, the scene\'s one pool of extra shapes (N-303 CR-34)',
 });
 
 /** Optimal string alignment distance, letters compared without case. */

@@ -3648,7 +3648,7 @@
       throw new Error('[weedjs-box2d] WEEDJS_INIT missing bodySync dirty buffers');
     }
     bindJointViews(data.jointViews, data.maxJoints | 0);
-    bindFixtureViews(data.fixtureViews, data.maxFixturePoolSize | data.maxFixtures | 0);
+    bindFixtureViews(data.fixtureViews, data.maxFixturePoolSize | 0);
     bindChainViews(data.chainViews, data.maxChainPoints | 0);
     if (data.liquidFunViews) {
       liquidFunViews = {

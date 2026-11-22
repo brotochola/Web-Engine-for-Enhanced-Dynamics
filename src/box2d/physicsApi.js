@@ -397,8 +397,7 @@ function createPhysicsApi(Module) {
   }
 
   class PhysicsWorld {
-    static BODY_TYPE = typeof Box2dBodyType !== 'undefined' ? Box2dBodyType : BODY_TYPE;
-    static Box2dBodyType = typeof Box2dBodyType !== 'undefined' ? Box2dBodyType : BODY_TYPE;
+    static Box2dBodyType = Box2dBodyType;
     static ShapeType = ShapeType;
     static DEFAULT_MATERIAL = DEFAULT_MATERIAL;
     static EVENT_HEADER = EVENT_HEADER;
@@ -468,7 +467,7 @@ function createPhysicsApi(Module) {
       const o = { ...DEFAULT_MATERIAL, ...options };
       const slot = createBody(
         this.worldId,
-        o.type ?? BODY_TYPE.DYNAMIC,
+        o.type ?? Box2dBodyType.DYNAMIC,
         o.x ?? 0,
         o.y ?? 0,
         o.angle ?? 0,
@@ -491,7 +490,7 @@ function createPhysicsApi(Module) {
       const o = { ...DEFAULT_MATERIAL, ...options };
       const slot = createBodyBox(
         this.worldId,
-        o.type ?? BODY_TYPE.DYNAMIC,
+        o.type ?? Box2dBodyType.DYNAMIC,
         o.x ?? 0,
         o.y ?? 0,
         o.angle ?? 0,
@@ -526,7 +525,7 @@ function createPhysicsApi(Module) {
       const o = { ...DEFAULT_MATERIAL, ...options };
       const slot = createBodyCircle(
         this.worldId,
-        o.type ?? BODY_TYPE.DYNAMIC,
+        o.type ?? Box2dBodyType.DYNAMIC,
         o.x ?? 0,
         o.y ?? 0,
         o.angle ?? 0,
@@ -568,7 +567,7 @@ function createPhysicsApi(Module) {
       Module.HEAPF32.set(verts, ptr >> 2);
       const slot = createBodyPolygon(
         this.worldId,
-        o.type ?? BODY_TYPE.DYNAMIC,
+        o.type ?? Box2dBodyType.DYNAMIC,
         o.x ?? 0,
         o.y ?? 0,
         o.angle ?? 0,

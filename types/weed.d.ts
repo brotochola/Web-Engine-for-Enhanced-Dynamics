@@ -567,8 +567,6 @@ export type SceneConfig = Record<string, unknown> & {
      * saves the ~1.5 ms a wake takes on Windows and holds its CPU meanwhile.
      */
     stepSpin?: 'auto' | boolean;
-    /** @deprecated one-release alias of maxFixturePoolSize */
-    maxFixtures?: number;
   };
   debug?: Record<string, unknown> & {
     /**

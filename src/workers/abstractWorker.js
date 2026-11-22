@@ -793,8 +793,7 @@ export class AbstractWorker {
     }
 
     if (data.fixtures && data.fixtures.enabled) {
-      const maxFixturePoolSize =
-        data.fixtures.maxFixturePoolSize | data.fixtures.maxFixtures | 0;
+      const maxFixturePoolSize = data.fixtures.maxFixturePoolSize | 0;
       ColliderFixture.initializeArrays(
         data.fixtures.data,
         maxFixturePoolSize,

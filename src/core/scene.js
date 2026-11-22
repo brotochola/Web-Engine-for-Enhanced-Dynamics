@@ -899,15 +899,6 @@ class Scene {
     // Ensure gravity is synced
     this.config.physics.gravity = this.config.physics.gravity || this.config.gravity;
     this.config.gravity = this.config.physics.gravity;
-    if (
-      (this.config.physics.maxFixturePoolSize | 0) === 0 &&
-      (this.config.physics.maxFixtures | 0) > 0
-    ) {
-      this.config.physics.maxFixturePoolSize = this.config.physics.maxFixtures | 0;
-      debugWorkerLog(
-        'WeedJS: physics.maxFixtures is an alias; use physics.maxFixturePoolSize (global fixture pool, not per body)',
-      );
-    }
 
     // WASM kernel switches (E-76 T7). A key that is not one (a kernel whose JavaScript path has left the engine
     // has no switch) is named once, so a scene that still sets it learns why nothing changed.

@@ -354,15 +354,10 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   /** Soft contact damping ratio ζ → b2WorldDef.contactDampingRatio. */
   contactDampingRatio: SIM.contactDampingRatio,
   maxJoints: 0,
-  /**
-   * Global ColliderFixture pool size for the whole scene (not per body). 0 = off.
-   * `maxFixtures` is a one-release alias copied onto this field in Scene._applyConfigDefaults.
-   */
+  /** Global ColliderFixture pool size for the whole scene (not per body). 0 = off. */
   maxFixturePoolSize: 0,
   /** Global chain-point arena for the whole scene. 0 = off. */
   maxChainPoints: 0,
-  /** @deprecated Use maxFixturePoolSize. Accepted as an alias when the new key is 0. */
-  maxFixtures: 0,
   /** Gravity (px/s²). */
   gravity: SIM.gravity,
   /** Pixels treated as 1 meter for Box2D scale-dependent thresholds. */
