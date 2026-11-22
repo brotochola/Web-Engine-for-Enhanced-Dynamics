@@ -1552,6 +1552,11 @@ class PixiRenderer extends AbstractWorker {
    */
   _commitPixiGbuf(order, count) {
     const batch = this.entitiesBatch;
+    // E-455 step 3: a keyed frame whose pack put the words in the slots' statics: the instances carry the mark alone.
+    if (batch.gbufInStatics) {
+      batch.commitGbufFromStatics(count);
+      return;
+    }
     if (batch.gbufPacked) {
       batch.commitGbuf(batch.packedGbuf, count);
       return;

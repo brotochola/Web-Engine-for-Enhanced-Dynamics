@@ -1,4 +1,5 @@
 import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './pixiMeshWgsl.js';
+import { gbufWordFromStaticsWgsl } from '../spriteIndexed.js';
 import { MAPS_TABLE_BINDING } from '../twinTexel.js';
 
 export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
@@ -174,6 +175,8 @@ export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, 
   if (!source) {
     throw new Error('WeedJS: Instanced sprite WGSL was not loaded before GpuProgram creation.');
   }
+  // E-455 step 3: one that reads the G-buffer words takes a statics frame's word from its statics row.
+  source = gbufWordFromStaticsWgsl(source);
   const vf = gpuStageVF();
   const f = gpuStageF();
   const group2 = { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uStatics: 4 };

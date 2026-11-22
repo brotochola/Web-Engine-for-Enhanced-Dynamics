@@ -25,6 +25,8 @@
  *   - keyedGbufKept: E-455's, keyedGbuf with the copy only when the pack says a slot's words changed (keyed.gbufChanged,
  *            as commitGbuf takes it; a tree whose pack does not say copies every frame). The frames change textures,
  *            not the words' columns, so a tree whose pack says copies none after the first.
+ *   - keyedGbufStatics: E-455 step 3's, without bands: each slot's word in its statics update, none a drawn instance,
+ *            nothing to copy (keyed.gbufStatics, where the tree's pack has the form: it says so in keyed.gbufInStatics).
  *
  *   node tests/bench/gpuPackKeyedMicrobench.mjs [--rows 14000] [--entities 42600] [--dirty 0.05] [--order random|near]
  *     [--marked [texture]] [--gbuf [bands]] [--frames 61] [--output path]
@@ -290,6 +292,16 @@ export async function run({
         for (let w = 0; w < rows * 2; w++) {
           if (got[w] !== want[w]) throw new Error(`the keyed pack's G-buffer float ${w} is not writeGbufWords'`);
         }
+      }
+      // E-455 step 3: without bands, the words in the slots' statics updates (keyed.gbufStatics) and none a drawn
+      // instance: nothing to copy, where the tree's pack has the form (it says so in keyed.gbufInStatics).
+      if (!zIndex) {
+        keyed.gbufStatics = true;
+        pack();
+        if (keyed.gbufInStatics === true) {
+          cases.keyedGbufStatics = { ms: framesMs(change, pack, frames), check: poseSum(s.pose, rows) };
+        }
+        keyed.gbufStatics = false;
       }
       keyed.gbufOut = null;
       keyed.gbufFlags = null;
