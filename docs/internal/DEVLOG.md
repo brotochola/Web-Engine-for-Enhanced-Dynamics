@@ -6,6 +6,34 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Sunday 22 November 2026 (early morning) — A Sprite That Stops Flickering, and Glows That Stay Inside the Canvas
+
+**A sprite could flicker between two looks forever.** Pre-render keeps a sprite's row from one frame to the next when
+nothing about it changed, and it learned "nothing changed" by clearing each sprite's dirty mark after drawing it. Logic
+runs beside it, so a change could land just after pre-render read the row and just before the clear: the mark was lost.
+One of the two queue buffers then kept the old look while the other drew the new one, and the sprite alternated every
+frame until something else touched it. Pre-render now takes the marks before it reads the rows, so a change that lands
+during the frame is seen on the next one (N-408).
+
+**On WebGPU, an additive glow let the page show through.** The two backends add light with the same colour but not the
+same alpha, and the WebGPU canvas was set up to blend with the page behind it. Under a bright lamp the canvas went partly
+transparent. It is opaque now, as the WebGL one is in effect, and the two backends' pictures of the light gallery agree
+within 5/255 where they differed by 52 (N-155).
+
+**Less garbage in every worker's frame.** Each worker's frame loop made a handful of short-lived numbers every frame,
+mostly doubles passed to calls the compiler did not inline. Those now travel in typed arrays: the frame loop's own
+allocations about halved in every worker. The light visibility kernels stopped taking doubles as arguments too, and
+pre-render's allocation on the flashlight scene fell from 127 to 55 KB a second (N-158). A lesson for the tools: code
+that runs once a frame needs over a minute to reach the optimizing compiler, so a heap sample taken after the usual
+eight seconds blamed it for allocations the warm code does not make.
+
+**Still less engine.** The code-reduction plan went on: about 780 more lines out of the engine (old body-creation API,
+the physics host packing views it could pass as they are, deprecated names, test-only math), and on the way a config
+bug: the renderer's frame cap was read by its own copy of the code, because the shared one looked for a name that never
+matched.
+
+Every batch went through the Predator gate and read as unchanged within its noise.
+
 ## Sunday 22 November 2026 (small hours) — Forty Thousand at Sixty, and a Lighter Engine
 
 **Predator holds its whole crowd now.** The capacity test asks how big a crowd Predator takes at 60 frames a second with

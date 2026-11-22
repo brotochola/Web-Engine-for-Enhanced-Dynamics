@@ -12817,7 +12817,8 @@
         "R-1760",
         "R-1828",
         "R-1829",
-        "R-1830"
+        "R-1830",
+        "R-1838"
       ]
     },
     {
@@ -22413,7 +22414,8 @@
       ],
       "records": [
         "R-1761",
-        "R-1762"
+        "R-1762",
+        "R-1838"
       ]
     },
     {
@@ -25067,7 +25069,8 @@
     },
     {
       "records": [
-        "R-1762"
+        "R-1762",
+        "R-1838"
       ],
       "refs": [],
       "id": "N-408",
@@ -42147,6 +42150,15 @@
       "title": "N-406 closed: the ASUS's 24-parallel check passes, 0 of 72 runs of the input-wait test (13 of 72 before)",
       "verdict": "kept-hygiene",
       "text": "**N-406 closed: the ASUS's check passes.** At f7761a6e (the fix, 3a3ce144, R-1836), the same stress as before on the ASUS's 2 cores (24 copies of frameChainWait.test.js at once, 3 rounds, a detached tree): 432 tests passed, 0 failed; the input-wait test 0 of 72 runs (13 of 72 with 24 tries before, 49 of 72 with 8). Finished 05:34:07 (the ASUS's runner log)."
+    },
+    {
+      "id": "R-1838",
+      "date": "2026-11-22",
+      "time": "05:44",
+      "timeFrom": "recorded",
+      "title": "Predator gate over the ASUS's batch 6 and the frame loop (3fdbd5ba -> 7c1d004a): NEUTRAL, preRender -1.1 %",
+      "verdict": "kept-hygiene",
+      "text": "**The ASUS's batch 6 (N-408: persist_take_dirty, one walk over the queued rows on persist-miss frames; DX-STATICSGEN step 1, debug builds only) and the main PC's frame loop (cb0cad0d, R-1830), N-406 and CR-21's renderer key (dd5ab466) pass Predator: NEUTRAL.** batch7-gate, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, 3fdbd5ba -> 7c1d004a (dist built), owner preRender, 4 pairs, 05:41 to 05:44:\n\n- preRender 8.196 -> 8.159 ms (-1.1 %, worse 2/4, cv 1/4 %): N-408's extra walk does not show.\n- logic -2.2 %, spatial -3.6 %, physics -3.1 %, renderer -6.0 % (worse 0 or 1 of 4 each): every worker a little lower, drift (against the others preRender +2.4 %, logic +1.1 %).\n- Load keys within 0.6 %.\n\nKept as hygiene."
     }
   ],
   "leads": [
