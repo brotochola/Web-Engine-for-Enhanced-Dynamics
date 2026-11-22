@@ -25001,18 +25001,18 @@
     {
       "records": [
         "R-1739",
-        "R-1836"
+        "R-1836",
+        "R-1837"
       ],
       "refs": [],
       "id": "N-406",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "tests",
       "date": "2026-11-22",
       "result": "24 tries instead of 8: 49 -> 13 failures of 72 under 24 parallel copies on the ASUS.",
       "title": "frameChainWait.test.js's input-wait test needs the publisher's thread on a core within logic's 0.95 ms wait; on a loaded 2-core machine every try can miss",
-      "statusText": "fixed 2026-11-22 (3a3ce144, R-1836): awaiting the ASUS's 24-parallel check",
-      "next": "A full fix lets the test widen logic's wait budget (an engine field for a test), or times the publish differently.",
+      "statusText": "fixed 2026-11-22 (3a3ce144, R-1836, R-1837): 0 of 72 on the ASUS's 2 cores",
       "aliases": [
         "frameChainWait flaky",
         "input wait test"
@@ -42138,6 +42138,15 @@
       "commits": [
         "77de23be"
       ]
+    },
+    {
+      "id": "R-1837",
+      "date": "2026-11-22",
+      "time": "05:34",
+      "timeFrom": "recorded",
+      "title": "N-406 closed: the ASUS's 24-parallel check passes, 0 of 72 runs of the input-wait test (13 of 72 before)",
+      "verdict": "kept-hygiene",
+      "text": "**N-406 closed: the ASUS's check passes.** At f7761a6e (the fix, 3a3ce144, R-1836), the same stress as before on the ASUS's 2 cores (24 copies of frameChainWait.test.js at once, 3 rounds, a detached tree): 432 tests passed, 0 failed; the input-wait test 0 of 72 runs (13 of 72 with 24 tries before, 49 of 72 with 8). Finished 05:34:07 (the ASUS's runner log)."
     }
   ],
   "leads": [
