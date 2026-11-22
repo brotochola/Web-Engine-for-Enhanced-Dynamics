@@ -784,13 +784,65 @@ INLINE int32_t first_ray_after(const double *rayAng, int32_t n, double a) {
   return lo;
 }
 
-/* clipVisibilityToPolar with mergeSweep (E-43), in and out the same buffers; then markSeenPolarOwners. */
+/* N-300: the most vertices the merge writes, lampWallRow.js's WALL_ROW_MAX_VERTS (a lamp's row holds them all, so
+   pre-render never thins a merged polygon): 512 rays and the sweep's vertices it keeps. */
+#define MERGE_MAX_VERTS 1024
+/* N-300: a sweep vertex this far inside the radius (px) is near: the free ones sit on it, within float32 rounding. */
+#define NEAR_MARGIN 0.5
+
+/* N-300: the polar bin a direction (its pseudo-angle) falls in: the last b whose lower border polarPseudo[2b] is at or
+   below it (0 below the first). */
+INLINE int32_t bin_of_pseudo(const double *polarPseudo, int32_t bins, double p) {
+  int32_t lo = 0;
+  int32_t hi = bins - 1;
+  while (lo < hi) {
+    const int32_t mid = (lo + hi + 1) >> 1;
+    if (polarPseudo[2 * mid] <= p) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/* N-300: whether a solid stamped any bin of ray group k (its hit under the radius). */
+INLINE int group_stamped(const float *polarDist, int32_t k, int32_t group, int32_t bins, double stampedUnder) {
+  const int32_t b0 = k * group;
+  const int32_t b1 = b0 + group < bins ? b0 + group : bins;
+  for (int32_t b = b0; b < b1; b++) {
+    if ((double)polarDist[b] < stampedUnder) return 1;
+  }
+  return 0;
+}
+
+/* N-300: the rays the merge takes at `group` bins a ray, into rayK (each one's group, in order); how many. With the
+   sweep's vertices in (all) the rays over a bin a solid stamped and the one each side of a run of them, where the
+   polygon passes from the sweep to the solid; without (none), every ray, as before N-300. */
+INLINE int32_t rays_taken(int32_t *rayK, const float *polarDist, int32_t group, int32_t bins, double stampedUnder,
+                          int all) {
+  const int32_t count = group == 1 ? bins : (bins + group - 1) / group;
+  int32_t nr = 0;
+  if (all) {
+    for (int32_t k = 0; k < count; k++) rayK[nr++] = k;
+    return nr;
+  }
+  const int first = group_stamped(polarDist, 0, group, bins, stampedUnder);
+  int prev = group_stamped(polarDist, count - 1, group, bins, stampedUnder);
+  int cur = first;
+  for (int32_t k = 0; k < count; k++) {
+    const int next = k + 1 < count ? group_stamped(polarDist, k + 1, group, bins, stampedUnder) : first;
+    if (prev | cur | next) rayK[nr++] = k;
+    prev = cur;
+    cur = next;
+  }
+  return nr;
+}
+
+/* clipVisibilityToPolar with mergeSweep (E-43), in and out the same buffers; then markSeenPolarOwners. N-300: the
+   sweep's own vertices where the sweep is the polygon (every bin no solid stamped, and in front of a solid), and the
+   rays only over the bins a solid stamped and beside them. */
 INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
-  const int32_t cap = s->maxV;
+  const int32_t cap = s->maxV < MERGE_MAX_VERTS ? s->maxV : MERGE_MAX_VERTS;
   if (cap < 3) return n;
   const int32_t bins = (int32_t)t[T_POLAR_BINS];
-  const int32_t group = cap >= bins ? 1 : (bins + cap - 1) / cap;
-  const int32_t count = group == 1 ? bins : (bins + group - 1) / group;
   const float *polarDist = (const float *)(uintptr_t)t[T_POLAR_DIST];
   const double *polarCos = (const double *)(uintptr_t)t[T_POLAR_COS];
   const double *polarSin = (const double *)(uintptr_t)t[T_POLAR_SIN];
@@ -802,23 +854,114 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
   const double lx = s->lx;
   const double ly = s->ly;
   const double radius = s->R > 0 ? s->R : 0; /* clearPolarBins(radius) with the light's radius */
+  /* A bin whose hit is under this holds a solid; at or over it, nothing stamped it (it holds the radius). */
+  const double stampedUnder = radius - EPSILON;
   const float *xs = s->outX;
   const float *ys = s->outY;
   const int32_t edges = n >= 3 ? n : 0;
   /* OL-4: what each ray hit, when the caller asked (the edge that set its distance, or the bins' owner). */
   int32_t *outOcc = s->outOcc;
   int32_t *rayOcc = outOcc ? (int32_t *)(uintptr_t)t[T_RAY_OCC] : 0;
+  const int32_t *binOwner = (const int32_t *)(uintptr_t)t[T_POLAR_OWNER];
 
+  /* N-300: the sweep's vertices that go in. In a bin no solid stamped the sweep is the polygon: every vertex there goes
+     in, free ones too, and no ray is needed there. In a stamped bin a vertex inside the radius nearer than the bin's hit
+     (in front of the solid) goes in as it is; beside a vertex in front, any other goes in too, pulled in along its
+     direction to its bin's hit where the solid is nearer (a wall's shadow side then ends on the solid). Pass 1 notes
+     each vertex's pseudo-angle (evKey), its flags (evType: 1 in front, 2 in a bin no solid stamped, 4 a direction at
+     all) and its bin (sortIdx: walked on from the bin before, the sweep turning with rising angle, or searched where the
+     angle falls); pass 2 keeps them in order, as pseudo-angle, x, y and hit (evKey, evC, evS, evOcc from 0: an index at
+     or below the vertex's, whose own entries pass 2 has read). The sweep is done with that scratch. More than the room
+     the merge leaves (or than the scratch holds): none go in, and every ray does, as before N-300. */
+  int32_t ins = 0;
+  if (edges > 0 && edges <= s->maxEvents) {
+    double *insAng = s->evKey;
+    double *insX = s->evC;
+    double *insY = s->evS;
+    int32_t *insOcc = s->evOcc;
+    uint8_t *flag = s->evType;
+    int32_t *binOf = s->sortIdx;
+    int32_t b = 0;
+    double lastP = 5.0; /* over every pseudo-angle: the first vertex searches */
+    for (int32_t i = 0; i < edges; i++) {
+      const double dx = (double)xs[i] - lx;
+      const double dy = (double)ys[i] - ly;
+      const double p = pseudo_angle(dx, dy);
+      uint8_t f = 0;
+      if (p == p) {
+        if (p < lastP) {
+          b = bin_of_pseudo(polarPseudo, bins, p);
+        } else {
+          while (b + 1 < bins && polarPseudo[2 * (b + 1)] <= p) b++;
+        }
+        lastP = p;
+        const double hit = (double)polarDist[b];
+        const double d = __builtin_sqrt(dx * dx + dy * dy);
+        f = (uint8_t)(4 | (d < radius - NEAR_MARGIN && d < hit ? 1 : 0) | (hit < stampedUnder ? 0 : 2));
+        binOf[i] = b;
+      }
+      insAng[i] = p;
+      flag[i] = f;
+    }
+    const int32_t room = cap - 3;
+    for (int32_t i = 0; i < edges; i++) {
+      const uint8_t f = flag[i];
+      int keep = (f & 3) != 0;
+      if (!keep && f) keep = ((flag[i > 0 ? i - 1 : edges - 1] | flag[i + 1 < edges ? i + 1 : 0]) & 1) != 0;
+      if (!keep) continue;
+      if (ins == room) {
+        ins = 0;
+        break;
+      }
+      /* A vertex pulled in names nothing (as a shadow side's free far end: the edge to it is named for the wall it starts
+         on, the corner's); any other keeps what the sweep's ray hit. */
+      double x = xs[i];
+      double y = ys[i];
+      int32_t occ = outOcc ? outOcc[i] : -1;
+      if (!(f & 3)) {
+        const double hit = (double)polarDist[binOf[i]];
+        const double dx = x - lx;
+        const double dy = y - ly;
+        const double d = __builtin_sqrt(dx * dx + dy * dy);
+        if (hit < d) {
+          const double k = hit / d;
+          x = lx + dx * k;
+          y = ly + dy * k;
+          occ = -1;
+        }
+      }
+      insAng[ins] = insAng[i];
+      insX[ins] = x;
+      insY[ins] = y;
+      insOcc[ins] = occ;
+      ins++;
+    }
+  }
+  /* The rays: one a bin where they fit beside the inserts, else grouped from the room the inserts leave (rays_taken
+     never takes more than that room). */
+  int32_t *rayK = s->sortIdx;
+  int32_t group = 1;
+  int32_t nr = rays_taken(rayK, polarDist, 1, bins, stampedUnder, ins == 0);
+  if (ins + nr > cap) {
+    const int32_t room = cap - ins;
+    group = room >= bins ? 1 : (bins + room - 1) / room;
+    nr = rays_taken(rayK, polarDist, group, bins, stampedUnder, ins == 0);
+  }
+
+  /* With inserts in, a ray's sweep distance starts at none: a ray over bins no solid stamped (beside a run of stamped
+     ones) takes the sweep's own, past the radius where the sweep's free edges run (its free vertices stand past it so
+     that its edges cover the circle), so the polygon there goes on along the sweep's edge; cut to the radius, it cut into
+     the circle on its way to the next free vertex. Without inserts every ray starts at the radius, as before N-300. */
   if (edges > 0) {
-    for (int32_t k = 0; k < count; k++) {
-      const int32_t b0 = k * group;
+    for (int32_t r = 0; r < nr; r++) {
+      const int32_t b0 = rayK[r] * group;
       const int32_t b1 = b0 + group < bins ? b0 + group : bins;
       const int32_t m = b0 + b1;
-      rayAng[k] = polarPseudo[m];
-      rayCos[k] = polarCos[m];
-      raySin[k] = polarSin[m];
-      rayBest[k] = radius;
-      if (rayOcc) rayOcc[k] = -1;
+      rayAng[r] = polarPseudo[m];
+      rayCos[r] = polarCos[m];
+      raySin[r] = polarSin[m];
+      rayBest[r] = ins > 0 ? __builtin_inf() : radius;
+      if (rayOcc) rayOcc[r] = -1;
     }
   }
   for (int32_t i = 0; i < edges; i++) {
@@ -837,7 +980,7 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
     const double ty = fy + (1 + 1e-4) * ey;
     const double cr = sx * ty - sy * tx;
     int32_t k0 = 0;
-    int32_t k1 = count;
+    int32_t k1 = nr;
     int32_t k2 = 0;
     if (cr * cr > 1e-6 * (sx * sx + sy * sy) * (tx * tx + ty * ty) || sx * tx + sy * ty > 0) {
       const double ps = pseudo_angle(sx, sy);
@@ -858,14 +1001,14 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
       lo -= ARC_PAD;
       hi += ARC_PAD;
       if (lo < -2) {
-        k0 = first_ray_at_or_after(rayAng, count, lo + 4);
-        k2 = first_ray_after(rayAng, count, hi);
+        k0 = first_ray_at_or_after(rayAng, nr, lo + 4);
+        k2 = first_ray_after(rayAng, nr, hi);
       } else if (hi > 2) {
-        k0 = first_ray_at_or_after(rayAng, count, lo);
-        k2 = first_ray_after(rayAng, count, hi - 4);
+        k0 = first_ray_at_or_after(rayAng, nr, lo);
+        k2 = first_ray_after(rayAng, nr, hi - 4);
       } else {
-        k0 = first_ray_at_or_after(rayAng, count, lo);
-        k1 = first_ray_after(rayAng, count, hi);
+        k0 = first_ray_at_or_after(rayAng, nr, lo);
+        k1 = first_ray_after(rayAng, nr, hi);
       }
     }
     /* An edge lies on what its end vertex's ray hit (lampWallRow.js reads the polygon the same way). */
@@ -885,10 +1028,43 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
       }
     }
   }
-  const int32_t *binOwner = (const int32_t *)(uintptr_t)t[T_POLAR_OWNER];
-  for (int32_t k = 0; k < count; k++) {
-    const int32_t b0 = k * group;
+  /* The rays and the inserts by angle, written over the sweep's polygon (its edges are all read by now). A vertex on a
+     ray's own direction is the ray's point. The sweep's order turns once round from where it starts (its first vertex
+     may sit on the seam at +pi, the largest pseudo-angle), so the inserts are taken in turn from the one after the
+     largest fall in angle, the seam (cyclically: from the last to the first when it starts at -pi). Not the least angle:
+     a corner and its shadow side's far end share an angle up to rounding, and the second of them may be the least. */
+  int32_t out = 0;
+  int32_t q = 0;
+  if (ins > 1) {
+    double fall = s->evKey[ins - 1] - s->evKey[0];
+    for (int32_t j = 1; j < ins; j++) {
+      const double f = s->evKey[j - 1] - s->evKey[j];
+      if (f > fall) {
+        fall = f;
+        q = j;
+      }
+    }
+  }
+  int32_t taken = 0;
+  for (int32_t r = 0; r < nr; r++) {
+    const int32_t b0 = rayK[r] * group;
     const int32_t b1 = b0 + group < bins ? b0 + group : bins;
+    const int32_t m = b0 + b1;
+    if (taken < ins) {
+      const double ra = polarPseudo[m];
+      while (taken < ins && s->evKey[q] < ra) {
+        s->outX[out] = (float)s->evC[q];
+        s->outY[out] = (float)s->evS[q];
+        if (outOcc) outOcc[out] = s->evOcc[q];
+        out++;
+        q = q + 1 < ins ? q + 1 : 0;
+        taken++;
+      }
+      while (taken < ins && s->evKey[q] == ra) {
+        q = q + 1 < ins ? q + 1 : 0;
+        taken++;
+      }
+    }
     double d = polarDist[b0];
     int32_t nearest = b0;
     for (int32_t b = b0 + 1; b < b1; b++) {
@@ -898,31 +1074,46 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
       }
     }
     /* The bins' owner where a solid's boundary is the nearest thing on the ray; free at the radius. */
-    int32_t occ = d < radius - EPSILON && binOwner[nearest] >= 0 ? -2 - binOwner[nearest] : -1;
-    if (edges > 0 && rayBest[k] < d) {
-      d = rayBest[k];
-      occ = rayOcc ? rayOcc[k] : -1;
+    int32_t occ = d < stampedUnder && binOwner[nearest] >= 0 ? -2 - binOwner[nearest] : -1;
+    if (ins > 0 && !(d < stampedUnder)) {
+      /* Over bins no solid stamped (beside stamped ones): the sweep's own distance, or the radius where none. */
+      if (rayBest[r] < __builtin_inf()) {
+        d = rayBest[r];
+        occ = rayOcc ? rayOcc[r] : -1;
+      }
+    } else if (edges > 0 && rayBest[r] < d) {
+      d = rayBest[r];
+      occ = rayOcc ? rayOcc[r] : -1;
     }
-    const int32_t m = b0 + b1;
-    s->outX[k] = (float)(lx + polarCos[m] * d);
-    s->outY[k] = (float)(ly + polarSin[m] * d);
-    if (outOcc) outOcc[k] = occ;
+    s->outX[out] = (float)(lx + polarCos[m] * d);
+    s->outY[out] = (float)(ly + polarSin[m] * d);
+    if (outOcc) outOcc[out] = occ;
+    out++;
   }
-  s->res[R_MERGE_COUNT] = (uint32_t)count;
+  while (taken < ins) {
+    s->outX[out] = (float)s->evC[q];
+    s->outY[out] = (float)s->evS[q];
+    if (outOcc) outOcc[out] = s->evOcc[q];
+    out++;
+    q = q + 1 < ins ? q + 1 : 0;
+    taken++;
+  }
+  s->res[R_MERGE_COUNT] = (uint32_t)nr;
   s->res[R_MERGE_GROUP] = (uint32_t)group;
   s->res[R_MERGE_EDGES] = (uint32_t)edges;
 
-  /* markSeenPolarOwners, when the caller gave a seen array. */
+  /* markSeenPolarOwners, when the caller gave a seen array: over the rays taken (a ray not taken is over bins no solid
+     stamped, with no owner). */
   uint32_t *ownerSeen = (uint32_t *)(uintptr_t)t[T_OWNER_SEEN];
   if (ownerSeen) {
     const int32_t *polarOwner = (const int32_t *)(uintptr_t)t[T_POLAR_OWNER];
     const uint32_t seenCap = t[T_OWNER_SEEN_CAP];
     const uint32_t stamp = t[T_OWNER_STAMP];
     int32_t marked = 0;
-    for (int32_t k = 0; k < count; k++) {
-      const int32_t b0 = k * group;
+    for (int32_t r = 0; r < nr; r++) {
+      const int32_t b0 = rayK[r] * group;
       const int32_t b1 = b0 + group < bins ? b0 + group : bins;
-      const double sweep = edges > 0 ? rayBest[k] : __builtin_inf();
+      const double sweep = edges > 0 ? rayBest[r] : __builtin_inf();
       for (int32_t b = b0; b < b1; b++) {
         const int32_t owner = polarOwner[b];
         if (owner >= 0 && (double)polarDist[b] <= sweep) {
@@ -933,7 +1124,7 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
     }
     s->res[R_OWNERS_MARKED] = (uint32_t)marked;
   }
-  return count;
+  return out;
 }
 
 INLINE int32_t sweep_light(uint32_t table, double lx, double ly, double maxRadius, int32_t occCount, int32_t polar,

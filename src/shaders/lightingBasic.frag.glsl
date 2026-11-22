@@ -108,7 +108,7 @@ uniform vec4 uWalls;
 // lampWallRow.js's numbers (tests/node/lampWallRow.test.js holds the two copies together).
 const int WALL_BINS = 256;
 const int WALL_VERT0 = 65;
-const int WALL_WALK = 16;
+const int WALL_WALK = 32;
 
 // A direction's place around the lamp, 0..4, rising with atan2 (lampWallRow.js wallAngle).
 float wallAngle(vec2 v) {

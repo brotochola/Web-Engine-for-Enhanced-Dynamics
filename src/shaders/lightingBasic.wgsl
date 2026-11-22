@@ -102,7 +102,7 @@ fn weedScreenToWorld(screenPos: vec2<f32>) -> vec2<f32> {
 // OL-4: the walls' rows (lampWallRow.js; lightingBasic.frag.glsl says how a row is laid out). lampWallRow.js's numbers.
 const WALL_BINS: i32 = 256;
 const WALL_VERT0: i32 = 65;
-const WALL_WALK: i32 = 16;
+const WALL_WALK: i32 = 32;
 
 // A direction's place around the lamp, 0..4, rising with atan2 (lampWallRow.js wallAngle).
 fn wallAngle(v: vec2<f32>) -> f32 {

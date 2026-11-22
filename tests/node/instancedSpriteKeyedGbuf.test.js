@@ -183,3 +183,73 @@ test('a keyed batch handed the G-buffer columns commits its pack\'s words, write
   assert.equal(plain.upload(s.q, { ...opts }), N);
   assert.equal(plain.gbufPacked, false, 'no G-buffer, no words');
 });
+
+// E-455: a keyed frame whose pack finds every slot's words as the frame before's (drawn keyed with them, committed
+// whole) leaves the CPU copy as it is, and each ring slot's buffer, once it holds them, is not sent them again; a word
+// that changes, a frame drawn split or fewer rows send them again.
+test('a keyed batch sends unchanged words to each ring slot once, and changed ones again (E-455)', async () => {
+  const s = await setup(455);
+  const order = Uint32Array.from({ length: N }, (_, i) => i).sort(() => s.rng() - 0.5);
+  const opts = {
+    space: BATCH_SPACE.WORLD, type: s.q.type, indices: order, indexCount: N, depthDenom: N, includeType: -1,
+    excludeType0: -1, excludeType1: -1,
+  };
+  const row = order.find((r) => s.q.key[r] !== KEY_NONE && (s.q.key[r] & 0x3fffffff) < ENTITIES);
+  const entity = s.q.key[row] & 0x3fffffff;
+  for (const [form, extra] of [['by pose', { gbuf: true }], ['by queue row', { gbuf: true, posesByRow: true }]]) {
+    const batch = s.make(extra);
+    const sent = [0, 0];
+    batch._gbufBuffers.forEach((b, r) => {
+      b.update = () => {
+        sent[r]++;
+      };
+    });
+    batch.setGbufColumns(s.flags, s.selfShadow, s.zIndex);
+    const frame = (indexCount = N) => {
+      const n = batch.upload(s.q, { ...opts, indexCount });
+      assert.equal(batch.gbufPacked, true, `${form}: keyed with the words`);
+      batch.commitGbuf(batch.packedGbuf, n);
+      return n;
+    };
+    const check = (label, n = N) => assertWords(`${form}, ${label}`, batch.gbufData, n, order, s.q.key, s.flags, s.selfShadow, s.zIndex);
+    frame();
+    frame();
+    assert.deepEqual(sent, [1, 1], `${form}: each ring slot sent the words once`);
+    for (let f = 0; f < 4; f++) frame();
+    assert.equal(batch._keyedPack.gbufChanged, false, `${form}: the pack found the words in place`);
+    assert.deepEqual(sent, [1, 1], `${form}: unchanged words are not sent again`);
+    check('unchanged');
+    // A drawn entity's flags change: its word does, and each slot is sent the words again.
+    s.flags[entity] ^= 1;
+    frame();
+    assert.equal(batch._keyedPack.gbufChanged, true, `${form}: a flag changed`);
+    frame();
+    assert.deepEqual(sent, [2, 2], `${form}: a changed word goes to both slots`);
+    check('a flag changed');
+    s.flags[entity] ^= 1;
+    frame();
+    frame();
+    assert.deepEqual(sent, [3, 3], `${form}: and back`);
+    // A frame drawn split (its words the caller's: none here), then keyed again: sent again, though the pack's memory
+    // may hold the same words.
+    const key = s.q.key;
+    s.q.key = null;
+    const m = batch.upload(s.q, { ...opts });
+    assert.equal(batch.gbufPacked, false, `${form}: drawn split`);
+    batch.commitGbuf(null, m);
+    s.q.key = key;
+    frame();
+    frame();
+    check('keyed after a split frame');
+    const afterSplit = sent[0] + sent[1];
+    frame();
+    frame();
+    assert.equal(sent[0] + sent[1], afterSplit, `${form}: then kept again`);
+    // Fewer rows: a commit of another count copies and sends them.
+    const before = sent[0] + sent[1];
+    const n = frame(N - 100);
+    assert.equal(n, N - 100);
+    assert.ok(sent[0] + sent[1] > before, `${form}: fewer rows are sent`);
+    check('fewer rows', N - 100);
+  }
+});

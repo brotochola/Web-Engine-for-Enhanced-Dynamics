@@ -98,8 +98,10 @@ test('a solid seen in one bin of a vertex group is seen', () => {
   const none = new Uint8Array(1);
   const f = new Float32Array(1);
   const i = new Int32Array(1);
-  const n = buildVisibilityPolygon(0, 0, R, none, f, f, f, i, none, f, f, 0, outX, outY, 128);
-  assert.equal(clipVisibilityToPolar(0, 0, outX, outY, n, outX, outY, 128), 128);
+  buildVisibilityPolygon(0, 0, R, none, f, f, f, i, none, f, f, 0, outX, outY, 128);
+  // N-300: with no sweep polygon (n 0) the merge is every ray, grouped four bins a ray at 128: since N-300 the sweep's
+  // own vertices (the empty light's free circle) would go in and the rays group from the room they leave.
+  assert.equal(clipVisibilityToPolar(0, 0, outX, outY, 0, outX, outY, 128), 128);
   const seen = new Uint32Array(16);
   markSeenPolarOwners(seen, 5);
   assert.equal(seen[10], 5);

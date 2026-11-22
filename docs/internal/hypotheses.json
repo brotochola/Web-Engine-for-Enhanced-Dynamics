@@ -19663,20 +19663,21 @@
     {
       "id": "E-455",
       "title": "The G-buffer words are written again every frame for every row though most rows' words never change: a words generation (as the statics' gen) would skip both pre-render's rewrite and Pixi's re-upload of unchanged words, or a per-entity word column would let the pack read one u32 instead of the type, entity, flags, self-shadow and a modulo",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-444 agent (opt/prerender-gbuf-words)",
+      "status": "kept",
+      "statusText": "step 1 kept 2026-11-22 on the ASUS (b582144e, R-1778): keyed frames; step 2 (pre-render's packs, the default) open",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
-      "result": "After E-444 the pack writes the words at 0.5 to 0.75 ms a frame (keyedPackStressScene pack=preRender n=250000 churn=0.05 gbuf=1), against 1.0 to 1.2 ms in JS before; Pixi's updateBuffer is 57 to 59 % of Pixi in that scene (E-445).",
-      "next": "A per-entity word column refreshed when flags, band or self-shadow change (the setters mark it), the packs reading it; then rows whose word did not change skip the write and the upload range (with E-445); pre-render's and Pixi's CPU per function before and after.",
+      "result": "keyedPackStressScene gbuf=1: Pixi 13.19 -> 11.21 ms at 150 000 sprites, 6.41 -> 4.91 ms at 80 000 (4 of 4 each); the keyed pack with the compare 1.04 -> 1.29 ms at 60 000 rows (its copy and upload skipped when the words hold).",
+      "next": "Step 2: pre-render's packs still send every frame's words: a words generation in the GPU queue header (a compare against the other queue buffer's words) would let Pixi skip the copy and upload there too; or the word could ride in the keyed statics texture by key, so the draw order no longer matters.",
       "refs": [],
       "aliases": [
         "gbuf words generation",
         "per-entity word column"
       ],
       "records": [
-        "R-1446"
+        "R-1446",
+        "R-1778"
       ]
     },
     {
@@ -23067,21 +23068,23 @@
     },
     {
       "refs": [],
-      "records": [],
+      "records": [
+        "R-1776"
+      ],
       "date": "2026-11-18",
       "aliases": [
         "merged lamp walls not named",
         "own pixels dark near compound solid",
         "row names by vertex"
       ],
-      "result": "On merged lamps the rows name 1 622 of the 2 014 simple walls the sweep saw before the merge (54 of 213 at 17 vertices a polygon), counted by the wired tests' adapter; not a capture yet.",
-      "next": "A capture first (a house beside a rock, lit from the side). Then name by bin as well as by vertex (the merge knows each bin's owner), or light a wall's own pixels by its id when any bin of the lamp names it.",
+      "result": "The probe's walls on a ray's axis beside a compound island cast their shadows (23 976 pixels); visibilityPolarMicrobench's merge 1.87 -> 1.49 ms (-20 %), 61 440 -> 26 303 vertices a frame; compoundVisPoly pre-render 7.71 -> 7.49 ms (neutral); the light pass 4.80 -> 4.63 ms.",
+      "next": "",
       "id": "N-300",
       "kind": "bug",
       "area": "preRender",
-      "status": "open",
+      "status": "kept-hygiene",
       "title": "Near a compound solid a lamp's row is the 512-bin merge, and a simple wall seen only between two bin rays is on no vertex: its own pixels are not lit beyond its edge (about a fifth of such walls)",
-      "statusText": "open (render, low): found 2026-11-18 adapting the wired tests to the rows (OL-15); not caused by the deletion"
+      "statusText": "fixed 2026-11-22 on the ASUS (169307ad, a7ea42ef; R-1776): the merge keeps the sweep's vertices and takes its rays only over the solid's bins"
     },
     {
       "refs": [],
@@ -25130,6 +25133,27 @@
         "renderDirty lost during the emit",
         "persist_take_dirty",
         "persist flicker"
+      ]
+    },
+    {
+      "records": [
+        "R-1776",
+        "R-1777"
+      ],
+      "refs": [],
+      "id": "N-409",
+      "title": "An edge that is all but a ray reads part-lit along its sliver of directions: the light pass reads a point against the edge's line, which then passes by the lamp",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-22",
+      "result": "A point 100 px from its lamp, inside the polygon, read 0.82 in lampWallsWired (the sliver 0.06 px wide there); the wired tests leave such edges (under 1e-3 apart in wallAngle) out.",
+      "statusText": "found 2026-11-22 on the ASUS writing N-300 (R-1776); low: a fraction of a pixel wide, rarely on a light-pass texel centre",
+      "next": "Measure the anti-aliasing along the pixel's ray, or take the edge's segment instead of its line (lightingBasic wallVisibility and lampWallRow.js wallRowLight together).",
+      "aliases": [
+        "near-ray edge sliver",
+        "shadow side reads part-lit",
+        "wall edge line passes the lamp"
       ]
     }
   ],
@@ -42484,6 +42508,42 @@
       "title": "N-256 phase 1 and PW-4 through a Pixi-owner Predator sitting (29068f55 -> ee38e44a): NEUTRAL in 16 pairs, renderer +0.2 % (the first 8 pairs' +8.0 % did not hold); the light3d night sitting read under the floor",
       "verdict": "kept-hygiene",
       "text": "**The Pixi-owner sitting over N-256 phase 1 and PW-4 (29068f55 -> ee38e44a): NEUTRAL in 16 pairs. The first 8 read\nrenderer +8.0 %, which did not hold.**\n\nThe sitting: `runPredatorAbab.mjs --name n256p1-plain --vs 29068f55 --hyp-rev ee38e44a --owner renderer`, with\n`--query \"crowd=2.5&dayCycle=0&mix=1\"`. It ran headed, from the save, on AC power. Base 29068f55 is the commit just\nbefore PW-1, so only N-256's moves differ. It ran 8 pairs from 10:28 to 10:35, then 8 more with `--append`, up to 10:50.\n\n| worker | A -> B (ms), 16 pairs | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.476 -> 15.192 | -0.6 % | 6/16 | -0.7 % |\n| spatial | 7.315 -> 7.212 | +0.0 % | 8/16 | +1.5 % |\n| physics | 15.034 -> 14.824 | -1.3 % | 5/16 | -0.2 % |\n| renderer | 7.131 -> 6.967 | +0.2 % | 8/16 | +3.0 % |\n| preRender | 8.642 -> 8.577 | -0.9 % | 5/16 | -0.5 % |\n\nParticle stays under the 6 ms floor. The load keys are within 0.4 %.\n\n- The first 8 pairs read the renderer at +8.0 % paired. Its deltas ran from -18.9 % to +27.1 % (cv 7/10 %), a standard\n  error of about 4.6 %. The 8 appended pairs brought it to +0.2 %, with 8 of 16 worse.\n- The moves add one or two property loads a frame on the renderer's path: the scenery's camera, the texture table's\n  upload check, and one call per MESH layer.\n- A second sitting, Predator light3d=1 hour=22, read every worker under the 6 ms floor (renderer 2.9 -> 3.1 ms), so it\n  gives no reading.\n- PW-3 (custom layers) and phases 3 to 4 get their own sitting."
+    },
+    {
+      "id": "R-1776",
+      "date": "2026-11-22",
+      "time": "10:40",
+      "timeFrom": "recorded",
+      "title": "N-300 fixed: the polar merge keeps the sweep's vertices (a thin wall beside a compound solid casts its shadow and is named), then takes its rays only over the solid's bins: the merge -20 % against main, its polygons -57 % vertices, pre-render neutral, WALL_WALK 32",
+      "verdict": "kept-hygiene",
+      "text": "**N-300 fixed on the ASUS (169307ad, a7ea42ef): a thin wall beside a compound solid casts its shadow and its lamp's row\nnames it, and the polar merge is faster than before.** Near a compound solid a lamp's polygon is the polar merge, which\nsampled the sweep's polygon at its 512 rays alone (0.7 degrees apart): a wall between two rays was on no vertex, cast no\nshadow and was named nowhere (the probe's walls along a ray's axis beside a compound island had none).\n\nStep 1 (169307ad) kept the sweep's own vertices among the rays: in front of the solid as they are, a shadow side's far end\npulled in to the solid's hit (dropping it had joined the solid's ray to the wall's corner, a dark wedge up to a bin wide),\nmerged from the seam (after the largest fall in angle; the least angle could start at the second of a corner and its far\nend, which tie up to rounding); rows of 1024 (WALL_ROW_MAX_VERTS), and WALL_WALK 16 -> 32 in lampWallRow.js and both\nshaders (a fence of 2 px posts 4 px apart 640 px out on a diagonal needs 21 to 24 steps from a bin's start, already in a\nplain sweep: lampWallsDenseBin.test.js). It cost pre-render +19 % in compoundVisPoly boxes=300 ringSegments=36 (3.81 ->\n4.53 ms, under the floor); visibilityPolarMicrobench (new, 4dee1b3e) put it in the merge's work: 1.87 -> 2.69 ms a frame\nof 120 lights (+43 %), the code alone with no insert taken equal to main.\n\nStep 2 (a7ea42ef): in a bin no solid stamped the rays only sampled the sweep's polygon, now kept whole, so the merge takes\nevery sweep vertex there and its rays only over the stamped bins and the one each side of a run of them (every ray with no\nsweep polygon, as before); a ray beside a run, over empty bins, takes the sweep's own distance past the radius (cut to it,\nthe edge to the sweep's next free vertex cut into the circle); the edge tests run over the rays taken; a pulled-in vertex\nnames nothing (the edge to it is its corner's wall's shadow side).\n\nSitting (the ASUS, main 69b356d0 against a7ea42ef): visibilityPolarMicrobench, 6 rounds, the polar sweep 5.09-5.16 ->\n4.71-4.76 ms (-7.6 %), its merge 1.85-1.88 -> 1.47-1.55 ms (-20 %), 61 440 -> 26 303 vertices a frame (-57 %);\ncompoundVisPoly boxes=300 ringSegments=96 pre-render 7.705 -> 7.494 ms (-1.2 %, 2 of 4 worse: NEUTRAL, so step 1's cost\nis gone); the light pass on the GPU (timer queries) compoundVisPoly 4.80 -> 4.63 ms (-3.5 %), lightGallery walls=1 and\nlight3dCompare equal on both backends with the 32-step walk. Captures, both backends: without a compound solid byte for\nbyte (the probe, houseLight, lightGallery walls=1); with one, 23 976 pixels, the missing shadows. Suites: test:node 3518,\ntest:demos 143.\n\nFound on the way, filed as N-409: an edge that is all but a ray reads part-lit along its sliver of directions.",
+      "commits": [
+        "169307ad",
+        "4dee1b3e",
+        "a7ea42ef"
+      ]
+    },
+    {
+      "id": "R-1777",
+      "date": "2026-11-22",
+      "time": "10:40",
+      "timeFrom": "recorded",
+      "title": "N-409 filed: an edge that is all but a ray reads part-lit along its sliver of directions (the light pass reads a point against the edge's line)",
+      "verdict": "note",
+      "text": "Filed with N-300 (R-1776). The light pass (lightingBasic wallVisibility, lampWallRow.js wallRowLight) reads a point against\nthe line of the edge over its direction; for an edge whose two ends lie almost on one ray from the lamp (a shadow side, or\nthe merge's join across a stamped bin), that line passes by the lamp, so a point anywhere along the edge's sliver of\ndirections, even near the lamp, sits within half a pixel of the line and reads 0.6 to 0.9: a point 100 px from its lamp\ninside the polygon read 0.82 in lampWallsWired (the sliver 0.06 px wide there). Low: a fraction of a pixel wide, and at\nthe light pass's quarter resolution rarely on a texel centre. The wired tests leave such edges out (under 1e-3 apart in\nwallAngle). A fix measures the anti-aliasing along the pixel's ray, or takes the edge's segment instead of its line."
+    },
+    {
+      "id": "R-1778",
+      "date": "2026-11-22",
+      "time": "09:56",
+      "timeFrom": "recorded",
+      "title": "E-455 step 1 kept: a keyed frame's G-buffer words go up only when they changed; keyedPackStressScene gbuf=1 Pixi -14.9 % at 150 000 sprites (4 of 4), -24.5 % at 80 000 (4 of 4); the pack's compare costs more than the copy it saves, the upload is the saving",
+      "verdict": "kept",
+      "text": "**E-455 step 1 kept (4320882e, b582144e): a keyed frame's G-buffer words go up only when they changed.** The keyed pack's\nwords forms compare each slot's word and band with what the memory held (results[3], keyed.gbufChanged); commitGbuf\nleaves the CPU copy as it is when the frame before was drawn keyed with them too and committed whole with as many rows\n(a draw serial counted in _finishUpload guards the shared rows), and each ring slot's buffer goes up only when it holds an\nolder generation of the copy or fewer rows.\n\nSitting (the ASUS, runPredatorAbab, 4 pairs, the measurement tool's commit against E-455's): keyedPackStressScene gbuf=1\nn=150000, Pixi 13.19 -> 11.21 ms (-14.9 %, 4 of 4, cv 2/1 %), drawn 36.3 -> 38.6 fps, with pre-render +4.1 % and logic\n+5.0 % from a saturated two-core machine (pre-render 30 ms a step at 188 %; vs the others +11.2 % and +9.4 %); n=80000,\nPixi 6.41 -> 4.91 ms (-24.5 %, 4 of 4), pre-render 11.76 -> 10.07 (-12.8 %), logic 4.07 -> 3.11 (under the floor). The\nkernel costs more (gpuPackKeyedMicrobench --gbuf, 60 000 rows: keyedGbufKept 1.04 -> 1.29 ms comparing three floats,\n1.22 -> 1.17 for word and band alone): the compare reads each slot back, more than the copy it saves; the frame's saving\nis the upload, 1.5 to 2 ms of Pixi a frame at these counts on this machine. It pays while the draw order and visible set\nhold (renderer.ySort off, the default, and a still camera).\n\nNext (step 2): pre-render's packs (preRender.packGpuSprites 'preRender', the engine's default) still send every frame's\nwords: a words generation in the GPU queue's header, set by a compare against the other queue buffer's words, would let\nPixi skip the copy and the upload there too; or the word could ride in the keyed statics texture by key, so the order no\nlonger matters.",
+      "commits": [
+        "4320882e",
+        "b582144e"
+      ]
     }
   ],
   "leads": [

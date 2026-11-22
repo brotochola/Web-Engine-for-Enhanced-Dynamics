@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { POLAR_BINS } from '../../src/render/visibility/angularSweep.js';
+import { WALL_ROW_MAX_VERTS } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import {
   buildVisibilityPolygon,
@@ -34,8 +35,8 @@ function placeholder(lx, ly, r, Buf = Float32Array) {
 function merge(lx, ly, r, segs, poly, maxVerts) {
   clearPolarBins(r);
   for (const [x0, y0, x1, y1] of segs) rasterBoundarySegment(x0, y0, x1, y1, lx, ly);
-  const outX = new Float32Array(POLAR_BINS);
-  const outY = new Float32Array(POLAR_BINS);
+  const outX = new Float32Array(WALL_ROW_MAX_VERTS);
+  const outY = new Float32Array(WALL_ROW_MAX_VERTS);
   const m = clipVisibilityToPolar(lx, ly, poly.x, poly.y, poly.n, outX, outY, maxVerts);
   return { m, x: Array.from(outX.subarray(0, m)), y: Array.from(outY.subarray(0, m)) };
 }
@@ -96,8 +97,8 @@ test('a Float64 placeholder takes the same path and gives the same polygon', () 
 // (merge) and the placeholder circle (full), at four vertex caps.
 const GOLDEN = {
   nearest_5000: [512, 27090489], nearest_512: [512, 27090489], nearest_128: [128, 428382817], nearest_17: [17, 4136368722],
-  merge_5000: [512, 2828365352], merge_512: [512, 2828365352], merge_128: [128, 1255936873], merge_17: [17, 547287056],
-  full_5000: [512, 2528039606], full_512: [512, 2528039606], full_128: [128, 4289685741], full_17: [17, 3401231949],
+  merge_5000: [395, 1531786084], merge_512: [395, 1531786084], merge_128: [114, 4291938855], merge_17: [17, 279817815],
+  full_5000: [393, 242163001], full_512: [393, 242163001], full_128: [112, 1005867855], full_17: [17, 1910470142],
 };
 
 function fnv(xs, ys, n) {
@@ -129,7 +130,7 @@ test('polar merge output is pinned bit for bit (E-41, E-42)', () => {
       if (occ >= 0) n = buildVisibilityPolygon(lx, ly, 220, kind, cx, cy, cr, vs, vc, vx, vy, occ, sx, sy, 512);
       clearPolarBins(220);
       for (const [a, b, c, d] of segs) rasterBoundarySegment(a + lx, b + ly, c + lx, d + ly, lx, ly);
-      const ox = new Float32Array(POLAR_BINS), oy = new Float32Array(POLAR_BINS);
+      const ox = new Float32Array(WALL_ROW_MAX_VERTS), oy = new Float32Array(WALL_ROW_MAX_VERTS);
       const k = clipVisibilityToPolar(lx, ly, sx, sy, n, ox, oy, maxVerts);
       assert.deepEqual([k, fnv(ox, oy, k)], GOLDEN[`${name}_${maxVerts}`], `${name} maxVerts ${maxVerts}`);
     }
