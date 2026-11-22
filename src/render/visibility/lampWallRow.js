@@ -226,8 +226,19 @@ export function wallRowLight(rows, o, px, py, selfId, depth = 0, behind = WALL_U
   const ex = rows[at + 4] - ax;
   const ey = rows[at + 5] - ay;
   // The vertices turn with rising atan2 around the lamp, so the lamp's side of an edge is where this cross is positive.
-  const len = Math.sqrt(ex * ex + ey * ey);
-  const inside = (ex * (vy - ay) - ey * (vx - ax)) / (len > 1e-4 ? len : 1e-4);
+  // N-409: how far inside is the distance to the edge's segment (the line's own wherever the point
+  // faces it): an edge all but along a ray from the lamp has a line that passes by the lamp, and a point far along the ray
+  // from the edge read a part of the light.
+  const rx = vx - ax;
+  const ry = vy - ay;
+  const len2 = ex * ex + ey * ey;
+  let along = (rx * ex + ry * ey) / (len2 > 1e-8 ? len2 : 1e-8);
+  if (along < 0) along = 0;
+  else if (along > 1) along = 1;
+  const dx = rx - ex * along;
+  const dy = ry - ey * along;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const inside = ex * ry - ey * rx >= 0 ? dist : -dist;
   let lit = inside + 0.5;
   if (lit >= 1) return 1;
   if (lit < 0) lit = 0;

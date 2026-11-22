@@ -134,7 +134,12 @@ fn wallVisibility(p: vec2<f32>, tag: f32, selfId: f32) -> f32 {
   if (v0.w < 0.5) { return 1.0; }
   let edge = v1.xy - v0.xy;
   let rel = v - v0.xy;
-  let inside = (edge.x * rel.y - edge.y * rel.x) / max(length(edge), 1e-4);
+  // N-409: how far inside is the distance to the edge's segment (the line's own wherever the point
+  // faces it): an edge all but along a ray from the lamp has a line that passes by the lamp, and a point far along the ray
+  // from the edge read a part of the light.
+  let along = clamp(dot(rel, edge) / max(dot(edge, edge), 1e-8), 0.0, 1.0);
+  let dist = length(rel - edge * along);
+  let inside = select(-dist, dist, edge.x * rel.y - edge.y * rel.x >= 0.0);
   let lit = clamp(inside + 0.5, 0.0, 1.0);
   if (lit >= 1.0) { return 1.0; }
   let owner = floor(v0.w / 256.0);

@@ -111,9 +111,8 @@ for (const [withSolid, maxVerts] of [[false, 512], [true, 512], [true, 5000]]) {
     if (withSolid) assert.ok(polarRayVertices(rows, o) >= 3, `the merge ran (${polarRayVertices(rows, o)} vertices on its rays)`);
     const poly = rowPolygon(rows, o);
     const steps = mostSteps(rows, o);
-    // Points across the fence's directions, in front of it and in its shadows. A point whose direction falls on an edge
-    // that is all but a ray (a shadow side: its corner and its far end, the sweep's two samples a hair apart) is left
-    // out, as lampWallsWired.test.js leaves it: the edge's line passes the lamp, so a point anywhere along it reads a part.
+    // Points across the fence's directions, in front of it and in its shadows (N-409: those on a shadow side's sliver of
+    // directions too, read against its segment).
     const rand = mulberry32(0xfe7ce);
     const mid = Math.atan2(-Math.SQRT1_2, Math.SQRT1_2);
     const half = Math.atan2(POSTS * 2 + 4, FENCE);
@@ -127,10 +126,6 @@ for (const [withSolid, maxVerts] of [[false, 512], [true, 512], [true, 5000]]) {
       const py = LY + Math.sin(a) * d;
       const at = polygonAt(poly, px, py);
       if (at.nearest < 0.75) continue;
-      let wa = wallAngle(px - rows[o + 2], py - rows[o + 3]);
-      if (wa < rows[o + 1]) wa += 4;
-      const e = coveringEdge(rows, o, 0, wa);
-      if (rows[vert(o, e + 1) + 2] - rows[vert(o, e) + 2] < 1e-3) continue;
       const got = wallRowLight(rows, o, px, py, 0);
       const ok = at.inside ? got === 1 : got >= WALL_UMBRA - 1e-6 && got < 1 - 1e-3;
       if (at.inside) lit++;

@@ -146,7 +146,12 @@ float wallVisibility(vec2 p, float tag, float selfId) {
   vec2 edge = v1.xy - v0.xy;
   vec2 rel = v - v0.xy;
   // The vertices turn with rising atan2 around the lamp, so the lamp's side of an edge is where this cross is positive.
-  float inside = (edge.x * rel.y - edge.y * rel.x) / max(length(edge), 1e-4);
+  // N-409: how far inside is the distance to the edge's segment (the line's own wherever the point
+  // faces it): an edge all but along a ray from the lamp has a line that passes by the lamp, and a point far along the ray
+  // from the edge read a part of the light.
+  float along = clamp(dot(rel, edge) / max(dot(edge, edge), 1e-8), 0.0, 1.0);
+  float dist = length(rel - edge * along);
+  float inside = edge.x * rel.y - edge.y * rel.x >= 0.0 ? dist : -dist;
   float lit = clamp(inside + 0.5, 0.0, 1.0);
   if (lit >= 1.0) return 1.0;
   float owner = floor(v0.w / 256.0);
