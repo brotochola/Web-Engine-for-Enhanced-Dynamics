@@ -24034,7 +24034,8 @@
         "R-1844",
         "R-1845",
         "R-1847",
-        "R-1848"
+        "R-1848",
+        "R-1849"
       ]
     },
     {
@@ -42433,6 +42434,15 @@
       "title": "Predator gate over CR-18 parts 6-7, the DX-CONFIGCHECK loss warnings and CR-7 (56ab3fae -> 69b356d0), 8 pairs: NEUTRAL, every worker within 3 % (renderer -2.6 %, preRender +1.3 %); R-1844's renderer +6.6 % did not come back",
       "verdict": "kept-hygiene",
       "text": "**Predator gate over CR-18 parts 6-7, the DX-CONFIGCHECK loss warnings and CR-7 (56ab3fae -> 69b356d0, both bundles'\nsources): NEUTRAL in 8 pairs.**\n\n`runPredatorAbab.mjs --name batch11 --vs 56ab3fae --hyp-rev 69b356d0 --pairs 8 --query \"crowd=2.5&dayCycle=0&mix=1\"`,\nheaded, from the save, on AC power; 08:42 to 08:49.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.909 -> 16.261 | +0.8 % | 5/8 | -0.3 % |\n| spatial | 7.455 -> 7.440 | -0.4 % | 2/8 | -0.7 % |\n| physics | 15.540 -> 15.722 | -0.4 % | 4/8 | +0.1 % |\n| renderer | 7.543 -> 7.297 | -2.6 % | 3/8 | -3.0 % |\n| preRender | 8.726 -> 8.955 | +1.3 % | 5/8 | +2.4 % |\n\nParticle is under the 6 ms floor (1.39 -> 1.36). Load keys within 1 % (BODY_COUNT -0.7 %, VISIBLE_ENTITIES -0.7 %).\nThe renderer's +6.6 % in R-1844 did not come back: it reads -2.6 % here, so no bisect of CR-18 parts 3-5. The sitting\nnamed `--owner pixi`, which is not a row name. With every row inside ±3 % the verdict is the same without an owner."
+    },
+    {
+      "id": "R-1849",
+      "date": "2026-11-22",
+      "time": "09:17",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-14 and CR-15 done: pose and additive shader variants made from their base (4 files out), the Pixi groups header and weedUv written once and included (shaderChunks.js); src -365 lines, every shader and JS-written program byte for byte",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-14 and CR-15 done (shader variants made from their base, shader chunks written once): src/ -365 lines in two\ncommits; what the renderer compiles is byte for byte the same.**\n\n- e2c15c15, CR-14: `instancedSpritePose.vert.glsl`, `instancedSpritePose.wgsl`, `instancedSpriteAdditive.frag.glsl` and\n  `gpuParticleAdditive.frag.glsl` go. `src/render/shaderVariants.js` (spritePoseGlsl, spritePoseWgsl,\n  additiveFragGlsl) makes them with replaceOnce when the base arrives, which means four fetches fewer at boot. The three\n  sprite variants equalled their files byte for byte; the particle one differed only in a comment line. `lfLightSplat`\n  stays its own file, since two thirds of it differs from `lfSplat`. src -171.\n- f1638c62, CR-15: the 14-line header of Pixi's groups 0 and 1 was in 11 WGSL files and 6 JS-written programs, and\n  `weedUv` was in 3 GLSL files, 3 WGSL files and faceMap.js. Now each lives once in `src/render/shaderChunks.js`\n  (PIXI_GROUPS_WGSL, WEED_UV_GLSL, WEED_UV_WGSL). A shader file names a chunk with `// #include <name>`, and\n  `fetchEngineShader` resolves it for a fetch and a bundle's embed alike. All 32 shader files resolve to their old text,\n  and all 18 JS-written programs equal theirs. src -194.\n- The tests read every shader through `tests/node/engineShaderSources.mjs`: `readEngineShader` by the old file names,\n  includes resolved, and `spriteGlslShaders` for the four-key dictionary 14 tests copied. The gpuPass,\n  meshFillGpuBench and spriteIndexedCompileCheck benches resolve what they fetch.\n\nCaptures against main on WebGL and WebGPU, 0 of 921600 pixels differ on each: dxCapture hour=22, light3dCompare all=1\nhour=22 still=1, depthPair, and for CR-15 also volumeStress still=1 dayMinutes=0. Suites: node 3515/0, demos 143/0.\ntest:bundle and test:node:bundle pass on a bundle of the CR-15 tree. Load-time code only, no timing; the next Predator\ngate covers it."
     }
   ],
   "leads": [
