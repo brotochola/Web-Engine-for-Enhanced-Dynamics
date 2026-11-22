@@ -18206,12 +18206,12 @@
       "id": "E-395",
       "title": "Keyed caster rows for casters that ask for a kind (DX-CASTER): one such caster turns the keyed caster path off for the whole scene (_casterKindsOn), so light3d scenes pack full rows and E-372 does not serve them",
       "status": "kept",
-      "statusText": "Kept 2026-11-21 on both backends (R-1696, R-1697): the sun's and the lamps' maps draw keyed caster rows; Predator map mode pre-render -35.7 % (WebGL) and -38.5 % (WebGPU), renderer -21.3 % and -23.9 %, uploads -42 %; captures identical.",
+      "statusText": "Kept 2026-11-21 (R-1696, R-1697, R-1698): the shadow maps and their columns draw keyed caster rows on both backends; Predator map mode pre-render -35.7 % (WebGL) and -38.5 % (WebGPU), light3d -30.5 %; renderer -15 to -24 %; uploads -42 %.",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
       "result": "",
-      "next": "The columns over keyed rows (scenes with height maps, the barrio, keep the full rows), and a kind carried in the keyed row.",
+      "next": "A still capture of keyed columns (a scene with keyed frames and height maps); the barrio's casters with frames of their own (N-188) and its keyed frames; a kind carried in the keyed row.",
       "refs": [],
       "aliases": [
         "keyed rows caster kinds"
@@ -18221,7 +18221,8 @@
         "R-1687",
         "R-1688",
         "R-1696",
-        "R-1697"
+        "R-1697",
+        "R-1698"
       ]
     },
     {
@@ -40985,6 +40986,15 @@
       "title": "Keyed caster rows in the shadow maps on WebGPU too: pre-render -38.5 %, renderer -23.9 %; the lamps' map captured identical on both backends",
       "verdict": "kept",
       "text": "**E-395 on WebGPU too, and the lamps' map captured (merged on main 2026-11-21).** sunShadowGpuProgram takes the statics (group 2, binding 4); the keyed sun-map and lamps'-map meshes on both backends; keyed caster programs stay on under a shadow map on both (off only while a render casts columns).\n\n- Captures, dxCaptureScene with the keyed path live: the sun's map (?maps=1&hour=16.5) on WebGPU, keyed against full rows 0 px, against main 0 px; the lamps' map (?maps=1&hour=22&night=1&lampElevation=70, 8 stamp lights; the knob 9a9c28d2) keyed against full rows and against main 0 px on WebGL and WebGPU; the raise changes 622 932 px, so the lamps' shadows are in the picture.\n- Gate, Predator crowd=2.5&dayCycle=0&sunShadows=map&lampShadows=map&backend=webgpu from one save, 4 pairs, ended 22:23: KEPT, pre-render 11.52 -> 6.92 ms (-38.5 %, 4/4), renderer 10.76 -> 7.90 ms (-23.9 %, 4/4), spatial -13.7 %, physics -10.6 %, logic -3.8 %; drawn 59.0 -> 59.8 fps.\n- Node 3433/3433, demos 143/143.\nLeft: the columns over keyed rows (scenes with height maps keep the full rows), and a kind carried in the keyed row."
+    },
+    {
+      "id": "R-1698",
+      "date": "2026-11-21",
+      "time": "22:55",
+      "timeFrom": "recorded",
+      "title": "Columns over keyed caster rows: Predator light3d pre-render -30.5 %, renderer -15.9 %, drawn 54.4 -> 59.9 fps (8 pairs)",
+      "verdict": "kept",
+      "text": "**E-395's columns: the renders' columns draw over keyed caster rows, so scenes with height maps keep the keyed rows (merged on main 2026-11-21).** The entity batch keeps a CPU copy of each keyed slot's texture and scale (enableStaticsMirror, a few frames of every slot's statics first); compactKeyedColumnRows picks the keyed rows that cast columns with it; the sun's and the lamps' columns draw them through columns programs composed over the keyed rows, both backends.\n\n- Predator light3d=1&dayCycle=0 now packs keyed rows (workerProbe); a film beside main shows the people's columns alike. No still scene with keyed frames and height maps exists for an exact capture (the light bench's casters ask for kinds; the barrio's cast frames of their own and draws no keyed frames).\n- Gate, Predator crowd=2.5&dayCycle=0&light3d=1 from one save, 8 pairs, ended 22:55: pre-render 12.92 -> 8.98 ms (-30.5 %, 8/8), renderer 9.86 -> 8.32 ms (-15.9 %, 8/8), logic +0.4 % (4/8: the first 4 pairs' +7.4 % was noise), spatial -2.4 %, physics -3.2 %; drawn 54.4 -> 59.9 fps. FAIL (load) on GPU_CASTERS alone: the keyed side draws 5.2 % more casters, the same every run (cv 0 %), main's full rows varied (cv 5 %).\n- Node 3433/3433, demos 143/143.\nLeft: a still capture of keyed columns, the barrio's own-frame casters (N-188's frames ride full rows) and keyed frames there, kinds in the keyed row."
     }
   ],
   "leads": [
