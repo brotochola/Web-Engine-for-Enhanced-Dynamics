@@ -432,11 +432,6 @@ export class NavGrid {
     }
   }
 
-  /** @deprecated The old name of loadStaticFlowfields (which reads binary files as well as JSON). */
-  static loadStaticFlowfieldsFromJSON(flowfieldUrls, sceneWorldWidth, sceneWorldHeight) {
-    return this.loadStaticFlowfields(flowfieldUrls, sceneWorldWidth, sceneWorldHeight);
-  }
-
   /**
    * Serialize loaded static flowfields for transfer to workers via initData.
    * @returns {Object} Plain object { name: { gridWidth, gridHeight, cellSize, vectors } }

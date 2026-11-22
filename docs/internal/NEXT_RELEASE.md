@@ -3,6 +3,13 @@
 What a game built on the last release may see differently. Whoever writes the release's notes reads this file, then
 empties it.
 
+- **Mouse's alias names are gone** (N-303 CR-34): `Mouse.isDown`, `isLeftButtonDown`, `isMiddleButtonDown`,
+  `isRightButtonDown`, `clicked`, `isLeftButtonPressed`/`Released`, `isMiddleButtonPressed`/`Released`,
+  `isRightButtonPressed`/`Released` and `isInWorld`. Use `isButton0Down` (primary), `isButton1Down` (middle),
+  `isButton2Down` (right), their `Pressed`/`Released` forms, and `isPresent`.
+- **Other deprecated names are gone** (N-303 CR-34): `NavGrid.loadStaticFlowfieldsFromJSON` (use
+  `loadStaticFlowfields`), `LiquidFun.getParticleViews` and `getParticleGroups` (use `getViews` and `getGroups`), and
+  `DECORATION_NO_PARENT`, a fixed `0xffff` that was wrong with 32-bit entity ids (use `decorationNoParent()`).
 - **A layer drawn in one pass takes its `blendMode`** (N-79). A sprite layer without a look, a MESH layer without a
   look and a world-rect layer used to draw with `shader.containerBlend`, normal when the config had no shader, so
   `blendMode` did nothing on them. They now draw with `blendMode`, unless the config sets `shader.containerBlend`. A MESH

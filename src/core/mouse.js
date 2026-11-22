@@ -295,25 +295,6 @@ export class Mouse {
   }
 
   // ============================================
-  // ALIASES
-  // ============================================
-
-  static get isDown() { return this.isButton0Down; }
-  static get isInWorld() { return this.isPresent; }
-  static get isLeftButtonDown() { return this.isButton0Down; }
-  static get isMiddleButtonDown() { return this.isButton1Down; }
-  static get isRightButtonDown() { return this.isButton2Down; }
-
-  /** Alias for isButton0Pressed — true on the primary press frame. */
-  static get clicked() { return this.isPressedAt(0); }
-  static get isLeftButtonPressed() { return this.isPressedAt(0); }
-  static get isLeftButtonReleased() { return this.isReleasedAt(0); }
-  static get isMiddleButtonPressed() { return this._button1JustPressed; }
-  static get isMiddleButtonReleased() { return this._button1JustReleased; }
-  static get isRightButtonPressed() { return this._button2JustPressed; }
-  static get isRightButtonReleased() { return this._button2JustReleased; }
-
-  // ============================================
   // PINCH (first two contacts that are down)
   // ============================================
 

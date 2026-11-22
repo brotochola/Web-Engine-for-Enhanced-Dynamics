@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normalizeYSort,
-  resolveYSort,
   ySortEnabled,
   assertSceneRendererConfig,
   errorYSortInvalid,
@@ -31,13 +30,13 @@ test('normalizeYSort: garbage logs WeedJS error and falls back to false', () => 
   assert.equal(errs[1], errorYSortInvalid('bitonic'));
 });
 
-test('resolveYSort: unknown names are off', () => {
+test('normalizeYSort: unknown names are off', () => {
   const errs = [];
   const orig = console.error;
   console.error = (m) => { errs.push(String(m)); };
   try {
-    assert.equal(resolveYSort('bitonic'), false);
-    assert.equal(resolveYSort('unknown'), false);
+    assert.equal(normalizeYSort('bitonic'), false);
+    assert.equal(normalizeYSort('unknown'), false);
   } finally {
     console.error = orig;
   }

@@ -379,11 +379,6 @@ export class LiquidFun {
     return null;
   }
 
-  /** @deprecated Prefer getViews() */
-  static getParticleViews() {
-    return LiquidFun.getViews();
-  }
-
   /** Zero-alloc group SoA (including lightIntensity by id). Null until bindSabs. */
   static getGroupViews() {
     return _groupsViews;
@@ -496,11 +491,6 @@ export class LiquidFun {
       g.groupFlags = v.groupFlags ? v.groupFlags[i] | 0 : 0;
     }
     return out;
-  }
-
-  /** @deprecated Prefer getGroups() */
-  static getParticleGroups() {
-    return LiquidFun.getGroups();
   }
 
   /**

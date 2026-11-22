@@ -110,7 +110,7 @@ class Boid extends GameObject {
     ax *= STEER;
     ay *= STEER;
 
-    if (Mouse.isDown && Mouse.isPresent) {
+    if (Mouse.isButton0Down && Mouse.isPresent) {
       const mdx = Mouse.x - myX;
       const mdy = Mouse.y - myY;
       const mDist2 = mdx * mdx + mdy * mdy;

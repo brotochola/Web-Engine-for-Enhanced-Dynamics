@@ -1386,7 +1386,6 @@ if (WEED.Mouse.isButton2Down) { ... }   // right button (cursor only)
 // Works across logic workers — SAB press/release counters.
 if (Mouse.isButton0Pressed) { ... }     // slot 0 just pressed
 if (Mouse.isButton0Released) { ... }    // slot 0 just released
-if (Mouse.clicked) { ... }              // alias for isButton0Pressed
 
 // Up to Mouse.MAX (4) contacts. Slots stay put until that contact ends.
 // count is how many primary buttons are down (hover and right-click do not count).

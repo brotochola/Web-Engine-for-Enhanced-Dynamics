@@ -87,7 +87,7 @@ class Box extends GameObject {
    */
   tick(dtRatio) {
     // Mouse interaction: push boxes away from cursor on click
-    if (Mouse.isDown) {
+    if (Mouse.isButton0Down) {
       const dx = this.x - Mouse.x;
       const dy = this.y - Mouse.y;
       const dist2 = dx * dx + dy * dy;
