@@ -14691,7 +14691,8 @@
       ],
       "records": [
         "R-0981",
-        "R-1041"
+        "R-1041",
+        "R-1806"
       ]
     },
     {
@@ -17094,7 +17095,8 @@
       "records": [
         "R-1101",
         "R-1231",
-        "R-1522"
+        "R-1522",
+        "R-1806"
       ]
     },
     {
@@ -41210,6 +41212,15 @@
       "title": "Five Box2D threads at crowd 2.5 (two spatial workers): physics -5.0 %, spatial +5.9 %, pre-render +5.4 %, logic +4.5 %, renderer +3.4 %: a trade, Predator keeps 4",
       "verdict": "rejected",
       "text": "**Five Box2D threads at crowd 2.5 with two spatial workers: physics -5.0 %, every other judged worker +3.4 to +5.9 %: a trade, not a gain; Predator keeps 4.** runPredatorAbab pw5, `--vs main` (8a6177a5, the knob taking up to 8) with `--query-b physicsWorkers=5`, Predator `crowd=2.5&dayCycle=0` from the E-210 save (two spatial workers since R-1804), owner physics, 4 pairs, to 00:35: REGRESSION. physics 15.445 -> 14.602 ms (-5.0 %, worse 0/4), spatial 9.852 -> 10.349 (+5.9 %, 3/4), pre-render 8.510 -> 8.767 (+5.4 %, 3/4), logic 7.165 -> 7.241 (+4.5 %, 3/4), renderer 6.265 -> 6.485 (+3.4 %, 3/4), presented 60 = 60. The fifth pool thread takes a core the others were using (16 logical CPUs, about 13 engine threads busy). With E-319's 3-thread result (+18.7 % physics, others -3 to -12 %), 4 is where the trade balances on this machine."
+    },
+    {
+      "id": "R-1806",
+      "date": "2026-11-22",
+      "time": "00:43",
+      "timeFrom": "recorded",
+      "title": "Box2D by name at crowd 2.5 after N-313: physics thread collide 29.8 %, solve 20.7 %, finalize 7.6 %, serial refit 4.1 % + step/glue ~13 %; pool threads idle ~29 % (futex 19 %, scheduler 10 %)",
+      "verdict": "note",
+      "text": "**Box2D by name at Predator crowd 2.5 after N-313 and with two spatial workers (2026-11-22, main 32b8dff2 with the --profiling-funcs build of Box2D 0f0fa10 swapped in a worktree; from the E-210 save, 6 s warm-up, 8 s traced window, to 00:43).** The names build is not wasm-opt'ed and the trace costs: physics read 19.1 ms (shape, not a ruler).\n\nThe physics thread (the one whose STEP_MS counts): b2CollideTask 29.8 %, b2ExecuteBlock 20.7 %, b2FinalizeBodiesTask 7.6 %, b2World_Step's own code 4.5 %, **b2DynamicTree_Refit 4.1 % (serial, after the finalize)**, publishPose (JS) 3.8 %, b2ComputeFatShapeAABB 3.7 %, b2SolverTask 3.5 %, bodies_apply_accelerations 2.7 %, step_world 2.0 %. Each of the three pool threads: b2CollideTask 21 %, b2ExecuteBlock 20 %, **futex waits 19 % and b2SchedulerWorkerMain 10 %** (idle while the physics thread runs the serial parts), b2FinalizeBodiesTask 7.7 %, b2PlaceLeaf 6.6 % (the tree rebuild task), b2ComputeFatShapeAABB 3.5 %, b2SolverTask 3 %.\n\nSo about 17 % of the physics thread is serial work with the pool waiting (the refit, the step's own code, the glue's accelerations and pose publish), and the two parallel stages (collide, solve) are about half of every thread. Levers seen, none tried: the refit as a task beside the bullets and islands, or the kinematic tree's refit on a pool thread; the glue's publishPose overlapped with the next step's setup. The AABB margin was tried (E-306, dropped) and a fifth thread trades (R-1805)."
     }
   ],
   "leads": [
