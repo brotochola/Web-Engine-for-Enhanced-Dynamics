@@ -18,7 +18,8 @@ export async function injectStyles() {
   } else {
     try {
       const cssPath = new URL('../debugUi.css', import.meta.url).href;
-      const response = await fetch(cssPath);
+      // Revalidated: a server that lets the browser keep CSS an hour showed an old stylesheet under new panels.
+      const response = await fetch(cssPath, { cache: 'no-cache' });
       cssText = await response.text();
     } catch (error) {
       console.error('Failed to load DebugUI.css:', error);

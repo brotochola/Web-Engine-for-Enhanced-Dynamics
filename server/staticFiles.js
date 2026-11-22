@@ -59,7 +59,7 @@ export const MIME_TYPES = {
  * asked with a `?v=` and its .wasm is not: an hour's cached box2dWasm.wasm beside a fresh box2dWasm.js lacks the
  * exports the script names ("__emscripten_thread_init is not a function", review N-169). Images and sounds keep an hour.
  */
-const FRESH_EXTENSIONS = new Set(['.js', '.mjs', '.html', '.wasm', '.glsl', '.wgsl', '.vert', '.frag']);
+const FRESH_EXTENSIONS = new Set(['.js', '.mjs', '.html', '.css', '.wasm', '.glsl', '.wgsl', '.vert', '.frag']);
 
 function plain(res, status, text, headers = {}) {
   res.writeHead(status, { 'Content-Type': 'text/plain', ...headers });
