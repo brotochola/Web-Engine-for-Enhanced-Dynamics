@@ -11594,10 +11594,10 @@
       "id": "DX-CONFIGCHECK",
       "title": "Config validation and a size advisor",
       "status": "open",
-      "statusText": "partly built 2026-11-22 (R-1839): unknown keys and tickInterval (DX-GUARDS), cell and neighbour truncation warnings",
+      "statusText": "built 2026-11-22 except the end-of-session advisor (R-1839, R-1846)",
       "date": "2026-11-10",
       "result": "",
-      "next": "Left: impacts and dropped contacts warned (they are counted in the stats only), and the suggested config at the end of a session (each cap's peak against its setting).",
+      "next": "Left: the suggested config at the end of a session (each cap's peak against its setting: cells, neighbours, rings, pools, impacts). Unknown keys, tickInterval, cell and neighbour caps (debug build) and every silent loss (always on) are said (R-1839, R-1846).",
       "area": "engine",
       "kind": "dx",
       "refs": [
@@ -11611,7 +11611,8 @@
       ],
       "records": [
         "R-0854",
-        "R-1839"
+        "R-1839",
+        "R-1846"
       ]
     },
     {
@@ -42403,6 +42404,15 @@
       "title": "N-303 CR-18 done: the render modules' cold copies, src/render -323 lines in seven commits (FillBatchBase, _beginUpload on makePackContext, _ringBuffers, RenderStep, pixiGroupsLayout, meshCorners slots, keyedPack), every one byte-for-byte in captures",
       "verdict": "kept-hygiene",
       "text": "**N-303 CR-18 done (the render modules' cold copies): src/render -323 lines net (+357 / -680) in seven commits, every one byte-for-byte equal in captures against main.** 2026-11-22, 07:25 to 08:05.\n\n- 67d03e16: ColliderFillBatch and MeshUvFillBatch extend FillBatchBase (the pose texture and its state, the atlas and LUT bindings, the immediate send, the mesh's draw state, uploadPoseTable; MeshUvFillBatch's version bump before it). dxCapture shade on both backends, volumeStress volume and mesh.\n- 5bb350ce: InstancedSpriteBatch._beginUpload is makePackContext (gpuQueueLayout.js, pre-render's packs' setup) on the batch's own context plus the empty mesh and the tile world; the context declares particleCount from the start (makePackContext wrote it on a literal that lacked it).\n- 976c1162: one _ringBuffers for the five ring-buffer makers, one dummyLutSource body for both backends.\n- 323f8461: renderStep.js's RenderStep (stencilStep, colorMaskStep) for the four ViewContainer render steps of instancedSpriteBatch.js and lightEdges.js, and STENCIL_* written once; the unshaded pass keeps its \"a mask drawn makes sure the target has a stencil\". depthPair, houseLight, wallShadow, dxCapture walls and light3d (the light's edges on: lighting.resolution 0.25 with pixel depth) on both backends.\n- b93a8aa3: pixiGroupsLayout / pixiGroupsGpuLayout for Pixi's group 0/1 layouts in 16 programs (the old meshUniformGroups folded in); eight WebGPU captures.\n- 1653ae50: meshCornersClient's two table writers share geometryBound and writeGenerationSlots (46 corner and UV tests).\n- 5074461f: gpuPackClient's keyed pair through one keyedPack, the general packs' params block through one writeGeneralParams (the instanced pack still guards the camera terms with || 0 and || 1, passed in); dxCapture keyed by row, by pose and with maps by night, both backends.\n\nOn the way: the double blank lines left in meshCornersClient.js, gpuPackClient.js and instancedSpriteBatch.js removed. The gates: R-1843 (CR-18 parts 1-2), R-1844 (parts 3-5, renderer +6.6 % inside its swing); parts 6-7 ride the next gate. N-242 (the unused UV rows) stays parked: CR-18 did not need it."
+    },
+    {
+      "id": "R-1846",
+      "date": "2026-11-22",
+      "time": "08:25",
+      "timeFrom": "recorded",
+      "title": "DX-CONFIGCHECK: physics says once when it loses commands or contact events (ring full, ring lapped, Box2D's 10 000 a step) and particle when a frame fills bullet.maxImpactsPerFrame; ballsHeavy and bulletStress hit them, Predator stays quiet",
+      "verdict": "kept-hygiene",
+      "text": "**DX-CONFIGCHECK: the silent losses left are said now, once each (always on, as the pools' and Box2D's memory warnings are).** 2026-11-22, 08:05 to 08:25.\n\n- 8d585d07 (physics, weedjsPost.js warnLostEventsOnce, three loads a step until said): a full command ring (commands lost: forces, impulses, teleports, body changes; physics.commandRingCapacity), a logic worker a whole contact ring behind (its unread events lost, onCollision never called; physics.contactRingCapacity), and more than Box2D's 10 000 contacts or sensor overlaps of one kind beginning or ending in one step (MAX_CONTACT_EVENTS in wasm_wrapper.c, a constant of the build; said only where the events are published to logic). ballsHeavyStressScene (12 000 balls) drops past the 10 000; Predator, balls and contactDrain stay quiet.\n- 310d0032 (particle): a frame that fills bullet.maxImpactsPerFrame (past it a hit still kills its bullet but records no impact, so no onGotShot; the JS and WASM ticks both stop writing at the cap). bulletStressScene fills its 256; bulletStorm and Predator stay quiet.\n- Logic already said when it fell behind the impact ring (N-129), and the debug build says cell overflow (N-325) and neighbour caps (R-1839).\n\nLeft in DX-CONFIGCHECK: the suggested config at the end of a session."
     }
   ],
   "leads": [
