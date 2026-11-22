@@ -24032,7 +24032,8 @@
         "R-1774",
         "R-1775",
         "R-1844",
-        "R-1845"
+        "R-1845",
+        "R-1847"
       ]
     },
     {
@@ -42413,6 +42414,15 @@
       "title": "DX-CONFIGCHECK: physics says once when it loses commands or contact events (ring full, ring lapped, Box2D's 10 000 a step) and particle when a frame fills bullet.maxImpactsPerFrame; ballsHeavy and bulletStress hit them, Predator stays quiet",
       "verdict": "kept-hygiene",
       "text": "**DX-CONFIGCHECK: the silent losses left are said now, once each (always on, as the pools' and Box2D's memory warnings are).** 2026-11-22, 08:05 to 08:25.\n\n- 8d585d07 (physics, weedjsPost.js warnLostEventsOnce, three loads a step until said): a full command ring (commands lost: forces, impulses, teleports, body changes; physics.commandRingCapacity), a logic worker a whole contact ring behind (its unread events lost, onCollision never called; physics.contactRingCapacity), and more than Box2D's 10 000 contacts or sensor overlaps of one kind beginning or ending in one step (MAX_CONTACT_EVENTS in wasm_wrapper.c, a constant of the build; said only where the events are published to logic). ballsHeavyStressScene (12 000 balls) drops past the 10 000; Predator, balls and contactDrain stay quiet.\n- 310d0032 (particle): a frame that fills bullet.maxImpactsPerFrame (past it a hit still kills its bullet but records no impact, so no onGotShot; the JS and WASM ticks both stop writing at the cap). bulletStressScene fills its 256; bulletStorm and Predator stay quiet.\n- Logic already said when it fell behind the impact ring (N-129), and the debug build says cell overflow (N-325) and neighbour caps (R-1839).\n\nLeft in DX-CONFIGCHECK: the suggested config at the end of a session."
+    },
+    {
+      "id": "R-1847",
+      "date": "2026-11-22",
+      "time": "08:36",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-7 done: shader code never chosen (instancedSpriteBlend.frag.glsl, mainFragBlend, alphaDiscard/alphaCut) and colliderFillGlProgram's copy go, one glProgramFrom; src -77 lines, byte for byte in captures",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-7 done (shader code that is never chosen): src/ -77 lines in two commits, byte for byte in captures.**\n\n- 8450cde5: `instancedSpriteBlend.frag.glsl` goes (it was byte for byte `instancedSprite.frag.glsl`), with `mainFragBlend`\n  in both sprite WGSL files (no pipeline named it) and the `alphaDiscard` / `alphaCut` options: `alphaDiscard` only\n  chose between the two identical files, `alphaCut` reached `_makeSpriteShader` and stopped there.\n  `pickInstancedSpriteFragmentGlsl(premultiplyAlpha, shaders)` picks premultiplied or additive.\n- c9d0989e: `colliderFillGlProgram` was a copy of `instancedSpriteGlProgram`, which already made the sun's and the\n  lamps' map programs. One `glProgramFrom` (`src/render/webgl/glProgram.js`) serves the 21 callers; its error names the\n  program whose source did not arrive.\n\nCaptures against main, 0 of 921600 pixels differ on each: dxCapture hour=22 and light3dCompare all=1 hour=22 still=1\non WebGL and WebGPU, depthPair on both (part 1); dxCapture and light3dCompare on WebGL (part 2, a WebGL-only helper).\nSuites: node 3507/0, demos 143/0. Cold code at load: no timing; the next Predator gate covers it with the batch."
     }
   ],
   "leads": [
