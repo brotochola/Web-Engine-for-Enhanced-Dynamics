@@ -5,7 +5,7 @@ The record of every sitting, kernel run, gate and decision now lives in the regi
 and its numbers. Every row this file held is there, linked to its hypothesis.
 
 - Read it in the terminal: `node scripts/hypotheses.mjs log`, `find <text>`, `show <id>`.
-- Read it as a page: `node scripts/buildHypothesesPage.mjs --open` (the Timeline tab).
+- Read it as a page: `npm run dev`, then `/docs/internal/hypotheses.html` (the Timeline view).
 - Add a record: `node scripts/hypotheses.mjs record --hyp <id> --title "…" --verdict <word> --text-file <note.md>`.
 
 A row written below this line by mistake is moved into the register by

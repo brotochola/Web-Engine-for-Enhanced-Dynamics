@@ -16,7 +16,7 @@
  * casters are pre-render's stamp rows, already picked for each lamp.
  */
 
-import { CASTER_ID_GLSL, CASTER_ID_WGSL, MAP_TEXEL_WGSL } from './sunShadowMap.js';
+import { CASTER_ID_GLSL, CASTER_ID_WGSL, FIRST_LINE, MAP_TEXEL_WGSL } from './sunShadowMap.js';
 import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
 
 /** The highest height a tile's 8 bits spanned, as the sun map's (2 px a step); N-211: the volumes' fragment scale. */
@@ -324,7 +324,9 @@ function lampHeadGlsl(source, what) {
   return source
     .slice(0, source.indexOf(after))
     .replace(decl, `${decl}${LAMP_DECL_GLSL}`)
-    .replace(main, `${main}  vSunZ = 0.0;\n  vTileUvW = vec3(-1.0, -1.0, 1.0);\n  vSunId = casterEntityId(aInstTintBits);\n  vLampE = 1.0;\n`);
+    .replace(main, `${main}  vSunZ = 0.0;\n  vTileUvW = vec3(-1.0, -1.0, 1.0);\n  vLampE = 1.0;\n`)
+    // E-395: after a keyed source's prologue (spriteIndexedVertex sets aInstTintBits there), before main's own first line.
+    .replace(FIRST_LINE, `  vSunId = casterEntityId(aInstTintBits);\n${FIRST_LINE}`);
 }
 
 /**
@@ -503,7 +505,8 @@ function lampPartsWgsl(source, what) {
   const from = source.indexOf(after);
   const to = source.indexOf(end, from);
   if (to < 0) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (mainVert's end)`);
-  const body = ') -> VertexOut {\n  var out: VertexOut;\n';
+  // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
+  const body = '  var out: VertexOut;\n';
   if (source.split(body).length !== 2) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (mainVert)`);
   const head = source
     .slice(0, from)
@@ -575,7 +578,8 @@ ${LAMP_OUT_WGSL}${rest}${LAMP_FRAGMENT_WGSL}`;
 export function lampMapColumnsWgsl(source, cells = LAMP_MAP_COLUMNS) {
   const parts = lampPartsWgsl(source, 'the lamps\' shadow map columns');
   const quad = '  @location(0) aQuad: vec2<f32>,\n';
-  const body = ') -> VertexOut {\n  var out: VertexOut;\n';
+  // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
+  const body = '  var out: VertexOut;\n';
   if (parts.head.split(quad).length !== 2 || parts.head.split(body).length !== 2) {
     throw new Error('WeedJS: the lamps\' shadow map columns need the sprite shadow WGSL (aQuad, mainVert)');
   }

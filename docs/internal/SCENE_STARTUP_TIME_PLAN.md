@@ -27,8 +27,7 @@ work in parallel, earlier and once, never from leaving it for later. So:
 - SST-0 comes first: no item is started before the waterfall can show what it changes.
 - With agents in parallel, partition by files (section 4): never two writers on one file.
 - Tick the item here (`[x]` plus the commit hash) in the commit that finishes it, add anything new
-  under "Found while building", update its row in `hypotheses.json` and write its record (then
-  `node scripts/buildHypothesesPage.mjs`).
+  under "Found while building", update its row in `hypotheses.json` and write its record.
 - Before any browser run: no other session benchmarking, the laptop on AC power.
 
 ---
