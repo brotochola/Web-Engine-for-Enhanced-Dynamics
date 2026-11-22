@@ -104,3 +104,28 @@ test('the worker: setRenderView takes a view only where its buffer exists, and m
   assert.equal(removed, 2);
   assert.equal(destroyed, 4);
 });
+
+test('the worker: lightTileAt names the tile under a canvas point and the lights its words list (DBG-7)', async () => {
+  const shared = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const px = Object.assign(Object.create(Object.getPrototypeOf(shared)), shared);
+  // A hand-made grid: 4 x 3 tiles of 16 px, a border of 1, two words a tile, rows of 4 texels, 4 rows a word band.
+  const t = { cols: 4, rows: 3, tilePx: 16, border: 1, wordsUsed: 2, rowsPerWord: 4, texWidth: 4, bits: new Uint32Array(4 * 8) };
+  const word = (x, y, k, value) => {
+    t.bits[(y + k * t.rowsPerWord) * t.texWidth + x] = value >>> 0;
+  };
+  word(2, 1, 0, (1 << 0) | (1 << 5) | (1 << 31));
+  word(2, 1, 1, 1 << 2);
+  px._lightTiles = t;
+  px._lightTilesOn = true;
+  px.lightingResolution = 0.5;
+  // Canvas (40, 10) at half resolution is light-pass (20, 5): tile 1, 0 plus the border, 2, 1.
+  const got = px._lightTileAt(40, 10);
+  assert.equal(got.msg, 'lightTile');
+  assert.deepEqual([got.x, got.y], [2, 1]);
+  assert.deepEqual(got.lights, [0, 5, 31, 34]);
+  assert.deepEqual([got.cols, got.rows, got.tilePx, got.wordsUsed], [4, 3, 16, 2]);
+  const outside = px._lightTileAt(1000, 10);
+  assert.deepEqual([outside.x, outside.y, outside.lights.length], [-1, -1, 0]);
+  px._lightTilesOn = false;
+  assert.equal(px._lightTileAt(40, 10).x, -1, 'no light pass by tiles: no tile');
+});

@@ -3964,6 +3964,32 @@ class PixiRenderer extends AbstractWorker {
     if (!this._renderTilesMesh.visible) this._renderTilesMesh.visible = true;
   }
 
+  /**
+   * DBG-7: the light tile under canvas point (x, y) as the light pass binned it this frame: the tile (x, y: -1 outside
+   * the grid), the grid's numbers, and the lights the tile lists (indices in the light data, word k's bit j is k·32 + j).
+   */
+  _lightTileAt(x, y) {
+    const t = this._lightTiles;
+    const out = {
+      msg: 'lightTile', x: -1, y: -1, cols: t.cols, rows: t.rows, tilePx: t.tilePx, border: t.border, wordsUsed: t.wordsUsed,
+      lights: [],
+    };
+    if (!this._lightTilesOn || t.texWidth < 1 || !(t.tilePx > 0) || !Number.isFinite(x) || !Number.isFinite(y)) return out;
+    const res = this.lightingResolution;
+    const cx = Math.floor((x * res) / t.tilePx) + t.border;
+    const cy = Math.floor((y * res) / t.tilePx) + t.border;
+    if (cx < 0 || cy < 0 || cx >= t.cols || cy >= t.rows) return out;
+    out.x = cx;
+    out.y = cy;
+    for (let k = 0; k < t.wordsUsed; k++) {
+      let word = t.bits[(cy + k * t.rowsPerWord) * t.texWidth + cx] >>> 0;
+      for (let j = 0; word !== 0; j++, word >>>= 1) {
+        if (word & 1) out.lights.push(k * 32 + j);
+      }
+    }
+    return out;
+  }
+
   /** DBG-7: the tiles view's quad over the canvas, on top of the stage. */
   _createTilesView() {
     const q = unshadedQuadPositions(this._renderTilesQuad, this.canvasWidth, this.canvasHeight);
@@ -8027,6 +8053,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // DBG-5: the debug UI's Render tab; the answer lists the views this scene has now.
       if (msg === 'setRenderView') this._setRenderView(data.view | 0, +data.opacity);
       self.postMessage({ msg: 'renderViews', views: availableRenderViews(this), view: this._renderView });
+      return;
+    }
+    if (msg === 'lightTileAt') {
+      // DBG-7: the Render tab's readout of the light tile under a canvas point.
+      self.postMessage(this._lightTileAt(+data.x, +data.y));
       return;
     }
     debugWorkerLog(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
