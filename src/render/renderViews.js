@@ -30,6 +30,7 @@ export const RENDER_VIEW = Object.freeze({
   SHADOWS: 7,
   SUN_MAP: 8,
   LAMP_MAP: 9,
+  LIGHT_TILES: 10,
 });
 
 /** The views in the Render tab's order: label, and the config that makes the buffer when a scene has none. */
@@ -44,6 +45,7 @@ export const RENDER_VIEWS = Object.freeze([
   { id: RENDER_VIEW.SHADOWS, label: 'Casted shadows', needs: "lighting.shadowsEnabled with a shadows layer (sunShadows or lampShadows 'layer')" },
   { id: RENDER_VIEW.SUN_MAP, label: 'Sun shadow map', needs: "lighting.sunShadows: 'map'" },
   { id: RENDER_VIEW.LAMP_MAP, label: 'Lamp shadow atlas', needs: "lighting.lampShadows: 'map'" },
+  { id: RENDER_VIEW.LIGHT_TILES, label: 'Light tiles', needs: 'the light pass by tiles (lighting.enabled; E-205)' },
 ]);
 
 /** zIndex of the view's quad: over every layer of the stage. */
@@ -88,6 +90,13 @@ export function renderViewTextures(w, view, out) {
       break;
     case RENDER_VIEW.LAMP_MAP:
       out[0] = w.lampMapRT ?? null;
+      break;
+    case RENDER_VIEW.LIGHT_TILES:
+      // DBG-7: the tiles' R32UI texture itself (a TextureSource, not a target), while the light pass bins by tile and has
+      // made it (WebGL: allocated; WebGPU, which keeps no such flag: the grid laid out, its texture made at that upload).
+      // The worker draws this view with a program of its own (RENDER_TILES_*).
+      out[0] = w._lightTilesOn && w._lightTilesSource
+        && (w._lightTilesMade || (w._useWebGpu === true && w._lightTiles.texWidth > 0)) ? w._lightTilesSource : null;
       break;
     default:
       break;
@@ -279,6 +288,145 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   return vec4<f32>(c * u.y, u.y);
 }
 `;
+
+/**
+ * DBG-7: the light tiles view. Each pixel of the canvas finds its tile of the light pass's grid (lightTiles.js: tiles of
+ * tilePx px of the light pass's target, x right and y down, `border` tiles past every edge) and counts the lights of
+ * that tile, the set bits of its words (word k of tile (x, y) is texel (x, y + k · rowsPerWord)). The count reads as a
+ * ramp (uCanvas.z lights read white), no light as black, and the grid's lines are drawn over it.
+ */
+export const RENDER_TILES_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform highp usampler2D uTiles;
+uniform vec4 uGrid; // tilePx, border, cols, rows
+uniform vec4 uWords; // wordsUsed, rowsPerWord, the light pass's resolution, opacity
+uniform vec4 uCanvas; // the canvas's width and height (px), the count that reads white
+out vec4 finalColor;
+
+vec3 weedRamp(float t) {
+  t = clamp(t, 0.0, 1.0);
+  return t < 0.5 ? mix(vec3(0.05, 0.05, 0.35), vec3(1.0, 0.45, 0.05), t * 2.0) : mix(vec3(1.0, 0.45, 0.05), vec3(1.0), t * 2.0 - 1.0);
+}
+
+// GLSL ES 3.00 has no bitCount: the set bits of a word, by halves.
+uint weedBitCount(uint v) {
+  v = v - ((v >> 1u) & 0x55555555u);
+  v = (v & 0x33333333u) + ((v >> 2u) & 0x33333333u);
+  return (((v + (v >> 4u)) & 0x0F0F0F0Fu) * 0x01010101u) >> 24u;
+}
+
+// DBG-7: the lights of this pixel's tile (renderViews.js).
+void main() {
+  vec2 px = vUV * uCanvas.xy * uWords.z;
+  vec2 cell = floor(px / uGrid.x) + uGrid.y;
+  float op = uWords.w;
+  if (cell.x < 0.0 || cell.y < 0.0 || cell.x >= uGrid.z || cell.y >= uGrid.w) {
+    finalColor = vec4(0.0);
+    return;
+  }
+  int words = int(uWords.x + 0.5);
+  int band = int(uWords.y + 0.5);
+  uint n = 0u;
+  for (int k = 0; k < 64; k++) {
+    if (k >= words) break;
+    n += weedBitCount(texelFetch(uTiles, ivec2(int(cell.x), int(cell.y) + k * band), 0).r);
+  }
+  vec2 f = fract(px / uGrid.x);
+  float line = (f.x * uGrid.x < 1.0 || f.y * uGrid.x < 1.0) ? 0.6 : 0.0;
+  vec3 c = n == 0u ? vec3(0.0) : weedRamp(float(n) / max(uCanvas.z, 1.0));
+  c = mix(c, vec3(0.35), line);
+  finalColor = vec4(c * op, op);
+}
+`;
+
+export const RENDER_TILES_WGSL = `struct GlobalUniforms {
+  uProjectionMatrix: mat3x3<f32>,
+  uWorldTransformMatrix: mat3x3<f32>,
+  uWorldColorAlpha: vec4<f32>,
+  uResolution: vec2<f32>,
+}
+@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
+
+struct LocalUniforms {
+  uTransformMatrix: mat3x3<f32>,
+  uColor: vec4<f32>,
+  uRound: f32,
+}
+@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+
+struct TileUniforms {
+  uGrid: vec4<f32>,
+  uWords: vec4<f32>,
+  uCanvas: vec4<f32>,
+}
+@group(2) @binding(0) var uTiles: texture_2d<u32>;
+@group(2) @binding(1) var<uniform> tileUniforms: TileUniforms;
+
+struct VertexOut {
+  @builtin(position) position: vec4<f32>,
+  @location(0) vUV: vec2<f32>,
+}
+
+@vertex
+fn mainVert(@location(0) aPosition: vec2<f32>, @location(1) aUV: vec2<f32>) -> VertexOut {
+  var out: VertexOut;
+  let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
+  out.position = vec4<f32>((mvp * vec3<f32>(aPosition, 1.0)).xy, 0.0, 1.0);
+  out.vUV = aUV;
+  return out;
+}
+
+fn weedRamp(t0: f32) -> vec3<f32> {
+  let t = clamp(t0, 0.0, 1.0);
+  if (t < 0.5) { return mix(vec3<f32>(0.05, 0.05, 0.35), vec3<f32>(1.0, 0.45, 0.05), t * 2.0); }
+  return mix(vec3<f32>(1.0, 0.45, 0.05), vec3<f32>(1.0), t * 2.0 - 1.0);
+}
+
+// DBG-7: the lights of this pixel's tile (the GLSL's twin).
+@fragment
+fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
+  let u = tileUniforms;
+  let px = in.vUV * u.uCanvas.xy * u.uWords.z;
+  let cell = floor(px / u.uGrid.x) + u.uGrid.y;
+  let op = u.uWords.w;
+  if (cell.x < 0.0 || cell.y < 0.0 || cell.x >= u.uGrid.z || cell.y >= u.uGrid.w) {
+    return vec4<f32>(0.0);
+  }
+  let words = i32(u.uWords.x + 0.5);
+  let band = i32(u.uWords.y + 0.5);
+  var n = 0u;
+  for (var k = 0; k < 64; k++) {
+    if (k >= words) { break; }
+    n += countOneBits(textureLoad(uTiles, vec2<i32>(i32(cell.x), i32(cell.y) + k * band), 0).r);
+  }
+  let f = fract(px / u.uGrid.x);
+  let line = select(0.0, 0.6, f.x * u.uGrid.x < 1.0 || f.y * u.uGrid.x < 1.0);
+  var c = select(weedRamp(f32(n) / max(u.uCanvas.z, 1.0)), vec3<f32>(0.0), n == 0u);
+  c = mix(c, vec3<f32>(0.35), line);
+  return vec4<f32>(c * op, op);
+}
+`;
+
+/** DBG-7's WebGPU program: Pixi's mesh groups, the tiles' r32uint texture (no sampler) and the view's uniforms. */
+export function renderTilesGpuProgram(GpuProgram, name = 'weed-render-tiles') {
+  const vf = gpuStageVF();
+  const f = gpuStageF();
+  return GpuProgram.from({
+    name,
+    vertex: { source: RENDER_TILES_WGSL, entryPoint: 'mainVert' },
+    fragment: { source: RENDER_TILES_WGSL, entryPoint: 'mainFrag' },
+    layout: { 0: { globalUniforms: 0 }, 1: { localUniforms: 0 }, 2: { uTiles: 0, tileUniforms: 1 } },
+    gpuLayout: [
+      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [
+        { binding: 0, visibility: f, texture: { sampleType: 'uint', viewDimension: '2d', multisampled: false } },
+        { binding: 1, visibility: vf, buffer: { type: 'uniform' } },
+      ],
+    ],
+  });
+}
 
 /** The view quad's WebGPU program: Pixi's mesh groups, the two textures and their samplers and the view's uniforms. */
 export function renderViewGpuProgram(GpuProgram, name = 'weed-render-view') {

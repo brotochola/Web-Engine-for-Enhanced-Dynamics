@@ -15,6 +15,7 @@ const LEGENDS = Object.freeze({
   [RENDER_VIEW.SHADOWS]: 'the casted shadows layer, on white',
   [RENDER_VIEW.SUN_MAP]: "the sun's shadow map: caster heights as a ramp (the whole map, margins included)",
   [RENDER_VIEW.LAMP_MAP]: "the lamps' shadow atlas: every lamp's tile, heights as a ramp",
+  [RENDER_VIEW.LIGHT_TILES]: 'lights per light tile: black none, the ramp up to 32 (or lighting.maxLights) white; the tile grid in grey',
 });
 
 export class RenderPanel {

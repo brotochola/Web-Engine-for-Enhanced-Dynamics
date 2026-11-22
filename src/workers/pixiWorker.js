@@ -82,11 +82,13 @@ import { WALL_VERT0, wallRowsLayout } from '../render/visibility/lampWallRow.js'
 import { UNSHADED_COMPOSITE_FRAG, UNSHADED_COMPOSITE_VERT, unshadedCompositeGpuProgram, unshadedQuadPositions } from '../render/unshadedComposite.js';
 import {
   RENDER_VIEW,
+  RENDER_TILES_FRAG,
   RENDER_VIEW_FRAG,
   RENDER_VIEW_HEIGHT_PX,
   RENDER_VIEW_VERT,
   RENDER_VIEW_Z,
   availableRenderViews,
+  renderTilesGpuProgram,
   renderViewGpuProgram,
   renderViewTextures,
 } from '../render/renderViews.js';
@@ -943,6 +945,14 @@ class PixiRenderer extends AbstractWorker {
     this._renderViewParams = new Float32Array(4);
     this._renderViewUniforms = null;
     this._renderViewPair = [null, null];
+    // DBG-7: the light tiles view, a quad of its own over the tiles' R32UI texture; made on first use as the other.
+    this._renderTilesMesh = null;
+    this._renderTilesUniforms = null;
+    this._renderTilesGrid = new Float32Array(4);
+    this._renderTilesWords = new Float32Array(4);
+    this._renderTilesCanvas = new Float32Array(4);
+    this._renderTilesQuad = new Float32Array(8);
+    this._renderTilesQuadBuffer = null;
     // E-404: the lightGlows layer drawn into a target a share of the canvas (the layer's resolution, from
     // lighting.lightGlowResolution) and added to the frame once by a sprite; null while the glows draw onto the frame.
     this._glowLayerRT = null;
@@ -3845,6 +3855,12 @@ class PixiRenderer extends AbstractWorker {
       this._releaseRenderView();
       return;
     }
+    if (this._renderView === RENDER_VIEW.LIGHT_TILES) {
+      if (this._renderViewMesh !== null && this._renderViewMesh.visible) this._renderViewMesh.visible = false;
+      this._syncTilesView(pair[0]);
+      return;
+    }
+    if (this._renderTilesMesh !== null && this._renderTilesMesh.visible) this._renderTilesMesh.visible = false;
     if (this._renderViewMesh === null) this._createRenderView();
     const res = this._renderViewMesh.shader.resources;
     const main = pair[0].source;
@@ -3913,8 +3929,82 @@ class PixiRenderer extends AbstractWorker {
     this.pixiApp.stage.sortChildren();
   }
 
+  /** DBG-7: the light tiles view each present: the tiles' texture, the grid as the light pass laid it out, the size. */
+  _syncTilesView(source) {
+    if (this._renderTilesMesh === null) this._createTilesView();
+    const res = this._renderTilesMesh.shader.resources;
+    if (res.uTiles !== source) res.uTiles = source;
+    const t = this._lightTiles;
+    const g = this._renderTilesGrid;
+    const w = this._renderTilesWords;
+    const c = this._renderTilesCanvas;
+    const opacity = Math.fround(this._renderViewOpacity);
+    const white = Math.min(this.maxLights, 32);
+    if (g[0] !== t.tilePx || g[1] !== t.border || g[2] !== t.cols || g[3] !== t.rows
+      || w[0] !== t.wordsUsed || w[1] !== t.rowsPerWord || w[2] !== Math.fround(this.lightingResolution) || w[3] !== opacity
+      || c[0] !== this.canvasWidth || c[1] !== this.canvasHeight || c[2] !== white) {
+      g[0] = t.tilePx;
+      g[1] = t.border;
+      g[2] = t.cols;
+      g[3] = t.rows;
+      w[0] = t.wordsUsed;
+      w[1] = t.rowsPerWord;
+      w[2] = this.lightingResolution;
+      w[3] = opacity;
+      c[0] = this.canvasWidth;
+      c[1] = this.canvasHeight;
+      c[2] = white;
+      this._renderTilesUniforms.update();
+    }
+    const q = this._renderTilesQuad;
+    if (q[2] !== this.canvasWidth || q[5] !== this.canvasHeight) {
+      unshadedQuadPositions(q, this.canvasWidth, this.canvasHeight);
+      this._renderTilesQuadBuffer.update();
+    }
+    if (!this._renderTilesMesh.visible) this._renderTilesMesh.visible = true;
+  }
+
+  /** DBG-7: the tiles view's quad over the canvas, on top of the stage. */
+  _createTilesView() {
+    const q = unshadedQuadPositions(this._renderTilesQuad, this.canvasWidth, this.canvasHeight);
+    this._renderTilesQuadBuffer = new Buffer({ data: q, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST });
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: { buffer: this._renderTilesQuadBuffer, format: 'float32x2', stride: 8, offset: 0 },
+        aUV: [0, 0, 1, 0, 1, 1, 0, 1],
+      },
+      indexBuffer: [0, 1, 2, 0, 2, 3],
+    });
+    this._renderTilesUniforms = new UniformGroup({
+      uGrid: { value: this._renderTilesGrid, type: 'vec4<f32>' },
+      uWords: { value: this._renderTilesWords, type: 'vec4<f32>' },
+      uCanvas: { value: this._renderTilesCanvas, type: 'vec4<f32>' },
+    });
+    const source = this._lightTilesSource;
+    const shader = this._useWebGpu
+      ? new PIXI.Shader({ gpuProgram: renderTilesGpuProgram(GpuProgram), resources: { uTiles: source, tileUniforms: this._renderTilesUniforms } })
+      : new PIXI.Shader({
+          glProgram: PIXI.GlProgram.from({ vertex: RENDER_VIEW_VERT, fragment: RENDER_TILES_FRAG, name: 'weed-render-tiles' }),
+          resources: { uTiles: source, tileUniforms: this._renderTilesUniforms },
+        });
+    const state = new PIXI.State();
+    state.blendMode = 'normal';
+    state.depthTest = false;
+    state.depthMask = false;
+    state.culling = false;
+    const mesh = new PIXI.Mesh({ geometry, shader, state, label: 'weed-render-tiles' });
+    mesh.cullable = false;
+    mesh.visible = false;
+    mesh.zIndex = RENDER_VIEW_Z;
+    this._renderTilesGrid.fill(-1);
+    this._renderTilesMesh = mesh;
+    this.pixiApp.stage.addChild(mesh);
+    this.pixiApp.stage.sortChildren();
+  }
+
   /** DBG-5: back to the final picture: the quad, its geometry and buffer go. */
   _releaseRenderView() {
+    this._releaseTilesView();
     const mesh = this._renderViewMesh;
     if (mesh === null) return;
     this._renderViewMesh = null;
@@ -3924,6 +4014,19 @@ class PixiRenderer extends AbstractWorker {
     geometry.destroy();
     this._renderViewQuadBuffer = null;
     this._renderViewUniforms = null;
+  }
+
+  /** DBG-7: the tiles view's quad, its geometry and buffer go. */
+  _releaseTilesView() {
+    const mesh = this._renderTilesMesh;
+    if (mesh === null) return;
+    this._renderTilesMesh = null;
+    if (mesh.parent) mesh.parent.removeChild(mesh);
+    const geometry = mesh.geometry;
+    mesh.destroy();
+    geometry.destroy();
+    this._renderTilesQuadBuffer = null;
+    this._renderTilesUniforms = null;
   }
 
   /** DBG-5: the view's quad off the targets a resize is about to replace (N-222's rule, as the unshaded layer's). */

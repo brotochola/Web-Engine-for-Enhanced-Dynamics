@@ -27,6 +27,18 @@ test('each view samples its buffer; the flags read the face map and the ids map'
   assert.deepEqual(names(RENDER_VIEW.FINAL), [null, null]);
   assert.deepEqual(availableRenderViews(w), [0, 1, 2, 3, 4, 5, 7, 9]);
   assert.deepEqual(availableRenderViews({}), [0]);
+  // DBG-7: the tiles view reads the tiles' texture once the light pass by tiles has made it.
+  const tiles = t('tiles');
+  assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), [null, null]);
+  Object.assign(w, { _lightTilesOn: true, _lightTilesMade: false, _lightTilesSource: tiles });
+  assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), [null, null], 'not made yet');
+  w._lightTilesMade = true;
+  assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), ['tiles', null]);
+  const gpu = { _useWebGpu: true, _lightTilesOn: true, _lightTilesMade: false, _lightTilesSource: tiles, _lightTiles: { texWidth: 0 } };
+  assert.deepEqual(renderViewTextures(gpu, RENDER_VIEW.LIGHT_TILES, out).map((x) => (x ? x.name : null)), [null, null], 'WebGPU: no grid yet');
+  gpu._lightTiles.texWidth = 64;
+  assert.deepEqual(renderViewTextures(gpu, RENDER_VIEW.LIGHT_TILES, out).map((x) => (x ? x.name : null)), ['tiles', null], 'WebGPU: laid out');
+  assert.deepEqual(availableRenderViews(w), [0, 1, 2, 3, 4, 5, 7, 9, 10]);
 });
 
 test('the production stub exports what renderViews.js does, and draws no view', () => {
@@ -74,4 +86,21 @@ test('the worker: setRenderView takes a view only where its buffer exists, and m
   assert.equal(px._renderViewMesh, null, 'Final releases the quad');
   assert.equal(removed, 1);
   assert.equal(destroyed, 2, 'the mesh and its geometry');
+
+  // DBG-7: the tiles view has its own quad; Final releases it too.
+  px._lightTilesOn = true;
+  px._lightTilesMade = true;
+  px._lightTilesSource = {};
+  px.handleCustomMessage({ msg: 'setRenderView', view: RENDER_VIEW.LIGHT_TILES, opacity: 1 });
+  assert.equal(px._renderView, RENDER_VIEW.LIGHT_TILES);
+  assert.equal(px._renderTilesMesh, null, 'made at the next present');
+  px._renderTilesMesh = {
+    parent: { removeChild: () => { removed++; } },
+    geometry: { destroy: () => { destroyed++; } },
+    destroy: () => { destroyed++; },
+  };
+  px.handleCustomMessage({ msg: 'setRenderView', view: RENDER_VIEW.FINAL, opacity: 1 });
+  assert.equal(px._renderTilesMesh, null, 'Final releases the tiles quad');
+  assert.equal(removed, 2);
+  assert.equal(destroyed, 4);
 });
