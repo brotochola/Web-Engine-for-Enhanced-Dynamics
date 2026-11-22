@@ -165,6 +165,8 @@ class OpaquePoseStep extends ViewContainer {
 export const KEYED_SAVED_BYTES = (GPU_STATIC_FLOATS - GPU_INDEXED_SLOT_FLOATS) * 4;
 export const KEYED_LOSS_FRAMES = 10;
 export const KEYED_PAUSE_FRAMES = 1800;
+/** E-395: the frames enableStaticsMirror asks every slot's statics for, so the CPU copy holds them all. */
+const STATICS_MIRROR_FILL_FRAMES = 4;
 
 const EMPTY_UPLOAD_OPTS = Object.freeze({
   space: BATCH_SPACE.WORLD,
@@ -620,11 +622,13 @@ export class InstancedSpriteBatch {
     this._sharedUpdates = k ? new Uint32Array(buf, k.updatesByte, updateWords) : new Uint32Array(0);
     const updateCopy = (k && arena && arena.f32(updateWords)) || new Float32Array(updateWords);
     this._keyUpdates = new Uint32Array(updateCopy.buffer, updateCopy.byteOffset, updateWords);
+    this._keyUpdatesF = new Float32Array(updateCopy.buffer, updateCopy.byteOffset, updateWords);
     // E-189: the texture updates, in the render-queue memory and their copy (WebGL takes no shared view).
     const texWords = this._keyedPack.texUpdatesByte > 0 ? this.capacity * GPU_KEYED_TEX_WORDS : 0;
     this._sharedTexUpdates = texWords > 0 ? new Uint32Array(buf, this._keyedPack.texUpdatesByte, texWords) : new Uint32Array(0);
     const texCopy = (texWords > 0 && arena && arena.f32(texWords)) || new Float32Array(texWords);
     this._keyTexUpdates = new Uint32Array(texCopy.buffer, texCopy.byteOffset, texWords);
+    this._keyTexUpdatesF = new Float32Array(texCopy.buffer, texCopy.byteOffset, texWords);
     this._keyHeader = k ? new Uint32Array(buf, k.headerByte, PIXI_KEYED_HEADER_WORDS) : new Uint32Array(PIXI_KEYED_HEADER_WORDS);
     // The queue frame and buffer of the next upload (the caller's), and the last queue frame the texture took keyed (0:
     // none; E-312: pre-render marks every change after the one the header's DRAWN says, which this batch stores).
@@ -760,6 +764,12 @@ export class InstancedSpriteBatch {
     this._statics = this.indexed ? statics : null;
     this._staticsSource = null;
     this._staticsHeight = 0;
+    // E-395: the keyed slots' texture and scale (three floats a slot), copied from the keyed updates once something asks
+    // (enableStaticsMirror: the renders' columns over keyed rows pick their rows by them); empty until then. The updates'
+    // float views read them.
+    this._staticsMirror = new Float32Array(0);
+    this._keyUpdatesF = new Float32Array(0);
+    this._keyTexUpdatesF = new Float32Array(0);
     this._indexedShader = this.indexed ? this._makeIndexedShader(labelName) : null;
     this._rowShader = this.posesByRow ? this._makeRowShader(labelName) : null;
     this.shadowShader = null;
@@ -2260,6 +2270,7 @@ export class InstancedSpriteBatch {
     if (n > 0 || nt > 0) {
       if (n > 0) this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
       if (nt > 0) this.copyIn(this._keyTexUpdates, this._sharedTexUpdates, nt * GPU_KEYED_TEX_WORDS);
+      if (this._staticsMirror.length > 0) this._mirrorKeyedStatics(n, nt);
       this._statics.scatter(
         this._staticsSource, this._keyUpdates, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight,
         this._keyTexUpdates, nt,
@@ -2639,6 +2650,50 @@ export class InstancedSpriteBatch {
     const geometry = this.keyedCasterGeometry(f > GPU_KEYED_CASTER_FLOATS, ring);
     geometry.instanceCount = keep;
     return geometry;
+  }
+
+  /**
+   * E-395: keep a CPU copy of each keyed slot's texture and scale (staticsMirror), for the renders' columns over keyed
+   * caster rows. The keyed updates carry only what changed, so this asks pre-render for every slot's statics again (the
+   * keyed pause, as after a loss) and the copy fills from them. False without keyed frames or a statics texture yet.
+   * @returns {boolean}
+   */
+  enableStaticsMirror() {
+    if (!this.keyed || this._staticsHeight <= 0) return false;
+    const slots = this._staticsHeight * STATICS_TEX_ROW;
+    if (this._staticsMirror.length < slots * 3) this._staticsMirror = new Float32Array(slots * 3);
+    // A few frames of every slot's statics (KEYED_PAUSE_FRAMES is the loss's long pause): the copy fills from them.
+    this._keyPause = Math.max(this._keyPause, STATICS_MIRROR_FILL_FRAMES);
+    this._keyFull = true;
+    Atomics.store(this._keyHeader, PIXI_KEYED_HEADER.FULL, 1);
+    return true;
+  }
+
+  /** E-395: the keyed slots' texture and scale (textureId, scaleX, scaleY a slot), or null before enableStaticsMirror. */
+  get staticsMirror() {
+    return this._staticsMirror.length > 0 ? this._staticsMirror : null;
+  }
+
+  /** E-395: this frame's keyed updates into the statics' CPU copy: an update's scale (words 0, 1) and texture (word 6). */
+  _mirrorKeyedStatics(n, nt) {
+    const M = this._staticsMirror;
+    const U = this._keyUpdates;
+    const UF = this._keyUpdatesF;
+    const max = (M.length / 3) | 0;
+    for (let k = 0; k < n; k++) {
+      const at = k * GPU_KEYED_ROW_WORDS;
+      const s = U[at + GPU_KEYED_KEY_WORD];
+      if (s >= max) continue;
+      M[s * 3] = UF[at + 6];
+      M[s * 3 + 1] = UF[at];
+      M[s * 3 + 2] = UF[at + 1];
+    }
+    const T = this._keyTexUpdates;
+    const TF = this._keyTexUpdatesF;
+    for (let k = 0; k < nt; k++) {
+      const s = T[2 * k];
+      if (s < max) M[s * 3] = TF[2 * k + 1];
+    }
   }
 
   /**
