@@ -20085,19 +20085,19 @@
     {
       "id": "N-235",
       "title": "d8 16 starves its background threads on this machine: Maglev jobs took 0.2 to 5.5 s and scavenges 362 ms unless run with --concurrent-maglev-high-priority-threads --single-threaded-gc, so D:/perf-tools/d8kit/runKernels.sh timings may be skewed",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-459 agent (opt/setter-inline), in d8 16, Node 22 and Chrome 157",
+      "status": "kept-hygiene",
+      "statusText": "Done 2026-11-22 (R-1815) in D:/perf-tools/d8kit: runKernels.sh's thread flags; build.mjs D8KIT_NATIVE=1 for src/ as native modules (not the default: it cuts both ways).",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
       "result": "Seen by the E-459 agent in its d8 16 driver.",
-      "next": "Add the two flags to runKernels.sh (or say why not) and re-time one known kernel both ways.",
       "refs": [],
       "aliases": [
         "d8 background threads starved"
       ],
       "records": [
-        "R-1217"
+        "R-1217",
+        "R-1815"
       ]
     },
     {
@@ -20179,19 +20179,19 @@
     {
       "id": "N-236",
       "title": "The d8kit bundle distorts what it times: esbuild turns every top-level const into var, so TurboFan stops folding module consts (const Transform = TransformImport); the bundled rebuildChecked ran 43 ns an entity against 25 ns as native modules",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "status": "kept-hygiene",
+      "statusText": "Done 2026-11-22 (R-1815) in D:/perf-tools/d8kit: runKernels.sh's thread flags; build.mjs D8KIT_NATIVE=1 for src/ as native modules (not the default: it cuts both ways).",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
       "result": "The agent loaded src/ and the variants as native modules with shims in a prelude: scratchpad d8hot/tools/buildExt.mjs.",
-      "next": "Add buildExt's native-module mode to D:/perf-tools/d8kit and use it by default; note it in perf-tools.",
       "refs": [],
       "aliases": [
         "d8kit const to var"
       ],
       "records": [
-        "R-1222"
+        "R-1222",
+        "R-1815"
       ]
     },
     {
@@ -41278,6 +41278,13 @@
       "title": "N-221 closed: Defender excludes C: and D: whole (the owner's choice); sittings run with the agents idle, by practice",
       "verdict": "answered",
       "text": "Closed in the 2026-11-22 backlog triage. The owner's call was made: Microsoft Defender excludes C:\\ and D:\\ whole (machine profile, 2026-11-21: MsMpEng under 90 CPU-s in 2.4 days). The other half is practice, not code: sittings run while the agents' builds and tests are idle (this session's sittings of 2026-11-22 ran with nothing else busy)."
+    },
+    {
+      "id": "R-1815",
+      "date": "2026-11-22",
+      "title": "N-235/N-236 done in d8kit: the two thread flags (+10-13 % on bodyPack) and a native-src mode (D8KIT_NATIVE=1); bundled stays default, since bodyPack ran faster bundled (187-191 vs 114-117 ops/s), the opposite of rebuildChecked",
+      "verdict": "kept-hygiene",
+      "text": "**N-235 and N-236 done in D:/perf-tools/d8kit (outside the repo; the perf-tools memory says how to use it).**\n\n- N-235: runKernels.sh runs d8 with `--concurrent-maglev-high-priority-threads --single-threaded-gc`. Re-timed in the release d8 (16.0.39), bodyPackMicrobench bundled into the repo's tests/bench: 103.5 ops/s without the flags against 113.7 and 117.0 with them (+10 to 13 %).\n- N-236: build.mjs gets a native mode (`D8KIT_NATIVE=1`): the repo's src/ stays native ES modules that d8 loads by absolute path, the kernel and its tests/ helpers are bundled, and the shims go to `<out>.prelude.js`, which d8 runs first (a native module evaluates before any banner; runKernels.sh passes it). The default stays the bundle: the same kernel ran 186.7 / 191.2 ops/s bundled against 113.7 / 117.0 native, the opposite of R-1222's rebuildChecked (43 ns bundled, 25 native). So esbuild's const-to-var does change TurboFan's code, but in both directions: a d8 timing says its mode, and a claim about the shipped code is read in Chrome (the prod bundle is webpack's, not esbuild's). Kernels that load a real worker (workerHarness: rebuildOwnedRowsMicrobench) throw in d8 in both modes, as before."
     }
   ],
   "leads": [
