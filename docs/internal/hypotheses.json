@@ -15886,8 +15886,8 @@
     {
       "id": "N-189",
       "title": "The lamps' map tags hold under 256 tiles, and the WebGL painter level is per range across GPU-particle chunk splits",
-      "status": "open",
-      "statusText": "first half fixed 2026-11-22 (ab4704fc, R-1842): the 256-tile tag; left: the painter level across GPU-particle chunk splits",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-22: the 256-tile tag (ab4704fc, R-1842) and the painter step across chunks (0e52ff59, R-1850)",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
@@ -15901,7 +15901,8 @@
       ],
       "records": [
         "R-1842",
-        "R-1843"
+        "R-1843",
+        "R-1850"
       ]
     },
     {
@@ -24035,7 +24036,8 @@
         "R-1845",
         "R-1847",
         "R-1848",
-        "R-1849"
+        "R-1849",
+        "R-1851"
       ]
     },
     {
@@ -42443,6 +42445,24 @@
       "title": "N-303 CR-14 and CR-15 done: pose and additive shader variants made from their base (4 files out), the Pixi groups header and weedUv written once and included (shaderChunks.js); src -365 lines, every shader and JS-written program byte for byte",
       "verdict": "kept-hygiene",
       "text": "**N-303 CR-14 and CR-15 done (shader variants made from their base, shader chunks written once): src/ -365 lines in two\ncommits; what the renderer compiles is byte for byte the same.**\n\n- e2c15c15, CR-14: `instancedSpritePose.vert.glsl`, `instancedSpritePose.wgsl`, `instancedSpriteAdditive.frag.glsl` and\n  `gpuParticleAdditive.frag.glsl` go. `src/render/shaderVariants.js` (spritePoseGlsl, spritePoseWgsl,\n  additiveFragGlsl) makes them with replaceOnce when the base arrives, which means four fetches fewer at boot. The three\n  sprite variants equalled their files byte for byte; the particle one differed only in a comment line. `lfLightSplat`\n  stays its own file, since two thirds of it differs from `lfSplat`. src -171.\n- f1638c62, CR-15: the 14-line header of Pixi's groups 0 and 1 was in 11 WGSL files and 6 JS-written programs, and\n  `weedUv` was in 3 GLSL files, 3 WGSL files and faceMap.js. Now each lives once in `src/render/shaderChunks.js`\n  (PIXI_GROUPS_WGSL, WEED_UV_GLSL, WEED_UV_WGSL). A shader file names a chunk with `// #include <name>`, and\n  `fetchEngineShader` resolves it for a fetch and a bundle's embed alike. All 32 shader files resolve to their old text,\n  and all 18 JS-written programs equal theirs. src -194.\n- The tests read every shader through `tests/node/engineShaderSources.mjs`: `readEngineShader` by the old file names,\n  includes resolved, and `spriteGlslShaders` for the four-key dictionary 14 tests copied. The gpuPass,\n  meshFillGpuBench and spriteIndexedCompileCheck benches resolve what they fetch.\n\nCaptures against main on WebGL and WebGPU, 0 of 921600 pixels differ on each: dxCapture hour=22, light3dCompare all=1\nhour=22 still=1, depthPair, and for CR-15 also volumeStress still=1 dayMinutes=0. Suites: node 3515/0, demos 143/0.\ntest:bundle and test:node:bundle pass on a bundle of the CR-15 tree. Load-time code only, no timing; the next Predator\ngate covers it."
+    },
+    {
+      "id": "R-1850",
+      "date": "2026-11-22",
+      "time": "09:25",
+      "timeFrom": "recorded",
+      "title": "N-189 second half fixed: pixel depth's painter step counts from the batch's first instance in WebGL chunks (uWeedFirstInstance set by the range hook); captures unchanged where no chunks are drawn",
+      "verdict": "kept-hygiene",
+      "text": "**N-189's second half fixed (0e52ff59): pixel depth's painter step counts from the batch's first instance in WebGL\nchunks.**\n\nThe bug. Pixel depth's last 7 bits are the painter's step, the instance index's low bits. In WebGL, gl_InstanceID\nstarts at 0 in every draw, with WEBGL_draw_instanced_base_vertex_base_instance and with the attribute repoint alike.\nGPU particles drawn among the entities split the entities batch into chunks (gpuParticleChunks.js), so each chunk\nrestarted the step. At a chunk's start, a sprite the painter drew later on the same floor step could lose the depth test\nto the one before it.\n\nThe fix. The colour pass and the G-buffer pass take `(gl_InstanceID + uWeedFirstInstance) & 127`.\ninstanceRangeDraw.js sets uWeedFirstInstance for a range's draw and puts it back to 0 after. No uniform group holds the\nuniform, so Pixi never writes it. WebGPU was already right: instance_index counts from firstInstance. A chunk's steps now\ngo on from the chunk before it, as the G-buffer pass's do over the whole batch. Steps still wrap every 128 instances, as\nbefore.\n\nEvidence:\n- Tests: the hook's uniform calls, with and without the extension, and none for a program without the uniform. The\n  painter text in both passes, declared once.\n- Captures against main, WebGL with pixel depth on (light3dCompare all=1 hour=22 still=1, depthPair, dxCapture\n  hour=22): 0 of 921600 pixels differ. These scenes draw no chunks, so the step is unchanged there, and the new shaders\n  compile.\n- No still scene draws chunks with pixel depth on, so no picture shows the fix itself.\n- Suites: node 3551/0, demos 143/0."
+    },
+    {
+      "id": "R-1851",
+      "date": "2026-11-22",
+      "time": "09:26",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-35 done: 34 behavioural tests for the public API no caller in the repo uses (none broken) and types for LiquidFun's five range wrappers",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-35 done (cecec670): tests for the public API no caller in the repo uses, and types for LiquidFun's range\nwrappers. 0 lines out of src/, as the owner decided (rule 9: they stay).**\n\nThere are 34 behavioural tests in two files: uncalledPublicApiCore.test.js and uncalledPublicApiData.test.js.\n- Scene: needsParticleWorker, numberOfPreRenderWorkers and getMemoryUsageSummary.\n- Grid's cell sleeping.\n- DebugFlags: SHOW_PROFILER, SHOW_COLLISION_CANDIDATES, enablePerformanceDebug and colors.\n- LiquidFun's range wrappers, each drained from the real command ring.\n- spriteSheetRegistry: validateSpriteConfig, getAnimationData and getAnimationFrameCount.\n- NavGrid: setWalkability and isPositionWalkable.\n- TileMap: getLayerNames and tileToWorld; hasTile lives on a layer, not on TileMap.\n- GameObject: clearTile, setAnimationLoop, getAllNeighborInstances and getJoints.\n- SoundManager: getSoundId and unloadMany.\n- The Pixi worker's self.PIXI, checked on the real worker through loadWorker.\n\nNone was broken. types/weed.d.ts gains the five `*Range` methods. The plan's \"seven\" also counted setUserDataList and\naddUserData, which are not ranges and stay untyped. An agent wrote the tests; I reviewed them and checked the types'\nJSDoc against the source and the command ring's clamp. check:types passes."
     }
   ],
   "leads": [
