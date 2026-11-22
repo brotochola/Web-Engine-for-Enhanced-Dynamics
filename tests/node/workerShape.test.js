@@ -63,6 +63,15 @@ const BOUND_BY_INITIALIZE = {
 // born then, as initialize's is.
 const ABSTRACT_BOOT_METHODS = ['initializeCommonBuffers', 'initializeAllComponents', 'registerCoreClasses', 'initSeededRandom', 'initializeWorkerPorts'];
 const abstractWritten = fieldsWrittenAfterBoot('abstractWorker.js', 'AbstractWorker', ABSTRACT_BOOT_METHODS);
+// N-256 PW-2: the renderer's initialize is a list of steps, each called from it alone, before the frame loop: what they
+// write may be born there, as initialize's own writes may.
+const INITIALIZE_STEPS = {
+  PixiRenderer: [
+    '_reportGpuInfo', '_fetchParticleShaders', '_readRendererConfig', '_bindRendererViews', '_loadAssets', '_initDecals',
+    '_initRenderQueue', '_initCastedShadows', '_bindKernels', '_initEntitiesLayer', '_initLighting', '_initSun',
+    '_initLayersAndPrograms',
+  ],
+};
 for (const [file, selfKey, className, minFields] of [
   ['preRenderWorker.js', 'preRenderWorker', 'PreRenderWorker', 40],
   ['pixiWorker.js', 'pixiRenderer', 'PixiRenderer', 40],
@@ -72,7 +81,17 @@ for (const [file, selfKey, className, minFields] of [
 ]) {
   test(`${className}: every field a later path writes exists from the constructor`, async () => {
     const worker = await loadWorker(file, selfKey);
-    const written = fieldsWrittenAfterBoot(file, className);
+    const steps = INITIALIZE_STEPS[className] || [];
+    if (steps.length) {
+      // Each step is called once, by initialize: none runs on a frame path, where its writes would count.
+      const source = fs.readFileSync(new URL(`../../src/workers/${file}`, import.meta.url), 'utf8');
+      const init = source.slice(source.indexOf('  async initialize(data) {'), source.indexOf('\n  }\n', source.indexOf('  async initialize(data) {')));
+      for (const step of steps) {
+        assert.equal(source.split(`this.${step}(`).length - 1, 1, `${step} is called once`);
+        assert.ok(init.includes(`this.${step}(`), `${step} is called by initialize`);
+      }
+    }
+    const written = fieldsWrittenAfterBoot(file, className, steps);
     assert.ok(written.size > minFields, `the scan found the frame paths (${written.size} fields)`);
     assert.ok(abstractWritten.size > 5, `the scan found AbstractWorker's frame paths (${abstractWritten.size} fields)`);
     for (const [name, at] of abstractWritten) if (!written.has(name)) written.set(name, `AbstractWorker.${at}`);

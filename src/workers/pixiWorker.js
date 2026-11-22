@@ -8816,6 +8816,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.reportError('PIXI Initialization Failed', this._bootError);
       return;
     }
+    // N-256 PW-2: the steps, in this order (each one's doc says what it makes).
+    this._reportGpuInfo();
+    await this._fetchParticleShaders(data);
+    this._readRendererConfig(data);
+    this._bindRendererViews(data);
+    this._loadAssets(data);
+    const decalBind = this._initDecals(data);
+    this._initRenderQueue(data);
+    this._initCastedShadows(data);
+    await this._bindKernels(data, decalBind);
+    this._initEntitiesLayer();
+    this._initLighting(data);
+    this._initSun();
+    await this._initLayersAndPrograms(data);
+  }
+
+  /**
+   * N-256 PW-2, initialize's step: DX-IGPUWARN: the GPU the page got to the scene, and a manual step's ticker stopped.
+   */
+  _reportGpuInfo() {
     // DX-IGPUWARN: the GPU the page got, to the scene (scene.gpu) before this worker reports ready.
     self.postMessage({
       msg: 'gpuInfo',
@@ -8828,7 +8848,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.pixiApp.ticker.autoStart = false;
       this.pixiApp.ticker.stop();
     }
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: GPU particle layers (LAYER_KIND.GPU_PARTICLES): their shaders, fetched only in a
+   * scene that has one.
+   */
+  async _fetchParticleShaders(data) {
     const sh = this._engineShaders;
     const shaderFetches = [];
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): their programs, only in a scene that has one.
@@ -8870,7 +8896,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       await Promise.all(shaderFetches);
       loadMark('particle shaders fetched');
     }
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the stats buffer, the canvas and world sizes, and the renderer, pre-render and
+   * lighting settings this worker reads.
+   */
+  _readRendererConfig(data) {
     // Initialize stats buffer for writing metrics
     if (data.buffers.rendererStats) {
       this.stats = createStatsWriter(data.buffers.rendererStats, RENDERER_STATS);
@@ -8922,7 +8954,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       Number.isFinite(maxDecalUploads) && maxDecalUploads > 0
         ? maxDecalUploads
         : RENDERER_DEFAULTS.maxDecalTileUploadsPerFrame;
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the mesh pose lists and the particle, decoration and light counts from the shared
+   * buffers.
+   */
+  _bindRendererViews(data) {
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
     // This includes Transform, RigidBody, SpriteRenderer, and all custom components
 
@@ -8954,7 +8992,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `PIXI WORKER: LightEmitter component initialized (${this.globalEntityCount} slots)`
       );
     }
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the spritesheets' metadata and the assets (src/render/pixi/assets.js): textures,
+   * sheets, tilesets, on the GPU.
+   */
+  _loadAssets(data) {
     // Deserialize spritesheet metadata for animation lookups
     if (data.spritesheetMetadata) {
       SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
@@ -8981,7 +9025,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // SST-7: on the GPU now, while the programs link, not at the first frame that draws them.
     this.assets.uploadAssetTextures();
     loadMark('textures uploaded');
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the blood decal grid (SAB tiles): its views and sprites. @returns {Promise|null} its
+   * premultiply kernel's bind
+   */
+  _initDecals(data) {
     // ========================================
     // BLOOD DECAL SPLAT GRID - Initialize (SAB tiles, not TileMap background)
     // ========================================
@@ -9020,7 +9070,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `PIXI WORKER: decal decals enabled - ${this.decalsTilesX}×${this.decalsTilesY} tiles (${this.decalsTileSize}px world, ${this.decalsTilePixelSize}px texture @ ${this.decalsResolution}x)`
       );
     }
+    return decalBind;
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the double-buffered render queue's views, the GPU queues' and the entity texture
+   * lookup.
+   */
+  _initRenderQueue(data) {
     // ========================================
     // RENDER QUEUE SYSTEM - Initialize (DOUBLE BUFFERED)
     // ========================================
@@ -9077,13 +9134,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } else {
       debugWorkerLog('PIXI WORKER: Render queue NOT enabled');
     }
+  }
 
+  /** N-256 PW-2, initialize's step: the casted shadows system, over the render queue's memory. */
+  _initCastedShadows(data) {
     // ========================================
     // CASTED SHADOWS SYSTEM - Initialize
     // ========================================
     this._renderQueueMemory = data.renderQueueMemory || null;
     this.createCastedShadowsSystem(data);
+  }
 
+  /** N-256 PW-2, initialize's step: the worker's kernels, bound together (SST-2). */
+  async _bindKernels(data, decalBind) {
     // The worker's kernels, which do not depend on each other, bound together (SST-2): the decals' premultiply, the entity
     // batch's pack and sort, the MESH layers' corners (initializeCustomLayers takes this bind). loadMark: each bind's
     // 'kernel' marks come from wasmKernel.js.
@@ -9094,7 +9157,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._bindMeshMemory(data),
     ]);
     loadMark('kernels bound');
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the entities' instanced batch and its layer (with its opaque, depth and glow
+   * meshes).
+   */
+  _initEntitiesLayer() {
     // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
     if (this.renderQueueEnabled) {
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
@@ -9122,7 +9191,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const glow = this._lightGlowAdd ? 'glow ADD' : 'glow in entity list';
       debugWorkerLog(`PIXI WORKER: ENTITIES layer using instanced sprite mesh (${order}, ${glow})`);
     }
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the lighting system: its settings, the shadow maps' modes, the lights' slots and its
+   * splats.
+   */
+  _initLighting(data) {
     // ========================================
     // LIGHTING SYSTEM - Initialize
     // ========================================
@@ -9215,17 +9290,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._particleLightMax = particleLights.max;
 
       // Create lighting mesh (full-screen quad with multiply blend)
-    // Shadows are now sprites, not in shader
-    this.createLightingSystem();
-    this._createLiquidFunLightSplat(this.liquidFunMaxCount);
-    this._createParticleLightSplat(this._particleLightMax);
+      // Shadows are now sprites, not in shader
+      this.createLightingSystem();
+      this._createLiquidFunLightSplat(this.liquidFunMaxCount);
+      this._createParticleLightSplat(this._particleLightMax);
 
-    debugWorkerLog(
-      `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, shadowLights: ${this.maxShadowCastingLights}, resolution: ${this.lightingResolution}, shadowResolution: ${this.shadowResolution})`
-    );
-
+      debugWorkerLog(
+        `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, shadowLights: ${this.maxShadowCastingLights}, resolution: ${this.lightingResolution}, shadowResolution: ${this.shadowResolution})`
+      );
     }
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the sun's switch, from the Sun static class (AbstractWorker.initializeCommonBuffers
+   * bound it).
+   */
+  _initSun() {
     // ========================================
     // SUN SYSTEM - Initialize
     // ========================================
@@ -9234,7 +9314,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.sunEnabled = Sun.enabled;
       debugWorkerLog(`PIXI WORKER: Sun system initialized (enabled: ${this.sunEnabled})`);
     }
+  }
 
+  /**
+   * N-256 PW-2, initialize's step: the custom layers, the layers' map, then every program made, linked and built before
+   * ready.
+   */
+  async _initLayersAndPrograms(data) {
     // Debug visualization is handled by DebugUI on the page thread
     // This removes ~400 lines of debug rendering code from pixi_worker
 
