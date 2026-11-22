@@ -16,6 +16,7 @@ import { GpuParticleLayerBatch } from '../../src/render/gpuParticleBatch.js';
 import { Container, Matrix, RenderTexture, Texture } from '../../src/vendor/pixi.min.js';
 import { readEngineShader } from './engineShaderSources.mjs';
 import { PixiCustomLayers } from '../../src/render/pixi/customLayers.js';
+import { PixiLookShaders } from '../../src/render/pixi/lookShaders.js';
 
 // The Pixi worker's side of the y-sort proxies: the entries of the frame it draws put the groups' meshes between
 // chunks of the entities batch under the entities root, a hidden layer's groups are left out, and the layers go
@@ -273,6 +274,8 @@ test('a resize moves a look layer\'s regions onto its new look target, with thei
   // N-256 PW-3: the custom layers resize it, reading the worker's proxies and its bind-group release.
   const worker = { _proxyLayers: [], pixiApp: null, _releaseTextureBindGroups: Pixi._releaseTextureBindGroups };
   const ctx = new PixiCustomLayers(worker);
+  // N-256: the look shaders unbind the old target from a layer's look (lookShaders.js).
+  worker.lookShaders = new PixiLookShaders(worker);
   worker._proxyLayers[layerId] = { layerId, cl, regions };
   try {
     ctx.resizeRTs(cl, 200, 100);

@@ -172,6 +172,7 @@ import { PixiAssets } from '../render/pixi/assets.js';
 import { PixiScenery } from '../render/pixi/scenery.js';
 import { PixiMeshLayers, emptyInstancedMesh } from '../render/pixi/meshLayers.js';
 import { PixiCustomLayers } from '../render/pixi/customLayers.js';
+import { PixiLookShaders } from '../render/pixi/lookShaders.js';
 import { PixiGlowLayer } from '../render/pixi/glowLayer.js';
 import { PixiShadowMaps } from '../render/pixi/shadowMaps.js';
 import { PixiLampMap } from '../render/pixi/lampMap.js';
@@ -737,6 +738,8 @@ class PixiRenderer extends AbstractWorker {
     this._colliderFillLayerCount = -1;
     // N-256 PW-3: the custom layers' runtimes, targets, look shaders and compute passes (src/render/pixi/customLayers.js).
     this.customLayers = new PixiCustomLayers(this);
+    // N-256: the custom layers' look shaders, made, swapped and unbound (src/render/pixi/lookShaders.js).
+    this.lookShaders = new PixiLookShaders(this);
     // N-256 PW-4: the MESH layers' memory, kernels, UV batches and look composite (src/render/pixi/meshLayers.js).
     this.meshLayers = new PixiMeshLayers(this);
 

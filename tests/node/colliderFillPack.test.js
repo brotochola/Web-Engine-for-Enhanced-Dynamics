@@ -419,8 +419,10 @@ test('MESH look path is one RT, no fillSpace / SCREEN bake', () => {
   assert.match(src, /if\s*\(\s*!isMesh\s*\)/);
   assert.match(src, /cl\.rtOut\s*=/);
   assert.match(src, /meshLayers\.lookFlipV\(\)/);
-  assert.match(customSrc, /makeLookShaderMesh\(cl\.shader,\s*isMesh\s*&&\s*this\.worker\.meshLayers\.lookFlipV\(\)\)/);
-  assert.match(customSrc, /makeLookShaderMesh\(cl\.shader,\s*!!cl\.fillBatch\s*&&\s*this\.worker\.meshLayers\.lookFlipV\(\)\)/);
+  assert.match(customSrc, /lookShaders\.makeMesh\(cl\.shader,\s*isMesh\s*&&\s*this\.worker\.meshLayers\.lookFlipV\(\)\)/);
+  // N-256: a shader swap's mesh, in the look shaders' own module (src/render/pixi/lookShaders.js).
+  const lookSrc = fs.readFileSync(path.join(here, '../../src/render/pixi/lookShaders.js'), 'utf8');
+  assert.match(lookSrc, /this\.makeMesh\(cl\.shader,\s*!!cl\.fillBatch\s*&&\s*this\.worker\.meshLayers\.lookFlipV\(\)\)/);
   assert.match(src, /skip\._skipRt/);
   assert.match(src, /paintEpoch/);
   assert.match(src, /packColliderFillPoseOnly/);

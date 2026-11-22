@@ -477,7 +477,7 @@ async function lookLayer(options) {
   px._collectSunLayers();
   const cl = px.customLayers.byId[Layer.get('shade').id];
   const look = cl.fillBatch.shader;
-  px.customLayers.createLookShader = () => look;
+  px.lookShaders.create = () => look;
   // The mesh's destroy would take the fill batch's shader with it.
   const destroy = px._destroyCustomLayerPostProcess;
   px._destroyCustomLayerPostProcess = function (layer) {
@@ -493,7 +493,7 @@ async function lookLayer(options) {
 test('a composed look on a MESH layer can be taken off and put back', async () => {
   const { px, cl, drawn } = await lookLayer({});
   await quietly(() => {
-    px.customLayers._setShader('shade', 'look', 'look');
+    px.lookShaders.setLayerShader('shade', 'look', 'look');
     Layer._alpha[cl.layerId] = 0.5;
     px.meshLayers.ensureLookComposite(cl);
   });
@@ -501,14 +501,14 @@ test('a composed look on a MESH layer can be taken off and put back', async () =
   assert.ok(composed, 'the alpha made it compose');
 
   await quietly(() => {
-    px.customLayers._setShader('shade', null, null);
+    px.lookShaders.setLayerShader('shade', null, null);
     px.customLayers.update();
   });
   assert.equal(cl.shaderMesh, null);
   assert.ok(!drawn.includes(null), 'no render of a look that is gone');
   assert.equal(cl.displaySprite.texture, cl.rt, 'the raw layer shows');
 
-  await quietly(() => px.customLayers._setShader('shade', 'look', 'look'));
+  await quietly(() => px.lookShaders.setLayerShader('shade', 'look', 'look'));
   assert.equal(cl.displaySprite.texture, composed, 'the look shows again');
   assert.ok(cl.displaySprite.visible);
   Layer._alpha[cl.layerId] = 1;
@@ -518,7 +518,7 @@ for (const [name, options] of [['alphaBySun', { alphaBySun: 'night' }], ['sunPro
   test(`a look set at run time on a MESH layer with ${name} composes, so the sun still reaches it`, async () => {
     const { px, cl } = await lookLayer(options);
     assert.equal(cl.rtOut, null);
-    await quietly(() => px.customLayers._setShader('shade', 'look', 'look'));
+    await quietly(() => px.lookShaders.setLayerShader('shade', 'look', 'look'));
     assert.ok(cl.rtOut, 'it goes through rtOut');
     assert.equal(cl.displaySprite.texture, cl.rtOut);
     assert.equal(px._layerRuntime.shade, cl.displaySprite, 'the alpha lands on the sprite, which every look obeys');
@@ -527,7 +527,7 @@ for (const [name, options] of [['alphaBySun', { alphaBySun: 'night' }], ['sunPro
 
 test('a look set at run time on a plain MESH layer stays on the stage', async () => {
   const { px, cl } = await lookLayer({});
-  await quietly(() => px.customLayers._setShader('shade', 'look', 'look'));
+  await quietly(() => px.lookShaders.setLayerShader('shade', 'look', 'look'));
   assert.equal(cl.rtOut, null);
   assert.equal(px._layerRuntime.shade, cl.shaderMesh);
 });
@@ -604,7 +604,7 @@ test('a mesh that changed while the sun showed nothing is drawn when the sun com
 test('a still MESH layer draws again after its RT is rebuilt', async () => {
   const { px, cl, frame, draws } = await sunLayer();
   px._releaseTextureBindGroups = () => {};
-  px.customLayers.unbindLookShaderTexture = () => {};
+  px.lookShaders.unbindTexture = () => {};
   const rt = cl.rt;
   await quietly(() => px.customLayers.resizeRTs(cl, 1024, 768));
   assert.notEqual(cl.rt, rt);

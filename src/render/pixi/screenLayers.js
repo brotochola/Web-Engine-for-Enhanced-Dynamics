@@ -4,7 +4,7 @@
  * under it (uTexture) and, when it names it, the frame before the first pass (uScene); the last pass draws onto the
  * canvas. The worker's present (_presentStage) goes through them while any is shown.
  *
- * The look shaders are the custom layers' (customLayers.js: createLookShader, makeLookShaderMesh). Until the renderer's
+ * The look shaders are the custom layers' (lookShaders.js: create, makeMesh). Until the renderer's
  * other subsystems move (N-256), what this class reads of the worker goes through `this.worker`.
  */
 
@@ -42,13 +42,13 @@ export class PixiScreenLayers {
     const layerId = config.id;
     const layerName = config.name;
     const name = config.shaderName || layerName;
-    const uniformDefs = this.worker.customLayers.buildUniformDefs(layerId, config.uniformMap, config.uniformTypes);
+    const uniformDefs = this.worker.lookShaders.buildUniformDefs(layerId, config.uniformMap, config.uniformTypes);
     // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it).
     const usesScene = typeof config.shaderFragment === 'string' && /\buScene\b/.test(config.shaderFragment);
     let shader;
     try {
       const empty = PIXI.Texture.EMPTY.source;
-      shader = this.worker.customLayers.createLookShader(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null);
+      shader = this.worker.lookShaders.create(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null);
     } catch (err) {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', name, layerName, this.worker._useWebGpu ? 'WebGPU' : 'WebGL', err);
@@ -64,7 +64,7 @@ export class PixiScreenLayers {
       shader,
       uniformStore: shader.resources?.customUniforms?.uniforms || null,
       uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
-      mesh: this.worker.customLayers.makeLookShaderMesh(shader, false),
+      mesh: this.worker.lookShaders.makeMesh(shader, false),
       usesScene,
       // Its output when it is not the last visible pass: the canvas's size times its resolution.
       target: null,
@@ -203,7 +203,7 @@ export class PixiScreenLayers {
   }
 
   _unbindTextures(cl) {
-    this.worker.customLayers.unbindLookShaderTexture(cl.shader);
+    this.worker.lookShaders.unbindTexture(cl.shader);
     if (cl.usesScene) cl.shader.resources.uScene = PIXI.Texture.EMPTY.source;
   }
 

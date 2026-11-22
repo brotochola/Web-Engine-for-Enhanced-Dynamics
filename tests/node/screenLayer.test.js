@@ -72,7 +72,7 @@ async function pixiWith(layers) {
   px._useWebGpu = false;
   px._engineShaders = { lookVert: LOOK_VERT };
   // Compiling needs a GPU context (Node has none): the shader as Pixi would hold it, from the same uniform defs.
-  px.customLayers.createLookShader = (source, texture, uniformDefs) => ({
+  px.lookShaders.create = (source, texture, uniformDefs) => ({
     source,
     resources: {
       customUniforms: { uniforms: Object.fromEntries(Object.entries(uniformDefs).map(([k, d]) => [k, d.value])) },
@@ -122,7 +122,7 @@ test('a SCREEN pass that names uScene gets the frame before the first pass bound
   const SCENE = COPY.replace('uniform float uAmount;', 'uniform float uAmount;\nuniform sampler2D uScene;');
   const { px } = await pixiWith({ bloom: screen(100), crt: screen(110) });
   const calls = [];
-  px.customLayers.createLookShader = (source, texture, uniformDefs, name, layerName, sceneSource) => {
+  px.lookShaders.create = (source, texture, uniformDefs, name, layerName, sceneSource) => {
     calls.push({ layerName, scene: sceneSource !== null && sceneSource !== undefined });
     return { resources: { customUniforms: { uniforms: {} }, uTexture: texture, ...(sceneSource ? { uScene: sceneSource } : {}) } };
   };
