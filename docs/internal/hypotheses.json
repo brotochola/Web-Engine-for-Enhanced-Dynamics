@@ -16543,20 +16543,21 @@
     {
       "id": "N-212",
       "title": "Shadows flicker, not with the fire: some do not show right and some disappear now and then",
-      "status": "open",
-      "statusText": "reported by the owner 2026-11-15 ~20:40 (\"hay sombras titilando, no por el fuego, como que no todas se muestran bien y algunas desaparecen\"); the scene and its URL asked",
+      "status": "kept",
+      "statusText": "Closed 2026-11-21 (R-1694) for the cause Predator showed: the light cut fades (R-1151) and the budget spares the lamps' map (R-1159); not confirmed in the owner's scene, which he does not remember. The other cuts' pops: N-330.",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
       "result": "Predator (crowd 1): 58-61 shadow-casting lights in view against maxShadowCastingLights 48 (67-70 with ?light3d=1), the kept set (nearest the view centre) taking in 0-3 new lights every 2 s: their shadows popped. Fixed for that cut (e47c5442, R-1151): the kept lights fade their shadows over the last 20 % of the cut distance (stamps, cookies, the lamps' map). Still: 15-24 lights in view without shadows (the cap), the per-entity (3 nearest) and per-light caster cuts pop; the owner's scene not confirmed.",
-      "next": "Confirm with the owner (scene, URL); then Predator's cap (raise it or thin its lights) and a fade in shadowStamp.c's per-entity and per-light cuts; measure the light pass's extra texel (gpuPassBench lampMap).",
+      "next": "",
       "refs": [],
       "aliases": [
         "flickering shadows"
       ],
       "records": [
         "R-1151",
-        "R-1159"
+        "R-1159",
+        "R-1694"
       ]
     },
     {
@@ -24786,6 +24787,20 @@
       "date": "2026-11-21",
       "statusText": "Found 2026-11-21 gating E-493 (R-1690): the from-save default of Predator sittings (E-210) is a lighter world than the fresh one; the mixed battle still fights restored (physics 19 ms).",
       "next": "Read which bodies sleep after a load (Box2D sleep timers and flags restored, or walkers whose FSM stands): a restored and a fresh run side by side, Awake and Moved by entity type; then restore what makes them walk. Meanwhile a physics owner at crowd 2.5 takes mix=1 or --fresh."
+    },
+    {
+      "records": [
+        "R-1694"
+      ],
+      "refs": [],
+      "id": "N-330",
+      "title": "Shadows still pop at the per-entity cut (each entity's 3 nearest lights) and the per-light caster cut: an entity crossing either gains or loses a shadow at once",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-21",
+      "statusText": "Filed 2026-11-21 from N-212 (R-1694): the maxShadowCastingLights cut fades since R-1151; these two cuts do not.",
+      "next": "A fade in shadowStamp.c's per-entity and per-light cuts as the light cut has (the last share of the cut distance), both builds of the kernel; a film of Predator at night where walkers cross between lamps, before and after."
     }
   ],
   "records": [
@@ -40923,11 +40938,20 @@
     {
       "id": "R-1693",
       "date": "2026-11-21",
-      "time": "21:33",
+      "time": "21:31",
       "timeFrom": "recorded",
       "title": "N-291 closed: the owner saw the barrio films and the edges hold (N-272 v3)",
       "verdict": "kept",
       "text": "**N-291 closed with N-272 (the owner, 2026-11-21: \"N-291 está ok ... en los mp4 se ve todo bien\").** The barrio films (pan=60, panY=60, noon; main beside N-272 v3, WebGL and WebGPU, R-1684) showed the owner no shading that drifts near the right or the bottom edge as the camera moves: the self-shadow march reads the face map's empty ring past the screen since v3."
+    },
+    {
+      "id": "R-1694",
+      "date": "2026-11-21",
+      "time": "21:34",
+      "timeFrom": "recorded",
+      "title": "N-212 closed for the cause found (the cut's fade, R-1151; the budget, R-1159), not confirmed in the owner's scene, which he does not remember; the per-entity and per-light cuts' pops filed as N-330",
+      "verdict": "kept",
+      "text": "**N-212 closed for the cause found; what is left filed as N-330.** The owner does not remember the scene of his 2026-11-15 report (asked again 2026-11-21), so it was not confirmed there. The mechanism Predator showed was fixed that week: the lights near maxShadowCastingLights' cut fade their shadows over the last 20 % of the cut distance instead of popping (e47c5442, R-1151; stamps, cookies and the lamps' map), and the adaptive budget no longer cuts the lamps' map (3a160eac, R-1159). Left, smaller: the per-entity cut (each entity's 3 nearest lights) and the per-light caster cut still pop a shadow in or out (N-330)."
     }
   ],
   "leads": [
