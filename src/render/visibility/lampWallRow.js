@@ -27,8 +27,12 @@ export const WALL_BINS = 256;
 export const WALL_BIN_TEXELS = WALL_BINS / 4;
 /** A row's first vertex texel. */
 export const WALL_VERT0 = 1 + WALL_BIN_TEXELS;
-/** Steps the search may take from a direction's start vertex (the vertices that may share one direction's bin). */
-export const WALL_WALK = 16;
+/**
+ * Steps the search may take from a direction's start vertex (the vertices that may share one direction's bin). N-300: 32,
+ * since 16 fell short where thin walls crowd a bin (a fence of 2 px posts 4 px apart, 640 px out on a diagonal: 21 to 24
+ * steps, lampWallsDenseBin.test.js); the search stops at its edge, so a pixel pays only for the vertices before it.
+ */
+export const WALL_WALK = 32;
 /**
  * The share of a lamp's light a wall's shadow keeps where lighting.lightBehindWalls says nothing (the old pass's
  * UMBRA_FLOOR: its shadows were never black).
@@ -36,9 +40,11 @@ export const WALL_WALK = 16;
 export const WALL_UMBRA = 0.33;
 /**
  * The most vertices a row holds, whatever lighting.maxPolygonVertices is (a scene may set that in the thousands, and a
- * row is as wide as its cap): a polygon with more is thinned to fit (pre-render keeps one vertex in every few).
+ * row is as wide as its cap): a polygon with more is thinned to fit (pre-render keeps one vertex in every few). N-300:
+ * 1024, so a merged polygon (512 polar rays and the sweep's vertices kept among them, visibilitySweep.c MERGE_MAX_VERTS)
+ * fits whole. The light pass's per-pixel walk is unchanged: a bin start, then WALL_WALK steps.
  */
-export const WALL_ROW_MAX_VERTS = 512;
+export const WALL_ROW_MAX_VERTS = 1024;
 
 /**
  * writeWallRow's lamp (x, y, in the polygon's world px) and 1 / the floor's scale (camera.floorScaleY): doubles in a typed

@@ -250,8 +250,11 @@ function assertBitForBit(a, b, label) {
   a.forEach((rows, f) => assert.deepEqual(compareRows(rows, b[f]), [], `${label}, frame ${f}`));
 }
 
-/** Rows whose polygon is the polar merge's (a vertex per bin at the 512 cap). */
-const polarLights = (frames) => frames.reduce((n, rows) => n + rows.lamps.filter((lamp, r) => rows.f32[r * rows.rowFloats] === POLAR_BINS).length, 0);
+/**
+ * Rows whose polygon is the polar merge's: at the 512 cap a vertex per bin, or (N-300) one per two bins and the sweep's
+ * vertices it keeps.
+ */
+const polarLights = (frames) => frames.reduce((n, rows) => n + rows.lamps.filter((lamp, r) => rows.f32[r * rows.rowFloats] >= POLAR_BINS / 2).length, 0);
 
 test('W1: compound solids raster in solidSegments.wasm, and the rows are the JS raster\'s, bit for bit', async (t) => {
   assert.equal(Object.hasOwn(WASM_DEFAULTS, 'solidSegments'), false, 'no switch');

@@ -872,13 +872,29 @@ INLINE int32_t first_ray_after(const double *rayAng, int32_t n, double a) {
   return lo;
 }
 
-/* clipVisibilityToPolar with mergeSweep (E-43), in and out the same buffers; then markSeenPolarOwners. */
+/* N-300 (as wasm/visibilitySweep.c): the merge's most vertices, lampWallRow.js's WALL_ROW_MAX_VERTS. */
+#define MERGE_MAX_VERTS 1024
+/* N-300: a sweep vertex this far inside the radius (px) is near. */
+#define NEAR_MARGIN 0.5
+
+/* N-300: the polar bin a pseudo-angle falls in: the last b whose lower border polarPseudo[2b] is at or below it. */
+INLINE int32_t bin_of_pseudo(const double *polarPseudo, int32_t bins, double p) {
+  int32_t lo = 0;
+  int32_t hi = bins - 1;
+  while (lo < hi) {
+    const int32_t mid = (lo + hi + 1) >> 1;
+    if (polarPseudo[2 * mid] <= p) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/* clipVisibilityToPolar with mergeSweep (E-43), in and out the same buffers; then markSeenPolarOwners. N-300: with the
+   sweep's own vertices where it is the nearer layer, as wasm/visibilitySweep.c clip_polar. */
 INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
-  const int32_t cap = s->maxV;
+  const int32_t cap = s->maxV < MERGE_MAX_VERTS ? s->maxV : MERGE_MAX_VERTS;
   if (cap < 3) return n;
   const int32_t bins = (int32_t)t[T_POLAR_BINS];
-  const int32_t group = cap >= bins ? 1 : (bins + cap - 1) / cap;
-  const int32_t count = group == 1 ? bins : (bins + group - 1) / group;
   const float *polarDist = (const float *)(uintptr_t)t[T_POLAR_DIST];
   const double *polarCos = (const double *)(uintptr_t)t[T_POLAR_COS];
   const double *polarSin = (const double *)(uintptr_t)t[T_POLAR_SIN];
@@ -893,6 +909,61 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
   const float *xs = s->outX;
   const float *ys = s->outY;
   const int32_t edges = n >= 3 ? n : 0;
+
+  /* N-300: the inserts (see wasm/visibilitySweep.c): near vertices nearer than their bin's hit as they are, any other
+     beside a kept near one, pulled in to its bin's hit where a solid stamped the bin nearer than it; into the sweep's
+     scratch, in order. */
+  int32_t ins = 0;
+  if (edges > 0 && edges <= s->maxEvents) {
+    double *insAng = s->evKey;
+    double *insX = s->evC;
+    double *insY = s->evS;
+    uint8_t *flag = s->evType;
+    for (int32_t i = 0; i < edges; i++) {
+      const double dx = (double)xs[i] - lx;
+      const double dy = (double)ys[i] - ly;
+      const double p = pseudo_angle(dx, dy);
+      uint8_t f = 0;
+      if (p == p) {
+        const int32_t b = bin_of_pseudo(polarPseudo, bins, p);
+        const double d = __builtin_sqrt(dx * dx + dy * dy);
+        f = d < radius - NEAR_MARGIN && d < (double)polarDist[b] ? 1 : 2;
+      }
+      insAng[i] = p;
+      flag[i] = f;
+    }
+    const int32_t room = cap - 3;
+    for (int32_t i = 0; i < edges; i++) {
+      const uint8_t f = flag[i];
+      int keep = f == 1;
+      if (f == 2) keep = flag[i > 0 ? i - 1 : edges - 1] == 1 || flag[i + 1 < edges ? i + 1 : 0] == 1;
+      if (!keep) continue;
+      if (ins == room) {
+        ins = 0;
+        break;
+      }
+      double x = xs[i];
+      double y = ys[i];
+      if (f == 2) {
+        const double hit = (double)polarDist[bin_of_pseudo(polarPseudo, bins, insAng[i])];
+        const double dx = x - lx;
+        const double dy = y - ly;
+        const double d = __builtin_sqrt(dx * dx + dy * dy);
+        if (hit < radius - EPSILON && hit < d) {
+          const double k = hit / d;
+          x = lx + dx * k;
+          y = ly + dy * k;
+        }
+      }
+      insAng[ins] = insAng[i];
+      insX[ins] = x;
+      insY[ins] = y;
+      ins++;
+    }
+  }
+  const int32_t rays = cap - ins;
+  const int32_t group = rays >= bins ? 1 : (bins + rays - 1) / rays;
+  const int32_t count = group == 1 ? bins : (bins + group - 1) / group;
 
   if (edges > 0) {
     for (int32_t k = 0; k < count; k++) {
@@ -961,17 +1032,53 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
       if (tt < rayBest[k]) rayBest[k] = tt;
     }
   }
+  /* The rays and the inserts by angle, the inserts in turn from the one after the largest fall in angle (N-300). */
+  int32_t out = 0;
+  int32_t q = 0;
+  if (ins > 1) {
+    double fall = s->evKey[ins - 1] - s->evKey[0];
+    for (int32_t j = 1; j < ins; j++) {
+      const double f = s->evKey[j - 1] - s->evKey[j];
+      if (f > fall) {
+        fall = f;
+        q = j;
+      }
+    }
+  }
+  int32_t taken = 0;
   for (int32_t k = 0; k < count; k++) {
     const int32_t b0 = k * group;
     const int32_t b1 = b0 + group < bins ? b0 + group : bins;
+    const int32_t m = b0 + b1;
+    if (taken < ins) {
+      const double ra = polarPseudo[m];
+      while (taken < ins && s->evKey[q] < ra) {
+        s->outX[out] = (float)s->evC[q];
+        s->outY[out] = (float)s->evS[q];
+        out++;
+        q = q + 1 < ins ? q + 1 : 0;
+        taken++;
+      }
+      while (taken < ins && s->evKey[q] == ra) {
+        q = q + 1 < ins ? q + 1 : 0;
+        taken++;
+      }
+    }
     double d = polarDist[b0];
     for (int32_t b = b0 + 1; b < b1; b++) {
       if (polarDist[b] < d) d = polarDist[b];
     }
     if (edges > 0 && rayBest[k] < d) d = rayBest[k];
-    const int32_t m = b0 + b1;
-    s->outX[k] = (float)(lx + polarCos[m] * d);
-    s->outY[k] = (float)(ly + polarSin[m] * d);
+    s->outX[out] = (float)(lx + polarCos[m] * d);
+    s->outY[out] = (float)(ly + polarSin[m] * d);
+    out++;
+  }
+  while (taken < ins) {
+    s->outX[out] = (float)s->evC[q];
+    s->outY[out] = (float)s->evS[q];
+    out++;
+    q = q + 1 < ins ? q + 1 : 0;
+    taken++;
   }
   s->res[R_MERGE_COUNT] = (uint32_t)count;
   s->res[R_MERGE_GROUP] = (uint32_t)group;
@@ -998,7 +1105,7 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
     }
     s->res[R_OWNERS_MARKED] = (uint32_t)marked;
   }
-  return count;
+  return out;
 }
 
 INLINE int32_t sweep_light(uint32_t table, double lx, double ly, double maxRadius, int32_t occCount, int32_t polar,

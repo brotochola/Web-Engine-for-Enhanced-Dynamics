@@ -49,6 +49,7 @@ import {
   clearPolarBins,
   clipVisibilityToPolar,
   markSeenPolarOwners,
+  polarMergeRays,
   rasterBoundarySegment,
   sweepSawOccluder,
 } from '../reference/visibilitySweepJs.mjs';
@@ -500,6 +501,7 @@ test('W2a sweep: with compound solids, the clip and merge and the seen owners ma
       stamp++;
       seenJs.fill(0);
       const marked = active ? markSeenPolarOwners(seenJs, stamp) : -1;
+      const rays = active ? polarMergeRays() : -1;
       const ref = { n, x: jsOut.x.slice(0, n), y: jsOut.y.slice(0, n), saw: [] };
 
       k.load(0, sc);
@@ -515,7 +517,9 @@ test('W2a sweep: with compound solids, the clip and merge and the seen owners ma
         if (!active) continue;
         if (maxVerts >= 3) {
           merged++;
-          assert.equal(k.resultsI32[R.mergeCount], m, `${v}: the merge's count`);
+          // N-300: the rays; the polygon is them and the sweep's vertices kept.
+          const kRays = k.resultsI32[R.mergeCount];
+          assert.ok(kRays >= 3 && kRays <= m && m <= Math.min(maxVerts, 1024), `${v}: the merge's ${kRays} rays in ${m}`);
         } else {
           assert.equal(k.resultsI32[R.mergeCount], -1, `${v}: no merge under 3 vertices`);
         }
@@ -524,6 +528,7 @@ test('W2a sweep: with compound solids, the clip and merge and the seen owners ma
         if (v === 'f32' || tallies[v].flips !== flipsBefore) continue;
         assert.deepEqual(Array.from(k.outX.subarray(0, m)), Array.from(ref.x), `polar scene ${s} maxVerts ${maxVerts} ${v}: x`);
         assert.deepEqual(Array.from(k.outY.subarray(0, m)), Array.from(ref.y), `polar scene ${s} maxVerts ${maxVerts} ${v}: y`);
+        assert.equal(k.resultsI32[R.mergeCount], rays, `polar scene ${s} maxVerts ${maxVerts} ${v}: rays`);
         assert.equal(k.resultsI32[R.ownersMarked], marked, `polar scene ${s} maxVerts ${maxVerts} ${v}: bins marked`);
         assert.deepEqual(Array.from(k.ownerSeen), Array.from(seenJs), `polar scene ${s} ${v}: seen owners`);
         ownersCompared++;

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OCC_CIRCLE, OCC_POLY, POLAR_BINS } from '../../src/render/visibility/angularSweep.js';
+import { WALL_ROW_MAX_VERTS } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import { createPolarReference } from '../helpers/polarReference.mjs';
 import {
@@ -30,8 +31,9 @@ function check(label, lx, ly, radius, segs, sx, sy, n) {
       ref.raster(x0, y0, x1, y1, lx, ly);
     }
     const want = ref.clip(lx, ly, sx, sy, n, maxVerts);
-    const ox = new Float32Array(POLAR_BINS);
-    const oy = new Float32Array(POLAR_BINS);
+    // N-300: the rays and the sweep's vertices kept, up to a row's WALL_ROW_MAX_VERTS.
+    const ox = new Float32Array(WALL_ROW_MAX_VERTS);
+    const oy = new Float32Array(WALL_ROW_MAX_VERTS);
     const m = clipVisibilityToPolar(lx, ly, sx, sy, n, ox, oy, maxVerts);
     if (!want) {
       assert.equal(m, n, `${label} maxVerts ${maxVerts}: no bin written`);

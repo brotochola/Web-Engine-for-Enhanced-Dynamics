@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { lightingSource } from '../../src/render/faceMap.js';
 import {
-  WALL_BINS, WALL_ROW_ARGS, WALL_UMBRA, WALL_VERT0, WALL_WALK, wallAngle, wallEdgeCode, wallRowLight, wallRowTexels, wallRowsLayout,
+  WALL_BINS, WALL_ROW_ARGS, WALL_ROW_MAX_VERTS, WALL_UMBRA, WALL_VERT0, WALL_WALK, wallAngle, wallEdgeCode, wallRowLight, wallRowTexels, wallRowsLayout,
   writeEmptyWallRow, writeWallRow,
 } from '../../src/render/visibility/lampWallRow.js';
 
@@ -212,7 +212,7 @@ test('the layout: a header, the directions, the vertices and the closing one', (
   assert.deepEqual(layout, {
     rowVerts: 128, rowTexels: 194, rowFloats: 776, lights: 128, headerInts: 131, signatureAt: 129, rowsByte: 528, bytes: 528 + 128 * 776 * 4,
   });
-  assert.equal(wallRowsLayout(8, 5000).rowVerts, 512, 'a row is no wider than WALL_ROW_MAX_VERTS, whatever the polygons cap is');
+  assert.equal(wallRowsLayout(8, 5000).rowVerts, WALL_ROW_MAX_VERTS, 'a row is no wider than WALL_ROW_MAX_VERTS, whatever the polygons cap is');
   assert.equal(layout.rowsByte % 16, 0, 'the rows start on a float boundary');
   const xs = new Float32Array([-10, 0, 10, 0]);
   const ys = new Float32Array([0, -10, 0, 10]);

@@ -38,6 +38,7 @@ import {
   writePolygonVerts,
 } from '../../src/render/visibility/angularSweep.js';
 import { SOLID_ARGS } from '../../src/render/visibility/solidSegmentsClient.js';
+import { WALL_ROW_MAX_VERTS } from '../../src/render/visibility/lampWallRow.js';
 
 const TWO_PI = Math.PI * 2;
 const EPSILON = 1e-5;
@@ -837,17 +838,90 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
     _mergeCount = 0;
     return n;
   }
-  // The caller stores y at x + maxVerts, so the result must never exceed maxVerts.
-  const cap = maxVerts | 0;
+  // The caller stores y at x + maxVerts, so the result must never exceed maxVerts. N-300: nor a lamp's row (a row holds
+  // the merge whole).
+  const cap = Math.min(maxVerts | 0, WALL_ROW_MAX_VERTS);
   if (cap < 3) return n;
-  const group = cap >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / cap);
+  const ins = collectMergeInserts(lx, ly, inX, inY, n, cap, _polarRadius);
+  const rays = cap - ins;
+  const group = rays >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / rays);
   const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
-  // No copy of the input: mergeSweep reads every vertex before its first write.
-  mergeSweep(lx, ly, inX, inY, n, count, group, _polarRadius, outX, outY);
+  // No copy of the input: the inserts are copied out first, and mergeSweep reads every edge before its first write.
+  const total = mergeSweep(lx, ly, inX, inY, n, count, group, _polarRadius, outX, outY, ins);
   _mergeCount = count;
   _mergeGroup = group;
   _mergeEdges = n >= 3 ? n : 0;
-  return count;
+  return total;
+}
+
+/** N-300: a sweep vertex this far inside the radius (px) is near (visibilitySweep.c NEAR_MARGIN). */
+const NEAR_MARGIN = 0.5;
+const _insAng = new Float64Array(MAX_EVENTS);
+const _insX = new Float64Array(MAX_EVENTS);
+const _insY = new Float64Array(MAX_EVENTS);
+const _insFlag = new Uint8Array(MAX_EVENTS);
+
+/** N-300: the polar bin a pseudo-angle falls in (visibilitySweep.c bin_of_pseudo). */
+function binOfPseudo(p) {
+  let lo = 0;
+  let hi = POLAR_BINS - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (_polarPseudo[2 * mid] <= p) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/**
+ * N-300, as visibilitySweep.c clip_polar's inserts: the sweep's vertices that go in with the rays, in order, into _insAng,
+ * _insX, _insY. A near one (closer than the radius) nearer than its bin's hit (a bin no solid stamped holds the radius) as
+ * it is; any other beside a near one that goes in, pulled in to its bin's hit where a solid stamped the bin nearer than it
+ * (a shadow side's far end, which then ends on the solid). More than cap - 3 (or more vertices than the scratch holds):
+ * none.
+ */
+function collectMergeInserts(lx, ly, xs, ys, n, cap, radius) {
+  if (n < 3 || n > MAX_EVENTS) return 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - lx;
+    const dy = ys[i] - ly;
+    const p = pseudoAngle(dx, dy);
+    let f = 0;
+    if (p === p) {
+      const b = binOfPseudo(p);
+      const d = Math.sqrt(dx * dx + dy * dy);
+      f = d < radius - NEAR_MARGIN && d < _polarDist[b] ? 1 : 2;
+    }
+    _insAng[i] = p;
+    _insFlag[i] = f;
+  }
+  const room = cap - 3;
+  let ins = 0;
+  for (let i = 0; i < n; i++) {
+    const f = _insFlag[i];
+    let keep = f === 1;
+    if (f === 2) keep = _insFlag[i > 0 ? i - 1 : n - 1] === 1 || _insFlag[i + 1 < n ? i + 1 : 0] === 1;
+    if (!keep) continue;
+    if (ins === room) return 0;
+    let x = xs[i];
+    let y = ys[i];
+    if (f === 2) {
+      const hit = _polarDist[binOfPseudo(_insAng[i])];
+      const dx = x - lx;
+      const dy = y - ly;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (hit < radius - EPSILON && hit < d) {
+        const k = hit / d;
+        x = lx + dx * k;
+        y = ly + dy * k;
+      }
+    }
+    _insAng[ins] = _insAng[i];
+    _insX[ins] = x;
+    _insY[ins] = y;
+    ins++;
+  }
+  return ins;
 }
 
 /**
@@ -858,6 +932,11 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
  * in one bin of a group is seen. Returns how many bins marked, or -1 when no
  * merge ran since clearPolarBins (the caller then cannot tell, and keeps all).
  */
+/** N-300: how many rays the last merge wrote (the polygon is them and the sweep's vertices kept); -1 when none ran. */
+export function polarMergeRays() {
+  return _mergeCount;
+}
+
 export function markSeenPolarOwners(seen, stamp) {
   syncBins();
   if (_mergeCount < 0) return -1;
@@ -931,7 +1010,7 @@ function firstRayAfter(n, a) {
   return lo;
 }
 
-function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY) {
+function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY, ins) {
   // Fewer than 3 vertices is no polygon: the bins alone.
   const edges = n >= 3 ? n : 0;
   if (edges > 0) {
@@ -1007,18 +1086,58 @@ function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY) {
       if (t < _rayBest[k]) _rayBest[k] = t;
     }
   }
+  // N-300: the rays and the inserts by angle; a vertex on a ray's own direction is the ray's point.
+  let out = 0;
+  // The sweep's order turns once round from where it starts (its first vertex may sit on the seam at +pi): the inserts in
+  // turn from the one after the largest fall in angle (the seam; not the least angle, which a shadow side's far end may
+  // take from its corner by rounding).
+  let q = 0;
+  if (ins > 1) {
+    let fall = _insAng[ins - 1] - _insAng[0];
+    for (let j = 1; j < ins; j++) {
+      const f = _insAng[j - 1] - _insAng[j];
+      if (f > fall) {
+        fall = f;
+        q = j;
+      }
+    }
+  }
+  let taken = 0;
   for (let k = 0; k < count; k++) {
     const b0 = k * group;
     const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
+    const m = b0 + b1;
+    if (taken < ins) {
+      const ra = _polarPseudo[m];
+      while (taken < ins && _insAng[q] < ra) {
+        outX[out] = _insX[q];
+        outY[out] = _insY[q];
+        out++;
+        q = q + 1 < ins ? q + 1 : 0;
+        taken++;
+      }
+      while (taken < ins && _insAng[q] === ra) {
+        q = q + 1 < ins ? q + 1 : 0;
+        taken++;
+      }
+    }
     let d = _polarDist[b0];
     for (let b = b0 + 1; b < b1; b++) {
       if (_polarDist[b] < d) d = _polarDist[b];
     }
     if (edges > 0 && _rayBest[k] < d) d = _rayBest[k];
-    const m = b0 + b1;
-    outX[k] = lx + _polarCos[m] * d;
-    outY[k] = ly + _polarSin[m] * d;
+    outX[out] = lx + _polarCos[m] * d;
+    outY[out] = ly + _polarSin[m] * d;
+    out++;
   }
+  while (taken < ins) {
+    outX[out] = _insX[q];
+    outY[out] = _insY[q];
+    out++;
+    q = q + 1 < ins ? q + 1 : 0;
+    taken++;
+  }
+  return out;
 }
 
 /** Raster one world segment into the current polar buffer. For kernels and tests. */
