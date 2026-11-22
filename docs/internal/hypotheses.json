@@ -15210,7 +15210,8 @@
         "R-1035",
         "R-1044",
         "R-1046",
-        "R-1804"
+        "R-1804",
+        "R-1823"
       ],
       "id": "E-310",
       "title": "Spatial workers at scale: at 57 600 entities two spatial workers would each spend ~7.3 ms where one spends ~12 ms (Predator sets one)",
@@ -41697,6 +41698,15 @@
       "title": "N-303: CR-24 first part (one save framing, one LiquidFun request skeleton) and CR-21 first two parts (one createWasmMemory for five kernel memories); CR-13 left for a closer session",
       "verdict": "kept-hygiene",
       "text": "**N-303, more phase A and B items on main (2026-11-22, after R-1821), suites green each time.**\n\n- CR-24, first part (a4c1c25b, src +63 / -99 over 2 files): one framing (frameSave / unframeSave / payloadOf) for encodeSave, decodeSave and their uncompressed twins; one request skeleton (askPhysicsWorker) for LiquidFun's snapshot and restore. The instance-field requests keep their own (scene callbacks, not a message reply). Left: the codec's constructor table and writeOptTyped/readOptTyped, worldBufferSave's apply skeleton, assertPayloadCompatible's per-entity find.\n- CR-21, first two parts (af5d6ae9, 872340e0, src +78 / -120 over 6 files): one createWasmMemory in wasmMemoryMap.js (the 32768-page cap, the try/catch and their texts, the advice optional) for the decal, navigation, mesh, particle and spatial publish memories, every error text as before. The render queue's and visibility's memories fall back (return null) instead of throwing and keep their own. sceneCycleSmoke OK after each. Left: columnSlots and the column writers, the nine \"did not load\" wrappers, logicWorker's box2dReady through super, AbstractWorker's published-list bindings, pre-render's null-emitLayout fallbacks, the double fixedFps reads.\n- Not taken tonight: CR-13 (one WEED name list): it rebuilds the public entry (index.js, workerWeed.js) the bundles and the type drift check read; left for a session that can watch the bundle smokes and checkTypesDrift closely.\n\nNone of these changes per-frame code; they ride on R-1821's gate."
+    },
+    {
+      "id": "R-1823",
+      "date": "2026-11-22",
+      "time": "03:06",
+      "timeFrom": "recorded",
+      "title": "Predator's capacity: crowd 2.5 (40 000 civilians and soldiers, the knob's top) holds p99 <= 16.7 ms on every worker (worst physics 12.6-13.1 ms), against crowd 1.55 on 2026-11-16 (spatial0 p99 17.5); the squad battle ends sooner now (caveat)",
+      "verdict": "note",
+      "text": "**Predator's capacity is now its knob's top: crowd 2.5 (40 000 civilians and soldiers) holds every rule, against crowd 1.55 (about 24 800) on 2026-11-16.** runCapacity --scene predator on main 2bd32ca8 (headed Chrome, --src, detailed stats off, warm-up 9 s, window 10 s, the pinned camera; on AC), 03:05 to 03:06, history in D:/claude/weed-capacity-history.jsonl:\n\n| crowd | result | worst p99 | worst p95 | presented / drawn |\n| --- | --- | --- | --- | --- |\n| 1.5 | PASS | spatial0 6.75 ms | spatial0 5.83 ms | 59.99 / 59.99 fps |\n| 2.5 | PASS | physics 12.62 ms | physics 11.6 ms | 59.99 / 59.99 fps |\n| 2.5 (again) | PASS | physics 13.12 ms | physics 11.82 ms | 59.98 / 59.98 fps |\n\nOn 2026-11-16 (9fbd6d46) the search stopped at crowd 1.55, spatial0's p99 17.5 ms over the 16.7 budget. What moved it since, measured one by one (none of them alone a capacity claim): E-310's two spatial workers from crowd 2 (crowd 2.5 spatial -34 %, p99 28.9 -> 16-18 ms, R-1804), N-217's slot walks (physics -4.4 %, logic -5 %, R-1744), E-493's scheduler count (physics -7.1 %, R-1690's sitting), E-395 (pre-render and renderer at crowd 2.5 with light3d) and the week's spatial and logic work. At crowd 1.5 (one spatial worker by E-310's rule) spatial0's p99 is 6.75 ms, far from 17.5.\n\nCaveats: (1) the squad battle now ends sooner (R-1817: about 1 200 more bodies gone by 20 s, most likely E-310), so the window from 9 to 19 s holds less fighting than it did; the mixed battle (mix=1) is the heavier test and is not this search's scene; (2) the knob tops at 2.5 because Predator's pools fit 16-bit ids (57 633 entities): the real limit is past it, and finding it needs the scene on 32-bit ids with a higher crowd cap (a scene change, not made)."
     }
   ],
   "leads": [
