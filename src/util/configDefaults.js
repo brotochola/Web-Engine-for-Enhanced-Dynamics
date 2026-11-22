@@ -668,6 +668,15 @@ export const RENDERER_DEFAULTS = Object.freeze({
   /** Sampler for the big atlas and loose textures. 'nearest' keeps binary PNG alpha. */
   atlasScaleMode: 'linear',
   /**
+   * N-302: with atlasScaleMode 'nearest', where the pixel snap puts an axis-aligned sprite on the screen's pixel grid.
+   * true (default): its corners, so sprites laid edge to edge (a floor of tiles) share their edges' pixels; at a
+   * fractional zoom a sprite is then a pixel wider or narrower from place to place, and one that moves can change by a
+   * pixel as it goes. false: its origin only, its size on screen kept, which at some fractional zooms (16 px pieces at
+   * 1.2 or 1.45) leaves a column of background between neighbours every few sprites. A turned or sheared sprite snaps
+   * its origin either way.
+   */
+  pixelSnapCorners: true,
+  /**
    * Blend the last two pre-render queue publishes in the entity sprite shader.
    * Use when preRender.fixedFps is below the display rate. Not physics-pose
    * smoothing (that is preRender.interpolation). Both true adds a frame of lag.

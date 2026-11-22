@@ -721,6 +721,8 @@ class PixiRenderer extends AbstractWorker {
     this.autoGenerateMipmaps = RENDERER_DEFAULTS.autoGenerateMipmaps;
     /** From renderer.atlasScaleMode. bigAtlas + loose textures. Both sprite passes share it. */
     this.atlasScaleMode = RENDERER_DEFAULTS.atlasScaleMode;
+    /** From renderer.pixelSnapCorners (N-302): with a nearest atlas, an axis-aligned sprite's corners on the pixel grid. */
+    this.pixelSnapCorners = RENDERER_DEFAULTS.pixelSnapCorners;
 
     // Texture and spritesheet storage
     this.textures = {}; // Store simple PIXI textures by name
@@ -9459,6 +9461,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const atlasScaleMode = rendererConfig.atlasScaleMode;
     this.atlasScaleMode =
       atlasScaleMode === 'nearest' || atlasScaleMode === 'linear' ? atlasScaleMode : RENDERER_DEFAULTS.atlasScaleMode;
+    this.pixelSnapCorners = rendererConfig.pixelSnapCorners !== false;
     // At boot too: the atlas's source may be made before the init (SST-19).
     this.autoGenerateMipmaps =
       rendererConfig.autoGenerateMipmaps !== undefined
@@ -9468,9 +9471,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const shadersFetched = this._fetchEngineShaders().then(() => loadMark('shaders fetched'));
     await Promise.all([shadersFetched, this._initPixiApp(config, backend)]);
 
-    // N-271: a nearest atlas snaps each sprite's origin to the pixel grid in its vertex shader (pixelSnap.js), before any
-    // sprite program is made from these sources; the packs leave the poses as they are.
-    if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu);
+    // N-271: a nearest atlas snaps each sprite to the pixel grid in its vertex shader (pixelSnap.js), before any sprite
+    // program is made from these sources; the packs leave the poses as they are. N-302: an axis-aligned sprite's corners
+    // (renderer.pixelSnapCorners, default) or its origin.
+    if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu, this.pixelSnapCorners);
     this._initTilemapGidProgram();
     // E-475: what boot made links on the driver's threads while the page loads the assets; initialize waits for it.
     this._startLinksAhead();

@@ -12,6 +12,11 @@ empties it.
   `DECORATION_NO_PARENT`, a fixed `0xffff` that was wrong with 32-bit entity ids (use `decorationNoParent()`),
   `BODY_TYPE` (use `Box2dBodyType`), and the config key `physics.maxFixtures` (use `physics.maxFixturePoolSize`; the
   old key is now reported as retired).
+- **Pixel snap rounds an axis-aligned sprite's corners** (N-302, `renderer.atlasScaleMode: 'nearest'`). It rounded each
+  sprite's origin alone and kept its fractional size, so at some fractional zooms (16 px pieces at 1.2 or 1.45) tiles laid
+  edge to edge showed a column of background every few pieces. Now neighbours share their edges' pixels, and a sprite is a
+  pixel wider or narrower from place to place (one that moves can change by a pixel as it goes); its texels shift by a
+  pixel inside it. `renderer.pixelSnapCorners: false` keeps the old snap. Turned and sheared sprites are unchanged.
 - **A layer drawn in one pass takes its `blendMode`** (N-79). A sprite layer without a look, a MESH layer without a
   look and a world-rect layer used to draw with `shader.containerBlend`, normal when the config had no shader, so
   `blendMode` did nothing on them. They now draw with `blendMode`, unless the config sets `shader.containerBlend`. A MESH

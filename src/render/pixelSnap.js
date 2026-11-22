@@ -6,10 +6,26 @@
  * the G-buffer's heights and the shadow maps read it, and only the drawn corners move to the grid. An interpolated pose
  * snaps after its blend, so a moving sprite lands on a pixel in every drawn frame.
  *
- * The snap rounds the origin in the stage's pixels (uWorldTransformMatrix · uTransformMatrix: the camera's zoom and
- * place, a parallax layer's own), as the packs did with the camera's: round((x - camera) · zoom).
+ * The snap rounds in the stage's pixels (uWorldTransformMatrix · uTransformMatrix: the camera's zoom and place, a parallax
+ * layer's own), as the packs did with the camera's: round((x - camera) · zoom). N-302: an axis-aligned sprite (no turn,
+ * no shear) rounds each corner, so two sprites that share an edge (a floor of tiles) share its pixel; rounding only its
+ * origin kept its fractional size on screen, and wherever that size's fraction was under a half (16 px pieces at zoom
+ * 1.2 or 1.45) neighbours left a column of background between them, every few pieces. Such a sprite is a pixel wider or
+ * narrower from place to place, as pixel art at a fractional zoom has to be. A turned or sheared sprite still rounds its
+ * origin and keeps its shape.
  */
 import { replaceOnce } from './shaderEdit.js';
+
+/**
+ * N-302: a sprite counts as axis-aligned below this |sin| of its turn (0.006°: a 100 px sprite's corners move a hundredth of
+ * a pixel), so a body that drifts by a float's error from 0 still snaps its corners.
+ */
+const SNAP_SQUARE_SIN = '1e-4';
+
+/** The shaders' test for a sprite whose corners snap (renderer.pixelSnapCorners); false: every sprite snaps its origin. */
+function squareTest(corners) {
+  return corners ? `!isShear && abs(s) < ${SNAP_SQUARE_SIN}` : 'false';
+}
 
 /** The GLSL snap: v moved by the rounding of its place on the stage, brought back through the transform's inverse. */
 const SNAP_GLSL = `
@@ -20,6 +36,11 @@ vec2 weedSnapXY(vec2 v) {
   vec2 d = floor(p + 0.5) - p;
   float det = m[0][0] * m[1][1] - m[1][0] * m[0][1];
   return det != 0.0 ? v + vec2(m[1][1] * d.x - m[1][0] * d.y, m[0][0] * d.y - m[0][1] * d.x) / det : v;
+}
+// N-302: an axis-aligned sprite's corner on the grid (its neighbours' shared edges land on the same pixel); a turned or
+// sheared one's origin.
+vec2 weedSnapWorld(vec2 origin, vec2 corner, bool square) {
+  return square ? weedSnapXY(origin + corner) : weedSnapXY(origin) + corner;
 }
 `;
 
@@ -33,34 +54,39 @@ fn weedSnapXY(v: vec2<f32>) -> vec2<f32> {
   if (det == 0.0) { return v; }
   return v + vec2<f32>(m[1][1] * d.x - m[1][0] * d.y, m[0][0] * d.y - m[0][1] * d.x) / det;
 }
+// N-302: an axis-aligned sprite's corner on the grid; a turned or sheared one's origin.
+fn weedSnapWorld(origin: vec2<f32>, corner: vec2<f32>, square: bool) -> vec2<f32> {
+  if (square) { return weedSnapXY(origin + corner); }
+  return weedSnapXY(origin) + corner;
+}
 `;
 
-
 /**
- * instancedSprite.vert.glsl or its pose form, snapping its origin.
+ * instancedSprite.vert.glsl or its pose form, on the pixel grid (an axis-aligned sprite's corners, another's origin).
  * @param {string} source
  * @returns {string}
  */
-export function pixelSnapGlsl(source) {
+export function pixelSnapGlsl(source, corners = true) {
   const pose = source.includes('vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);');
   let out = replaceOnce(source, 'void main() {', `${SNAP_GLSL}\nvoid main() {`, 'the pixel snap (a sprite vertex shader)');
-  out = pose
-    ? replaceOnce(out, 'vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);', 'vec2 xy = weedSnapXY(mix(aInstPrevXY, aInstXY, uPoseAlpha));', 'the pixel snap (the pose blend)')
-    : replaceOnce(out, 'vec2 world = (isShear ? sheared : spun) + aInstXY;', 'vec2 world = (isShear ? sheared : spun) + weedSnapXY(aInstXY);', 'the pixel snap (the corner)');
+  // An interpolated pose snaps after its blend.
+  const origin = pose ? 'xy' : 'aInstXY';
+  out = replaceOnce(out, `vec2 world = (isShear ? sheared : spun) + ${origin};`,
+    `vec2 world = weedSnapWorld(${origin}, isShear ? sheared : spun, ${squareTest(corners)});`, 'the pixel snap (the corner)');
   return out;
 }
 
 /**
- * instancedSprite.wgsl or its pose form, snapping its origin.
+ * instancedSprite.wgsl or its pose form, on the pixel grid (an axis-aligned sprite's corners, another's origin).
  * @param {string} source
  * @returns {string}
  */
-export function pixelSnapWgsl(source) {
+export function pixelSnapWgsl(source, corners = true) {
   const pose = source.includes('let xy = mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha);');
   let out = replaceOnce(source, '@vertex', `${SNAP_WGSL}\n@vertex`, 'the pixel snap (a sprite WGSL)');
-  out = pose
-    ? replaceOnce(out, 'let xy = mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha);', 'let xy = weedSnapXY(mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha));', 'the pixel snap (the pose blend)')
-    : replaceOnce(out, 'let world = select(spun, sheared, isShear) + aInstXY;', 'let world = select(spun, sheared, isShear) + weedSnapXY(aInstXY);', 'the pixel snap (the corner)');
+  const origin = pose ? 'xy' : 'aInstXY';
+  out = replaceOnce(out, `let world = select(spun, sheared, isShear) + ${origin};`,
+    `let world = weedSnapWorld(${origin}, select(spun, sheared, isShear), ${squareTest(corners)});`, 'the pixel snap (the corner)');
   return out;
 }
 
@@ -69,11 +95,12 @@ export function pixelSnapWgsl(source) {
  * spritePose. Every sprite program (indexed, pose, G-buffer, pixel depth, the opaque pass) is made from these.
  * @param {Record<string, string>} shaders the Pixi worker's engine shaders
  * @param {boolean} webgpu
+ * @param {boolean} [corners] renderer.pixelSnapCorners: an axis-aligned sprite's corners on the grid (default), else its origin
  */
-export function applyPixelSnap(shaders, webgpu) {
+export function applyPixelSnap(shaders, webgpu, corners = true) {
   const keys = webgpu ? ['sprite', 'spritePose'] : ['spriteVert', 'spriteVertPose'];
   for (const key of keys) {
     if (typeof shaders[key] !== 'string' || shaders[key].includes('weedSnapXY')) continue;
-    shaders[key] = webgpu ? pixelSnapWgsl(shaders[key]) : pixelSnapGlsl(shaders[key]);
+    shaders[key] = webgpu ? pixelSnapWgsl(shaders[key], corners) : pixelSnapGlsl(shaders[key], corners);
   }
 }
