@@ -5333,6 +5333,16 @@ export declare class LiquidFun {
   static applyLinearImpulse(index: number, ix: number, iy: number): void;
   static groupApplyForce(groupId: number, fx: number, fy: number): void;
   static groupApplyLinearImpulse(groupId: number, ix: number, iy: number): void;
+  /** Total force on particles `[first, last)` (last exclusive), split across the members; first sub-step only, as {@link LiquidFun.applyForce}. */
+  static applyForceRange(first: number, last: number, fx: number, fy: number): void;
+  /** Linear impulse on particles `[first, last)` (last exclusive). */
+  static applyLinearImpulseRange(first: number, last: number, ix: number, iy: number): void;
+  /** Write the same user-data bits on particles `[first, last)` (last exclusive, half-open). */
+  static setUserDataRange(first: number, last: number, bits: number): void;
+  /** Packed RGBA on particles `[first, last)` (last exclusive, half-open). */
+  static setColorRange(first: number, last: number, rgba: number): void;
+  /** Viscous scale on particles `[first, last)` (last exclusive, half-open); a scale of 0 or less means 1. */
+  static setViscousScaleRange(first: number, last: number, scale: number): void;
   static getGroups(): unknown[];
   static emit(options: Record<string, unknown>): number;
   static createParticleBox(options: Record<string, unknown>): number;
