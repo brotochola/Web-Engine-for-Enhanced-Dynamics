@@ -2,723 +2,189 @@
 // Requires: box2dWasm.js loaded first (Module global).
 
 function createPhysicsApi(Module) {
-  const wrap = (name, ret, args) => Module.cwrap(name, ret, args);
+  // Every export takes and returns numbers, so cwrap hands back the raw export (no type lists: N-303 CR-1).
+  const wrap = (name) => Module.cwrap(name);
 
-  const createWorld = wrap("create_world", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const worldEnableSleeping = wrap("world_enable_sleeping", null, [
-    "number",
-    "number",
-  ]);
-  const worldSetStepSpin = wrap("world_set_step_spin", null, ["number", "number"]);
-  const worldSetAwakeReorderInterval = wrap("world_set_awake_reorder_interval", null, ["number", "number"]);
-  const bindGameBuffers = wrap("bind_game_buffers", "number", ["number", "number"]);
-  const createBodyBox = wrap("create_body_box", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createBodyCircle = wrap("create_body_circle", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createBodyPolygon = wrap("create_body_polygon", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createBody = wrap("create_body", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const bodyClearShapes = wrap("body_clear_shapes", null, ["number"]);
-  const destroyBody = wrap("destroy_body", null, ["number"]);
-  const bodySetTransform = wrap("body_set_transform", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const bodySetLinearVelocity = wrap("body_set_linear_velocity", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const bodySetAngularVelocity = wrap("body_set_angular_velocity", null, [
-    "number",
-    "number",
-  ]);
-  const bodySetFixedRotation = wrap("body_set_fixed_rotation", null, [
-    "number",
-    "number",
-  ]);
-  const bodyApplyForce = wrap("body_apply_force", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const bodyApplyForceCenter = wrap("body_apply_force_center", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const bodySetLinearDamping = wrap("body_set_linear_damping", null, [
-    "number",
-    "number",
-  ]);
-  const bodySetAngularDamping = wrap("body_set_angular_damping", null, [
-    "number",
-    "number",
-  ]);
-  const bodySetGravityScale = wrap("body_set_gravity_scale", null, [
-    "number",
-    "number",
-  ]);
-  const bodyApplyLinearImpulse = wrap("body_apply_linear_impulse", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const bodyApplyLinearImpulseCenter = wrap(
-    "body_apply_linear_impulse_center",
-    null,
-    ["number", "number", "number", "number"],
-  );
-  const bodyApplyAngularImpulse = wrap("body_apply_angular_impulse", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const bodyApplyTorque = wrap("body_apply_torque", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const bodySetAwake = wrap("body_set_awake", null, ["number", "number"]);
-  const bodySetFilter = wrap("body_set_filter", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const overlapAabbIntoFn = wrap("overlap_aabb_into", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const overlapCircleFn = wrap("overlap_circle", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const overlapBoxFn = wrap("overlap_box", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const castRayClosestFn = wrap("cast_ray_closest", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const castRayAllFn = wrap("cast_ray_all", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const castMoverFn = wrap("cast_mover", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const collideMoverFn = wrap("collide_mover", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createRevoluteJoint = wrap("create_revolute_joint", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createDistanceJoint = wrap("create_distance_joint", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createPrismaticJoint = wrap("create_prismatic_joint", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createWeldJoint = wrap("create_weld_joint", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createDistanceJointLocal = wrap("create_distance_joint_local", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createRevoluteJointLocal = wrap("create_revolute_joint_local", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createWeldJointLocal = wrap("create_weld_joint_local", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const destroyJoint = wrap("destroy_joint", null, ["number"]);
-  const getJointCount = wrap("get_joint_count", "number", []);
-  const stepWorld = wrap("step_world", null, ["number", "number", "number"]);
-  const collideWorld = wrap("collide_world", null, ["number"]);
-  const getStateByteOffset = wrap("get_state_byte_offset", "number", []);
-  const getSleepingByteOffset = wrap("get_sleeping_byte_offset", "number", []);
-  const getMetaByteOffset = wrap("get_meta_byte_offset", "number", []);
-  const getStateChannelOffset = wrap("get_state_channel_offset", "number", [
-    "number",
-  ]);
-  const getMetaFloatStride = wrap("get_meta_float_stride", "number", []);
-  const getBodyCapacity = wrap("get_body_capacity", "number", []);
-  const getMaxBodySlots = wrap("get_max_body_slots", "number", []);
-  const getSlotCount = wrap("get_slot_count", "number", []);
-  const getStateRegionBytes = wrap("get_state_region_bytes", "number", []);
-  const getMetaRegionBytes = wrap("get_meta_region_bytes", "number", []);
-  const getJointByteOffset = wrap("get_joint_byte_offset", "number", []);
-  const getJointFloatStride = wrap("get_joint_float_stride", "number", []);
-  const getJointRegionBytes = wrap("get_joint_region_bytes", "number", []);
-  const getJointCapacity = wrap("get_joint_capacity", "number", []);
-  const getQuerySlotsByteOffset = wrap("get_query_slots_byte_offset", "number", []);
-  const getQueryHitsByteOffset = wrap("get_query_hits_byte_offset", "number", []);
-  const getEventHeaderByteOffset = wrap("get_event_header_byte_offset", "number", []);
-  const getContactBeginByteOffset = wrap("get_contact_begin_byte_offset", "number", []);
-  const getContactEndByteOffset = wrap("get_contact_end_byte_offset", "number", []);
-  const getContactHitByteOffset = wrap("get_contact_hit_byte_offset", "number", []);
-  const getSensorBeginByteOffset = wrap("get_sensor_begin_byte_offset", "number", []);
-  const getSensorEndByteOffset = wrap("get_sensor_end_byte_offset", "number", []);
-  const getMoverPlanesByteOffset = wrap("get_mover_planes_byte_offset", "number", []);
-  const getQueryCapacity = wrap("get_query_capacity", "number", []);
-  const getRayHitCapacity = wrap("get_ray_hit_capacity", "number", []);
-  const getQueryHitFloatStride = wrap("get_query_hit_float_stride", "number", []);
-  const getContactEventCapacity = wrap("get_contact_event_capacity", "number", []);
-  const getSensorEventCapacity = wrap("get_sensor_event_capacity", "number", []);
-  const getContactHitCapacity = wrap("get_contact_hit_capacity", "number", []);
-  const getMoverPlaneCapacity = wrap("get_mover_plane_capacity", "number", []);
-  const getMoverPlaneFloatStride = wrap("get_mover_plane_float_stride", "number", []);
-  const getEventHeaderIntCount = wrap("get_event_header_int_count", "number", []);
-  const getContactPairIntStride = wrap("get_contact_pair_int_stride", "number", []);
-  const getBodyMoveCount = wrap("get_body_move_count", "number", []);
-  const getBodyMoveByteOffset = wrap("get_body_move_byte_offset", "number", []);
-  const getBodyFellAsleepByteOffset = wrap(
-    "get_body_fell_asleep_byte_offset",
-    "number",
-    [],
-  );
-  const getBodyMoveCapacity = wrap("get_body_move_capacity", "number", []);
-  const getAwakeBodyCount = wrap("get_awake_body_count", "number", ["number"]);
-  const getProfileByteOffset = wrap("get_profile_byte_offset", "number", []);
-  const getProfileFloatCount = wrap("get_profile_float_count", "number", []);
-  const getCountersByteOffset = wrap("get_counters_byte_offset", "number", []);
-  const getCountersIntCount = wrap("get_counters_int_count", "number", []);
-  const getJointEventsByteOffset = wrap(
-    "get_joint_events_byte_offset",
-    "number",
-    [],
-  );
-  const getJointEventCapacity = wrap("get_joint_event_capacity", "number", []);
-  const bodySetRestitution = wrap("body_set_restitution", null, [
-    "number",
-    "number",
-  ]);
-  const bodySetSleepThreshold = wrap("body_set_sleep_threshold", null, [
-    "number",
-    "number",
-  ]);
-  const worldSetHitEventThreshold = wrap(
-    "world_set_hit_event_threshold",
-    null,
-    ["number", "number"],
-  );
-  const worldExplode = wrap("world_explode", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const jointConfigure = wrap("joint_configure", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
+  const createWorld = wrap("create_world");
+  const worldEnableSleeping = wrap("world_enable_sleeping");
+  const worldSetStepSpin = wrap("world_set_step_spin");
+  const worldSetAwakeReorderInterval = wrap("world_set_awake_reorder_interval");
+  const bindGameBuffers = wrap("bind_game_buffers");
+  const createBodyBox = wrap("create_body_box");
+  const createBodyCircle = wrap("create_body_circle");
+  const createBodyPolygon = wrap("create_body_polygon");
+  const createBody = wrap("create_body");
+  const bodyClearShapes = wrap("body_clear_shapes");
+  const destroyBody = wrap("destroy_body");
+  const bodySetTransform = wrap("body_set_transform");
+  const bodySetLinearVelocity = wrap("body_set_linear_velocity");
+  const bodySetAngularVelocity = wrap("body_set_angular_velocity");
+  const bodySetFixedRotation = wrap("body_set_fixed_rotation");
+  const bodyApplyForce = wrap("body_apply_force");
+  const bodyApplyForceCenter = wrap("body_apply_force_center");
+  const bodySetLinearDamping = wrap("body_set_linear_damping");
+  const bodySetAngularDamping = wrap("body_set_angular_damping");
+  const bodySetGravityScale = wrap("body_set_gravity_scale");
+  const bodyApplyLinearImpulse = wrap("body_apply_linear_impulse");
+  const bodyApplyLinearImpulseCenter = wrap("body_apply_linear_impulse_center");
+  const bodyApplyAngularImpulse = wrap("body_apply_angular_impulse");
+  const bodyApplyTorque = wrap("body_apply_torque");
+  const bodySetAwake = wrap("body_set_awake");
+  const bodySetFilter = wrap("body_set_filter");
+  const overlapAabbIntoFn = wrap("overlap_aabb_into");
+  const overlapCircleFn = wrap("overlap_circle");
+  const overlapBoxFn = wrap("overlap_box");
+  const castRayClosestFn = wrap("cast_ray_closest");
+  const castRayAllFn = wrap("cast_ray_all");
+  const castMoverFn = wrap("cast_mover");
+  const collideMoverFn = wrap("collide_mover");
+  const createRevoluteJoint = wrap("create_revolute_joint");
+  const createDistanceJoint = wrap("create_distance_joint");
+  const createPrismaticJoint = wrap("create_prismatic_joint");
+  const createWeldJoint = wrap("create_weld_joint");
+  const createDistanceJointLocal = wrap("create_distance_joint_local");
+  const createRevoluteJointLocal = wrap("create_revolute_joint_local");
+  const createWeldJointLocal = wrap("create_weld_joint_local");
+  const destroyJoint = wrap("destroy_joint");
+  const getJointCount = wrap("get_joint_count");
+  const stepWorld = wrap("step_world");
+  const collideWorld = wrap("collide_world");
+  const getStateByteOffset = wrap("get_state_byte_offset");
+  const getSleepingByteOffset = wrap("get_sleeping_byte_offset");
+  const getMetaByteOffset = wrap("get_meta_byte_offset");
+  const getStateChannelOffset = wrap("get_state_channel_offset");
+  const getMetaFloatStride = wrap("get_meta_float_stride");
+  const getBodyCapacity = wrap("get_body_capacity");
+  const getMaxBodySlots = wrap("get_max_body_slots");
+  const getSlotCount = wrap("get_slot_count");
+  const getStateRegionBytes = wrap("get_state_region_bytes");
+  const getMetaRegionBytes = wrap("get_meta_region_bytes");
+  const getJointByteOffset = wrap("get_joint_byte_offset");
+  const getJointFloatStride = wrap("get_joint_float_stride");
+  const getJointRegionBytes = wrap("get_joint_region_bytes");
+  const getJointCapacity = wrap("get_joint_capacity");
+  const getQuerySlotsByteOffset = wrap("get_query_slots_byte_offset");
+  const getQueryHitsByteOffset = wrap("get_query_hits_byte_offset");
+  const getEventHeaderByteOffset = wrap("get_event_header_byte_offset");
+  const getContactBeginByteOffset = wrap("get_contact_begin_byte_offset");
+  const getContactEndByteOffset = wrap("get_contact_end_byte_offset");
+  const getContactHitByteOffset = wrap("get_contact_hit_byte_offset");
+  const getSensorBeginByteOffset = wrap("get_sensor_begin_byte_offset");
+  const getSensorEndByteOffset = wrap("get_sensor_end_byte_offset");
+  const getMoverPlanesByteOffset = wrap("get_mover_planes_byte_offset");
+  const getQueryCapacity = wrap("get_query_capacity");
+  const getRayHitCapacity = wrap("get_ray_hit_capacity");
+  const getQueryHitFloatStride = wrap("get_query_hit_float_stride");
+  const getContactEventCapacity = wrap("get_contact_event_capacity");
+  const getSensorEventCapacity = wrap("get_sensor_event_capacity");
+  const getContactHitCapacity = wrap("get_contact_hit_capacity");
+  const getMoverPlaneCapacity = wrap("get_mover_plane_capacity");
+  const getMoverPlaneFloatStride = wrap("get_mover_plane_float_stride");
+  const getEventHeaderIntCount = wrap("get_event_header_int_count");
+  const getContactPairIntStride = wrap("get_contact_pair_int_stride");
+  const getBodyMoveCount = wrap("get_body_move_count");
+  const getBodyMoveByteOffset = wrap("get_body_move_byte_offset");
+  const getBodyFellAsleepByteOffset = wrap("get_body_fell_asleep_byte_offset");
+  const getBodyMoveCapacity = wrap("get_body_move_capacity");
+  const getAwakeBodyCount = wrap("get_awake_body_count");
+  const getProfileByteOffset = wrap("get_profile_byte_offset");
+  const getProfileFloatCount = wrap("get_profile_float_count");
+  const getCountersByteOffset = wrap("get_counters_byte_offset");
+  const getCountersIntCount = wrap("get_counters_int_count");
+  const getJointEventsByteOffset = wrap("get_joint_events_byte_offset");
+  const getJointEventCapacity = wrap("get_joint_event_capacity");
+  const bodySetRestitution = wrap("body_set_restitution");
+  const bodySetSleepThreshold = wrap("body_set_sleep_threshold");
+  const worldSetHitEventThreshold = wrap("world_set_hit_event_threshold");
+  const worldExplode = wrap("world_explode");
+  const jointConfigure = wrap("joint_configure");
 
-  const createParticleSystem = wrap("create_particle_system", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const destroyParticleSystem = wrap("destroy_particle_system", null, []);
-  const createParticleBox = wrap("create_particle_box", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createParticleGroupBox = wrap("create_particle_group_box", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const createParticleGroupCircle = wrap("create_particle_group_circle", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const destroyParticleGroup = wrap("destroy_particle_group", null, [
-    "number",
-  ]);
-  const setParticleSubSteps = wrap("set_particle_sub_steps", null, [
-    "number",
-  ]);
-  const setParticleTuning = wrap("set_particle_tuning", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const setGroupViscousScale = wrap("set_group_viscous_scale", null, [
-    "number",
-    "number",
-  ]);
-  const getParticleGroupSlotCount = wrap("get_particle_group_slot_count", "number", []);
-  const getParticleGroupAlive = wrap("get_particle_group_alive", "number", ["number"]);
-  const getParticleGroupParticleCount = wrap("get_particle_group_particle_count", "number", [
-    "number",
-  ]);
-  const getParticleGroupCenterX = wrap("get_particle_group_center_x", "number", ["number"]);
-  const getParticleGroupCenterY = wrap("get_particle_group_center_y", "number", ["number"]);
-  const getParticleGroupVx = wrap("get_particle_group_vx", "number", ["number"]);
-  const getParticleGroupVy = wrap("get_particle_group_vy", "number", ["number"]);
-  const getParticleGroupAngularVelocity = wrap("get_particle_group_angular_velocity", "number", [
-    "number",
-  ]);
-  const getParticleGroupAngle = wrap("get_particle_group_angle", "number", ["number"]);
-  const getParticleGroupViscousScale = wrap("get_particle_group_viscous_scale", "number", [
-    "number",
-  ]);
-  const getParticleGroupFirstIndex = wrap("get_particle_group_first_index", "number", ["number"]);
-  const getParticleGroupLastIndex = wrap("get_particle_group_last_index", "number", ["number"]);
-  const getParticleGroupFlags = wrap("get_particle_group_flags", "number", ["number"]);
-  const joinParticleGroups = wrap("join_particle_groups", null, ["number", "number"]);
-  const splitParticleGroup = wrap("split_particle_group", null, ["number"]);
-  const particleApplyForce = wrap("particle_apply_force", null, ["number", "number", "number"]);
-  const particleApplyLinearImpulse = wrap("particle_apply_linear_impulse", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const particleGroupApplyForce = wrap("particle_group_apply_force", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const particleGroupApplyLinearImpulse = wrap("particle_group_apply_linear_impulse", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const particleQueryAabb = wrap("particle_query_aabb", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const particleRayCast = wrap("particle_ray_cast", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const getParticleQueryHitsByteOffset = wrap(
-    "get_particle_query_hits_byte_offset",
-    "number",
-    [],
-  );
+  const createParticleSystem = wrap("create_particle_system");
+  const destroyParticleSystem = wrap("destroy_particle_system");
+  const createParticleBox = wrap("create_particle_box");
+  const createParticleGroupBox = wrap("create_particle_group_box");
+  const createParticleGroupCircle = wrap("create_particle_group_circle");
+  const destroyParticleGroup = wrap("destroy_particle_group");
+  const setParticleSubSteps = wrap("set_particle_sub_steps");
+  const setParticleTuning = wrap("set_particle_tuning");
+  const setGroupViscousScale = wrap("set_group_viscous_scale");
+  const getParticleGroupSlotCount = wrap("get_particle_group_slot_count");
+  const getParticleGroupAlive = wrap("get_particle_group_alive");
+  const getParticleGroupParticleCount = wrap("get_particle_group_particle_count");
+  const getParticleGroupCenterX = wrap("get_particle_group_center_x");
+  const getParticleGroupCenterY = wrap("get_particle_group_center_y");
+  const getParticleGroupVx = wrap("get_particle_group_vx");
+  const getParticleGroupVy = wrap("get_particle_group_vy");
+  const getParticleGroupAngularVelocity = wrap("get_particle_group_angular_velocity");
+  const getParticleGroupAngle = wrap("get_particle_group_angle");
+  const getParticleGroupViscousScale = wrap("get_particle_group_viscous_scale");
+  const getParticleGroupFirstIndex = wrap("get_particle_group_first_index");
+  const getParticleGroupLastIndex = wrap("get_particle_group_last_index");
+  const getParticleGroupFlags = wrap("get_particle_group_flags");
+  const joinParticleGroups = wrap("join_particle_groups");
+  const splitParticleGroup = wrap("split_particle_group");
+  const particleApplyForce = wrap("particle_apply_force");
+  const particleApplyLinearImpulse = wrap("particle_apply_linear_impulse");
+  const particleGroupApplyForce = wrap("particle_group_apply_force");
+  const particleGroupApplyLinearImpulse = wrap("particle_group_apply_linear_impulse");
+  const particleQueryAabb = wrap("particle_query_aabb");
+  const particleRayCast = wrap("particle_ray_cast");
+  const getParticleQueryHitsByteOffset = wrap("get_particle_query_hits_byte_offset");
   const particleQueryHitsI32 = getParticleQueryHitsByteOffset() >> 2;
-  const syncActiveParticleGroupsFn = wrap("sync_active_particle_groups", "number", [
-    "number",
-  ]);
-  const getSyncParticleGroupsByteOffset = wrap(
-    "get_sync_particle_groups_byte_offset",
-    "number",
-    [],
-  );
-  const getSyncParticleGroupsMax = wrap("get_sync_particle_groups_max", "number", []);
-  const cullParticlesOutsideBoundsFn = wrap("cull_particles_outside_bounds", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const getParticleWeightByteOffset = wrap("get_particle_weight_byte_offset", "number", []);
-  const getParticleCount = wrap("get_particle_count", "number", []);
-  const restoreParticlesFn = wrap("restore_particles", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const getParticleGroupIndexByteOffset = wrap("get_particle_group_index_byte_offset", "number", []);
-  const getParticleRestOffsetByteOffset = wrap("get_particle_rest_offset_byte_offset", "number", []);
-  const getParticlePairCount = wrap("get_particle_pair_count", "number", []);
-  const copyParticleGroupSlots = wrap("copy_particle_group_slots", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const copyParticlePairs = wrap("copy_particle_pairs", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const restoreParticleGroupsAndPairsFn = wrap("restore_particle_groups_and_pairs", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
+  const syncActiveParticleGroupsFn = wrap("sync_active_particle_groups");
+  const getSyncParticleGroupsByteOffset = wrap("get_sync_particle_groups_byte_offset");
+  const getSyncParticleGroupsMax = wrap("get_sync_particle_groups_max");
+  const cullParticlesOutsideBoundsFn = wrap("cull_particles_outside_bounds");
+  const getParticleWeightByteOffset = wrap("get_particle_weight_byte_offset");
+  const getParticleCount = wrap("get_particle_count");
+  const restoreParticlesFn = wrap("restore_particles");
+  const getParticleGroupIndexByteOffset = wrap("get_particle_group_index_byte_offset");
+  const getParticleRestOffsetByteOffset = wrap("get_particle_rest_offset_byte_offset");
+  const getParticlePairCount = wrap("get_particle_pair_count");
+  const copyParticleGroupSlots = wrap("copy_particle_group_slots");
+  const copyParticlePairs = wrap("copy_particle_pairs");
+  const restoreParticleGroupsAndPairsFn = wrap("restore_particle_groups_and_pairs");
   // Weed wasm glue only assigns Module.HEAP32 / HEAPF32 (not HEAPU8/U16/U32).
   const heapBuf = () => Module.HEAPF32.buffer;
   const heapU8 = () => new Uint8Array(heapBuf());
   const heapU16 = () => new Uint16Array(heapBuf());
   const heapU32 = () => new Uint32Array(heapBuf());
-  const getLiquidFunStepMs = wrap("get_liquidfun_step_ms", "number", []);
-  const getLfParticleContactCount = wrap("get_lf_particle_contact_count", "number", []);
-  const getParticleCapacity = wrap("get_particle_capacity", "number", []);
-  const getParticleRadius = wrap("get_particle_radius", "number", []);
-  const getParticleCountByteOffset = wrap("get_particle_count_byte_offset", "number", []);
-  const getParticlePosByteOffset = wrap("get_particle_pos_byte_offset", "number", []);
-  const getParticleVelByteOffset = wrap("get_particle_vel_byte_offset", "number", []);
-  const getParticleFlagsByteOffset = wrap("get_particle_flags_byte_offset", "number", []);
-  const getParticleXByteOffset = wrap("get_particle_x_byte_offset", "number", []);
-  const getParticleYByteOffset = wrap("get_particle_y_byte_offset", "number", []);
-  const getParticleVxByteOffset = wrap("get_particle_vx_byte_offset", "number", []);
-  const getParticleVyByteOffset = wrap("get_particle_vy_byte_offset", "number", []);
-  const getParticleAlphaByteOffset = wrap("get_particle_alpha_byte_offset", "number", []);
+  const getLiquidFunStepMs = wrap("get_liquidfun_step_ms");
+  const getLfParticleContactCount = wrap("get_lf_particle_contact_count");
+  const getParticleCapacity = wrap("get_particle_capacity");
+  const getParticleRadius = wrap("get_particle_radius");
+  const getParticleCountByteOffset = wrap("get_particle_count_byte_offset");
+  const getParticlePosByteOffset = wrap("get_particle_pos_byte_offset");
+  const getParticleVelByteOffset = wrap("get_particle_vel_byte_offset");
+  const getParticleFlagsByteOffset = wrap("get_particle_flags_byte_offset");
+  const getParticleXByteOffset = wrap("get_particle_x_byte_offset");
+  const getParticleYByteOffset = wrap("get_particle_y_byte_offset");
+  const getParticleVxByteOffset = wrap("get_particle_vx_byte_offset");
+  const getParticleVyByteOffset = wrap("get_particle_vy_byte_offset");
+  const getParticleAlphaByteOffset = wrap("get_particle_alpha_byte_offset");
   // N-142: each particle's index at the last reset, carried through LiquidFun's reorders, and whether one happened.
-  const getParticleOriginByteOffset = wrap("get_particle_origin_byte_offset", "number", []);
-  const particleReorderedFn = wrap("particle_reordered", "number", []);
-  const resetParticleOriginsFn = wrap("reset_particle_origins", null, []);
-  const getParticleUserDataByteOffset = wrap("get_particle_user_data_byte_offset", "number", []);
-  const getParticleColorByteOffset = wrap("get_particle_color_byte_offset", "number", []);
-  const getParticleViscousScaleByteOffset = wrap("get_particle_viscous_scale_byte_offset", "number", []);
-  const setParticleUserDataFn = wrap("set_particle_user_data", null, ["number", "number"]);
-  const setParticleUserDataRangeFn = wrap("set_particle_user_data_range", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const setParticleColorFn = wrap("set_particle_color", null, ["number", "number"]);
-  const setParticleColorRangeFn = wrap("set_particle_color_range", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const setParticleFlagsFn = wrap("set_particle_flags", null, ["number", "number"]);
-  const setParticleViscousScaleFn = wrap("set_particle_viscous_scale", null, ["number", "number"]);
-  const setParticleViscousScaleRangeFn = wrap("set_particle_viscous_scale_range", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const setParticleGroupFlagsFn = wrap("set_particle_group_flags", null, ["number", "number"]);
-  const destroyParticleFn = wrap("destroy_particle", null, ["number"]);
-  const createParticleFn = wrap("create_particle", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const particleApplyForceRangeFn = wrap("particle_apply_force_range", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const particleApplyLinearImpulseRangeFn = wrap("particle_apply_linear_impulse_range", null, [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
-  const setParticleExtraTuningFn = wrap("set_particle_extra_tuning", null, [
-    "number",
-    "number",
-    "number",
-  ]);
-  const getExtractIndicesByteOffset = wrap("get_extract_indices_byte_offset", "number", []);
-  const getExtractIndicesMax = wrap("get_extract_indices_max", "number", []);
-  const extractParticlesFn = wrap("extract_particles", "number", [
-    "number",
-    "number",
-    "number",
-    "number",
-  ]);
+  const getParticleOriginByteOffset = wrap("get_particle_origin_byte_offset");
+  const particleReorderedFn = wrap("particle_reordered");
+  const resetParticleOriginsFn = wrap("reset_particle_origins");
+  const getParticleUserDataByteOffset = wrap("get_particle_user_data_byte_offset");
+  const getParticleColorByteOffset = wrap("get_particle_color_byte_offset");
+  const getParticleViscousScaleByteOffset = wrap("get_particle_viscous_scale_byte_offset");
+  const setParticleUserDataFn = wrap("set_particle_user_data");
+  const setParticleUserDataRangeFn = wrap("set_particle_user_data_range");
+  const setParticleColorFn = wrap("set_particle_color");
+  const setParticleColorRangeFn = wrap("set_particle_color_range");
+  const setParticleFlagsFn = wrap("set_particle_flags");
+  const setParticleViscousScaleFn = wrap("set_particle_viscous_scale");
+  const setParticleViscousScaleRangeFn = wrap("set_particle_viscous_scale_range");
+  const setParticleGroupFlagsFn = wrap("set_particle_group_flags");
+  const destroyParticleFn = wrap("destroy_particle");
+  const createParticleFn = wrap("create_particle");
+  const particleApplyForceRangeFn = wrap("particle_apply_force_range");
+  const particleApplyLinearImpulseRangeFn = wrap("particle_apply_linear_impulse_range");
+  const setParticleExtraTuningFn = wrap("set_particle_extra_tuning");
+  const getExtractIndicesByteOffset = wrap("get_extract_indices_byte_offset");
+  const getExtractIndicesMax = wrap("get_extract_indices_max");
+  const extractParticlesFn = wrap("extract_particles");
   const DEFAULT_MATERIAL = Object.freeze({
     density: 1.0,
     friction: 0.3,
