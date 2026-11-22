@@ -134,7 +134,8 @@ function buildChromiumLaunchArgs({
   userDataDir,
   enableLogging,
 }) {
-  const args = [];
+  // A scene's sounds stay off the machine's speakers (the audio still renders, so its worker's cost is unchanged).
+  const args = ['--mute-audio'];
   if (!allowThrottle) {
     args.push(
       '--disable-background-timer-throttling',
