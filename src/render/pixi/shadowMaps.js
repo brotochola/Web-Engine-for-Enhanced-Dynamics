@@ -9,8 +9,6 @@
  * camera, config, lighting state, batches, queues, shaders, assets and custom layers) goes through `this.worker`.
  */
 
-import { LightEmitter } from '../../components/lightEmitter.js';
-import { Transform } from '../../components/transform.js';
 import { Layer } from '../../core/layer.js';
 import { Sun } from '../../core/sun.js';
 import { LIGHTING_DEFAULTS } from '../../util/configDefaults.js';
@@ -28,17 +26,14 @@ import {
   Shader,
   Sprite,
   State,
-  TextureSource,
 } from '../../vendor/pixi.min.js';
 import {
   GPU_CASTER_FLOATS,
-  GPU_CASTER_LIGHT_FLOAT,
   GPU_FLAG_CASTER_OWN,
   GPU_FLAG_KEYED_CASTERS,
   GPU_HDR_COOKIE,
   GPU_HDR_FLAGS,
   GPU_HDR_STAMP,
-  GPU_HDR_STAMP_LIGHTS,
   GPU_HDR_SUN,
   GPU_KEYED_CASTER_FLOATS,
   GPU_KEYED_STAMP_FLOATS,
@@ -46,29 +41,7 @@ import {
 } from '../gpuQueueLayout.js';
 import { rtPixelSize } from '../gpuShadowCasters.js';
 import { INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch, TEX_LUT_FLOATS } from '../instancedSpriteBatch.js';
-import {
-  LAMP_MAP_COLUMNS,
-  autoLampTileSize,
-  lampCardStrip,
-  lampColumnGrid,
-  lampColumnIndex,
-  lampMapColumnsVertex,
-  lampMapColumnsWgsl,
-  lampMapFragment,
-  lampMapVertex,
-  lampMapWgsl,
-  lampTileLayout,
-  writeLampTile,
-  writeLampTileOwner,
-} from '../lampShadowMap.js';
-import {
-  LAMP_TILE_ROWS,
-  createLampVolumeCache,
-  lampCacheLayout,
-  lampCachePays,
-  planLampVolumeCache,
-  writeDirectLampList,
-} from '../lampVolumeCache.js';
+import { lampMapColumnsVertex, lampMapColumnsWgsl, lampMapFragment } from '../lampShadowMap.js';
 import { layerIsVisible } from '../pixi/layerHelpers.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../spriteIndexed.js';
 import {
@@ -88,31 +61,19 @@ import {
   sunMapWgsl,
   volumeMapVertex,
 } from '../sunShadowMap.js';
-import {
-  LAMP_CACHE_COPY_FRAGMENT,
-  LAMP_CACHE_COPY_VERTEX,
-  VOLUME_LAMP_CACHE_FRAGMENT,
-  VOLUME_LAMP_FRAGMENT,
-  lampCacheCopyGpuProgram,
-  volumeLampVertex,
-  volumeLampWgsl,
-  volumeMapGpuProgram,
-  volumeMapWgsl,
-  writeVolumeLampTerms,
-} from '../volumeShadowMap.js';
+import { volumeMapGpuProgram, volumeMapWgsl } from '../volumeShadowMap.js';
 import { glProgramFrom } from '../webgl/glProgram.js';
 import { pickInstancedSpriteFragmentGlsl } from '../webgl/instancedSpriteGlsl.js';
 import { sunShadowGpuProgram } from '../webgpu/instancedSpriteWgsl.js';
-import { writeRgba32Float } from '../webgpu/pinGpuTexture.js';
 
 // The Pixi classes the moved bodies name as PIXI.X, as pixiWorker.js's namespace does.
-const PIXI = Object.freeze({ Container, Geometry, GlProgram, Mesh, RenderTexture, Shader, Sprite, State, TextureSource });
+const PIXI = Object.freeze({ Container, Geometry, GlProgram, Mesh, RenderTexture, Shader, Sprite, State });
 
 /**
  * DX-GBUF: the shadow maps' programs' state (sunShadowMap.frag.glsl): no blending, a depth test (less) and its writes, so
  * each texel keeps its highest caster point, whose depth is 1 - height / ZMAX, with that caster's entity id.
  */
-function mapDepthState() {
+export function mapDepthState() {
   const state = new State();
   state.blendMode = 'none';
   state.depthTest = true;
@@ -120,12 +81,6 @@ function mapDepthState() {
   state.culling = false;
   return state;
 }
-
-/** DX-LAMPPANO: how many of the stamp batch's geometries keep a lamp card strip of their own (its ring's slots, then some). */
-const LAMP_STRIP_SOURCES = 8;
-
-/** DX-SHADOW3D (F7): the volumes' lamp terms' scales, 1 / heightScaleY and 1 / groundScaleY (writeVolumeLampTerms). */
-const VOLUME_LAMP_SCALES = new Float64Array(2);
 
 /** The sun's and the lamps' shadow maps and the casters' passes, for one renderer worker. */
 export class PixiShadowMaps {
@@ -149,58 +104,6 @@ export class PixiShadowMaps {
     // World px to the sun map's texels, (world - camera) · screenScale as its cards land, for the volumes (written when
     // it changes: a Matrix's fields are tagged, each double written a heap number).
     this.volumeMapTransform = new Matrix();
-    // DX-SHADOW3D (F7): the volumes in the lamps' map: { batch, host, mesh, geometry: the batch's vertices and indices,
-    // drawn with an instance a tile in use (E-389, E-453) } a volumes' batch, and their program's options and state (made
-    // on first use).
-    this.volumeLampEntries = [];
-    this.volumeLampProgram = null;
-    this.volumeLampState = null;
-    this.volumeLampCacheProgram = null;
-    this.lampCache = createLampVolumeCache();
-    this.lampCacheTarget = null;
-    this.lampCacheColor = null;
-    this.lampCacheDepth = null;
-    this.lampCacheSlots = 0;
-    this.lampCacheSize = 0;
-    this.lampCachePerRow = 1;
-    this.lampCacheCopy = null;
-    this.lampVolumesEpoch = 0;
-    this.lampVolumeScales = new Float64Array(2);
-    // This frame's volumes' entries in order (_drawVolumesInLampMap), and how many.
-    this.volumeLampActive = [];
-    this.volumeLampActiveCount = 0;
-    /** N-196: this frame's widest casting lamp's reach (floor px; a double from the start). */
-    this.lampMaxReach = 0.5;
-    this.lampTilesPerRow = 1;
-    this.lampMapLights = 0;
-    this.lampMapMesh = null;
-    // E-395: the lamps' map over keyed stamp rows (WebGL): its two halves' meshes and host, and a strip a ring geometry.
-    this.lampMapKeyedMesh = null;
-    this.lampMapKeyedMeshCeil = null;
-    this.lampMapKeyedHost = null;
-    this.lampKeyedStrips = new Map();
-    /** DX-LAMPPANO: the cards drawn into the ceiling's half (their own uniforms: uTileWorld.z 1). */
-    this.lampMapMeshCeil = null;
-    this.lampMapHost = null;
-    this.lampMapColumns = null;
-    this.lampMapUniforms = null;
-    this.lampMapUniformsCeil = null;
-    /** DX-LAMPPANO: the cards' strip (lampCardStrip) and its geometry over the batch's instance attributes. */
-    this.lampStripBuffer = null;
-    this.lampStripIndex = new Uint16Array(0);
-    this.lampStripGeometry = null;
-    this.lampStripSource = null;
-    /** The strip's geometry for each geometry of the batch's ring it was drawn over (made once each, a few at most). */
-    this.lampStripBySource = new Map();
-    this.lampMapClear = false;
-    this.lampMapDrew = false;
-    // Each tile's lamp (floor point, height, reach) as RGBA32F, a texel a tile, and below it (row 1) its owner (E-389);
-    // entity -> tile; last frame's lamps.
-    // E-508: a third row, the volumes' draws' lists (lampVolumeCache.js).
-    this.lampTileData = new Float32Array(4 * LAMP_TILE_ROWS);
-    this.lampTileSource = null;
-    this.lampTileIds = new Uint32Array(1);
-    this.lampTileCount = 0;
     this.sunMapMesh = null;
     // E-395: the sun's map over keyed caster rows, and its host; the columns over keyed rows (_keyedColumnsFor).
     this.sunMapKeyedMesh = null;
@@ -337,8 +240,8 @@ export class PixiShadowMaps {
       this._clearSunMapIfEmpty();
     }
     if (this.worker._lampMapOn) {
-      this.lampMapDrew = false;
-      this._clearLampMapIfEmpty();
+      this.worker.lampMap.mapDrew = false;
+      this.worker.lampMap.clearIfEmpty();
     }
   }
 
@@ -464,11 +367,11 @@ export class PixiShadowMaps {
       }
     }
 
-    this.lampMapDrew = false;
+    this.worker.lampMap.mapDrew = false;
     if (stampN > 0 && this.worker._lampMapOn) {
       // DX-SHADOW3D (F7): each lamp's casters into its tile of the lamps' map; the light pass takes each lamp out alone.
       // E-395: keyed stamp rows too (WebGL).
-      this.lampMapDrew = this._drawLampMap(batch, gpu, stampN, keyedRows);
+      this.worker.lampMap.mapDrew = this.worker.lampMap.draw(batch, gpu, stampN, keyedRows);
     } else if (stampN > 0) {
       u.uLight[0] = 0;
       u.uLight[1] = 0;
@@ -481,12 +384,12 @@ export class PixiShadowMaps {
         this.worker._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
         this._drawGpuCasterPass(mesh, group, !this.gpuSunDrew);
       }
-    } else if (stampN <= 0 && this.worker._lampMapOn && (this.lampTileCount | 0) > 0) {
+    } else if (stampN <= 0 && this.worker._lampMapOn && (this.worker.lampMap.tileCount | 0) > 0) {
       // OL-5: lamps with tiles and no stamp row (no sprite caster in any lamp's reach): the volumes alone.
-      this.lampMapDrew = this._drawLampMapVolumes(gpu);
+      this.worker.lampMap.mapDrew = this.worker.lampMap.drawVolumes(gpu);
     }
 
-    if (this.worker._lampMapOn && !this.lampMapDrew) this._clearLampMapIfEmpty();
+    if (this.worker._lampMapOn && !this.worker.lampMap.mapDrew) this.worker.lampMap.clearIfEmpty();
 
     if (!this.gpuSunDrew) {
       rtOpts.container = this.worker._rtEmptyContainer;
@@ -549,7 +452,7 @@ export class PixiShadowMaps {
   _ensureKeyedCasters(sunShader) {
     // DX-SHADOW3D: the sun's map and the renders' solids read pre-render's full rows (their columns need a frame's
     // instance whole); a directional caster's sun frame rides in the keyed rows too (plan §17.2).
-    // E-395: the maps draw keyed rows too (_drawSunMap, _drawLampMap), and the renders' columns over them, picked with the
+    // E-395: the maps draw keyed rows too (_drawSunMap, lampMap.js draw), and the renders' columns over them, picked with the
     // entity batch's copy of the slots' statics (enableStaticsMirror) where the atlas has height maps.
     if (this.keyedCastersTried) return;
     this.keyedCastersTried = true;
@@ -992,822 +895,6 @@ export class PixiShadowMaps {
   }
 
   /**
-   * DX-SHADOW3D (F7): this frame's lamps with a tile in the lamps' map, read before the light data is packed: pre-render's
-   * stamp lights (the GPU queue's stampLightIds, a stamp row's stampLightIdx counts them), each one's tile its index. The
-   * light pack tags their first row (_lampTileOf); the tiles' texture holds each lamp's floor point, height and reach
-   * (lampShadowMap.js writeLampTile), which the map's programs read.
-   */
-  readLampTiles() {
-    const gpu = this.worker._gpuQueueRead;
-    const ids = gpu && gpu.stampLightIds ? gpu.stampLightIds : null;
-    let n = ids && gpu.header ? Math.min(gpu.header[GPU_HDR_STAMP_LIGHTS] | 0, ids.length) : 0;
-    // OL-5: pre-render names the casting lamps in a frame with no stamp row too. They take tiles then only when volumes
-    // are there to draw into them: every pixel of a lamp reads its tile, and an empty one is read for nothing.
-    if (n > 0 && (gpu.header[GPU_HDR_STAMP] | 0) <= 0 && !this._volumesCast()) n = 0;
-    const entities = Transform.x ? Transform.x.length : 0;
-    if (this.worker.lighting.lampTileOf.length !== entities) this.worker.lighting.lampTileOf = new Int16Array(entities).fill(-1);
-    if (this.worker.lighting.lampFadeOf.length !== entities) this.worker.lighting.lampFadeOf = new Float32Array(entities).fill(1);
-    const of = this.worker.lighting.lampTileOf;
-    const fadeOf = this.worker.lighting.lampFadeOf;
-    // N-212: pre-render's fades beside the ids (a queue without them: none fade).
-    const fades = gpu && gpu.stampLightFade && gpu.stampLightFade.length >= n ? gpu.stampLightFade : null;
-    const last = this.lampTileIds;
-    for (let i = 0; i < this.lampTileCount; i++) {
-      const id = last[i];
-      if (id < of.length) {
-        of[id] = -1;
-        fadeOf[id] = 1;
-      }
-    }
-    const cap = Math.max(1, ids ? ids.length : 1);
-    if (this.lampTileIds.length < cap) this.lampTileIds = new Uint32Array(cap);
-    if (this.lampTileData.length < cap * 4 * LAMP_TILE_ROWS) this.lampTileData = new Float32Array(cap * 4 * LAMP_TILE_ROWS);
-    const data = this.lampTileData;
-    // E-389: the texture's width; row 1 holds each tile's owner, row 2 the volumes' draws' lists (E-508).
-    const width = data.length / (4 * LAMP_TILE_ROWS);
-    const groundInvY = this.worker._groundInvScaleY || 1;
-    let maxReach = 0.5;
-    const worldX = Transform.x;
-    const worldY = Transform.y;
-    const rotC = Transform.rotC;
-    const rotS = Transform.rotS;
-    const offsetX = LightEmitter.offsetX;
-    const offsetY = LightEmitter.offsetY;
-    for (let t = 0; t < n; t++) {
-      const id = ids[t];
-      this.lampTileIds[t] = id;
-      if (id < of.length) {
-        of[id] = t;
-        fadeOf[id] = fades !== null ? fades[t] : 1;
-      }
-      const ox = offsetX[id];
-      const oy = offsetY[id];
-      const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
-      const y = (worldY[id] + ox * rotS[id] + oy * rotC[id]) * groundInvY;
-      const elevation = LightEmitter.elevation[id];
-      // E-510: the tile spans how far its shadows reach: its shadowRange where that is under its radius (the light
-      // data's fourth row carries the same, for the light pass).
-      const radius = LightEmitter.radius[id];
-      const shadowRange = LightEmitter.shadowRange[id];
-      const reach = shadowRange > 0 && shadowRange < radius ? shadowRange : radius;
-      writeLampTile(data, t, x, y, elevation, reach);
-      writeLampTileOwner(data, width, t, id);
-      if (elevation > 0 && reach > maxReach) maxReach = reach;
-    }
-    this.lampMaxReach = maxReach;
-    const stale = Math.max(n, this.lampTileCount);
-    data.fill(0, n * 4, stale * 4);
-    for (let t = n; t < stale; t++) writeLampTileOwner(data, width, t, -1);
-    this.lampTileCount = n;
-    this._uploadLampTiles();
-  }
-
-  /**
-   * DX-SHADOW3D (F7): the tiles' texture (a texel a tile: its lamp in row 0, its owner in row 1), made on first use,
-   * written each frame.
-   */
-  _uploadLampTiles() {
-    const width = Math.max(1, this.lampTileData.length / (4 * LAMP_TILE_ROWS));
-    if (this.lampTileSource === null || this.lampTileSource.width !== width) {
-      const old = this.lampTileSource;
-      this.lampTileSource = PIXI.TextureSource.from({
-        resource: this.lampTileData,
-        width,
-        height: LAMP_TILE_ROWS,
-        format: 'rgba32float',
-        scaleMode: 'nearest',
-        addressMode: 'clamp-to-edge',
-        autoGenerateMipmaps: false,
-      });
-      this.lampTileSource.uploadMethodId = this.worker._useWebGpu ? 'external' : 'unknown';
-      // Never unloaded by Pixi's texture GC while the programs keep it bound.
-      this.lampTileSource.autoGarbageCollect = false;
-      // Every program that binds it moves to the new one before the old one is destroyed.
-      this._pointLampTilePrograms();
-      if (old) old.destroy();
-    }
-    if (this.worker._useWebGpu) {
-      const renderer = this.worker.pixiApp?.renderer;
-      if (renderer?.gpu?.device) writeRgba32Float(renderer, this.lampTileSource, this.lampTileData, width, LAMP_TILE_ROWS, 'weed-lamp-tiles');
-      return;
-    }
-    this.worker._uploadRgba32FloatGl(this.lampTileSource, this.lampTileData, width, LAMP_TILE_ROWS);
-  }
-
-  /**
-   * DX-SHADOW3D (F7): every program that binds the tiles' lamps (uLampTiles) on the current source: the lamps' map's cards
-   * and columns, and each volumes' layer's mesh.
-   */
-  _pointLampTilePrograms() {
-    const source = this.lampTileSource;
-    const shaders = [
-      this.lampMapMesh && this.lampMapMesh.shader,
-      this.lampMapMeshCeil && this.lampMapMeshCeil.shader,
-      this.lampMapColumns && this.lampMapColumns.shader,
-      this.lampMapColumns && this.lampMapColumns.shaderCeil,
-    ];
-    for (let i = 0; i < this.volumeLampEntries.length; i++) {
-      shaders.push(this.volumeLampEntries[i].mesh.shader, this.volumeLampEntries[i].paintMesh.shader);
-    }
-    if (this.lampCacheCopy !== null) shaders.push(this.lampCacheCopy.mesh.shader);
-    for (let i = 0; i < shaders.length; i++) {
-      const shader = shaders[i];
-      if (shader && shader.resources.uLampTiles !== source) shader.resources.uLampTiles = source;
-    }
-  }
-
-  /**
-   * DX-SHADOW3D (F7): the lamps' map, an atlas of a square tile a stamp light (lampTileLayout), bound to the light pass with
-   * its layout (uLampAtlas: tiles a row, a tile's texels, the atlas's size). Made for the most lights the queue's stamps can
-   * go to.
-   * @returns {boolean}
-   */
-  _ensureLampMap(gpu) {
-    const most = Math.max(1, (gpu && gpu.caps && gpu.caps.maxStampLights) | 0);
-    let lights = most;
-    let size = this.worker._lampTileSize;
-    if (this.worker._lampTileAuto) {
-      // N-196: a tile for each lamp casting now, rounded up to a power of two (the map is made again only when that
-      // count or the tile's size changes), each as fine as the widest lamp's reach and the shadows' resolution ask.
-      lights = 1;
-      while (lights < this.lampTileCount && lights < most) lights *= 2;
-      if (lights > most) lights = most;
-      // DX-PIXELSHADOW: with pixel-art lighting a texel a floor px (twice the resolution), so a lamp's shadow steps on the
-      // art's pixels rather than on pairs of them, as far as the map's room allows.
-      size = autoLampTileSize(this.lampMaxReach, this.worker.shadowResolution * (this.worker._pixelArtLight ? 2 : 1), lights);
-    }
-    if (this.worker.lighting.lampMapRT !== null && this.lampMapLights === lights && this.worker._lampTileSize === size) return true;
-    this.worker._lampTileSize = size;
-    const layout = lampTileLayout(lights, size, 4096);
-    // The light pass lets go of the old map before it goes (Pixi warns of a source destroyed while bound).
-    const old = this.worker.lighting.lampMapRT;
-    this.worker.lighting.lampMapRT = PIXI.RenderTexture.create({ width: layout.width, height: layout.height, scaleMode: 'nearest' });
-    const bound = this.worker.lighting.lightingShader?.resources;
-    if (bound) bound.uLampMap = this.worker.lighting.lampMapRT.source;
-    if (old) old.destroy(true);
-    // DX-GBUF: its programs keep the highest caster point by a depth test, as the sun's.
-    this.worker._ensureTargetDepth(this.worker.lighting.lampMapRT);
-    this.lampMapLights = lights;
-    this.lampTilesPerRow = layout.perRow;
-    const a = this.worker.lighting.lampAtlas;
-    a[0] = layout.perRow;
-    a[1] = layout.size;
-    a[2] = layout.width;
-    a[3] = layout.height;
-    this.lampMapClear = false;
-    return true;
-  }
-
-  /**
-   * DX-SHADOW3D (F7): a lamps' map program as a Shader's options: the cards (lampMapVertex: the casters facing their lamp)
-   * or a render's columns (lampMapColumnsVertex), GLSL on WebGL and WGSL on WebGPU.
-   * @param {boolean} columns
-   */
-  lampMapProgram(columns) {
-    const shaders = this.worker._engineShaders;
-    const name = columns ? 'lamp-map-columns' : 'lamp-map';
-    if (this.worker._useWebGpu) {
-      const source = columns ? lampMapColumnsWgsl(shaders.shadowWgsl) : lampMapWgsl(shaders.shadowWgsl);
-      return { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragLamp', name, { maps: columns, lampTiles: true }) };
-    }
-    const vertex = columns ? lampMapColumnsVertex(shaders.shadowVert) : lampMapVertex(shaders.shadowVert);
-    return { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), name) };
-  }
-
-  /**
-   * DX-SHADOW3D (F7): this frame's stamp rows drawn into the lamps' map: each caster's card in its lamp's tile (max
-   * blending: the highest point landing at each texel), a render's columns too. The rows are pre-render's full rows; their
-   * light's z, which the lamps' programs do not read, carries the tile + 1 (stampLightIdx).
-   * @returns {boolean} whether it drew
-   */
-  _drawLampMap(batch, gpu, stampN, keyedRows = false) {
-    const shaders = this.worker._engineShaders;
-    if (!(this.worker._useWebGpu ? shaders?.shadowWgsl : shaders?.shadowVert && shaders?.sunMapFrag)) return false;
-    if (!gpu.stampLightIdx || !this._ensureLampMap(gpu)) return false;
-    if (this.lampTileSource === null) this._uploadLampTiles();
-    if (this.lampMapMesh === null) {
-      const r = batch.shadowShader.resources;
-      const lampUniforms = () => ({
-        uTileWorld: { value: new Float32Array(4), type: 'vec4<f32>' },
-        uSun: { value: new Float32Array(4), type: 'vec4<f32>' },
-        uLight: { value: new Float32Array(4), type: 'vec4<f32>' },
-        uCam: { value: new Float32Array(4), type: 'vec4<f32>' },
-        uPointScale: { value: 0, type: 'f32' },
-        uGroundInvScaleY: { value: 1, type: 'f32' },
-        uSunK: { value: new Float32Array(4), type: 'vec4<f32>' },
-        uSunPerp: { value: new Float32Array(4), type: 'vec4<f32>' },
-      });
-      // DX-LAMPPANO: one program set for each half of the tiles, the ceiling's with uTileWorld.z 1.
-      const cardShader = (uniforms) => new PIXI.Shader({
-        ...this.lampMapProgram(false),
-        resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uLampTiles: this.lampTileSource, uniforms },
-      });
-      const shader = cardShader(lampUniforms());
-      const shaderCeil = cardShader(lampUniforms());
-      this.lampMapUniforms = shader.resources.uniforms;
-      this.lampMapUniformsCeil = shaderCeil.resources.uniforms;
-      const state = mapDepthState();
-      // DX-LAMPPANO: the cards on a strip of three rows (lampCardStrip) over the stamp rows' instance attributes.
-      const strip = lampCardStrip();
-      this.lampStripBuffer = new Buffer({ data: strip.vertices, usage: BufferUsage.VERTEX, label: 'lamp-card-strip' });
-      this.lampStripIndex = strip.indices;
-      this.lampStripGeometry = this._lampCardGeometry(batch);
-      this.lampStripSource = batch.mesh.geometry;
-      this.lampStripBySource.set(this.lampStripSource, this.lampStripGeometry);
-      this.lampMapMesh = new PIXI.Mesh({ geometry: this.lampStripGeometry, shader, state, label: 'lamp-map' });
-      this.lampMapMeshCeil = new PIXI.Mesh({ geometry: this.lampStripGeometry, shader: shaderCeil, state, label: 'lamp-map-ceiling' });
-      // A depth test keeps the highest caster point and its entity; a mesh's blend mode holds only as a child (the sun
-      // map's host says why). Both halves in one render: they write apart.
-      this.lampMapMesh.blendMode = 'none';
-      this.lampMapMeshCeil.blendMode = 'none';
-      this.lampMapHost = new PIXI.Container();
-      this.lampMapHost.addChild(this.lampMapMesh);
-      this.lampMapHost.addChild(this.lampMapMeshCeil);
-      const columnShader = (uniforms) => new PIXI.Shader({
-        ...this.lampMapProgram(true),
-        resources: {
-          uTexture: r.uTexture,
-          uSampler: r.uSampler,
-          uTexLut: r.uTexLut,
-          uMaps: this.worker.assets.atlasMapsSource ?? this.worker.lighting.emptyMapsSource(),
-          uMapsLut: this.worker.assets.mapsTableSourceOrEmpty(),
-          uFoot: this.worker.assets.footSourceOrEmpty(),
-          uLampTiles: this.lampTileSource,
-          uniforms,
-        },
-      });
-      this.lampMapColumns = {
-        shader: columnShader(this.lampMapUniforms),
-        shaderCeil: columnShader(this.lampMapUniformsCeil),
-        grid: new Buffer({ data: lampColumnGrid(LAMP_MAP_COLUMNS), usage: BufferUsage.VERTEX }),
-        index: lampColumnIndex(LAMP_MAP_COLUMNS),
-        state,
-        blendMode: 'none',
-        rows: new Float32Array(64 * GPU_CASTER_FLOATS),
-        blocks: new Float32Array(64 * 4),
-        slots: [],
-        ring: 0,
-        label: 'lamp-map-columns',
-      };
-    }
-    // E-395: keyed stamp rows (11 floats, the statics by key) through the keyed cards; full rows as below.
-    if (keyedRows) return this._drawLampMapKeyed(gpu, stampN);
-    // The stamp rows, their light's z the tile + 1.
-    const n = stampN | 0;
-    const cap = batch.capacity | 0;
-    const keep = n > cap ? cap : n;
-    const len = keep * GPU_CASTER_FLOATS;
-    if (keep <= 0 || len > batch.data.length) return false;
-    batch.copyIn(batch.data, gpu.stamp, len);
-    const tiles = gpu.stampLightIdx;
-    const data = batch.data;
-    for (let i = 0, at = GPU_CASTER_LIGHT_FLOAT + 2; i < keep; i++, at += GPU_CASTER_FLOATS) data[at] = tiles[i] + 1;
-    if (!batch.commitInstances(keep)) return false;
-    // DX-LAMPPANO: the strip's geometry follows the batch's (a new one when the batch grows), drawn for these rows.
-    const source = batch.mesh.geometry;
-    if (this.lampStripSource !== source) {
-      // The batch draws from a ring of geometries, a slot each frame: a strip over each, made once. Made again whenever
-      // the slot changed, it was a geometry a frame (96 KB/s of Pixi's garbage in Predator ?light3d=1). A batch that grew
-      // makes new ones: past a few, the strips go and are made again.
-      let strip = this.lampStripBySource.get(source);
-      if (strip === undefined) {
-        if (this.lampStripBySource.size >= LAMP_STRIP_SOURCES) {
-          for (const g of this.lampStripBySource.values()) g.destroy();
-          this.lampStripBySource.clear();
-        }
-        strip = this._lampCardGeometry(batch);
-        this.lampStripBySource.set(source, strip);
-      }
-      this.lampStripGeometry = strip;
-      this.lampStripSource = source;
-      this.lampMapMesh.geometry = strip;
-      this.lampMapMeshCeil.geometry = strip;
-    }
-    this.lampStripGeometry.instanceCount = keep;
-    for (let half = 0; half < 2; half++) {
-      const group = half === 0 ? this.lampMapUniforms : this.lampMapUniformsCeil;
-      const u = group.uniforms;
-      u.uTileWorld[0] = this.lampTilesPerRow;
-      u.uTileWorld[1] = this.worker._lampTileSize;
-      u.uTileWorld[2] = half;
-      u.uSunK[3] = this.worker._heightScaleY > 0 ? this.worker._heightScaleY : 1;
-      u.uGroundInvScaleY = this.worker._groundInvScaleY || 1;
-      group.update();
-    }
-    const rtOpts = this.worker._rtRenderOpts;
-    rtOpts.container = this.lampMapHost;
-    rtOpts.target = this.worker.lighting.lampMapRT;
-    rtOpts.clear = true;
-    rtOpts.clearColor = this.worker._clearTransparent;
-    this.worker._submitRender(rtOpts);
-    this.worker._gpuPassesThisFrame++;
-    // E-379: the rows that cast columns towards their lamp, as their own instances.
-    const lampColumns = this.worker.assets.atlasMapsSource !== null ? this._columnsHost(batch, keep, this.lampMapColumns, 1) : null;
-    if (lampColumns !== null) {
-      rtOpts.container = lampColumns;
-      rtOpts.clear = false;
-      this.worker._submitRender(rtOpts);
-      this.worker._gpuPassesThisFrame++;
-    }
-    this._drawVolumesInLampMap(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
-    this.lampMapClear = false;
-    return true;
-  }
-
-  /**
-   * E-395: _drawLampMap for keyed stamp rows (WebGL): their light's z the tile + 1 (commitKeyedCasterRows), the cards'
-   * strip over the caster batch's keyed ring geometry (one a ring slot, made once), the two halves' keyed programs
-   * (lampMapVertex over spriteIndexedVertex's keyed stamp rows) sharing the full cards' uniform groups, then the volumes.
-   * No columns: keyed rows are sent only while no render casts them (_ensureKeyedCasters).
-   * @returns {boolean} whether it drew
-   */
-  _drawLampMapKeyed(gpu, stampN) {
-    const shaders = this.worker._engineShaders;
-    const entities = this.worker.entitiesBatch;
-    const casters = this.worker.gpuCasterBatch;
-    if (!entities || !entities.keyed || !casters) return false;
-    if (this.lampMapKeyedMesh === null) {
-      let program;
-      if (this.worker._useWebGpu) {
-        if (!shaders?.shadowWgsl) return false;
-        const source = lampMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true, light: true }));
-        program = { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragLamp', 'lamp-map-keyed', { lampTiles: true, statics: true }) };
-      } else {
-        if (!shaders?.shadowVert || !shaders?.sunMapFrag) return false;
-        const vertex = lampMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: true }));
-        program = { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), 'lamp-map-keyed') };
-      }
-      const r = casters.shadowShader.resources;
-      const keyedShader = (uniforms) => entities.makeKeyedRowsShader(program, {
-        uTexture: r.uTexture,
-        uSampler: r.uSampler,
-        uTexLut: r.uTexLut,
-        uLampTiles: this.lampTileSource,
-        uniforms,
-      });
-      const shader = keyedShader(this.lampMapUniforms);
-      const shaderCeil = keyedShader(this.lampMapUniformsCeil);
-      if (shader === null || shaderCeil === null) return false;
-      const state = mapDepthState();
-      const geometry = this._lampKeyedStripFor(casters.keyedCasterGeometry(true));
-      this.lampMapKeyedMesh = new PIXI.Mesh({ geometry, shader, state, label: 'lamp-map-keyed' });
-      this.lampMapKeyedMeshCeil = new PIXI.Mesh({ geometry, shader: shaderCeil, state, label: 'lamp-map-keyed-ceiling' });
-      this.lampMapKeyedMesh.blendMode = 'none';
-      this.lampMapKeyedMeshCeil.blendMode = 'none';
-      this.lampMapKeyedHost = new PIXI.Container();
-      this.lampMapKeyedHost.addChild(this.lampMapKeyedMesh);
-      this.lampMapKeyedHost.addChild(this.lampMapKeyedMeshCeil);
-    }
-    const rows = casters.commitKeyedCasterRows(gpu.stamp, stampN, GPU_KEYED_STAMP_FLOATS, gpu.stampLightIdx);
-    if (rows === null) return false;
-    const keep = rows.instanceCount | 0;
-    const strip = this._lampKeyedStripFor(rows);
-    strip.instanceCount = rows.instanceCount;
-    this.lampMapKeyedMesh.geometry = strip;
-    this.lampMapKeyedMeshCeil.geometry = strip;
-    for (let half = 0; half < 2; half++) {
-      const group = half === 0 ? this.lampMapUniforms : this.lampMapUniformsCeil;
-      const u = group.uniforms;
-      u.uTileWorld[0] = this.lampTilesPerRow;
-      u.uTileWorld[1] = this.worker._lampTileSize;
-      u.uTileWorld[2] = half;
-      u.uSunK[3] = this.worker._heightScaleY > 0 ? this.worker._heightScaleY : 1;
-      u.uGroundInvScaleY = this.worker._groundInvScaleY || 1;
-      group.update();
-    }
-    const rtOpts = this.worker._rtRenderOpts;
-    rtOpts.container = this.lampMapKeyedHost;
-    rtOpts.target = this.worker.lighting.lampMapRT;
-    rtOpts.clear = true;
-    rtOpts.clearColor = this.worker._clearTransparent;
-    this.worker._submitRender(rtOpts);
-    this.worker._gpuPassesThisFrame++;
-    // The keyed rows that cast columns towards their lamp, as their own instances (E-379's, over keyed rows).
-    const lampColumns = this.worker.assets.atlasMapsSource !== null ? this._keyedColumnsHost(keep, this._keyedColumnsFor('lamp', casters), 1) : null;
-    if (lampColumns !== null) {
-      rtOpts.container = lampColumns;
-      rtOpts.clear = false;
-      this.worker._submitRender(rtOpts);
-      this.worker._gpuPassesThisFrame++;
-    }
-    this._drawVolumesInLampMap(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
-    this.lampMapClear = false;
-    return true;
-  }
-
-  /** E-395: the lamps' cards' strip (lampCardStrip) over a keyed stamp rows' ring geometry, made once for each. */
-  _lampKeyedStripFor(rows) {
-    let strip = this.lampKeyedStrips.get(rows);
-    if (strip === undefined) {
-      const attributes = { aQuad: { buffer: this.lampStripBuffer, format: 'float32x2', stride: 8, offset: 0 } };
-      for (const [name, a] of Object.entries(rows.attributes)) {
-        if (name === 'aQuad') continue;
-        attributes[name] = { buffer: a.buffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
-      }
-      strip = new PIXI.Geometry({ attributes, indexBuffer: this.lampStripIndex });
-      this.lampKeyedStrips.set(rows, strip);
-    }
-    return strip;
-  }
-
-  /**
-   * OL-5: the lamps' map in a frame whose lamps have tiles and no stamp row: cleared, and the volumes drawn into it as
-   * _drawLampMap draws them after its cards. Without it a street of houses with nobody near its lamps cast no lamp
-   * shadow at all: the map was drawn only in a frame with a sprite caster in some lamp's reach.
-   * @returns {boolean} whether it drew
-   */
-  _drawLampMapVolumes(gpu) {
-    if (!this._volumesCast() || !this._ensureLampMap(gpu)) return false;
-    if (this.lampTileSource === null) this._uploadLampTiles();
-    const rtOpts = this.worker._rtRenderOpts;
-    rtOpts.container = this.worker._rtEmptyContainer;
-    rtOpts.target = this.worker.lighting.lampMapRT;
-    rtOpts.clear = true;
-    rtOpts.clearColor = this.worker._clearTransparent;
-    this.worker._submitRender(rtOpts);
-    this.worker._gpuPassesThisFrame++;
-    this._drawVolumesInLampMap(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
-    this.lampMapClear = false;
-    return true;
-  }
-
-  /**
-   * DX-LAMPPANO: the cards' geometry: the strip (aQuad: lampCardStrip) per vertex, and the sprite batch's instance
-   * attributes (this frame's stamp rows) per instance, as the columns' slots read them.
-   */
-  _lampCardGeometry(batch) {
-    const attributes = { aQuad: { buffer: this.lampStripBuffer, format: 'float32x2', stride: 8, offset: 0 } };
-    for (const [name, a] of Object.entries(batch.mesh.geometry.attributes)) {
-      if (name === 'aQuad') continue;
-      attributes[name] = { buffer: a.buffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
-    }
-    return new PIXI.Geometry({ attributes, indexBuffer: this.lampStripIndex });
-  }
-
-  /**
-   * DX-SHADOW3D (F7): each sun-projected volumes' layer drawn into the lamps' map, every tile in use in one draw (E-389):
-   * the batch's vertices and indices with an instance a tile (E-453; volumeShadowMap.js volumeLampVertex /
-   * volumeLampWgsl), each vertex landing on the floor along its tile's lamp's ray (the tiles' texture holds the lamps and
-   * their owners), its height out, the highest kept by the depth test. A mesh past an edge of a tile is left out in its
-   * vertices, and one of the tile's lamp's own entity. Last frame's records, as the sun map's volumes. A mesh a tile drew
-   * the same: about 47 draws and as many uniform syncs a frame in Predator ?light3d=1.
-   *
-   * E-508 (lighting.lampMapCache): a lamp still for a few frames, under volumes that held too, is drawn into the cache
-   * once (_paintLampCache) and copied into its tile each frame (_copyLampCache), after the cards and the columns as the
-   * volumes were; the others draw as before. The draws take their tiles from lists in the tiles' texture's row 2
-   * (lampVolumeCache.js), written here, after the map's layout is this frame's, and sent again.
-   */
-  _drawVolumesInLampMap(rtOpts) {
-    const shaders = this.worker._engineShaders;
-    const tiles = this.lampTileCount | 0;
-    if (tiles <= 0 || this.lampTileSource === null) return;
-    if (!(this.worker._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
-    VOLUME_LAMP_SCALES[0] = 1 / (this.worker._heightScaleY > 0 ? this.worker._heightScaleY : 1);
-    VOLUME_LAMP_SCALES[1] = this.worker._groundInvScaleY || 1;
-    // This frame's volumes' layers, in order; E-508: whether they, their records or their scales moved (the epoch).
-    const active = this.volumeLampActive;
-    let count = 0;
-    let indices = 0;
-    let moved = false;
-    for (let i = 0; i < this.worker.customLayers.list.length; i++) {
-      const cl = this.worker.customLayers.list[i];
-      const batch = cl.sunProjected ? cl.uvFillBatch : null;
-      // instanceCount 1: the batch has triangles (MeshUvFillBatch.upload).
-      if (batch === null || (batch.geometry.instanceCount | 0) <= 0) continue;
-      let entry = null;
-      for (let k = 0; k < this.volumeLampEntries.length; k++) {
-        if (this.volumeLampEntries[k].batch === batch) entry = this.volumeLampEntries[k];
-      }
-      if (entry === null) {
-        entry = this._volumeLampEntry(batch);
-        this.volumeLampEntries.push(entry);
-      }
-      if (count >= active.length) active.push(entry);
-      if (active[count] !== entry) {
-        active[count] = entry;
-        moved = true;
-      }
-      count++;
-      indices += batch.indexCount;
-      if (entry.version !== batch.version) {
-        entry.version = batch.version;
-        moved = true;
-      }
-    }
-    if (count !== this.volumeLampActiveCount) {
-      this.volumeLampActiveCount = count;
-      moved = true;
-    }
-    if (count === 0) return;
-    const scales = this.lampVolumeScales;
-    if (scales[0] !== VOLUME_LAMP_SCALES[0] || scales[1] !== VOLUME_LAMP_SCALES[1]) {
-      scales[0] = VOLUME_LAMP_SCALES[0];
-      scales[1] = VOLUME_LAMP_SCALES[1];
-      moved = true;
-    }
-    if (moved) this.lampVolumesEpoch = (this.lampVolumesEpoch + 1) | 0;
-    const data = this.lampTileData;
-    const width = data.length / (4 * LAMP_TILE_ROWS);
-    const perRow = this.lampTilesPerRow;
-    let direct = tiles;
-    let cached = 0;
-    let paint = false;
-    // E-508: only volumes heavy enough for their lamps' tiles (lampCachePays): a copy writes every texel of the half.
-    const pays = lampCachePays(indices, this.worker._lampTileSize);
-    if (this.worker._lampCacheOn && pays && this._ensureLampCache(this.lampMapLights | 0, this.worker._lampTileSize)) {
-      const plan = planLampVolumeCache(
-        this.lampCache, this.lampTileIds, data, width, tiles, perRow, this.lampCacheSlots, this.lampCachePerRow,
-        this.lampVolumesEpoch,
-      );
-      direct = plan.direct;
-      cached = plan.cached;
-      paint = plan.paint;
-    } else {
-      writeDirectLampList(data, width, tiles, perRow);
-    }
-    this._uploadLampTiles();
-    rtOpts.clear = false;
-    if (direct > 0) {
-      for (let k = 0; k < count; k++) {
-        const entry = active[k];
-        this._drawVolumeLampMesh(entry.batch, entry.mesh, entry.host, entry.geometry, direct, 0, rtOpts);
-      }
-    }
-    if (paint) this._paintLampCache(active, count, cached, direct, rtOpts);
-    if (cached > 0) this._copyLampCache(cached, direct, rtOpts);
-  }
-
-  /** One volumes' mesh into the target in rtOpts: `instances` entries of the draws' list from `listStart`. */
-  _drawVolumeLampMesh(batch, mesh, host, geometry, instances, listStart, rtOpts) {
-    geometry.instanceCount = instances;
-    if (mesh.geometry !== geometry) mesh.geometry = geometry;
-    this._syncVolumeResources(mesh.shader, batch);
-    const group = mesh.shader.resources.sunShadow;
-    const u = group.uniforms;
-    if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, listStart, this.lampTilesPerRow, this.worker._lampTileSize, VOLUME_LAMP_SCALES)) {
-      group.update();
-    }
-    rtOpts.container = host;
-    this.worker._submitRender(rtOpts);
-    this.worker._gpuPassesThisFrame++;
-  }
-
-  /**
-   * E-508: the cache painted again, whole: each volumes' layer drawn for the `cached` lamps of the list (from
-   * `listStart`), each into its slot, the texel and its depth's bits (VOLUME_LAMP_CACHE_FRAGMENT), the first clearing it.
-   */
-  _paintLampCache(active, count, cached, listStart, rtOpts) {
-    const map = rtOpts.target;
-    rtOpts.target = this.lampCacheTarget;
-    for (let k = 0; k < count; k++) {
-      const entry = active[k];
-      rtOpts.clear = k === 0;
-      this._drawVolumeLampMesh(entry.batch, entry.paintMesh, entry.paintHost, entry.paintGeometry, cached, listStart, rtOpts);
-    }
-    rtOpts.clear = false;
-    rtOpts.target = map;
-  }
-
-  /**
-   * E-508: the cached lamps' slots copied into their tiles (`cached` entries of the list from `listStart`), each texel a
-   * volume drew with the depth it drew at, so the map's depth test keeps what drawing the volumes there would have.
-   */
-  _copyLampCache(cached, listStart, rtOpts) {
-    const copy = this._lampCacheCopyMesh();
-    copy.geometry.instanceCount = cached;
-    const v = copy.group.uniforms.uLampVolume;
-    if (v[0] !== listStart || v[1] !== this.lampTilesPerRow || v[2] !== this.worker._lampTileSize) {
-      v[0] = listStart;
-      v[1] = this.lampTilesPerRow;
-      v[2] = this.worker._lampTileSize;
-      v[3] = 0;
-      copy.group.update();
-    }
-    rtOpts.container = copy.host;
-    this.worker._submitRender(rtOpts);
-    this.worker._gpuPassesThisFrame++;
-  }
-
-  /**
-   * E-508: the cache's target, `slots` floor halves of `size` texels (lampCacheLayout), two colours (the texels, their
-   * depths' bits) and a depth buffer; made again when the slots or their size change (the epoch moves: nothing in it
-   * holds). False where it cannot be made (no RenderTarget class: the volumes then draw directly).
-   */
-  _ensureLampCache(slots, size) {
-    if (this.lampCacheTarget !== null && this.lampCacheSlots === slots && this.lampCacheSize === size) return true;
-    const RenderTargetClass = this.worker.pixiApp?.renderer?.view?.renderTarget?.constructor;
-    if (slots <= 0 || typeof RenderTargetClass !== 'function') return false;
-    const layout = lampCacheLayout(slots, size, 4096);
-    const opts = { width: layout.width, height: layout.height, scaleMode: 'nearest' };
-    const color = PIXI.RenderTexture.create(opts);
-    const depth = PIXI.RenderTexture.create(opts);
-    const target = new RenderTargetClass({ colorTextures: [color, depth], label: 'weed-lamp-volume-cache' });
-    if (typeof target.ensureDepthStencilTexture !== 'function') {
-      color.destroy(true);
-      depth.destroy(true);
-      this.worker._lampCacheOn = false;
-      return false;
-    }
-    target.ensureDepthStencilTexture();
-    const oldColor = this.lampCacheColor;
-    const oldDepth = this.lampCacheDepth;
-    this._releaseLampCacheTarget();
-    this.lampCacheTarget = target;
-    this.lampCacheColor = color;
-    this.lampCacheDepth = depth;
-    // The copy lets go of the old textures before they go (Pixi warns of a source destroyed while bound).
-    if (this.lampCacheCopy !== null) {
-      const res = this.lampCacheCopy.mesh.shader.resources;
-      res.uCacheColor = color.source;
-      res.uCacheDepth = depth.source;
-    }
-    if (oldColor) oldColor.destroy(true);
-    if (oldDepth) oldDepth.destroy(true);
-    this.lampCacheSlots = slots;
-    this.lampCacheSize = size;
-    this.lampCachePerRow = layout.perRow;
-    this.lampVolumesEpoch = (this.lampVolumesEpoch + 1) | 0;
-    return true;
-  }
-
-  /** E-508: the cache's target's GPU side, through the render target system's records (_releaseGbufTarget says why). */
-  _releaseLampCacheTarget() {
-    const target = this.lampCacheTarget;
-    if (target === null) return;
-    this.lampCacheTarget = null;
-    const system = this.worker.pixiApp?.renderer?.renderTarget;
-    const gpuTargets = system ? system._gpuRenderTargetHash : null;
-    const gpu = gpuTargets ? gpuTargets[target.uid] : null;
-    if (gpu && system.adaptor && typeof system.adaptor.destroyGpuRenderTarget === 'function') {
-      gpuTargets[target.uid] = null;
-      system.adaptor.destroyGpuRenderTarget(gpu);
-    }
-    if (system && system._renderSurfaceToRenderTargetHash) system._renderSurfaceToRenderTargetHash.delete(target);
-    if (typeof target.destroy === 'function') target.destroy();
-  }
-
-  /** E-508: the cache's copy's program as a Shader's options (volumeShadowMap.js LAMP_CACHE_COPY_*). */
-  lampCacheCopyProgram() {
-    if (this.worker._useWebGpu) return { gpuProgram: lampCacheCopyGpuProgram(GpuProgram, 'lamp-map-volume-copy') };
-    return {
-      glProgram: PIXI.GlProgram.from({
-        vertex: LAMP_CACHE_COPY_VERTEX,
-        fragment: LAMP_CACHE_COPY_FRAGMENT,
-        name: 'lamp-map-volume-copy',
-      }),
-    };
-  }
-
-  /**
-   * E-508: the copy's mesh (made once): a quad an instance (a cached lamp), its program (volumeShadowMap.js
-   * LAMP_CACHE_COPY_*), the tiles' texture, the cache's two colours and its terms (lampCopy: uLampVolume), the depth test
-   * and write of the map's other draws.
-   */
-  _lampCacheCopyMesh() {
-    if (this.lampCacheCopy !== null) return this.lampCacheCopy;
-    const program = this.lampCacheCopyProgram();
-    const quad = new Buffer({ data: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), usage: BufferUsage.VERTEX, label: 'lamp-cache-quad' });
-    const geometry = new PIXI.Geometry({
-      attributes: { aPosition: { buffer: quad, format: 'float32x2', stride: 8, offset: 0 } },
-      indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
-    });
-    geometry.instanceCount = 0;
-    const shader = new PIXI.Shader({
-      ...program,
-      resources: {
-        uLampTiles: this.lampTileSource,
-        uCacheColor: this.lampCacheColor.source,
-        uCacheDepth: this.lampCacheDepth.source,
-        lampCopy: { uLampVolume: { value: new Float32Array(4), type: 'vec4<f32>' } },
-      },
-    });
-    const mesh = new PIXI.Mesh({ geometry, shader, state: mapDepthState(), label: 'lamp-map-volume-copy' });
-    mesh.blendMode = 'none';
-    const host = new PIXI.Container();
-    host.addChild(mesh);
-    this.lampCacheCopy = { mesh, host, geometry, group: shader.resources.lampCopy };
-    return this.lampCacheCopy;
-  }
-
-  /**
-   * E-389, E-453: the lamps' map volumes' geometry: the batch's vertex attributes and its index buffer (the same buffers:
-   * what the batch's last upload sent), drawn with an instance an entry of the draw's list (E-508). Two a batch, the
-   * direct draw's and the cache's paint's: the frame sets each one's instanceCount.
-   */
-  _volumeLampGeometry(batch) {
-    const attributes = {};
-    for (const [name, a] of Object.entries(batch.geometry.attributes)) {
-      attributes[name] = { buffer: a.buffer, format: a.format, stride: a.stride, offset: a.offset };
-    }
-    const geometry = new PIXI.Geometry({ attributes, indexBuffer: batch.indexBuffer });
-    geometry.instanceCount = 0;
-    return geometry;
-  }
-
-  /**
-   * DX-SHADOW3D (F7): a volumes' batch's entry in the lamps' map: one mesh, its own terms (sunShadow: uSunShadow, then
-   * uLampVolume, the WGSL struct's order), in its own host, over its geometry (_volumeLampGeometry). E-508: and its twin
-   * for the cache's paint (its program writes two colours), and the batch's version the cache last saw.
-   */
-  _volumeLampEntry(batch) {
-    const host = new PIXI.Container();
-    const geometry = this._volumeLampGeometry(batch);
-    const paintHost = new PIXI.Container();
-    const paintGeometry = this._volumeLampGeometry(batch);
-    return {
-      batch,
-      host,
-      mesh: this._volumeLampMesh(batch, host, geometry, false),
-      geometry,
-      paintHost,
-      paintMesh: this._volumeLampMesh(batch, paintHost, paintGeometry, true),
-      paintGeometry,
-      version: -1,
-    };
-  }
-
-  /**
-   * DX-SHADOW3D (F7): the mesh over a volumes' batch in the lamps' map, with its terms, in `host`; E-508: `cache`, the
-   * cache's paint's (two colours). The programs and state are made once.
-   */
-  _volumeLampMesh(batch, host, geometry, cache) {
-    this.makeVolumeLampPrograms();
-    const r = batch.shader.resources;
-    const shader = new PIXI.Shader({
-      ...(cache ? this.volumeLampCacheProgram : this.volumeLampProgram),
-      resources: {
-        uTexture: r.uTexture,
-        uSampler: r.uSampler,
-        uTexLut: r.uTexLut,
-        uPoseTable: r.uPoseTable,
-        uLampTiles: this.lampTileSource,
-        // No tile in use until the frame writes this mesh's terms (writeVolumeLampTerms).
-        sunShadow: {
-          uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
-          uLampVolume: { value: new Float32Array(4), type: 'vec4<f32>' },
-        },
-      },
-    });
-    const label = cache ? 'lamp-map-volume-cache' : 'lamp-map-volumes';
-    const mesh = new PIXI.Mesh({ geometry, shader, state: this.volumeLampState, label });
-    // A depth test keeps the highest point and its entity; a mesh's blend mode holds only as a child (the sun map's host
-    // says why).
-    mesh.blendMode = 'none';
-    host.addChild(mesh);
-    return mesh;
-  }
-
-  /** DX-SHADOW3D (F7), E-508: the lamps' map volumes' programs (direct, and the cache's paint) and their state, made once. */
-  makeVolumeLampPrograms() {
-    if (this.volumeLampProgram === null) {
-      const shaders = this.worker._engineShaders;
-      this.volumeLampProgram = this.worker._useWebGpu
-        ? {
-            gpuProgram: volumeMapGpuProgram(GpuProgram, volumeLampWgsl(shaders.meshUvFill), 'mainFragLamp', 'lamp-map-volumes', {
-              lampTiles: true,
-            }),
-          }
-        : {
-            glProgram: PIXI.GlProgram.from({
-              vertex: volumeLampVertex(shaders.meshUvFillVert),
-              fragment: VOLUME_LAMP_FRAGMENT,
-              name: 'lamp-map-volumes',
-            }),
-          };
-      this.volumeLampCacheProgram = this.worker._useWebGpu
-        ? {
-            gpuProgram: volumeMapGpuProgram(GpuProgram, volumeLampWgsl(shaders.meshUvFill), 'mainFragLampCache', 'lamp-map-volume-cache', {
-              lampTiles: true,
-            }),
-          }
-        : {
-            glProgram: PIXI.GlProgram.from({
-              vertex: volumeLampVertex(shaders.meshUvFillVert),
-              fragment: VOLUME_LAMP_CACHE_FRAGMENT,
-              name: 'lamp-map-volume-cache',
-            }),
-          };
-      this.volumeLampState = mapDepthState();
-    }
-  }
-
-  /** DX-SHADOW3D (F7): a frame with no stamp rows clears the lamps' map (once). */
-  _clearLampMapIfEmpty() {
-    if (!this.worker.lighting.lampMapRT || this.lampMapClear === true) return;
-    const rtOpts = this.worker._rtRenderOpts;
-    rtOpts.container = this.worker._rtEmptyContainer;
-    rtOpts.target = this.worker.lighting.lampMapRT;
-    rtOpts.clear = true;
-    rtOpts.clearColor = this.worker._clearTransparent;
-    this.worker._submitRender(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
-    this.lampMapClear = true;
-  }
-
-  /**
    * E-395: a columns pass over keyed caster rows (`kind` 'sun': the sun's map, 'lamp': the lamps' map), made on first use
    * and kept: the columns programs composed over spriteIndexed's keyed rows (statics by key) on either backend, the full
    * columns' resources and uniform groups, grid and state, and the caster batch's keyed geometry as the rows' layout.
@@ -1816,7 +903,7 @@ export class PixiShadowMaps {
   _keyedColumnsFor(kind, batch) {
     const key = kind === 'sun' ? 'sunMapKeyedColumns' : 'lampMapKeyedColumns';
     if (this[key] !== null) return this[key];
-    const full = kind === 'sun' ? this.sunMapColumns : this.lampMapColumns;
+    const full = kind === 'sun' ? this.sunMapColumns : this.worker.lampMap.columns;
     const entities = this.worker.entitiesBatch;
     const shaders = this.worker._engineShaders;
     if (!full || !entities || !entities.keyed) return null;
@@ -1842,11 +929,11 @@ export class PixiShadowMaps {
       uMaps: this.worker.assets.atlasMapsSource ?? this.worker.lighting.emptyMapsSource(),
       uMapsLut: this.worker.assets.mapsTableSourceOrEmpty(),
       uFoot: this.worker.assets.footSourceOrEmpty(),
-      ...(lamp ? { uLampTiles: this.lampTileSource } : {}),
+      ...(lamp ? { uLampTiles: this.worker.lampMap.tileSource } : {}),
       uniforms,
     });
-    const shader = entities.makeKeyedRowsShader(program, resources(lamp ? this.lampMapUniforms : this.sunMapUniforms));
-    const shaderCeil = lamp ? entities.makeKeyedRowsShader(program, resources(this.lampMapUniformsCeil)) : null;
+    const shader = entities.makeKeyedRowsShader(program, resources(lamp ? this.worker.lampMap.uniforms : this.sunMapUniforms));
+    const shaderCeil = lamp ? entities.makeKeyedRowsShader(program, resources(this.worker.lampMap.uniformsCeil)) : null;
     if (shader === null || (lamp && shaderCeil === null)) return null;
     const floats = lamp ? GPU_KEYED_STAMP_FLOATS : GPU_KEYED_CASTER_FLOATS;
     this[key] = {
@@ -1983,7 +1070,7 @@ export class PixiShadowMaps {
    */
   pointFootPrograms() {
     const source = this.worker.assets.footSource;
-    const holders = [this.sunSolids && this.sunSolids.columns, this.sunMapColumns, this.lampMapColumns];
+    const holders = [this.sunSolids && this.sunSolids.columns, this.sunMapColumns, this.worker.lampMap.columns];
     for (let i = 0; i < holders.length; i++) {
       const c = holders[i];
       if (c && c.shader && c.shader.resources.uFoot !== source) c.shader.resources.uFoot = source;
@@ -1994,7 +1081,7 @@ export class PixiShadowMaps {
   /** E-496: every program that binds the maps table (uMapsLut) on the current source: the columns', the entities'. */
   pointMapsTablePrograms() {
     const source = this.worker.assets.mapsTableSource;
-    const holders = [this.sunSolids && this.sunSolids.columns, this.sunMapColumns, this.lampMapColumns];
+    const holders = [this.sunSolids && this.sunSolids.columns, this.sunMapColumns, this.worker.lampMap.columns];
     for (let i = 0; i < holders.length; i++) {
       const c = holders[i];
       if (c && c.shader && c.shader.resources.uMapsLut !== undefined) c.shader.resources.uMapsLut = source;

@@ -340,7 +340,7 @@ export class PixiLighting {
       lightingResources.uniforms.uSelfShadow = { value: new Float32Array([4, 6, 3, 0]), type: 'vec4<f32>' };
     }
     if (this.worker._lampMapOn) {
-      // DX-SHADOW3D (F7): the lamps' map and its layout (_ensureLampMap binds the atlas once it is made).
+      // DX-SHADOW3D (F7): the lamps' map and its layout (lampMap.js _ensureMap binds the atlas once it is made).
       lightingResources.uniforms.uLampAtlas = { value: this.lampAtlas, type: 'vec4<f32>' };
       lightingResources.uLampMap = this.lampMapRT ? this.lampMapRT.source : PIXI.Texture.EMPTY.source;
     }
@@ -476,7 +476,7 @@ export class PixiLighting {
   updateLighting() {
     if (!this.worker.lightingEnabled || !this.lightingShader) return;
     // DX-SHADOW3D (F7): which lamps have a tile in the lamps' map this frame, before their texels are packed.
-    if (this.worker._lampMapOn) this.worker.shadowMaps.readLampTiles();
+    if (this.worker._lampMapOn) this.worker.lampMap.readTiles();
 
     const uniformGroup = this.lightingShader.resources.uniforms;
 

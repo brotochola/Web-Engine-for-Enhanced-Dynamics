@@ -62,8 +62,8 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   // A caster stamped for it (OL-5: without a stamp row or a volume a lamp takes no tile).
   gpu.header[GPU_HDR_STAMP] = 1;
   px._gpuQueueRead = gpu;
-  px.shadowMaps._uploadLampTiles = () => {};
-  px.shadowMaps.readLampTiles();
+  px.lampMap._uploadTiles = () => {};
+  px.lampMap.readTiles();
   assert.equal(px.lighting.lampTileOf[1], 0);
   assert.equal(px.lighting.lampFadeOf[1], 0.25);
   assert.equal(px.lighting.lampFadeOf[0], 1);
@@ -86,7 +86,7 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
 
   // The next frame, the lamp out of the cut's band: back to 1.
   gpu.stampLightFade[0] = 1;
-  px.shadowMaps.readLampTiles();
+  px.lampMap.readTiles();
   px.lighting.updateLighting();
   assert.equal(d[MAX_LIGHTS * 12 + lamp * 4], 1);
 });
@@ -101,12 +101,12 @@ test('N-212: a light that loses its tile goes back to fade 1', async () => {
   gpu.header[GPU_HDR_STAMP_LIGHTS] = 1;
   gpu.header[GPU_HDR_STAMP] = 1;
   px._gpuQueueRead = gpu;
-  px.shadowMaps._uploadLampTiles = () => {};
-  px.shadowMaps.readLampTiles();
+  px.lampMap._uploadTiles = () => {};
+  px.lampMap.readTiles();
   assert.equal(px.lighting.lampFadeOf[1], 0.5);
   gpu.stampLightIds[0] = 0;
   gpu.stampLightFade[0] = 0.75;
-  px.shadowMaps.readLampTiles();
+  px.lampMap.readTiles();
   assert.equal(px.lighting.lampTileOf[1], -1);
   assert.equal(px.lighting.lampFadeOf[1], 1);
   assert.equal(px.lighting.lampFadeOf[0], 0.75);

@@ -69,7 +69,7 @@ test('castedShadows hidden in map mode: the sun and lamp maps cleared once, draw
     // What a drawn frame leaves: the maps hold shadows again.
     this.sunMapDrew = true;
     this.sunMapClear = false;
-    this.lampMapClear = false;
+    px.lampMap.mapClear = false;
   };
   const layers = withLayers(['castedShadows']);
   try {
@@ -104,10 +104,10 @@ async function shadowPass(counts) {
   px.lighting.lampMapRT = { name: 'lampMap' };
   px._lampMapOn = true;
   px._sunMapOn = false;
-  px.shadowMaps.lampTileCount = 0;
+  px.lampMap.tileCount = 0;
   px.shadowMaps._ensureKeyedCasters = () => {};
   px.lighting.shadowPixelScale = () => 1;
-  px.shadowMaps._drawLampMap = (batch, gpu, n) => { lampDraws.push(n); return true; };
+  px.lampMap.draw = (batch, gpu, n) => { lampDraws.push(n); return true; };
   return { px, lampDraws };
 }
 

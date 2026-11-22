@@ -174,6 +174,7 @@ import { PixiMeshLayers, emptyInstancedMesh } from '../render/pixi/meshLayers.js
 import { PixiCustomLayers } from '../render/pixi/customLayers.js';
 import { PixiGlowLayer } from '../render/pixi/glowLayer.js';
 import { PixiShadowMaps } from '../render/pixi/shadowMaps.js';
+import { PixiLampMap } from '../render/pixi/lampMap.js';
 import { PixiLighting } from '../render/pixi/lighting.js';
 import { PixiDecalTiles } from '../render/pixi/decalTiles.js';
 import { PixiScreenLayers } from '../render/pixi/screenLayers.js';
@@ -328,6 +329,8 @@ class PixiRenderer extends AbstractWorker {
     this._pixiKeyed = null;
     // N-256 PW-8: the sun's and the lamps' shadow maps and the casters' passes (src/render/pixi/shadowMaps.js).
     this.shadowMaps = new PixiShadowMaps(this);
+    // N-256: the lamps' shadow map, its tiles, passes and volumes' cache (src/render/pixi/lampMap.js).
+    this.lampMap = new PixiLampMap(this);
     this._keyedRowsRefusedWarned = false;
     // The statics scatter's GL objects (_scatterStaticsGl), made on its first call.
     this._staticsScatterGl = null;
@@ -3608,10 +3611,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this.shadowMaps.sunShadowProgram('cards');
         this.shadowMaps.sunShadowProgram('columns');
       }
-      // DX-SHADOW3D (F7): the lamps' map's cards and columns (_drawLampMap).
+      // DX-SHADOW3D (F7): the lamps' map's cards and columns (lampMap.js draw).
       if (this._lampMapOn) {
-        this.shadowMaps.lampMapProgram(false);
-        this.shadowMaps.lampMapProgram(true);
+        this.lampMap.mapProgram(false);
+        this.lampMap.mapProgram(true);
       }
       // E-191: the sun pass over the entities' keyed instances (_keyedSunFor) and over pre-render's keyed caster rows
       // (_ensureKeyedCasters), where those can run.
@@ -3623,15 +3626,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     // E-453: a MESH layer's UV meshes (_ensureMeshUvBatch: one program for every layer's batch, the first layer's name);
     // DX-SHADOW3D: a sun-projected layer's volumes in the sun's map and the lamps' (_drawVolumesInSunMap,
-    // _drawVolumesInLampMap), E-508: the lamps' cache's copy.
+    // lampMap.js _drawVolumes), E-508: the lamps' cache's copy.
     const uvLayers = this.customLayers.list.filter((cl) => (cl.uvVertCapacity | 0) > 0 && (cl.uvIndexCapacity | 0) >= 3);
     if (uvLayers.length > 0 && shaders.meshUvFillVert && shaders.meshUvFillFrag) {
       meshUvFillProgram(false, shaders, `mesh-uv-${uvLayers[0].layerId}`);
       if (casters && uvLayers.some((cl) => cl.sunProjected)) {
         if (this._sunMapOn) this.shadowMaps.sunMapVolumeProgram();
         if (this._lampMapOn) {
-          this.shadowMaps.makeVolumeLampPrograms();
-          if (this._lampCacheOn) this.shadowMaps.lampCacheCopyProgram();
+          this.lampMap.makeVolumePrograms();
+          if (this._lampCacheOn) this.lampMap.cacheCopyProgram();
         }
       }
     }

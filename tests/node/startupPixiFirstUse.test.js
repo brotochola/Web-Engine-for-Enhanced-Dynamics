@@ -75,19 +75,19 @@ test("a lit scene's maps, volumes and UV meshes: their programs made at init, an
 
   // The passes, on their first draw, make their programs by the same calls: each gets the one made at init.
   const later = programsMadeBy(() => {
-    assert.ok(made.includes(px.shadowMaps.lampMapProgram(false).glProgram), "the lamps' cards");
-    assert.ok(made.includes(px.shadowMaps.lampMapProgram(true).glProgram), "the lamps' columns");
+    assert.ok(made.includes(px.lampMap.mapProgram(false).glProgram), "the lamps' cards");
+    assert.ok(made.includes(px.lampMap.mapProgram(true).glProgram), "the lamps' columns");
     assert.ok(made.includes(px.shadowMaps.sunShadowProgram('map').glProgram), "the sun's map");
     assert.ok(made.includes(px.shadowMaps.sunShadowProgram('mapColumns').glProgram), "the sun's map columns");
     assert.ok(made.includes(px.shadowMaps.sunMapVolumeProgram().glProgram), "the sun map's volumes");
-    assert.ok(made.includes(px.shadowMaps.lampCacheCopyProgram().glProgram), "the lamps' cache copy");
+    assert.ok(made.includes(px.lampMap.cacheCopyProgram().glProgram), "the lamps' cache copy");
     assert.ok(made.includes(meshUvFillProgram(false, px._engineShaders, 'mesh-uv-9').glProgram), 'any layer\'s UV mesh');
   });
   assert.equal(later.length, 0, 'no program made after init');
   // The volumes' programs are made once and kept.
-  const volumes = px.shadowMaps.volumeLampProgram.glProgram;
-  px.shadowMaps.makeVolumeLampPrograms();
-  assert.equal(px.shadowMaps.volumeLampProgram.glProgram, volumes);
+  const volumes = px.lampMap.volumeProgram.glProgram;
+  px.lampMap.makeVolumePrograms();
+  assert.equal(px.lampMap.volumeProgram.glProgram, volumes);
   assert.ok(made.includes(volumes));
 });
 
