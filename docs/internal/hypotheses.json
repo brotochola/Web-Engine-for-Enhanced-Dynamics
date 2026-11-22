@@ -24029,7 +24029,8 @@
         "R-1772",
         "R-1773",
         "R-1774",
-        "R-1775"
+        "R-1775",
+        "R-1844"
       ]
     },
     {
@@ -42383,6 +42384,15 @@
       "commits": [
         "e466a44d"
       ]
+    },
+    {
+      "id": "R-1844",
+      "date": "2026-11-22",
+      "time": "07:50",
+      "timeFrom": "recorded",
+      "title": "Predator gate over the ASUS's batch 9 (CR-26/30/32) and CR-18 parts 3-5 (a66f2a63 -> 56ab3fae), owner logic, 8 pairs: NEUTRAL, logic +1.2 %; renderer +6.6 % inside its swing (watch the next gate)",
+      "verdict": "kept-hygiene",
+      "text": "**The ASUS's batch 9 (N-303 CR-26: one QuerySystem, CR-30: draw-call counting only with detailed stats, CR-32: Pixi's literals hold their fields) and the main PC's CR-18 parts 3-5 (_ringBuffers and dummyLutSource, renderStep.js, pixiGroupsLayout in 16 programs) pass Predator: NEUTRAL.** batch10-gate, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, a66f2a63 -> 56ab3fae (dist built), owner logic (CR-26 is on its query path), 8 pairs from the start (the last two gates needed them), 07:44 to 07:50:\n\n- logic 14.953 -> 15.004 ms (+1.2 %, worse 5/8, cv 2/2 %); spatial +2.5 %, physics +2.1 %, preRender +0.3 %.\n- renderer 6.751 -> 6.844 ms (+6.6 %, worse 5/8, cv 10/10 %, +5.8 % against the others): inside this scene's renderer swing (about ±10 % from sitting to sitting, R-1826), and every CR-18 part read byte-for-byte equal in captures; if the next gate reads the renderer up again, bisect CR-18 parts 3-5 against CR-30/CR-32.\n- Load keys within 0.9 %.\n\nKept as hygiene."
     }
   ],
   "leads": [
