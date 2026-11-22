@@ -270,6 +270,11 @@ function setDisplayVisible(obj, on) {
   obj.visible = !!on && !emptyInstancedMesh(obj);
 }
 
+/**
+ * A sprite queue's columns as a pack reads them (_bindSpriteQueue fills it each frame), every field there from the start
+ * (N-303 CR-32: type, sortKey, the shadow terms and key were added on the first frame, a new map for every function that
+ * had seen the object).
+ */
 function makeBatchViews() {
   return {
     count: 0,
@@ -280,6 +285,7 @@ function makeBatchViews() {
     rotC: null,
     rotS: null,
     alpha: null,
+    type: null,
     tint: null,
     textureId: null,
     anchorX: null,
@@ -291,8 +297,13 @@ function makeBatchViews() {
     tileOffsetV: null,
     tileMulX: null,
     tileMulY: null,
+    sortKey: null,
+    shadowH: null,
+    shadowOffX: null,
+    shadowOffY: null,
     // E-82: the queue's staticGen column, or null (a queue whose statics are not counted).
     staticGen: null,
+    key: null,
   };
 }
 
@@ -1172,6 +1183,8 @@ class PixiRenderer extends AbstractWorker {
       prevPoseY: null,
       prevPoseRotC: null,
       prevPoseRotS: null,
+      // The frame's interpolation alpha (a fraction from the start: CR-32).
+      poseAlpha: NaN,
     };
     this._computeFrame = {
       dt: 0,
@@ -1889,7 +1902,7 @@ class PixiRenderer extends AbstractWorker {
 
   _bindRenderQueueTo(q, count) {
     let src = this._renderQueueBindSrc;
-    if (!src) src = this._renderQueueBindSrc = {};
+    if (!src) src = this._renderQueueBindSrc = makeBatchViews();
     src.x = this.renderQueueX;
     src.y = this.renderQueueY;
     src.scaleX = this.renderQueueScaleX;
@@ -11230,6 +11243,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             // Rows changed while a sunProjected layer showed nothing: its RT is old when the sun comes back.
             rtStale: false,
             uvLocalsReady: false,
+            // Set later each frame (CR-32: there from the start): the fill's locals packed, and the RT pass skipped.
+            localsReady: false,
+            _skipRt: false,
           };
           if (cl.meshRegion) this._bindMeshSkipRegions(skip, cl.meshRegion);
         }
