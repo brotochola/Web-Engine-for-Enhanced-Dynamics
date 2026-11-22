@@ -37,11 +37,12 @@ export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
  * DX-SHADOW3D: the sun map's programs and the renders' solids (sunShadowMap.js sunMapWgsl / sunMapColumnsWgsl): the
  * shadow program's bindings, the atlas readable from the vertex stage (a column reads its cell's alpha there) and, with
  * `maps`, the atlas's twin page as binding 5 (a column's height); with `lampTiles` (F7, the lamps' map, lampShadowMap.js)
- * the tiles' lamps as binding 6.
+ * the tiles' lamps as binding 6; with `statics` (E-395, a map over keyed caster rows, spriteIndexedWgsl) the statics as
+ * binding 4, a read-only storage buffer.
  * @param {string} fragEntry 'mainFragMap' (the map: the height), 'mainFragLamp' (the lamps' map) or 'mainFrag' (the
  *   shadows' layer)
  */
-export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps = false, lampTiles = false } = {}) {
+export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps = false, lampTiles = false, statics = false } = {}) {
   if (!source) {
     throw new Error('WeedJS: Shadow sprite WGSL was not loaded before GpuProgram creation.');
   }
@@ -56,6 +57,7 @@ export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps 
     group2.uMapsLut = MAPS_TABLE_BINDING;
   }
   if (lampTiles) group2.uLampTiles = 6;
+  if (statics) group2.uStatics = 4;
   return GpuProgram.from({
     name,
     vertex: { source, entryPoint: 'mainVert' },
@@ -77,6 +79,7 @@ export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps 
           texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false },
         },
         { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
+        ...(statics ? [{ binding: 4, visibility: vf, buffer: { type: 'read-only-storage' } }] : []),
         ...(maps
           ? [{ binding: 5, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
           : []),
