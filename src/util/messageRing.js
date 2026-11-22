@@ -11,6 +11,8 @@
  * No allocation on push or drain.
  */
 
+import { spinPause } from './spinPause.js';
+
 export const MESSAGE_HDR_WRITE = 0;
 export const MESSAGE_HDR_READ = 1;
 export const MESSAGE_HDR_CAP = 2;
@@ -47,6 +49,7 @@ export function pushMessage(i32, f64, target, from, nameId, gen, a, b, c, d) {
     // Slot free once the consumer of the previous lap stored read + cap.
     while (Atomics.load(i32, base) !== write) {
       /* a slower peer or the previous lap's consumer */
+      spinPause();
     }
     i32[base + 1] = target;
     i32[base + 2] = from;

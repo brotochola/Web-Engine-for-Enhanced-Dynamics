@@ -29,6 +29,7 @@ import {
 } from '../util/atomicFreeList.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { poolSlotWide } from '../util/poolSlotWidth.js';
+import { spinPause } from '../util/spinPause.js';
 
 /**
  * Base class for atomic object pools backed by SharedArrayBuffer.
@@ -65,6 +66,7 @@ export class SharedAtomicPool {
         if (!lockView) return;
         while (Atomics.compareExchange(lockView, 0, 0, 1) !== 0) {
             // Joint add/remove is rare, so a short spin lock is acceptable here.
+            spinPause();
         }
     }
 

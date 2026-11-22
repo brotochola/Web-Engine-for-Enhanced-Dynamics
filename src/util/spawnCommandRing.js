@@ -22,6 +22,8 @@
  * returns false; callers escape to the existing postMessage spawn/despawn.
  */
 
+import { spinPause } from './spinPause.js';
+
 export const SPAWN_CMD_KIND = Object.freeze({
   SPAWN: 1,
   DESPAWN: 2,
@@ -94,6 +96,7 @@ function tryPush(kind, typeId, entityIndex, x, y, owner) {
     const base = SPAWN_CMD_HEADER_I32 + (write % cap) * SPAWN_CMD_STRIDE_I32;
     while (Atomics.load(ringI32, base) !== write) {
       /* wait prior lap consumer / slower peer publish */
+      spinPause();
     }
     ringI32[base + 1] = kind | 0;
     ringI32[base + 2] = typeId | 0;

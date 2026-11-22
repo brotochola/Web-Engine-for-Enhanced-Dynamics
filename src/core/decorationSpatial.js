@@ -5,6 +5,7 @@
 
 import { DecorationComponent } from '../components/decorationComponent.js';
 import { PoolSlotArray, poolSlotNone } from '../util/poolSlotWidth.js';
+import { spinPause } from '../util/spinPause.js';
 
 const NOT_IN_GRID = -1;
 
@@ -104,7 +105,7 @@ export class DecorationSpatial {
     const lock = this._lock;
     if (!lock) return;
     while (Atomics.compareExchange(lock, 0, 0, 1) !== 0) {
-      /* spin */
+      spinPause();
     }
   }
 

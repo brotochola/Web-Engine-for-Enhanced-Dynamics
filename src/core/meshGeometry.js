@@ -10,6 +10,8 @@
 // that binds the arena derives the width from the same maxVerts (meshIndexWidth), once; the code that reads
 // the columns is the same for both widths.
 
+import { spinPause } from '../util/spinPause.js';
+
 export const MESH_INDEX_WIDTH_16 = 16;
 export const MESH_INDEX_WIDTH_32 = 32;
 /** The largest vertex arena with 16-bit counts and indices, and the most vertices one mesh has there. */
@@ -335,6 +337,7 @@ export class MeshGeometry {
     if (!lock) return false;
     while (Atomics.compareExchange(lock, 0, 0, 1) !== 0) {
       // setMesh is rare. Same short spin as Joint add/remove.
+      spinPause();
     }
     return true;
   }
