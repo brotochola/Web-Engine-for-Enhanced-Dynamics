@@ -16,8 +16,6 @@
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/poseInterpPackMicrobench.mjs --variants js,wasm --rounds 5
  *   node tests/bench/poseInterpPackMicrobench.mjs --variant wasm [--case pose|both] [--n 250000] [--check] [--output path]
  */
-import fs from 'node:fs';
-import path from 'node:path';
 
 import {
   BATCH_SPACE,
@@ -29,12 +27,12 @@ import { bindGpuPack, packPoseRowsWasm } from '../../src/render/gpuPackClient.js
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
+import { readEngineShader } from '../node/engineShaderSources.mjs';
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 
-const shaderDir = path.resolve(import.meta.dirname, '../../src/shaders');
-const read = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
+const read = readEngineShader;
 
 /** A queue, its previous x and y, the kernel and a pose batch on one memory, bunnyMark's way. */
 export async function setupPoseKernel({ n = 250000, seed = 0xb0ee5 } = {}) {

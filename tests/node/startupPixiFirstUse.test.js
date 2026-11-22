@@ -5,14 +5,12 @@
 // with is left out of the links.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { GlProgram, Shader, Texture } from '../../src/vendor/pixi.min.js';
 import { InstancedSpriteBatch } from '../../src/render/instancedSpriteBatch.js';
 import { meshUvFillProgram } from '../../src/render/meshUvFillBatch.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { readEngineShader, spriteGlslShaders } from './engineShaderSources.mjs';
 
 // GlProgram probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.OffscreenCanvas ??= class {
@@ -21,13 +19,9 @@ globalThis.OffscreenCanvas ??= class {
   }
 };
 
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const readShader = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
+const readShader = readEngineShader;
 const GL_SHADERS = {
-  spriteVert: readShader('instancedSprite.vert.glsl'),
-  spriteVertPose: readShader('instancedSpritePose.vert.glsl'),
-  spriteFrag: readShader('instancedSprite.frag.glsl'),
-  spriteFragAdd: readShader('instancedSpriteAdditive.frag.glsl'),
+  ...spriteGlslShaders(),
   shadowVert: readShader('instancedSpriteShadow.vert.glsl'),
   sunMapFrag: readShader('sunShadowMap.frag.glsl'),
   faceFrag: readShader('faceMap.frag.glsl'),

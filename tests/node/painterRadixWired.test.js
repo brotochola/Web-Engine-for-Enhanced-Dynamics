@@ -11,9 +11,6 @@
 // sprite order and the glow order must be the JS painter's, and each packed row the queue row at its slot.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
@@ -33,6 +30,7 @@ import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { coreComponentData, emitSpec, emitSpriteBuffers, initWorker, loadWorker, quietly } from '../bench/workerHarness.mjs';
 import { createPainterState, orderPainterSlots, radixSortIndicesBySortKey } from '../reference/painterJs.mjs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const MAX = 6000;
 const FRAMES = 36;
@@ -438,8 +436,7 @@ test('pre-render told to sort on a memory without its painter state has no paint
 
 // Pixi runs on the WebGPU program path, which builds in Node (the GL one probes a canvas); with no renderer,
 // its uploads stop before the GPU.
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const readShader = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
+const readShader = readEngineShader;
 const GPU_SHADERS = {
   sprite: readShader('instancedSprite.wgsl'),
   spritePose: readShader('instancedSpritePose.wgsl'),

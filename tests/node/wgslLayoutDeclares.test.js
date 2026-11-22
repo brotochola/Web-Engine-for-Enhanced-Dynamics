@@ -5,7 +5,6 @@
 // program the engine builds from transformed WGSL declares what its layout names, at the same group and binding.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { SUN_MAP_COLUMNS, sunMapColumnsWgsl, sunMapWgsl } from '../../src/render/sunShadowMap.js';
 import { lampMapColumnsWgsl, lampMapWgsl } from '../../src/render/lampShadowMap.js';
@@ -17,8 +16,9 @@ import {
   instancedSpriteIndexedGpuProgram,
   sunShadowGpuProgram,
 } from '../../src/render/webgpu/instancedSpriteWgsl.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = readEngineShader;
 const GpuProgram = { from: (o) => o };
 
 /** The WGSL's declared bindings as Pixi reads them: `@group(g) @binding(b) var<…> name`. */

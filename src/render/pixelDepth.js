@@ -433,7 +433,7 @@ function facesDepthCoreWgsl(gbuf) {
 }
 
 /**
- * pixelDepthVertex and pixelDepthFragment in one, for the sprite WGSL (instancedSprite.wgsl or instancedSpritePose.wgsl,
+ * pixelDepthVertex and pixelDepthFragment in one, for the sprite WGSL (instancedSprite.wgsl or its pose variant,
  * after spriteIndexedWgsl for the indexed program, after gbufAttributeWgsl with `gbuf`): uDepth closes the sprite uniform
  * group's struct (Pixi lays a group out in its entries' order, and the batch adds uDepth last), the foot's floor y, the
  * painter step (the instance index) and the words go to the fragment, and every fragment entry keeps its name for the

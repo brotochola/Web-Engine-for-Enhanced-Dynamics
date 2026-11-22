@@ -87,7 +87,8 @@ test('folded, every frame is where the shaders fetch it, and the slots past the 
 test('every shader that reads uTexLut reads it folded, by the texture width', () => {
   const dir = path.join(root, 'src/shaders');
   const readers = fs.readdirSync(dir).filter((f) => fs.readFileSync(path.join(dir, f), 'utf8').includes('uTexLut'));
-  assert.equal(readers.length, 12, readers.join(', '));
+  // The pose variants of instancedSprite.vert.glsl and .wgsl are made from them (shaderVariants.js): they fold as their base.
+  assert.equal(readers.length, 10, readers.join(', '));
   for (const f of readers) {
     const src = fs.readFileSync(path.join(dir, f), 'utf8');
     const wgsl = f.endsWith('.wgsl');

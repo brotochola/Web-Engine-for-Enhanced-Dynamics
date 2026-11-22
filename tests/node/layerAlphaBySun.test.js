@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { Sun } from '../../src/core/sun.js';
 import { normalizeAlphaBySun } from '../../src/core/layer.js';
 import { SUN_DEFAULTS } from '../../src/util/configDefaults.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 function bootSun(config = {}) {
   Sun.initializeStaged(new SharedArrayBuffer(Sun.BYTE_LENGTH));
@@ -87,7 +88,7 @@ test('normalizeAlphaBySun keeps the three forms and refuses the rest, by name', 
 });
 
 test('every instanced sprite and mesh fill shader, both dialects, takes the layer alpha', () => {
-  const read = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+  const read = readEngineShader;
   for (const name of ['instancedSprite', 'instancedSpritePose', 'colliderFill', 'meshUvFill']) {
     const glsl = read(`${name}.vert.glsl`);
     assert.match(glsl, /uniform vec4 uColor;/, name);

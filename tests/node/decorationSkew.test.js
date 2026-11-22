@@ -5,7 +5,6 @@
 // walls from flat pieces this way, one texture for every heading.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { Transform } from '../../src/components/transform.js';
@@ -17,13 +16,14 @@ import { setupAttachedSway } from '../bench/attachedSwayMicrobench.mjs';
 import { setupDecorationCollect } from '../bench/decorationCollectMicrobench.mjs';
 import { setupSwayKernel, swayDecorationsWasm } from '../bench/decorationSwayWasmMicrobench.mjs';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const D = DecorationComponent;
 const f = Math.fround;
 
 /** The two numbers each sprite shader decides a shear by, read from the shader as it ships. */
 const SHADER_NUMBERS = ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl', 'instancedSprite.wgsl', 'instancedSpritePose.wgsl'].map((name) => {
-  const source = fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+  const source = readEngineShader(name);
   const isShear = source.match(/isShear = c > ([\d.]+);/);
   const scale = source.match(/t = \(c - 1\.5\) \* ([\d.]+);/);
   assert.ok(isShear && scale, `${name}: the shear's numbers`);

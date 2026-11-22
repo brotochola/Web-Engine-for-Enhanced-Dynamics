@@ -1,8 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { BATCH_SPACE, InstancedSpriteBatch, POSE_DYN_FLOATS, POSE_STATIC_FLOATS } from '../../src/render/instancedSpriteBatch.js';
 import { TextureSource } from '../../src/vendor/pixi.min.js';
@@ -15,6 +12,7 @@ import {
   buildOpaqueKeyedRows, buildOpaqueRows, opaqueFragment, opaquePassPays, opaquePoseTextureRows, opaqueRowVertex, opaqueVertex,
 } from '../../src/render/opaquePass.js';
 import { spriteIndexedVertex } from '../../src/render/spriteIndexed.js';
+import { readEngineShader, spriteGlslShaders } from './engineShaderSources.mjs';
 
 // E-448: the opaque pass draws the instances of binary frames under an opaque tint first, nearest first, writing depth,
 // so the batch's own blended pass (every instance, painter order, depth tested) is rejected early behind their solid
@@ -25,14 +23,8 @@ import { spriteIndexedVertex } from '../../src/render/spriteIndexed.js';
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const read = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
-const shaders = {
-  spriteVertPose: read('instancedSpritePose.vert.glsl'),
-  spriteVert: read('instancedSprite.vert.glsl'),
-  spriteFrag: read('instancedSprite.frag.glsl'),
-  spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-};
+const read = readEngineShader;
+const shaders = spriteGlslShaders();
 
 test('the opaque fragment shader is the blend one discarding every alpha but 1', () => {
   const out = opaqueFragment(shaders.spriteFrag);

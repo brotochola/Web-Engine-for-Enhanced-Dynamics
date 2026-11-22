@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import { PIXEL_DEPTH_FLOOR_STEPS, gbufDepthFragment, gbufDepthVertex, gbufDepthWgsl } from '../../src/render/pixelDepth.js';
 import { pixelDepthValue } from '../reference/renderMathJs.mjs';
 import { faceGbufFragment, faceMapVertex, faceMapWgsl, faceUnshadedFragment, gbufAttributeWgsl } from '../../src/render/faceMap.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = readEngineShader;
 const count = (s, part) => s.split(part).length - 1;
 
 // N-274: the G-buffer's one pass (the face map and the ids map) takes the colour pass's depth, so the light reads the

@@ -132,7 +132,7 @@ export function opaqueFragment(source) {
 const OPAQUE_VERT = 'the opaque pass\'s sprite vertex shader';
 
 /**
- * The opaque pass's vertex shader from the batch's (instancedSpritePose.vert.glsl, a pose or a split batch's): the pose
+ * The opaque pass's vertex shader from the batch's (instancedSprite.vert.glsl's pose variant, a pose or a split batch's): the pose
  * attributes become globals read first from uOpPoses, the batch's pose stream in an RGBA32UI texture (a float's bits a
  * channel, OPAQUE_POSE_TEXELS texels a row), at the row's painter slot aInstSlot: `poseWords` 6 (x, y, the turn, the
  * previous x, y: a pose batch) or 4 (x, y, the turn; the previous pose is the current one, as a split batch's geometry

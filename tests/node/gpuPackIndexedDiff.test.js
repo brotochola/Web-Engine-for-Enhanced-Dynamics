@@ -8,9 +8,6 @@
 // whose changes overflow the lists and a split frame between indexed ones fall back or recover as they must.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { TextureSource } from '../../src/vendor/pixi.min.js';
 import { InstancedSpriteBatch } from '../../src/render/instancedSpriteBatch.js';
@@ -39,18 +36,15 @@ import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { coreComponentData, emitSpec, emitSpriteBuffers, initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { readEngineShader, spriteGlslShaders } from './engineShaderSources.mjs';
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 // With a document, sceneParams reads location.search (the workers' harness loads it).
 globalThis.location ??= { search: '' };
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const read = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
+const read = readEngineShader;
 const shaders = {
-  spriteVertPose: read('instancedSpritePose.vert.glsl'),
-  spriteVert: read('instancedSprite.vert.glsl'),
-  spriteFrag: read('instancedSprite.frag.glsl'),
-  spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
+  ...spriteGlslShaders(),
   shadowVert: read('instancedSpriteShadow.vert.glsl'),
 };
 

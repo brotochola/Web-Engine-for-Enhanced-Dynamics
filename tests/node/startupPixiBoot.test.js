@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { Application, GlProgram, RendererType } from '../../src/vendor/pixi.min.js';
 import { AbstractWorker } from '../../src/workers/abstractWorker.js';
 import { coreComponentData, loadWorker, postedMessages, quietly } from '../bench/workerHarness.mjs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 // GlProgram probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.OffscreenCanvas ??= class {
@@ -70,8 +71,17 @@ function fakePixiInit() {
   return { calls, release: () => release(), restore: () => { Application.prototype.init = saved; } };
 }
 
-/** Every engine shader a bundle embeds, as the boot message carries them: a program that compiles nowhere. */
-const embeddedShaders = new Proxy({}, { get: (_, path) => (typeof path === 'string' ? '#version 300 es\nvoid main() {}\n' : undefined) });
+/**
+ * Every engine shader a bundle embeds, as the boot message carries them: each one's own text (the renderer makes the
+ * pose and additive variants from it, N-303 CR-14), a program that compiles nowhere for any other path.
+ */
+const SHADER_PATH = '/src/shaders/';
+const embeddedShaders = new Proxy({}, {
+  get: (_, path) => {
+    if (typeof path !== 'string') return undefined;
+    return path.startsWith(SHADER_PATH) ? readEngineShader(path.slice(SHADER_PATH.length)) : '#version 300 es\nvoid main() {}\n';
+  },
+});
 
 function bootMessage(canvas) {
   return {

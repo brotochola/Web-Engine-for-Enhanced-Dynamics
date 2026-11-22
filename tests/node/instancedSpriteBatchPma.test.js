@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(dir, '../../src/render/instancedSpriteBatch.js'), 'utf8');
@@ -138,7 +139,7 @@ test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
   const shaderDir = join(dir, '../../src/shaders');
   const glsl = [
     readFileSync(join(shaderDir, 'instancedSprite.frag.glsl'), 'utf8'),
-    readFileSync(join(shaderDir, 'instancedSpriteAdditive.frag.glsl'), 'utf8'),
+    readEngineShader('instancedSpriteAdditive.frag.glsl'),
   ].join('\n');
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, 0\.0\);/);

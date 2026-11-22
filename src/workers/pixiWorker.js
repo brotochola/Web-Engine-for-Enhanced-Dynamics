@@ -129,6 +129,7 @@ import {
 } from '../render/lampShadowMap.js';
 import { glProgramFrom } from '../render/webgl/glProgram.js';
 import { pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
+import { additiveFragGlsl, spritePoseGlsl, spritePoseWgsl } from '../render/shaderVariants.js';
 import {
   LAMP_CACHE_COPY_FRAGMENT,
   LAMP_CACHE_COPY_VERTEX,
@@ -9701,7 +9702,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < made.length; i++) shaders.weedLinkAhead(made[i]);
   }
 
-  /** SST-1: the engine shaders this backend's passes read, fetched at boot (a bundle's come embedded in the boot message). */
+  /**
+   * SST-1: the engine shaders this backend's passes read, fetched at boot (a bundle's come embedded in the boot message).
+   * N-303 CR-14: the pose and additive variants are made from their base as it arrives (shaderVariants.js).
+   */
   _fetchEngineShaders() {
     this._engineShaders = {};
     const sh = this._engineShaders;
@@ -9710,12 +9714,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaderFetches.push(
         fetchEngineShader('/src/shaders/instancedSprite.wgsl').then((s) => {
           sh.sprite = s;
+          sh.spritePose = spritePoseWgsl(s);
         }),
         fetchEngineShader('/src/shaders/instancedSpriteShadow.wgsl').then((s) => {
           sh.shadowWgsl = s;
-        }),
-        fetchEngineShader('/src/shaders/instancedSpritePose.wgsl').then((s) => {
-          sh.spritePose = s;
         }),
         fetchEngineShader('/src/shaders/lfSplat.wgsl').then((s) => {
           sh.lfSplat = s;
@@ -9743,18 +9745,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaderFetches.push(
         fetchEngineShader('/src/shaders/instancedSprite.vert.glsl').then((s) => {
           sh.spriteVert = s;
+          sh.spriteVertPose = spritePoseGlsl(s);
         }),
         fetchEngineShader('/src/shaders/instancedSpriteShadow.vert.glsl').then((s) => {
           sh.shadowVert = s;
         }),
-        fetchEngineShader('/src/shaders/instancedSpritePose.vert.glsl').then((s) => {
-          sh.spriteVertPose = s;
-        }),
         fetchEngineShader('/src/shaders/instancedSprite.frag.glsl').then((s) => {
           sh.spriteFrag = s;
-        }),
-        fetchEngineShader('/src/shaders/instancedSpriteAdditive.frag.glsl').then((s) => {
-          sh.spriteFragAdd = s;
+          sh.spriteFragAdd = additiveFragGlsl(s);
         }),
         fetchEngineShader('/src/shaders/lfSplat.vert.glsl').then((s) => {
           sh.lfSplatVert = s;
@@ -9851,9 +9849,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }),
           fetchEngineShader('/src/shaders/gpuParticle.frag.glsl').then((s) => {
             sh.gpuParticleFrag = s;
-          }),
-          fetchEngineShader('/src/shaders/gpuParticleAdditive.frag.glsl').then((s) => {
-            sh.gpuParticleFragAdd = s;
+            sh.gpuParticleFragAdd = additiveFragGlsl(s);
           })
         );
         if (regionShaders) {

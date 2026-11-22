@@ -8,9 +8,6 @@
 // Pixi did not draw sends the changes of both, keyed (E-312: no frame drawn split, no resync).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { TextureSource } from '../../src/vendor/pixi.min.js';
 import { Transform } from '../../src/components/transform.js';
@@ -28,6 +25,7 @@ import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { PIXI_KEYED_HEADER as H, PIXI_KEYED_HEADER_WORDS } from '../../src/util/wasmMemoryMap.js';
 import { loadWorker, quietly } from '../bench/workerHarness.mjs';
+import { readEngineShader, spriteGlslShaders } from './engineShaderSources.mjs';
 
 const MAX = 4000;
 const ENTITIES = 9000;
@@ -40,14 +38,8 @@ globalThis.OffscreenCanvas ??= class {
     return null;
   }
 };
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const readShader = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
-const GL_SHADERS = {
-  spriteVert: readShader('instancedSprite.vert.glsl'),
-  spriteVertPose: readShader('instancedSpritePose.vert.glsl'),
-  spriteFrag: readShader('instancedSprite.frag.glsl'),
-  spriteFragAdd: readShader('instancedSpriteAdditive.frag.glsl'),
-};
+const readShader = readEngineShader;
+const GL_SHADERS = spriteGlslShaders();
 const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl'), spritePose: readShader('instancedSpritePose.wgsl') };
 
 class Thing extends GameObject {}

@@ -1,12 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { InstancedSpriteBatch, INSTANCED_SPRITE_FLOATS, BATCH_SPACE } from '../../src/render/instancedSpriteBatch.js';
 import { bindGpuPack } from '../../src/render/gpuPackClient.js';
 import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
+import { spriteGlslShaders } from './engineShaderSources.mjs';
 
 // W9d. Pixi's plain sprite batch packs through gpuPack.wasm when its rows live in the render-queue
 // memory: the rows must be the bits the JS pack (tests/reference/gpuPackJs.mjs) writes, a type filter's
@@ -15,14 +13,7 @@ import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const read = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
-const shaders = {
-  spriteVertPose: read('instancedSpritePose.vert.glsl'),
-  spriteVert: read('instancedSprite.vert.glsl'),
-  spriteFrag: read('instancedSprite.frag.glsl'),
-  spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-};
+const shaders = spriteGlslShaders();
 
 const N = 2000;
 

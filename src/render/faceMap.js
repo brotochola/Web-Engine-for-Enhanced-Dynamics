@@ -375,7 +375,7 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
  * E-457: with `unshadedMask` (and `gbuf`), the unshaded mask's vertex half (unshadedMaskVertex's cut); its entry is
  * mainFragUnshadedMask. DX-UNSHADED: with `unshaded`, the unshaded pass draws the unshaded pixels, so the G-buffer's
  * entries leave them out.
- * @param {string} source instancedSprite.wgsl or instancedSpritePose.wgsl
+ * @param {string} source instancedSprite.wgsl or its pose variant (shaderVariants.js)
  * @param {{ gbuf?: boolean, unshaded?: boolean, unshadedMask?: boolean }} [opts]
  * @returns {string}
  */

@@ -4,22 +4,14 @@
 // same bytes as one with arrays of its own, and copies from anywhere else with TypedArray.set.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import { createPrivateArena } from '../../src/render/sharedCopy.js';
 import { InstancedSpriteBatch, POSE_STATIC_FLOATS, SPLIT_POSE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
+import { spriteGlslShaders } from './engineShaderSources.mjs';
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
-const shaderDir = path.resolve(import.meta.dirname, '../../src/shaders');
-const read = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
-const SHADERS = {
-  spriteVertPose: read('instancedSpritePose.vert.glsl'),
-  spriteVert: read('instancedSprite.vert.glsl'),
-  spriteFrag: read('instancedSprite.frag.glsl'),
-  spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-};
+const SHADERS = spriteGlslShaders();
 
 const sharedMemory = (pages) => new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
 

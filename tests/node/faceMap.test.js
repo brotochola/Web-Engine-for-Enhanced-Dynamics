@@ -29,8 +29,9 @@ import { lampMapColumnsVertex, lampMapColumnsWgsl } from '../../src/render/lampS
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = readEngineShader;
 
 const angleDeg = (a, b) => (Math.acos(Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])) * 180) / Math.PI;
 

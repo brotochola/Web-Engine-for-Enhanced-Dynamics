@@ -1,8 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { TextureSource } from '../../src/vendor/pixi.min.js';
 import {
@@ -18,6 +15,7 @@ import {
 } from '../../src/render/gpuPackClient.js';
 import { STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW } from '../../src/render/spriteIndexed.js';
 import { PIXI_KEYED_HEADER as H, PIXI_KEYED_HEADER_WORDS } from '../../src/util/wasmMemoryMap.js';
+import { readEngineShader, spriteGlslShaders } from './engineShaderSources.mjs';
 
 // E-177: a keyed batch draws what a split batch draws. With the queue written as the emit writes it (here by the test,
 // from a world of entities: each sprite row's statics are its entity's, and its key the entity with the changed bit when
@@ -32,13 +30,9 @@ import { PIXI_KEYED_HEADER as H, PIXI_KEYED_HEADER_WORDS } from '../../src/util/
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const read = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
+const read = readEngineShader;
 const shaders = {
-  spriteVertPose: read('instancedSpritePose.vert.glsl'),
-  spriteVert: read('instancedSprite.vert.glsl'),
-  spriteFrag: read('instancedSprite.frag.glsl'),
-  spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
+  ...spriteGlslShaders(),
   shadowVert: read('instancedSpriteShadow.vert.glsl'),
 };
 

@@ -8,27 +8,18 @@
 // stream, and the pose texture as its uploads leave it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { TextureSource } from '../../src/vendor/pixi.min.js';
 import { BATCH_SPACE, INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch } from '../../src/render/instancedSpriteBatch.js';
 import { gpuIndexedStaticRows } from '../../src/render/gpuQueueLayout.js';
 import { GPU_KEYED_CHANGED, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, bindGpuPack } from '../../src/render/gpuPackClient.js';
 import { POSE_TEX_TEXELS } from '../../src/render/spriteIndexed.js';
+import { spriteGlslShaders } from './engineShaderSources.mjs';
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const read = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
-const shaders = {
-  spriteVertPose: read('instancedSpritePose.vert.glsl'),
-  spriteVert: read('instancedSprite.vert.glsl'),
-  spriteFrag: read('instancedSprite.frag.glsl'),
-  spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-};
+const shaders = spriteGlslShaders();
 
 const N = 3000;
 const ENTITIES = 6000;

@@ -4,9 +4,6 @@
 // packs; before, both batches packed in JS. The kernel's glow rows are the JS packer's.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
@@ -21,10 +18,10 @@ import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
 import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
+import { readEngineShader } from './engineShaderSources.mjs';
 
 const MAX = 2000;
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const readShader = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
+const readShader = readEngineShader;
 const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl'), spritePose: readShader('instancedSpritePose.wgsl') };
 
 class Thing extends GameObject {}

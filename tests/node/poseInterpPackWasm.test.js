@@ -1,8 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
   BATCH_SPACE,
@@ -12,6 +9,7 @@ import {
 } from '../../src/render/instancedSpriteBatch.js';
 import { bindGpuPack, packPoseRowsWasm } from '../../src/render/gpuPackClient.js';
 import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
+import { spriteGlslShaders } from './engineShaderSources.mjs';
 
 // W9e. A pose batch's upload (renderer.interpolation) through gpuPack.wasm's pack_pose: the pose stream and the
 // statics must be the bits the batch's own _packPoseOnly and _packPoseAndStatics write, on every path they take:
@@ -21,14 +19,7 @@ import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 
-const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const read = (f) => fs.readFileSync(path.join(shaderDir, f), 'utf8');
-const shaders = {
-  spriteVertPose: read('instancedSpritePose.vert.glsl'),
-  spriteVert: read('instancedSprite.vert.glsl'),
-  spriteFrag: read('instancedSprite.frag.glsl'),
-  spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-};
+const shaders = spriteGlslShaders();
 
 const N = 3000;
 

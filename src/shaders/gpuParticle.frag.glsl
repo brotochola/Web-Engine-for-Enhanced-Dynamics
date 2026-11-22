@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
-// GPU particles (gpuParticle.vert.glsl): the atlas frame, tinted, premultiplied, as instancedSprite.frag.glsl.
+// GPU particles (gpuParticle.vert.glsl): the atlas frame, tinted, premultiplied, as instancedSprite.frag.glsl. The
+// additive variant (src/render/shaderVariants.js) writes alpha 0.
 in vec2 vLocal;
 in vec4 vColor;
 in vec4 vAtlasUV;

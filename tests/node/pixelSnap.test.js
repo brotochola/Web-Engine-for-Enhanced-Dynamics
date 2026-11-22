@@ -1,13 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { applyPixelSnap, pixelSnapGlsl, pixelSnapWgsl } from '../../src/render/pixelSnap.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shaders = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
-const read = (name) => fs.readFileSync(path.join(shaders, name), 'utf8');
+const read = readEngineShader;
 const count = (s, part) => s.split(part).length - 1;
 
 test('N-271, N-302: the sprite sources snap their drawn corners (axis-aligned) or origin, and keep aInstXY true', () => {

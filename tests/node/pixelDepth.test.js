@@ -1,7 +1,6 @@
 /** DX-DEPTH (F5 v2): the depth the entities' pixels write and test (src/render/pixelDepth.js), on the real code. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 
 import {
   PIXEL_DEPTH_MARGIN,
@@ -12,8 +11,9 @@ import {
 } from '../../src/render/pixelDepth.js';
 import { pixelDepthValue } from '../reference/renderMathJs.mjs';
 import { spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
+import { readEngineShader } from './engineShaderSources.mjs';
 
-const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+const shader = readEngineShader;
 
 test('a higher zIndex band is in front whatever the floor place, a nearer place in front within a band', () => {
   assert.ok(pixelDepthValue(1, 0, 0) < pixelDepthValue(0, 1, 127), 'band first');
