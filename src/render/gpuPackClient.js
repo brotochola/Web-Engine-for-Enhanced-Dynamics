@@ -10,7 +10,6 @@ import {
 } from './gpuQueueLayout.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
-
 /** Lists shorter than this pack by gathering: the scatter's inverse costs a pass over the queue. */
 export const SCATTER_MIN_ROWS = 4096;
 
@@ -171,6 +170,31 @@ export async function bindGpuPack(memory, layout) {
  * not in the memory or the tables are full. Keyed by the columns, not by q: pre-render reuses one
  * q object and points it at queue A or B each frame.
  */
+/**
+ * The general packs' parameter block (GENERAL_PARAMS doubles, gpuPack.c's): the space and filter flags, the camera
+ * terms and the type filters, from a pack context (makePackContext). N-303 CR-18: one copy for the instanced and the pose
+ * packs, which pass the camera's place and scale as they read them.
+ */
+function writeGeneralParams(P, ctx, cameraX, cameraY, screenScale) {
+  P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0)
+    | (ctx.filterTypes ? 8 : 0) | (ctx.hasInclude ? 16 : 0);
+  P[1] = cameraX;
+  P[2] = cameraY;
+  P[3] = screenScale;
+  P[4] = ctx.camC;
+  P[5] = ctx.camS;
+  P[6] = ctx.focusX;
+  P[7] = ctx.focusY;
+  P[8] = ctx.halfW;
+  P[9] = ctx.halfH;
+  P[10] = 0;
+  P[11] = 0;
+  P[12] = 0;
+  P[13] = ctx.includeType | 0;
+  P[14] = ctx.exclude0 | 0;
+  P[15] = ctx.exclude1 | 0;
+}
+
 function tableFor(b, q) {
   const cols = GPU_PACK_COLUMNS;
   const entry = b.tables.get(q.x);
@@ -248,24 +272,7 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
   const typeByte = typeArr ? typeArr.byteOffset : 0;
   if (general) {
     // The slow path: packInstancedRows' own values, read as it reads them.
-    const P = b.params;
-    P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0)
-      | (ctx.filterTypes ? 8 : 0) | (ctx.hasInclude ? 16 : 0);
-    P[1] = ctx.cameraX || 0;
-    P[2] = ctx.cameraY || 0;
-    P[3] = ctx.screenScale || 1;
-    P[4] = ctx.camC;
-    P[5] = ctx.camS;
-    P[6] = ctx.focusX;
-    P[7] = ctx.focusY;
-    P[8] = ctx.halfW;
-    P[9] = ctx.halfH;
-    P[10] = 0;
-    P[11] = 0;
-    P[12] = 0;
-    P[13] = ctx.includeType | 0;
-    P[14] = ctx.exclude0 | 0;
-    P[15] = ctx.exclude1 | 0;
+    writeGeneralParams(b.params, ctx, ctx.cameraX || 0, ctx.cameraY || 0, ctx.screenScale || 1);
     const pack = shadowCast ? b.castersGeneral : b.spritesGeneral;
     const n = pack(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte, b.paramsByte);
     ctx.particleCount = b.u32[b.particlesByte >> 2];
@@ -513,10 +520,30 @@ function splitGbufByte(b, gbuf, n, rows) {
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
-  if (!b || !q || !pose || !slots || !ctx || !keyed || !b.spritesKeyed) return -1;
+  if (!b || !b.spritesKeyed) return -1;
+  return keyedPack(b, q, ctx, pose, slots, keyed, capacity, b.spritesKeyed, b.spritesKeyedGbuf);
+}
+
+/**
+ * E-201: packKeyedRowsWasm with each drawn instance's queue row (a float) at `rows` instead of its pose: the keyed
+ * program fetches the pose from the queue's own pose columns by that row. The rest as packKeyedRowsWasm (E-387: the
+ * G-buffer words too).
+ * @returns {number} the rows written, or -1 when this call is not one the kernel packs
+ */
+export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) {
+  if (!b || !b.spritesKeyedRows) return -1;
+  return keyedPack(b, q, ctx, rows, slots, keyed, capacity, b.spritesKeyedRows, b.spritesKeyedRowsGbuf);
+}
+
+/**
+ * The keyed packs' one body (N-303 CR-18): `at` is each drawn instance's pose (packKeyedRowsWasm) or its queue row
+ * (packKeyedRowsByRowWasm), `pack` and `packGbuf` the kernel pair for it, without and with the G-buffer words.
+ */
+function keyedPack(b, q, ctx, at, slots, keyed, capacity, pack, packGbuf) {
+  if (!q || !at || !slots || !ctx || !keyed) return -1;
   if (ctx.useScreen || ctx.filterTypes) return -1;
   const key = q.key;
-  if (!key || key.buffer !== b.buffer || pose.buffer !== b.buffer || slots.buffer !== b.buffer) return -1;
+  if (!key || key.buffer !== b.buffer || at.buffer !== b.buffer || slots.buffer !== b.buffer) return -1;
   const typeArr = ctx.typeArr;
   if (typeArr && typeArr.buffer !== b.buffer) return -1;
   const table = tableFor(b, q);
@@ -534,47 +561,9 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   // E-337: the type column only for the shadow terms' glow test; without them it fed only an unread particle count.
   const typeByte = shadowByte > 0 && typeArr ? typeArr.byteOffset : 0;
   const out = gbufByte > 0
-    ? b.spritesKeyedGbuf(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+    ? packGbuf(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
       slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte, gbufByte)
-    : b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte);
-  keyed.shadowed = shadowByte > 0;
-  keyed.gbufWritten = gbufByte > 0;
-  const r = b.particlesByte >> 2;
-  ctx.particleCount = b.u32[r];
-  keyed.updates = b.u32[r + 1];
-  keyed.texUpdates = keyed.texUpdatesByte > 0 ? b.u32[r + 2] : 0;
-  return out;
-}
-
-/**
- * E-201: packKeyedRowsWasm with each drawn instance's queue row (a float) at `rows` instead of its pose: the keyed
- * program fetches the pose from the queue's own pose columns by that row. The rest as packKeyedRowsWasm (E-387: the
- * G-buffer words too).
- * @returns {number} the rows written, or -1 when this call is not one the kernel packs
- */
-export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) {
-  if (!b || !q || !rows || !slots || !ctx || !keyed || !b.spritesKeyedRows) return -1;
-  if (ctx.useScreen || ctx.filterTypes) return -1;
-  const key = q.key;
-  if (!key || key.buffer !== b.buffer || rows.buffer !== b.buffer || slots.buffer !== b.buffer) return -1;
-  const typeArr = ctx.typeArr;
-  if (typeArr && typeArr.buffer !== b.buffer) return -1;
-  const table = tableFor(b, q);
-  if (table < 0) return -1;
-  const count = ctx.scanCount | 0;
-  const indexByte = indexByteFor(b, ctx, count, capacity);
-  if (indexByte < 0) return -1;
-  const depthDenom = ctx.depthDenom || 1;
-  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
-  const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
-  const texByte = keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0;
-  const typeByte = shadowByte > 0 && typeArr ? typeArr.byteOffset : 0; // E-337, as packKeyedRowsWasm
-  const out = gbufByte > 0
-    ? b.spritesKeyedRowsGbuf(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte, gbufByte)
-    : b.spritesKeyedRows(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
+    : pack(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
       slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte);
   keyed.shadowed = shadowByte > 0;
   keyed.gbufWritten = gbufByte > 0;
@@ -822,24 +811,7 @@ export function packPoseRowsWasm(b, q, ctx, pose, stat, capacity) {
   const count = ctx.scanCount | 0;
   const indexByte = indexByteFor(b, ctx, count, capacity);
   if (indexByte < 0) return -1;
-  const P = b.params;
-  P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0)
-    | (ctx.filterTypes ? 8 : 0) | (ctx.hasInclude ? 16 : 0);
-  P[1] = ctx.cameraX;
-  P[2] = ctx.cameraY;
-  P[3] = ctx.screenScale;
-  P[4] = ctx.camC;
-  P[5] = ctx.camS;
-  P[6] = ctx.focusX;
-  P[7] = ctx.focusY;
-  P[8] = ctx.halfW;
-  P[9] = ctx.halfH;
-  P[10] = 0;
-  P[11] = 0;
-  P[12] = 0;
-  P[13] = ctx.includeType | 0;
-  P[14] = ctx.exclude0 | 0;
-  P[15] = ctx.exclude1 | 0;
+  writeGeneralParams(b.params, ctx, ctx.cameraX, ctx.cameraY, ctx.screenScale);
   return b.pose(table, indexByte, count, capacity | 0, ctx.depthDenom, pose.byteOffset, stat !== null ? stat.byteOffset : 0,
     typeArr ? typeArr.byteOffset : 0, prevX ? prevX.byteOffset : 0, prevY ? prevY.byteOffset : 0, b.paramsByte);
 }
