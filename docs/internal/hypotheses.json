@@ -12734,7 +12734,8 @@
         "R-0940",
         "R-1741",
         "R-1756",
-        "R-1757"
+        "R-1757",
+        "R-1759"
       ]
     },
     {
@@ -22252,11 +22253,11 @@
     {
       "id": "N-270",
       "title": "On WebGPU, Pixi before 8.23 blends add with src-alpha / one-minus-src-alpha alpha factors: an additive pass drawn into a transparent target writes half WebGL's alpha (127 against 254), so it may composite dimmer (to check)",
-      "status": "open",
-      "statusText": "found 2026-11-17 reading Pixi 8.23's release notes (#12290; DX-PIXI823); not yet seen in the engine",
+      "status": "answered",
+      "statusText": "answered 2026-11-22 on the ASUS (R-1759): no visible effect once the canvas is opaque (N-155)",
       "date": "2026-11-17",
-      "result": "",
-      "next": "WebGL and WebGPU captures of flashlightStressScene and lightGallery (the glows at half resolution, E-404); fixed by DX-PIXI823, or by a blend-table patch if that waits.",
+      "result": "The add alpha factors mattered where they reached the page (N-155, fixed by the opaque canvas); a one, one patch changed 0 pixels in lightGallery on WebGPU.",
+      "next": "",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -22268,7 +22269,8 @@
         "blend parity"
       ],
       "records": [
-        "R-1315"
+        "R-1315",
+        "R-1759"
       ]
     },
     {
@@ -41964,6 +41966,15 @@
       "commits": [
         "9c1f02c9"
       ]
+    },
+    {
+      "id": "R-1759",
+      "date": "2026-11-22",
+      "time": "04:20",
+      "timeFrom": "recorded",
+      "title": "N-270 answered: with the WebGPU canvas opaque (N-155), Pixi's WebGPU add alpha factors change nothing shown; a patch to one, one changed 0 pixels in lightGallery, so it stays out",
+      "verdict": "answered",
+      "text": "**N-270 answered: with the WebGPU canvas opaque (N-155, 2731a1d8), Pixi's WebGPU 'add' alpha factors change nothing the engine shows; a build patch to WebGL's one, one changed 0 pixels, so it does not go in.**\n\nOn the ASUS, 2026-11-22 04:17 to 04:20 (job 0901c): the vendored Pixi rebuilt as it is came out byte for byte (scripts/buildPixi.mjs), then with a patch giving GpuBlendModesToPixi.add the alpha factors one, one (WebGL's, as Pixi 8.23 has them, #12290). lightGallery (its glows at half resolution, E-404), with sorted glows and with walls, each on both backends in both trees:\n\n- WebGPU before against after the patch: 0 pixels differ in all three; WebGL: 0.\n- WebGL against WebGPU, before and after alike: 18 563, 18 359 and 18 361 pixels, max 5, 6 and 26 (the 26 is two pixels of one cell; the rest rounding along lamps' edges).\n\nThe alpha the 'add' factors wrote mattered where it reached the page: N-155's canvas, fixed by making it opaque. An additive pass into a transparent target that is later composited by its colour alone shows no difference here. DX-PIXI823 brings Pixi's own fix with the upgrade."
     }
   ],
   "leads": [
