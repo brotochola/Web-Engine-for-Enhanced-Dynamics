@@ -166,11 +166,12 @@ test('logic waits for main\'s frame of this vsync before it reads inputs, and co
   const w = await loadWorker('logicWorker.js', 'logicWorker');
   // A loaded machine may run the publisher late (past logic's 0.95 ms budget), or keep this thread off a core until
   // main's frame is already out (no wait at all): a few tries, each read against the publish's time (N-326,
-  // waitedUntil; each a miss at most, and logicAt clears the misses, so the waits stay on).
+  // waitedUntil; each a miss at most, and logicAt clears the misses, so the waits stay on). N-406: 24 tries, as 8 all
+  // missed on the ASUS's 2 cores beside a browser job; a try that lands ends the loop, so they cost only on such a machine.
   let chain = null;
   let waited = 0;
   let untilPublish = false;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 24; attempt++) {
     chain = logicAt(w, 7);
     const p = await publisherAt(chain.buffer, 1, 8);
     resetWaitMeter();
