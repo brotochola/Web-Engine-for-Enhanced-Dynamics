@@ -46,6 +46,29 @@ import {
 import { SharedResource } from './sharedResource.js';
 
 /**
+ * CR-19: the layers' config buffer, one column of MAX_LAYERS per entry in buffer order; null pads to 4 bytes. Layer's
+ * _layConfig walks it for the buffer's size, its views and reset's nulls (they were written out three times).
+ */
+const LAYER_CONFIG_COLUMNS = [
+  ['_zIndex', Float32Array],
+  ['_blendModeId', Uint8Array],
+  ['_hasShader', Uint8Array],
+  ['_ySorting', Uint8Array],
+  null,
+  ['_resolution', Float32Array],
+  ['_alpha', Float32Array],
+  ['_alphaDirty', Int32Array],
+  ['_containerBlendId', Uint8Array],
+  ['_available', Uint8Array],
+  ['_hasRenderQueue', Uint8Array],
+  ['_visible', Uint8Array],
+  ['_feederKind', Uint8Array],
+  null,
+  ['_visibleDirty', Int32Array],
+  ['_presentationDirty', Int32Array],
+];
+
+/**
  * Engine-reserved look uniforms, auto-declared on every custom shader layer
  * and fed every frame by applyEngineLookUniforms in pixi_worker. Scenes use
  * them in WGSL/GLSL without declaring them in config. Scene defs win on
@@ -761,51 +784,7 @@ export class Layer {
     //   presentationDirty: Int32[MAX_LAYERS] (Atomics dirty flag: blendMode, containerBlendMode, zIndex)
 
     static _createConfigViews(sab) {
-        let offset = 0;
-        this._zIndex = new Float32Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS * 4;
-
-        this._blendModeId = new Uint8Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS;
-
-        this._hasShader = new Uint8Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS;
-
-        this._ySorting = new Uint8Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS;
-
-        // Align for Float32
-        offset = Math.ceil(offset / 4) * 4;
-
-        this._resolution = new Float32Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS * 4;
-
-        this._alpha = new Float32Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS * 4;
-
-        this._alphaDirty = new Int32Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS * 4;
-
-        this._containerBlendId = new Uint8Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS;
-
-        this._available = new Uint8Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS;
-
-        this._hasRenderQueue = new Uint8Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS;
-
-        this._visible = new Uint8Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS;
-
-        this._feederKind = new Uint8Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS;
-
-        offset = Math.ceil(offset / 4) * 4;
-        this._visibleDirty = new Int32Array(sab, offset, this.MAX_LAYERS);
-        offset += this.MAX_LAYERS * 4;
-
-        this._presentationDirty = new Int32Array(sab, offset, this.MAX_LAYERS);
+        this._layConfig(sab);
     }
 
     /** A blend mode's id from its name or its BLEND_MODES id, or a WeedJS error naming the modes there are. */
@@ -819,32 +798,34 @@ export class Layer {
     }
 
     static _getConfigSABSize() {
-        let size = 0;
-        size += this.MAX_LAYERS * 4;  // zIndex Float32
-        size += this.MAX_LAYERS;      // blendModeId Uint8
-        size += this.MAX_LAYERS;      // hasShader Uint8
-        size += this.MAX_LAYERS;      // ySorting Uint8
-        size = Math.ceil(size / 4) * 4; // align
-        size += this.MAX_LAYERS * 4;  // resolution Float32
-        size += this.MAX_LAYERS * 4;  // alpha Float32
-        size += this.MAX_LAYERS * 4;  // alphaDirty Int32
-        size += this.MAX_LAYERS;      // containerBlendId Uint8
-        size += this.MAX_LAYERS;      // available Uint8
-        size += this.MAX_LAYERS;      // hasRenderQueue Uint8
-        size += this.MAX_LAYERS;      // visible Uint8
-        size += this.MAX_LAYERS;      // feederKind Uint8
-        size = Math.ceil(size / 4) * 4;
-        size += this.MAX_LAYERS * 4;  // visibleDirty Int32
-        size += this.MAX_LAYERS * 4;  // presentationDirty Int32
-        return size;
+        return this._layConfig(null);
+    }
+
+    /**
+     * Walks LAYER_CONFIG_COLUMNS: with a buffer, sets each column's view (MAX_LAYERS entries); returns the bytes taken.
+     * @param {SharedArrayBuffer | null} sab
+     */
+    static _layConfig(sab) {
+        const n = this.MAX_LAYERS;
+        let offset = 0;
+        for (const column of LAYER_CONFIG_COLUMNS) {
+            if (column === null) {
+                offset = Math.ceil(offset / 4) * 4;
+                continue;
+            }
+            const Type = column[1];
+            if (sab !== null) this[column[0]] = new Type(sab, offset, n);
+            offset += n * Type.BYTES_PER_ELEMENT;
+        }
+        return offset;
     }
 
     // ========================================
     // INITIALIZATION (main thread)
     // ========================================
 
-    static initializeFromConfig(layersConfig = {}, builtInLayers = {}) {
-        // Reset state
+    /** The registry and the per-layer lists a scene's layers fill, emptied (both init paths and reset()). */
+    static _clearRegistry() {
         this._byName = {};
         this._byId = [];
         this.count = 0;
@@ -863,6 +844,10 @@ export class Layer {
         this._particleFeedMax = [];
         this._particleFeedSlots = [];
         this._particleFeedOverflowWarned = 0;
+    }
+
+    static initializeFromConfig(layersConfig = {}, builtInLayers = {}) {
+        this._clearRegistry();
 
         // Allocate config SAB
         this._configSAB = new SharedArrayBuffer(this._getConfigSABSize());
@@ -1913,24 +1898,7 @@ export class Layer {
     static initializeFromBuffers(data) {
         if (!data || !data.configSAB) return;
 
-        // Reset
-        this._byName = {};
-        this._byId = [];
-        this._uniformSABs = [];
-        this._uniformFloats = [];
-        this._uniformDirty = [];
-        this._uniformMaps = [];
-        this._textureSlots = [];
-        this._feedIndexSABs = [];
-        this._feedIndices = [];
-        this._feedMax = [];
-        this._feedSlots = [];
-        this._feedOverflowWarned = 0;
-        this._particleFeedIndexSABs = [];
-        this._particleFeedIndices = [];
-        this._particleFeedMax = [];
-        this._particleFeedSlots = [];
-        this._particleFeedOverflowWarned = 0;
+        this._clearRegistry();
 
         // Create typed views over the shared config SAB
         this._configSAB = data.configSAB;
@@ -2054,46 +2022,20 @@ export class Layer {
                 delete this[name];
             }
         }
-        this._byName = {};
-        this._byId = [];
-        this.count = 0;
+        this._clearRegistry();
         this.initialized = false;
         this.entitiesId = -1;
         this._configSAB = null;
-        this._zIndex = null;
-        this._blendModeId = null;
-        this._hasShader = null;
-        this._ySorting = null;
-        this._resolution = null;
-        this._alpha = null;
-        this._alphaDirty = null;
-        this._containerBlendId = null;
-        this._available = null;
-        this._hasRenderQueue = null;
-        this._visible = null;
-        this._feederKind = null;
-        this._visibleDirty = null;
-        this._presentationDirty = null;
+        for (const column of LAYER_CONFIG_COLUMNS) {
+            if (column !== null) this[column[0]] = null;
+        }
         this._spriteQueueBits = 0;
         this._feedCountSAB = null;
         this._feedCount = null;
         this._feedLock = null;
-        this._feedIndexSABs = [];
-        this._feedIndices = [];
-        this._feedMax = [];
-        this._feedSlots = [];
         this._particleFeedCountSAB = null;
         this._particleFeedCount = null;
         this._particleFeedLock = null;
-        this._particleFeedIndexSABs = [];
-        this._particleFeedIndices = [];
-        this._particleFeedMax = [];
-        this._particleFeedSlots = [];
-        this._uniformSABs = [];
-        this._uniformFloats = [];
-        this._uniformDirty = [];
-        this._uniformMaps = [];
-        this._textureSlots = [];
         this._metadata = null;
         this._allCache = [];
         this._allCacheCount = -1;

@@ -1,10 +1,11 @@
-// CR-19: the joint and tween pools laid out from tables keep the byte offsets their hand-written layouts gave (the
-// physics host mirrors the joint layout by hand), at both entity id widths; Component and SharedResource size and bind
-// through laySchema as their own loops did.
+// CR-19: the joint and tween pools and the layers' config buffer, laid out from tables, keep the byte offsets their
+// hand-written layouts gave (the physics host mirrors the joint layout by hand), at both entity id widths; Component
+// and SharedResource size and bind through laySchema as their own loops did.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Joint } from '../../src/core/joint.js';
+import { Layer } from '../../src/core/layer.js';
 import { Tween, tweenBufferBytes } from '../../src/core/tween.js';
 import { bindEntityIdWidth } from '../../src/util/entityIdWidth.js';
 import { laySchema } from '../../src/util/schemaLayout.js';
@@ -148,6 +149,38 @@ test('the tween pool keeps its byte offsets at both entity id widths', () => {
     Tween.unbind();
     bindEntityIdWidth(16);
   }
+});
+
+test('the layers\' config buffer keeps its byte offsets, and reset drops every column', () => {
+  const n = Layer.MAX_LAYERS;
+  // The hand-written layout before CR-19: [field, element bytes], an align to 4 after the third 1-byte column and
+  // after the fifth.
+  const ref = [];
+  let o = 0;
+  const col = (name, bytes) => {
+    ref.push([name, o]);
+    o += n * bytes;
+  };
+  col('_zIndex', 4);
+  col('_blendModeId', 1);
+  col('_hasShader', 1);
+  col('_ySorting', 1);
+  o = align4(o);
+  col('_resolution', 4);
+  col('_alpha', 4);
+  col('_alphaDirty', 4);
+  for (const name of ['_containerBlendId', '_available', '_hasRenderQueue', '_visible', '_feederKind']) col(name, 1);
+  o = align4(o);
+  col('_visibleDirty', 4);
+  col('_presentationDirty', 4);
+  assert.equal(Layer._getConfigSABSize(), o);
+  Layer._createConfigViews(new SharedArrayBuffer(o));
+  for (const [name, offset] of ref) {
+    assert.equal(Layer[name].byteOffset, offset, name);
+    assert.equal(Layer[name].length, n, `${name} length`);
+  }
+  Layer.reset();
+  for (const [name] of ref) assert.equal(Layer[name], null, `${name} after reset`);
 });
 
 test('laySchema aligns each column to its element size and binds count x length elements', () => {
