@@ -18100,13 +18100,13 @@
     {
       "id": "E-390",
       "title": "With light3d by day Pixi uploads 2.3 MB of buffers a frame against 0.73 MB without it: two bufferSubData of 1196 KB and 844 KB a frame",
-      "status": "open",
-      "statusText": "Identified 2026-11-21 (R-1687): the map arm's extra uploads are the caster batch's instance rows, sent whole every frame (about 1.14 MB) because casters with a kind turn the keyed caster path off; the fix is E-395's.",
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1696, through E-395): the map arm's whole caster rows were the extra uploads; keyed rows cut the buffers 1 413.7 -> 637.8 KB a frame in Predator.",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
       "result": "Predator light3d uploads 2.7 MB a frame against 0.73 MB plain: two buffers of 1.2 MB and 0.83 MB a frame (not the G-buffer words, 85 KB; not the shadow maps; not pixel depth). The words in the statics: -151 KB a frame, not kept.",
-      "next": "E-395 (keyed caster rows that carry their kind); then the same glFrameRecorder pair: the map arm's buffers a frame against the classic's 518 KB.",
+      "next": "",
       "refs": [],
       "aliases": [
         "light3d buffer uploads"
@@ -18115,7 +18115,8 @@
         "R-1173",
         "R-1575",
         "R-1687",
-        "R-1688"
+        "R-1688",
+        "R-1696"
       ]
     },
     {
@@ -18204,13 +18205,13 @@
     {
       "id": "E-395",
       "title": "Keyed caster rows for casters that ask for a kind (DX-CASTER): one such caster turns the keyed caster path off for the whole scene (_casterKindsOn), so light3d scenes pack full rows and E-372 does not serve them",
-      "status": "open",
-      "statusText": "2026-11-21 (R-1688): in map mode the whole rows come from Pixi, not the kinds: _ensureKeyedCasters makes no keyed caster programs while the sun's map, the lamps' map or the solids are on, so the keyed statics never go LIVE (workerProbe on Predator: kinds false, live false).",
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 on WebGL (R-1696): the sun's and the lamps' maps draw keyed caster rows; Predator map mode pre-render 11.0 -> 7.1 ms (-35.7 %), renderer -21.3 %, uploads -42 %; captures identical.",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
       "result": "",
-      "next": "Design (2026-11-21): (1) sunMapVertex/sunMapWgsl take keyed: the caster id from the key (vSunId = float(int(aInstSlot + 0.5) % 65535 + 1), as the columns' aInstBody form) instead of casterEntityId(aInstTintBits); composed over spriteIndexedVertex(shadowVert, { shadow, casterRows }) it already builds (GLSL; the WGSL keyed source renames mainVert: fix the mark). (2) Pixi: _ensureKeyedCasters no longer bails for the sun map; a keyed sun-map mesh over casters.keyedCasterGeometry with uStatics, drawn when the frame's rows are keyed (GPU_FLAG_KEYED_CASTERS); full rows stay while columns (height-map casters) or the lamps' map with stamp rows need them. (3) Then the lamps' map over keyed stamp rows, the columns, WebGPU. Checks: compareCaptures main against the branch (Predator sunShadows=map by day and night, the light bench), glFrameRecorder buffers a frame (1.41 MB in map mode now), pre-render's pack time. About 4-6 h.",
+      "next": "WebGPU's keyed maps (the WGSL transforms accept a keyed source already), the columns over keyed rows, a still capture of the lamps' map, and a kind carried in the keyed row.",
       "refs": [],
       "aliases": [
         "keyed rows caster kinds"
@@ -18218,7 +18219,8 @@
       "records": [
         "R-1173",
         "R-1687",
-        "R-1688"
+        "R-1688",
+        "R-1696"
       ]
     },
     {
@@ -24509,7 +24511,8 @@
         "R-1573",
         "R-1623",
         "R-1687",
-        "R-1688"
+        "R-1688",
+        "R-1696"
       ],
       "refs": [],
       "id": "E-531",
@@ -40963,6 +40966,15 @@
       "title": "The owner confirms N-212 fixed and approves the self-shadow's car and bed (light bench captures, no checkerboard)",
       "verdict": "kept",
       "text": "**The owner confirmed two items on 2026-11-21.**\n- N-212: \"sí, N-212 está arreglado\" (the flickering shadows: the light cut's fade, R-1151, and the budget, R-1159; closed in R-1694 before his word, now confirmed). N-330 (the per-entity and per-light cuts) stays open.\n- DX-SELFSHADOW's last item: \"la cama y el auto se ven bien\", after the light bench's captures by the 16 h sun with self-shadow on (D:/tmp/films/carbed/a.png, the bed; D:/tmp/films/car/a.png, the hatchback): no checkerboard. Approved."
+    },
+    {
+      "id": "R-1696",
+      "date": "2026-11-21",
+      "time": "22:05",
+      "timeFrom": "recorded",
+      "title": "Shadow maps draw keyed caster rows on WebGL: Predator map mode pre-render -35.7 %, renderer -21.3 %, uploads -42 %, captures identical",
+      "verdict": "kept",
+      "text": "**E-395 kept on WebGL: the shadow maps draw pre-render's keyed caster rows (7 floats a caster, 11 a stamp, the statics by key) instead of the full 22-float rows (aecbd2e2, merged 10cafeda).** Pixi's keyed caster programs no longer turn off under the sun's map or the lamps' map (only while a render casts columns, and on WebGPU's maps); the maps' programs compose over spriteIndexedVertex's keyed rows; a keyed row's tint float holds its entity (its key), written after the keyed prologue (a first build read it before: every keyed caster was entity 0's id and shaded its own sprite, 5 282 px in the capture below, fixed before the commit).\n\n- Captures, dxCaptureScene ?maps=1&hour=16.5 with the keyed path live (workerProbe): keyed against full rows (?fullRows=1, a11472ed) 0 of 921 600 px; against main 0 px; WebGPU against main 0 px (full rows both). The lamps' map has no still capture yet (Predator at night: keyed with 62 stamp lights, a film beside main alike).\n- glFrameRecorder, Predator dayCycle=0&sunShadows=map&lampShadows=map: buffers 1 413.7 -> 637.8 KB a frame (-55 %), textures 287 -> 355, uploads 1 701 -> 993 KB (-42 %).\n- Gate, Predator crowd=2.5&dayCycle=0&sunShadows=map&lampShadows=map from one save, 4 pairs, base ffab2257, ended 22:05: KEPT, pre-render 11.01 -> 7.12 ms (-35.7 %, 4/4), renderer 8.16 -> 6.27 ms (-21.3 %, 4/4), physics -10.7 %, spatial -7.7 %, logic -1.9 %; drawn 58.6 -> 59.8 fps; BODY_COUNT -0.0 %.\n- Node 3433/3433, demos 143/143.\nLeft: WebGPU's keyed maps (the WGSL transforms already accept a keyed source), the columns over keyed rows, a still capture of the lamps' map, and the casters with a kind (the row carries no code)."
     }
   ],
   "leads": [
