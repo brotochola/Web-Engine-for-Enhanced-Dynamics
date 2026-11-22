@@ -23972,7 +23972,8 @@
       "records": [
         "R-1430",
         "R-1431",
-        "R-1816"
+        "R-1816",
+        "R-1818"
       ]
     },
     {
@@ -24975,6 +24976,18 @@
         "frameChainWait flaky",
         "input wait test"
       ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-545",
+      "title": "N-323's first-build stagger by place, not by id: a frame's rebuilds in one compact region of the map, so the gather keeps E-81's cell locality (the ASUS read N-323's spread at +41 % exact mean, about 2.5 times a rebuild, against all lists at once)",
+      "status": "open",
+      "kind": "speed",
+      "area": "spatial",
+      "date": "2026-11-22",
+      "statusText": "Filed 2026-11-22 from N-403 (the ASUS bisect: first bad 546c5afc, N-323). Before N-323 all of a worker's lists were rebuilt on one frame in 16, walked in home-cell order (E-81); N-323 gives each list a first-build age by its block of ids, so a frame's ~1 170 rebuilds are scattered over the map and walk cold cells.",
+      "next": "The first-build age from the entity's home cell (a block of cells per frame, rows of the grid in turn) instead of its id block; same flat tail. stationarySpatialScene ?entities=40000 exact-frame mean and p95 on both PCs, then Predator mix=1 spatial."
     }
   ],
   "records": [
@@ -41640,6 +41653,13 @@
       "title": "N-245: the ASUS numbers for the main PC's spatial fix: spatialWorker.js:2253 274 -> 0 in Predator; the OSR entry moves to the owned loop (2143, 84)",
       "verdict": "note",
       "text": "**N-245, the ASUS's numbers for the main PC's spatial fix** (fix/n245-spatial-rebuilt-rows, 7ea3fe24, against its base c8599a69). Deopt pass, one run a side, a 20 s warm-up, steady = the last 8 s of each log.\n\n- **Predator default:** spatialWorker.js:2253 (\"prepare for OSR\", the rows the gather rebuilt) went 274 -> 0. The per-frame OSR entry moved to the owned-entity loop of the same function (:2143, 0 -> 84), which the main PC plans to split the same way.\n- **bichos, Boids, renderQueueStress:** no steady spatial deopt either side. The sweep's spatialWorker.js:2222 (944) and Boids' 2253 were start-up (N-405).\n- **Boids:** weedjsPost.js:665, N-245's other site, is gone (N-214's fix, R-1158).\n\nCounts move a lot from run to run in code neither side changed, so one run each gives the shape."
+    },
+    {
+      "id": "R-1818",
+      "date": "2026-11-22",
+      "title": "N-303's first cold batch (CR-9/10/6/1/12) through Predator mix=1: NEUTRAL in 8 pairs (worst pre-render +2.4 %); the session's A/A on the scene reads up to 3.2 % a worker",
+      "verdict": "kept-hygiene",
+      "text": "**N-303's first cold batch through Predator: NEUTRAL in 8 pairs, at this session's noise.** runPredatorAbab cr-batch1, `--vs 710ce2e8 --hyp-rev 33fb37e3` (CR-9, CR-10, CR-6, CR-1, CR-12's first part; CR-33 was in both), `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, owner logic. After 4 pairs it read REGRESSION (spatial +3.9 % 4/4, pre-render +3.9 % 4/4, renderer +13.9 % at cv 11/6 %); 4 more (--append) made it NEUTRAL: logic 15.071 -> 15.381 ms (+1.7 %, worse 5/8), spatial +1.6 % (6/8), physics +0.1 %, renderer +1.5 % (cv 9/9 %), pre-render +2.4 % (5/8), presented 60 = 60, BODY_COUNT +0.1 %. The changes remove dead code and move test-only modules: nothing a worker runs per frame changed.\n\n**The session's A/A** (aa-mix-0122, 710ce2e8 against itself, the same scene, 4 pairs): NEUTRAL, logic -2.0 %, spatial +0.7 %, physics -0.9 %, renderer -2.0 % (cv 3/9 %), pre-render -3.2 % (worse 0/4: one side lower in every pair). So this scene's detection limit today is about 3 % a worker, and a 4-pair 4/4 reading of +3.9 % on a worker the change cannot reach is not a verdict."
     }
   ],
   "leads": [
