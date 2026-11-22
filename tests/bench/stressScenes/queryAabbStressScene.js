@@ -4,6 +4,21 @@ import { QueryAabbChurnProbe } from './queryAabb/queryAabbChurnProbe.js';
 
 const { Scene, Camera } = WEED;
 
+/**
+ * Box2D's QueryAABB issued from a logic tick over 200 static boxes. `?queries=N` (DX-SCORELOAD): the probe's queries a
+ * tick (default 1), each a round trip to physics, so logic0's cost grows with N.
+ */
+const QUERIES = (() => {
+  try {
+    const n = Number(new URLSearchParams(globalThis.location?.search || '').get('queries'));
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+  } catch {
+    return 1;
+  }
+})();
+
+export const stressSceneConfig = { requested: { queries: QUERIES } };
+
 export class QueryAabbStressScene extends Scene {
   static config = {
     worldWidth: 3000,
@@ -51,7 +66,7 @@ export class QueryAabbStressScene extends Scene {
         size: 28,
       });
     }
-    QueryAabbChurnProbe.spawn({ x: cx, y: cy });
+    QueryAabbChurnProbe.spawn({ x: cx, y: cy, queries: QUERIES });
     Camera.centerOn(cx, cy);
     Camera.setZoom(0.45);
   }
