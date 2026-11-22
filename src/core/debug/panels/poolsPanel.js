@@ -1,17 +1,16 @@
 // PoolsPanel.js — Decorations inspect; particles / bullets paint + erase + clear
 
-import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
+import { createPanel, createRow, createStat, createButton, elem } from '../ui/debugDom.js';
 import { formatNumber } from '../../../util/utils.js';
 import { DecorationPool } from '../../decorationPool.js';
 import { BulletPool } from '../../bulletPool.js';
 import { ParticleEmitter } from '../../particleEmitter.js';
 import { PARTICLE_STATS, RENDERER_STATS } from '../stats/statsCollector.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
-export class PoolsPanel {
+export class PoolsPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.elements = {};
-    this.panel = null;
+    super(debugUI);
   }
 
   create() {
@@ -37,8 +36,7 @@ export class PoolsPanel {
   }
 
   _makeBlock(title, kind, opts) {
-    const wrap = document.createElement('div');
-    wrap.className = 'debug-ui-pool-block';
+    const wrap = elem('div', 'debug-ui-pool-block');
 
     const head = createRow();
     const titleEl = createStat(title);

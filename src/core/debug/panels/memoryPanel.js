@@ -1,16 +1,15 @@
 // MemoryPanel.js — Scene SharedArrayBuffer usage + WASM HEAP / JS heap
 
-import { createPanel, createStat } from '../ui/debugDom.js';
+import { createPanel, createStat, elem } from '../ui/debugDom.js';
 import { formatBytes } from '../../../util/sceneBufferMemory.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
 const TOP_BUFFERS = 12;
 const TOP_WASTE = 8;
 
-export class MemoryPanel {
+export class MemoryPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.elements = {};
-    this.panel = null;
+    super(debugUI);
   }
 
   create() {
@@ -67,7 +66,6 @@ export class MemoryPanel {
     return this.panel;
   }
 
-  attach() {}
 
   update() {
     const scene = this.debugUI.scene;
@@ -145,8 +143,7 @@ export class MemoryPanel {
   }
 
   _sectionTitle(text) {
-    const el = document.createElement('div');
-    el.className = 'debug-ui-stat';
+    const el = elem('div', 'debug-ui-stat');
     el.style.cssText =
       'font-weight:bold;font-size:12px;color:rgba(255,255,255,0.9)';
     el.textContent = text;

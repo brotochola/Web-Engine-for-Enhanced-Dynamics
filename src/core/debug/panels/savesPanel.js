@@ -2,12 +2,11 @@
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 import { SaveStore } from '../../save/saveStore.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
-export class SavesPanel {
+export class SavesPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.elements = {};
-    this.panel = null;
+    super(debugUI);
     this.selectedId = null;
     this._busy = false;
   }
@@ -149,64 +148,55 @@ export class SavesPanel {
     this._updateLoadEnabled();
   }
 
+  /**
+   * One save action: busy while it runs (the buttons off), its status first, the error as the status if it throws, then
+   * the list again.
+   */
+  async _busyAction(status, action) {
+    this._busy = true;
+    this._updateLoadEnabled();
+    this._setStatus(status);
+    try {
+      await action();
+    } catch (err) {
+      console.error(err);
+      this._setStatus(String(err?.message || err), true);
+    } finally {
+      this._busy = false;
+      this._updateLoadEnabled();
+      await this.refreshList();
+    }
+  }
+
   async _onSave() {
     const scene = this.debugUI.scene;
     if (!scene || this._busy) return;
-    this._busy = true;
-    this._updateLoadEnabled();
-    this._setStatus('Saving…');
-    try {
+    await this._busyAction('Saving…', async () => {
       const result = await scene.saveGame();
       this.selectedId = result.meta.id;
       const pc = result.particleCount | 0;
       this._setStatus(
         `Saved ${result.entityCount} entities, ${pc} particles (${(result.bytes / 1024).toFixed(1)} KB)`
       );
-    } catch (err) {
-      console.error(err);
-      this._setStatus(String(err?.message || err), true);
-    } finally {
-      this._busy = false;
-      this._updateLoadEnabled();
-      await this.refreshList();
-    }
+    });
   }
 
   async _onLoad() {
     const scene = this.debugUI.scene;
     if (!scene || !this.selectedId || this._busy) return;
-    this._busy = true;
-    this._updateLoadEnabled();
-    this._setStatus(`Loading ${this.selectedId}…`);
-    try {
-      await scene.loadGame(this.selectedId);
-      this._setStatus(`Loaded ${this.selectedId}`);
-    } catch (err) {
-      console.error(err);
-      this._setStatus(String(err?.message || err), true);
-    } finally {
-      this._busy = false;
-      this._updateLoadEnabled();
-      await this.refreshList();
-    }
+    const id = this.selectedId;
+    await this._busyAction(`Loading ${id}…`, async () => {
+      await scene.loadGame(id);
+      this._setStatus(`Loaded ${id}`);
+    });
   }
 
   async _onDelete(slotId) {
     if (!slotId || this._busy) return;
-    this._busy = true;
-    this._updateLoadEnabled();
-    this._setStatus(`Deleting ${slotId}…`);
-    try {
+    await this._busyAction(`Deleting ${slotId}…`, async () => {
       await SaveStore.remove(slotId);
       if (this.selectedId === slotId) this.selectedId = null;
       this._setStatus(`Deleted ${slotId}`);
-    } catch (err) {
-      console.error(err);
-      this._setStatus(String(err?.message || err), true);
-    } finally {
-      this._busy = false;
-      this._updateLoadEnabled();
-      await this.refreshList();
-    }
+    });
   }
 }

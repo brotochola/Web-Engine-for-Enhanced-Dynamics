@@ -2,7 +2,7 @@
 // together; the heavy logic lives in src/core/debug/'s sub-modules. SST-14: loaded by DebugUI.load() (debugUi.js) only
 // when a game shows it, so the engine's index does not pull it into every worker of a source build.
 
-import { injectStyles, createTab } from './ui/debugDom.js';
+import { injectStyles, createTab, elem } from './ui/debugDom.js';
 import { StatsCollector } from './stats/statsCollector.js';
 import { DebugCanvas } from './rendering/debugCanvas.js';
 import { ToolManager } from './tools/toolManager.js';
@@ -21,6 +21,22 @@ import { LightPanel } from './panels/lightPanel.js';
 import { RenderPanel } from './panels/renderPanel.js';
 import { MemoryPanel } from './panels/memoryPanel.js';
 import { SavesPanel } from './panels/savesPanel.js';
+
+/** The tabs in order: section id, icon, label and panel class (CR-23: the panels, their list and the tabs from one table). */
+const PANEL_DEFS = [
+  ['scene', '🎬', 'Scene', ScenePanel],
+  ['performance', '⚡', 'Performance', PerformancePanel],
+  ['audio', '🔊', 'Audio', AudioPanel],
+  ['memory', '💾', 'Memory', MemoryPanel],
+  ['saves', '💿', 'Saves', SavesPanel],
+  ['visual', '👁', 'Visual', VisualAidsPanel],
+  ['entities', '📦', 'Entities', EntitiesPanel],
+  ['pools', '🌿', 'Pools', PoolsPanel],
+  ['layers', '📚', 'Layers', LayersPanel],
+  ['light', '☀', 'Light', LightPanel],
+  ['render', '🖼', 'Render', RenderPanel],
+  ['navigation', '🧭', 'Nav', NavigationPanel],
+];
 
 /**
  * The debug overlay managed by GameEngine (game.debugUI): orchestrates panels, tools, stats and a debug canvas.
@@ -59,35 +75,14 @@ export class DebugOverlay {
     this.canvas = new DebugCanvas(this);
     this.tools = new ToolManager(this);
 
-    // Panels (keyed by section id for the accordion)
-    this.panels = {
-      scene: new ScenePanel(this),
-      performance: new PerformancePanel(this),
-      audio: new AudioPanel(this),
-      memory: new MemoryPanel(this),
-      saves: new SavesPanel(this),
-      visual: new VisualAidsPanel(this),
-      entities: new EntitiesPanel(this),
-      pools: new PoolsPanel(this),
-      layers: new LayersPanel(this),
-      light: new LightPanel(this),
-      render: new RenderPanel(this),
-      navigation: new NavigationPanel(this),
-    };
-    this._panelList = [
-      this.panels.scene,
-      this.panels.performance,
-      this.panels.audio,
-      this.panels.memory,
-      this.panels.saves,
-      this.panels.visual,
-      this.panels.entities,
-      this.panels.pools,
-      this.panels.layers,
-      this.panels.light,
-      this.panels.render,
-      this.panels.navigation,
-    ];
+    // Panels (keyed by section id for the accordion), in the tabs' order.
+    this.panels = {};
+    this._panelList = [];
+    for (const [id, , , Panel] of PANEL_DEFS) {
+      const panel = new Panel(this);
+      this.panels[id] = panel;
+      this._panelList.push(panel);
+    }
 
     // Build DOM. From source the stylesheet is a fetch: the bar stays hidden until it is in, or its
     // bare HTML shows for a frame or two.
@@ -234,42 +229,22 @@ export class DebugOverlay {
   // ========================================
 
   _createUI() {
-    this.container = document.createElement('div');
-    this.container.className = 'debug-ui';
+    this.container = elem('div', 'debug-ui');
 
-    const header = document.createElement('div');
-    header.className = 'debug-ui-header';
+    const header = elem('div', 'debug-ui-header');
 
-    const tabDefs = [
-      ['🎬', 'Scene', 'scene'],
-      ['⚡', 'Performance', 'performance'],
-      ['🔊', 'Audio', 'audio'],
-      ['💾', 'Memory', 'memory'],
-      ['💿', 'Saves', 'saves'],
-      ['👁', 'Visual', 'visual'],
-      ['📦', 'Entities', 'entities'],
-      ['🌿', 'Pools', 'pools'],
-      ['📚', 'Layers', 'layers'],
-      ['☀', 'Light', 'light'],
-      ['🖼', 'Render', 'render'],
-      ['🧭', 'Nav', 'navigation'],
-    ];
-
-    for (const [icon, label, id] of tabDefs) {
+    for (const [id, icon, label] of PANEL_DEFS) {
       const tab = createTab(icon, label, id, (sid) => this._toggleSection(sid));
       header.appendChild(tab);
       this.sections[id] = { tab };
     }
 
     // Spacer
-    const spacer = document.createElement('div');
-    spacer.className = 'debug-ui-spacer';
+    const spacer = elem('div', 'debug-ui-spacer');
     header.appendChild(spacer);
 
     // Toggle hint
-    const toggleHint = document.createElement('div');
-    toggleHint.className = 'debug-ui-toggle';
-    toggleHint.textContent = 'Hide';
+    const toggleHint = elem('div', 'debug-ui-toggle', 'Hide');
     toggleHint.onclick = () => this.toggle();
     header.appendChild(toggleHint);
 

@@ -31,6 +31,29 @@ export const DEBUG_FLAG_COUNT = 19;
 export const DEBUG_SELECTED_ENTITY_OFFSET = 20;
 
 /**
+ * The flag of each key enable() takes and getState() returns, in their order. The profiler, the selected entity and the
+ * collision candidates have no key: their show* methods set them.
+ */
+export const DEBUG_FLAG_KEYS = Object.freeze({
+  colliders: DEBUG_FLAGS.SHOW_COLLIDERS,
+  velocity: DEBUG_FLAGS.SHOW_VELOCITY,
+  acceleration: DEBUG_FLAGS.SHOW_ACCELERATION,
+  neighbors: DEBUG_FLAGS.SHOW_NEIGHBORS,
+  spatialGrid: DEBUG_FLAGS.SHOW_SPATIAL_GRID,
+  entityInfo: DEBUG_FLAGS.SHOW_ENTITY_INFO,
+  lights: DEBUG_FLAGS.SHOW_LIGHTS,
+  fpsGraph: DEBUG_FLAGS.SHOW_FPS_GRAPH,
+  entityIndices: DEBUG_FLAGS.SHOW_ENTITY_INDICES,
+  activeOnly: DEBUG_FLAGS.SHOW_ACTIVE_ONLY,
+  debugDraws: DEBUG_FLAGS.SHOW_DEBUG_DRAWS,
+  sleepingEntities: DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES,
+  sleepingCells: DEBUG_FLAGS.SHOW_SLEEPING_CELLS,
+  joints: DEBUG_FLAGS.SHOW_JOINTS,
+  entityOrigins: DEBUG_FLAGS.SHOW_ENTITY_ORIGINS,
+  meshes: DEBUG_FLAGS.SHOW_MESHES,
+});
+
+/**
  * DebugFlags - Manages debug visualization flags
  * Works with SharedArrayBuffer to sync state across workers
  */
@@ -62,99 +85,90 @@ export class DebugFlags {
     for (let i = 0; i < n; i++) flags[i] = 0;
   }
 
-  showColliders(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_COLLIDERS] = enabled ? 1 : 0;
+  /**
+   * Turn one flag (DEBUG_FLAGS) on or off.
+   * @param {number} flag
+   * @param {boolean} [enabled=true]
+   */
+  setFlag(flag, enabled = true) {
+    this.flags[flag] = enabled ? 1 : 0;
     return this;
+  }
+
+  showColliders(enabled = true) {
+    return this.setFlag(DEBUG_FLAGS.SHOW_COLLIDERS, enabled);
   }
 
   showVelocity(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_VELOCITY] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_VELOCITY, enabled);
   }
 
   showAcceleration(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_ACCELERATION] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_ACCELERATION, enabled);
   }
 
   showNeighbors(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_NEIGHBORS] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_NEIGHBORS, enabled);
   }
 
   showSpatialGrid(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_SPATIAL_GRID] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_SPATIAL_GRID, enabled);
   }
 
   showEntityInfo(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_ENTITY_INFO] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_ENTITY_INFO, enabled);
   }
 
   showLights(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_LIGHTS] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_LIGHTS, enabled);
   }
 
   showFPSGraph(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_FPS_GRAPH] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_FPS_GRAPH, enabled);
   }
 
   showProfiler(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_PROFILER] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_PROFILER, enabled);
   }
 
   showEntityIndices(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_ENTITY_INDICES] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_ENTITY_INDICES, enabled);
   }
 
   showActiveOnly(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_ACTIVE_ONLY] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_ACTIVE_ONLY, enabled);
   }
 
   showDebugDraws(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_DEBUG_DRAWS] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_DEBUG_DRAWS, enabled);
   }
 
   showSelectedEntity(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_SELECTED_ENTITY] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_SELECTED_ENTITY, enabled);
   }
 
   showSleepingEntities(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES, enabled);
   }
 
   showSleepingCells(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_SLEEPING_CELLS] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_SLEEPING_CELLS, enabled);
   }
 
   showCollisionCandidates(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES, enabled);
   }
 
   showJoints(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_JOINTS] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_JOINTS, enabled);
   }
 
   showEntityOrigins(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_ENTITY_ORIGINS] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS, enabled);
   }
 
   showMeshes(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_MESHES] = enabled ? 1 : 0;
-    return this;
+    return this.setFlag(DEBUG_FLAGS.SHOW_MESHES, enabled);
   }
 
   /**
@@ -191,22 +205,9 @@ export class DebugFlags {
    * @param {Object} options - { colliders: true, velocity: true, ... }
    */
   enable(options = {}) {
-    if (options.colliders !== undefined) this.showColliders(options.colliders);
-    if (options.velocity !== undefined) this.showVelocity(options.velocity);
-    if (options.acceleration !== undefined) this.showAcceleration(options.acceleration);
-    if (options.neighbors !== undefined) this.showNeighbors(options.neighbors);
-    if (options.spatialGrid !== undefined) this.showSpatialGrid(options.spatialGrid);
-    if (options.entityInfo !== undefined) this.showEntityInfo(options.entityInfo);
-    if (options.lights !== undefined) this.showLights(options.lights);
-    if (options.fpsGraph !== undefined) this.showFPSGraph(options.fpsGraph);
-    if (options.entityIndices !== undefined) this.showEntityIndices(options.entityIndices);
-    if (options.activeOnly !== undefined) this.showActiveOnly(options.activeOnly);
-    if (options.debugDraws !== undefined) this.showDebugDraws(options.debugDraws);
-    if (options.sleepingEntities !== undefined) this.showSleepingEntities(options.sleepingEntities);
-    if (options.sleepingCells !== undefined) this.showSleepingCells(options.sleepingCells);
-    if (options.joints !== undefined) this.showJoints(options.joints);
-    if (options.entityOrigins !== undefined) this.showEntityOrigins(options.entityOrigins);
-    if (options.meshes !== undefined) this.showMeshes(options.meshes);
+    for (const key in DEBUG_FLAG_KEYS) {
+      if (options[key] !== undefined) this.setFlag(DEBUG_FLAG_KEYS[key], options[key]);
+    }
     return this;
   }
 
@@ -247,23 +248,8 @@ export class DebugFlags {
   }
 
   getState() {
-    return {
-      colliders: this.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS),
-      velocity: this.isEnabled(DEBUG_FLAGS.SHOW_VELOCITY),
-      acceleration: this.isEnabled(DEBUG_FLAGS.SHOW_ACCELERATION),
-      neighbors: this.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS),
-      spatialGrid: this.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID),
-      entityInfo: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INFO),
-      lights: this.isEnabled(DEBUG_FLAGS.SHOW_LIGHTS),
-      fpsGraph: this.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH),
-      entityIndices: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES),
-      activeOnly: this.isEnabled(DEBUG_FLAGS.SHOW_ACTIVE_ONLY),
-      debugDraws: this.isEnabled(DEBUG_FLAGS.SHOW_DEBUG_DRAWS),
-      sleepingEntities: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES),
-      sleepingCells: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS),
-      joints: this.isEnabled(DEBUG_FLAGS.SHOW_JOINTS),
-      entityOrigins: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS),
-      meshes: this.isEnabled(DEBUG_FLAGS.SHOW_MESHES),
-    };
+    const state = {};
+    for (const key in DEBUG_FLAG_KEYS) state[key] = this.isEnabled(DEBUG_FLAG_KEYS[key]);
+    return state;
   }
 }

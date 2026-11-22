@@ -1,6 +1,7 @@
 // NavDebugRenderer.js — Draws navigation debug overlays (walkability grid, flowfields, paths)
 
 import { NavGrid } from '../../navGrid.js';
+import { strokeFlowfield, strokeGridLines, visibleCells } from './gridDraw.js';
 
 export class NavDebugRenderer {
   constructor() {
@@ -41,15 +42,11 @@ export class NavDebugRenderer {
 
     const cellSizeScreen = cellSize * zoom;
 
-    const startCellX = Math.max(0, Math.floor(camera.x / cellSize));
-    const startCellY = Math.max(0, Math.floor(camera.y / cellSize));
-    const endCellX = Math.min(gridWidth, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
-    const endCellY = Math.min(gridHeight, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
-
-    const worldStartX = startCellX * cellSize;
-    const worldStartY = startCellY * cellSize;
-    const worldEndX = endCellX * cellSize;
-    const worldEndY = endCellY * cellSize;
+    const cells = visibleCells(camera, canvas, zoom, cellSize, gridWidth, gridHeight, 0);
+    const startCellX = cells[0];
+    const startCellY = cells[1];
+    const endCellX = cells[2];
+    const endCellY = cells[3];
 
     // Blocked cells
     ctx.fillStyle = 'rgba(255, 50, 50, 0.5)';
@@ -64,19 +61,7 @@ export class NavDebugRenderer {
     // Grid lines
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1;
-    ctx.beginPath();
-
-    for (let x = startCellX; x <= endCellX; x++) {
-      const sx = (x * cellSize - camera.x) * zoom;
-      ctx.moveTo(sx, (worldStartY - camera.y) * zoom);
-      ctx.lineTo(sx, (worldEndY - camera.y) * zoom);
-    }
-    for (let y = startCellY; y <= endCellY; y++) {
-      const sy = (y * cellSize - camera.y) * zoom;
-      ctx.moveTo((worldStartX - camera.x) * zoom, sy);
-      ctx.lineTo((worldEndX - camera.x) * zoom, sy);
-    }
-    ctx.stroke();
+    strokeGridLines(ctx, camera, zoom, cellSize, startCellX, startCellY, endCellX, endCellY, Infinity, Infinity);
   }
 
   drawFlowfield(ctx, canvas, camera, zoom, slotIndex) {
@@ -89,28 +74,7 @@ export class NavDebugRenderer {
 
     ctx.strokeStyle = 'rgba(0, 200, 255, 0.7)';
     ctx.lineWidth = 1.5;
-    const arrowLen = cellSize * 0.35 * zoom;
-
-    const startCellX = Math.max(0, Math.floor(camera.x / cellSize) - 1);
-    const startCellY = Math.max(0, Math.floor(camera.y / cellSize) - 1);
-    const endCellX = Math.min(gridWidth, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
-    const endCellY = Math.min(gridHeight, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
-
-    for (let y = startCellY; y < endCellY; y++) {
-      for (let x = startCellX; x < endCellX; x++) {
-        const vecIdx = (y * gridWidth + x) * 2;
-        const vx = vectors[vecIdx];
-        const vy = vectors[vecIdx + 1];
-        if (vx === 0 && vy === 0) continue;
-
-        const dx = vx / 127;
-        const dy = vy / 127;
-        const sx = (x * cellSize + cellSize / 2 - camera.x) * zoom;
-        const sy = (y * cellSize + cellSize / 2 - camera.y) * zoom;
-
-        this._drawArrow(ctx, sx, sy, dx, dy, arrowLen);
-      }
-    }
+    strokeFlowfield(ctx, canvas, camera, zoom, vectors, gridWidth, gridHeight, cellSize);
 
     // Target marker
     const tSx = (targetX - camera.x) * zoom;
@@ -131,28 +95,7 @@ export class NavDebugRenderer {
     const { vectors, gridWidth, gridHeight, cellSize } = ff;
     ctx.strokeStyle = 'rgba(100, 255, 100, 0.7)';
     ctx.lineWidth = 1.5;
-    const arrowLen = cellSize * 0.35 * zoom;
-
-    const startCellX = Math.max(0, Math.floor(camera.x / cellSize) - 1);
-    const startCellY = Math.max(0, Math.floor(camera.y / cellSize) - 1);
-    const endCellX = Math.min(gridWidth, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
-    const endCellY = Math.min(gridHeight, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
-
-    for (let y = startCellY; y < endCellY; y++) {
-      for (let x = startCellX; x < endCellX; x++) {
-        const vecIdx = (y * gridWidth + x) * 2;
-        const vx = vectors[vecIdx];
-        const vy = vectors[vecIdx + 1];
-        if (vx === 0 && vy === 0) continue;
-
-        const dx = vx / 127;
-        const dy = vy / 127;
-        const sx = (x * cellSize + cellSize / 2 - camera.x) * zoom;
-        const sy = (y * cellSize + cellSize / 2 - camera.y) * zoom;
-
-        this._drawArrow(ctx, sx, sy, dx, dy, arrowLen);
-      }
-    }
+    strokeFlowfield(ctx, canvas, camera, zoom, vectors, gridWidth, gridHeight, cellSize);
   }
 
   drawPath(ctx, canvas, camera, zoom, slotIndex) {
@@ -191,31 +134,5 @@ export class NavDebugRenderer {
       ctx.lineWidth = 1;
       ctx.stroke();
     }
-  }
-
-  // ------- internal -------
-
-  _drawArrow(ctx, sx, sy, dx, dy, arrowLen) {
-    ctx.beginPath();
-    ctx.moveTo(sx - dx * arrowLen * 0.5, sy - dy * arrowLen * 0.5);
-    ctx.lineTo(sx + dx * arrowLen * 0.5, sy + dy * arrowLen * 0.5);
-    ctx.stroke();
-
-    const headLen = arrowLen * 0.4;
-    // ±30° from unit (dx,dy) via CS rotate (cos30=√3/2, sin30=1/2)
-    const c30 = 0.86602540378;
-    const s30 = 0.5;
-    const tipX = sx + dx * arrowLen * 0.5;
-    const tipY = sy + dy * arrowLen * 0.5;
-    const bx0 = -(dx * c30 - dy * s30) * headLen;
-    const by0 = -(dx * s30 + dy * c30) * headLen;
-    const bx1 = -(dx * c30 + dy * s30) * headLen;
-    const by1 = -(-dx * s30 + dy * c30) * headLen;
-    ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(tipX + bx0, tipY + by0);
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(tipX + bx1, tipY + by1);
-    ctx.stroke();
   }
 }

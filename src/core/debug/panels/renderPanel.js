@@ -4,6 +4,7 @@
 
 import { createPanel, createRow, createStat } from '../ui/debugDom.js';
 import { RENDER_VIEW, RENDER_VIEWS } from '../../../render/renderViews.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
 const LEGENDS = Object.freeze({
   [RENDER_VIEW.NORMALS]: 'normal → RGB (0.5 + 0.5·n); magenta an unshaded pixel, grey one lit as drawn, black no face',
@@ -18,10 +19,9 @@ const LEGENDS = Object.freeze({
   [RENDER_VIEW.LIGHT_TILES]: 'lights per light tile: black none, the ramp up to 32 (or lighting.maxLights) white; the tile grid in grey',
 });
 
-export class RenderPanel {
+export class RenderPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.panel = null;
+    super(debugUI);
     this.select = null;
     this.opacity = null;
     this.opacityVal = null;

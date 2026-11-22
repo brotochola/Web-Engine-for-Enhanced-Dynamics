@@ -1,13 +1,12 @@
 // NavigationPanel.js — Flowfield / A* path / walkability grid visualization controls
 
-import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
+import { createPanel, createRow, createStat, createButton, elem } from '../ui/debugDom.js';
 import { NavGrid } from '../../navGrid.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
-export class NavigationPanel {
+export class NavigationPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
-    this.elements = {};
-    this.panel = null;
+    super(debugUI);
   }
 
   // ------- DOM creation -------
@@ -54,9 +53,7 @@ export class NavigationPanel {
 
   // ------- lifecycle -------
 
-  attach() {}
 
-  update() {}
 
   onOpen() {
     this._refreshLists();
@@ -94,8 +91,7 @@ export class NavigationPanel {
 
     const nav = this.debugUI.canvas.nav;
     for (const ff of flowfields) {
-      const item = document.createElement('div');
-      item.className = 'debug-ui-nav-item';
+      const item = elem('div', 'debug-ui-nav-item');
       if (nav.selectedFlowfieldSlot === ff.slotIndex) item.classList.add('selected');
       item.innerHTML = `<span class="slot">#${ff.slotIndex}</span><span class="target">→ (${ff.targetX}, ${ff.targetY})</span>`;
       item.onclick = () => this._selectFlowfield(ff.slotIndex);
@@ -111,8 +107,7 @@ export class NavigationPanel {
 
     const nav = this.debugUI.canvas.nav;
     for (const path of paths) {
-      const item = document.createElement('div');
-      item.className = 'debug-ui-nav-item';
+      const item = elem('div', 'debug-ui-nav-item');
       if (nav.selectedPathSlot === path.slotIndex) item.classList.add('selected');
       item.innerHTML = `<span class="slot">#${path.slotIndex}</span><span class="path">(${path.fromX},${path.fromY}) → (${path.toX},${path.toY})</span><span class="length">[${path.length}]</span>`;
       item.onclick = () => this._selectPath(path.slotIndex);
@@ -130,8 +125,7 @@ export class NavigationPanel {
     const nav = this.debugUI.canvas.nav;
     for (const name of names) {
       const ff = NavGrid._staticFlowfields.get(name);
-      const item = document.createElement('div');
-      item.className = 'debug-ui-nav-item';
+      const item = elem('div', 'debug-ui-nav-item');
       if (nav.selectedStaticFlowfield === name) item.classList.add('selected');
       item.innerHTML = `<span class="slot">${name}</span><span class="target">${ff.gridWidth}x${ff.gridHeight}</span>`;
       item.onclick = () => this._selectStaticFlowfield(name);

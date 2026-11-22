@@ -9,6 +9,8 @@
 // panel (dragging a slider, scrolling a list) doesn't fight the free camera's
 // pan/zoom.
 
+import { elem } from './debugDom.js';
+
 let zCounter = 10002;
 
 export class FloatingPanel {
@@ -44,13 +46,11 @@ export class FloatingPanel {
       'border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);';
     head.addEventListener('pointerdown', (e) => this._startDrag(e));
 
-    const titleEl = document.createElement('span');
-    titleEl.textContent = title;
+    const titleEl = elem('span', '', title);
     titleEl.style.cssText =
       'font-weight:600;font-size:13px;color:#fff;pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
 
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '\u00d7';
+    const closeBtn = elem('button', '', '\u00d7');
     closeBtn.title = 'Close';
     closeBtn.style.cssText =
       'background:none;border:none;color:rgba(255,255,255,0.6);font-size:16px;cursor:pointer;padding:0 2px;line-height:1;flex:none';

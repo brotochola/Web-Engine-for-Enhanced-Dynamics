@@ -2514,15 +2514,19 @@ export declare class DebugFlags {
   flags: Uint8Array;
   colors: DebugFlagsPalette;
   constructor(debugBuffer: SharedArrayBuffer);
+  /** Turn one flag (DEBUG_FLAGS) on or off. */
+  setFlag(flag: number, enabled?: boolean): this;
   showColliders(enabled?: boolean): this;
   showVelocity(enabled?: boolean): this;
   showAcceleration(enabled?: boolean): this;
   showNeighbors(enabled?: boolean): this;
   showSpatialGrid(enabled?: boolean): this;
   showEntityInfo(enabled?: boolean): this;
+  showLights(enabled?: boolean): this;
   showFPSGraph(enabled?: boolean): this;
   showProfiler(enabled?: boolean): this;
   showEntityIndices(enabled?: boolean): this;
+  showActiveOnly(enabled?: boolean): this;
   showDebugDraws(enabled?: boolean): this;
   showSelectedEntity(enabled?: boolean): this;
   showSleepingEntities(enabled?: boolean): this;
@@ -2530,6 +2534,7 @@ export declare class DebugFlags {
   showCollisionCandidates(enabled?: boolean): this;
   showJoints(enabled?: boolean): this;
   showEntityOrigins(enabled?: boolean): this;
+  showMeshes(enabled?: boolean): this;
   setSelectedEntity(entityIndex: number): this;
   getSelectedEntity(): number;
   clearSelectedEntity(): this;

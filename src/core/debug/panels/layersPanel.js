@@ -1,9 +1,10 @@
 // LayersPanel.js — Per-layer controls (visible, alpha, blend, shader, uniforms, y-sort, z-index)
 
-import { createPanel } from '../ui/debugDom.js';
+import { createPanel, elem } from '../ui/debugDom.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
 import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE, LAYER_SCALE_MODE } from '../../../util/configDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../layer.js';
+import { DebugPanel } from '../ui/debugPanel.js';
 
 function alphaBySunText(spec) {
   if (typeof spec === 'string') return spec;
@@ -114,15 +115,14 @@ const LIGHTING_BLEND_TITLE = 'The light multiplies the scene by itself: its blen
 const ROW_GRID_TEMPLATE = '112px 40px 92px 116px 108px 108px 52px 44px 72px 82px';
 const ROW_GRID_STYLE = `display:grid;grid-template-columns:${ROW_GRID_TEMPLATE};column-gap:8px;align-items:center`;
 
-export class LayersPanel {
+export class LayersPanel extends DebugPanel {
   constructor(debugUI) {
-    this.debugUI = debugUI;
+    super(debugUI);
     this.elements = {
       layerControls: {},
       layerRows: {},
       layerUniformInputs: {},
     };
-    this.panel = null;
     // DBG-4: the shader options are rebuilt when the scene's loaded sources change (they may finish after attach), not
     // every tick while a scene has none.
     this._shaderSources = null;
@@ -170,12 +170,10 @@ export class LayersPanel {
       'text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.35)';
 
     for (const text of ['Layer', 'Vis', 'Alpha', 'Shader', 'Out Blend', 'Cont Blend', 'Y-Sort', 'Z']) {
-      const cell = document.createElement('span');
-      cell.textContent = text;
+      const cell = elem('span', '', text);
       head.appendChild(cell);
     }
-    const panelsCell = document.createElement('span');
-    panelsCell.textContent = 'Panels';
+    const panelsCell = elem('span', '', 'Panels');
     panelsCell.style.gridColumn = '9 / 11';
     head.appendChild(panelsCell);
 
@@ -348,8 +346,7 @@ export class LayersPanel {
     row.appendChild(zInput);
 
     // Uniforms popup — only shown when the layer has a shader with uniforms
-    const uniformsBtn = document.createElement('button');
-    uniformsBtn.textContent = 'Uniforms';
+    const uniformsBtn = elem('button', '', 'Uniforms');
     uniformsBtn.style.cssText = FLOAT_BUTTON_STYLE;
     uniformsBtn.style.display = 'none';
     uniformsBtn.title = 'Open the uniforms panel for this layer';
@@ -357,8 +354,7 @@ export class LayersPanel {
     row.appendChild(uniformsBtn);
 
     // Compute passes popup — only shown for compute layers
-    const computeBtn = document.createElement('button');
-    computeBtn.textContent = 'Compute';
+    const computeBtn = elem('button', '', 'Compute');
     computeBtn.style.cssText = FLOAT_BUTTON_STYLE;
     computeBtn.style.display = 'none';
     computeBtn.title = 'Open the compute passes panel for this layer';
@@ -440,8 +436,7 @@ export class LayersPanel {
   }
 
   _sectionTitle(text) {
-    const el = document.createElement('div');
-    el.textContent = text;
+    const el = elem('div', '', text);
     el.style.cssText =
       'font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;' +
       'color:rgba(255,255,255,0.35);margin:8px 0 3px;border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:2px';
@@ -522,8 +517,7 @@ export class LayersPanel {
       cb.className = 'debug-ui-checkbox';
       cb.checked = (floats ? floats[entry.offset] : 0) > 0.5;
       cb.onchange = () => layer.setUniform(uName, cb.checked ? 1 : 0);
-      const span = document.createElement('span');
-      span.textContent = label;
+      const span = elem('span', '', label);
       node.appendChild(cb);
       node.appendChild(span);
       return { node, kind: 'check', entry, hint, input: cb };
@@ -538,8 +532,7 @@ export class LayersPanel {
       const node = document.createElement('div');
       node.style.cssText = 'display:grid;grid-template-columns:110px 1fr 44px;gap:6px;align-items:center;margin:2px 0';
       if (hint.tip) node.title = hint.tip;
-      const name = document.createElement('span');
-      name.textContent = label;
+      const name = elem('span', '', label);
       name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       const input = document.createElement('input');
       input.type = 'range';
