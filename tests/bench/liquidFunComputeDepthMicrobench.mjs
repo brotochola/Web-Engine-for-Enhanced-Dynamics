@@ -9,6 +9,7 @@
 // Usage:
 //   node tests/bench/liquidFunComputeDepthMicrobench.mjs
 //   node tests/bench/liquidFunComputeDepthMicrobench.mjs --reps 11 --output tests/results/liquidfun-computedepth-micro.json
+//   [--warmup-ms 1500] (time-based warm-up, N-226)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,6 +29,10 @@ const ICE_HALF_H = Number(args['ice-half-h'] ?? 100);
 const RADIUS = Number(args.radius ?? 10);
 const REPS = Number(args.reps ?? 11);
 const WARMUP = Number(args.warmup ?? 2);
+// N-226: each sample is one step on a fresh particle system, so two warm-up samples left that step's WASM in Liftoff (V8
+// tiers a function up after enough of its own work, call by call): --no-liftoff read it 1.15x faster on the ASUS (4
+// pairs). The warm-up runs this long first (and at least WARMUP samples), so the timed steps run TurboFan code.
+const WARMUP_MS = Number(args['warmup-ms'] ?? 1500);
 const OUTPUT = args.output ? String(args.output) : null;
 
 const VISCOUS = 1 << 2;
@@ -73,6 +78,9 @@ function instantiateBox2dWasm() {
   return fn;
 }
 
+// One world for the process: the module has no world destroy, and the warm-up makes more samples than its worlds.
+let worldId = 0;
+
 function timeOneIceStep(fn) {
   const createWorld = fn('create_world');
   const bindGameBuffers = fn('bind_game_buffers');
@@ -88,9 +96,11 @@ function timeOneIceStep(fn) {
     (Math.floor((2 * PUDDLE_HALF_W) / spacing) + 1) * (Math.floor((2 * PUDDLE_HALF_H) / spacing) + 1);
   const iceEst = (Math.floor((2 * ICE_HALF_W) / spacing) + 1) * (Math.floor((2 * ICE_HALF_H) / spacing) + 1);
 
-  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
-  if (!worldId) throw new Error('create_world failed');
-  if (!bindGameBuffers(16)) throw new Error('bind_game_buffers failed');
+  if (!worldId) {
+    worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+    if (!worldId) throw new Error('create_world failed');
+    if (!bindGameBuffers(16)) throw new Error('bind_game_buffers failed');
+  }
   const sysOk = createParticleSystem(worldId, RADIUS, 1.0, puddleEst + iceEst + 64, 0);
   if (!sysOk) throw new Error('create_particle_system failed');
   setSubSteps(1);
@@ -143,7 +153,8 @@ function timeOneIceStep(fn) {
 
 const fn = instantiateBox2dWasm();
 
-for (let i = 0; i < WARMUP; i++) {
+const warmUntil = performance.now() + WARMUP_MS;
+for (let i = 0; i < WARMUP || performance.now() < warmUntil; i++) {
   timeOneIceStep(fn);
 }
 
