@@ -31,6 +31,7 @@ import { loadMark } from '../../util/loadMarks.js';
 import {
   applySharedResources,
   applyTime,
+  applySimNow,
   applyNav,
   remapCameraFollow,
   idMapGetter,
@@ -306,6 +307,7 @@ export function applySavePayloadToScene(scene, payload, options = {}) {
 
   applySharedResources(payload.sharedResources);
   applyTime(payload.timeScale);
+  applySimNow(payload.simNowMs);
   applyNav(payload.nav);
 
   const completePromise = new Promise((resolve, reject) => {

@@ -87,8 +87,8 @@ test('a serializable class can leave some of its entities out of a save (N-5)', 
   assert.equal(shouldSaveEntity(Chunk, 2, { active }), true);
 });
 
-test('SAVE_FORMAT_VERSION is 7 (N-314: decal tiles deflated; E-539: entities by columns)', () => {
-  assert.equal(SAVE_FORMAT_VERSION, 7);
+test('SAVE_FORMAT_VERSION is 8 (N-329: the sim clock; N-314: decal tiles deflated; E-539: entities by columns)', () => {
+  assert.equal(SAVE_FORMAT_VERSION, 8);
 });
 
 test('binary uncompressed roundtrip', () => {
@@ -96,7 +96,7 @@ test('binary uncompressed roundtrip', () => {
   const bytes = encodeSaveUncompressed(payload);
   const decoded = decodeSaveUncompressed(bytes);
   assert.equal(decoded.magic, SAVE_MAGIC);
-  assert.equal(decoded.formatVersion, 7);
+  assert.equal(decoded.formatVersion, 8);
   assert.equal(decoded.sceneName, 'TestScene');
   assert.equal(decoded.entities.length, 1);
   assert.deepEqual([...decoded.entities[0].indices], [7]);
@@ -117,7 +117,7 @@ test('binary deflate roundtrip', async () => {
   assert.ok(compressed.byteLength > 0);
   const decoded = await decodeSave(compressed);
   assert.equal(decoded.entities[0].typeName, 'A');
-  assert.equal(decoded.formatVersion, 7);
+  assert.equal(decoded.formatVersion, 8);
 });
 
 test('applyEntitySaveRestore writes a row of SoA fields', () => {
@@ -186,7 +186,7 @@ test('joints + entityIndex binary roundtrip', () => {
   });
   const bytes = encodeSaveUncompressed(payload);
   const decoded = decodeSaveUncompressed(bytes);
-  assert.equal(decoded.formatVersion, 7);
+  assert.equal(decoded.formatVersion, 8);
   assert.deepEqual([...decoded.entities[0].indices], [7]);
   assert.equal(decoded.joints.length, 1);
   assert.equal(decoded.joints[0].entityA, 7);

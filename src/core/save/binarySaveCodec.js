@@ -830,12 +830,16 @@ function writeInstanceFields(w, value) {
   w.str(JSON.stringify(value));
 }
 
-function writeTime(w, scale) {
-  w.f32(+scale);
+// TIME: the scale (f32), then the sim clock's time (f64, N-329); NaN for either one the save did not have.
+function writeTime(w, scale, simNowMs) {
+  w.f32(scale == null ? NaN : +scale);
+  w.f64(simNowMs == null ? NaN : +simNowMs);
 }
 
 function readTime(r) {
-  return r.f32();
+  const scale = r.f32();
+  const simNowMs = r.f64();
+  return { scale: scale === scale ? scale : null, simNowMs: simNowMs === simNowMs ? simNowMs : null };
 }
 
 // TWEENS2. The entity is u32 (entityIdWidth 32 indices exceed 65535). The leading
@@ -915,8 +919,8 @@ export function encodeBinarySaveBody(payload) {
   if (payload.nav?.walkability) {
     pushSection(sections, SECTION.NAV, (w) => writeNav(w, payload.nav));
   }
-  if (payload.timeScale != null) {
-    pushSection(sections, SECTION.TIME, (w) => writeTime(w, payload.timeScale));
+  if (payload.timeScale != null || payload.simNowMs != null) {
+    pushSection(sections, SECTION.TIME, (w) => writeTime(w, payload.timeScale, payload.simNowMs));
   }
   if (payload.tweens?.length) {
     pushSection(sections, SECTION.TWEENS2, (w) => writeTweens(w, payload.tweens));
@@ -971,6 +975,7 @@ export function decodeBinarySaveBody(bytes) {
   if (!map[SECTION.META]) throw new Error('SaveGame: missing META section');
 
   const meta = readMeta(new Reader(map[SECTION.META]));
+  const time = map[SECTION.TIME] ? readTime(new Reader(map[SECTION.TIME])) : null;
   return {
     sceneName: meta.sceneName,
     engineVersion: meta.engineVersion,
@@ -988,7 +993,8 @@ export function decodeBinarySaveBody(bytes) {
     fixtures: readVersioned(map, SECTION.FIXTURES2, 'fixture', readFixtures),
     meshes: readVersioned(map, SECTION.MESHES2, 'mesh', readMeshes),
     nav: map[SECTION.NAV] ? readNav(new Reader(map[SECTION.NAV])) : null,
-    timeScale: map[SECTION.TIME] ? readTime(new Reader(map[SECTION.TIME])) : null,
+    timeScale: time ? time.scale : null,
+    simNowMs: time ? time.simNowMs : null,
     tweens: map[SECTION.TWEENS2] ? readTweens(new Reader(map[SECTION.TWEENS2])) : null,
     // A save whose scene had no onSaveGame has no CUSTOM section: null, not an error.
     custom: readVersioned(map, SECTION.CUSTOM, 'custom', readCustom),
