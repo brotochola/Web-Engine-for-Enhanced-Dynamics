@@ -276,10 +276,8 @@ class LogicWorker extends AbstractWorker {
     this._impactsLostWarned = false;
 
     // Performance tracking
-    this.activeEntityCount = 0; // Number of active entities this worker is processing
     this.entitiesProcessedThisFrame = 0; // Track actual entities processed
     this.systemsExecutedThisFrame = 0; // Track number of distinct update phases executed
-    this.frameStartTime = 0; // For timing diagnostics
     // E-250: the frame's detailed-stats times, here from the start. update() first wrote them as the Smi 0 on the first
     // frame, which added them then, and a measured double later moved the worker to a new map again (N-32). -0 is a
     // double zero, so each is a double field from the start; update() still resets them every frame.
@@ -1359,7 +1357,6 @@ class LogicWorker extends AbstractWorker {
   }
 
   update(deltaTime, dtRatio, resuming) {
-    if (this.collectDetailedStats) this.frameStartTime = performance.now();
     // DX-GUARDS E2 (debug build): once a second, a field first written after onSpawned.
     auditFields(firstActiveInstance);
     Tween.tick(deltaTime, this.workerIndex, this.totalLogicWorkers);
@@ -1674,9 +1671,6 @@ class LogicWorker extends AbstractWorker {
     if (this.entitiesProcessedThisFrame > 0) {
       this.systemsExecutedThisFrame++; // Entity tick system executed
     }
-
-    // Store active count for FPS reporting
-    this.activeEntityCount = activeCount;
 
     // ========================================
     // PHASE 3: SEND LIST UPDATES TO LOGIC0 (non-logic0 workers)

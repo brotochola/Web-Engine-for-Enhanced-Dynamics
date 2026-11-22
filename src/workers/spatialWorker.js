@@ -565,17 +565,6 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * Get circle pattern for a specific cellRadius
-   * @param {number} cellRadius - Radius in cells
-   * @returns {Int32Array} Pattern array with [dr, dc, dr, dc, ...] pairs
-   */
-  _getCirclePattern(cellRadius) {
-    // Clamp to max supported radius
-    const clampedRadius = cellRadius > this._maxCellRadius ? this._maxCellRadius : cellRadius;
-    return this._circlePatterns[clampedRadius] || this._circlePatterns[0];
-  }
-
-  /**
    * E-328: spatial.startOn, 'vsync' (the default) or 'logicDone', or an array of them, one per spatial worker (a worker
    * past its end starts on the vsync). 'logicDone' needs logic workers and frames on the vsync: a worker or a logic paced
    * by a timer (noLimitFPS, fixedFps) has no vsync to share, and starts when its timer fires.
