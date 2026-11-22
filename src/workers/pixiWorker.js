@@ -2052,7 +2052,8 @@ class PixiRenderer extends AbstractWorker {
       this._renderCameraY || 0,
       this.canvasHeight / (this._renderZoom || 1),
     );
-    if (!layerIsVisible(Layer.entitiesId)) {
+    const entitiesShown = layerIsVisible(Layer.entitiesId);
+    if (!entitiesShown) {
       this.entitiesBatch.hide();
       this.visibleEntityCount = 0;
       this.visibleParticleCount = 0;
@@ -2080,7 +2081,12 @@ class PixiRenderer extends AbstractWorker {
     // E-448: the opaque pass needs the canvas's depth and the entities drawn in one piece: not through a SCREEN layer
     // (the stage's target there has no depth on WebGL), nor in chunks around GPU particle groups (last frame's).
     // E-502: nor on Intel's integrated or tile-based GPUs, unless debug.opaquePass forces it (_opaqueOn, set at GL init).
-    this.entitiesBatch.setOpaqueAllowed(this._opaqueOn && !this._entityChunksActive && !this._screenLayersShown());
+    // DBG-3: nor while the layer fades: the pass draws solid pixels with blending off, so a layer alpha under 1 left them
+    // opaque (only the soft edges faded) until 0, where Pixi skips the container. The batch then blends every pixel.
+    const root = this._entitiesRoot;
+    this.entitiesBatch.setOpaqueAllowed(
+      this._opaqueOn && !this._entityChunksActive && !this._screenLayersShown() && (root === null || root.alpha >= 1),
+    );
     // And it draws when its rows cover enough of the canvas at the camera's zoom to pay for their second vertex pass.
     this.entitiesBatch.setOpaqueView(this._renderZoom || 1, this.canvasWidth * this.canvasHeight);
 
@@ -2221,6 +2227,11 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesBatch.gbuf && packed.sprite > 0) this._commitPixiGbuf(packed.spriteIndices, packed.sprite);
     if (this._proxiesOn) this._applyLocalProxies(packed.spriteIndices, packed.sprite);
     if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;
+    // DBG-1: entities hidden with their glows shown come here for the glows: the pack wrote (and showed) the entities too.
+    if (!entitiesShown) {
+      this.entitiesBatch.hide();
+      this.visibleEntityCount = 0;
+    }
   }
 
   /**
@@ -3293,8 +3304,67 @@ class PixiRenderer extends AbstractWorker {
       // On the stage a MESH layer's textured rows are a mesh of their own. Through an RT, the Sprite holds the alpha.
       const cl = this._customLayers[i];
       if (cl && cl.uvFillBatch && !cl.rt) cl.uvFillBatch.mesh.alpha = Layer._alpha[i];
+      // DBG-3: the unshaded pixels are added where the light is short of them, so they fade with the light they make up for.
+      if (name === 'lighting' && this._unshadedComposite !== null) this._unshadedComposite.alpha = Layer._alpha[i];
     }
     this.syncSunLayerAlpha();
+  }
+
+  /**
+   * DBG-2: blendMode, containerBlendMode and zIndex set at run time (the Layer setters: config SAB plus a dirty flag),
+   * applied to every object that draws the layer. _applyLayerPresentation reads the same SAB, so registering a layer's
+   * object again (a shader swap, a look composite, the light pass rebuilt) keeps them.
+   */
+  syncLayerPresentationFromSharedState() {
+    const dirty = Layer._presentationDirty;
+    if (!dirty) return;
+    let moved = false;
+    for (let i = 0; i < Layer.count; i++) {
+      if (Atomics.load(dirty, i) !== 1) continue;
+      Atomics.store(dirty, i, 0);
+      const name = Layer.getName(i);
+      if (name) {
+        this._applyLayerBlendAndZ(i, name);
+        moved = true;
+      }
+    }
+    if (moved) this.pixiApp.stage.sortChildren();
+  }
+
+  /** DBG-2: one layer's blend and z on its display object and on the objects beside it that draw its pixels. */
+  _applyLayerBlendAndZ(id, name) {
+    const layer = Layer.get(name);
+    if (!layer) return;
+    const display = this._layerRuntime[name] ?? null;
+    const cl = this._customLayers[id];
+    const z = layer.zIndex;
+    const blend = cl !== undefined && display !== null && this._customLayerForcesContainerBlend(cl, display)
+      ? layer.containerBlendMode
+      : layer.blendMode;
+    if (display !== null) {
+      display.zIndex = z;
+      // The light's meshes multiply and add by themselves (lightEdges.js): a blend on their host would change nothing.
+      if (name !== 'lighting' || this._lightEdges === null) display.blendMode = blend;
+    }
+    // The entities' meshes set their own blend, so their root's was never inherited: the batch takes it (its opaque pass
+    // drops itself off 'normal').
+    if (name === 'entities' && this.entitiesBatch) this.entitiesBatch.setLayerBlend(layer.blendMode);
+    if (name === 'lighting' && this._unshadedComposite !== null) this._unshadedComposite.zIndex = z;
+    if (cl === undefined) return;
+    // A layer's pieces drawn into its render texture take the container blend; the one on the stage is the display.
+    const pieceBlend = layer.containerBlendMode;
+    const pieces = [cl.batch?.mesh, cl.fillBatch?.mesh, cl.splatBatch?.mesh];
+    for (let k = 0; k < pieces.length; k++) {
+      const piece = pieces[k];
+      if (piece && piece !== display) piece.blendMode = pieceBlend;
+    }
+    const uvMesh = cl.uvFillBatch?.mesh;
+    if (uvMesh) {
+      // On the stage a MESH layer's textured rows draw beside the fill mesh, as it does; through an RT they are a piece.
+      const onStage = !cl.rt && !cl.meshLook;
+      uvMesh.blendMode = onStage ? (display !== null ? display.blendMode : blend) : pieceBlend;
+      if (onStage) uvMesh.zIndex = z;
+    }
   }
 
   /** Layers with alphaBySun, from layer metadata (one short list, so the general layer loops carry no branch). */
@@ -3431,6 +3501,9 @@ class PixiRenderer extends AbstractWorker {
       this._renderLiquidFunLightingField();
       this._renderParticleLightingField();
       if (this._unshadedOn) this._renderUnshaded();
+    } else if (this._unshadedComposite !== null && this._unshadedComposite.visible) {
+      // DBG-1: the unshaded pixels go with the lighting layer: hidden, it would keep adding the last frame's.
+      this._unshadedComposite.visible = false;
     }
     if (started) this.lightsTimeThisFrame += performance.now() - started;
   }
@@ -3720,12 +3793,16 @@ class PixiRenderer extends AbstractWorker {
   _createUnshadedLayer() {
     const width = this.canvasWidth;
     const height = this.canvasHeight;
+    // DBG-3: it fades with the lighting layer (syncLayerAlphaFromSharedState), from the alpha that layer has now.
+    const lightingId = Layer.lighting?.id;
+    const alpha = lightingId !== undefined && Layer._alpha ? Layer._alpha[lightingId] : 1;
     this.unshadedRT = PIXI.RenderTexture.create({ width, height });
     if (this._lightEdges !== null) {
       // DX-LIGHTEDGES: the two halves over the light host's stencil marks, drawn right after it (same zIndex, added later).
       this._unshadedEdges = unshadedEdgesHost(this._lightEdgesEnv(), this._lightEdgesGeometry, this.lightingRT.source, this.unshadedRT.source);
       const host = this._unshadedEdges.host;
       host.visible = false;
+      host.alpha = alpha;
       host.zIndex = this._lightEdges.host.zIndex;
       this._unshadedComposite = host;
       this.pixiApp.stage.addChild(host);
@@ -3761,6 +3838,7 @@ class PixiRenderer extends AbstractWorker {
     mesh.blendMode = 'add';
     mesh.cullable = false;
     mesh.visible = false;
+    mesh.alpha = alpha;
     mesh.zIndex = this.lightingDisplaySprite ? this.lightingDisplaySprite.zIndex : 0;
     this._unshadedComposite = mesh;
     this.pixiApp.stage.addChild(mesh);
@@ -4124,6 +4202,7 @@ class PixiRenderer extends AbstractWorker {
       this.updateCameraTransform();
       this.updateGpuParticleLayers();
       this.syncLayerAlphaFromSharedState();
+      this.syncLayerPresentationFromSharedState();
       this.updateDecalTiles();
       if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
         this.syncLayerResolutionFromSharedState();
@@ -5605,6 +5684,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!this.shadowBatch || !this.shadowRT) return;
     if (!layerIsVisible(Layer.castedShadows?.id)) {
       this._setKeyedSunStream(false);
+      this._clearShadowMapsWhileHidden();
       return;
     }
     const interval = this.shadowUpdateInterval | 0;
@@ -5617,6 +5697,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // would draw them.
     const nextSkip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
     this._setKeyedSunStream(this._keyedSunWanted && !nextSkip);
+  }
+
+  /**
+   * DBG-1: the casted-shadows layer hidden means no shadows. In map mode the light pass samples the sun's and the lamps'
+   * maps, and only the shadow pass draws or clears them: left alone they would stand on screen, frozen. They are cleared
+   * once, and the tick restarts so the first frame shown again draws them whatever shadowUpdateInterval is.
+   */
+  _clearShadowMapsWhileHidden() {
+    this._shadowUpdateTick = 0;
+    if (this._sunMapOn) {
+      this._sunMapDrew = false;
+      this._clearSunMapIfEmpty();
+    }
+    if (this._lampMapOn) {
+      this._lampMapDrew = false;
+      this._clearLampMapIfEmpty();
+    }
   }
 
   /** E-211: whether the entity batch's next keyed packs write its instances' shadow terms (once it has them). */
@@ -7230,9 +7327,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     this._ensureKeyedCasters(shader);
     const gpu = this._gpuQueueRead;
-    const sunN = gpu && gpu.header ? (gpu.header[GPU_HDR_SUN] | 0) : 0;
-    const stampN = gpu && gpu.header ? (gpu.header[GPU_HDR_STAMP] | 0) : 0;
-    const cookieN = gpu && gpu.header ? (gpu.header[GPU_HDR_COOKIE] | 0) : 0;
+    // DBG-1: the sun and stamp rows are the entities' (pre-render takes them from the render queue), so a hidden entities
+    // layer casts nothing, and its cookies (they only lighten what casters drew) go with them. Volumes cast on their own.
+    const castersShown = !!(gpu && gpu.header) && layerIsVisible(Layer.entitiesId);
+    const sunN = castersShown ? (gpu.header[GPU_HDR_SUN] | 0) : 0;
+    const stampN = castersShown ? (gpu.header[GPU_HDR_STAMP] | 0) : 0;
+    const cookieN = castersShown ? (gpu.header[GPU_HDR_COOKIE] | 0) : 0;
     // E-191 step 2: pre-render's sun and stamp rows are keyed caster rows (a pose, a key, the shadow terms; a stamp's
     // light) when it found Pixi's statics recent.
     const keyedRows = gpu && gpu.header ? ((gpu.header[GPU_HDR_FLAGS] | 0) & GPU_FLAG_KEYED_CASTERS) !== 0 : false;
@@ -7768,47 +7868,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Handle layer property changes from debug UI
-   * @param {Object} data - { layer, visible, blendMode, containerBlendMode, zIndex, shader, shaderFragment }
+   * The debug UI's shader swap and splat radius for a layer. Visibility, alpha, blend and z are the Layer facade's
+   * setters (config SAB plus dirty flags), applied each frame (DBG-2).
+   * @param {Object} data - { layer, shader, shaderFragment, splatRadius }
    */
   handleSetLayerProps(data) {
-    const { layer, visible, blendMode, containerBlendMode, zIndex, shader, shaderFragment, splatRadius } = data;
+    const { layer, shader, shaderFragment, splatRadius } = data;
 
     if (shader !== undefined || shaderFragment !== undefined) {
       this._setCustomLayerShader(layer, shaderFragment || null, shader || null);
-    }
-
-    const displayObject = this.layerRefs?.[layer];
-    if (!displayObject && splatRadius === undefined) {
-      return;
-    }
-
-    if (visible !== undefined && displayObject) {
-      const show = visible && (layer !== 'lightGlows' || this._lightGlowAdd);
-      setDisplayVisible(displayObject, show);
-    }
-
-    if (blendMode !== undefined && displayObject) {
-      displayObject.blendMode = blendMode;
-    }
-
-    if (containerBlendMode !== undefined) {
-      const layerObj = Layer.get(layer);
-      if (layerObj) {
-        const cl = this._customLayers[layerObj.id];
-        if (cl?.batch?.mesh) {
-          cl.batch.mesh.blendMode = containerBlendMode;
-        }
-        if (cl?.fillBatch?.mesh) {
-          cl.fillBatch.mesh.blendMode = containerBlendMode;
-        }
-        if (cl?.uvFillBatch?.mesh) {
-          cl.uvFillBatch.mesh.blendMode = containerBlendMode;
-        }
-        if (cl?.splatBatch?.mesh) {
-          cl.splatBatch.mesh.blendMode = containerBlendMode;
-        }
-      }
     }
 
     if (splatRadius !== undefined) {
@@ -7820,11 +7888,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           if (cl.splat) cl.splat.radius = splatRadius;
         }
       }
-    }
-
-    if (zIndex !== undefined && displayObject) {
-      displayObject.zIndex = zIndex;
-      this.pixiApp.stage.sortChildren();
     }
   }
 
@@ -8516,6 +8579,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         (name !== 'lightGlows' || this._lightGlowAdd) &&
         (name !== 'castedShadows' || this.shadowSpritesEnabled);
       if (displayObj) setDisplayVisible(displayObj, show);
+      // DBG-1: on the stage a MESH layer's textured rows are a mesh of their own beside the fill mesh (through an RT the
+      // layer's sprite holds both). Its geometry's instanceCount says whether it has triangles (setDisplayVisible).
+      const cl = this._customLayers[i];
+      if (cl !== undefined && cl.uvFillBatch && !cl.rt && !cl.meshLook) setDisplayVisible(cl.uvFillBatch.mesh, show);
     }
   }
 

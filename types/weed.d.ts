@@ -3441,6 +3441,8 @@ export declare class Layer {
   constructor(id: number, name: string);
 
   get zIndex(): number;
+  /** Draw order against the other layers. Any worker; the renderer moves every object of the layer. Throws unless finite. */
+  set zIndex(value: number);
   get resolution(): number;
   /**
    * A look layer's render-texture scale (viewport × this). Any worker; the renderer remakes the layer's render
@@ -3456,8 +3458,16 @@ export declare class Layer {
   get ySorting(): boolean;
   get available(): boolean;
   get blendMode(): string;
+  /**
+   * How the layer's picture blends onto the scene, by name: 'normal', 'add', 'multiply', 'screen', 'erase', 'normal-npm',
+   * 'add-npm', 'screen-npm', 'none', 'min' or 'max' (BLEND_MODES). Any worker; applied to every object of the layer.
+   * Throws on another name.
+   */
+  set blendMode(value: string);
   get blendModeId(): number;
   get containerBlendMode(): string;
+  /** The blend the layer's pieces draw with into its render texture (config shader.containerBlend), by name, as blendMode. */
+  set containerBlendMode(value: string);
   get containerBlendModeId(): number;
   get hasRenderQueue(): boolean;
   get builtIn(): boolean;

@@ -2,6 +2,10 @@
  * Engine feature catalog for the scoreboard.
  * One row per hot subsystem. Gameplay means a scene that actually runs the code.
  * Artistic demos (Predator combat) are not rows.
+ *
+ * scene.loadKnob (DX-SCORELOAD): the scene's query key that scales its primary worker's load, its default (base) and a
+ * cap (max). calibrateScoreboardLoads.mjs raises it on a machine where the baseline's primary sits under the stress
+ * floor, and runScoreboard --loads runs both sides at that load.
  */
 
 export const ENGINE_FEATURES = [
@@ -14,6 +18,7 @@ export const ENGINE_FEATURES = [
       key: 'rayStress',
       path: '/tests/bench/stressScenes/rayStressScene.js',
       exportName: 'RayStressScene',
+      loadKnob: { key: 'casts', base: 3072, max: 49152 },
       headed: false,
       kind: 'stress',
     },
@@ -29,6 +34,7 @@ export const ENGINE_FEATURES = [
       key: 'rayVsBox2dBusy',
       path: '/tests/bench/stressScenes/rayVsBox2dStressScene.js',
       exportName: 'RayVsBox2dWeedBusyScene',
+      loadKnob: { key: 'casts', base: 3072, max: 49152 },
       headed: false,
       kind: 'stress',
     },
@@ -127,6 +133,7 @@ export const ENGINE_FEATURES = [
       key: 'stationarySpatial',
       path: '/tests/bench/stressScenes/stationarySpatialScene.js',
       exportName: 'StationarySpatialScene',
+      loadKnob: { key: 'entities', base: 9000, max: 40000 },
       headed: false,
       kind: 'stress',
     },
@@ -213,6 +220,7 @@ export const ENGINE_FEATURES = [
       key: 'queryAabb',
       path: '/tests/bench/stressScenes/queryAabbStressScene.js',
       exportName: 'QueryAabbStressScene',
+      loadKnob: { key: 'queries', base: 1, max: 4096 },
       headed: false,
       kind: 'stress',
     },
@@ -344,6 +352,8 @@ export const ENGINE_FEATURES = [
       key: 'rayVsBox2dBoxBusy',
       path: '/tests/bench/stressScenes/rayVsBox2dStressScene.js',
       exportName: 'RayVsBox2dBoxBusyScene',
+      // No loadKnob: ?casts sends its Box2D rays to the physics worker, and logic0 (the primary) stayed 0.18 -> 0.74 ms
+      // from 3 072 to 49 152 casts on the ASUS (DX-SCORELOAD calibration, 2026-11-21).
       headed: false,
       kind: 'stress',
     },
@@ -431,6 +441,7 @@ export const ENGINE_FEATURES = [
       key: 'bulletStress',
       path: '/tests/bench/stressScenes/bulletStressScene.js',
       exportName: 'BulletStressScene',
+      loadKnob: { key: 'bullets', base: 40000, max: 65000 },
       headed: false,
       kind: 'stress',
     },
@@ -446,6 +457,7 @@ export const ENGINE_FEATURES = [
       key: 'spawnStorm',
       path: '/tests/bench/stressScenes/spawnStormScene.js',
       exportName: 'SpawnStormScene',
+      loadKnob: { key: 'storm', base: 1800, max: 6000 },
       headed: false,
       kind: 'stress',
     },

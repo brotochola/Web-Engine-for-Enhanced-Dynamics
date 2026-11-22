@@ -19609,20 +19609,22 @@
     {
       "id": "N-226",
       "title": "Wasm kernel benches that warm a new export with a few short frames time its Liftoff code, not TurboFan's: a 5 000-row pack read 0.104 ms warmed so against 0.065 ms under --no-liftoff, and gpuPackKeyedMicrobench (20 warm frames) may have timed E-387's 0.1318 ms that way",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-444 agent (opt/prerender-gbuf-words)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-21 on the ASUS: wasmTierCompare.mjs (42aa376d, a2c9c8e9) screened the 56 WASM benches; liquidFunExtract (47ac1aab) and liquidFunComputeDepth (6645b189) warm to TurboFan (R-1721, R-1723)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "gpuPackIndexedMicrobench, E-444's export: 0.104 ms (10 small warm frames) against 0.065 ms (--no-liftoff) at 5 000 rows; with 250 ms of warm-up per case the owner shape still read 13 % faster under --no-liftoff than under V8's default tiering (3.308 / 3.310 -> 3.283 / 3.083 against 3.400 / 3.560 -> 2.928 / 3.115), unexplained. HOW_WE_MEASURE asks for TurboFan, not Liftoff, in wasm kernels.",
-      "next": "Audit the wasm kernel benches' warm-up (a time-based warm-up, or a --no-liftoff run beside the default one, as kernelTierAudit does for JS), re-read gpuPackKeyedMicrobench for E-387, and find why default tiering trails --no-liftoff after 250 ms (a function Liftoff keeps because it is called rarely: each call a big frame?).",
+      "result": "Fixed: two LiquidFun benches timed Liftoff (extract 2 to 3.6x slow, ComputeDepth 1.15x) and now warm 1.5 s on one world; every other flag of the 2-pair screen read even at 4 pairs. warmWasm checks the export only, so a one-shot bench needs a time-based warm-up.",
+      "next": "Nothing left on the bench side; wasmTierCompare --pairs 2 then --pairs 4 checks a new WASM bench.",
       "refs": [],
       "aliases": [
         "liftoff in wasm benches",
         "wasm tiering gap"
       ],
       "records": [
-        "R-1247"
+        "R-1247",
+        "R-1721",
+        "R-1723"
       ]
     },
     {
@@ -20386,19 +20388,19 @@
       "id": "N-243",
       "title": "glFrameRecorder rounds draws a frame to 0.1, so per-draw times of layers that redraw in fewer than every frame read about +-8 %",
       "status": "kept-hygiene",
-      "statusText": "fixed 2026-11-20 (289933e0), on fix/n243-recorder-unrounded (R-1712)",
+      "statusText": "fixed 2026-11-20 (289933e0, R-1712); its WebGPU half 2026-11-21 (dff643d5, R-1715), on fix/n243-webgpu-unrounded",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Fixed 2026-11-20 (289933e0): the result's rows hold unrounded rates, their totals and msPerDraw; only the printed table rounds. The WebGPU recorder rounds the same way (left to the main PC).",
-      "next": "webgpuRecorderWorker.mjs rounds draws a frame the same way (WebGPU: the main PC).",
+      "result": "Fixed: glFrameRecorder (289933e0) and webgpuFrameRecorder (dff643d5) keep rates a frame unrounded, with their totals and ms a draw; only the printed tables round.",
       "refs": [],
       "aliases": [
         "recorder draw rounding"
       ],
       "records": [
         "R-1228",
-        "R-1712"
+        "R-1712",
+        "R-1715"
       ]
     },
     {
@@ -23115,10 +23117,10 @@
       "id": "DX-DEBUGUI",
       "title": "The debug UI catches up with the engine: the Layers panel's Vis, blend and alpha work on every render path (they do not today), render views of the buffers the frame is made of (G-buffer normals and heights, light buffer, shadow maps), a sheet's height and normal maps, the lighting grid (light tiles), and panels for the sun, the light pass, the camera and the renderer's counters",
       "status": "open",
-      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed",
+      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed. DBG-1 to DBG-3 fixed 2026-11-21 on the ASUS (R-1716, R-1717, R-1718)",
       "date": "2026-11-18",
       "result": "",
-      "next": "DBG-1 to DBG-3 (the bugs the owner hit) first, then DBG-4 (the same panel); DBG-5 builds the render views that DBG-7 uses; DBG-6 is main-thread only and can run beside them. Estimate: about 15 to 23 h in a row (re-estimated: the first 25 to 36 h summed every range's top). The owner's decisions are in the plan's section 6.",
+      "next": "DBG-4 (the Layers panel lists every layer and says what it is), then DBG-5 (render views) before DBG-7; DBG-6 beside them. DBG-3 left the worldRect stage mesh (3.3.3).",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23132,18 +23134,20 @@
       ],
       "records": [
         "R-1347",
-        "R-1348"
+        "R-1348",
+        "R-1716",
+        "R-1717",
+        "R-1718"
       ],
       "rank": 21
     },
     {
       "id": "DBG-1",
       "title": "The debug UI's Layers panel: unticking Vis does not hide what the layer draws: castedShadows in map mode leaves the sun and lamp maps frozen in the light pass, hidden entities still cast, hidden lighting leaves the unshaded composite, a MESH layer's uvFill mesh ignores it (read, not yet confirmed)",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-21 (b131532c), on fix/dbg1-layer-vis (R-1716)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Confirm each suspect of the plan's section 3.1 (workerHarness or the browser, both backends), then apply visibility to every object that draws the layer's pixels; node test: a hidden castedShadows leaves _sunMapK[3] at 0.",
+      "result": "Fixed: hidden castedShadows clears the shadow maps; hidden entities cast nothing; the unshaded composite and a MESH layer's uvFill mesh follow Vis. Light bench, HD 620: castedShadows hidden 0.00 % -> 10.76 % of the picture.",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -23154,17 +23158,17 @@
         "layers vis"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1716"
       ]
     },
     {
       "id": "DBG-2",
       "title": "The debug UI's Layers panel: the blend selects do nothing: the entities' meshes and the lightEdges meshes set their own blend (nothing inherits the container's), Cont Blend reaches custom layers only, a re-registration restores the config's value, and about 22 of the 33 names draw as normal (no advanced blend modes registered); blendMode becomes a layer setter (SAB plus dirty flag, as alpha and visible)",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-21 (893571c1), on fix/dbg2-layer-blend (R-1718)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Confirm section 3.2; layer.blendMode / containerBlendMode setters applied to every object of the layer; setLayerProps loses its blend fields (no aliases); the list is trimmed to the modes that draw (BLEND_MODES and _BLEND_MODE_STRINGS together; the owner, 2026-11-18; nothing used a removed mode); test:demos too, games see the Layer API.",
+      "result": "Fixed: layer.blendMode, containerBlendMode and zIndex setters (SAB plus a dirty flag) applied to every object of the layer and kept on re-registration; setLayerProps lost its blend fields; BLEND_MODES trimmed to the 11 modes that draw.",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -23176,17 +23180,18 @@
       ],
       "records": [
         "R-1347",
-        "R-1348"
+        "R-1348",
+        "R-1718"
       ]
     },
     {
       "id": "DBG-3",
       "title": "The debug UI's Layers panel: alpha acts as on or off: the entities' opaque pass (E-448/E-502) is dropped for a blend other than normal but not for alpha below 1, so solid pixels stay opaque until alpha 0; the lightEdges and lightingMesh shaders never read uColor; worldRect stage meshes ignore it while the camera moves",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-21 (43d6b7ac), on fix/dbg3-layer-alpha (R-1717); worldRect stage meshes left",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Confirm section 3.3; drop the opaque pass while the layer's alpha is below 1 (a per-frame test); the light's meshes mix by uColor.a (GLSL and WGSL); check by eye that entities under lighting fade with no jump at 0.5; hygiene keep, the suites decide unless the lightEdges scene's drawn frames move.",
+      "result": "Fixed: the light's meshes (lightEdges, the canvas light pass) and the unshaded pixels fade by the layer's alpha; the entities' opaque pass is off while they fade. lightEdges, alpha 0.5: 0.00 % -> 99.84 % of the picture.",
+      "next": "worldRect layers' stage mesh (plan 3.3.3): a GLSL wrapper round the game's fragment so it fades while the camera moves; the lightEdges owner scene's drawn frames on the GTX 1650 (one mix a pixel at alpha 1).",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -23197,7 +23202,8 @@
         "alpha slider"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1717"
       ]
     },
     {
@@ -23603,17 +23609,18 @@
       ],
       "records": [
         "R-1585",
-        "R-1592"
+        "R-1592",
+        "R-1719"
       ],
-      "result": "",
-      "next": "A `query` per catalog row (engineFeatureCatalog.mjs) and a calibration pass in runScoreboard that raises it until the baseline's primary worker passes the floor on the machine at hand. Load knobs for the scenes that have none: stationarySpatialScene (spatial) and queryAabbStressScene (queryAabb, N-295). The ASUS's values from job 0896e are a start: ray casts=12288, bullets=65000, spawn storm=6000.",
+      "result": "Built: a load knob per floor-bound row, a calibration on the machine at hand and runScoreboard --loads. On the ASUS ray and rayVsBox2d now decide (tie), bullets and spawn read kept; spatial cannot reach the floor (40 000 entities: 2.7 ms); box2dRayJs has no knob that loads logic0.",
+      "next": "spatial: a knob that loads it past the floor on a slow machine (denser neighbours or movers; 110 000 stationary entities would be needed); box2dRayJs: a primary its knob reaches (physics) or a protocol ceiling; queryAabb's +5.5 % at 1106 queries (wait-bound) rechecked; the spatial lead at 40 000 entities (main 3.99 against v0.14.0 2.62 ms) on the main PC.",
       "id": "DX-SCORELOAD",
       "kind": "tool",
       "area": "tools",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-18",
       "title": "The scoreboard's stress rows run at loads chosen for the main PC, so on a slower machine many fall under the 6 ms floor and read FAIL: a load per row, calibrated per machine, and knobs for the scenes that have none (spatial, queryAabb)",
-      "statusText": "raised by the owner on 2026-11-18 from the ASUS scoreboards (R-1349, R-1361): about half the stress rows read FAIL there"
+      "statusText": "built 2026-11-21 on the ASUS (6c1e852a, 49fc08e0, R-1719): catalog load knobs, calibrateScoreboardLoads.mjs, runScoreboard --loads"
     },
     {
       "refs": [],
@@ -24808,6 +24815,45 @@
       "date": "2026-11-21",
       "statusText": "Filed 2026-11-21 from N-212 (R-1694): the maxShadowCastingLights cut fades since R-1151; these two cuts do not.",
       "next": "A fade in shadowStamp.c's per-entity and per-light cuts as the light cut has (the last share of the cut distance), both builds of the kernel; a film of Predator at night where walkers cross between lamps, before and after."
+    },
+    {
+      "records": [
+        "R-1720"
+      ],
+      "refs": [],
+      "id": "N-400",
+      "title": "queryWake.test.js and waitMeterClaimBurst.test.js time a cross-thread event by a fixed wait and fail now and then under the suite's parallel files on 2 cores",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-21",
+      "result": "Fixed: the claim test's peer releases at a wall-clock time given ahead and a try counts only when this thread began before it (wallClockWait.mjs); the wake test waits for its callback up to 2 s. 24 parallel files, 4 rounds on the ASUS: 28 failures in 384 before, 0 after.",
+      "statusText": "fixed 2026-11-21 (4e7bb7b7), on fix/n400-two-core-test-waits (R-1720)",
+      "next": "Nothing left.",
+      "aliases": [
+        "queryWake",
+        "waitMeterClaimBurst",
+        "two-core flaky test"
+      ]
+    },
+    {
+      "records": [
+        "R-1722"
+      ],
+      "refs": [],
+      "id": "N-401",
+      "title": "physicsChainWait.test.js's bell test lets its ringer ring on its own clock, so on 2 cores several rings land in one sleep and the pass count reads 1 or 2",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-21",
+      "result": "Fixed: the ringer waits up to 500 ms for one service pass per ring so far before ringing again. 24 copies at once, 4 rounds on the ASUS: 7 failures in 384 before, 0 after.",
+      "statusText": "fixed 2026-11-21 (dde5b572), on fix/n401-physics-bell-test (R-1722)",
+      "next": "Nothing left.",
+      "aliases": [
+        "physicsChainWait",
+        "physics bell test"
+      ]
     }
   ],
   "records": [
@@ -41013,6 +41059,119 @@
       "title": "N-313 fixed: the awake reorder gathers into the step's stack and copies back; Predator crowd 2.5 Box2D memory peak 553-557 -> 518-519 MB, harness heap top 129.6 -> 109.6 MB; physics +0.8 % NEUTRAL, LiquidFun neutral",
       "verdict": "kept-hygiene",
       "text": "**N-313 fixed: E-322's awake reorder gathers into the step's stack and copies back, instead of into new buffers.** Box2D a87c81e (branch weed/n313-reorder-in-stack), shipped as the wasm of WeedJS fix/n313-reorder-in-stack 06f7d849. The reorder runs before any other task of the step uses the stack, which the solver already sized; it now gathers the body sims, body states and each sorted contact array there when the stack has the room (`b2GetStackRoom`), then copies back in a parallel pass. An array the stack cannot hold still goes to a new buffer, as before, rather than growing the stack.\n\n- **Crowd harness** (weed mode, 38 000 walkers, order 2, churn 100, idle 20, 960 steps, reorder -30, one round, 23:40-23:46): heap top 107.2 MB with no reorder; reordering, 129.6 MB on main against 109.6 MB with the fix (bytes in use 96.3 MB on every arm). poseHash 963cbc7b036c09c5 and weedHash identical to main's for each setting. The copy costs the reorder 5.27 -> 6.43 ms per 30-step cycle (median of 32 cycles), its longest step 3.43 -> 4.79 ms: about 0.04 ms a step on average.\n- **Predator crowd 2.5** (`dayCycle=0`, from the E-210 save, owner physics, 4 pairs, to 23:52): NEUTRAL; physics 14.102 -> 14.308 ms (+0.8 %, worse 2/4), logic +1.4 %, spatial -0.2 %, pre-render -1.0 %, presented 60 = 60; loads within 1 %. Box2D's memory peak (MEMORY_PEAK_KB): 552.9 to 556.8 MB on main against 518.2 to 518.9 MB with the fix, every run (-38 MB).\n- **LiquidFun** (the Box2D rule): liquidFunStressScene `water=1.5`, owner physics, 4 pairs, to 23:56: NEUTRAL, physics 9.239 -> 9.333 ms (+2.5 %, worse 2/4; 3 bodies, which the reorder cannot reach); liquidFunBodyCoupleStressScene, to 23:59: NEUTRAL, physics 8.001 -> 7.791 ms (-1.6 %, worse 1/4).\n\nKept as hygiene (no primary worker 3 % worse). Merged: Box2D 0f0fa10, WeedJS 3f9f23f2. Node suite 3434/3434, demos 143/143."
+    },
+    {
+      "id": "R-1715",
+      "date": "2026-11-21",
+      "time": "20:04",
+      "timeFrom": "recorded",
+      "title": "N-243's WebGPU half fixed: webgpuFrameRecorder keeps rates a frame unrounded, with totals and ms a draw",
+      "verdict": "kept-hygiene",
+      "text": "**N-243's WebGPU half fixed: webgpuFrameRecorder's result holds unrounded rates a frame, their totals and ms a draw; only the printed table rounds.** Branch fix/n243-webgpu-unrounded, dff643d5, made on the ASUS by the main PC's session over ssh.\n\n- **Cause:** webgpuRecorderWorker.mjs rounded passes and draws a frame to 0.1, instances to a whole number and ms to 0.001 in the result, as glFrameRecorder did before 289933e0 (R-1712).\n- **Fix:** the GPU pass rows carry passesPerFrame, drawsPerFrame, instancesPerFrame and the ms rates unrounded, with the instance total and, per pass, msPerDraw; the draw rows the same. The frame-span medians are unrounded too. The printed tables round as before.\n- **Checked by a real recording** on the ASUS (Intel HD 620, Chrome 158, bunnyMark ?backend=webgpu, --gpu-draws, 3 s): 18 draws in 69 frames; drawsPerFrame 0.26087 = 18 / 69 (the old result said 0.3, +15 %); msPerDraw 157.7.",
+      "commits": [
+        "dff643d5"
+      ]
+    },
+    {
+      "id": "R-1716",
+      "date": "2026-11-21",
+      "time": "20:22",
+      "timeFrom": "recorded",
+      "title": "DBG-1 fixed: a hidden layer hides all it draws (map shadows cleared, hidden entities cast nothing, unshaded and uvFill follow)",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-1 fixed: the Layers panel's Vis box now hides everything a layer draws.** Branch fix/dbg1-layer-vis (b131532c, on the ASUS, by the main PC's session over ssh), after the probe's commit daafa628.\n\n- **Confirmed on screen before fixing** (layerPropsProbe on the light bench, ?still=1, Intel HD 620): hiding castedShadows changed 0.00 % of the picture in shadow-map mode, so the shadows stood.\n- **Causes and fixes (pixiWorker.js):**\n  - castedShadows in map mode: hiding it stopped the shadow pass, the only code that draws or clears the sun's and the lamps' maps, and the light pass kept sampling them. Hidden, the maps are cleared once; the tick restarts, so the first frame shown again draws them whatever shadowUpdateInterval is.\n  - Hidden entities still cast: the sun and stamp rows are the entities' (pre-render takes them from the render queue). A hidden entities layer now casts nothing, its cookies go too, and volumes still cast. One per-frame check.\n  - Hidden lighting left the unshaded composite on screen with last frame's pixels: hidden with it now.\n  - A MESH layer's uvFill mesh on the stage ignored Vis: it follows it (its instanceCount still says whether it has triangles).\n  - The plan's suspect 3.1.5, confirmed by reading only: in Pixi's own pack mode, entities hidden with their glows shown were packed and shown again with the glows. Hidden again after the pack.\n  - The castedShadows row's tip in map mode says it stands for the maps' shadows.\n- **On screen, old -> new** (light bench ?still=1, HD 620, WebGL and WebGPU gave the same numbers, different pictures): castedShadows hidden 0.00 % -> 10.76 % of the picture (the shadows go); entities hidden 17.82 % -> 28.57 % (their shadows go too); lighting hidden 99.83 % both. Shown again, each step gave the first picture back exactly (0.00 %). The pictures show no shadow left with castedShadows hidden, and bare grass with entities hidden.\n- **dxCaptureScene ?shadowMaps=1 showed nothing either way:** a flat top-down scene, whose casters throw no map shadow at 12 h, 16 h or 22 h. The light bench is the scene for map shadows.\n- **Test:** layerVisibilityPaths.test.js, the real Pixi worker in Node, its passes stubbed: 4 of its 5 tests fail on the old code. Node suite on the ASUS 3434 of 3434.\n- **Not measured:** a bug fix off the hot path (one visibility read a frame), hygiene keep; nothing timed.",
+      "commits": [
+        "daafa628",
+        "b131532c"
+      ]
+    },
+    {
+      "id": "R-1717",
+      "date": "2026-11-21",
+      "time": "20:31",
+      "timeFrom": "recorded",
+      "title": "DBG-3 fixed: a layer's alpha fades the light's meshes, the unshaded pixels and the entities' solid pixels",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-3 fixed: a layer's alpha fades the light's meshes, the unshaded pixels and the entities' solid pixels.** Branch fix/dbg3-layer-alpha (on top of fix/dbg1-layer-vis), on the ASUS, by the main PC's session over ssh.\n\n- **Confirmed on screen before fixing** (layerPropsProbe, Intel HD 620): with lightEdges (light bench ?res=0.5&depth=1) lighting alpha 0.5 and 0.25 changed 0.00 % of the picture, WebGL and WebGPU; the light pass drawn on the canvas (dxCaptureScene, no render target) also 0.00 % at alpha 0.5. The plain light sprite (light bench at res 1) already faded.\n- **Fixes:**\n  - lightEdges.js (GLSL and WGSL): the multiplied halves mix the light toward white by uColor.a (alpha 0 applies no light), the unshaded halves scale by it.\n  - lightingBasic (GLSL and WGSL), the !EDGES output: the same mix, which only matters when the pass is drawn on the canvas (a render target's pass draws at alpha 1).\n  - unshadedComposite.js: scales by uColor.a; the worker gives the unshaded composite the lighting layer's alpha (at creation and on each change), since it makes up for that light.\n  - The entities' opaque pass (E-448) is not allowed while the entities root's alpha is under 1 (a per-frame test in updateSpritesFromRenderQueue); alpha 1 is unchanged.\n- **On screen, before -> after:** lightEdges, lighting alpha 0.5: 0.00 % -> 99.84 % (max 88), alpha 0.25: 0.00 % -> 99.84 % (max 132), WebGL and WebGPU; the canvas pass, alpha 0.5: 0.00 % -> 21.29 % (max 22). Each step gave the first picture back on restore. At lighting 0.5 the shadows show at half strength; at entities 0.5 the grass shows through the entities with no jump.\n- **Not shown on screen:** the opaque pass's gate. That pass is off on Intel's integrated GPUs (E-502), and with ?opaquePass=1 it did not pay in dxCaptureScene (small sprites), so entities alpha read the same before and after there. layerAlphaPaths.test.js covers it on the real worker.\n- **Left:** worldRect layers' stage mesh (plan 3.3.3) still runs the game's own fragment without uColor, so such a layer fades only while its cached picture is shown; a fix needs a GLSL wrapper round the game's shader.\n- **Test:** layerAlphaPaths.test.js (3 tests, all fail on the old code; the shaders by source, as the plan allows for a GPU blend).\n- **Not measured:** the lightEdges halves gain one mix a pixel at alpha 1; a hygiene keep unless the owner scene's drawn frames move on the GTX 1650 (not run: this session's runs are on the ASUS).",
+      "commits": [
+        "43d6b7ac"
+      ]
+    },
+    {
+      "id": "R-1718",
+      "date": "2026-11-21",
+      "time": "20:45",
+      "timeFrom": "recorded",
+      "title": "DBG-2 fixed: layer blendMode, containerBlendMode and zIndex setters, applied to every object of the layer; the blend list trimmed",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-2 fixed: a layer's blend modes and z change at run time and stay changed.** Branch fix/dbg2-layer-blend (on top of fix/dbg3-layer-alpha), on the ASUS, by the main PC's session over ssh.\n\n- **Causes (the plan's section 3.2, all read in the code before fixing):** the panel posted setLayerProps, which set the blend on the layer's display object only; the entities' meshes and the light's meshes set their own, so nothing inherited it; Cont Blend reached custom layers only; the panel never wrote the Layer SAB, so registering a layer's object again (a shader swap, a look composite, the light pass rebuilt) put the config's value back; about 22 of the 33 names drew as normal (Pixi's advanced modes are not registered in this build).\n- **Fix:**\n  - Layer setters for blendMode and containerBlendMode (by name) and zIndex: the config SAB plus a presentation dirty flag (a new Int32 view at the config SAB's end), as alpha and visible. An unknown name throws with the list; a config id out of range throws at registration.\n  - The Pixi worker's syncLayerPresentationFromSharedState applies a dirty layer each frame to every object that draws it: the display object; the entities' batch mesh and edge pass (InstancedSpriteBatch.setLayerBlend; the opaque pass drops itself off 'normal'); a custom layer's pieces drawn into its RT take the container blend; a MESH layer's uvFill mesh on the stage follows the fill mesh (blend and z); the unshaded composite's z follows the light's. _applyLayerPresentation reads the same SAB, so a re-registration keeps them.\n  - setLayerProps keeps only the shader swap and the splat radius (one API, no aliases).\n  - The list is trimmed (the owner's decision 4, 2026-11-18): normal, add, multiply, screen, erase, normal-npm, add-npm, screen-npm, none, min, max; BLEND_MODES renumbered 0 to 10. Nothing in src, demos, tests or the guide used a removed mode (the code names modes, never numbers).\n  - The panel calls the setters. The lighting layer's blend select is off with a tip (its meshes multiply and add by themselves, so a blend on the host would break or do nothing); Cont Blend is off on built-in layers.\n  - types/weed.d.ts and the guide's blend paragraph follow.\n- **Test:** layerBlendPaths.test.js (4 tests: the list, the setters, the worker on run-time changes and a re-registration, setLayerProps without blend fields) and layerBlendSinglePass.test.js's run-time case through the setter: 5 fail on the old code.\n- **Not measured:** off the hot path (a dirty-flag loop over the layers a frame); hygiene keep.\n- **On screen** (layerPropsProbe, dxCaptureScene ?hour=16&deco=1&shade=1, Intel HD 620, WebGL and WebGPU alike; the old code had no setter to probe): entities blendMode add changed 1.21 % of the picture (max 70: white balls over the floor), multiply 3.70 % (max 255); the overlay decorations' layer add 6.08 % (the black squares vanish); the MESH layer's add 11.17 % and zIndex -1 11.17 % (under the ground). Each step gave the first picture back on restore (0.00 %).",
+      "commits": [
+        "830450f4",
+        "893571c1"
+      ]
+    },
+    {
+      "id": "R-1719",
+      "date": "2026-11-21",
+      "time": "21:17",
+      "timeFrom": "recorded",
+      "title": "DX-SCORELOAD built and used on the ASUS: rows at a load calibrated per machine; ray and rayVsBox2d decide (tie), bullets and spawn kept, spatial still under the floor",
+      "verdict": "kept-hygiene",
+      "text": "**DX-SCORELOAD built and used on the ASUS: the scoreboard's stress rows at a load calibrated per machine.** Branch tools/dx-scoreload (6c1e852a scene knobs, 49fc08e0 the calibration and runScoreboard --loads), on the ASUS, by the main PC's session over ssh.\n\n- **What:** the catalog names each floor-bound row's load knob (scene.loadKnob: query key, default, cap): ray, rayVsBox2d (casts), spatial (entities, new), queryAabb (queries, new), bullets (bullets), spawn (storm). calibrateScoreboardLoads.mjs runs a row's baseline side once on the machine at hand, as the scoreboard does, and raises the knob in a straight line toward 9 ms while the primary reads under 7.5 ms (1.25 x the floor), up to three runs or the cap; it writes a loads file (rows it leaves out are kept from an --out of the same baseline). runScoreboard --loads runs both sides of each row at that load and records the query in the row's verdict.\n- **Calibration on the ASUS** (jobs 0900m 20:57-21:04 and 0900n 21:06-21:07; v0.14.0's src under main 0b260fd7's scenes, headless, one run a step), the baseline primary at the default -> at the chosen load: ray casts 3072 -> 6218: logic0 4.45 -> 7.54 ms; rayVsBox2d casts 3072 -> 5640: 4.90 -> 7.53; bullets 40000 -> 54226: particle 6.64 -> 8.01; spawn storm 1800 -> 3635 -> 4883: logic0 4.46 -> 6.70 -> 8.38; queryAabb queries 1 -> 90 -> 512 -> 1106: logic0 0.06 -> 0.76 -> 3.40 -> 8.00 (about 7 us of own work a query, linear); spatial entities 9000 -> 40000 (the cap): spatialMax 0.47 -> 2.71 ms, still under the floor (about 110 000 would be needed, past what the grid's buffers allow).\n- **box2dRayJs has no knob:** ?casts sends its Box2D rays to the physics worker; logic0, its primary, read 0.18 -> 0.74 ms from 3 072 to 49 152 casts.\n- **queryAabb at 1106 queries is wait-bound:** each query is a round trip to physics, so logic0 runs at about 21 fps with 40 ms of waits a frame; its own work is what the row compares.\n- **A loaded scoreboard of those six rows** (main 0b260fd7 against v0.14.0, 2 runs a side, --skip-kernels --no-recheck, job 0900o, 21:07-21:17): ray TIE (logic0 -2.4 %), rayVsBox2d TIE (+2.3 %), bullets KEPT (particle -16.4 %), spawn KEPT (logic0 -13.5 %), queryAabb WORSE (logic0 +5.5 %, not rechecked, in the wait-bound regime above), spatial FAIL (floor). Before, all six read FAIL on this machine (floor, or spawn's load not comparable).\n- **A lead, not a verdict:** at 40 000 stationary entities spatial read main 3.99 ms against v0.14.0's 2.62 ms (+52 %), where at 9 000 earlier ASUS scoreboards had main 55 to 65 % cheaper. Under the floor and one sitting of 2 runs: worth a look at a large entity count on the main PC before calling it anything.\n- **Test:** scoreboardLoads.test.js (the scene at a load, the linear step, the primary, the loads file, the catalog's knobs).\n- The loads file of the ASUS is C:\\weedlab\\scoreboard-loads.json (not in the repo: a machine's calibration).",
+      "commits": [
+        "6c1e852a",
+        "49fc08e0"
+      ]
+    },
+    {
+      "id": "R-1720",
+      "date": "2026-11-21",
+      "time": "21:30",
+      "timeFrom": "recorded",
+      "title": "N-400 fixed: the claim-wait and query-wake tests wait for their cross-thread event (28 failures in 384 under 24 parallel files before, 0 after)",
+      "verdict": "kept-hygiene",
+      "text": "**N-400 fixed: two node tests timed a cross-thread event by a fixed wait and failed now and then under the suite's parallel files on the ASUS's 2 cores.** Branch fix/n400-two-core-test-waits (4e7bb7b7), on the ASUS, by the main PC's session over ssh.\n\n- **Found** in this session's full suites on the ASUS (3437 and 3434 tests): queryWake.test.js \"a request on every sync query kind wakes physics\" once, waitMeterClaimBurst.test.js \"a blocked claim counts as wait\" once; each 3 of 3 alone.\n- **Causes:** the claim test's peer released the slot 30 ms after its own start, and this thread sometimes reached the call after that (its 'up' message and the event loop ran late), so nothing was metered. The wake test waited a fixed 10 ms for an Atomics.waitAsync callback that comes when this thread next runs its event loop.\n- **Fixes:** the claim test's peer releases at a wall-clock time given ahead, and a try counts only when this thread began before it (tests/helpers/wallClockWait.mjs's waitedUntil, as N-326), up to 5 tries; the wake test waits for the callback, up to 2 s.\n- **Checked under load:** 12 copies of each file at once (24 files, --test-concurrency=24), 4 rounds on the ASUS (C:\\weedlab\\flakeStress.cmd): 28 failures in 384 before (26 claim, 2 wake), 0 in 384 after. Node suite 3429 of 3429.",
+      "commits": [
+        "4e7bb7b7"
+      ]
+    },
+    {
+      "id": "R-1721",
+      "date": "2026-11-21",
+      "time": "21:44",
+      "timeFrom": "recorded",
+      "title": "N-226 screened by wasmTierCompare (default against --no-liftoff, 56 benches): liquidFunExtract timed Liftoff 2 to 3.6x slow, fixed; four left",
+      "verdict": "note",
+      "text": "**N-226 screened: which WASM kernel benches time Liftoff, by a tool that runs each one as shipped and under node --no-liftoff in pairs; one fixed, four left.** Branch tools/n226-wasm-tier (42aa376d and a2c9c8e9 the tool, 47ac1aab the first fix), on the ASUS, by the main PC's session over ssh.\n\n- **The tool:** wasmTierCompare.mjs runs every *Microbench.mjs whose source mentions wasm, as it ships and under --no-liftoff (every WASM function compiled by TurboFan from the start), alternating which runs first, and compares each case's rate (opsPerSec, or 1000 / ms). LIFTOFF: the median ratio over 1.05 with every pair agreeing.\n- **Screen, 2 pairs, 56 benches (job 0900p, 21:22-21:28):** LIFTOFF flags on 7 (decalStampWasm x1.28, solidSegmentsWasm x1.20, painterRadixWasm x1.15-1.20, bodyForceCall up to x1.24, spatialGridMovers x1.14, shadowStamp x1.13, preRenderEmitAdobe x1.08), the reverse on 8 others; 20 benches that report ms read nothing (fixed in a2c9c8e9).\n- **Confirmation, 4 pairs (job 0900q, 21:34-21:40):** the ASUS's kernel noise (about +-20 %, R-1580) explains most of the screen: decalStampWasm, solidSegmentsWasm, painterRadixWasm, spatialGridMovers, preRenderEmitAdobe and every reverse flag read even. Left LIFTOFF: shadowStamp's stamp x1.19, bodyForceCall's batch r1 x1.10. The ms benches (2 pairs): liquidFunExtract x2.78 at k=64 and x1.76 at k=1024, liquidFunComputeDepth x1.21, sunFrames x1.17, liquidFunPassProfile x1.08 to x1.14 on every pass, decorationVisibilityGrid x1.06.\n- **Why warmWasm did not cover them:** five of the seven first flags already warm through wasmKernelHelpers.warmWasm, which checks that the timed export reached TurboFan; V8 tiers each WASM function up on its own work, so a callee inside the module can still run Liftoff code. The benches that stay flagged time one-shot calls (a fresh world or system a sample) or few calls, which a callee never warms in.\n- **Fixed: liquidFunExtractMicrobench** warms 1.5 s before each k, on one world for the process (the module has no world destroy). ASUS, median ms at k = 64 / 512 / 1024: before 0.250 / 0.144 / 0.159 (0.09 to 0.27 apart), before under --no-liftoff 0.090 / 0.090 / 0.091, now 0.069 / 0.070 / 0.071; the tool, 4 pairs: k=64 x1.064, the others even. Its old numbers read the extract 2 to 3.6 times too slow.\n- **Left (the next):** liquidFunComputeDepth, liquidFunPassProfile, sunFrames and shadowStamp's stamp case (confirm each with --pairs 4 on a quiet machine, then a time-based warm-up as above), bodyForceCall's batch r1; and the kernels' records that used those benches read Liftoff-inflated numbers before the fix. A kernel claim compares two variants under the same warm-up, so its ratio stood unless one variant tiered sooner.",
+      "commits": [
+        "42aa376d",
+        "a2c9c8e9",
+        "47ac1aab"
+      ]
+    },
+    {
+      "id": "R-1722",
+      "date": "2026-11-21",
+      "time": "21:50",
+      "timeFrom": "recorded",
+      "title": "N-401 fixed: physicsChainWait's ringer waits for the waiter's pass after each ring (7 failures in 384 under 24 copies before, 0 after)",
+      "verdict": "kept-hygiene",
+      "text": "**N-401 fixed: physicsChainWait's bell test let its ringer outrun the waiter on 2 cores.** Branch fix/n401-physics-bell-test, on the ASUS, by the main PC's session over ssh.\n\n- **Found** in the batch's full suite on the ASUS (3446 tests): \"physics sleeps until the bell rings: a query posted mid-wait is answered, the frames end the wait\" read 2 service passes (3 to 5 expected); 3 of 3 alone. Under 24 copies at once, 4 rounds: 7 failures in 384, each reading 1 pass.\n- **Cause:** the ringer rang on its own clock (3, 6 and 9 ms after go), spinning; on 2 cores under parallel files it rang twice or three times while the waiter was still asleep, or before it first slept, so the waiter woke once (or never) for several rings.\n- **Fix:** before each ring the ringer waits, up to 500 ms, until the waiter has made one pass per ring so far (the test's service counts passes in a shared word). Each ring now meets an awake waiter; a waiter that stopped serving on a ring still fails the count (the ringer rings anyway after 500 ms).\n- **Checked:** 24 copies at once, 4 rounds on the ASUS (C:\\weedlab\\flakeStress2.cmd): 7 failures in 384 before, 0 in 384 after. The same class as N-400 (a cross-thread test timed on one thread's own clock).",
+      "commits": [
+        "dde5b572"
+      ]
+    },
+    {
+      "id": "R-1723",
+      "date": "2026-11-21",
+      "time": "21:53",
+      "timeFrom": "recorded",
+      "title": "N-226 finished on the ASUS: only liquidFunComputeDepth held at 4 pairs (x1.145), now warmed to TurboFan (3.574 -> 3.094 ms); the other flags were noise",
+      "verdict": "kept-hygiene",
+      "text": "**N-226 finished on the ASUS: of the screen's flags, only liquidFunComputeDepth held at 4 pairs, and it now warms to TurboFan; nothing else left.** Branch tools/n226-compute-depth-warm, on the ASUS, by the main PC's session over ssh.\n\n- **Confirmation, 4 pairs** (job 0900r): liquidFunComputeDepth x1.145 LIFTOFF; liquidFunPassProfile (x1.017), sunFrames (x1.067), shadowStamp (x1.083) and decorationVisibilityGrid (x1.032) even: their 2-pair flags were the ASUS's noise.\n- **Fixed: liquidFunComputeDepthMicrobench** warms 1.5 s on one world for the process, as liquidFunExtract's. ASUS, median ms of the first step after the ice: before 3.574 (3.11 to 3.73), before under --no-liftoff 3.121, now 3.094 (3.09 to 3.20); the tool, 4 pairs: even (x1.002).\n- **Left of the earlier rounds:** bodyForceCall's batch r1 read x1.10 in one 4-pair round (one case of nine); not chased (one case, a 15 W CPU's noise of about +-20 %).\n- **How to use the tool:** wasmTierCompare.mjs --pairs 2 screens every WASM bench in about 6 minutes on the ASUS; confirm a flag with --pairs 4 before acting on it.",
+      "commits": [
+        "6645b189"
+      ]
     }
   ],
   "leads": [

@@ -127,8 +127,8 @@ export function printResult(r) {
     const q = g.quantized === null ? '' : g.quantized > 0.9 ? ', QUANTIZED (65.5 or 100 us steps)' : '';
     const how = g.perDraw ? ' + a timestamp around each draw' : g.split ? ': each draw in a pass of its own' : '';
     console.log(`GPU time by pass (timestampWrites${how}${q}; ${g.invalid} invalid, ${g.lost} unread, ` +
-      `${g.skippedEncoders} encoders untimed): ${g.msPerFrame} ms a frame in passes; a frame's span on the GPU (first pass begin to last ` +
-      `pass end, median of ${g.framesTimed}): ${g.spanMsMedian} ms, its passes summed ${g.passSumMsMedian} ms`);
+      `${g.skippedEncoders} encoders untimed): ${g.msPerFrame.toFixed(3)} ms a frame in passes; a frame's span on the GPU (first pass begin to last ` +
+      `pass end, median of ${g.framesTimed}): ${g.spanMsMedian.toFixed(3)} ms, its passes summed ${g.passSumMsMedian.toFixed(3)} ms`);
     if (!g.perDraw && !g.split && !g.insidePasses) console.log('  (no timestamps inside passes on this device: pass times only; --split-passes times each draw in a pass of its own)');
     if (g.split) {
       const e = g.passes.reduce((t, p) => [t[0] + p.emptyPassNs, t[1] + p.emptyPasses], [0, 0]);
@@ -136,13 +136,13 @@ export function printResult(r) {
     }
     for (const row of g.passes.slice(0, 25)) {
       const parts = g.perDraw || g.split ? `  [draws ${row.drawsMsPerFrame.toFixed(3)}, to 1st draw ${row.preMsPerFrame.toFixed(3)}, end ${row.postMsPerFrame.toFixed(3)}]` : '';
-      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${String(row.passesPerFrame).padStart(4)} ${String(row.drawsPerFrame).padStart(6)} draws ` +
-        `${String(row.instancesPerFrame).padStart(8)} inst  ${row.label}${parts}`);
+      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${row.passesPerFrame.toFixed(1).padStart(4)} ${row.drawsPerFrame.toFixed(1).padStart(6)} draws ` +
+        `${String(Math.round(row.instancesPerFrame)).padStart(8)} inst  ${row.label}${parts}`);
     }
     if (g.draws) {
       console.log('the costliest draws (and the passes\' own parts):');
       for (const row of g.draws.slice(0, 30)) {
-        console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${String(row.perFrame).padStart(5)} ${String(row.instancesPerFrame).padStart(8)} inst  ${row.label}`);
+        console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${row.perFrame.toFixed(1).padStart(5)} ${String(Math.round(row.instancesPerFrame)).padStart(8)} inst  ${row.label}`);
       }
     }
   }

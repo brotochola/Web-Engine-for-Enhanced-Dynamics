@@ -154,6 +154,11 @@ export class LayersPanel {
     label.style.cssText = 'font-weight:bold;color:rgba(255,255,255,0.85);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     label.textContent = layerName;
     label.title = layerName;
+    // DBG-1: in shadow-map mode the castedShadows layer's own picture is empty; its row stands for the maps' shadows.
+    const lighting = this.debugUI.scene?.config?.lighting;
+    if (layerName === 'castedShadows' && (lighting?.sunShadows === 'map' || lighting?.lampShadows === 'map')) {
+      label.title = 'castedShadows: the shadows in the light pass (the sun\'s and the lamps\' shadow maps)';
+    }
     row.appendChild(label);
 
     // Visible
@@ -204,14 +209,30 @@ export class LayersPanel {
     blendSelect.value = customLayer
       ? (Layer._BLEND_MODE_STRINGS[Layer._blendModeId[customLayer.id]] || 'normal')
       : (Layer._BLEND_MODE_STRINGS[DEFAULT_LAYERS[layerName]?.blendMode] || 'normal');
-    blendSelect.onchange = () => this._setLayerProp(layerName, 'blendMode', blendSelect.value);
+    blendSelect.onchange = () => {
+      const l = Layer.get(layerName);
+      if (l) l.blendMode = blendSelect.value;
+    };
+    if (layerName === 'lighting') {
+      // DBG-2: the light multiplies the scene and adds its unshaded and glow parts by itself; another blend breaks it.
+      blendSelect.disabled = true;
+      blendSelect.title = 'The light multiplies the scene by itself: its blend is not a choice';
+    }
     row.appendChild(blendSelect);
 
     // Container blend
     const cBlendSelect = this._buildBlendSelect(selectStyle, Layer._BLEND_MODE_STRINGS);
     cBlendSelect.title = "Blend mode used between this layer's own children, inside its render container";
     if (customLayer) cBlendSelect.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[customLayer.id]] || 'normal';
-    cBlendSelect.onchange = () => this._setLayerProp(layerName, 'containerBlendMode', cBlendSelect.value);
+    cBlendSelect.onchange = () => {
+      const l = Layer.get(layerName);
+      if (l) l.containerBlendMode = cBlendSelect.value;
+    };
+    // DBG-2: only a layer of the scene's own draws pieces into a render texture of its own.
+    if (!customLayer || customLayer.builtIn) {
+      cBlendSelect.disabled = true;
+      cBlendSelect.title = 'Built-in layers draw no pieces of their own into a render texture';
+    }
     row.appendChild(cBlendSelect);
 
     // Y-Sort
@@ -235,7 +256,9 @@ export class LayersPanel {
       'border:1px solid rgba(255,255,255,0.3);border-radius:3px';
     zInput.title = 'Z-index — draw order relative to other layers';
     zInput.onchange = () => {
-      this._setLayerProp(layerName, 'zIndex', parseInt(zInput.value, 10) || 0);
+      const l = Layer.get(layerName);
+      const z = Number(zInput.value);
+      if (l && Number.isFinite(z)) l.zIndex = z;
       this._sortLayerRows();
     };
     row.appendChild(zInput);
@@ -736,14 +759,6 @@ export class LayersPanel {
       const el = this.elements.layerRows[names[i]];
       if (el) panel.appendChild(el);
     }
-  }
-
-  _setLayerProp(layer, prop, value) {
-    const scene = this.debugUI.scene;
-    if (!scene?.workers?.renderer) return;
-    const msg = { msg: 'setLayerProps', layer };
-    msg[prop] = value;
-    scene.workers.renderer.postMessage(msg);
   }
 
   _setLayerShader(layerName, shaderName) {

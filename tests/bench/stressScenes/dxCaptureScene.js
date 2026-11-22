@@ -62,6 +62,8 @@ export const LAMP_SHIFT = queryNumber('lampShift', 0);
 /** `?worldFloor=1`: a procedural floor (a worldRect layer) over the ground; `?worldFloorCache=0` paints it every frame (E-504). */
 export const WORLD_FLOOR = queryNumber('worldFloor', 0) === 1;
 export const WORLD_FLOOR_CACHE = queryNumber('worldFloorCache', 1) === 1;
+/** `?shadowMaps=1`: the sun's and the lamps' shadows in shadow maps the light pass samples (sunShadows and lampShadows 'map'). */
+export const SHADOW_MAPS = queryNumber('shadowMaps', 0) === 1;
 export const stressSceneConfig = {
   requested: {
     hour: HOUR,
@@ -78,6 +80,7 @@ export const stressSceneConfig = {
     decoAlpha: DECO_ALPHA,
     worldFloor: WORLD_FLOOR ? 1 : 0,
     worldFloorCache: WORLD_FLOOR_CACHE ? 1 : 0,
+    shadowMaps: SHADOW_MAPS ? 1 : 0,
   },
 };
 
@@ -144,6 +147,7 @@ export class DxCaptureScene extends Scene {
       baseAmbient: 0.1,
       maxLights: 32,
       shadowsEnabled: true,
+      ...(SHADOW_MAPS ? { sunShadows: 'map', lampShadows: 'map' } : {}),
       maxShadowCastingLights: 8,
       maxShadowsPerLight: 32,
       resolution: 1,

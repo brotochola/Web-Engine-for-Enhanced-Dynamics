@@ -773,6 +773,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   return vec4<f32>(totalLight, 0.0);
 // #endif EDGES
 // #if !EDGES
-  return vec4<f32>(totalLight, 1.0);
+  // DBG-3: multiplied over the canvas when drawn there, so alpha 0 applies no light (a render target's pass draws at 1).
+  return vec4<f32>(mix(vec3<f32>(1.0), totalLight, localUniforms.uColor.a), 1.0);
 // #endif !EDGES
 }

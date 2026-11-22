@@ -4,6 +4,8 @@ precision highp float;
 // ANGLE's D3D11 flatten the branch (both sides run), so no early out (a lamp's reach, its cosine) saved anything on WebGL
 // (E-365). Every input is a render target without mipmaps: textureLod at level 0 reads what texture() did.
 out vec4 finalColor;
+// DBG-3: the mesh's group colour, premultiplied: drawn on the canvas (no render target), its alpha is the lighting layer's.
+uniform vec4 uColor;
 
 uniform vec2 uCameraPos;
 uniform float uZoom;
@@ -763,6 +765,7 @@ void main() {
   finalColor = vec4(totalLight, 0.0);
 // #endif EDGES
 // #if !EDGES
-  finalColor = vec4(totalLight, 1.0);
+  // DBG-3: multiplied over the canvas when drawn there, so alpha 0 applies no light (a render target's pass draws at 1).
+  finalColor = vec4(mix(vec3(1.0), totalLight, uColor.a), 1.0);
 // #endif !EDGES
 }

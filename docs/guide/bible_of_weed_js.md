@@ -1245,11 +1245,12 @@ Layer.sky.clear()
 Layer.water.setUniform('uWaterColor', [0.05, 0.1, 0.95])
 Layer.water.getUniform('uThreshold')
 
-// Blend modes (numeric enum)
+// Blend modes (numeric enum in the config, names on the Layer facade)
 import { BLEND_MODES } from '/src/util/configDefaults.js';
 // or: const { BLEND_MODES } = WEED.enums;
-// BLEND_MODES.NORMAL (0), BLEND_MODES.ADD (2), BLEND_MODES.MULTIPLY (3), BLEND_MODES.SCREEN (4)
-// Full list: 33 modes matching PixiJS (INHERIT, DARKEN, LIGHTEN, ERASE, COLOR_DODGE, ...)
+// NORMAL, ADD, MULTIPLY, SCREEN, ERASE, NORMAL_NPM, ADD_NPM, SCREEN_NPM, NONE, MIN, MAX: the modes this build draws
+// (Pixi's advanced modes, overlay, darken and the rest, are not registered and are not offered).
+Layer.fx.blendMode = 'add'            // any worker, by name; containerBlendMode and zIndex the same way
 ```
 
 ### Two-RT Shader Pipeline (How It Works)

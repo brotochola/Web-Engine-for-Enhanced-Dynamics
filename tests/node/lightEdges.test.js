@@ -66,10 +66,11 @@ test("the light pass's EDGES: the floor's texels leave alpha 0 with it, 1 withou
   const wgsl = shader('lightingBasic.wgsl');
   assert.match(lightingSource(glsl, { ...flags, edges: true }), /finalColor = vec4\(totalLight, 0\.0\);/);
   assert.doesNotMatch(lightingSource(glsl, { ...flags, edges: true }), /finalColor = vec4\(totalLight, 1\.0\);/);
-  assert.match(lightingSource(glsl, flags), /finalColor = vec4\(totalLight, 1\.0\);/);
+  // DBG-3: without EDGES the pass may be drawn on the canvas, so it mixes its light toward white by the layer's alpha.
+  assert.match(lightingSource(glsl, flags), /finalColor = vec4\(mix\(vec3\(1\.0\), totalLight, uColor\.a\), 1\.0\);/);
   assert.doesNotMatch(lightingSource(glsl, flags), /finalColor = vec4\(totalLight, 0\.0\);/);
   assert.match(lightingSource(wgsl, { ...flags, edges: true }), /return vec4<f32>\(totalLight, 0\.0\);/);
-  assert.match(lightingSource(wgsl, flags), /return vec4<f32>\(totalLight, 1\.0\);/);
+  assert.match(lightingSource(wgsl, flags), /return vec4<f32>\(mix\(vec3<f32>\(1\.0\), totalLight, localUniforms\.uColor\.a\), 1\.0\);/);
   // A face's texel keeps alpha 1 either way (its light dithered, N-277).
   assert.match(lightingSource(glsl, { ...flags, edges: true }), /finalColor = vec4\(weedDither\(min\(faceLight\(fragWorld, face, selfId, selfOn\), vec3\(1\.0\)\), ditherAt\), 1\.0\);/);
 });
