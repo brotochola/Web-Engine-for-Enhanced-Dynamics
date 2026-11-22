@@ -110,6 +110,57 @@ import { addWaitMs } from '../util/waitMeter.js';
 const firstActiveInstance = (EntityClass) => EntityClass.getFirstActiveInstance();
 
 /** This worker's instance of the entity at `index`, made if it has none (hot reload: the fields put back). */
+/** E-125: a spawn batch's sort keys, entityIndex * span + its position (_processSpawnSoA). */
+function fillSpawnKeys(keys, idx, n, span) {
+  for (let i = 0; i < n; i++) keys[i] = idx[i] * span + i;
+}
+
+/**
+ * E-125: the sorted keys' spawns into sorted / sortedClass, alive ones only and each index once (_processSpawnSoA);
+ * returns how many.
+ */
+function gatherSortedSpawns(keys, idx, classes, n, span, sorted, sortedClass, transformActive) {
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const key = keys[i];
+    const src = (key - Math.floor(key / span) * span) | 0;
+    const entityIndex = idx[src];
+    if (transformActive[entityIndex] !== 1) continue;
+    if (m > 0 && sorted[m - 1] === entityIndex) continue;
+    sorted[m] = entityIndex;
+    sortedClass[m] = classes[src];
+    m++;
+  }
+  return m;
+}
+
+/** The end of the run of one class from runStart in sortedClass (mergeSpawnRuns). */
+function classRunEnd(sortedClass, runStart, m) {
+  const EntityClass = sortedClass[runStart];
+  let runEnd = runStart + 1;
+  while (runEnd < m && sortedClass[runEnd] === EntityClass) runEnd++;
+  return runEnd;
+}
+
+/** Each class's run of the sorted spawns into its type's active list (_processSpawnSoA). */
+function mergeSpawnRuns(sorted, sortedClass, m, scratch) {
+  let runStart = 0;
+  while (runStart < m) {
+    const EntityClass = sortedClass[runStart];
+    const runEnd = classRunEnd(sortedClass, runStart, m);
+    if (EntityClass?._activeList) {
+      mergeSortedIntoActiveList(
+        EntityClass._activeList,
+        sorted.subarray(runStart, runEnd),
+        runEnd - runStart,
+        scratch,
+      );
+      GameObject._typeListChanged(EntityClass);
+    }
+    runStart = runEnd;
+  }
+}
+
 function instanceAtIndex(index) {
   const EntityClass = GameObject.classByType[Transform.entityType[index]];
   return EntityClass && EntityClass.instances ? GameObject._instanceOf(EntityClass, index) : undefined;
@@ -1062,7 +1113,6 @@ class LogicWorker extends AbstractWorker {
     const span = keys.length;
     const sorted = this._spawnSorted;
     const sortedClass = this._spawnSortedClass;
-    const transformActive = Transform.active;
 
     // Sort the batch by entity index, then gather (E-125, H-14 re-sat). Each spawn is a key, entityIndex * span +
     // its position, sorted by the typed array's own numeric sort with no comparator: span, the keys' length, is the
@@ -1071,40 +1121,16 @@ class LogicWorker extends AbstractWorker {
     // order does not change the lists. They are kept once: a short life whose index was reused at once (LIFO)
     // spawns twice in one batch, and the merge below only skips an index the list already holds, so both copies
     // were listed and the entity ticked twice.
-    let m = 0;
-    for (let i = 0; i < n; i++) keys[i] = idx[i] * span + i;
+    // N-214: no loop here; each is a function of its own (the code after them ran in OSR code with no feedback and
+    // deopted every frame that spawned a batch).
+    fillSpawnKeys(keys, idx, n, span);
     keys.subarray(0, n).sort();
-    for (let i = 0; i < n; i++) {
-      const key = keys[i];
-      const src = (key - Math.floor(key / span) * span) | 0;
-      const entityIndex = idx[src];
-      if (transformActive[entityIndex] !== 1) continue;
-      if (m > 0 && sorted[m - 1] === entityIndex) continue;
-      sorted[m] = entityIndex;
-      sortedClass[m] = classes[src];
-      m++;
-    }
+    const m = gatherSortedSpawns(keys, idx, classes, n, span, sorted, sortedClass, Transform.active);
     if (m === 0) return false;
 
     const scratch = this._listMergeScratch;
     if (active) mergeSortedIntoActiveList(active, sorted, m, scratch);
-
-    let runStart = 0;
-    while (runStart < m) {
-      const EntityClass = sortedClass[runStart];
-      let runEnd = runStart + 1;
-      while (runEnd < m && sortedClass[runEnd] === EntityClass) runEnd++;
-      if (EntityClass?._activeList) {
-        mergeSortedIntoActiveList(
-          EntityClass._activeList,
-          sorted.subarray(runStart, runEnd),
-          runEnd - runStart,
-          scratch,
-        );
-        GameObject._typeListChanged(EntityClass);
-      }
-      runStart = runEnd;
-    }
+    mergeSpawnRuns(sorted, sortedClass, m, scratch);
     return true;
   }
 
