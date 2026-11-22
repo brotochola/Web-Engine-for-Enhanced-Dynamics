@@ -15,6 +15,7 @@
  * --expect-diff: pass when the sides differ, for a knob that must change the picture.
  * --tolerance <n>: pass when no channel of any pixel differs by more than n of 255 (default 0).
  * --wait-ms (default 3000), --headless (a real GPU needs headed Chrome), --save <dir>: keep both PNGs.
+ * --chrome-arg <flag> (repeatable): a Chromium flag for both sides' browsers (--disable-gpu: Chromium without a GPU).
  * Exit 0 on the verdict asked for, 1 otherwise.
  */
 import fs from 'node:fs';
@@ -30,7 +31,7 @@ const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)))
 const VIEWPORT = { width: 1280, height: 720 };
 
 function parseCli(argv) {
-  const opts = { query: [], queryA: [], queryB: [], waitMs: 3000, tolerance: 0, expectDiff: false, headless: false };
+  const opts = { query: [], queryA: [], queryB: [], chromeArgs: [], waitMs: 3000, tolerance: 0, expectDiff: false, headless: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => argv[++i];
@@ -47,6 +48,7 @@ function parseCli(argv) {
     else if (arg === '--headless') opts.headless = true;
     else if (arg === '--full-rev') opts.fullRev = true;
     else if (arg === '--save') opts.save = next();
+    else if (arg === '--chrome-arg') opts.chromeArgs.push(next());
     else throw new Error(`compareCaptures: unknown argument ${arg}`);
   }
   if (!opts.scene || !opts.sceneExport) throw new Error('compareCaptures: --scene and --scene-export are required');
@@ -100,7 +102,7 @@ async function withBrowser(opts, use) {
   const browser = await chromium.launch({
     headless: opts.headless,
     channel: 'chrome',
-    args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--enable-unsafe-webgpu'],
+    args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--enable-unsafe-webgpu', ...opts.chromeArgs],
   });
   try {
     return await use(browser);
