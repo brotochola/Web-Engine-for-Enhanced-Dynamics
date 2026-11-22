@@ -24910,7 +24910,8 @@
     },
     {
       "records": [
-        "R-1694"
+        "R-1694",
+        "R-1765"
       ],
       "refs": [],
       "id": "N-330",
@@ -24919,8 +24920,8 @@
       "kind": "bug",
       "area": "render",
       "date": "2026-11-21",
-      "statusText": "Filed 2026-11-21 from N-212 (R-1694): the maxShadowCastingLights cut fades since R-1151; these two cuts do not.",
-      "next": "Design read 2026-11-22 (not a quick fix): the per-entity cut fades the last kept light by how close the next one is, f = min(1, (dNext - dLast) / (0.2 dNext)), applied as DX-SPOT's cone_intensity applies its f (lane 2 of the row's light vec4, so the shaders do not change). It needs the (maxPE + 1)-th nearest distance: note_nearest keeps one pair more a caster (the near records' stride and region in wasmMemoryMap), caster_rows reads it, the JS twin and the float32 test module follow, and the lamps' map's keyed stamp rows take the same vec4. The per-light caster cut (ring_select / the radix select) fades its lim-th caster the same way by the (lim + 1)-th candidate. Both builds of the kernel, the parity tests, then a film of Predator at night where walkers cross between lamps, before and after."
+      "statusText": "step 1 done 2026-11-22 on the ASUS (9c22a462, R-1765): the per-entity cut fades; step 2 (the per-light caster cut) open",
+      "next": "Step 2: the per-light caster cut (a light's maxShadows / maxShadowsPerLight keeps its lim nearest casters): fade its lim-th caster by the (lim + 1)-th candidate. Without maxShadowsPerEntity the light's rows can take it directly (stamp_light_rows); with it the fade must ride the caster's record pair (no room in the 8 bytes today). Then a scene that shows a walker crossing between lamps, before and after."
     },
     {
       "records": [
@@ -42169,6 +42170,19 @@
       "text": "**N-259 under Chromium without a GPU: not reproduced either. GPU particles with sortWithEntities draw.**\n\nThe ASUS ran job 0901p (2026-11-22, batch 6 7523ae81). compareCaptures took the new `--chrome-arg` knob (1dfc5db43), on gpuParticlesStressScene ?hold=6 with WebGL, sort=0 against sort=1, and a 6 s wait:\n\n| browser | pixels that differ | max delta |\n| --- | --- | --- |\n| headless, `--disable-gpu` | 50 903 | 153 |\n| headless, `--disable-gpu --enable-unsafe-swiftshader` | 27 227 | 129 |\n| headless, `--use-angle=swiftshader --enable-unsafe-swiftshader` | 58 556 | 153 |\n| headed, `--disable-gpu --enable-unsafe-swiftshader` | 2 681 | 70 |\n| headless on the GPU (reference) | 7 213 | 60 |\n\nEvery sort=1 capture shows the smoke columns, as its sort=0 capture does. The differences are where trees and columns overlap.\n\nWith R-1738 (WebGL headed and headless, WebGPU, on the HD 620), current main draws these particles on a GPU and on SwiftShader. The report's case was the buenos-aires game's water layer on its bundle fa59073a. Answered: reopen if the game shows it on a current bundle.",
       "commits": [
         "1dfc5db43"
+      ]
+    },
+    {
+      "id": "R-1765",
+      "date": "2026-11-22",
+      "time": "06:14",
+      "timeFrom": "recorded",
+      "title": "N-330 step 1: the per-entity cut fades its last shown light by the nearest light left out (f = min(1, (dNext - dLast) / (0.2 dNext)) on its intensity); the stamp kernel +5 % (+0.024 ms a stamp on the ASUS)",
+      "verdict": "kept-hygiene",
+      "text": "**N-330 step 1: the per-entity cut fades instead of popping.**\n\nWith `lighting.maxShadowsPerEntity`, each caster shows the shadows of its N nearest lights. When a fourth light came nearer than the third, the third's shadow vanished and the fourth's appeared, both at once. This was main's design read of 2026-11-22.\n\nHow it works (9c22a462):\n- A caster's record in `wasm/shadowStamp.c` holds one pair more than it shows: maxPE + 1, sized everywhere by `stampNearPairs` in `wasmMemoryMap.js`.\n- When the record holds that pair (a light past the cut), the last shown light's row takes `f = min(1, (dNext - dLast) / (0.2 dNext))` on its intensity. The distances are the records' squared floats, rooted in double. The fade folds into lane 2 of the light vec4 the way DX-SPOT's cone folds its f (`faded_intensity`: f × shade × cone), so the shaders do not change.\n- f is 0 where the next light is as near as the last, the moment they swap, and 1 from 20 % nearer. A light crossing the cut takes the shadow down to 0 as it comes level, then the newcomer's shadow comes up from 0.\n- The faded row goes out of `caster_rows`' loop (one copy, `caster_row` with the fade), so the loop's rows are written as before.\n- `writeStampLights` now writes every light's 1 / groundScaleY², 1 for a record without one. It was written only for cone and dim lights, the only rows that read it then. A point light's fade also measures its caster on the floor.\n\nWhat followed the kernel:\n- The JS reference (`tests/reference/shadowStamp.mjs`: cutFade, fadedIntensity, invG2Of).\n- The benches' region sizes (shadowStampKernel, shadowStampReplay).\n- The rows test's end-of-memory record placement.\n- The float32 tolerance: a row's intensity may be a fade of its light's. The float32 test module screens pairs and does not fade; it is unchanged.\n\n`tests/node/shadowStampEntityCut.test.js` checks the kernel against the reference, bit for bit, on these cases:\n- three lights: no fade;\n- a fourth light at 340 against a third at 300: f = 40 / 68;\n- a fourth past 20 %: no fade;\n- a fourth as near as the third: f = 0;\n- one shadow per caster;\n- the crossing: the third's shadow goes monotonically down to nearly 0, then the newcomer's comes up;\n- a dim light: f × shade.\n\nThe stamp kernel on the Predator fixture (shadowStampWasmMicrobench --variant wasm: 48 lights, 16 424 casters, 3 a caster), ASUS, 4 ABAB pairs (job 0901u, 06:01): A (batch 7) 9.1, 8.1, 8.2, 9.6 ms for 20 ops, B 9.9, 8.7, 9.6, 8.7: 8.75 -> 9.23 ms (+5.4 %, 3 of 4 pairs worse), +0.024 ms a stamp, about 0.1 % of a pre-render frame. A first version kept maxPE + 1 sorted pairs and rooted every full record: +10.8 % (4 of 4, job 0901s); the left-out slot as a min and the squares' test halved it.\n\nIn the renderer (ASUS, headed Chrome, job 0901v): lampShadowStressScene ?still=1&lamps=48&walkers=600, A against B with the new ?perEntity= knob (435a85df): perEntity=1, 195 pixels differ by 1, B brighter (the faded shadows); perEntity=2, 28; perEntity=3, none (a walker there is rarely in four lamps' reach). The scene's shadows are small and dim, so the pops are hard to see in a still; a film of Predator at ?hour=22 was not night (the pin needs light3d) and is not evidence. A scene made to show a walker crossing between lamps is still to do.\n\nSuites with the change (C:weedtest3, engine wasm built there, buildWasm --check clean): node and demos green (job 0901w); the stamp tests 24/24 (11 files).\n\nLeft: step 2, the per-light caster cut (ring_select / the radix select fade the lim-th caster by the (lim + 1)-th candidate).",
+      "commits": [
+        "435a85df",
+        "9c22a462"
       ]
     }
   ],
