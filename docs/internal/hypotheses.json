@@ -25188,6 +25188,24 @@
         "particles by depth"
       ],
       "records": []
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-410",
+      "title": "The yellow bus's sun shadow is cut at one facing: in the light bench, colectivo_amarillo at 172.5° casts a silhouette shadow with a part missing",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-22",
+      "result": "",
+      "statusText": "reported 2026-11-22 by the owner, from a screenshot of the light bench (demos/?scene=lightbenchscene&debug=1)",
+      "next": "Reproduce: lightbenchscene. Hour 16:00, day cycle stopped, Direction 0°, Height at noon 90°, Intensity 1.00, lamps on. Select colectivo_amarillo (car, 48 views, half a turn mirrored) and set Facing 172.5°. Shadow with the sun: silhouette; shadow with lamps: height map; card orientation: faces each light. Capture the bus's shadow on both backends, at this facing and at its neighbours. Then find where it is cut, against three candidates: the sun map's rect or margins (_fitSunMap's tallest-frame bound, N-317); the silhouette card's frame for that view (the mirrored half turn: a frame trimmed or flipped short); or the caster row's tile in the map.",
+      "aliases": [
+        "bus shadow cut",
+        "colectivo shadow missing part",
+        "silhouette shadow cut at one facing"
+      ]
     }
   ],
   "records": [
