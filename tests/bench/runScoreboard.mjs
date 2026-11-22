@@ -6,6 +6,8 @@
  *   pnpm bench:scoreboard --only box2d,emit,spatial --smoke
  *   pnpm bench:scoreboard --vs 0695a8d --headed-only box2d,visPoly,steadyCombat
  *   pnpm bench:scoreboard --vs main --full-rev   (an API change: each side runs its own scenes and kernel scripts)
+ *   pnpm bench:scoreboard --vs v0.14.0 --loads loads.json   (DX-SCORELOAD: each row at the load calibrateScoreboardLoads.mjs
+ *                                                           chose for this machine; both sides run it)
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -35,6 +37,7 @@ import {
 import { isCli } from './microbenchHelpers.mjs';
 import { ensureRevWorktree } from './revWorktree.mjs';
 import { addRecord, loadRegistry, localStamp, saveRegistry } from '../../scripts/hypothesesRegister.mjs';
+import { readScoreboardLoads, sceneAtLoad } from './scoreboardLoads.mjs';
 
 const outRoot = path.join(repoRoot, 'tests/results/scoreboard');
 
@@ -175,7 +178,7 @@ export function recheckRegressions(feature, row, args, baseline, outRoot) {
           const json = runKernelScript(feature.kernel.script, path.join(dir, `kernel-${side}-p${p}.json`), root);
           v[side] = pickOpsWithKey(json, feature.kernel.opsKey);
         } else {
-          const res = measureSceneSide(`${feature.scene.key}-${side}-p${p}`, feature.scene, oneRun, dir, feature.id, root);
+          const res = measureSceneSide(`${feature.scene.key}-${side}-p${p}`, sceneAtLoad(feature, args.loadsTable), oneRun, dir, feature.id, root);
           v[side] = res.ok ? res.summary[hit.metric]?.median : null;
         }
       }
@@ -488,6 +491,7 @@ function abortCampaign(reason, rows, gates, args) {
 
 function main() {
   const args = parseMeasureArgs(process.argv.slice(2));
+  args.loadsTable = args.loads ? readScoreboardLoads(args.loads) : null;
   const features = filterFeatures(args.only);
   fs.mkdirSync(outRoot, { recursive: true });
   const baseline = ensureRevWorktree(args.vs, { srcOnly: !args.fullRev });
@@ -551,12 +555,14 @@ function main() {
 
       if (!args.skipScenes && feature.scene && !feature.protocolCeiling) {
         const headed = sceneWantsHeaded(feature.scene, args, feature.id);
-        const cacheKey = `${feature.scene.key}|${headed ? 1 : 0}|${args.smoke}`;
+        const scene = sceneAtLoad(feature, args.loadsTable);
+        if (scene.query) console.log(`load ${scene.query} (${args.loads})`);
+        const cacheKey = `${feature.scene.key}|${headed ? 1 : 0}|${args.smoke}|${scene.query || ''}`;
         if (!sceneCache.has(cacheKey)) {
           const sdir = path.join(outRoot, feature.scene.key);
           fs.mkdirSync(sdir, { recursive: true });
-          const base = measureSceneSide(`${feature.scene.key}-BASE`, feature.scene, args, sdir, feature.id, baseline.root);
-          const hyp = measureSceneSide(`${feature.scene.key}-KEEP`, feature.scene, args, sdir, feature.id);
+          const base = measureSceneSide(`${feature.scene.key}-BASE`, scene, args, sdir, feature.id, baseline.root);
+          const hyp = measureSceneSide(`${feature.scene.key}-KEEP`, scene, args, sdir, feature.id);
           sceneCache.set(cacheKey, {
             ok: base.ok && hyp.ok,
             error: base.ok ? hyp.error : base.error,
@@ -567,6 +573,7 @@ function main() {
         const cached = sceneCache.get(cacheKey);
         row.scene = {
           ...cached,
+          query: scene.query || null,
           workload:
             cached.ok && cached.base && cached.hyp
               ? workloadOk(cached.base, cached.hyp, feature.load)

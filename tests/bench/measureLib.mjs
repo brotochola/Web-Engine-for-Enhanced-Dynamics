@@ -323,7 +323,8 @@ export function measureSceneSide(label, scene, args, outDir, featureId, root = r
   const runs = headed ? args.runs : args.stressRuns;
   const warmupMs = headed ? args.warmupMs : args.stressWarmupMs;
   const durationMs = headed ? args.durationMs : args.stressDurationMs;
-  const benchOpts = { warmupMs, durationMs, headed, detailedStats: Boolean(args.detailedStats), root };
+  // DX-SCORELOAD: a scene's own query (its load knob at a calibrated value, scoreboardLoads) on every run of both sides.
+  const benchOpts = { warmupMs, durationMs, headed, detailedStats: Boolean(args.detailedStats), root, query: scene.query || null };
   const rows = [];
   for (let r = 0; r < runs; r++) {
     const out = path.join(outDir, `${label}-r${r}.json`);
@@ -410,6 +411,8 @@ export function parseMeasureArgs(argv, extras = {}) {
     else if (a === '--headless') out.headlessAll = true;
     else if (a === '--detailed-stats') out.detailedStats = true;
     else if (a === '--no-recheck') out.noRecheck = true;
+    // DX-SCORELOAD: a loads file from calibrateScoreboardLoads.mjs (each row's load knob for this machine).
+    else if (a === '--loads' && argv[i + 1]) out.loads = String(argv[++i]);
     else if (a === '--smoke') {
       out.smoke = true;
       out.runs = 1;
