@@ -165,6 +165,35 @@ function compareOutlines(pixels, shadows, mask, levels) {
   }
   const live = shadows.filter((s) => s.polygon !== null);
   const results = shadows.map((s) => ({ caster: s.caster.kind, why: s.why, measured: [], expected: [] }));
+  // N-192: the shadow's connected parts, each claimed by a compared caster whose projection it overlaps. Where a caster
+  // is not compared (a card taller than its lamp), a part no projection overlaps, more than SEARCH px from each, is that
+  // caster's: its outline is no other's, where the nearest projection took it (420 px off under the 60 px lamp). Its
+  // pixels are counted and shown. Any other part is measured: a sliver past a shadow is the nearest caster's error.
+  const anyUncompared = live.length < shadows.length;
+  const part = new Int32Array(W * H).fill(-1);
+  const claimed = [];
+  const stack = [];
+  for (let start = 0; anyUncompared && start < W * H; start++) {
+    if (state[start] !== 1 || part[start] !== -1) continue;
+    const id = claimed.length;
+    let inside = 0;
+    part[start] = id;
+    stack.push(start);
+    while (stack.length > 0) {
+      const i = stack.pop();
+      const x = (i % W) + 0.5;
+      const y = Math.floor(i / W) + 0.5;
+      if (inside === 0 && live.some((s) => insidePolygon(x, y, s.polygon))) inside = 1;
+      for (const j of [i - 1, i + 1, i - W, i + W]) {
+        if (j >= 0 && j < W * H && state[j] === 1 && part[j] === -1) {
+          part[j] = id;
+          stack.push(j);
+        }
+      }
+    }
+    claimed.push(inside === 1);
+  }
+  results.unclaimed = 0;
   // Each measured outline pixel belongs to the nearest expected outline.
   for (const [x, y] of outline) {
     let best = Infinity;
@@ -175,6 +204,10 @@ function compareOutlines(pixels, shadows, mask, levels) {
         best = d;
         at = shadows.indexOf(s);
       }
+    }
+    if (anyUncompared && best > SEARCH && !claimed[part[Math.floor(y) * W + Math.floor(x)]]) {
+      results.unclaimed++;
+      continue;
     }
     if (at >= 0) results[at].measured.push(best);
   }
@@ -208,6 +241,13 @@ function report(label, results, tolerance) {
   for (const r of results) {
     if (r.why) {
       console.log(`  ${label} ${r.caster}: not compared (${r.why})`);
+      continue;
+    }
+    // N-192: a shadow the caster's own sprite hides whole (the sun behind the camera's side of it) has no outline to
+    // compare, measured or projected: not a failure. One whose projection is hidden but whose measured outline shows
+    // is still one (the crate's columns, too wide, showed 108 px past its sprite under the sun from 90 degrees).
+    if (r.measured.length < 20 && r.expected.length < 20) {
+      console.log(`  ${label} ${r.caster}: not compared (behind its sprite: ${r.measured.length} outline px, ${r.expected.length} projection points seen)`);
       continue;
     }
     const m99 = percentile(r.measured, 0.99);
@@ -269,6 +309,7 @@ async function main() {
           const shadows = expectedShadows(casters, light);
           const results = compareOutlines(pixels, shadows, spriteMask(casters, 2), levels);
           const ok = report(label, results, opts.tolerance) && errors.length === 0;
+          if (results.unclaimed > 0) console.log(`  ${label}: ${results.unclaimed} outline px of a shadow no compared projection overlaps (an uncompared caster's)`);
           if (errors.length) console.log(`  ${label}: page errors: ${errors.slice(0, 3).join(' | ')}`);
           if (!ok) allOk = false;
         }
