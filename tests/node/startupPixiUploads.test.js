@@ -23,12 +23,12 @@ test('the atlas, its maps page, the loose textures and the tilesets go to the GP
   const maps = new TextureSource({ width: 8, height: 8, label: 'maps' });
   const loose = new TextureSource({ width: 4, height: 4, label: 'loose' });
   const tileset = new TextureSource({ width: 4, height: 4, label: 'tileset' });
-  px.spritesheets = { bigAtlas: { source: atlas }, cars: { source: atlas, isProxy: true } };
-  px.atlasMapsSource = maps;
-  px.textures = { car_1: new Texture({ source: atlas }), car_2: new Texture({ source: atlas }), bunny: new Texture({ source: loose }) };
-  px.tilemaps = { ground: { tilesetTexture: new Texture({ source: tileset }) } };
+  px.assets.spritesheets = { bigAtlas: { source: atlas }, cars: { source: atlas, isProxy: true } };
+  px.assets.atlasMapsSource = maps;
+  px.assets.textures = { car_1: new Texture({ source: atlas }), car_2: new Texture({ source: atlas }), bunny: new Texture({ source: loose }) };
+  px.assets.tilemaps = { ground: { tilesetTexture: new Texture({ source: tileset }) } };
   const uploaded = [];
   px.pixiApp = { renderer: { texture: { initSource: (source) => uploaded.push(source.label) } } };
-  px._uploadAssetTextures();
+  px.assets.uploadAssetTextures();
   assert.deepEqual(uploaded, ['atlas', 'maps', 'loose', 'tileset']);
 });

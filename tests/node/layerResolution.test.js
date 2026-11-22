@@ -181,7 +181,7 @@ test("E-404: the glows' composite covers the canvas rect their quads reach, on t
   let updates = 0;
   const ctx = {
     entitiesGlowBatch: { data },
-    _texLut: lut,
+    assets: { texLut: lut },
     canvasWidth: 1920,
     canvasHeight: 1080,
     _glowLayerBounds: new Float64Array(4),

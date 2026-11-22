@@ -31,7 +31,6 @@ import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { MeshGeometry } from '../core/meshGeometry.js';
 import { MeshUvFillBatch, meshUvFillProgram } from '../render/meshUvFillBatch.js';
-import { proxyTexturesByPrefix } from '../render/atlasProxyTextures.js';
 import { Sun } from '../core/sun.js';
 
 import {
@@ -57,8 +56,6 @@ import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource } from '../render/faceMap.js';
 import { applyPixelSnap } from '../render/pixelSnap.js';
-import { packMapsTable } from '../render/mapsTable.js';
-import { setTwinFormat } from '../render/twinTexel.js';
 import {
   LightTiles,
   TILE_CAM_COS,
@@ -93,7 +90,6 @@ import {
   renderViewTextures,
 } from '../render/renderViews.js';
 import { lightEdgesHost, lightEdgesQuad, rgbOnlyHost, unshadedEdgesHost, wallEdgesWanted } from '../render/lightEdges.js';
-import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
   SUN_MAP_MARGIN_MAX,
@@ -214,13 +210,9 @@ import {
   POSE_STATIC_FLOATS,
   BATCH_SPACE,
   BATCH_DEPTH,
-  buildTextureLut,
-  packTextureLutRgba,
   TEX_LUT_FLOATS,
-  textureLutLayout,
   textureLutSolid,
   textureLutTexels,
-  TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, wasmPainterState } from '../render/painterRadixClient.js';
 import { LiquidFunDensitySplat, LF_SPLAT_STRIDE } from '../render/liquidFunDensitySplat.js';
@@ -400,6 +392,7 @@ import {
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
+import { PixiAssets } from '../render/pixi/assets.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
 import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
@@ -465,7 +458,7 @@ function sortPrefixByDistSq(arr, count) {
 import { RENDERER_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { Time } from '../core/timeScale.js';
 import { GpuParticles } from '../core/gpuParticles.js';
-import { GpuParticleLayerBatch, packAnimStartLookup } from '../render/gpuParticleBatch.js';
+import { GpuParticleLayerBatch } from '../render/gpuParticleBatch.js';
 import { installInstanceRangeDraw } from '../render/instanceRangeDraw.js';
 import {
   PROXY, PROXY_CAMERA, PROXY_KIND, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, localProxyHalf, proxyView,
@@ -666,32 +659,6 @@ class PixiRenderer extends AbstractWorker {
     this.shadowBatch = null;
     this.spriteMesh = null; // entitiesBatch.mesh alias for layer refs
     this.spriteGlowMesh = null; // entitiesGlowBatch.mesh
-    this._texLut = null;
-    this._texLutCount = 0;
-    this._texLutSource = null;
-    this._texLutRgba = null;
-    // N-111: the LUT texture's size (textureLutLayout), folded past TEX_LUT_MAX_ROWS textureIds.
-    this._texLutWidth = TEX_LUT_RGBA_WIDTH;
-    this._texLutHeight = 1;
-    this._texLutNeedsGpuUpload = false;
-    // DX-SHADOW3D: the renders' footprints (frameBase.js writeFootprintRow), a row each, uploaded with the LUT; a row
-    // of nothing (count 0) when no frame has one, so the column programs always have the texture.
-    this._footSource = null;
-    this._footRgba = new Float32Array(0);
-    this._footRows = 1;
-    // E-496: the maps table (src/render/mapsTable.js), each frame's window in the twin page and its marks, a texel a
-    // textureId, uploaded with the LUT; a texel of nothing before the atlas, so its readers always have the texture.
-    this._mapsTableSource = null;
-    this._mapsTableRgba = new Float32Array(0);
-    this._mapsTableWidth = 1;
-    this._mapsTableHeight = 1;
-    // A baked atlas from before E-496: its twin page has the atlas's layout, so every frame reads at its atlas texel.
-    this._mapsAtlasLayout = false;
-    // GPU particle layers (LAYER_KIND.GPU_PARTICLES): animation index -> atlas lookup id, as RGBA32F (red).
-    this._gpuAnimStartSource = null;
-    this._gpuAnimStartRgba = new Float32Array(0);
-    this._gpuAnimStartWidth = 0;
-    this._gpuAnimStartHeight = 0;
     /** @type {GpuParticleLayerBatch[]} */
     this._gpuParticleBatches = [];
     // WebGL: the rings' record textures, made and filled here (E-157); null until the first GPU particle layer.
@@ -739,10 +706,8 @@ class PixiRenderer extends AbstractWorker {
     /** From renderer.pixelSnapCorners (N-302): with a nearest atlas, an axis-aligned sprite's corners on the pixel grid. */
     this.pixelSnapCorners = RENDERER_DEFAULTS.pixelSnapCorners;
 
-    // Texture and spritesheet storage
-    this.textures = {}; // Store simple PIXI textures by name
-    this.spritesheets = {}; // Store loaded spritesheets by name
-    this.tilemaps = {}; // Store PIXI tileset textures by tilemap name (tile data comes from TileMap SAB)
+    // N-256 PW-1: the textures, the spritesheets, the tileset textures, the atlas and its tables (src/render/pixi/assets.js).
+    this.assets = new PixiAssets(this);
 
     // Per-frame subtimers (ms) — written to RENDERER_STATS in reportFPS
     this.lightsTimeThisFrame = 0;
@@ -873,12 +838,6 @@ class PixiRenderer extends AbstractWorker {
 
     // ========================================
     // FLAT TEXTURE LOOKUP (Zero-cost texture resolution)
-    // ========================================
-    // All textures flattened into single array for O(1) lookup
-    // Index = globalTextureId from pre_render_worker
-    this.flatTextures = [];           // PIXI.Texture[] indexed by globalTextureId
-    this.animationFrameStart = [];    // Starting index in flatTextures for each animation
-    this.animationFrameCount = [];    // Number of frames per animation
 
     // ========================================
     // BLOOD DECAL SPLAT GRID (SAB tiles, not TileMap background)
@@ -945,7 +904,6 @@ class PixiRenderer extends AbstractWorker {
     this._unshadedOn = false;
     // DX-UNSHADED: spriteRenderer.unshaded was set in a scene that draws no G-buffer, and that was said.
     this._unshadedWarned = false;
-    this._atlasUnshaded = false;
     this.unshadedRT = null;
     this._unshadedComposite = null;
     this._unshadedQuad = new Float32Array(8);
@@ -983,13 +941,6 @@ class PixiRenderer extends AbstractWorker {
     this._glowLayerTexture = null;
     /** This frame's glows' rect on the canvas (x0, y0, x1, y1; px), _glowScreenBounds. */
     this._glowLayerBounds = new Float64Array(4);
-    this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
-    /**
-     * SST-19: the atlas sheets' pictures the page posted before the init ('atlasBitmaps'), by sheet name:
-     * { imageBitmap, mapsBitmap, source, mapsSource }, the sources made and uploaded once the renderer is booted;
-     * loadSpritesheets takes them. Empty after it.
-     */
-    this._earlyAtlas = {};
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
     // DX-SHADOW3D (F7): lighting.lampShadows 'map': a shadow map a lamp (lampShadowMap.js), tiles in an atlas.
@@ -1784,7 +1735,7 @@ class PixiRenderer extends AbstractWorker {
     // N-138: a mesh whose sprite was drawn this frame takes its sprite's pose.
     v.queueFrame = this._meshPoseLists.length !== 0 && this.lastReadFrame > 0 ? this.lastReadFrame : -1;
     v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
-    v.animationFrameStart = this.animationFrameStart;
+    v.animationFrameStart = this.assets.animationFrameStart;
     if (this._poseX) {
       v.x = this._poseX;
       v.y = this._poseY;
@@ -1943,9 +1894,9 @@ class PixiRenderer extends AbstractWorker {
     opts.indexCount = 0;
     opts.depthMode = BATCH_DEPTH.INDEX;
     opts.sortKey = null;
-    opts.texLut = this._texLut;
-    opts.texLutCount = this._texLutCount;
-    opts.textures = this.flatTextures;
+    opts.texLut = this.assets.texLut;
+    opts.texLutCount = this.assets.texLutCount;
+    opts.textures = this.assets.flatTextures;
     opts.cameraRot = 0;
   }
 
@@ -2281,98 +2232,12 @@ class PixiRenderer extends AbstractWorker {
     return 0;
   }
 
-  /** Resolve atlas ImageSource for instanced batches. */
-  _resolveAtlasSource() {
-    if (this.flatTextures) {
-      for (let i = 0; i < this.flatTextures.length; i++) {
-        const t = this.flatTextures[i];
-        if (t?.source) return t.source;
-      }
-    }
-    return PIXI.Texture.WHITE.source;
-  }
-
-  /**
-   * Force RGBA32F LUT into a GPUTexture Pixi samples (no RENDER_ATTACHMENT).
-   */
-  _uploadTexLutTexture() {
-    const source = this._texLutSource;
-    const data = this._texLutRgba;
-    if (!source || !data) return;
-    if (this._useWebGpu) {
-      const renderer = this.pixiApp?.renderer;
-      if (!renderer?.gpu?.device) return;
-      writeRgba32Float(
-        renderer,
-        source,
-        data,
-        this._texLutWidth,
-        this._texLutHeight,
-        'weed-tex-lut'
-      );
-      if (this._footSource) writeRgba32Float(renderer, this._footSource, this._footRgba, FOOTPRINT_TEXELS, this._footRows, 'weed-footprints');
-      if (this._mapsTableSource) {
-        writeRgba32Float(renderer, this._mapsTableSource, this._mapsTableRgba, this._mapsTableWidth, this._mapsTableHeight, 'weed-maps-table');
-      }
-      this._texLutNeedsGpuUpload = false;
-      return;
-    }
-    this._uploadRgba32FloatGl(source, data, this._texLutWidth, this._texLutHeight);
-    if (this._footSource) this._uploadRgba32FloatGl(this._footSource, this._footRgba, FOOTPRINT_TEXELS, this._footRows);
-    if (this._mapsTableSource) {
-      this._uploadRgba32FloatGl(this._mapsTableSource, this._mapsTableRgba, this._mapsTableWidth, this._mapsTableHeight);
-    }
-    this._texLutNeedsGpuUpload = false;
-  }
-
-  /**
-   * DX-SHADOW3D: the renders' footprints, a row each (frameBase.js writeFootprintRow), for the solids' columns: a frame
-   * with a contact base and a footprint gets a row (texture.weedFootSlot, which writeLutSlot puts in its base's spare
-   * float). Made with the texture table, uploaded with it.
-   */
-  _buildFootprintTexture() {
-    const textures = this.flatTextures || [];
-    let rows = 0;
-    for (let i = 0; i < textures.length; i++) {
-      const t = textures[i];
-      if (t && t.weedFootprint && t.weedBase && t.weedBase.contact >= 0 && this.config?.lighting?.footprintSolids === true) t.weedFootSlot = rows++;
-    }
-    const height = Math.max(1, rows);
-    const data = new Float32Array(height * FOOTPRINT_TEXELS * 4);
-    for (let i = 0; i < textures.length; i++) {
-      const t = textures[i];
-      if (t && t.weedFootSlot >= 0) writeFootprintRow(data, t.weedFootSlot, t.weedFootprint);
-    }
-    this._footRgba = data;
-    // Its texels go up with the LUT (_uploadTexLutTexture writes this array into the source's texture).
-    this._texLutNeedsGpuUpload = true;
-    // One source while the rows' count holds. A program binds it (uFoot) when it is made and keeps it: a new source
-    // each rebuild left the lamps' columns on the old one, which WebGPU then failed every frame as destroyed.
-    if (this._footSource !== null && this._footRows === height) return;
-    this._footRows = height;
-    const old = this._footSource;
-    this._footSource = PIXI.TextureSource.from({
-      resource: data,
-      width: FOOTPRINT_TEXELS,
-      height,
-      format: 'rgba32float',
-      scaleMode: 'nearest',
-      addressMode: 'clamp-to-edge',
-      autoGenerateMipmaps: false,
-    });
-    this._footSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
-    // Never unloaded by Pixi's texture GC while bound (writeRgba32Float pins it too, but only when it makes the texture).
-    this._footSource.autoGarbageCollect = false;
-    this._pointFootPrograms();
-    if (old !== null) old.destroy();
-  }
-
   /**
    * DX-SHADOW3D: every program that binds the footprints (uFoot) on the current source: the layer shadows' columns, the
    * sun map's and the lamps' map's (their layouts name binding 7 whether or not their WGSL reads it).
    */
   _pointFootPrograms() {
-    const source = this._footSource;
+    const source = this.assets.footSource;
     const holders = [this._sunSolids && this._sunSolids.columns, this._sunMapColumns, this._lampMapColumns];
     for (let i = 0; i < holders.length; i++) {
       const c = holders[i];
@@ -2381,46 +2246,9 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
-  /**
-   * E-496: the maps table (src/render/mapsTable.js packMapsTable) of flatTextures: each frame's window in the twin page (its
-   * texture's weedMaps, from the atlas's json) and its marks. One source while its size holds, its texels uploaded with the
-   * LUT; a new one re-points every program that binds it (uMapsLut), as the footprints do.
-   */
-  _buildMapsTable() {
-    const packed = packMapsTable(this.flatTextures || [], this._mapsAtlasLayout && this.atlasMapsSource !== null);
-    this._mapsTableRgba = packed.data;
-    this._texLutNeedsGpuUpload = true;
-    if (this._mapsTableSource !== null && this._mapsTableWidth === packed.width && this._mapsTableHeight === packed.height) return;
-    this._mapsTableWidth = packed.width;
-    this._mapsTableHeight = packed.height;
-    const old = this._mapsTableSource;
-    this._mapsTableSource = PIXI.TextureSource.from({
-      resource: packed.data,
-      width: packed.width,
-      height: packed.height,
-      format: 'rgba32float',
-      scaleMode: 'nearest',
-      addressMode: 'clamp-to-edge',
-      autoGenerateMipmaps: false,
-    });
-    this._mapsTableSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
-    this._mapsTableSource.autoGarbageCollect = false;
-    this._pointMapsTablePrograms();
-    if (old !== null) old.destroy();
-  }
-
-  /** E-496: the maps table, or a texel of nothing before the atlas made it (uploaded with the LUT). */
-  _mapsTableSourceOrEmpty() {
-    if (this._mapsTableSource === null) {
-      this._buildMapsTable();
-      this._texLutNeedsGpuUpload = true;
-    }
-    return this._mapsTableSource;
-  }
-
   /** E-496: every program that binds the maps table (uMapsLut) on the current source: the columns', the entities'. */
   _pointMapsTablePrograms() {
-    const source = this._mapsTableSource;
+    const source = this.assets.mapsTableSource;
     const holders = [this._sunSolids && this._sunSolids.columns, this._sunMapColumns, this._lampMapColumns];
     for (let i = 0; i < holders.length; i++) {
       const c = holders[i];
@@ -2514,7 +2342,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   _bindLutToBatches() {
-    const lut = this._texLutSource;
+    const lut = this.assets.texLutSource;
     if (!lut) return;
     if (this.entitiesBatch) this.entitiesBatch.setLutSource(lut);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setLutSource(lut);
@@ -2528,48 +2356,14 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
-  /** Rebuild per-textureId UV/trim/orig LUT after atlas load. */
+  /** After the atlas loads: the texture tables rebuilt (assets.rebuildTextureLut), and every batch pointed at them. */
   rebuildInstancedTextureLut() {
-    const fallback = this.textures?.['_white'] || PIXI.Texture.WHITE;
-    // Before the table: its rows name each render's footprint row.
-    this._buildFootprintTexture();
-    // E-496: each frame's window in the twin page.
-    this._buildMapsTable();
-    this._texLut = buildTextureLut(this.flatTextures || [], fallback);
-    this._texLutCount = this.flatTextures?.length || 0;
-    // N-317: the tallest frame, which bounds how far a pixel's sun ray lands past the screen (_fitSunMap).
-    let tallest = 0;
-    const flat = this.flatTextures || [];
-    for (let i = 0; i < flat.length; i++) {
-      const h = flat[i]?.orig?.height ?? flat[i]?.frame?.height ?? 0;
-      if (h > tallest) tallest = h;
-    }
-    this._sunMapTallestPx = tallest;
-    // N-111: one textureId a row would pass MAX_TEXTURE_SIZE with a big atlas (9 020 frames drew nothing on
-    // SwiftShader's 8 192): past TEX_LUT_MAX_ROWS the rows hold several.
-    const layout = textureLutLayout(this._texLutCount);
-    this._texLutWidth = layout.width;
-    this._texLutHeight = layout.height;
-    const rgba = packTextureLutRgba(this._texLut, Math.max(1, this._texLutCount));
-    this._texLutRgba = rgba;
-    this._texLutSource = PIXI.TextureSource.from({
-      resource: rgba,
-      width: layout.width,
-      height: layout.height,
-      format: 'rgba32float',
-      scaleMode: 'nearest',
-      addressMode: 'clamp-to-edge',
-      autoGenerateMipmaps: false,
-    });
-    this._texLutSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
-    this._texLutNeedsGpuUpload = true;
-    this._uploadTexLutTexture();
-    this._rebuildGpuAnimStartLookup();
-    const src = this._resolveAtlasSource();
+    this.assets.rebuildTextureLut();
+    const src = this.assets.resolveAtlasSource();
     if (this.entitiesBatch) {
       this.entitiesBatch.setAtlasSource(src);
       // E-448: which frames the opaque pass may draw.
-      this.entitiesBatch.setFrameTexels(textureLutTexels(this._texLut), textureLutSolid(this._texLut));
+      this.entitiesBatch.setFrameTexels(textureLutTexels(this.assets.texLut), textureLutSolid(this.assets.texLut));
     }
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.shadowBatch) this.shadowBatch.setAtlasSource(src);
@@ -2579,45 +2373,9 @@ class PixiRenderer extends AbstractWorker {
       if (cl.batch) cl.batch.setAtlasSource(src);
       if (cl.fillBatch) cl.fillBatch.setAtlasSource(src);
       if (cl.uvFillBatch) cl.uvFillBatch.setAtlasSource(src);
-      if (cl.gpu) cl.gpu.setTextures(src, this._texLutSource, this._gpuAnimStartSource);
+      if (cl.gpu) cl.gpu.setTextures(src, this.assets.texLutSource, this.assets.gpuAnimStartSource);
     }
     this._bindLutToBatches();
-  }
-
-  /**
-   * GPU particles store a texture as CPU particles do, an animation index; their vertex shader maps it to the
-   * atlas lookup's id through this table (animationFrameStart, 0 = the white circle, as the emit kernel does).
-   */
-  _rebuildGpuAnimStartLookup() {
-    if (!GpuParticles.layers.some(Boolean)) return;
-    const white = this.animationFrameStart?.[SpriteSheetRegistry.getTextureId('_whiteCircle')] ?? 0;
-    const packed = packAnimStartLookup(this.animationFrameStart || [], white);
-    this._gpuAnimStartRgba = packed.data;
-    this._gpuAnimStartWidth = packed.width;
-    this._gpuAnimStartHeight = packed.height;
-    this._gpuAnimStartSource = PIXI.TextureSource.from({
-      resource: packed.data,
-      width: packed.width,
-      height: packed.height,
-      format: 'rgba32float',
-      scaleMode: 'nearest',
-      addressMode: 'clamp-to-edge',
-      autoGenerateMipmaps: false,
-    });
-    this._gpuAnimStartSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
-    this._uploadGpuAnimStartLookup();
-  }
-
-  _uploadGpuAnimStartLookup() {
-    const source = this._gpuAnimStartSource;
-    if (!source) return;
-    if (this._useWebGpu) {
-      const renderer = this.pixiApp?.renderer;
-      if (!renderer?.gpu?.device) return;
-      writeRgba32Float(renderer, source, this._gpuAnimStartRgba, this._gpuAnimStartWidth, this._gpuAnimStartHeight, 'weed-gpu-anim-start');
-      return;
-    }
-    this._uploadRgba32FloatGl(source, this._gpuAnimStartRgba, this._gpuAnimStartWidth, this._gpuAnimStartHeight);
   }
 
   /**
@@ -3033,10 +2791,10 @@ class PixiRenderer extends AbstractWorker {
     const facesDepth = this._faceDepthWanted();
     // OL-14: so do walls whose light is drawn under the canvas's size: the light's edges need the entities' depth.
     const wallsDepth = wallEdgesWanted(this.config?.lighting);
-    const pixelDepth = (this.atlasMapsSource !== null || facesDepth || wallsDepth)
+    const pixelDepth = (this.assets.atlasMapsSource !== null || facesDepth || wallsDepth)
       && (wantDepth === true || (wantDepth !== false && oblique))
       ? {
-        maps: this.atlasMapsSource ?? this._emptyMapsSource(),
+        maps: this.assets.atlasMapsSource ?? this._emptyMapsSource(),
         // E-378: a nearest atlas without mipmaps samples texels whole, so the edge pass can leave plain frames out.
         plainEdge: this.atlasScaleMode === 'nearest' && this.autoGenerateMipmaps !== true,
       }
@@ -3044,8 +2802,8 @@ class PixiRenderer extends AbstractWorker {
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
-      atlasSource: this._resolveAtlasSource(),
-      lutSource: this._texLutSource,
+      atlasSource: this.assets.resolveAtlasSource(),
+      lutSource: this.assets.texLutSource,
       depthTest: false,
       depthMask: false,
       premultiplyAlpha: true,
@@ -3074,10 +2832,10 @@ class PixiRenderer extends AbstractWorker {
       pixelDepth,
       depthFaces: facesDepth,
       // E-496: each frame's window in the twin page, for every program of the batch that reads it.
-      mapsTable: this._mapsTableSourceOrEmpty(),
+      mapsTable: this.assets.mapsTableSourceOrEmpty(),
       // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), where the G-buffer pass runs (faces, a sheet
       // with maps, a shadow map: gbufWanted, as pre-render decides it).
-      gbuf: gbufWanted(this.config, { maps: this.atlasMapsSource !== null, unshaded: this._atlasUnshaded }),
+      gbuf: gbufWanted(this.config, { maps: this.assets.atlasMapsSource !== null, unshaded: this.assets.atlasUnshaded }),
       // E-448: the binary frames' solid pixels first, nearest first, with the canvas's depth (opaquePass.js), through the
       // record textures (the pass's pose texture); the batch takes it where it can (WebGL, no pixel depth, no G-buffer
       // words).
@@ -3102,7 +2860,7 @@ class PixiRenderer extends AbstractWorker {
     if (!this._lightGlowAdd) {
       this.entitiesGlowBatch = null;
       this.spriteGlowMesh = null;
-      if (this.flatTextures?.length) this.rebuildInstancedTextureLut();
+      if (this.assets.flatTextures?.length) this.rebuildInstancedTextureLut();
       debugWorkerLog(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend)`);
       return;
     }
@@ -3110,8 +2868,8 @@ class PixiRenderer extends AbstractWorker {
     this.entitiesGlowBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-glow-instanced',
-      atlasSource: this._resolveAtlasSource(),
-      lutSource: this._texLutSource,
+      atlasSource: this.assets.resolveAtlasSource(),
+      lutSource: this.assets.texLutSource,
       depthTest: false,
       depthMask: false,
       premultiplyAlpha: false,
@@ -3125,7 +2883,7 @@ class PixiRenderer extends AbstractWorker {
     });
     this.spriteGlowMesh = this.entitiesGlowBatch.mesh;
 
-    if (this.flatTextures?.length) this.rebuildInstancedTextureLut();
+    if (this.assets.flatTextures?.length) this.rebuildInstancedTextureLut();
     debugWorkerLog(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend + glow ADD)`);
   }
 
@@ -3420,9 +3178,9 @@ class PixiRenderer extends AbstractWorker {
   }
 
   uploadTextureLookupIfNeeded() {
-    if (!this._texLutNeedsGpuUpload) return;
+    if (!this.assets.texLutNeedsGpuUpload) return;
     const started = this.collectDetailedStats ? performance.now() : 0;
-    this._uploadTexLutTexture();
+    this.assets.uploadTexLutTexture();
     if (started) this.miscTimeThisFrame += performance.now() - started;
   }
 
@@ -3568,7 +3326,7 @@ class PixiRenderer extends AbstractWorker {
    */
   _glowScreenBounds(mesh) {
     const batch = this.entitiesGlowBatch;
-    const lut = this._texLut;
+    const lut = this.assets.texLut;
     const n = batch !== null ? mesh.geometry.instanceCount | 0 : 0;
     if (n <= 0 || !lut) return false;
     const rows = batch.data;
@@ -4104,13 +3862,13 @@ class PixiRenderer extends AbstractWorker {
   _renderUnshaded() {
     const mesh = this._unshadedComposite;
     if (mesh === null || this.unshadedRT === null) return;
-    const on = (this._atlasUnshaded || SpriteRenderer.unshadedUsers() > 0) && layerIsVisible(Layer.lighting?.id);
+    const on = (this.assets.atlasUnshaded || SpriteRenderer.unshadedUsers() > 0) && layerIsVisible(Layer.lighting?.id);
     if (!on) {
       if (mesh.visible) mesh.visible = false;
       return;
     }
     const batch = this.entitiesBatch;
-    const maps = this.atlasMapsSource ?? this._emptyMapsSource();
+    const maps = this.assets.atlasMapsSource ?? this._emptyMapsSource();
     // E-457: the unshaded mask (an unshaded word or sheet), then the unshaded pass drawn where it marked
     // (InstancedSpriteBatch.unshadedPass).
     const pass = batch !== null && batch.mesh.visible ? batch.unshadedPass(this._heightScaleY, this._groundScaleY || 1, maps) : null;
@@ -4162,7 +3920,7 @@ class PixiRenderer extends AbstractWorker {
     const batch = this.entitiesBatch;
     if (batch) {
       if (batch.pixelDepthOn) batch.setDepthFaces(true);
-      else if (this._pixelDepthWanted()) batch.enablePixelDepth(this.atlasMapsSource ?? this._emptyMapsSource(), true);
+      else if (this._pixelDepthWanted()) batch.enablePixelDepth(this.assets.atlasMapsSource ?? this._emptyMapsSource(), true);
       this._placeDepthMeshes();
     }
     if (this.lightingEnabled && this._facesWatch && !this._facesOn) {
@@ -4227,16 +3985,6 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /** DX-MAPS: a 1 × 1 twin page that says "no map", for the faces' pass when no sheet has maps. */
-  /** DX-SHADOW3D: the footprint texture, or one row of nothing before the atlas made it. */
-  _footSourceOrEmpty() {
-    if (this._footSource === null) {
-      this._buildFootprintTexture();
-      // Uploaded with the LUT (uploadTextureLookupIfNeeded).
-      this._texLutNeedsGpuUpload = true;
-    }
-    return this._footSource;
-  }
-
   _emptyMapsSource() {
     if (this._noMapsSource === null) {
       this._noMapsSource = PIXI.TextureSource.from({
@@ -4259,7 +4007,7 @@ class PixiRenderer extends AbstractWorker {
    */
   _renderFaceMap() {
     const batch = this.entitiesBatch;
-    const maps = this.atlasMapsSource ?? this._emptyMapsSource();
+    const maps = this.assets.atlasMapsSource ?? this._emptyMapsSource();
     const mesh = batch !== null ? batch.faceMesh(this._heightScaleY, this._groundScaleY || 1, maps) : null;
     const opts = this._rtRenderOpts;
     opts.container = mesh !== null && batch.mesh.visible ? mesh : this._rtEmptyContainer;
@@ -5957,8 +5705,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.shadowBatch = new InstancedSpriteBatch({
       capacity: cookieCap,
       label: 'shadows-instanced',
-      atlasSource: this._resolveAtlasSource(),
-      lutSource: this._texLutSource,
+      atlasSource: this.assets.resolveAtlasSource(),
+      lutSource: this.assets.texLutSource,
       depthTest: false,
       depthMask: false,
       useWebGpu: this._useWebGpu,
@@ -5968,8 +5716,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.gpuCasterBatch = new InstancedSpriteBatch({
       capacity: casterCap,
       label: 'gpu-casters',
-      atlasSource: this._resolveAtlasSource(),
-      lutSource: this._texLutSource,
+      atlasSource: this.assets.resolveAtlasSource(),
+      lutSource: this.assets.texLutSource,
       depthTest: false,
       depthMask: false,
       useWebGpu: this._useWebGpu,
@@ -6195,9 +5943,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             uTexture: r.uTexture,
             uSampler: r.uSampler,
             uTexLut: r.uTexLut,
-            uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
-            uMapsLut: this._mapsTableSourceOrEmpty(),
-            uFoot: this._footSourceOrEmpty(),
+            uMaps: this.assets.atlasMapsSource ?? this._emptyMapsSource(),
+            uMapsLut: this.assets.mapsTableSourceOrEmpty(),
+            uFoot: this.assets.footSourceOrEmpty(),
             uniforms: this._sunMapUniforms,
           },
         }),
@@ -6258,7 +6006,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clearColor = this._clearTransparent;
     this._submitRender(rtOpts);
     // E-379: the rows that cast columns, as their own instances.
-    const sunColumns = rows <= 0 || this.atlasMapsSource === null
+    const sunColumns = rows <= 0 || this.assets.atlasMapsSource === null
       ? null
       : keyedMesh !== null
         ? this._keyedColumnsHost(rows, this._keyedColumnsFor('sun', batch), 0)
@@ -6663,9 +6411,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           uTexture: r.uTexture,
           uSampler: r.uSampler,
           uTexLut: r.uTexLut,
-          uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
-          uMapsLut: this._mapsTableSourceOrEmpty(),
-          uFoot: this._footSourceOrEmpty(),
+          uMaps: this.assets.atlasMapsSource ?? this._emptyMapsSource(),
+          uMapsLut: this.assets.mapsTableSourceOrEmpty(),
+          uFoot: this.assets.footSourceOrEmpty(),
           uLampTiles: this._lampTileSource,
           uniforms,
         },
@@ -6736,7 +6484,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._submitRender(rtOpts);
     this._gpuPassesThisFrame++;
     // E-379: the rows that cast columns towards their lamp, as their own instances.
-    const lampColumns = this.atlasMapsSource !== null ? this._columnsHost(batch, keep, this._lampMapColumns, 1) : null;
+    const lampColumns = this.assets.atlasMapsSource !== null ? this._columnsHost(batch, keep, this._lampMapColumns, 1) : null;
     if (lampColumns !== null) {
       rtOpts.container = lampColumns;
       rtOpts.clear = false;
@@ -6818,7 +6566,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._submitRender(rtOpts);
     this._gpuPassesThisFrame++;
     // The keyed rows that cast columns towards their lamp, as their own instances (E-379's, over keyed rows).
-    const lampColumns = this.atlasMapsSource !== null ? this._keyedColumnsHost(keep, this._keyedColumnsFor('lamp', casters), 1) : null;
+    const lampColumns = this.assets.atlasMapsSource !== null ? this._keyedColumnsHost(keep, this._keyedColumnsFor('lamp', casters), 1) : null;
     if (lampColumns !== null) {
       rtOpts.container = lampColumns;
       rtOpts.clear = false;
@@ -6863,9 +6611,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       uTexture: r.uTexture,
       uSampler: r.uSampler,
       uTexLut: r.uTexLut,
-      uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
-      uMapsLut: this._mapsTableSourceOrEmpty(),
-      uFoot: this._footSourceOrEmpty(),
+      uMaps: this.assets.atlasMapsSource ?? this._emptyMapsSource(),
+      uMapsLut: this.assets.mapsTableSourceOrEmpty(),
+      uFoot: this.assets.footSourceOrEmpty(),
       ...(lamp ? { uLampTiles: this._lampTileSource } : {}),
       uniforms,
     });
@@ -6896,7 +6644,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * rows whose frame casts columns, picked with the entity batch's copy of the slots' statics (compactKeyedColumnRows).
    */
   _keyedColumnsHost(rows, columns, light) {
-    const lut = this._texLut;
+    const lut = this.assets.texLut;
     const statics = this.entitiesBatch ? this.entitiesBatch.staticsMirror : null;
     const src = this.gpuCasterBatch ? this.gpuCasterBatch.data : null;
     if (columns === null || !lut || !statics || !src || rows <= 0) return null;
@@ -7345,7 +7093,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * batch's do; null when no row casts columns.
    */
   _columnsHost(batch, rows, columns, light) {
-    const lut = this._texLut;
+    const lut = this.assets.texLut;
     const src = batch.data;
     if (!lut || !src || rows <= 0) return null;
     const F = GPU_CASTER_FLOATS;
@@ -7417,7 +7165,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /** DX-SHADOW3D: whether the layer shadows cast solids: the atlas has height maps (and the backend's shadow source). */
   _sunSolidsOn() {
-    return this.atlasMapsSource !== null && Boolean(this._useWebGpu ? this._engineShaders?.shadowWgsl : this._engineShaders?.shadowVert);
+    return this.assets.atlasMapsSource !== null && Boolean(this._useWebGpu ? this._engineShaders?.shadowWgsl : this._engineShaders?.shadowVert);
   }
 
   /**
@@ -7468,9 +7216,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             ...this._sunShadowProgram('columns'),
             resources: {
               ...resources(),
-              uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
-              uMapsLut: this._mapsTableSourceOrEmpty(),
-              uFoot: this._footSourceOrEmpty(),
+              uMaps: this.assets.atlasMapsSource ?? this._emptyMapsSource(),
+              uMapsLut: this.assets.mapsTableSourceOrEmpty(),
+              uFoot: this.assets.footSourceOrEmpty(),
             },
           }),
           grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
@@ -7662,362 +7410,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
-  /**
-   * Load simple textures from transferred ImageBitmaps
-   * PixiJS 8: Uses ImageSource instead of BaseTexture
-   */
-  loadTextures(texturesData) {
-    if (!texturesData) return;
-
-    // console.log(
-    //   `PIXI WORKER: Loading ${Object.keys(texturesData).length} textures`
-    // );
-
-    for (const [name, imageBitmap] of Object.entries(texturesData)) {
-      // PixiJS 8: Create TextureSource from ImageBitmap, then create Texture
-      const source = new PIXI.ImageSource({
-        resource: imageBitmap,
-        autoGenerateMipmaps: this.autoGenerateMipmaps,
-        scaleMode: this.atlasScaleMode,
-      });
-      if (source.style) source.style.scaleMode = this.atlasScaleMode;
-      this.textures[name] = new PIXI.Texture({ source });
-
-      // console.log(`✅ Loaded texture: ${name}`);
-    }
-  }
-
-  /**
-   * Load spritesheets from JSON + texture data
-   * NOTE: PIXI.Spritesheet.parse() doesn't work in workers, so we manually build animations
-   */
-  loadSpritesheets(spritesheetData, proxySheets = {}) {
-    if (!spritesheetData) {
-      // console.log("PIXI WORKER: No spritesheets to load");
-      return;
-    }
-
-    // console.log(
-    //   `PIXI WORKER: Loading ${Object.keys(spritesheetData).length} spritesheets`
-    // );
-
-    for (const [name, data] of Object.entries(spritesheetData)) {
-      try {
-        // console.log(`  Loading spritesheet "${name}"...`);
-
-        // SST-19: the pictures the page posted before the init, uploaded already (or made here if not yet).
-        const early = this._earlyAtlas[name] || null;
-        if ((!data.imageBitmap && !early) || !data.json) {
-          throw new Error(`Missing imageBitmap or json for ${name}`);
-        }
-        const source = early !== null
-          ? (early.source ?? (early.source = this._atlasSourceOf(early.imageBitmap)))
-          : this._atlasSourceOf(data.imageBitmap);
-        const jsonData = data.json;
-
-        // Manually create textures for each frame. SST-7 step 4: one frame rectangle and one options object for all of
-        // them (a Texture copies its frame; orig and trim it keeps, a Rectangle each).
-        const frameTextures = {};
-        const frameRect = new PIXI.Rectangle();
-        const textureOptions = { source, frame: frameRect, orig: undefined, trim: undefined };
-        for (const frameName in jsonData.frames) {
-          const frameData = jsonData.frames[frameName];
-          const frame = frameData.frame;
-          const sourceSize = frameData.sourceSize;
-          const spriteSourceSize = frameData.spriteSourceSize;
-          frameRect.x = frame.x;
-          frameRect.y = frame.y;
-          frameRect.width = frame.w;
-          frameRect.height = frame.h;
-
-          // If frame is trimmed, add orig and trim for proper anchor handling
-          // PixiJS uses these to offset the sprite so anchors work relative to original size
-          if (sourceSize && spriteSourceSize &&
-            (sourceSize.w !== frame.w || sourceSize.h !== frame.h)) {
-            textureOptions.orig = new PIXI.Rectangle(0, 0, sourceSize.w, sourceSize.h);
-            textureOptions.trim = new PIXI.Rectangle(
-              spriteSourceSize.x, spriteSourceSize.y,
-              spriteSourceSize.w, spriteSourceSize.h
-            );
-          } else {
-            textureOptions.orig = undefined;
-            textureOptions.trim = undefined;
-          }
-
-          const texture = new PIXI.Texture(textureOptions);
-          // DX-SHADOW3D: where the frame stands (frameBase.js); writeLutSlot puts it in the texture table's spare floats.
-          if (frameData.base) texture.weedBase = frameData.base;
-          // E-496: its window in the twin page (the maps table, _buildMapsTable); DX-UNSHADED: its sheet's mark.
-          if (frameData.maps) texture.weedMaps = frameData.maps;
-          if (frameData.unshaded === true) texture.weedUnshaded = true;
-          // A render's footprint: its solid sweeps north to it (_buildFootprintTexture).
-          if (frameData.footprint) texture.weedFootprint = frameData.footprint;
-          frameTextures[frameName] = texture;
-        }
-
-        // Manually build animation arrays
-        const animations = {};
-        if (jsonData.animations) {
-          for (const [animName, frameNames] of Object.entries(jsonData.animations)) {
-            animations[animName] = frameNames.map((frameName) => frameTextures[frameName]);
-          }
-        }
-
-        // Store as a spritesheet-like object
-        this.spritesheets[name] = {
-          textures: frameTextures,
-          animations: animations,
-          source: source, // PixiJS 8: uses source instead of baseTexture
-        };
-
-        // BIGATLAST SUPPORT: If this is the bigAtlas, also populate this.textures
-        // This allows static textures (like "bunny") to be accessed directly
-        if (name === 'bigAtlas') {
-          for (const [frameName, texture] of Object.entries(frameTextures)) {
-            this.textures[frameName] = texture;
-          }
-          // DX-MAPS: the atlas's twin page (heights and normals at the same rectangles), data: nearest, no mipmaps,
-          // no premultiplied alpha. The G-buffer pass samples it with the colour's UV.
-          // DX-UNSHADED: a sheet of the atlas is unshaded (spriteSheetRegistry createBigAtlas's meta.unshaded).
-          this._atlasUnshaded = jsonData.meta?.unshaded === true;
-          // E-497: the twin page's format (meta.mapsFormat; A without one), before any of its readers' programs is made.
-          setTwinFormat(jsonData.meta?.mapsFormat);
-          // E-496: a twin page without frame windows is a bake's from before them, laid out as the atlas.
-          this._mapsAtlasLayout = jsonData.meta?.maps === true && !Object.values(jsonData.frames).some((f) => f && f.maps);
-          const mapsBitmap = data.mapsBitmap || early?.mapsBitmap || null;
-          if (mapsBitmap) {
-            this.atlasMapsSource = early?.mapsSource ?? this._atlasMapsSourceOf(mapsBitmap);
-          }
-
-          const textureKeys = Object.keys(frameTextures);
-
-          debugWorkerLog(
-            `✅ BigAtlas loaded: ${Object.keys(frameTextures).length} frames available as textures`
-          );
-
-          // DEBUG: Check if _lightGradient texture is available
-          if (this.textures['_lightGradient']) {
-            debugWorkerLog(`✅ PIXI WORKER: _lightGradient texture found in BigAtlas textures`);
-          } else {
-            console.warn(`⚠️ PIXI WORKER: _lightGradient texture NOT found in BigAtlas textures`);
-            debugWorkerLog(`   Available texture keys (first 20):`, textureKeys.slice(0, 20));
-            debugWorkerLog(
-              `   Looking for textures with "light" or "gradient" in name:`,
-              textureKeys.filter(
-                (k) => k.toLowerCase().includes('light') || k.toLowerCase().includes('gradient')
-              )
-            );
-          }
-
-          // ========================================
-          // BUILD FLAT TEXTURE LOOKUP ARRAY
-          // ========================================
-          // Flatten all animation frames into single array for O(1) lookup
-          // pre_render writes textureId; pixi uploads via texLut / InstancedSpriteBatch
-          this.flatTextures = [];
-          this.animationFrameStart = [];
-          this.animationFrameCount = [];
-
-          // Get animation names in consistent order (same as SpriteSheetRegistry)
-          const animNames = Object.keys(animations);
-          for (let animIdx = 0; animIdx < animNames.length; animIdx++) {
-            const animName = animNames[animIdx];
-            const frames = animations[animName];
-
-            this.animationFrameStart[animIdx] = this.flatTextures.length;
-            this.animationFrameCount[animIdx] = frames.length;
-
-            for (let f = 0; f < frames.length; f++) {
-              this.flatTextures.push(frames[f]);
-            }
-          }
-
-          debugWorkerLog(`✅ Built flat texture array: ${this.flatTextures.length} textures, ${animNames.length} animations`);
-          loadMark('atlas textures');
-
-          this.rebuildInstancedTextureLut();
-          loadMark('texture lut');
-        }
-
-        // console.log(
-        //   `✅ Loaded spritesheet: ${name} with ${
-        //     Object.keys(animations).length
-        //   } animations`
-        // );
-      } catch (error) {
-        console.error(`❌ Failed to load spritesheet ${name}:`, error);
-      }
-    }
-
-    // Create proxy spritesheet entries that redirect to bigAtlas
-    if (proxySheets && Object.keys(proxySheets).length > 0) {
-      debugWorkerLog(`🔗 Creating ${Object.keys(proxySheets).length} proxy spritesheets...`);
-
-      const bigAtlas = this.spritesheets.bigAtlas;
-      if (!bigAtlas) {
-        console.error('❌ Cannot create proxy sheets: bigAtlas not loaded!');
-        return;
-      }
-
-      const texturesByPrefix = proxyTexturesByPrefix(bigAtlas.textures, proxySheets);
-      for (const [proxyName, proxyData] of Object.entries(proxySheets)) {
-        // Extract animations from bigAtlas that match this proxy's prefix
-        const proxyAnimations = {};
-        const proxyTextures = texturesByPrefix.get(proxyData.prefix);
-
-        for (const [animName, animInfo] of Object.entries(proxyData.animations)) {
-          const prefixedName = animInfo.prefixedName;
-          if (bigAtlas.animations[prefixedName]) {
-            // Map unprefixed name to bigAtlas animation
-            proxyAnimations[animName] = bigAtlas.animations[prefixedName];
-          } else {
-            console.warn(
-              `⚠️ Proxy "${proxyName}": Animation "${animName}" (${prefixedName}) not found in bigAtlas`
-            );
-          }
-        }
-
-        // Create proxy spritesheet entry (for PIXI rendering)
-        this.spritesheets[proxyName] = {
-          textures: proxyTextures,
-          animations: proxyAnimations,
-          source: bigAtlas.source, // PixiJS 8: uses source instead of baseTexture
-          isProxy: true,
-          targetSheet: 'bigAtlas',
-        };
-
-        // Also register in SpriteSheetRegistry (for animation lookups)
-        SpriteSheetRegistry.registerProxy(proxyName, proxyData);
-
-        debugWorkerLog(`  ✅ Proxy "${proxyName}": ${Object.keys(proxyAnimations).length} animations`);
-      }
-    }
-
-    // console.log("PIXI WORKER: Finished loading all spritesheets");
-    loadMark('proxy sheets');
-  }
-
-  /**
-   * SST-7 step 1: the textures the init message brought (the atlas and its maps page, the loose textures, the tilesets)
-   * made and uploaded on the GPU here, through Pixi's texture system as a first draw would (initSource: the GL texture or
-   * the GPUTexture, and the image's upload), instead of in the first frame that draws each. Each source once.
-   */
-  /**
-   * The atlas's Pixi source over its picture. PixiJS 8's default alphaMode premultiplies on upload (PMA on the GPU):
-   * InstancedSpriteBatch's fragment does not premultiply again (that darkens soft alpha).
-   * @param {ImageBitmap} bitmap
-   */
-  _atlasSourceOf(bitmap) {
-    const source = new PIXI.ImageSource({
-      resource: bitmap,
-      autoGenerateMipmaps: this.autoGenerateMipmaps,
-      scaleMode: this.atlasScaleMode,
-    });
-    if (source.style) source.style.scaleMode = this.atlasScaleMode;
-    return source;
-  }
-
-  /**
-   * DX-MAPS: the twin page's source (heights and normals at the atlas's rectangles): data, nearest, no mipmaps, no
-   * premultiplied alpha. The G-buffer pass samples it with the colour's UV.
-   * @param {ImageBitmap} bitmap
-   */
-  _atlasMapsSourceOf(bitmap) {
-    return new PIXI.ImageSource({
-      resource: bitmap,
-      autoGenerateMipmaps: false,
-      scaleMode: 'nearest',
-      alphaMode: 'no-premultiply-alpha',
-    });
-  }
-
-  /**
-   * SST-19: the atlas sheets' pictures the page posted as soon as its atlas was in ('atlasBitmaps'), before it built the
-   * init data: kept now, made Pixi sources and uploaded once the renderer is booted. loadSpritesheets takes them.
-   * @param {Record<string, { imageBitmap: ImageBitmap, mapsBitmap: ImageBitmap | null }>} sheets
-   */
-  _takeEarlyAtlas(sheets) {
-    for (const name in sheets) {
-      const sheet = sheets[name];
-      if (!sheet?.imageBitmap) continue;
-      this._earlyAtlas[name] = { imageBitmap: sheet.imageBitmap, mapsBitmap: sheet.mapsBitmap || null, source: null, mapsSource: null };
-    }
-    const booted = this._bootPromise ?? Promise.resolve();
-    booted.then(() => this._uploadEarlyAtlas(), () => {});
-  }
-
-  /** SST-19: the early atlas sheets' sources made and put on the GPU (the init's _uploadAssetTextures finds them there). */
-  _uploadEarlyAtlas() {
-    const textures = this.pixiApp?.renderer?.texture;
-    for (const name in this._earlyAtlas) {
-      const early = this._earlyAtlas[name];
-      if (early.source === null) early.source = this._atlasSourceOf(early.imageBitmap);
-      if (early.mapsBitmap && early.mapsSource === null) early.mapsSource = this._atlasMapsSourceOf(early.mapsBitmap);
-      if (textures && typeof textures.initSource === 'function') {
-        textures.initSource(early.source);
-        if (early.mapsSource) textures.initSource(early.mapsSource);
-      }
-    }
-    loadMark('atlas uploaded');
-  }
-
-  _uploadAssetTextures() {
-    const textures = this.pixiApp?.renderer?.texture;
-    if (!textures || typeof textures.initSource !== 'function') return;
-    const sources = new Set();
-    for (const name in this.spritesheets) {
-      const sheet = this.spritesheets[name];
-      if (sheet && sheet.source) sources.add(sheet.source);
-    }
-    if (this.atlasMapsSource !== null) sources.add(this.atlasMapsSource);
-    for (const name in this.textures) {
-      const texture = this.textures[name];
-      if (texture && texture.source) sources.add(texture.source);
-    }
-    for (const id in this.tilemaps) {
-      const tileset = this.tilemaps[id]?.tilesetTexture;
-      if (tileset && tileset.source) sources.add(tileset.source);
-    }
-    for (const source of sources) textures.initSource(source);
-  }
-
-  /**
-   * Load tileset bitmaps and create PIXI Textures for tilemap rendering.
-   * Tile data is accessed via TileMap static class (SAB-backed, initialized by AbstractWorker).
-   */
-  loadTilesetBitmaps(tilesetBitmaps) {
-    if (!tilesetBitmaps || Object.keys(tilesetBitmaps).length === 0) {
-      return;
-    }
-
-    debugWorkerLog(`PIXI WORKER: Loading ${Object.keys(tilesetBitmaps).length} tileset textures...`);
-
-    for (const [tilemapId, bitmap] of Object.entries(tilesetBitmaps)) {
-      try {
-        const source = new PIXI.ImageSource({
-          resource: bitmap,
-          autoGenerateMipmaps: false,
-          scaleMode: 'linear',
-        });
-        if (source.style) {
-          source.style.scaleMode = 'linear';
-          source.style.addressMode = 'clamp-to-edge';
-        }
-        const tilesetTexture = new PIXI.Texture({ source });
-
-        this.tilemaps[tilemapId] = { tilesetTexture };
-
-        debugWorkerLog(`  ✅ Loaded tileset texture: ${tilemapId}`);
-      } catch (error) {
-        console.error(`  ❌ Failed to load tileset texture "${tilemapId}":`, error);
-      }
-    }
-  }
-
   handleCustomMessage(data) {
     const { msg } = data;
     if (msg === 'atlasBitmaps') {
-      this._takeEarlyAtlas(data.sheets);
+      this.assets.takeEarlyAtlas(data.sheets);
       return;
     }
     if (msg === 'box2dReady' && data.channelOffsets) {
@@ -8241,8 +7637,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       label: `mesh-uv-${cl.layerId}`,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
-      atlasSource: this._resolveAtlasSource(),
-      lutSource: this._texLutSource,
+      atlasSource: this.assets.resolveAtlasSource(),
+      lutSource: this.assets.texLutSource,
       data: there ? new Float32Array(buf, region.uvVertsByte, cap * MESH_UV_VERT_FLOATS) : null,
       vertexEntity: there ? new Uint32Array(buf, region.uvVertEntityByte, cap) : null,
       indices: there ? new Uint32Array(buf, region.uvIndicesByte, indexCap) : null,
@@ -9059,7 +8455,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _createStaticScenery(layerId, layerName, textureId, parallaxX, parallaxY) {
-    const texture = this.textures[textureId];
+    const texture = this.assets.textures[textureId];
     if (!texture) {
       console.warn(`PIXI WORKER: Texture "${textureId}" not found for static scenery`);
       return;
@@ -9076,7 +8472,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _createCoverScenery(layerId, layerName, textureId, { parallaxX, parallaxY, margin, zoomParallax } = {}) {
-    const texture = this.textures[textureId];
+    const texture = this.assets.textures[textureId];
     if (!texture) {
       console.warn(`PIXI WORKER: Texture "${textureId}" not found for cover scenery`);
       return;
@@ -9094,7 +8490,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _createTilingScenery(layerId, layerName, textureId, tileScale = 1, parallaxX, parallaxY) {
-    const texture = this.textures[textureId];
+    const texture = this.assets.textures[textureId];
     if (!texture) {
       console.warn(`PIXI WORKER: Texture "${textureId}" not found for tiling scenery`);
       return;
@@ -9358,7 +8754,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _createTilemapScenery(layerId, layerName, tilemapId, options = {}, parallaxX, parallaxY) {
-    const texEntry = this.tilemaps[tilemapId];
+    const texEntry = this.assets.tilemaps[tilemapId];
     if (!texEntry || !texEntry.tilesetTexture) {
       console.warn(`PIXI WORKER: Tileset texture for "${tilemapId}" not found`);
       return;
@@ -9586,7 +8982,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (batch !== null && batch.keyed && renderer.gl) this._staticsScatterGl = createStaticsScatterGl(renderer.gl);
     // DX-FACES, DX-GBUF, DX-UNSHADED: the light's passes over the entities (_renderFaceMap, _renderUnshaded).
     if (batch !== null && this.lightingEnabled) {
-      const maps = this.atlasMapsSource ?? this._emptyMapsSource();
+      const maps = this.assets.atlasMapsSource ?? this._emptyMapsSource();
       const heightScaleY = this._heightScaleY;
       const groundScaleY = this._groundScaleY || 1;
       if (this.faceRT !== null) {
@@ -9964,20 +9360,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Load simple textures
-    this.loadTextures(data.textures);
+    this.assets.loadTextures(data.textures);
     this.reportLog('finished loading textures');
 
     // Load spritesheets (synchronous now - manually parsed)
-    this.loadSpritesheets(data.spritesheets, data.bigAtlasProxySheets);
-    this._earlyAtlas = {};
+    this.assets.loadSpritesheets(data.spritesheets, data.bigAtlasProxySheets);
+    this.assets.earlyAtlas = {};
     this.reportLog('finished loading spritesheets');
     loadMark('spritesheets');
 
     // Load tileset textures (tile data comes from TileMap SAB via AbstractWorker)
-    this.loadTilesetBitmaps(data.tilesetBitmaps);
+    this.assets.loadTilesetBitmaps(data.tilesetBitmaps);
     this.reportLog('finished loading tileset textures');
     // SST-7: on the GPU now, while the programs link, not at the first frame that draws them.
-    this._uploadAssetTextures();
+    this.assets.uploadAssetTextures();
     loadMark('textures uploaded');
 
     // ========================================
@@ -10186,7 +9582,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass. DX-GBUF: so
       // is every entity's in the shadow maps' modes (a card standing on its foot, plan §5.4): the maps keep their highest
       // caster's entity, and a caster's own shadow never paints its own sprite.
-      if (this.atlasMapsSource !== null || this._sunMapOn || this._lampMapOn) this._facesOn = true;
+      if (this.assets.atlasMapsSource !== null || this._sunMapOn || this._lampMapOn) this._facesOn = true;
       // OL-4: walls (lighting.walls) read by this pass: pre-render's rows and their texture, and the G-buffer, since a
       // wall's own pixels are told by their entity's id.
       const wallRows = data.visibilityPolygons;
@@ -10740,8 +10136,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           label: `mesh-layer-${layerName}`,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
-          atlasSource: this._resolveAtlasSource(),
-          lutSource: this._texLutSource,
+          atlasSource: this.assets.resolveAtlasSource(),
+          lutSource: this.assets.texLutSource,
           data: meshRegion
             ? new Float32Array(this._meshMemoryBuffer, meshRegion.fillRowsByte, caps.fill * COLLIDER_FILL_FLOATS)
             : null,
@@ -10767,8 +10163,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         batch = new InstancedSpriteBatch({
           capacity: maxItems,
           label: `custom-layer-${layerName}`,
-          atlasSource: this._resolveAtlasSource(),
-          lutSource: this._texLutSource,
+          atlasSource: this.assets.resolveAtlasSource(),
+          lutSource: this.assets.texLutSource,
           depthTest: false,
           depthMask: false,
           useWebGpu: this._useWebGpu,
@@ -10786,16 +10182,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const info = GpuParticles.layerOf(layerId);
         if (!info) continue;
         installInstanceRangeDraw(this.pixiApp.renderer, this._useWebGpu);
-        if (!this._gpuAnimStartSource) this._rebuildGpuAnimStartLookup();
+        if (!this.assets.gpuAnimStartSource) this.assets.rebuildGpuAnimStartLookup();
         const looks = !!(hasShader && config.shaderFragment);
         const blend = looks ? containerBlend : layerObj.blendMode;
         gpuBatch = new GpuParticleLayerBatch({
           info,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
-          atlasSource: this._resolveAtlasSource(),
-          lutSource: this._texLutSource,
-          animStartSource: this._gpuAnimStartSource,
+          atlasSource: this.assets.resolveAtlasSource(),
+          lutSource: this.assets.texLutSource,
+          animStartSource: this.assets.gpuAnimStartSource,
           blendMode: blend,
           additive: !looks && blend === 'add',
           pixelSnap: !!config.gpuParticles?.pixelSnap,

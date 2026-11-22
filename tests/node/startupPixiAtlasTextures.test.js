@@ -71,11 +71,12 @@ test("the atlas's frames: a texture each, its own frame, orig and trim as the sh
     meta: {},
   };
   px.rebuildInstancedTextureLut = () => {};
-  px.loadSpritesheets({ bigAtlas: { imageBitmap: bitmap, json } }, {
+  px.assets.loadSpritesheets({ bigAtlas: { imageBitmap: bitmap, json } }, {
     a: { prefix: 'a_', animations: { walk: { prefixedName: 'a_walk' } } },
     b: { prefix: 'b_', animations: { idle: { prefixedName: 'b_idle' } } },
   });
-  const sheet = px.spritesheets.bigAtlas;
+  const { assets } = px;
+  const sheet = assets.spritesheets.bigAtlas;
   const [t1, t2, t3] = ['a_1', 'a_2', 'b_1'].map((n) => sheet.textures[n]);
   assert.ok(t1 instanceof Texture && t2 instanceof Texture && t3 instanceof Texture);
   assert.ok(t1.frame !== t2.frame && t2.frame !== t3.frame, 'a frame each');
@@ -88,11 +89,11 @@ test("the atlas's frames: a texture each, its own frame, orig and trim as the sh
   assert.deepEqual([t2.orig.width, t2.orig.height, t2.trim.x, t2.trim.y, t2.trim.width, t2.trim.height], [16, 16, 3, 2, 10, 12]);
   assert.equal(t3.orig, t3.frame, 'no sizes in the JSON: untrimmed');
   assert.equal(t3.trim, undefined);
-  assert.equal(px.textures.a_2, t2, 'the atlas frames are the loose textures too');
+  assert.equal(assets.textures.a_2, t2, 'the atlas frames are the loose textures too');
   assert.deepEqual(sheet.animations.a_walk, [t1, t2]);
-  assert.deepEqual(px.flatTextures, [t1, t2, t3]);
-  assert.deepEqual(Object.keys(px.spritesheets.a.textures), ['1', '2']);
-  assert.equal(px.spritesheets.a.textures['2'], t2);
-  assert.deepEqual(px.spritesheets.a.animations.walk, [t1, t2]);
-  assert.deepEqual(Object.keys(px.spritesheets.b.textures), ['1']);
+  assert.deepEqual(assets.flatTextures, [t1, t2, t3]);
+  assert.deepEqual(Object.keys(assets.spritesheets.a.textures), ['1', '2']);
+  assert.equal(assets.spritesheets.a.textures['2'], t2);
+  assert.deepEqual(assets.spritesheets.a.animations.walk, [t1, t2]);
+  assert.deepEqual(Object.keys(assets.spritesheets.b.textures), ['1']);
 });

@@ -142,9 +142,9 @@ test("the renderer starts Pixi on the boot's canvas, and an 'init' that comes fi
     const start = postedMessages().length;
     // What had started linking when initialize reached the assets (its first step after boot).
     let linkedBeforeAssets = null;
-    const loadTextures = px.loadTextures;
-    px.loadTextures = function (textures) {
-      linkedBeforeAssets = this.pixiApp.renderer.shader.linked.slice();
+    const loadTextures = px.assets.loadTextures;
+    px.assets.loadTextures = function (textures) {
+      linkedBeforeAssets = px.pixiApp.renderer.shader.linked.slice();
       return loadTextures.call(this, textures);
     };
 

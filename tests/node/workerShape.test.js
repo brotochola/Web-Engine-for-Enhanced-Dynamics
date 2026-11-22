@@ -18,7 +18,9 @@ import { computeBufferSize, createViews } from '../../src/render/renderQueueLayo
  * loop), from the source.
  */
 function fieldsWrittenAfterBoot(file, className, bootMethods = []) {
-  const lines = fs.readFileSync(new URL(`../../src/workers/${file}`, import.meta.url), 'utf8').split('\n');
+  // A worker's file by its name (src/workers/), any other class's by its path under src/ (N-256's src/render/pixi/).
+  const at = file.includes('/') ? `../../src/${file}` : `../../src/workers/${file}`;
+  const lines = fs.readFileSync(new URL(at, import.meta.url), 'utf8').split('\n');
   const start = lines.findIndex((l) => new RegExp(`^(?:export )?class ${className}\\b`).test(l));
   assert.ok(start >= 0, `class ${className} in ${file}`);
   const indent = lines.slice(start + 1).find((l) => l.trim()).match(/^ */)[0].length;
@@ -81,6 +83,20 @@ for (const [file, selfKey, className, minFields] of [
       [],
       'declare these in the constructor',
     );
+  });
+}
+
+// N-256: the renderer's subsystems that moved out of pixiWorker.js into classes of their own (src/render/pixi/) keep the
+// rule there: a field one of their methods writes exists from their constructor.
+for (const [file, className, minFields, make] of [
+  ['render/pixi/assets.js', 'PixiAssets', 15, async () => new (await import('../../src/render/pixi/assets.js')).PixiAssets({})],
+]) {
+  test(`${className}: every field its methods write exists from the constructor`, async () => {
+    const subsystem = await make();
+    const written = fieldsWrittenAfterBoot(file, className);
+    assert.ok(written.size > minFields, `the scan found its methods (${written.size} fields)`);
+    const missing = [...written].filter(([name]) => !Object.hasOwn(subsystem, name));
+    assert.deepEqual(missing.map(([name, where]) => `${name} (${where})`), [], 'declare these in the constructor');
   });
 }
 

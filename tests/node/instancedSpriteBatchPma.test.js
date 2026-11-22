@@ -67,6 +67,8 @@ test('ctor sets State.depthMask; upload excludeType0/1; indices skip filter', ()
 });
 
 const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8');
+// N-256 PW-1: the texture tables are made and uploaded by the renderer's assets.
+const assetsSrc = readFileSync(join(dir, '../../src/render/pixi/assets.js'), 'utf8');
 const packLayer = readFileSync(join(dir, '../../src/render/packSpriteLayer.js'), 'utf8');
 
 test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', () => {
@@ -147,13 +149,13 @@ test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
 });
 
 test('pixi binds packed LUT as rgba32float TextureSource', () => {
-  assert.match(pixiSrc, /packTextureLutRgba/);
-  assert.match(pixiSrc, /TEX_LUT_RGBA_WIDTH/);
+  assert.match(assetsSrc, /packTextureLutRgba/);
+  assert.match(assetsSrc, /TEX_LUT_RGBA_WIDTH/);
   assert.match(pixiSrc, /setLutSource/);
-  assert.match(pixiSrc, /format: 'rgba32float'/);
-  assert.match(pixiSrc, /_uploadTexLutTexture/);
+  assert.match(assetsSrc, /format: 'rgba32float'/);
+  assert.match(assetsSrc, /uploadTexLutTexture/);
   assert.match(pixiSrc, /uploadMethodId = 'external'/);
-  assert.match(pixiSrc, /writeRgba32Float/);
+  assert.match(assetsSrc, /writeRgba32Float/);
   assert.match(pixiSrc, /preference: backend/);
 });
 
