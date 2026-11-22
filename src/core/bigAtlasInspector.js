@@ -1,18 +1,25 @@
 // BigAtlasInspector.js - Visual inspector for the generated bigAtlas
 
+import { ATLAS_MAP_MODES, atlasMapsAt, atlasMapsImage } from './atlasMapsView.js';
+
 /**
  * BigAtlasInspector - Shows the generated atlas with frame overlays
  * Usage: BigAtlasInspector.show(await scene.bigAtlasInspect(), scene.bigAtlasJson)
  */
 class BigAtlasInspector {
   static panel = null;
+  /** DBG-6: the twin page read for the maps modes, and the json it belongs to (read once per atlas). */
+  static _mapsPage = null;
+  static _mapsJson = null;
 
   /**
    * Show the bigAtlas in an overlay panel
    * @param {HTMLCanvasElement} atlasCanvas - The generated atlas canvas
    * @param {Object} atlasJson - The atlas metadata (frames, animations)
+   * @param {(() => Promise<{ texels: Uint8ClampedArray, width: number, height: number } | null>) | null} [inspectMaps]
+   *   DBG-6: the twin page's texels on demand; with it, and a sheet with maps, a mode select shows the maps
    */
-  static show(atlasCanvas, atlasJson) {
+  static show(atlasCanvas, atlasJson, inspectMaps = null) {
     if (this.panel) {
       this.panel.remove();
     }
@@ -216,13 +223,77 @@ class BigAtlasInspector {
     canvasContainer.appendChild(displayCanvas);
     canvasContainer.appendChild(overlayCanvas);
 
+    // DBG-6: the maps modes and the readout under the pointer.
+    const readout = document.createElement('div');
+    readout.style.cssText = 'font-family: monospace; font-size: 12px; margin: 6px 0; min-height: 16px; color: #333;';
+    let mode = 'colour';
+    if (typeof inspectMaps === 'function' && atlasJson.meta?.maps === true) {
+      const select = document.createElement('select');
+      select.style.cssText = 'margin-left: 10px; padding: 6px; font-size: 14px;';
+      for (const m of ATLAS_MAP_MODES) {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        select.appendChild(opt);
+      }
+      select.onchange = async () => {
+        mode = select.value;
+        if (mode === 'colour') {
+          ctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
+          ctx.drawImage(atlasCanvas, 0, 0);
+          readout.textContent = '';
+          return;
+        }
+        readout.textContent = 'reading the twin page...';
+        const page = await this._readMaps(inspectMaps, atlasJson);
+        if (!page) {
+          readout.textContent = 'no twin page: no sheet of this atlas has maps';
+          return;
+        }
+        const img = atlasMapsImage(page, atlasJson, mode);
+        ctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
+        ctx.putImageData(new ImageData(img.rgba, img.width, img.height), 0, 0);
+        readout.textContent = `${mode}: ${img.frames} frames with maps${img.maxZ > 0 ? `, highest ${img.maxZ.toFixed(1)} px` : ''}`;
+      };
+      controls.appendChild(select);
+    }
+    displayCanvas.onmousemove = (e) => {
+      const r = displayCanvas.getBoundingClientRect();
+      const x = Math.floor(((e.clientX - r.left) * displayCanvas.width) / r.width);
+      const y = Math.floor(((e.clientY - r.top) * displayCanvas.height) / r.height);
+      const page = this._mapsJson === atlasJson ? this._mapsPage : null;
+      const at = atlasMapsAt(page, atlasJson, x, y);
+      if (!at) {
+        readout.textContent = '';
+        return;
+      }
+      const m = at.marks;
+      const marks = [m.twin && 'maps', m.heights && 'height map', m.relief && 'relief', m.unshaded && 'unshaded'].filter(Boolean).join(', ') || 'no maps';
+      let text = `${at.name} (${at.frame.w}x${at.frame.h} at ${at.frame.x}, ${at.frame.y}): ${marks}`;
+      if (at.texel) {
+        const n = at.texel.normal;
+        text += `; height ${at.texel.z.toFixed(2)} px${n ? `, normal (${n[0].toFixed(2)}, ${n[1].toFixed(2)}, ${n[2].toFixed(2)})` : ''}`;
+      }
+      readout.textContent = text;
+    };
+
     // Assemble panel
     this.panel.appendChild(header);
     this.panel.appendChild(info);
     this.panel.appendChild(controls);
+    this.panel.appendChild(readout);
     this.panel.appendChild(canvasContainer);
 
     document.body.appendChild(this.panel);
+  }
+
+  /** DBG-6: the twin page's texels, read once per atlas json. */
+  static async _readMaps(inspectMaps, atlasJson) {
+    if (this._mapsJson !== atlasJson) {
+      this._mapsPage = await inspectMaps();
+      this._mapsJson = atlasJson;
+    }
+    return this._mapsPage;
   }
 
   /**

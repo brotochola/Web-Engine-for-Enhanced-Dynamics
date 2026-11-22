@@ -52,6 +52,33 @@ export async function loadBakedMapsPage(bigAtlasAsset, json, sceneName) {
   return createImageBitmap(body, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
 }
 
+/**
+ * DBG-6: an ImageBitmap's bytes exactly as decoded (premultiplyAlpha 'none'): a 2D canvas would premultiply and lose the
+ * twin page's data where its alpha (an octahedral byte) is low, so the bytes go through a WebGL2 texture and readPixels.
+ * @param {ImageBitmap} bitmap
+ * @returns {{ texels: Uint8ClampedArray, width: number, height: number } | null}
+ */
+export function bitmapTexels(bitmap) {
+  const width = bitmap.width;
+  const height = bitmap.height;
+  if (typeof OffscreenCanvas !== 'function') return null;
+  const gl = new OffscreenCanvas(width, height).getContext('webgl2', { premultipliedAlpha: false });
+  if (!gl) return null;
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+  const framebuffer = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  const texels = new Uint8ClampedArray(width * height * 4);
+  // The texture's first row is the image's top, and readPixels starts at the framebuffer's row 0: no flip.
+  gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, texels);
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return { texels, width, height };
+}
+
 /** What the pixel readers use of an atlas's JSON (a smaller structured clone to the worker). */
 export function pixelJsonOf(json) {
   return { frames: json.frames, animations: json.animations, meta: { maps: json.meta?.maps, size: json.meta?.size } };
@@ -124,5 +151,10 @@ export async function loadBakedAtlas(bigAtlasAsset, { decals, sceneName, worker,
     // The inspector and the download, on demand: the bake's PNG decoded again into a canvas (the built-ins added at load
     // are in the renderer's bitmap, not in it).
     inspect: () => canvasOf(png),
+    // DBG-6: the maps page's texels for the inspector, read again and back exactly (null: the bake has none).
+    inspectMaps: async () => {
+      const bitmap = await loadBakedMapsPage(bigAtlasAsset, json, sceneName);
+      return bitmap ? bitmapTexels(bitmap) : null;
+    },
   };
 }

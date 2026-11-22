@@ -97,5 +97,10 @@ export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = nul
     decals: packed.decals ?? null,
     // The inspector and the download, on demand: the atlas packed again on this thread (a debug view: lazy is allowed).
     inspect: async () => (await SpriteSheetRegistry.createBigAtlas(assetsToLoad, { ...options, camera, unshadedGlows })).canvas,
+    // DBG-6: the twin page's texels for the inspector's maps modes, packed again the same way (null: no sheet has maps).
+    inspectMaps: async () => {
+      const again = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, { ...options, camera, unshadedGlows, keepMapsTexels: true });
+      return again.mapsTexels ? { texels: again.mapsTexels, width: again.mapsSize.w, height: again.mapsSize.h } : null;
+    },
   };
 }

@@ -4,6 +4,7 @@ import { createPanel, createRow, createStat, createButton, elem } from '../ui/de
 import { sceneParams } from '../../sceneParams.js';
 import { CameraSection } from './cameraSection.js';
 import { DebugPanel } from '../ui/debugPanel.js';
+import { BigAtlasInspector } from '../../bigAtlasInspector.js';
 
 function sceneEntryIsActive(scene, entry) {
   if (!scene) return false;
@@ -72,9 +73,21 @@ export class ScenePanel extends DebugPanel {
     this.elements.restartBtn = createButton('↻ Restart', '', () => this._restartScene());
     controlsRow.appendChild(this.elements.restartBtn);
 
+    // DBG-6: the atlas inspector (its colours, and its sheets' maps), as window.inspectBigAtlas() opens it.
+    this.elements.atlasBtn = createButton('🗺 Atlas', '', () => this._openAtlas());
+    this.elements.atlasBtn.title = 'The atlas, its frames, and its height, normal and relief maps';
+    controlsRow.appendChild(this.elements.atlasBtn);
+
     this.panel.appendChild(controlsRow);
     this.panel.appendChild(this.camera.create());
     return this.panel;
+  }
+
+  /** DBG-6: the scene's atlas in the inspector (made on demand: the page keeps no canvas of it). */
+  async _openAtlas() {
+    const scene = this.debugUI.scene;
+    if (!scene || typeof scene.bigAtlasInspect !== 'function') return;
+    BigAtlasInspector.show(await scene.bigAtlasInspect(), scene.bigAtlasJson, scene.bigAtlasInspectMaps);
   }
 
   // ------- lifecycle -------

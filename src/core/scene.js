@@ -1762,7 +1762,7 @@ class Scene {
   }
 
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
-    const { json, imageBitmap, mapsBitmap = null, decals = null, inspect = null } = atlas;
+    const { json, imageBitmap, mapsBitmap = null, decals = null, inspect = null, inspectMaps = null } = atlas;
     // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
     const proxySheets = { ...(json?.meta?.proxySheets || {}) };
     addBigAtlasChunks(json, proxySheets);
@@ -1815,6 +1815,8 @@ class Scene {
 
     this.bigAtlasProxySheets = proxySheets;
     this.bigAtlasInspect = inspect;
+    // DBG-6: the twin page's texels on demand, for the inspector's maps modes.
+    this.bigAtlasInspectMaps = inspectMaps;
     this.bigAtlasJson = json;
 
     if (this.config.particle.decals && decals) {
@@ -1832,7 +1834,7 @@ class Scene {
       };
 
       window.inspectBigAtlas = async () => {
-        BigAtlasInspector.show(await this.bigAtlasInspect(), this.bigAtlasJson);
+        BigAtlasInspector.show(await this.bigAtlasInspect(), this.bigAtlasJson, this.bigAtlasInspectMaps);
       };
     }
   }
@@ -3029,6 +3031,7 @@ class Scene {
     this.decalMemory = null;
     this.box2dBlock = null;
     this.bigAtlasInspect = null;
+    this.bigAtlasInspectMaps = null;
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;
     this._loadedShaderSources = null;
