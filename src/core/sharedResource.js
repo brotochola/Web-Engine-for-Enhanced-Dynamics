@@ -6,6 +6,7 @@
 // Workers bind after the scene module import.
 
 import { assertSharedBytes } from './layerTextureUpload.js';
+import { laySchema } from '../util/schemaLayout.js';
 
 const TYPED_ARRAYS = Object.freeze({
   Int8Array,
@@ -140,15 +141,8 @@ export class SharedResource {
    */
   static getBufferSize(schema) {
     SharedResource._validateSchema(schema);
-    let offset = 0;
-    for (const spec of Object.values(schema)) {
-      const { type, length } = SharedResource._schemaEntry(spec);
-      const bytesPerElement = type.BYTES_PER_ELEMENT;
-      const remainder = offset % bytesPerElement;
-      if (remainder !== 0) offset += bytesPerElement - remainder;
-      offset += length * bytesPerElement;
-    }
-    return offset > 0 ? offset : 1;
+    const bytes = laySchema(schema, (spec) => SharedResource._schemaEntry(spec), 1, 0, null, null);
+    return bytes > 0 ? bytes : 1;
   }
 
   /**
@@ -165,17 +159,10 @@ export class SharedResource {
     this._schema = schema;
     this._fieldNames = [];
 
-    let offset = 0;
-    for (const [name, spec] of Object.entries(schema)) {
-      const { type, length, atomic } = SharedResource._schemaEntry(spec);
-      const bytesPerElement = type.BYTES_PER_ELEMENT;
-      const remainder = offset % bytesPerElement;
-      if (remainder !== 0) offset += bytesPerElement - remainder;
-      const view = new type(buffer, offset, length);
-      this[name] = atomic ? new SharedResourceMailbox(view) : view;
+    laySchema(schema, (spec) => SharedResource._schemaEntry(spec), 1, 0, buffer, (name, view, entry) => {
+      this[name] = entry.atomic ? new SharedResourceMailbox(view) : view;
       this._fieldNames.push(name);
-      offset += length * bytesPerElement;
-    }
+    });
 
     if (live.indexOf(this) < 0) live.push(this);
     SharedResource._noteBound(this);
