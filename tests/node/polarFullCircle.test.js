@@ -97,8 +97,8 @@ test('a Float64 placeholder takes the same path and gives the same polygon', () 
 // (merge) and the placeholder circle (full), at four vertex caps.
 const GOLDEN = {
   nearest_5000: [512, 27090489], nearest_512: [512, 27090489], nearest_128: [128, 428382817], nearest_17: [17, 4136368722],
-  merge_5000: [520, 2717978747], merge_512: [264, 2558140422], merge_128: [111, 2606825984], merge_17: [17, 3019108275],
-  full_5000: [512, 2528039606], full_512: [512, 2528039606], full_128: [128, 4289685741], full_17: [17, 3401231949],
+  merge_5000: [395, 1531786084], merge_512: [395, 1531786084], merge_128: [114, 4291938855], merge_17: [17, 279817815],
+  full_5000: [393, 242163001], full_512: [393, 242163001], full_128: [112, 1005867855], full_17: [17, 1910470142],
 };
 
 function fnv(xs, ys, n) {

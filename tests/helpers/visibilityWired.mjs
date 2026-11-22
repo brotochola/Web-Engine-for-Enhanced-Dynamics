@@ -101,6 +101,26 @@ export function makeScene(seed, {
   return { ents, lights, entities: ents.length, fixtures };
 }
 
+/**
+ * N-300: whether a row vertex (its offset to its lamp) lies on one of the polar merge's rays, a bin's centre (to 1/500 of
+ * a bin; a sweep's own vertex sits there about once in 500).
+ */
+export function onPolarRay(x, y) {
+  const t = (Math.atan2(y, x) + Math.PI) / (Math.PI / POLAR_BINS);
+  const m = 2 * Math.round((t - 1) / 2) + 1;
+  return Math.abs(t - m) < 2e-3;
+}
+
+/** N-300: how many of a row's vertices lie on the merge's rays (three or more: the row is a merged polygon's). */
+export function polarRayVertices(f32, o) {
+  const n = f32[o] | 0;
+  let c = 0;
+  for (let i = 0; i < n; i++) {
+    if (onPolarRay(f32[o + 4 * (WALL_VERT0 + i)], f32[o + 4 * (WALL_VERT0 + i) + 1])) c++;
+  }
+  return c;
+}
+
 /** Bounce x0 + v t between lo and hi. */
 function bounce(x0, v, t, lo, hi) {
   const span = hi - lo;

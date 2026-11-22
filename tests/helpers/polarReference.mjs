@@ -1,8 +1,10 @@
 // The polar raster and merge as they were before E-43 and E-61: every boundary
 // edge rastered with its own two atan2, and every sweep edge tested against
 // every output ray. The parity tests hold the shipped code to this, bit for bit.
-// N-300: the merge keeps the sweep's vertices where the sweep is the nearer
-// layer, by angle among the rays, at most WALL_ROW_MAX_VERTS in all.
+// N-300: the merge keeps the sweep's vertices where the sweep is the polygon
+// (every bin no solid stamped, and in front of a solid), by angle among the
+// rays it takes (over the bins a solid stamped and beside them), at most
+// WALL_ROW_MAX_VERTS in all.
 import { POLAR_BINS, SWEEP_CAPS } from '../../src/render/visibility/angularSweep.js';
 import { WALL_ROW_MAX_VERTS } from '../../src/render/visibility/lampWallRow.js';
 import { normalizeAngleSigned } from '../../src/util/utils.js';
@@ -94,9 +96,10 @@ export function createPolarReference() {
       const cap = Math.min(maxVerts | 0, WALL_ROW_MAX_VERTS);
       const xs = Float32Array.from(inX.subarray(0, n));
       const ys = Float32Array.from(inY.subarray(0, n));
-      // N-300: the sweep's vertices kept. Near ones (inside the radius) nearer than their bin as they are; any other
-      // beside a kept near one in the polygon's order, pulled in to its bin's hit where a solid is nearer than it. More
-      // than cap - 3, or a polygon past the sweep's scratch (its event cap): none.
+      // N-300: the sweep's vertices kept. Every one in a bin no solid stamped; in a stamped bin one inside the radius
+      // nearer than the bin's hit (in front) as it is, and beside a vertex in front any other, pulled in to the bin's hit
+      // where the solid is nearer. More than cap - 3, or a polygon past the sweep's scratch (its event cap): none.
+      const stampedUnder = radius - EPSILON;
       let kept = [];
       if (n >= 3 && n <= SWEEP_CAPS.maxEvents) {
         const kind = [];
@@ -113,19 +116,21 @@ export function createPolarReference() {
           if (!Number.isNaN(p)) {
             while (b + 1 < POLAR_BINS && BORDER_PSEUDO[b + 1] <= p) b++;
             d = Math.sqrt(dx * dx + dy * dy);
-            f = d < radius - NEAR_MARGIN && d < dist[b] ? 1 : 2;
+            f = { front: d < radius - NEAR_MARGIN && d < dist[b], empty: !(dist[b] < stampedUnder) };
           }
           kind.push(f);
           ang.push(p);
           bin.push(b);
           reach.push(d);
         }
+        const front = (i) => kind[i] !== 0 && kind[i].front;
         for (let i = 0; i < n; i++) {
-          const near = kind[i] === 1;
-          const beside = kind[i] === 2 && (kind[(i + n - 1) % n] === 1 || kind[(i + 1) % n] === 1);
-          if (!near && !beside) continue;
+          if (kind[i] === 0) continue;
+          const asIs = kind[i].front || kind[i].empty;
+          const beside = !asIs && (front((i + n - 1) % n) || front((i + 1) % n));
+          if (!asIs && !beside) continue;
           const hit = dist[bin[i]];
-          if (beside && hit < radius - EPSILON && hit < reach[i]) {
+          if (beside && hit < reach[i]) {
             const k = hit / reach[i];
             kept.push({ p: ang[i], x: Math.fround(lx + (xs[i] - lx) * k), y: Math.fround(ly + (ys[i] - ly) * k) });
           } else {
@@ -145,13 +150,35 @@ export function createPolarReference() {
         }
       });
       kept = kept.slice(first).concat(kept.slice(0, first));
-      const rays = cap - kept.length;
-      const group = rays >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / rays);
-      const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
+      // The rays: over a bin a solid stamped and the one each side of a run of them (every ray without inserts), one a
+      // bin where they fit beside the inserts, else grouped from the room the inserts leave.
+      const takeRays = (group) => {
+        const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
+        const stamped = [];
+        for (let k = 0; k < count; k++) {
+          let any = false;
+          for (let b = k * group; b < Math.min((k + 1) * group, POLAR_BINS); b++) any = any || dist[b] < radius - EPSILON;
+          stamped.push(any);
+        }
+        const out = [];
+        for (let k = 0; k < count; k++) {
+          if (kept.length === 0 || stamped[(k + count - 1) % count] || stamped[k] || stamped[(k + 1) % count]) out.push(k);
+        }
+        return out;
+      };
+      let group = 1;
+      let taken = takeRays(1);
+      if (kept.length + taken.length > cap) {
+        const room = cap - kept.length;
+        group = room >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / room);
+        taken = takeRays(group);
+      }
+      const count = taken.length;
       const outX = new Float32Array(count);
       const outY = new Float32Array(count);
       const rayP = new Float64Array(count);
-      for (let k = 0; k < count; k++) {
+      for (let r = 0; r < count; r++) {
+        const k = taken[r];
         const b0 = k * group;
         const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
         let d = dist[b0];
@@ -161,18 +188,23 @@ export function createPolarReference() {
         const ang = halfBinAngle(b0 + b1);
         const c = Math.cos(ang);
         const s = Math.sin(ang);
-        rayP[k] = pseudoAngle(c, s);
+        rayP[r] = pseudoAngle(c, s);
         if (n >= 3) {
-          let best = radius;
+          let best = kept.length > 0 ? Infinity : radius;
           for (let i = 0; i < n; i++) {
             const j = i + 1 < n ? i + 1 : 0;
             const t = raySegT(lx, ly, c, s, xs[i], ys[i], xs[j], ys[j]);
             if (t < best) best = t;
           }
-          if (best < d) d = best;
+          if (kept.length > 0 && !(d < radius - EPSILON)) {
+            // Over bins no solid stamped (beside stamped ones): the sweep's own distance, or the radius where none.
+            if (best < Infinity) d = best;
+          } else if (best < d) {
+            d = best;
+          }
         }
-        outX[k] = lx + c * d;
-        outY[k] = ly + s * d;
+        outX[r] = lx + c * d;
+        outY[r] = ly + s * d;
       }
       // In turn, the kept vertices before each ray's angle, then those on it (the ray's point stands for them), then the
       // ray.

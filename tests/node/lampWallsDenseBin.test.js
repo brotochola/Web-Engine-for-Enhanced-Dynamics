@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import { WALL_BINS, WALL_UMBRA, WALL_VERT0, WALL_WALK, wallAngle, wallRowLight } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
-import { bootPreRender, ringTriangles, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
+import { bootPreRender, polarRayVertices, ringTriangles, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
 
 const LX = 1200;
 const LY = 900;
@@ -108,7 +108,7 @@ for (const [withSolid, maxVerts] of [[false, 512], [true, 512], [true, 5000]]) {
     assert.ok(r >= 0, 'the lamp has a row');
     const o = r * out.rowFloats;
     const rows = out.f32;
-    if (withSolid) assert.ok(rows[o] >= 256, `the merge ran (${rows[o]} vertices)`);
+    if (withSolid) assert.ok(polarRayVertices(rows, o) >= 3, `the merge ran (${polarRayVertices(rows, o)} vertices on its rays)`);
     const poly = rowPolygon(rows, o);
     const steps = mostSteps(rows, o);
     // Points across the fence's directions, in front of it and in its shadows. A point whose direction falls on an edge

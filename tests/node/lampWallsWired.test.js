@@ -11,7 +11,9 @@ import assert from 'node:assert/strict';
 import { gbufEntityId } from '../../src/render/gbufWord.js';
 import { WALL_UMBRA, WALL_VERT0, wallAngle, wallRowLight } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
-import { bootPreRender, bootPreRenderGather, makeScene, runFrame, runFrameJs, writeFrame } from '../helpers/visibilityWired.mjs';
+import {
+  bootPreRender, bootPreRenderGather, makeScene, onPolarRay, runFrame, runFrameJs, writeFrame,
+} from '../helpers/visibilityWired.mjs';
 
 const SCENE = { lights: 24, boxes: 150, circles: 50, polygons: 30, rings: 5, blockHalf: 0.25 };
 
@@ -153,11 +155,11 @@ async function compare(t, boot) {
         const entity = id - 1;
         const wall = sc.ents[entity];
         assert.ok(Math.abs(opacity - wall.block) < 1 / 255, `wall ${entity}'s opacity (${wall.block}) rides in its edge's code (${opacity})`);
-        // Boxes and circles: the shapes whose outline is easy to say. Not in a merged polygon (a compound solid in reach:
-        // a vertex a polar bin, 512 of them, or one per two bins and the sweep's vertices it keeps, N-300): there a ray's
-        // vertex is where it meets the swept polygon, anywhere along one of its edges, and an edge between two walls that
-        // overlap is named for the one it ends on.
-        if (len < 6 || edges >= 256 || (wall.kind !== 'box' && wall.kind !== 'circle')) continue;
+        // Boxes and circles: the shapes whose outline is easy to say. Not an edge with an end on one of the polar merge's
+        // rays (a compound solid in reach, N-300: its rays over the solid's bins and beside them): a ray's vertex is where
+        // it meets the swept polygon, anywhere along one of its edges, and an edge between two walls that overlap is named
+        // for the one it ends on.
+        if (len < 6 || onPolarRay(ax, ay) || onPolarRay(bx, by) || (wall.kind !== 'box' && wall.kind !== 'circle')) continue;
         const x = boundX(wall, time);
         const y = boundY(wall, time);
         const angle = (wall.angle || 0) + (wall.spin || 0) * time;

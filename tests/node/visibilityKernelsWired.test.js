@@ -38,6 +38,7 @@ import {
   solidSegmentsStats,
 } from '../../src/render/visibility/solidSegmentsClient.js';
 import { MAX_POLYGON_VERTICES, WASM_DEFAULTS } from '../../src/util/configDefaults.js';
+import { polarRayVertices } from '../helpers/visibilityWired.mjs';
 import { createVisibilityMemory } from '../../src/util/visibilityMemory.js';
 import {
   MAX_FLIP_SHARE,
@@ -251,10 +252,10 @@ function assertBitForBit(a, b, label) {
 }
 
 /**
- * Rows whose polygon is the polar merge's: at the 512 cap a vertex per bin, or (N-300) one per two bins and the sweep's
- * vertices it keeps.
+ * Rows whose polygon is the polar merge's: three or more vertices on its rays (N-300: the rays over the bins a solid
+ * stamped and beside them, among the sweep's own vertices).
  */
-const polarLights = (frames) => frames.reduce((n, rows) => n + rows.lamps.filter((lamp, r) => rows.f32[r * rows.rowFloats] >= POLAR_BINS / 2).length, 0);
+const polarLights = (frames) => frames.reduce((n, rows) => n + rows.lamps.filter((lamp, r) => polarRayVertices(rows.f32, r * rows.rowFloats) >= 3).length, 0);
 
 test('W1: compound solids raster in solidSegments.wasm, and the rows are the JS raster\'s, bit for bit', async (t) => {
   assert.equal(Object.hasOwn(WASM_DEFAULTS, 'solidSegments'), false, 'no switch');

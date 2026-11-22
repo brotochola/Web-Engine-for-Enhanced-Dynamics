@@ -843,15 +843,59 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
   const cap = Math.min(maxVerts | 0, WALL_ROW_MAX_VERTS);
   if (cap < 3) return n;
   const ins = collectMergeInserts(lx, ly, inX, inY, n, cap, _polarRadius);
-  const rays = cap - ins;
-  const group = rays >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / rays);
-  const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
+  // The rays (visibilitySweep.c clip_polar): one a bin where they fit beside the inserts, else grouped from the room the
+  // inserts leave.
+  let group = 1;
+  let nr = raysTaken(1, _polarRadius, ins === 0);
+  if (ins + nr > cap) {
+    const room = cap - ins;
+    group = room >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / room);
+    nr = raysTaken(group, _polarRadius, ins === 0);
+  }
   // No copy of the input: the inserts are copied out first, and mergeSweep reads every edge before its first write.
-  const total = mergeSweep(lx, ly, inX, inY, n, count, group, _polarRadius, outX, outY, ins);
-  _mergeCount = count;
+  const total = mergeSweep(lx, ly, inX, inY, n, nr, group, _polarRadius, outX, outY, ins);
+  _mergeCount = nr;
   _mergeGroup = group;
   _mergeEdges = n >= 3 ? n : 0;
   return total;
+}
+
+// N-300: each ray taken's group (raysTaken), in order.
+const _rayK = new Int32Array(POLAR_BINS);
+
+/** N-300 (visibilitySweep.c group_stamped): whether a solid stamped any bin of ray group k. */
+function groupStamped(k, group, stampedUnder) {
+  const b0 = k * group;
+  const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
+  for (let b = b0; b < b1; b++) {
+    if (_polarDist[b] < stampedUnder) return 1;
+  }
+  return 0;
+}
+
+/**
+ * N-300 (visibilitySweep.c rays_taken): the rays the merge takes at `group` bins a ray, into _rayK; how many. With the
+ * sweep's vertices in (`all` false) the rays over a bin a solid stamped and the one each side of a run of them; without,
+ * every ray.
+ */
+function raysTaken(group, radius, all) {
+  const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
+  const stampedUnder = radius - EPSILON;
+  let nr = 0;
+  if (all) {
+    for (let k = 0; k < count; k++) _rayK[nr++] = k;
+    return nr;
+  }
+  const first = groupStamped(0, group, stampedUnder);
+  let prev = groupStamped(count - 1, group, stampedUnder);
+  let cur = first;
+  for (let k = 0; k < count; k++) {
+    const next = k + 1 < count ? groupStamped(k + 1, group, stampedUnder) : first;
+    if (prev | cur | next) _rayK[nr++] = k;
+    prev = cur;
+    cur = next;
+  }
+  return nr;
 }
 
 /** N-300: a sweep vertex this far inside the radius (px) is near (visibilitySweep.c NEAR_MARGIN). */
@@ -860,6 +904,7 @@ const _insAng = new Float64Array(MAX_EVENTS);
 const _insX = new Float64Array(MAX_EVENTS);
 const _insY = new Float64Array(MAX_EVENTS);
 const _insFlag = new Uint8Array(MAX_EVENTS);
+const _insBin = new Int32Array(MAX_EVENTS);
 
 /** N-300: the polar bin a pseudo-angle falls in (visibilitySweep.c bin_of_pseudo). */
 function binOfPseudo(p) {
@@ -875,22 +920,27 @@ function binOfPseudo(p) {
 
 /**
  * N-300, as visibilitySweep.c clip_polar's inserts: the sweep's vertices that go in with the rays, in order, into _insAng,
- * _insX, _insY. A near one (closer than the radius) nearer than its bin's hit (a bin no solid stamped holds the radius) as
- * it is; any other beside a near one that goes in, pulled in to its bin's hit where a solid stamped the bin nearer than it
- * (a shadow side's far end, which then ends on the solid). More than cap - 3 (or more vertices than the scratch holds):
- * none.
+ * _insX, _insY. Every vertex in a bin no solid stamped (the sweep is the polygon there); in a stamped bin, one inside the
+ * radius nearer than the bin's hit (in front) as it is, and beside a vertex in front any other, pulled in to the bin's
+ * hit where the solid is nearer (a shadow side's far end, which then ends on the solid). More than cap - 3 (or more
+ * vertices than the scratch holds): none.
  */
 function collectMergeInserts(lx, ly, xs, ys, n, cap, radius) {
   if (n < 3 || n > MAX_EVENTS) return 0;
+  const stampedUnder = radius - EPSILON;
   for (let i = 0; i < n; i++) {
-    const dx = xs[i] - lx;
-    const dy = ys[i] - ly;
+    // The sweep's vertices as float32, as the kernel holds them (a caller may hand doubles).
+    const dx = Math.fround(xs[i]) - lx;
+    const dy = Math.fround(ys[i]) - ly;
     const p = pseudoAngle(dx, dy);
     let f = 0;
     if (p === p) {
       const b = binOfPseudo(p);
+      const hit = _polarDist[b];
       const d = Math.sqrt(dx * dx + dy * dy);
-      f = d < radius - NEAR_MARGIN && d < _polarDist[b] ? 1 : 2;
+      // 1 in front, 2 in a bin no solid stamped, 4 a direction at all.
+      f = 4 | (d < radius - NEAR_MARGIN && d < hit ? 1 : 0) | (hit < stampedUnder ? 0 : 2);
+      _insBin[i] = b;
     }
     _insAng[i] = p;
     _insFlag[i] = f;
@@ -899,18 +949,18 @@ function collectMergeInserts(lx, ly, xs, ys, n, cap, radius) {
   let ins = 0;
   for (let i = 0; i < n; i++) {
     const f = _insFlag[i];
-    let keep = f === 1;
-    if (f === 2) keep = _insFlag[i > 0 ? i - 1 : n - 1] === 1 || _insFlag[i + 1 < n ? i + 1 : 0] === 1;
+    let keep = (f & 3) !== 0;
+    if (!keep && f) keep = ((_insFlag[i > 0 ? i - 1 : n - 1] | _insFlag[i + 1 < n ? i + 1 : 0]) & 1) !== 0;
     if (!keep) continue;
     if (ins === room) return 0;
-    let x = xs[i];
-    let y = ys[i];
-    if (f === 2) {
-      const hit = _polarDist[binOfPseudo(_insAng[i])];
+    let x = Math.fround(xs[i]);
+    let y = Math.fround(ys[i]);
+    if (!(f & 3)) {
+      const hit = _polarDist[_insBin[i]];
       const dx = x - lx;
       const dy = y - ly;
       const d = Math.sqrt(dx * dx + dy * dy);
-      if (hit < radius - EPSILON && hit < d) {
+      if (hit < d) {
         const k = hit / d;
         x = lx + dx * k;
         y = ly + dy * k;
@@ -942,7 +992,7 @@ export function markSeenPolarOwners(seen, stamp) {
   if (_mergeCount < 0) return -1;
   let marked = 0;
   for (let k = 0; k < _mergeCount; k++) {
-    const b0 = k * _mergeGroup;
+    const b0 = _rayK[k] * _mergeGroup;
     const b1 = b0 + _mergeGroup < POLAR_BINS ? b0 + _mergeGroup : POLAR_BINS;
     const sweep = _mergeEdges > 0 ? _rayBest[k] : Infinity;
     for (let b = b0; b < b1; b++) {
@@ -1015,13 +1065,13 @@ function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY, ins) {
   const edges = n >= 3 ? n : 0;
   if (edges > 0) {
     for (let k = 0; k < count; k++) {
-      const b0 = k * group;
+      const b0 = _rayK[k] * group;
       const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
       const m = b0 + b1;
       _rayAng[k] = _polarPseudo[m];
       _rayCos[k] = _polarCos[m];
       _raySin[k] = _polarSin[m];
-      _rayBest[k] = radius;
+      _rayBest[k] = ins > 0 ? Infinity : radius;
     }
   }
   for (let i = 0; i < edges; i++) {
@@ -1104,7 +1154,7 @@ function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY, ins) {
   }
   let taken = 0;
   for (let k = 0; k < count; k++) {
-    const b0 = k * group;
+    const b0 = _rayK[k] * group;
     const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
     const m = b0 + b1;
     if (taken < ins) {
@@ -1125,7 +1175,12 @@ function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY, ins) {
     for (let b = b0 + 1; b < b1; b++) {
       if (_polarDist[b] < d) d = _polarDist[b];
     }
-    if (edges > 0 && _rayBest[k] < d) d = _rayBest[k];
+    if (ins > 0 && !(d < radius - EPSILON)) {
+      // Over bins no solid stamped (beside stamped ones): the sweep's own distance, or the radius where none.
+      if (_rayBest[k] < Infinity) d = _rayBest[k];
+    } else if (edges > 0 && _rayBest[k] < d) {
+      d = _rayBest[k];
+    }
     outX[out] = lx + _polarCos[m] * d;
     outY[out] = ly + _polarSin[m] * d;
     out++;
