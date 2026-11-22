@@ -208,3 +208,50 @@ export function spriteIndexedWgsl(source, { shadow = false, casterRows = false, 
     out.slice(head)
   );
 }
+
+/**
+ * E-455 step 3: a keyed frame without zIndex bands carries each slot's G-buffer word in its statics row (the third
+ * texel's last lane, gpuPack.c's keyed updates), and the batch fills its per-instance words with this mark instead of
+ * uploading them every frame: (GBUF_STATICS_MARK, band 0, no foot), the band and the foot right as they stand.
+ */
+export const GBUF_STATICS_MARK = -2;
+
+const GBUF_ATTR_GLSL = 'in vec3 aInstGbuf;\n';
+const S2_GLSL = '  uvec4 weedS2 = texelFetch(uStatics, weedTexel + ivec2(2, 0), 0);\n';
+const S2_WGSL = '  let weedS2 = uStatics[weedRow + 2u];\n';
+
+/**
+ * E-455 step 3: an indexed sprite vertex shader (spriteIndexedVertex: its statics fetched) that reads the instances'
+ * G-buffer words, made to take the word from the statics row where the instance carries GBUF_STATICS_MARK: every
+ * `aInstGbuf.x` reads `weedGbufWord`, set right after the statics are fetched. The band and the foot stay the
+ * instance's (the mark's are those of a statics frame). Any other shader comes back as it is, as one already made so.
+ * @param {string} source
+ * @returns {string}
+ */
+export function gbufWordFromStaticsGlsl(source) {
+  if (typeof source !== 'string' || !source.includes(GBUF_ATTR_GLSL) || !source.includes(S2_GLSL) || source.includes('weedGbufWord')) {
+    return source;
+  }
+  return source
+    .replace(/aInstGbuf\.xy(?![a-z])/g, 'vec2(weedGbufWord, aInstGbuf.y)')
+    .replace(/aInstGbuf\.x(?![a-z])/g, 'weedGbufWord')
+    .replace(GBUF_ATTR_GLSL, () => `${GBUF_ATTR_GLSL}float weedGbufWord; // E-455 step 3: the instance's word, or its statics row's\n`)
+    .replace(S2_GLSL, () => `${S2_GLSL}  weedGbufWord = aInstGbuf.x < ${GBUF_STATICS_MARK + 0.5} ? uintBitsToFloat(weedS2.w) : aInstGbuf.x;\n`);
+}
+
+/**
+ * E-455 step 3: gbufWordFromStaticsGlsl for an indexed sprite WGSL (spriteIndexedWgsl: its statics fetched in mainVert),
+ * whose words come in mainVert's `aInstGbuf` input.
+ * @param {string} source
+ * @returns {string}
+ */
+export function gbufWordFromStaticsWgsl(source) {
+  if (typeof source !== 'string' || !source.includes('aInstGbuf: vec3<f32>') || !source.includes(S2_WGSL) || source.includes('weedGbufWord')) {
+    return source;
+  }
+  return source
+    .replace(/aInstGbuf\.xy(?![a-z])/g, 'vec2<f32>(weedGbufWord, aInstGbuf.y)')
+    .replace(/aInstGbuf\.x(?![a-z])/g, 'weedGbufWord')
+    .replace(S2_WGSL, () => `${S2_WGSL}  // E-455 step 3: the instance's word, or its statics row's.\n`
+      + `  let weedGbufWord = select(aInstGbuf.x, bitcast<f32>(weedS2.w), aInstGbuf.x < ${GBUF_STATICS_MARK + 0.5});\n`);
+}

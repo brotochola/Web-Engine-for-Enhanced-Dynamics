@@ -17,6 +17,8 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Query } from '../../src/core/query.js';
 import { createViews } from '../../src/render/renderQueueLayout.js';
 import { GPU_GBUF_FLOATS } from '../../src/render/gpuQueueLayout.js';
+import { GPU_KEYED_ROW_WORDS } from '../../src/render/gpuPackClient.js';
+import { GBUF_STATICS_MARK } from '../../src/render/spriteIndexed.js';
 import { GPU_KEYED_CHANGED } from '../../src/render/gpuPackClient.js';
 import { writeGbufWords } from '../../src/render/gbufWord.js';
 import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
@@ -168,6 +170,18 @@ function emitFrame(px, m, w, frame, n) {
 }
 
 /** The committed words against writeGbufWords' for the same rows, bit for bit; the entity rows and the top band. */
+/** E-455 step 3: each statics update's lane 11 is its slot's word (writeGbufWords' formula, no bands), as a float's bits. */
+function assertStaticsWords(label, updates, flags, self) {
+  if (updates.length === 0) return;
+  const f = new Float32Array(updates.buffer, updates.byteOffset, updates.length);
+  const selfN = self ? self.length : 0;
+  for (let u = 0; u < updates.length; u += GPU_KEYED_ROW_WORDS) {
+    const slot = updates[u + 12];
+    const want = slot >= flags.length ? 0 : (slot % 65535) + 1 + ((flags[slot] & 63) << 16) + (slot < selfN ? (self[slot] & 3) << 22 : 0);
+    if (f[u + 11] !== want) assert.fail(`${label}: slot ${slot}'s statics word ${f[u + 11]}, not ${want}`);
+  }
+}
+
 function assertWords(label, got, n, order, keys, flags, self, z) {
   const want = new Float32Array(n * GPU_GBUF_FLOATS);
   writeGbufWords(want, n, order, null, null, keys, flags.length, flags, self, z);
@@ -243,9 +257,21 @@ for (const [backend, byRow] of [['webgl', false], ['webgl', true], ['webgpu', fa
         px.updateSpritesFromRenderQueue();
         assert.equal(px.visibleEntityCount, n, `frame ${f}: every row drawn`);
         assert.equal(batch.mesh.shader === batch.shader, split, `frame ${f}: drawn ${split ? 'split' : 'keyed'}`);
-        assert.equal(batch.gbufPacked, !split, `frame ${f}: the words ${split ? 'in JavaScript' : 'from the pack'}`);
         assert.ok(order && order.length === n, `frame ${f}: the painter's order`);
         const q = px.renderQueueBuffers[b];
+        if (!split && !bands) {
+          // E-455 step 3: keyed without bands, the words in the slots' statics updates; the instances carry the mark.
+          assert.equal(batch.gbufInStatics, true, `frame ${f}: the words in the statics`);
+          assert.equal(batch.gbufPacked, false, `frame ${f}: none a drawn instance`);
+          for (let k = 0; k < n; k++) {
+            if (batch.gbufData[3 * k] !== GBUF_STATICS_MARK || batch.gbufData[3 * k + 1] !== 0) assert.fail(`frame ${f}: instance ${k} not marked`);
+          }
+          const updates = batch._keyUpdates.subarray(0, batch._keyedPack.updates * GPU_KEYED_ROW_WORDS);
+          assertStaticsWords(`frame ${f}`, updates, SpriteRenderer.gbufFlags, ShadowCaster.selfShadow);
+          continue;
+        }
+        assert.equal(batch.gbufInStatics, false, `frame ${f}: ${split ? 'drawn split' : 'bands'}, the words a drawn instance`);
+        assert.equal(batch.gbufPacked, !split, `frame ${f}: the words ${split ? 'in JavaScript' : 'from the pack'}`);
         const seen = assertWords(`frame ${f}`, batch.gbufData, n, order, q.key, SpriteRenderer.gbufFlags, ShadowCaster.selfShadow,
           bands ? SpriteRenderer.zIndex : null);
         assert.ok(seen.words > n * 0.9 && seen.words < n, `frame ${f}: the sprites' words, 0 for the particles (${seen.words})`);

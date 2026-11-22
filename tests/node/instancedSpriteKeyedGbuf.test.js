@@ -11,6 +11,7 @@ import { GPU_GBUF_FLOATS, gpuIndexedStaticRows } from '../../src/render/gpuQueue
 import { GPU_KEYED_CHANGED, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, bindGpuPack } from '../../src/render/gpuPackClient.js';
 import { writeGbufWords } from '../../src/render/gbufWord.js';
 import { spriteGlslShaders } from './engineShaderSources.mjs';
+import { GBUF_STATICS_MARK } from '../../src/render/spriteIndexed.js';
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
@@ -92,12 +93,16 @@ async function setup(seed) {
   top += 16 + 16 * 8;
   if (top > buf.byteLength) throw new Error('the test memory is too small');
   const pack = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
-  // A statics helper that keeps nothing: this test reads the words alone.
+  // A statics helper that keeps nothing but the last scatter's updates: this test reads the words alone (E-455 step 3:
+  // a keyed frame without bands carries them in its slots' statics updates).
+  const scattered = { updates: new Uint32Array(0) };
   const statics = {
     maxSize: 16384,
     make: (bits, width, height, label) => new TextureSource({ width, height, label }),
     upload() {},
-    scatter() {},
+    scatter(source, updates, count) {
+      scattered.updates = Uint32Array.from(updates.subarray(0, count * GPU_KEYED_ROW_WORDS));
+    },
   };
   const make = (extra) => {
     const b = new InstancedSpriteBatch({
@@ -111,7 +116,19 @@ async function setup(seed) {
     b.keyedBuffer = 0;
     return b;
   };
-  return { rng, q, flags, selfShadow, zIndex, pack, make };
+  return { rng, q, flags, selfShadow, zIndex, pack, make, scattered };
+}
+
+/** E-455 step 3: each statics update's lane 11 is its slot's word (writeGbufWords' formula, no bands), as a float's bits. */
+function assertStaticsWords(label, updates, flags, self) {
+  assert.ok(updates.length > 0, `${label}: some slots sent`);
+  const f = new Float32Array(updates.buffer, updates.byteOffset, updates.length);
+  const selfN = self ? self.length : 0;
+  for (let u = 0; u < updates.length; u += GPU_KEYED_ROW_WORDS) {
+    const slot = updates[u + 12];
+    const want = slot >= flags.length ? 0 : (slot % 65535) + 1 + ((flags[slot] & 63) << 16) + (slot < selfN ? (self[slot] & 3) << 22 : 0);
+    if (f[u + 11] !== want) assert.fail(`${label}: slot ${slot}'s statics word ${f[u + 11]}, not ${want}`);
+  }
 }
 
 /** The batch's committed words against writeGbufWords' for the same rows, bit for bit; the entity rows and top band. */
@@ -160,6 +177,19 @@ test('a keyed batch handed the G-buffer columns commits its pack\'s words, write
       const n = batch.upload(s.q, { ...opts });
       assert.equal(n, N, `${form}, ${label}: drawn`);
       assert.notEqual(batch.mesh.shader, batch.shader, `${form}, ${label}: keyed`);
+      if (z === null) {
+        // E-455 step 3: no bands, the words in the slots' statics: none a drawn instance, the instances carry the mark.
+        assert.equal(batch.gbufInStatics, true, `${form}, ${label}: the words in the statics`);
+        assert.equal(batch.gbufPacked, false, `${form}, ${label}: none a drawn instance`);
+        assert.ok(batch.packedGbuf.every((v) => v === -7), `${form}, ${label}: the pack's words untouched`);
+        assertStaticsWords(`${form}, ${label}`, s.scattered.updates, s.flags, self);
+        batch.commitGbufFromStatics(n);
+        for (let k = 0; k < n; k++) {
+          if (batch.gbufData[3 * k] !== GBUF_STATICS_MARK || batch.gbufData[3 * k + 1] !== 0) assert.fail(`${form}, ${label}: instance ${k} not marked`);
+        }
+        continue;
+      }
+      assert.equal(batch.gbufInStatics, false, `${form}, ${label}: bands keep the words a drawn instance`);
       assert.equal(batch.gbufPacked, true, `${form}, ${label}: the pack wrote the words`);
       batch.commitGbuf(batch.packedGbuf, n);
       const seen = assertWords(`${form}, ${label}`, batch.gbufData, n, order, s.q.key, s.flags, self, z);

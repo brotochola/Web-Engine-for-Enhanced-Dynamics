@@ -704,6 +704,8 @@ function normalsAt(i, value) {
     return;
   }
   SpriteRenderer.gbufFlags[i] = (SpriteRenderer.gbufFlags[i] & ~GBUF_FLAGS.NORMALS_MASK) | code;
+  // E-455 step 3: the flags are part of the word a keyed frame keeps in the sprite's statics.
+  SpriteRenderer.keyedDirty[i] = 1;
 }
 
 /** spriteRenderer.surface: the floor bit of the G-buffer flags; a name it does not know is warned about once. */
@@ -714,6 +716,7 @@ function surfaceAt(i, value) {
   }
   const f = SpriteRenderer.gbufFlags[i];
   SpriteRenderer.gbufFlags[i] = value === 'floor' ? f | GBUF_FLAGS.FLOOR : f & ~GBUF_FLAGS.FLOOR;
+  SpriteRenderer.keyedDirty[i] = 1;
 }
 
 /** spriteRenderer.unshaded: the unshaded bit (`on` a boolean); the count of unshaded sprites follows. */
@@ -722,6 +725,7 @@ function unshadedAt(i, on) {
   const was = (f & GBUF_FLAGS.UNSHADED) !== 0;
   if (was === on) return;
   SpriteRenderer.gbufFlags[i] = on ? f | GBUF_FLAGS.UNSHADED : f & ~GBUF_FLAGS.UNSHADED;
+  SpriteRenderer.keyedDirty[i] = 1;
   const users = SpriteRenderer._unshadedUsers;
   if (users) Atomics.add(users, 0, on ? 1 : -1);
 }

@@ -165,9 +165,15 @@ function checkWords(s, label, { opts, cap = N, byRow = false, shadow = false, te
   keyed.gbufFlags = s.flags;
   keyed.gbufSelf = self;
   keyed.gbufZ = kernelZ;
+  s.wordSelf = self && self.length > 0 ? self : null;
   assert.equal(pack(s.b, s.q, makePackContext(s.q, opts, cap, {}), first, s.slots, keyed, cap), n, `${label}: rows with the words`);
   assert.equal(keyed.gbufWritten, true, `${label}: the pack wrote the words`);
-  assert.deepEqual(packOutput(s, n, byRow, keyed), plain, `${label}: the rest of the output as without them`);
+  const withWords = packOutput(s, n, byRow, keyed);
+  // E-455 step 3: each update's third texel's last lane holds its slot's word (its key's entity, as writeGbufWords makes
+  // it; 0 for a row that is no entity), where the plain pack leaves a zero; every other word as without them.
+  checkUpdateWords(s, withWords.updates, label);
+  for (let u = 0; u < withWords.updates.length; u += GPU_KEYED_ROW_WORDS) withWords.updates[u + 11] = 0;
+  assert.deepEqual(withWords, plain, `${label}: the rest of the output as without them`);
   const want = new Float32Array(n * GPU_GBUF_FLOATS);
   writeGbufWords(want, n, opts.indices || null, null, null, s.q.key, s.flags.length, s.flags, self, z);
   const got = u32(s.gbufOut, n * GPU_GBUF_FLOATS);
@@ -202,6 +208,23 @@ function checkWords(s, label, { opts, cap = N, byRow = false, shadow = false, te
 }
 
 const selfShort = (s) => new Uint8Array(s.selfShadow.buffer, s.selfShadow.byteOffset, ENTITIES >> 1);
+
+/** E-455 step 3: the word an update's slot carries, for the key it was sent for (writeGbufWords' formula, no bands). */
+function slotWordOf(s, slot, self) {
+  if (slot >= ENTITIES) return 0;
+  const selfN = self ? self.length : 0;
+  return (slot % 65535) + 1 + ((s.flags[slot] & 63) << 16) + (slot < selfN ? (self[slot] & 3) << 22 : 0);
+}
+
+/** E-455 step 3: every listed update's lane 11 is its slot's word, as a float's bits. */
+function checkUpdateWords(s, updates, label) {
+  const f = new Float32Array(updates.buffer, updates.byteOffset, updates.length);
+  for (let u = 0; u < updates.length; u += GPU_KEYED_ROW_WORDS) {
+    const slot = updates[u + 12];
+    const want = slotWordOf(s, slot, s.wordSelf);
+    if (f[u + 11] !== want) assert.fail(`${label}: update for slot ${slot}: word ${f[u + 11]}, not ${want}`);
+  }
+}
 
 test('the keyed pack writes writeGbufWords\' words and bands, bit for bit, on both forms and with every column', async () => {
   for (const seed of [387, 388]) {
@@ -280,5 +303,39 @@ test('gpuPackKeyedMicrobench\'s G-buffer cases agree on a small frame', async ()
     const { keyedWords, keyedGbuf } = report.cases;
     assert.ok(keyedWords && keyedGbuf, `${gbuf}: both cases ran`);
     assert.equal(keyedGbuf.check, keyedWords.check, `${gbuf}: the same words`);
+  }
+});
+
+// E-455 step 3: asked for the words in the statics (keyed.gbufStatics) and with no bands, the pack writes each slot's word
+// into its statics update and none a drawn instance; the rest of its output is the plain pack's. With bands it keeps the
+// words a drawn instance (each band depends on the draw order).
+test('the words in the statics: each sent slot carries its word, no drawn instance writes any, bands keep theirs', async () => {
+  const s = await setup(455);
+  const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N, type: s.q.type };
+  for (const byRow of [false, true]) {
+    const pack = byRow ? packKeyedRowsByRowWasm : packKeyedRowsWasm;
+    const first = byRow ? s.rows : s.pose;
+    const base = { keyBase: KEY_BASE, updatesByte: s.updates.byteOffset, updates: 0, texUpdatesByte: s.texUpdates.byteOffset, texUpdates: 0 };
+    const plainKeyed = { ...base };
+    const n = pack(s.b, s.q, makePackContext(s.q, opts, N, {}), first, s.slots, plainKeyed, N);
+    const plain = packOutput(s, n, byRow, plainKeyed);
+    s.gbufOut.fill(-7);
+    s.wordSelf = s.selfShadow;
+    const keyed = { ...base, gbufOut: s.gbufOut, gbufFlags: s.flags, gbufSelf: s.selfShadow, gbufZ: null, gbufStatics: true };
+    assert.equal(pack(s.b, s.q, makePackContext(s.q, opts, N, {}), first, s.slots, keyed, N), n);
+    assert.equal(keyed.gbufInStatics, true, 'the words went to the statics');
+    assert.equal(keyed.gbufWritten, false, 'no drawn instance\'s words');
+    assert.equal(keyed.gbufChanged, false, 'nothing for the renderer to copy');
+    assert.ok(s.gbufOut.every((v) => v === -7), 'the destination untouched');
+    const out = packOutput(s, n, byRow, keyed);
+    assert.ok(out.updates.length > 0, 'some slots sent');
+    checkUpdateWords(s, out.updates, byRow ? 'by row' : 'pose');
+    for (let u = 0; u < out.updates.length; u += GPU_KEYED_ROW_WORDS) out.updates[u + 11] = 0;
+    assert.deepEqual(out, plain, 'the rest as the plain pack');
+    // With bands: the words a drawn instance, as before.
+    const banded = { ...keyed, gbufZ: s.zIndex };
+    pack(s.b, s.q, makePackContext(s.q, opts, N, {}), first, s.slots, banded, N);
+    assert.equal(banded.gbufInStatics, false);
+    assert.equal(banded.gbufWritten, true);
   }
 });

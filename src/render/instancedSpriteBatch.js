@@ -54,9 +54,10 @@ import {
   gbufDepthFragment, gbufDepthVertex, gbufDepthWgsl, pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl,
 } from './pixelDepth.js';
 import {
-  POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats, spriteIndexedVertex,
-  spriteIndexedWgsl, staticsTextureHeight,
+  GBUF_STATICS_MARK, POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats,
+  spriteIndexedVertex, spriteIndexedWgsl, staticsTextureHeight,
 } from './spriteIndexed.js';
+import { GBUF_FOOT_NONE } from './gbufWord.js';
 import { PIXI_KEYED_HEADER, PIXI_KEYED_HEADER_WORDS } from '../util/wasmMemoryMap.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
@@ -433,6 +434,10 @@ export class InstancedSpriteBatch {
     this._gbufZeros = 0;
     // E-387: whether the last upload's keyed pack wrote this frame's words (packedGbuf), from setGbufColumns' columns.
     this.gbufPacked = false;
+    // E-455 step 3: whether it put them in the slots' statics instead (a keyed frame without bands), and the instances
+    // whose words the CPU copy holds as GBUF_STATICS_MARK (commitGbufFromStatics), so a run of such frames uploads none.
+    this.gbufInStatics = false;
+    this._gbufMarked = 0;
     // E-455: the batch's drawn frames (each _finishUpload, so every pack that writes its shared rows counts), the one whose
     // commit took the keyed pack's words (-1: none; the frame after compares with them in place), the CPU copy's count at
     // the last commit, its generation (one more each time it changes), and each ring slot's: the generation its buffer
@@ -896,6 +901,7 @@ export class InstancedSpriteBatch {
     const floats = n * GPU_GBUF_FLOATS;
     if (src === this._gbufData) {
       this._gbufZeros = 0;
+      this._gbufMarked = 0;
       this._gbufGen++;
     } else if (src !== null && src.length >= floats) {
       const same = src === this._sharedGbuf && this.gbufPacked && !this._keyedPack.gbufChanged
@@ -903,11 +909,13 @@ export class InstancedSpriteBatch {
       if (!same) {
         this.copyIn(this._gbufData, src, floats);
         this._gbufZeros = 0;
+        this._gbufMarked = 0;
         this._gbufGen++;
       }
     } else if (this._gbufZeros < n) {
       this._gbufData.fill(0, 0, floats);
       this._gbufZeros = n;
+      this._gbufMarked = 0;
       this._gbufGen++;
     }
     this._gbufPackedSerial = src === this._sharedGbuf && this.gbufPacked ? this._drawSerial : -1;
@@ -920,8 +928,42 @@ export class InstancedSpriteBatch {
     }
   }
 
+  /**
+   * E-455 step 3: a frame whose keyed pack put the words in the slots' statics (gbufInStatics): the `count` instances
+   * carry GBUF_STATICS_MARK, which the indexed programs read as "the statics row's word" (spriteIndexed.js
+   * gbufWordFromStaticsGlsl), band 0 and no foot. The CPU copy is marked once and each ring slot's buffer goes up once,
+   * not every frame.
+   * @param {number} count
+   */
+  commitGbufFromStatics(count) {
+    if (this._gbufBuffers === null) return;
+    const n = Math.min(count | 0, this.capacity);
+    if (n <= 0) return;
+    if (this._gbufMarked < n) {
+      const d = this._gbufData;
+      for (let k = this._gbufMarked; k < n; k++) {
+        d[k * GPU_GBUF_FLOATS] = GBUF_STATICS_MARK;
+        d[k * GPU_GBUF_FLOATS + 1] = 0;
+        d[k * GPU_GBUF_FLOATS + 2] = GBUF_FOOT_NONE;
+      }
+      this._gbufMarked = n;
+      this._gbufZeros = 0;
+      this._gbufGen++;
+    }
+    this._gbufPackedSerial = -1;
+    this._gbufCount = n;
+    const ring = this._lastRing;
+    if (this._ringGbufGen[ring] !== this._gbufGen || this._ringGbufCount[ring] < n) {
+      this._gbufBuffers[ring].update(n * GPU_GBUF_FLOATS * 4);
+      this._ringGbufGen[ring] = this._gbufGen;
+      this._ringGbufCount[ring] = n;
+    }
+  }
+
   /** DX-GBUF: the words' CPU copy, for a caller that writes them itself (gbufWord.js writeGbufWords), then commitGbuf. */
   get gbufData() {
+    // E-455 step 3: a caller that takes the copy writes it: the statics' marks it held are no longer known to be there.
+    this._gbufMarked = 0;
     return this._gbufData;
   }
 
@@ -1994,6 +2036,7 @@ export class InstancedSpriteBatch {
   upload(q, opts) {
     this.keyedShadowReady = false;
     this.gbufPacked = false;
+    this.gbufInStatics = false;
     if (this.poseInterp) return this._uploadPose(q, opts);
     if (this.split) return this._uploadSplit(q, opts);
     const ctx = this._beginUpload(q, opts);
@@ -2108,12 +2151,15 @@ export class InstancedSpriteBatch {
     const k = this._keyedPack;
     // E-201: by queue row when the batch draws so and the queue has its pose columns here.
     const byRow = this.posesByRow && !!q.x && !!q.y && !!q.rotC && !!q.rotS;
+    // E-455 step 3: the words in the slots' statics where the pack can (no bands): its programs read them there.
+    k.gbufStatics = this.gbuf;
     const out = byRow
       ? packKeyedRowsByRowWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity)
       : packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
     if (out < 0) return this._keyedMiss(H);
-    // E-387: the words too, when it had their columns.
+    // E-387: the words too, when it had their columns; E-455 step 3: or in the slots' statics.
     this.gbufPacked = k.gbufWritten;
+    this.gbufInStatics = k.gbufInStatics === true;
     // E-312 step 2: drawn keyed again after a pause or a miss, so pre-render may skip unmarked rows' statics again.
     if (this._keyFull && this._keyPause === 0) {
       this._keyFull = false;
