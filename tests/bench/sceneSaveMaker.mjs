@@ -3,7 +3,8 @@
 // the scene from /src, lets it play, saves the game (scene.saveGame) and hands back the save's bytes as base64. The
 // Node half writes them to a file.
 //   node tests/bench/sceneSaveMaker.mjs [--scene /demos/predatorScene/predatorScene.js] [--export PredatorScene]
-//     [--seconds 20] [--query "k=v&…"] [--output tests/results/restore/predatorBattle.weedsave]
+//     [--seconds 20] [--query "k=v&…"] [--root <checkout>] [--output tests/results/restore/predatorBattle.weedsave]
+// --root serves another checkout (a revision's worktree), so its own code makes the save.
 // Set MSYS_NO_PATHCONV=1 from Git Bash.
 
 /** Browser side: chromeKernel.mjs calls run(args) in its page. */
@@ -40,7 +41,8 @@ if (typeof process !== 'undefined' && process.versions?.node) {
       seconds: Number(args.seconds ?? 20),
       query: typeof args.query === 'string' ? args.query : '',
     };
-    const res = spawnSync(process.execPath, [path.join(here, 'chromeKernel.mjs'), '--module', '/tests/bench/sceneSaveMaker.mjs', '--headed',
+    const rootArgs = typeof args.root === 'string' && args.root ? ['--root', args.root] : [];
+    const res = spawnSync(process.execPath, [path.join(here, 'chromeKernel.mjs'), ...rootArgs, '--module', '/tests/bench/sceneSaveMaker.mjs', '--headed',
       '--args', JSON.stringify(runArgs), '--output', json], { stdio: ['ignore', 'ignore', 'inherit'], env: { ...process.env, MSYS_NO_PATHCONV: '1' } });
     if (res.status !== 0) process.exit(res.status || 1);
     const report = JSON.parse(fs.readFileSync(json, 'utf8')).result;

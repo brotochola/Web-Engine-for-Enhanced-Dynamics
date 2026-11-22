@@ -6,6 +6,57 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 21 November 2026 (before midnight) — Shadow Maps Read the Short Form, a Loaded Battle Shoots Again
+
+**The shadow maps stopped re-sending every caster.** With shadow maps on, the renderer sent every caster's full
+description to the GPU each frame, about 1.1 MB, because the programs that draw into the maps only understood the
+full rows. The light's programs now read the short, keyed rows that the plain shadows already used: a caster's
+position, frame and height each frame, and the rest from a table the GPU keeps (E-395). The sun's map, the lamps' map and
+the renders' columns all draw from them, on WebGL and on WebGPU. In Predator's map mode pre-render got 35.7 % cheaper on
+WebGL and 38.5 % on WebGPU, and the renderer 21 to 24 %. With the columns too, Predator with light3d drew 59.9 frames a
+second instead of 54.4, pre-render −30.5 %, renderer −15.9 %. Captures before and after match pixel for pixel.
+
+**A loaded battle shoots again.** A restored Predator looked calmer than the battle it was saved from, and the gate
+that starts from a save was measuring a lighter world (N-329). A new tool plays a battle, saves it, and plays the save
+beside the original, so the two can be compared moment by moment. It showed that after a load the soldiers still aimed
+but never fired: each gun remembered its last shot by the page's own clock, and a new page's clock starts again at zero,
+so every gun waited for a time that lay tens of seconds in the future. The save now keeps the game's clock
+(`Time.simNowMs`) and a load goes on from it, and Predator's guns time their cooldown on that clock. After a load the
+battle fires about 7 500 bullet impacts a second instead of 370, and the loaded fight follows the original. A small gap
+is left: the reloaded physics world is a few percent cheaper per awake body, likely because Box2D rebuilds it in one go.
+
+## Saturday 21 November 2026 (late night) — Saving in Half a Second, Measuring the Same Battle Twice
+
+**Saving a crowd takes a blink.** A save of Predator's biggest crowd took 3.7 seconds, and most of it was the blood on
+the ground: each decal tile was turned into a PNG through a canvas, one after another. A tile is now its raw pixels
+squeezed by the browser's own compressor, sixteen at a time (N-314). Saving dropped from 3.7 to 0.6 s at crowd 2.5 and
+from 2.7 to 0.3 s at crowd 1. Loading got 11–12 % faster and the file 18–24 % smaller. On the way it fixed something
+nobody had noticed: the canvas premultiplied the alpha, so every semi-transparent stain lost a little each time it was
+saved. Tiles now come back exactly as they were.
+
+**The same battle on both sides.** Predator is a fight, and two runs of it are two different fights. Comparing two
+builds, the workers moved 4 to 7 % between runs of identical code, so a 3 % change could not be called. The benchmark
+now starts both sides from one saved moment of the battle (E-210). Two runs of identical code now differ by at most
+1.6 % per worker, and four pairs are enough to call a 3 % change. Reading the results also showed that a restored world
+sleeps more than the original: half as many bodies awake. That is a load bug to chase (N-329). Until then, physics
+changes are measured in the mixed battle, which still fights after a load.
+
+**Two bugs in loading and in the light.** A player's load hands the entities of a class pinned to another logic worker
+over to that worker, with their saved data. That worker wrote the data after logic0 had already remapped the entity ids,
+so the old ids came back. The load now waits on a barrier until that worker is done (N-327, test first). Self-shadow
+near the screen's edge read pixels outside the screen, so shading slid as the camera moved. The face map now keeps an
+empty border (N-272). The owner watched the films and the edges hold.
+
+**Box2D's idle threads stopped scanning.** While waiting for work, each of Box2D's spare threads checked every task's
+status, over and over, sweeping cache lines the other cores were using. Now they check one counter (E-493). In
+Predator's battle physics got 7.1 % cheaper, and every other worker got cheaper too: logic −8.8 %, spatial −4.5 %. A
+fourth Box2D thread still earns its core: with three, physics slows by 18.7 % (E-319).
+
+**Found, not yet fixed.** With shadow maps on, the renderer re-sends every caster's full description every frame, about
+1.1 MB, because the programs that draw into the maps only read full rows (E-395). Teaching them the compact form is the
+next big GPU job. A trace of Chrome's GPU process showed where its time goes: commands, draws and uploads, not the small
+calls once suspected (E-412, E-415, E-416).
+
 ## Saturday 21 November 2026 (night) — A Battle That Leaves Almost Nothing Behind
 
 The ECS pass ended with two leftovers in Predator's shot: the bullet's own config object and the sound's numbers. Both

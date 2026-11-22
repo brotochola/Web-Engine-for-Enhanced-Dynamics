@@ -111,7 +111,9 @@ export function spriteIndexedVertex(source, { shadow = false, casterRows = false
         (shadow && casterRows ? '' : `  aInstRotCS = vec2(weedPose(weedPr + ${2 * poseBlock}), weedPose(weedPr + ${3 * poseBlock}));\n`)
       : '') +
     '  aInstDepth = 0.0;\n' +
-    (shadow ? '  aInstTintBits = 0.0;\n' : '') +
+    // E-395: a keyed caster row's tint float holds its entity (its key), as a full row's does: the shadow maps keep it
+    // (casterEntityId), and a shadow's colour does not read it.
+    (shadow ? (casterRows ? '  aInstTintBits = aInstSlot;\n' : '  aInstTintBits = 0.0;\n') : '') +
     '  int weedRow = int(aInstSlot + 0.5);\n' +
     `  ivec2 weedTexel = ivec2((weedRow & ${STATICS_TEX_ROW - 1}) * ${STATICS_TEXELS_PER_ROW}, weedRow >> ${STATICS_TEX_ROW_SHIFT});\n` +
     '  uvec4 weedS0 = texelFetch(uStatics, weedTexel, 0);\n' +
@@ -170,7 +172,8 @@ export function spriteIndexedWgsl(source, { shadow = false, casterRows = false, 
     out = replaceOnce(out, '  let tintBits = bitcast<u32>(aInstTintBits);\n', '  let tintBits = weedS1.y;\n', 'WGSL');
   } else {
     out = replaceOnce(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @location(1) aInstXY: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'shadow WGSL');
-    lets += '  let aInstTintBits = 0.0;\n';
+    // E-395: a keyed caster row's entity (its key) where a full row carries it, for the shadow maps' casterEntityId.
+    lets += casterRows ? '  let aInstTintBits = aInstSlot;\n' : '  let aInstTintBits = 0.0;\n';
     if (casterRows) {
       // DX-SHADOW3D (plan §17.2): the row's fourth float, the frame a light sees, takes the rotation's free location.
       out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstFrame: f32,\n', 'shadow WGSL');

@@ -1278,7 +1278,8 @@ export declare class Time {
   /**
    * The scene's sim clock in ms, the same in every thread: 0 at scene start, advanced once per main-thread frame by
    * the scaled frame time, so a pause or a hitstop stops it. A main thread that gives no frame for 100 ms does not
-   * hold it back: the workers carry it on at Time.scale. GPU particles age by it. 0 when unbound.
+   * hold it back: the workers carry it on at Time.scale. GPU particles age by it. A load goes on from the saved game's
+   * time, so stamps taken from it (a last shot, a cooldown's end) keep their meaning after a load. 0 when unbound.
    */
   static get simNowMs(): number;
 }

@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-21",
-  "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
+  "about": "The register of WeedJS's work, the project's one backlog, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, every bug (kind `bug`, with its review item in REVIEW_PLAN.md) and the approved features and developer-experience todos (kinds `feature`, `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, docs/internal/hypotheses.html, which reads this file itself: `npm run dev`, then `/docs/internal/hypotheses.html` (it reads the file again when it changes). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
     "open": "Not tested yet, or reopened.",
@@ -11541,11 +11541,11 @@
     {
       "id": "E-210",
       "title": "Predator's gate from a save",
-      "status": "open",
-      "statusText": "Unblocked 2026-11-21 (triage, R-1678): Predator's state lives in components since E-530 and E-535 (written static, no instance), and R-1663's ecs-mixr sitting ran the mixed battle from one save. Next: check that a restored Predator fights as a fresh one does (every worker's load over the window), then the gate from a save as the default for Predator's emergent rows.",
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1682): runPredatorAbab starts Predator from a save by default (--restore auto, one cached save per scene, query and format; --fresh for the start); an A/A worker spread 3.6-7.0 % fresh -> 1.6 % from one save.",
       "date": "2026-11-10",
       "result": "step 0 (R-0908): the save keeps components, not the FSMs' plain fields; restored, Predator goes quiet (every worker under 3 ms)",
-      "next": "Needs a scene whose behaviour survives a save (Predator's AI state in components: demo work). The tools (?restore=, --restore, sceneSaveMaker) are in.",
+      "next": "",
       "area": "harness",
       "kind": "js",
       "refs": [
@@ -11561,7 +11561,9 @@
       "records": [
         "R-0854",
         "R-0908",
-        "R-1678"
+        "R-1678",
+        "R-1682",
+        "R-1690"
       ]
     },
     {
@@ -15277,17 +15279,18 @@
         "R-1057",
         "R-1058",
         "R-1120",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "engine",
       "kind": "dx",
       "result": "",
-      "next": "Owner: an ABAB with worktrees on a quiet machine (directionalSpriteStressScene ?mode=hand|ds, logic). Predator's gate against main ran (R-1058): neutral by the rule (logic and pre-render under the 6 ms floor), a real cost from its people's DirectionalSprite still to win back.",
+      "next": "",
       "id": "DX-DIRSPRITE",
       "title": "DirectionalSprite: a sprite drawn from several directions, from its facing (DX-LIGHT3D F2)",
-      "status": "running",
-      "statusText": "built 2026-11-14 on dx/light3d; measured on a 2-core VM only"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): DirectionalSprite merged with dx/light3d (R-1160); its Predator gates neutral by the rule (R-1058, R-1120, R-1162), the scene's own pair neutral (R-1162, n=60000); E-364, E-388 and E-533 won back logic and garbage. Left: the people's sun and lamp frames in pre-render (R-1162: +26.5 % at crowd 2.5), which E-371 and E-395 hold."
     },
     {
       "aliases": [
@@ -15308,17 +15311,18 @@
         "R-1065",
         "R-1120",
         "R-1132",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "render",
       "kind": "dx",
       "result": "",
-      "next": "The static cache; volumes in the sun's map on WebGPU; opacity in the maps; footprint solids (off: a bug); keyed rows in map mode; lampShadowStressScene (map against stamps), the formula checks, Predator at night (measuring phase).",
+      "next": "",
       "id": "DX-SHADOW3D",
       "title": "Shadows from the frame each light sees: cards on their base, renders’ solids, the sun’s map (DX-LIGHT3D F6/F7, §17)",
-      "status": "running",
-      "statusText": "sun and lamps built 2026-11-14/15 on dx/light3d: the sun's map and sprite modes (WebGL and WebGPU), the lamps' map (F7, option C); the owner approved the darker shadows; not timed against main"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): the sun's and the lamps' maps merged (R-1160) with volumes on WebGPU, opacity, footprint solids and keyed frames; lampShadowStressScene and Predator at night measured (R-1162, E-384); five of six formula checks pass (R-1123). Left: the lamps' static casters (E-508 kept the volumes; E-460, E-517), the sun's map cache (E-544), keyed rows for casters with a kind (E-395), shadowOutlineCheck's last 1.5 px (N-192)."
     },
     {
       "aliases": [
@@ -15331,17 +15335,18 @@
       ],
       "records": [
         "R-1061",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "render",
       "kind": "dx",
       "result": "",
-      "next": "WebGPU; opaque-only writes and zIndex bands; depthSortCheck and depthSortStressScene; the cost of writing depth from the shader (measuring phase).",
+      "next": "",
       "id": "DX-DEPTH",
       "title": "Depth that corrects the painter: each entity pixel at its place on the floor (DX-LIGHT3D F5)",
-      "status": "running",
-      "statusText": "first version built 2026-11-15 on dx/light3d (WebGL); not timed"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): per-pixel depth on WebGL and WebGPU, opaque-only writes and zIndex bands, depthSortCheck passing (R-1123) and depthSortStressScene. Left: its cost (E-378, first step kept) and the painter level across particle chunks (N-189)."
     },
     {
       "aliases": [
@@ -15353,17 +15358,19 @@
       ],
       "records": [
         "R-1062",
-        "R-1160"
+        "R-1160",
+        "R-1681",
+        "R-1695"
       ],
       "date": "2026-11-14",
       "area": "render",
       "kind": "dx",
       "result": "",
-      "next": "The entity id (same-entity heights only), 1/2/4 rays in selfShadowStressScene, the owner's look at the car and the bed.",
+      "next": "",
       "id": "DX-SELFSHADOW",
       "title": "Self-shadow: faces and sprites with height maps shade themselves from the sun and the lamps (DX-LIGHT3D F8)",
-      "status": "running",
-      "statusText": "built 2026-11-14/15 on dx/light3d: sun and lamps (with the lamps' map), WebGL and WebGPU; not timed"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): self-shadow from the sun and the lamps on both backends, the entity id in the G-buffer (no shadow from its own map, N-181), 1/2/4 rays (E-365: the pass 3.33 -> 1.61 ms). The owner approved the car and the bed without the checkerboard (R-1695). Left: the id wrap at 65 535 (N-185)."
     },
     {
       "aliases": [
@@ -15375,17 +15382,18 @@
       ],
       "records": [
         "R-1063",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "render",
       "kind": "dx",
       "result": "",
-      "next": "v2: MRT and the two colours a pixel (a glow past 1), spriteRenderer.emissive per entity, emissiveStressScene and emissiveCheck.",
+      "next": "",
       "id": "DX-EMISSIVE",
       "title": "Emissive sheets: a glowing sprite keeps its colour in the dark and sorts with the entities (DX-LIGHT3D F10)",
-      "status": "running",
-      "statusText": "v1 built 2026-11-15 on dx/light3d (per sheet, full light); v2 (MRT, two colours a pixel) to do"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): v2 built (MRT, two colours a pixel, the glow layer; E-457 kept), per entity through gbufFlags, emissiveStressScene; renamed unshaded since (DX-UNSHADED, unshadedCheck). Left: N-187 (Adobe rows get no G-buffer words), N-229 (capture determinism), both their own rows."
     },
     {
       "aliases": [
@@ -15397,17 +15405,18 @@
       ],
       "records": [
         "R-1064",
-        "R-1160"
+        "R-1160",
+        "R-1681"
       ],
       "date": "2026-11-14",
       "area": "engine",
       "kind": "dx",
       "result": "",
-      "next": "The second part (setBox / addLevel / setHull / setWall, selfShadow, baseRadius, setSprite({ frame, anchorX, anchorY, heightScale })), opacity in the maps, the demos' migration, CAST_KIND in the worker WEED.",
+      "next": "",
       "id": "DX-CASTER",
       "title": "One ShadowCaster: each entity says how it casts, for the sun and the lamps apart (DX-LIGHT3D F9)",
-      "status": "running",
-      "statusText": "first part built 2026-11-15 on dx/light3d (setSprite / setHeightMap / clear, sun / lamps, opacity, type, fixed cards); the rest being finished"
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): one ShadowCaster with setSprite (frame, anchors, heightScale), setHeightMap, setBox, addLevel, setHull, setWall, selfShadow, baseRadius and opacity in the maps; every demo and stress scene on it; CAST_KIND in the worker WEED. Left: keyed rows for casters with a kind (E-395)."
     },
     {
       "id": "E-311",
@@ -15818,12 +15827,12 @@
       "id": "N-187",
       "title": "A frame whose GPU queue count differs from the rows pre-render collected sends no G-buffer words: Pixi zeroes them, so every sprite is lit without its id and flags that frame (its own map shadow, its glow, its self-shadow); with Adobe animations every frame differs",
       "status": "open",
-      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "statusText": "Read again 2026-11-21: deferred while Adobe Animate stays out (the owner, 2026-10-29; E-145). Only scenes with Adobe characters and light3d's G-buffer lose the words, and today that is the Adobe demo alone. The queue's key column cannot carry a piece's root entity: Pixi's keyed pack takes a key as the row's slot identity (gpuPack.c), and pieces must stay unkeyed (adobe_root writes KEY_NONE).",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
       "result": "Read 2026-11-15: _writeGbufWords returns false when q.count differs from the collected rows (Adobe roots expanded into more rows), the frame goes without GPU_FLAG_GBUF and Pixi's commitGbuf(null) zeroes the words (not the last frame's, as first reported). Each such frame lights every sprite as before round 2: id 0 (a caster's own shadow paints it in map mode), no glow of its own, no self-shadow flag. A scene with Adobe animated entities expands roots every frame, so there the words never reach Pixi.",
-      "next": "Give the expanded rows their root's entity (the collector knows it) so the words are written whatever the count; a capture of an Adobe character with spriteRenderer.emissive and a sun map.",
+      "next": "The emit kernel (wasm/preRenderEmit.c adobe_root and emit_rows, tests/reference/preRenderEmitJs.mjs) writes where each collector row starts in the queue (a u32 per collector row in the queue memory), or a G-buffer entity column beside the key; _writeGbufWords then gives every queue row its collector row's entity (a piece its root's) whatever the count. C/JS parity in preRenderEmitAdobe.test.js, scripts/buildWasm.mjs, an adobeAnimateScene capture with lighting.gbuffer and a sun map. About 2-3 h.",
       "refs": [
         "REVIEW_PLAN.md#N-187"
       ],
@@ -16535,20 +16544,22 @@
     {
       "id": "N-212",
       "title": "Shadows flicker, not with the fire: some do not show right and some disappear now and then",
-      "status": "open",
-      "statusText": "reported by the owner 2026-11-15 ~20:40 (\"hay sombras titilando, no por el fuego, como que no todas se muestran bien y algunas desaparecen\"); the scene and its URL asked",
+      "status": "kept",
+      "statusText": "Closed 2026-11-21 (R-1694) for the cause Predator showed: the light cut fades (R-1151) and the budget spares the lamps' map (R-1159), confirmed by the owner (R-1695). The other cuts' pops: N-330.",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
       "result": "Predator (crowd 1): 58-61 shadow-casting lights in view against maxShadowCastingLights 48 (67-70 with ?light3d=1), the kept set (nearest the view centre) taking in 0-3 new lights every 2 s: their shadows popped. Fixed for that cut (e47c5442, R-1151): the kept lights fade their shadows over the last 20 % of the cut distance (stamps, cookies, the lamps' map). Still: 15-24 lights in view without shadows (the cap), the per-entity (3 nearest) and per-light caster cuts pop; the owner's scene not confirmed.",
-      "next": "Confirm with the owner (scene, URL); then Predator's cap (raise it or thin its lights) and a fade in shadowStamp.c's per-entity and per-light cuts; measure the light pass's extra texel (gpuPassBench lampMap).",
+      "next": "",
       "refs": [],
       "aliases": [
         "flickering shadows"
       ],
       "records": [
         "R-1151",
-        "R-1159"
+        "R-1159",
+        "R-1694",
+        "R-1695"
       ]
     },
     {
@@ -16917,8 +16928,8 @@
     {
       "id": "E-319",
       "title": "Box2D's pool size and spin at crowd 2.5: 4 physics threads plus E-298's spin keep about 3.1 cores busy while about 10 threads are runnable on 8 cores in the frame's first 7 ms",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "answered",
+      "statusText": "Answered 2026-11-21 (R-1691): 4 threads stay (3: physics +18.7 % 4/4, the others -3 to -12 %); the spin's cost went with E-493.",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -16944,7 +16955,8 @@
         "R-1238",
         "R-1244",
         "R-1250",
-        "R-1252"
+        "R-1252",
+        "R-1691"
       ]
     },
     {
@@ -18088,20 +18100,23 @@
     {
       "id": "E-390",
       "title": "With light3d by day Pixi uploads 2.3 MB of buffers a frame against 0.73 MB without it: two bufferSubData of 1196 KB and 844 KB a frame",
-      "status": "open",
-      "statusText": "Proposed 2026-11-16; the words-in-statics version built and rejected 2026-11-20 (R-1575, a small saving for much plumbing); the big uploads still to identify",
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1696, through E-395): the map arm's whole caster rows were the extra uploads; keyed rows cut the buffers 1 413.7 -> 637.8 KB a frame in Predator.",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
       "result": "Predator light3d uploads 2.7 MB a frame against 0.73 MB plain: two buffers of 1.2 MB and 0.83 MB a frame (not the G-buffer words, 85 KB; not the shadow maps; not pixel depth). The words in the statics: -151 KB a frame, not kept.",
-      "next": "Identify the two buffers light3d adds (1.2 MB and 0.83 MB a frame, one bufferSubData each in Predator light3d=1&hour=12&zoom=0.3): not the G-buffer words, not the lamps’ or the sun’s map, not pixel depth (R-1575). Next suspects: the sprite path light3d’s packed atlas with maps sends its frames down (instance rows instead of keyed poses), the farm trees’ and houses’ decorations, the volumes. glFrameRecorder with each piece off, or a stack at bufferSubData in the Pixi worker. 2026-11-20 probe: a stack at the Pixi worker’s gl.bufferSubData shows the 1.2 MB call made lazily by Pixi’s geometry system when a mesh binds (GlGeometrySystem.bind -> updateBuffers), so it is one of the engine’s instanced batches’ Buffer.update(); the stage’s 800 plain Pixi Sprites (156 visible) are not it. Next: tag each batch’s buffers (a label per stream) and read which one the 1.2 MB and 0.83 MB are (light3d’s frames may leave the keyed poses for full instance rows).",
+      "next": "",
       "refs": [],
       "aliases": [
         "light3d buffer uploads"
       ],
       "records": [
         "R-1173",
-        "R-1575"
+        "R-1575",
+        "R-1687",
+        "R-1688",
+        "R-1696"
       ]
     },
     {
@@ -18190,19 +18205,24 @@
     {
       "id": "E-395",
       "title": "Keyed caster rows for casters that ask for a kind (DX-CASTER): one such caster turns the keyed caster path off for the whole scene (_casterKindsOn), so light3d scenes pack full rows and E-372 does not serve them",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from preRenderWorker.js _packGpuSun and the traces (pack_casters_scatter in Predator ?light3d=1)",
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1696, R-1697, R-1698): the shadow maps and their columns draw keyed caster rows on both backends; Predator map mode pre-render -35.7 % (WebGL) and -38.5 % (WebGPU), light3d -30.5 %; renderer -15 to -24 %; uploads -42 %.",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
       "result": "",
-      "next": "Carry the caster's code in the keyed row (a spare float, or the key's high bits) so the keyed scan and the keyed shadow programs serve kinds too; then Predator ?light3d=1's pre-render.",
+      "next": "A still capture of keyed columns (a scene with keyed frames and height maps); the barrio's casters with frames of their own (N-188) and its keyed frames; a kind carried in the keyed row.",
       "refs": [],
       "aliases": [
         "keyed rows caster kinds"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1687",
+        "R-1688",
+        "R-1696",
+        "R-1697",
+        "R-1698"
       ]
     },
     {
@@ -18610,12 +18630,12 @@
       "id": "E-412",
       "title": "Chrome's GPU process main thread spends 295 ms a second in CommandBufferService:PutChanged on Predator ?light3d=1 (4.9 ms a frame) against 135 ms without light3d: light3d's GL command stream costs the GPU process 2.7 ms a frame more",
       "status": "open",
-      "statusText": "proposed 2026-11-16 from gpuProcessTrace on Predator (zoom 0.3, headed, 3 s after 12 s)",
+      "statusText": "2026-11-21 (R-1692): PutChanged broken down: its own 87 ms/s (command count), instanced draws 34, glFlush 16, buffer uploads 14, texture uploads 12, plain draws 12, texture binds 10; the levers are fewer uploads (E-395, E-392) and fewer draws.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "CrGpuMain: light3d day 364.1 ms/s in slices, PutChanged 295.2 self (251 a second), CommandBufferStub::PerformWork 16.2, SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass 9.0, DXGISwapChainImageBacking::Present 8.3; plain 171.4 ms/s, PutChanged 135.2 (153 a second). VizCompositorThread about 55 ms/s in both.",
-      "next": "Break PutChanged down by command (--enable-gpu-service-tracing for the decoder's per-command slices) and cut the costly ones (E-389's redundant uniforms, E-391's draws, the uploads E-390/E-392/E-396).",
+      "next": "After E-395 lands, the same traced pair: PutChanged and the uploads against today's 185 ms/s untraced.",
       "refs": [],
       "aliases": [
         "gpu process putchanged",
@@ -18623,7 +18643,8 @@
       ],
       "records": [
         "R-1177",
-        "R-1181"
+        "R-1181",
+        "R-1692"
       ]
     },
     {
@@ -18669,38 +18690,40 @@
     {
       "id": "E-415",
       "title": "Chrome's GPU process calls glObjectLabelKHR 180 to 254 times a frame (10 781 to 15 223 a second) though the page creates no GL object a frame: Chrome labelling resources, perhaps only with service tracing on",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "status": "answered",
+      "statusText": "Answered 2026-11-21 (R-1692): glObjectLabelKHR shows only under --enable-gpu-service-tracing (Chrome labels for its own trace); untraced, PutChanged is 41 ms/s lighter. Not the game's cost.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "light3d day glObjectLabelKHR 23.20 ms/s self, 15 223 a second; plain 16.67 ms/s, 10 781 a second; the page side (glFrameRecorder) creates no texture, buffer or vertex array a frame.",
-      "next": "The same trace without --enable-gpu-service-tracing (the labels show as ANGLE calls in a gpu.angle category, or nsys) to tell an artifact from a real cost; if real, which resources (transfer buffers, shared images).",
+      "next": "",
       "refs": [],
       "aliases": [
         "object label gpu process"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1692"
       ]
     },
     {
       "id": "E-416",
       "title": "With light3d the GPU process waits on fences 13 times a frame (glClientWaitSync, 792 a second; 334 without) behind the page's one fenceSync and getSyncParameter a frame",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "status": "answered",
+      "statusText": "Answered 2026-11-21 (R-1692): the fence waits are 1.9 ms/s of the GPU process (0.03 ms a frame): not worth a change.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "light3d day glClientWaitSync 6.38 ms/s self, 792 a second; plain 2.38 ms/s, 334 a second. The page: fenceSync 1, getSyncParameter 1, deleteSync 1 a frame (glFrameRecorder).",
-      "next": "Who polls (the engine's GPU readback or frame fence, Pixi, Chrome's own shared-image sync) and whether light3d's extra targets add waits; poll once a frame or not at all.",
+      "next": "",
       "refs": [],
       "aliases": [
         "client wait sync",
         "fence polling"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1692"
       ]
     },
     {
@@ -18719,7 +18742,8 @@
       ],
       "records": [
         "R-1181",
-        "R-1425"
+        "R-1425",
+        "R-1692"
       ]
     },
     {
@@ -19649,8 +19673,8 @@
     {
       "id": "N-227",
       "title": "Volumes cast no lamp shadow in a scene without sprite casters: the lamps' map draws its volumes only after its stamp cards, and a lamp gets a tile only from pre-render's stamp lights",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the pixi batch agent (opt/pixi-gpu-batch)",
+      "status": "kept",
+      "statusText": "Fixed 2026-11-18 by OL-5 (13c69176, R-1356; closed 2026-11-21 in R-1686): a lamp gets a tile for a casting volume, and the volumes draw with no stamp row.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "bug",
@@ -19660,7 +19684,9 @@
       "aliases": [
         "volumes need stamp casters for lamp shadows"
       ],
-      "records": []
+      "records": [
+        "R-1686"
+      ]
     },
     {
       "id": "E-457",
@@ -19848,19 +19874,21 @@
     {
       "id": "N-232",
       "title": "Leave-one-out Predator sittings of small builds read 4/4 shifts on workers the change cannot reach (spatial +7.5 %, physics +5.8 %, logic +9 %) while the A/A reads ±0.3 %: the two builds play different battles from one seed (BODY_MOVED_COUNT differs 4/4), so such verdicts need --restore (E-210) or the unreachable workers fitted against their load key",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the PR #12 sittings agent",
+      "status": "answered",
+      "statusText": "Answered 2026-11-21 by E-210 (R-1682): Predator sittings start both builds from one save by default, so they play the same battle; DECAL_TILES_DIRTY has its own 25 % band.",
       "date": "2026-11-16",
       "area": "bench",
       "kind": "bug",
       "result": "E-330's first sitting: REGRESSION on spatial +7.5 % and physics +5.8 % (4/4) with moved bodies +1.2 to +2.5 % on B, gone with the sides swapped; E-331's: logic +9 % 4/4 with 12.8 % more moved bodies in one pair. Today's A/A: every worker within ±1 %.",
-      "next": "Default leave-one-out sittings of a build to --restore (the same world each run), or make the runner fit spatial and physics against BODY_MOVED_COUNT before it calls a regression on them (HOW_WE_MEASURE says so for emergent scenes); and note the floor: on a quiet machine Predator crowd 2.5's pre-render and logic run 5.4 to 6.1 ms, so pre-render owners need shadowLights=96 and logic has no knob there.",
+      "next": "",
       "refs": [],
       "aliases": [
         "battle drift in leave-one-out",
         "predator floor quiet"
       ],
-      "records": []
+      "records": [
+        "R-1682"
+      ]
     },
     {
       "id": "E-463",
@@ -20781,8 +20809,8 @@
     {
       "id": "E-493",
       "title": "E-298's idle spin calls b2SchedulerHasPending every turn, which scans every enqueued task's status atomic (12-byte slots, about 5 a cache line, up to 256): the three spinning pool threads keep pulling the lines the claiming and completing threads write",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the physics agent reading box2d/src/scheduler.c",
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1689): b2Scheduler's pending tasks in one padded word the spinners poll (Box2D ef43206); Predator's battle from a save physics -7.1 %, logic -8.8 %; LiquidFun couple -3.6 %.",
       "date": "2026-11-16",
       "area": "physics",
       "kind": "speed",
@@ -20793,7 +20821,8 @@
         "spin polls every task slot"
       ],
       "records": [
-        "R-1238"
+        "R-1238",
+        "R-1689"
       ]
     },
     {
@@ -21067,8 +21096,8 @@
     {
       "id": "N-258",
       "title": "Normals do not flip with flipX/flipY nor turn with a rotated sprite: the G-buffer pass decodes them in the frame's own space, so a lamp on the left would light a mirrored car's right side (the standard cars mirror half their headings)",
-      "status": "open",
-      "statusText": "suspected from the code 2026-11-16 (preRenderEmit.c makes a flip a negative scale; faceMap.frag.glsl decodes the normal without it); to confirm on the light bench first (a mirrored car with a lamp at its side)",
+      "status": "kept",
+      "statusText": "Fixed 2026-11-17 (3cd826a5, closed 2026-11-21 in R-1685): the G-buffer pass mirrors and turns a frame's normals with its sprite, GLSL and WGSL; faceMap.test.js.",
       "date": "2026-11-16",
       "area": "render",
       "kind": "bug",
@@ -21078,7 +21107,9 @@
       ],
       "aliases": [],
       "next": "Flip and turn the decoded normal (and the Sobel's) in the G-buffer pass, GLSL and WGSL.",
-      "records": []
+      "records": [
+        "R-1685"
+      ]
     },
     {
       "id": "E-496",
@@ -22384,17 +22415,18 @@
         "R-1333",
         "R-1336",
         "R-1337",
-        "R-1340"
+        "R-1340",
+        "R-1684"
       ],
       "result": "",
-      "next": "Captures: a house cut by the screen's bottom edge with the sun from the south, WebGL and WebGPU, main (bug) against exp/n272-branchfree (v2) against v3 (v3 must match v2 but for the 1-px border); then the barrio at night on the four GPUs (GTX 1650, Radeon, HD 620, MX110), main against v3. Later: WebGPU's march could drop its per-step bounds test too (the ring does it).",
+      "next": "",
       "id": "N-272",
       "kind": "bug",
       "area": "render",
-      "status": "running",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "WebGL's self-shadow march reads the face map's edge texel, clamped, for every step past the screen: near the edge the sun's side looks at (the bottom, with the sun in the south), pixels take shadows from whatever wall stands at the edge, and they slide as the camera moves; WebGPU's march skips those steps",
-      "statusText": "v3 built 2026-11-18 on exp/n272-ring (d74a5d7e): the face map drawn a texel inside its edges (Pixi's frame, the transform a texel back), so the clamp-to-edge reads past the screen land on the empty ring; the march is main's (both earlier fixes, a per-step test and the exit worked out before the loop, cost the HD 620 about 4.5 %, R-1337); the light pass reads a pixel's own face and id a texel inside. Not browser-checked or measured yet"
+      "statusText": "Fixed 2026-11-21 (R-1684): v3 merged, the face map drawn a texel inside its edges so WebGL's march reads the empty ring past the screen; the march is main's (no GPU cost)."
     },
     {
       "id": "DX-ONELIGHT",
@@ -23064,8 +23096,8 @@
     {
       "id": "N-291",
       "title": "Moving the camera changes the shading of things near the screen's right edge, as it did near the bottom edge: likely N-272's (the self-shadow march reads the face map's edge texel past the screen) with the sun's march toward that edge",
-      "status": "open",
-      "statusText": "seen by the owner 2026-11-18 in the barrio (localhost:8000, main 702e6842): near the right edge the shading changes as the camera moves; the bottom edge did the same (N-272's sighting). N-272's fix is not on main (v3 on exp/n272-ring, unmeasured), so main's WebGL march still reads the edge texel; the sun's direction decides which edge shows it. Not checked: added at the owner's ask, nothing touched",
+      "status": "kept",
+      "statusText": "Closed 2026-11-21 (R-1693) with N-272: the owner saw the barrio films, no drift at the edges.",
       "date": "2026-11-18",
       "result": "",
       "next": "Pan the barrio by day with the sun's march toward the right edge (film the drift), main against exp/n272-ring (N-272 v3, the empty ring), WebGL and WebGPU. If v3 fixes both edges, close it with N-272; if not, find what else reads past the screen on that side (the light tiles, lightEdges, the half-resolution light pass).",
@@ -23076,7 +23108,10 @@
         "right edge shading",
         "screen edge shading drifts"
       ],
-      "records": []
+      "records": [
+        "R-1684",
+        "R-1693"
+      ]
     },
     {
       "id": "DX-DEBUGUI",
@@ -24178,16 +24213,17 @@
         "R-1528",
         "R-1586",
         "R-1670",
-        "R-1674"
+        "R-1674",
+        "R-1680"
       ],
       "refs": [],
       "id": "N-314",
       "title": "Saving and loading a crowd scene is slow: Predator's 17 500 entities take 3.7 to 5.5 s to save (captureSavePayload) and 3.8 to 8.6 s to load back, which is most of a restart after a GPU loss (N-301) and of a hot reload",
-      "status": "open",
+      "status": "kept",
       "kind": "bug",
       "area": "save",
       "date": "2026-11-19",
-      "statusText": "in part 2026-11-19 (R-1528): the restart 3.6 s. 2026-11-21 (E-539, R-1674): the load 4.7 -> 2.0 s at crowd 1 and 8.5 -> 2.4 s at crowd 2.5 in the page, as fast as a fresh start; the save 2.9 and 3.7 s left.",
+      "statusText": "Fixed 2026-11-21 (R-1680, after E-539's load in R-1674): decal tiles deflated by the browser 16 at a time, save format 7; Predator crowd 2.5 save 3.7 -> 0.6 s, load 2.3 -> 2.0 s, as fast as a fresh start.",
       "next": "The save: Decal.packSnapshot encodes its PNG tiles one after another (2.56 s in R-1528); issue every convertToBlob before awaiting any, and time it with tests/bench/saveLoadTimer.mjs at crowd 1 and 2.5."
     },
     {
@@ -24482,7 +24518,10 @@
     {
       "records": [
         "R-1573",
-        "R-1623"
+        "R-1623",
+        "R-1687",
+        "R-1688",
+        "R-1696"
       ],
       "refs": [],
       "id": "E-531",
@@ -24518,7 +24557,8 @@
     },
     {
       "records": [
-        "R-1661"
+        "R-1661",
+        "R-1679"
       ],
       "refs": [],
       "id": "E-533",
@@ -24533,7 +24573,8 @@
     },
     {
       "records": [
-        "R-1662"
+        "R-1662",
+        "R-1679"
       ],
       "refs": [],
       "id": "E-534",
@@ -24662,15 +24703,17 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-1683"
+      ],
       "refs": [],
       "id": "N-327",
       "title": "A pinned class on a player's load: the worker it is handed to writes its saved row after logic0's id remap, so the remapped ids and the geometry on those entities are overwritten with the saved ones",
-      "status": "open",
+      "status": "kept",
       "kind": "bug",
       "area": "save",
       "date": "2026-11-21",
-      "statusText": "found 2026-11-21 by E-539's agent while moving saves to columns (R-1670): the behaviour predates the columns; a spawn handed to another logic worker carries its row (rowRestore) and applies it there, after logic0 remapped the ids of everything it placed",
+      "statusText": "Fixed 2026-11-21 (R-1683): logic0's load waits on a barrier for the workers it handed pinned spawns to, then remaps; savePinnedRemap.test.js shows the ids come back mapped.",
       "next": "A test first: a player's load (not exact indices) of a scene with a forceProcessOnLogicWorker class holding entity-id fields and a parent; then remap those rows on the receiving worker too (the old -> new table travels with the hand-off), or remap after every worker acked its spawns."
     },
     {
@@ -24755,6 +24798,62 @@
         "physicsChainWait",
         "physics bell test"
       ]
+    },
+    {
+      "records": [
+        "R-1679"
+      ],
+      "refs": [],
+      "id": "N-328",
+      "title": "The object way's spawn costs a little more since the ECS campaign: spawnStormScene ?storm=6000 logic +2.7 % on every pair (6.27 -> 6.39 ms), with E-534's kernel at 2.73 -> 2.51 M spawns/s",
+      "status": "open",
+      "kind": "speed",
+      "area": "logic",
+      "date": "2026-11-21",
+      "statusText": "Found 2026-11-21 measuring the object way across the ECS campaign (R-1679): under the 3 % bar but 4/4, with BODY_COUNT -5.2 % on B (the load did not match). The per-frame object way got 16.6 % faster in the same sitting set.",
+      "next": "A CPU profile pair of spawnStormScene ?storm=6000, c01c6d51 against main: where the instance spawn's time moved (the TypePlan, the static core's bits read per key, onSpawned's lookup, the lazy instance tables); spawnPathMicrobench's object form with more runs."
+    },
+    {
+      "records": [
+        "R-1681"
+      ],
+      "refs": [],
+      "id": "E-544",
+      "title": "The sun's shadow map has no static cache: every frame redraws every caster into it, also the scenery that never moves (the lamps' map keeps still volumes since E-508)",
+      "status": "open",
+      "kind": "gpu",
+      "area": "render",
+      "date": "2026-11-21",
+      "statusText": "Filed 2026-11-21 closing DX-LIGHT3D (R-1681), from DX-SHADOW3D's list. Low: the sun's map is in screen space, so a cache of still casters holds only while the camera is still (the 2026-11-21 E-531 study ranked it last).",
+      "next": "Count the frames a game holds its camera still (Predator, the barrio); if they matter, a still-casters layer redrawn when the view or the static scenery changes and the movers drawn over it, as E-504 does for the colour pass."
+    },
+    {
+      "records": [
+        "R-1690",
+        "R-1800"
+      ],
+      "refs": [],
+      "id": "N-329",
+      "title": "A restored Predator moves fewer bodies than a fresh one at the same game time: half as many awake (5 996 against 12 229) and a fifth fewer moved at crowd 2.5, physics 2.9 against 6.7 ms of work",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "save",
+      "date": "2026-11-21",
+      "statusText": "Fixed 2026-11-21 (R-1800): guns stayed cold after a load because Predator stamped shots with performance.now(); the save keeps Time.simNowMs now (format 8) and Person's cooldown reads it. Left: a restored world is 4-8 % fewer awake bodies and 6-14 % cheaper physics per awake body than the fresh battle it came from (likely Box2D's rebuilt layout, not measured)."
+    },
+    {
+      "records": [
+        "R-1694"
+      ],
+      "refs": [],
+      "id": "N-330",
+      "title": "Shadows still pop at the per-entity cut (each entity's 3 nearest lights) and the per-light caster cut: an entity crossing either gains or loses a shadow at once",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-21",
+      "statusText": "Filed 2026-11-21 from N-212 (R-1694): the maxShadowCastingLights cut fades since R-1151; these two cuts do not.",
+      "next": "A fade in shadowStamp.c's per-entity and per-light cuts as the light cut has (the last share of the cut distance), both builds of the kernel; a film of Predator at night where walkers cross between lamps, before and after."
     }
   ],
   "records": [
@@ -40875,6 +40974,195 @@
       "commits": [
         "6645b189"
       ]
+    },
+    {
+      "id": "R-1679",
+      "date": "2026-11-21",
+      "time": "20:08",
+      "timeFrom": "recorded",
+      "title": "The object way across the ECS campaign: per-frame instance ticks -16.6 % (painterMove), instance spawns +2.7 % on every pair (spawnStorm 6000, N-328), carScene under the floor",
+      "verdict": "note",
+      "text": "**The object way across the whole ECS campaign, in scenes (the owner's question, 2026-11-21: did games written with GameObject instances get slower?).** ABAB, 4 pairs each, `--full-rev`, A = c01c6d51 (the register commit before E-532), B = main 0b260fd7 (E-532 to E-543 and the day's other merges), owner logic. The three scenes are unchanged between the two revisions and still use instances.\n\n- **painterMoveStressScene** (PainterMoveReinsertScene: 300 000 entities, an instance `tick()` writing `this.y` every frame), 19:55–19:58: KEPT (product) for B. Logic 6.446 -> 5.371 ms (-16.6 %, worse 0/4, cv 3/4 %); pre-render +0.9 %, presented 60 = 60. The object way's per-frame path is faster than before the campaign.\n- **spawnStormScene ?storm=6000** (6000 spawns and despawns of instances a tick), 20:05–20:08: FAIL (load). Logic 6.271 -> 6.390 ms (+2.7 %, worse 4/4, cv 2/2 %), BODY_COUNT 1583 -> 1502 (-5.2 %). Under the 3 % bar, but on every pair: the object way's spawn is a little dearer, as E-534's kernel read (2.73 -> 2.51 M spawns/s, called inside its spread). Filed as N-328. At the default storm (1800), 19:58–20:01: logic 2.12 -> 2.24 ms, under the floor.\n- **carScene** (the demo's walkers), 20:01–20:04: every worker under the floor (logic 0.308 -> 0.310 ms); FAIL (load) on a key at that size.\n\nTests: every index static has a twin test against its instance form (columns compared), suites green (Node 3429, demos 143, bundle 8/8 and 358)."
+    },
+    {
+      "id": "R-1680",
+      "date": "2026-11-21",
+      "time": "20:16",
+      "timeFrom": "recorded",
+      "title": "Decal tiles deflated in a save: Predator's save 3.7 -> 0.6 s at crowd 2.5 and 2.7 -> 0.3 s at crowd 1, the load -11 %, the tiles exact",
+      "verdict": "kept",
+      "text": "**N-314 closed: a save's decal tiles are deflated by the browser, not PNG-encoded through a canvas (7d145d74, merged 47faa049).** packSnapshot deflates each tile with content (CompressionStream 'deflate-raw', the tile copied off the shared buffer when its turn comes, 16 in flight); applySnapshot inflates them the same way; save format 7. The first try (PNG 16 at a time) read the pack 25 % slower in its kernel and the apply 13 % faster; decalCodecProbe (ec1219d8) then showed the browser's deflate ahead on every count: 77 tiles of 256 px, encode 140-150 ms at once (PNG 235-507 one by one), decode 34-38 ms (PNG 158-230), 114 KB (PNG 244), every tile exact (PNG none: the canvas premultiplies).\n\n- Predator in the page (saveLoadTimer, 3 rounds a side, main 0b260fd7 against the branch, 20:13–20:16): crowd 1 save 2.63-2.68 s -> 0.27-0.31 s (-89 %), load 1.92-1.96 -> 1.72-1.77 s (-11 %), 2.50 -> 1.91 MB; crowd 2.5 save 3.68-3.70 -> 0.52-0.60 s (-85 %), load 2.19-2.40 -> 1.98-2.07 s (-12 %), 5.86 -> 4.82 MB. With E-539's load (R-1674), saving and loading a crowd scene now costs about what starting it does.\n- Chrome parity check (decalSnapshotParity): 77 of 77 tiles back exactly, empty tiles empty, dirty marks set.\n- Node 3429/3429, demos 143/143."
+    },
+    {
+      "id": "R-1681",
+      "date": "2026-11-21",
+      "time": "20:30",
+      "timeFrom": "recorded",
+      "title": "DX-LIGHT3D closed: DX-DIRSPRITE, DX-SHADOW3D, DX-DEPTH, DX-SELFSHADOW, DX-EMISSIVE and DX-CASTER kept, each leftover on its own row (E-544 filed)",
+      "verdict": "kept",
+      "text": "**DX-LIGHT3D closed (the owner, 2026-11-21: \"quiero que cierres dx-light3d, que tiene cosas abiertas\").** Its six rows had read \"running\" since the merge (R-1160, 2026-11-15) with lists written before it. A read-only audit of each list against main (c1f13b64) found nearly every item done, and each one left already has its own row:\n\n- DX-DIRSPRITE: gates neutral (R-1058, R-1120, R-1162); left: the people's frames in pre-render (E-371, E-395). The owner's ABAB of directionalSpriteStressScene is dropped: the scene's own 4-pair sitting (R-1162) read neutral.\n- DX-SHADOW3D: volumes on WebGPU, opacity, footprint solids, keyed frames, lampShadowStressScene, Predator at night; left: the static casters (E-460, E-517), the sun's map cache (E-544, filed now), keyed rows with kinds (E-395), N-192.\n- DX-DEPTH: WebGPU, opaque-only writes, zIndex bands, depthSortCheck; left: E-378, N-189.\n- DX-SELFSHADOW: the entity id, 1/2/4 rays; left: the owner's look at the car and the bed (asked again), N-185.\n- DX-EMISSIVE: v2, per entity, the stress scene (since renamed unshaded); left: N-187, N-229.\n- DX-CASTER: the whole API, every scene migrated, CAST_KIND; left: E-395.\n\nThe campaign's open follow-ups, all their own rows: E-371, E-373, E-378, E-386, E-395, E-460, E-517, E-544, N-185, N-187, N-189, N-192, N-212, N-229, and the light3d GPU studies (E-400 to E-417, E-463 to E-467)."
+    },
+    {
+      "id": "R-1682",
+      "date": "2026-11-21",
+      "time": "20:35",
+      "timeFrom": "recorded",
+      "title": "Predator's sittings start from a save: an A/A's worker spread 3.6-7.0 % fresh -> 1.6 % from one save, the load matched (NEUTRAL)",
+      "verdict": "kept",
+      "text": "**E-210 kept: Predator's ABAB sittings start from a save by default.** `runPredatorAbab` takes `--restore auto` for Predator unless `--fresh` or `--restore <file>`: one save per scene, shared query and save format (tests/results/restore/predator-<key>.weedsave), made once by sceneSaveMaker 20 s into the scene (about 40 s) and reused by every later sitting with the same key; sides that read different save formats play fresh battles with a warning; `--restore-new` remakes it (c1f13b64). DECAL_TILES_DIRTY, the battle's own count of blood and hit stamps, is gated at a 25 % band (67dfbf99); HOW_WE_MEASURE rule 5 says both (a9fa1344).\n\nA/As of main 0a0570a8 against itself, Predator `crowd=2.5&logicWorkers=1&mix=1&dayCycle=0`, 4 pairs, owner logic:\n- fresh (20:19–20:22, an audit agent reading files during its first 1.5 min): logic +7.0 % (3/4), spatial +4.5 % (4/4), physics +6.7 %, renderer +0.5 %, pre-render +1.0 %; DECAL_TILES_DIRTY -24.1 % cv 81 %: FAIL (load).\n- fresh again, the machine quiet (20:31–20:35): logic -3.6 %, spatial -3.4 %, physics -2.4 % (0/4 worse), renderer -2.5 %, pre-render -2.4 %: the battle's drift on identical code; DECAL_TILES_DIRTY +25.1 % cv 82 %: FAIL (load).\n- from one save (20:22–20:26, the save made first): logic -1.5 %, spatial +0.6 %, physics +0.7 %, renderer -1.6 %, pre-render -1.6 %; BODY_COUNT -0.0 %, ACTIVE_PARTICLES -3.9 %, DECAL_TILES_DIRTY -11.1 % cv 19/8 %: NEUTRAL with the key's own band.\nSo a worker's A/A spread falls from 3.6-7.0 % to 1.6 %: a 3 % change can be called in 4 pairs, which fresh battles could not do.\n\nThe restored battle is a later phase of the fight, lighter than a fresh one's first seconds: logic 29.5 against 40.8-44.7 ms, physics 19.0 against 22.8-25.1, ACTIVE_PARTICLES 1 961 against 7 240-7 540 (fewer civilians left at 30-40 s); it still fights (28 flash lights at noon, 60-68 decal tiles stamped a frame). Every judged worker stays above the 6 ms floor at this query (renderer 6.1-6.3 ms, the closest). A change to the scene's start or to spawning runs `--fresh`. N-232 (leave-one-out sittings of two builds playing two battles) is answered by the default."
+    },
+    {
+      "id": "R-1683",
+      "date": "2026-11-21",
+      "time": "20:37",
+      "timeFrom": "recorded",
+      "title": "A player's load remaps a pinned class's ids after its worker wrote their rows: a barrier between the load's two halves",
+      "verdict": "kept",
+      "text": "**N-327 fixed (14f0f43b, merged ff3b77d0): a player's load remaps a pinned class's entities after the worker they went to has written their rows.** logic0's load runs in two halves, _restoreSpawn and _restoreFinish, with a barrier between them for every logic worker that took pinned spawns: sent on the same port after the spawns and answered once that worker has read them (a port is read in order), so chains, fixtures, meshes, tweens, the id remaps and the parents' links run after the saved rows are written, not before. The world is paused during a load; an unanswered barrier ends after 10 s with an error.\n\n- The test first (savePinnedRemap.test.js): a pinned class with entity-id fields (a Target, a pinned pair, none), saved, loaded at new indices, logic1 played by the test. Before the fix: Pinned 28 -> 31 kept its saved target 4 (expected 23). After: every id remapped, none stays none.\n- saveColumnsRoundTrip's hand-off test answers the barrier now.\n- Node 3430/3430, demos 143/143. No sitting: the load path only, not a frame's."
+    },
+    {
+      "id": "R-1684",
+      "date": "2026-11-21",
+      "time": "20:44",
+      "timeFrom": "recorded",
+      "title": "N-272 v3 merged: the face map a texel inside its edges; captures change only pixels by the edges (149 px WebGL, 132 WebGPU); barrio films for N-291",
+      "verdict": "kept",
+      "text": "**N-272 v3 merged (d74a5d7e cherry-picked as 5d8b2840, merged on main 2026-11-21): the face map is drawn a texel inside its edges, so WebGL's clamp-to-edge reads past the screen land on the empty ring.** The march is main's (v1 and v2's per-step test cost the HD 620 about 4.5 %, R-1337); the light pass reads a pixel's own face and id a texel inside.\n\n- Captures, main against v3, selfShadowStressScene `hour=12&still=1` (nothing moves), captureDiffWhere (a8929be5): WebGL 149 of 921 600 px differ, 100 in the 1-px border, 5 within 4 px, 28 within 16 px, 16 inside; WebGPU 132 (100, 0, 16, 16 inside). The change touches only what lies by the screen's edges, on both backends.\n- The barrio (Buenos Aires, noon, people and cars off) differs about equally on both backends (3 307 and 3 565 px, mostly inside: trees and water move), so a still capture there cannot tell the fix; films of the barrio panning (pan=60, panY=60), main beside v3, WebGL and WebGPU, are at D:/tmp/films/n272-barrio-*.mp4 for the owner's eye (N-291).\n- No GPU sitting: the march and its steps are main's; the ring adds one texel of border to the face map.\n- Node 3433/3433 (selfShadowRing.test.js), demos 143/143."
+    },
+    {
+      "id": "R-1685",
+      "date": "2026-11-21",
+      "time": "20:46",
+      "timeFrom": "recorded",
+      "title": "N-258 closed: fixed 2026-11-17 in 3cd826a5 (normals mirror and turn with their sprite, both backends), its row left open",
+      "verdict": "kept",
+      "text": "**N-258 was fixed on 2026-11-17 and its row left open: closed now.** 3cd826a5 (\"Maps: normals mirror and turn with their sprite\", merged with dx/barrios-render 0e157f7f and dx/barrios 700d9650): the G-buffer pass turns a frame's normal with its sprite's rotation and mirrors it with a negative scale, in GLSL (faceMap.frag.glsl turnNormal) and WGSL (faceMap.js faceFunctionsWgsl), the Sobel's too; faceMap.test.js holds the mirrored car and the rotated sprite (turnNormal in JS against the shader's terms). Found while working the 2026-11-21 plan's bug list."
+    },
+    {
+      "id": "R-1686",
+      "date": "2026-11-21",
+      "time": "20:50",
+      "timeFrom": "recorded",
+      "title": "N-227 closed: fixed 2026-11-18 by OL-5 (13c69176, R-1356: volumes cast lamp shadows with no stamp row), its row left open",
+      "verdict": "kept",
+      "text": "**N-227 was fixed on 2026-11-18 by OL-5 and its row left open: closed now.** 13c69176 (R-1356, merged with dx/one-light 85ca7900): with lampShadows 'map', pre-render names the casting lamps without a stamp row (_writeStampLightIds, _lampMapCasts) and Pixi gives them tiles for a stamp row or a casting volume and draws the volumes alone when no stamp row ran (_drawLampMapVolumes). R-1356 checked it: visPolyStressScene ?arm=maps before against after 139 473 px (no lamp shadow before), WebGL against WebGPU 0 px. Not measured again (on record)."
+    },
+    {
+      "id": "R-1687",
+      "date": "2026-11-21",
+      "time": "20:58",
+      "timeFrom": "recorded",
+      "title": "E-390's uploads found: the caster rows sent whole (about 1.14 MB a frame) since Predator's casters ask for a kind (E-395); by day the map arm's extra is the sun's map and the face map passes",
+      "verdict": "note",
+      "text": "**E-390's big uploads identified, and where E-531 stands by day with Predator's lamps off (2026-11-21, main bac85aa1, glFrameRecorder --gpu-passes, GTX 1650, Predator `dayCycle=0` against `dayCycle=0&sunShadows=map&lampShadows=map`, 3 s windows).**\n\n- Uploads: the map arm sends 1 413.7 KB of buffers a frame against the classic's 517.9: two 570.9 KB-a-frame buffers taking turns (buffer#12 and #22, a call every other frame each, about 1.14 MB a call), the caster batch's instance rows (13 287 instances; the sun's map draws with that batch's geometry, _drawSunMap). They go whole every frame because Predator's casters ask for a kind, which turns the keyed caster path off for the whole scene (_casterKindsOn): E-395 is the lever (keyed caster rows that carry their kind).\n- GPU by pass, the map arm: the sun's map 576x366 0.426 ms (13 287 instances), the face map 478x268 0.423 ms (13 467 instances, prog with uMaps), the 3072x178 strip 0.555, the light pass 0.156; the lamps' map is gone by day (the lamps are off). The classic: the shadows' layer 480x270 0.481, the strip 0.341, the light pass 0.063. The GPU was 27-29 % busy at mid clocks (P3/P5 675 MHz against P0/P5 900 MHz): the shape, not a ruler.\n- So at Predator's light resolution the light pass is cheap (0.16 ms) and E-408 to E-410 (its shader) would move Predator little; the extra is the two passes that draw every sprite again (the sun's map and the face map) and the caster rows sent whole."
+    },
+    {
+      "id": "R-1688",
+      "date": "2026-11-21",
+      "time": "21:07",
+      "timeFrom": "recorded",
+      "title": "Map mode packs whole caster rows because Pixi turns its keyed caster programs off while a shadow map is on, not because of kinds (workerProbe: keyed live false, kinds false)",
+      "verdict": "note",
+      "text": "**Why Predator's caster rows go whole in map mode: not the kinds, the maps (2026-11-21, workerProbe of the running pre-render, Predator `dayCycle=0&sunShadows=map&lampShadows=map`).** Pre-render read: _casterKindsOn false, _shadowFramesOn false, keyed casters allowed, keyed frames on (key base 62 633), but _keyedCastersLive() false every sample: Pixi never marks its keyed statics LIVE in this mode. Pixi's _ensureKeyedCasters returns before it makes the keyed caster programs whenever the sun's map, the lamps' map or the renders' solids are on (\"their columns need a frame's instance whole\"), so entitiesBatch.keyedCasters stays false and pre-render packs the full 22-float rows (about 1.14 MB a frame at 13 287 casters, R-1687).\n\nSo E-395's premise (a caster with a kind turns the keyed path off) is true but not Predator's case; the lever for map mode is keyed rows the map programs can draw: the sun's map's cards and columns and the lamps' map reading the statics by key from the entity batch's texture (with the sun frame in the row's fourth float, as the keyed sun rows already carry it), GLSL and WGSL, the stamp rows too; the captures identical, then the same glFrameRecorder pair (buffers a frame) and Predator's pre-render pack time. A larger job than E-395 as written: about a working day with both backends."
+    },
+    {
+      "id": "R-1689",
+      "date": "2026-11-21",
+      "time": "21:20",
+      "timeFrom": "recorded",
+      "title": "Box2D's spinning workers poll one pending count: Predator's battle physics -7.1 % and every worker lower, LiquidFun couple -3.6 %, stress neutral",
+      "verdict": "kept",
+      "text": "**E-493 kept: Box2D's spinning workers poll one pending-task count, not every task's status.** Box2D ef43206 (merged 3625743): b2Scheduler counts its enqueued, unclaimed tasks in a padded word (counted before a task is published, uncounted on its claim); b2SchedulerHasPending reads it, b2SchedulerExecuteOne returns at once while it is 0. SIMD and no-SIMD built, the SSE2 check passed. WeedJS f201efc7, merged 3ddc6d58 (the .wasm only).\n\n- Predator crowd 2.5, one logic worker, the mixed battle, from one save (E-210), 4 pairs, ended 21:20: KEPT. Physics 19.54 -> 18.69 ms (-7.1 %, lower 3/4, cv 6/4 %), logic -8.8 %, spatial -4.5 %, renderer -3.7 %, pre-render -2.8 %; BODY_COUNT -0.0 %. Every worker lower: the spinning threads no longer sweep the task slots' cache lines (the session's from-save A/A read every worker within 1.6 %, R-1682).\n- liquidFunBodyCoupleStressScene, 4 pairs (21:10–21:14): KEPT, physics 6.34 -> 6.07 ms (-3.6 %).\n- liquidFunStressScene ?water=1.5, 2 pairs --early (21:09–21:10): NEUTRAL, physics 6.71 -> 6.67 ms (-0.5 %).\n- Predator crowd 2.5 without the battle, from its save (21:05–21:09): every worker under the floor (physics 3.2 ms): the restored world is lighter than the fresh one (N-329).\n- Node 3433/3433, demos 143/143."
+    },
+    {
+      "id": "R-1690",
+      "date": "2026-11-21",
+      "time": "21:17",
+      "timeFrom": "recorded",
+      "title": "A restored Predator is lighter than a fresh one at the same time: Awake 12 229 -> 5 996, Moved 3 824 -> 3 050, physics 6.7 -> 2.9 ms (crowd 2.5)",
+      "verdict": "note",
+      "text": "**A restored Predator is lighter than a fresh one at the same game time (found 2026-11-21 gating E-493).** Predator `crowd=2.5&dayCycle=0` (two logic workers), single runs, 6 s windows: fresh at 10-16 s physics 7.9 ms, Moved 6 968, Awake 15 989; fresh at 30-36 s physics 6.7 ms of work, Moved 3 824, Awake 12 229, spatial 7.1, logic 4.1; restored from a save taken at 20 s and measured at 30-36 s: physics 2.9 ms of work (5.85 step, 2.95 wait), Moved 3 050, Awake 5 996, spatial 5.2, logic 2.6. Half the bodies awake and a fifth fewer moving: the save brings the bodies back asleep or some walkers stand after a load. The mixed battle restored still fights (physics 19 ms, R-1682)."
+    },
+    {
+      "id": "R-1691",
+      "date": "2026-11-21",
+      "time": "21:27",
+      "timeFrom": "recorded",
+      "title": "Box2D keeps 4 threads: 3 make Predator's battle physics +18.7 % (4/4) while the freed core makes the others 3-12 % cheaper",
+      "verdict": "answered",
+      "text": "**E-319 answered: Box2D keeps 4 threads in Predator.** The same build (main cdd5d071, E-493 in), `--query-a physicsWorkers=4 --query-b physicsWorkers=3`, Predator crowd 2.5, one logic worker, the mixed battle, from one save, 4 pairs, ended 21:27: physics 18.47 -> 22.31 ms (+18.7 %, worse 4/4) with 3 threads, while the core it frees makes the others cheaper (logic -11.6 %, spatial -4.0 %, renderer -4.0 %, pre-render -2.8 %, 0-1/4 worse); ACTIVE_PARTICLES +6.0 % (FAIL (load) on it alone). Physics is the CPU's critical path (the strategy, physics first), so 4 stay. The spin's half of the 2x2 is moot: E-493 (R-1689) took its scan away."
+    },
+    {
+      "id": "R-1692",
+      "date": "2026-11-21",
+      "time": "21:27",
+      "timeFrom": "recorded",
+      "title": "Chrome's GPU process traced with and without decoder tracing: glObjectLabelKHR is the tracing's own (E-415), fences 1.9 ms/s (E-416), the time goes with commands, draws and uploads (E-412)",
+      "verdict": "note",
+      "text": "**Chrome's GPU process on Predator light3d by day, traced again (2026-11-21, main e1ebf567, gpuProcessTrace, `light3d=1&hour=12&zoom=0.3`, 3 s after 12 s, GTX 1650), without and with --enable-gpu-service-tracing.**\n\n- CrGpuMain: 252.4 ms/s in slices untraced, 273.6 traced; CommandBufferService:PutChanged 185.2 ms/s total untraced, 226.6 traced. The decoder's tracing costs about 21 ms/s of the thread and 41 of PutChanged.\n- E-415 answered: glObjectLabelKHR (16.3 ms/s, 10 892 a second) shows only in the traced run, inside that 41 ms/s: Chrome labels resources for its own tracing; the page creates none a frame (glFrameRecorder). Not a cost of the game.\n- E-412's breakdown (traced): PutChanged's own 87.2 ms/s (decoding and validating commands, by count), glDrawElementsInstancedANGLE 33.9 (718 a second, 12 a frame), glFlush 16.3 (one a frame), glBufferSubData 13.7 (599 a second), glTexSubImage2D 12.1 (559 a second), glDrawElements 11.6 (19 a frame), glBindTexture 6.1 + glActiveTexture 3.8 (95 and 61 a frame), glGetGraphicsResetStatusARB 2.7, uniforms about 4, glClientWaitSync 1.9 (387 a second). So the GPU process's time goes with commands, draws and uploads: fewer uploads (E-395's caster rows, 1.14 MB a frame in map mode; E-392's pose texture) and fewer draws move it; texture binds (E-417) are about 4 % of the thread.\n- E-416 answered: the fence waits are 1.9 ms/s (0.03 ms a frame): not worth a change."
+    },
+    {
+      "id": "R-1693",
+      "date": "2026-11-21",
+      "time": "21:31",
+      "timeFrom": "recorded",
+      "title": "N-291 closed: the owner saw the barrio films and the edges hold (N-272 v3)",
+      "verdict": "kept",
+      "text": "**N-291 closed with N-272 (the owner, 2026-11-21: \"N-291 está ok ... en los mp4 se ve todo bien\").** The barrio films (pan=60, panY=60, noon; main beside N-272 v3, WebGL and WebGPU, R-1684) showed the owner no shading that drifts near the right or the bottom edge as the camera moves: the self-shadow march reads the face map's empty ring past the screen since v3."
+    },
+    {
+      "id": "R-1694",
+      "date": "2026-11-21",
+      "time": "21:34",
+      "timeFrom": "recorded",
+      "title": "N-212 closed for the cause found (the cut's fade, R-1151; the budget, R-1159), not confirmed in the owner's scene, which he does not remember; the per-entity and per-light cuts' pops filed as N-330",
+      "verdict": "kept",
+      "text": "**N-212 closed for the cause found; what is left filed as N-330.** The owner does not remember the scene of his 2026-11-15 report (asked again 2026-11-21), so it was not confirmed there. The mechanism Predator showed was fixed that week: the lights near maxShadowCastingLights' cut fade their shadows over the last 20 % of the cut distance instead of popping (e47c5442, R-1151; stamps, cookies and the lamps' map), and the adaptive budget no longer cuts the lamps' map (3a160eac, R-1159). Left, smaller: the per-entity cut (each entity's 3 nearest lights) and the per-light caster cut still pop a shadow in or out (N-330)."
+    },
+    {
+      "id": "R-1695",
+      "date": "2026-11-21",
+      "time": "21:43",
+      "timeFrom": "recorded",
+      "title": "The owner confirms N-212 fixed and approves the self-shadow's car and bed (light bench captures, no checkerboard)",
+      "verdict": "kept",
+      "text": "**The owner confirmed two items on 2026-11-21.**\n- N-212: \"sí, N-212 está arreglado\" (the flickering shadows: the light cut's fade, R-1151, and the budget, R-1159; closed in R-1694 before his word, now confirmed). N-330 (the per-entity and per-light cuts) stays open.\n- DX-SELFSHADOW's last item: \"la cama y el auto se ven bien\", after the light bench's captures by the 16 h sun with self-shadow on (D:/tmp/films/carbed/a.png, the bed; D:/tmp/films/car/a.png, the hatchback): no checkerboard. Approved."
+    },
+    {
+      "id": "R-1696",
+      "date": "2026-11-21",
+      "time": "22:05",
+      "timeFrom": "recorded",
+      "title": "Shadow maps draw keyed caster rows on WebGL: Predator map mode pre-render -35.7 %, renderer -21.3 %, uploads -42 %, captures identical",
+      "verdict": "kept",
+      "text": "**E-395 kept on WebGL: the shadow maps draw pre-render's keyed caster rows (7 floats a caster, 11 a stamp, the statics by key) instead of the full 22-float rows (aecbd2e2, merged 10cafeda).** Pixi's keyed caster programs no longer turn off under the sun's map or the lamps' map (only while a render casts columns, and on WebGPU's maps); the maps' programs compose over spriteIndexedVertex's keyed rows; a keyed row's tint float holds its entity (its key), written after the keyed prologue (a first build read it before: every keyed caster was entity 0's id and shaded its own sprite, 5 282 px in the capture below, fixed before the commit).\n\n- Captures, dxCaptureScene ?maps=1&hour=16.5 with the keyed path live (workerProbe): keyed against full rows (?fullRows=1, a11472ed) 0 of 921 600 px; against main 0 px; WebGPU against main 0 px (full rows both). The lamps' map has no still capture yet (Predator at night: keyed with 62 stamp lights, a film beside main alike).\n- glFrameRecorder, Predator dayCycle=0&sunShadows=map&lampShadows=map: buffers 1 413.7 -> 637.8 KB a frame (-55 %), textures 287 -> 355, uploads 1 701 -> 993 KB (-42 %).\n- Gate, Predator crowd=2.5&dayCycle=0&sunShadows=map&lampShadows=map from one save, 4 pairs, base ffab2257, ended 22:05: KEPT, pre-render 11.01 -> 7.12 ms (-35.7 %, 4/4), renderer 8.16 -> 6.27 ms (-21.3 %, 4/4), physics -10.7 %, spatial -7.7 %, logic -1.9 %; drawn 58.6 -> 59.8 fps; BODY_COUNT -0.0 %.\n- Node 3433/3433, demos 143/143.\nLeft: WebGPU's keyed maps (the WGSL transforms already accept a keyed source), the columns over keyed rows, a still capture of the lamps' map, and the casters with a kind (the row carries no code)."
+    },
+    {
+      "id": "R-1697",
+      "date": "2026-11-21",
+      "time": "22:23",
+      "timeFrom": "recorded",
+      "title": "Keyed caster rows in the shadow maps on WebGPU too: pre-render -38.5 %, renderer -23.9 %; the lamps' map captured identical on both backends",
+      "verdict": "kept",
+      "text": "**E-395 on WebGPU too, and the lamps' map captured (merged on main 2026-11-21).** sunShadowGpuProgram takes the statics (group 2, binding 4); the keyed sun-map and lamps'-map meshes on both backends; keyed caster programs stay on under a shadow map on both (off only while a render casts columns).\n\n- Captures, dxCaptureScene with the keyed path live: the sun's map (?maps=1&hour=16.5) on WebGPU, keyed against full rows 0 px, against main 0 px; the lamps' map (?maps=1&hour=22&night=1&lampElevation=70, 8 stamp lights; the knob 9a9c28d2) keyed against full rows and against main 0 px on WebGL and WebGPU; the raise changes 622 932 px, so the lamps' shadows are in the picture.\n- Gate, Predator crowd=2.5&dayCycle=0&sunShadows=map&lampShadows=map&backend=webgpu from one save, 4 pairs, ended 22:23: KEPT, pre-render 11.52 -> 6.92 ms (-38.5 %, 4/4), renderer 10.76 -> 7.90 ms (-23.9 %, 4/4), spatial -13.7 %, physics -10.6 %, logic -3.8 %; drawn 59.0 -> 59.8 fps.\n- Node 3433/3433, demos 143/143.\nLeft: the columns over keyed rows (scenes with height maps keep the full rows), and a kind carried in the keyed row."
+    },
+    {
+      "id": "R-1698",
+      "date": "2026-11-21",
+      "time": "22:55",
+      "timeFrom": "recorded",
+      "title": "Columns over keyed caster rows: Predator light3d pre-render -30.5 %, renderer -15.9 %, drawn 54.4 -> 59.9 fps (8 pairs)",
+      "verdict": "kept",
+      "text": "**E-395's columns: the renders' columns draw over keyed caster rows, so scenes with height maps keep the keyed rows (merged on main 2026-11-21).** The entity batch keeps a CPU copy of each keyed slot's texture and scale (enableStaticsMirror, a few frames of every slot's statics first); compactKeyedColumnRows picks the keyed rows that cast columns with it; the sun's and the lamps' columns draw them through columns programs composed over the keyed rows, both backends.\n\n- Predator light3d=1&dayCycle=0 now packs keyed rows (workerProbe); a film beside main shows the people's columns alike. No still scene with keyed frames and height maps exists for an exact capture (the light bench's casters ask for kinds; the barrio's cast frames of their own and draws no keyed frames).\n- Gate, Predator crowd=2.5&dayCycle=0&light3d=1 from one save, 8 pairs, ended 22:55: pre-render 12.92 -> 8.98 ms (-30.5 %, 8/8), renderer 9.86 -> 8.32 ms (-15.9 %, 8/8), logic +0.4 % (4/8: the first 4 pairs' +7.4 % was noise), spatial -2.4 %, physics -3.2 %; drawn 54.4 -> 59.9 fps. FAIL (load) on GPU_CASTERS alone: the keyed side draws 5.2 % more casters, the same every run (cv 0 %), main's full rows varied (cv 5 %).\n- Node 3433/3433, demos 143/143.\nLeft: a still capture of keyed columns, the barrio's own-frame casters (N-188's frames ride full rows) and keyed frames there, kinds in the keyed row."
+    },
+    {
+      "id": "R-1800",
+      "date": "2026-11-21",
+      "time": "23:34",
+      "timeFrom": "recorded",
+      "title": "N-329 fixed: a loaded game's guns stayed on cooldown (performance.now() stamps); the save keeps the sim clock (format 8) and Predator times guns on it; restored battle now tracks the fresh one (impacts 370 -> 7 500/s)",
+      "verdict": "kept-hygiene",
+      "text": "**N-329 found: after a load every gun stayed on cooldown.** Person stamped `PersonComponent.lastShotTime` with the logic worker's `performance.now()`; the save kept the stamps and a new page's `performance.now()` starts near 0, so `canFire` stayed false until the new clock passed the old stamps (tens of seconds). No bullets, no new deaths, no new panic: the restored world calmed down. Found with `tests/bench/restoreFidelity.mjs` (new: the same battle fresh, saved, and restored from that save beside it), Predator `crowd=2.5&dayCycle=0`:\n\n- saved at 12 s (mid-battle): bullet impacts published ~9 000/s fresh against ~370/s restored; live bullets 60-250 against 9-16.\n- saved at 20 s: civilians killed in the next 10 s, 29 fresh against 1 restored; soldiers in RANGED_ATTACKING were alike (10-20), so they aimed and never fired.\n- Per-entity sight, neighbours, guns and FSM state times came back right (probed by type): only the stamp was wrong.\n\n**Fix.** Engine (1bde21d5): the save keeps the sim clock and a load goes on from it (TIME section: scale f32 + `Time.simNowMs` f64; format 7 -> 8; `Time._setSimNow`). Demo (935a7ba9): Person's cooldown reads `Time.simNowMs`; the car scene's hit throttle, which shares the column, too. After it, same battles: saved at 12 s, ~7 500 impacts/s restored and civilians dying at the fresh rate (1 083 against 947 in 5 s); saved at 20 s, the restored series tracks the fresh one (deaths 27 against 28, panic 1 585 against 1 503 eight seconds on).\n\n**Load left after the fix** (same battle, the bench page's 6 s window 10 s after a 20 s save, three sittings): physics 15.0 / 15.5 / 15.6 ms fresh against 13.9 / 12.8 / 14.0 restored; Awake 18 116 / 16 887 / 18 348 against 16 675 / 16 276 / 17 525 (-4 to -8 %); Moved mixed (6 824 / 4 614 / 6 271 against 6 534 / 5 649 / 5 771); spatial -1 to -8 %, logic -4 to -8 %. Per awake body restored physics costs 6-14 % less: likely the Box2D world rebuilt in one pass against one grown over 30 s of spawns and deaths (not measured). Both sides of a from-save sitting load the same save, so the comparison stays even; the cached format 7 saves no longer match (the runner's key holds the format) and are remade."
     }
   ],
   "leads": [

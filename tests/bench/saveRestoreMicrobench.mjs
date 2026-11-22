@@ -130,7 +130,7 @@ function marksToPhases(marks) {
   return out;
 }
 
-const CAPTURE = { allEntities: true, instanceFields: true, staysPaused: true, decalsAsPng: false };
+const CAPTURE = { allEntities: true, instanceFields: true, staysPaused: true, decalsCompressed: false };
 
 /** One round: save, codec, load. Returns ms per phase, and the payloads for the object counts. */
 async function round(world) {

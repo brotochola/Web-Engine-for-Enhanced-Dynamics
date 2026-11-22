@@ -10,7 +10,7 @@ import { ColliderFixture } from '../../src/core/colliderFixture.js';
 import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometry.js';
 import { NavGrid } from '../../src/core/navGrid.js';
 import { SharedResource } from '../../src/core/sharedResource.js';
-import { Time } from '../../src/core/timeScale.js';
+import { CLOCK_BYTES, Time } from '../../src/core/timeScale.js';
 import { Tween, TWEEN_KIND_PAINT, TWEEN_KIND_ZOOM, tweenBufferBytes } from '../../src/core/tween.js';
 import {
   SAVE_FORMAT_VERSION,
@@ -32,6 +32,8 @@ import {
   applyNav,
   packTime,
   applyTime,
+  packSimNow,
+  applySimNow,
   packTweens,
   applyTweens,
   remapCameraFollow,
@@ -92,6 +94,7 @@ test('world-buffer sections round-trip, and a save without them leaves them empt
       walkability: Uint8Array.from([1, 0, 2, 1]),
     },
     timeScale: 0,
+    simNowMs: 123456.789,
     tweens: [{
       kind: 0,
       ease: 1,
@@ -112,8 +115,8 @@ test('world-buffer sections round-trip, and a save without them leaves them empt
     }],
   };
   const decoded = roundtrip(payload);
-  assert.equal(decoded.formatVersion, 6);
-  assert.equal(SAVE_FORMAT_VERSION, 6);
+  assert.equal(decoded.formatVersion, 8);
+  assert.equal(SAVE_FORMAT_VERSION, 8);
   assert.equal(decoded.sharedResources[0].name, 'Grid');
   assert.deepEqual([...decoded.sharedResources[0].bytes], [1, 2, 3, 4]);
   assert.equal(decoded.chains[0].entityIndex, 2);
@@ -128,18 +131,20 @@ test('world-buffer sections round-trip, and a save without them leaves them empt
   assert.equal(decoded.nav.cellSize, 16);
   assert.deepEqual([...decoded.nav.walkability], [1, 0, 2, 1]);
   assert.equal(decoded.timeScale, 0);
+  assert.equal(decoded.simNowMs, 123456.789);
   assert.equal(decoded.tweens[0].entity, 3);
   assert.equal(decoded.tweens[0].elapsed, 40);
   assert.equal(decoded.tweens[0].from0, 0.25);
 
   const old = roundtrip({});
-  assert.equal(old.formatVersion, 6);
+  assert.equal(old.formatVersion, 8);
   assert.equal(old.sharedResources, null);
   assert.equal(old.chains, null);
   assert.equal(old.fixtures, null);
   assert.equal(old.meshes, null);
   assert.equal(old.nav, null);
   assert.equal(old.timeScale, null);
+  assert.equal(old.simNowMs, null);
   assert.equal(old.tweens, null);
 });
 
@@ -306,6 +311,31 @@ describe('world buffer apply', { concurrency: false }, () => {
     applyTime(decoded.timeScale);
     assert.equal(Time.scale, 2);
     Time.unbind();
+  });
+
+  test('the sim clock goes on from the saved time (N-329: stamps taken from it stay in the past after a load)', () => {
+    const sab = new SharedArrayBuffer(CLOCK_BYTES);
+    new Float32Array(sab, 0, 1)[0] = 1;
+    Time.bind(sab);
+    Time._advanceSimNow(20000);
+    const saved = packSimNow();
+    assert.equal(saved, 20000);
+    // A new scene's clock starts at 0; the load sets it to the saved time, and only a scale moves it on.
+    const fresh = new SharedArrayBuffer(CLOCK_BYTES);
+    new Float32Array(fresh, 0, 1)[0] = 1;
+    Time.bind(fresh);
+    assert.equal(Time.simNowMs, 0);
+    const decoded = roundtrip({ timeScale: packTime(), simNowMs: saved });
+    applyTime(decoded.timeScale);
+    applySimNow(decoded.simNowMs);
+    assert.equal(Time.simNowMs, 20000);
+    Time._advanceSimNow(16);
+    assert.equal(Time.simNowMs, 20016);
+    // A save from no clock leaves the clock alone.
+    applySimNow(null);
+    assert.equal(Time.simNowMs, 20016);
+    Time.unbind();
+    assert.equal(packSimNow(), null);
   });
 
   test('tweens remap paint entities, keep zoom entities, and drop a missing target', () => {

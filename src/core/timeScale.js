@@ -136,7 +136,8 @@ export class Time {
    * The scene's sim clock in ms, the same in every thread: 0 when the scene starts; while it runs, it moves once a
    * main-thread frame by the frame's wall time times Time.scale, so a pause or a hitstop stops it and `Time.scale`
    * slows it. A main thread that gives no frame for SIM_CLOCK_HOLD_MS does not hold it back: past that its readers
-   * carry it on at the scale, and the next frame goes on from there. GPU particles age by it. 0 when unbound.
+   * carry it on at the scale, and the next frame goes on from there. GPU particles age by it. A load goes on from the
+   * saved game's time (N-329), so stamps a game takes from it keep their meaning after a load. 0 when unbound.
    */
   static get simNowMs() {
     this.readSimNowInto(SIM_NOW, 0);
@@ -247,6 +248,18 @@ export class Time {
     if (!this._lockSim()) return;
     this._rebaseSim(wallNowMs());
     this._simRun[0] = 0;
+    this._unlockSim();
+  }
+
+  /**
+   * Set the sim clock to `simMs` (a load: the saved game's time, N-329), from this moment on; a running clock goes on
+   * from there at its scale. No-op when the clock is unbound.
+   * @param {number} simMs
+   */
+  static _setSimNow(simMs) {
+    if (!(simMs >= 0) || !this._lockSim()) return;
+    this._simNow[0] = +simMs;
+    this._simNow[1] = wallNowMs();
     this._unlockSim();
   }
 

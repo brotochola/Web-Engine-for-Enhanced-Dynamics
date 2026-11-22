@@ -5,7 +5,7 @@ import { LootableComponent } from '/demos/predatorScene/components/lootableCompo
 import { CarComponent } from '../components/carComponent.js';
 import { ParticleEmitter, Decal, SpriteSheetRegistry, SoundManager } from '/src/index.js';
 
-const { rng, GameObject, RigidBody, Collider, CollisionListener, DirectionalSprite, NavGrid, Transform } = WEED;
+const { rng, GameObject, RigidBody, Collider, CollisionListener, DirectionalSprite, NavGrid, Transform, Time } = WEED;
 
 // Reusable object for flowfield sampling (zero allocation)
 const _navVec = { x: 0, y: 0 };
@@ -110,7 +110,8 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     const carSpeedSq = carVx * carVx + carVy * carVy;
     if (carSpeedSq < 40 * 40) return;
 
-    const now = performance.now();
+    // PersonComponent.lastShotTime is on the scene's clock (Time.simNowMs), as Predator's guns stamp it.
+    const now = Time.simNowMs;
     const i = this.index;
     if (!firstContact && now - PersonComponent.lastShotTime[i] < 200) return;
     PersonComponent.lastShotTime[i] = now;

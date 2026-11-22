@@ -286,6 +286,22 @@ export function applyTime(scale) {
   Time.scale = +scale;
 }
 
+/**
+ * N-329: the sim clock's time (Time.simNowMs), so a load goes on from it: a game that stamps it (a weapon's last shot,
+ * a cooldown's start) compares those stamps with the same clock after a load. Null when the clock is unbound.
+ * @returns {number|null}
+ */
+export function packSimNow() {
+  if (!Time._simSeq) return null;
+  return Time.simNowMs;
+}
+
+/** The sim clock set to the saved time (a save without one leaves it alone). */
+export function applySimNow(simNowMs) {
+  if (simNowMs == null || !Time._simSeq) return;
+  Time._setSimNow(+simNowMs);
+}
+
 export function packTweens() {
   if (!Tween.active) return null;
   const out = [];

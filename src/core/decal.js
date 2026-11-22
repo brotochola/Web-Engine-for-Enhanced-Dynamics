@@ -76,35 +76,46 @@ function tileHasContent(rgba, byteOffset, bytesPerTile) {
   return false;
 }
 
-function canEncodePng() {
-  return typeof OffscreenCanvas !== 'undefined' && typeof createImageBitmap !== 'undefined';
+function canDeflate() {
+  return typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
 }
 
-async function encodeTilePng(rgba, byteOffset, tilePixelSize, bytesPerTile) {
-  const canvas = new OffscreenCanvas(tilePixelSize, tilePixelSize);
-  const ctx = canvas.getContext('2d');
-  const copy = new Uint8ClampedArray(bytesPerTile);
-  copy.set(rgba.subarray(byteOffset, byteOffset + bytesPerTile));
-  const imageData = new ImageData(copy, tilePixelSize, tilePixelSize);
-  ctx.putImageData(imageData, 0, 0);
-  const blob = await canvas.convertToBlob({ type: 'image/png' });
-  return new Uint8Array(await blob.arrayBuffer());
+/** Bytes through a CompressionStream or DecompressionStream. */
+async function streamBytes(bytes, stream) {
+  return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 }
 
-async function decodeTilePng(bytes, tilePixelSize, bytesPerTile) {
-  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const bitmap = await createImageBitmap(new Blob([u8], { type: 'image/png' }));
-  const canvas = new OffscreenCanvas(tilePixelSize, tilePixelSize);
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(bitmap, 0, 0);
-  if (bitmap.close) bitmap.close();
-  const imageData = ctx.getImageData(0, 0, tilePixelSize, tilePixelSize);
-  if (imageData.data.byteLength !== bytesPerTile) {
-    throw new Error(
-      `Decal: PNG decode size mismatch (got ${imageData.data.byteLength}, expected ${bytesPerTile})`
-    );
+/**
+ * N-314: a save's decal tiles are their RGBA bytes through the browser's deflate (deflate-raw), this many at a time. PNG
+ * through a canvas took 3 to 5 ms a tile one after another (Predator's save spent 2.56 s there, R-1528), lost
+ * precision on every semi-transparent pixel (the canvas premultiplies), and kept twice the bytes; deflate gives the
+ * tile back exactly and decodes several times faster. Each tile in flight holds its copy, so the count is bounded.
+ */
+const TILE_CODEC_IN_FLIGHT = 16;
+
+/** task(k) for every k below count, at most `limit` running at once; the results by k. */
+async function runInFlight(count, limit, task) {
+  const results = new Array(count);
+  let next = 0;
+  const lane = async () => {
+    while (next < count) {
+      const k = next++;
+      results[k] = await task(k);
+    }
+  };
+  const lanes = [];
+  for (let l = 0; l < limit && l < count; l++) lanes.push(lane());
+  await Promise.all(lanes);
+  return results;
+}
+
+/** A deflated tile's RGBA bytes; throws when they are not one tile. */
+async function inflateTile(bytes, bytesPerTile) {
+  const pixels = await streamBytes(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), new DecompressionStream('deflate-raw'));
+  if (pixels.byteLength !== bytesPerTile) {
+    throw new Error(`Decal: inflated tile is ${pixels.byteLength} bytes, expected ${bytesPerTile}`);
   }
-  return imageData.data;
+  return pixels;
 }
 
 export class Decal {
@@ -392,10 +403,10 @@ export class Decal {
   }
 
   /**
-   * Pack non-empty decal tiles from scene SharedArrayBuffer.
-   * Browser: PNG bytes per tile. Node / no OffscreenCanvas, or png false (a save kept in memory): raw RGBA bytes.
+   * Pack non-empty decal tiles from scene SharedArrayBuffer: each tile's RGBA bytes deflated (N-314), or raw with
+   * compress false (a save kept in memory) or where CompressionStream is missing.
    * @param {object} scene
-   * @param {{ png?: boolean }} [options]
+   * @param {{ compress?: boolean }} [options]
    * @returns {Promise<object|null>}
    */
   static async packSnapshot(scene, options = {}) {
@@ -412,25 +423,26 @@ export class Decal {
 
     const bytesPerTile = tilePixelSize * tilePixelSize * 4;
     const rgba = new Uint8ClampedArray(sab);
-    const usePng = options.png !== false && canEncodePng();
-    const tiles = [];
+    const compress = options.compress !== false && canDeflate();
 
+    const used = [];
     for (let i = 0; i < totalTiles; i++) {
-      const byteOffset = i * bytesPerTile;
-      if (!tileHasContent(rgba, byteOffset, bytesPerTile)) continue;
-      if (usePng) {
-        const bytes = await encodeTilePng(rgba, byteOffset, tilePixelSize, bytesPerTile);
-        tiles.push({ i, fmt: 'png', bytes });
-      } else {
-        tiles.push({
-          i,
-          fmt: 'raw',
-          bytes: new Uint8Array(rgba.subarray(byteOffset, byteOffset + bytesPerTile)),
-        });
-      }
+      if (tileHasContent(rgba, i * bytesPerTile, bytesPerTile)) used.push(i);
     }
+    if (!used.length) return null;
 
-    if (!tiles.length) return null;
+    // A tile is copied off the shared buffer (which the particle worker keeps stamping) when its turn comes: a Blob
+    // takes no shared memory, and a copy of every tile at once would hold them all.
+    const copyOf = (i) => rgba.slice(i * bytesPerTile, (i + 1) * bytesPerTile);
+    let tiles;
+    if (compress) {
+      const packed = await runInFlight(used.length, TILE_CODEC_IN_FLIGHT, (k) =>
+        streamBytes(new Uint8Array(copyOf(used[k]).buffer), new CompressionStream('deflate-raw')),
+      );
+      tiles = used.map((i, k) => ({ i, fmt: 'deflate', bytes: packed[k] }));
+    } else {
+      tiles = used.map((i) => ({ i, fmt: 'raw', bytes: new Uint8Array(copyOf(i).buffer) }));
+    }
 
     return {
       tilesX,
@@ -480,31 +492,38 @@ export class Decal {
     const totalTiles = scene.decalsTotalTiles | (tilesX * tilesY);
     const rgba = new Uint8ClampedArray(sab);
     const dirty = new Uint8Array(dirtySab);
-    let restored = 0;
 
+    // The tiles to write, in the save's order; deflated ones inflated TILE_CODEC_IN_FLIGHT at a time (N-314).
+    const kept = [];
     for (const tile of blob.tiles) {
       const i = tile.i | 0;
       if (i < 0 || i >= totalTiles || !tile.bytes) continue;
-      const byteOffset = i * bytesPerTile;
-      let pixels;
-      if (tile.fmt === 'png') {
-        if (!canEncodePng()) {
-          console.warn('[Decal] PNG tile but OffscreenCanvas unavailable; skip tile', i);
+      if (tile.fmt === 'deflate') {
+        if (!canDeflate()) {
+          console.warn('[Decal] deflated tile but DecompressionStream unavailable; skip tile', i);
           continue;
         }
-        pixels = await decodeTilePng(tile.bytes, tilePixelSize, bytesPerTile);
       } else {
-        pixels = tile.bytes instanceof Uint8Array ? tile.bytes : new Uint8Array(tile.bytes);
-        if (pixels.byteLength !== bytesPerTile) {
+        const raw = tile.bytes instanceof Uint8Array ? tile.bytes : new Uint8Array(tile.bytes);
+        if (raw.byteLength !== bytesPerTile) {
           console.warn('[Decal] raw tile size mismatch; skip tile', i);
           continue;
         }
       }
-      rgba.set(pixels, byteOffset);
+      kept.push(tile);
+    }
+    const pixelsOf = await runInFlight(kept.length, TILE_CODEC_IN_FLIGHT, (k) => {
+      const tile = kept[k];
+      if (tile.fmt === 'deflate') return inflateTile(tile.bytes, bytesPerTile);
+      return tile.bytes instanceof Uint8Array ? tile.bytes : new Uint8Array(tile.bytes);
+    });
+
+    for (let k = 0; k < kept.length; k++) {
+      const i = kept[k].i | 0;
+      rgba.set(pixelsOf[k], i * bytesPerTile);
       Atomics.store(dirty, i, 1); // B-03: atomic, matching the stamp path
-      restored++;
     }
 
-    return { ok: true, restored };
+    return { ok: true, restored: kept.length };
   }
 }

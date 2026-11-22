@@ -20,12 +20,14 @@ import {
   packMeshes,
   packNav,
   packTime,
+  packSimNow,
   packTweens,
 } from './worldBufferSave.js';
 
 export const SAVE_MAGIC = 'WEEDSAVE1';
-/** 6: entities by columns, one table per type (E-539). A save of any other version does not load. */
-export const SAVE_FORMAT_VERSION = 6;
+/** 8: the sim clock's time (N-329); 7: decal tiles deflated, not PNG (N-314); 6: entities by columns, one table per type
+ * (E-539). A save of any other version does not load. */
+export const SAVE_FORMAT_VERSION = 8;
 
 /** @param {Function} EntityClass */
 export function isEntityClassSerializable(EntityClass) {
@@ -607,6 +609,8 @@ export function buildSavePayload(scene, globals = {}, options = {}) {
   if (nav) payload.nav = nav;
   const timeScale = packTime();
   if (timeScale != null) payload.timeScale = timeScale;
+  const simNowMs = packSimNow();
+  if (simNowMs != null) payload.simNowMs = simNowMs;
   const tweens = packTweens();
   if (tweens) payload.tweens = tweens;
   // Scene state outside entities (score, quest flags, level): JSON, back as payload.custom.

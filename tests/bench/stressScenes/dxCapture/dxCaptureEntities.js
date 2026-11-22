@@ -49,6 +49,9 @@ export class DxCaptureLamp extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 4;
     this.lightEmitter.shadowRange = 900;
+    // E-395: `?lampElevation=` px lifts the lamps (the lamps' shadow map needs a raised lamp), for captures of that map.
+    const elevation = Number(WEED.params?.get('lampElevation') ?? 0);
+    if (elevation > 0) this.lightEmitter.elevation = elevation;
     // `?lampOffset=d`: the light d px ahead of an entity turned 90 degrees (so d px down); `?lampShift=d` the same spot
     // without either. The two must draw the same picture.
     const offset = LAMP_OFFSET;
