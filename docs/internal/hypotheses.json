@@ -23975,7 +23975,8 @@
         "R-1816",
         "R-1818",
         "R-1820",
-        "R-1821"
+        "R-1821",
+        "R-1822"
       ]
     },
     {
@@ -41689,6 +41690,13 @@
       "title": "N-303 batch 2: CR-3 (the unread query SABs; 65 queries no longer throw), CR-5 (part), CR-11 (engine.wasm 356 323 -> 329 082 B: losing variants to test modules); Predator mix=1 gate NEUTRAL in 8 pairs (logic +1.5 %)",
       "verdict": "kept-hygiene",
       "text": "**N-303's second batch on main and through Predator: CR-3, CR-5 (part), CR-11, with CR-2 and CR-34 (R-1820) in the same range.**\n\n- CR-3 (813a3f48, src +6 / -137): the query system's entityMetadataSAB and queryCacheSAB, written and never read (the workers rebuild both from the serialized data), their sizes, writers and plumbing (sceneSharedBuffers, the bootstrap, scene.buffers, AbstractWorker, types, MEMORY_STRUCTURE.md). Test first: a scene with 65 precomputed queries threw a RangeError while making the buffers (the cache was sized for 64); now it does not. sceneCycleSmoke OK (4 cycles, heap flat).\n- CR-5, abstract/spatial/logic (c116ae1c, src +1 / -44): AbstractWorker's getActiveEntityCount/Index, emptyQueryWarnings, _emptyUint16Array, _queryEntityMetadata; spatial's _getCirclePattern; logic's activeEntityCount and frameStartTime (a performance.now() a frame with detailed stats on). particleWorker's and pre-render's share waits for the ASUS session, which works in them.\n- CR-11 (e2f694e0, src +14 / -18, wasm/ and tests/ the rest): engine.wasm ships what won only: bullet_tick_lean with its 32-bit forms, the painter's simd_inplace (radix_sort_simd, painter_order_simd, reinsert_simd_inplace), premultiply_simd. The variants they beat move to test modules (wasm/test/bulletTickVariants.c, painterRadixVariants.c, decalPremultiplyVariants.c, each including the shipped source, built into tests/fixtures/wasm/), which the parity tests and benches load. The engine no longer readies ray stamps before each bullet tick (the lean tick reads none) nor reserves their 4 bytes an entity. **engine.wasm 356 323 -> 329 082 B (-7.6 %; 84 965 B gzipped)**; buildWasm --check identical for every module; Predator and bulletStorm boot on it with no error.\n\nGate cr-batch2, `--vs ad97960c --hyp-rev e2f694e0`, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, owner logic: 4 pairs read REGRESSION with every worker up together (logic +3.4 %, pre-render +3.3 %, spatial +2.5 %, physics +1.8 %, each within 0.4 % of the others: drift); 4 more (to 02:54) made it NEUTRAL: logic 15.122 -> 15.292 ms (+1.5 %, worse 5/8), spatial +0.4 %, physics -0.2 %, renderer -1.9 %, pre-render +0.1 %, presented 60 = 60, BODY_COUNT +0.2 %. Inside R-1818's A/A (up to 3.2 % a worker). Kept as hygiene. Node 3482/3482, demos 143/143; dist rebuilt (cac1bd6f)."
+    },
+    {
+      "id": "R-1822",
+      "date": "2026-11-22",
+      "title": "N-303: CR-24 first part (one save framing, one LiquidFun request skeleton) and CR-21 first two parts (one createWasmMemory for five kernel memories); CR-13 left for a closer session",
+      "verdict": "kept-hygiene",
+      "text": "**N-303, more phase A and B items on main (2026-11-22, after R-1821), suites green each time.**\n\n- CR-24, first part (a4c1c25b, src +63 / -99 over 2 files): one framing (frameSave / unframeSave / payloadOf) for encodeSave, decodeSave and their uncompressed twins; one request skeleton (askPhysicsWorker) for LiquidFun's snapshot and restore. The instance-field requests keep their own (scene callbacks, not a message reply). Left: the codec's constructor table and writeOptTyped/readOptTyped, worldBufferSave's apply skeleton, assertPayloadCompatible's per-entity find.\n- CR-21, first two parts (af5d6ae9, 872340e0, src +78 / -120 over 6 files): one createWasmMemory in wasmMemoryMap.js (the 32768-page cap, the try/catch and their texts, the advice optional) for the decal, navigation, mesh, particle and spatial publish memories, every error text as before. The render queue's and visibility's memories fall back (return null) instead of throwing and keep their own. sceneCycleSmoke OK after each. Left: columnSlots and the column writers, the nine \"did not load\" wrappers, logicWorker's box2dReady through super, AbstractWorker's published-list bindings, pre-render's null-emitLayout fallbacks, the double fixedFps reads.\n- Not taken tonight: CR-13 (one WEED name list): it rebuilds the public entry (index.js, workerWeed.js) the bundles and the type drift check read; left for a session that can watch the bundle smokes and checkTypesDrift closely.\n\nNone of these changes per-frame code; they ride on R-1821's gate."
     }
   ],
   "leads": [
