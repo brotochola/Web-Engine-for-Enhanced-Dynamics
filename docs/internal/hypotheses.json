@@ -20391,19 +20391,20 @@
     {
       "id": "N-241",
       "title": "The lamps' map cull drops geometry that would still draw: since DX-LAMPPANO, landings past a lamp's reach still fall inside the tile's outer band, so culling by reach (per triangle before E-453, per mesh now) can drop what that band would show",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "status": "answered",
+      "statusText": "answered 2026-11-22: no bug (R-1859)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "bug",
-      "result": "Seen by the E-453 agent; its captures (shadowOutlineScene part=lamp, light3dCompare all=1 by night) showed 0 pixels changed, so no case found yet.",
-      "next": "Decide what the cull may drop (the tile's outer band against the lamp's reach) and make it conservative; a capture with a volume just past a lamp's reach.",
+      "result": "Answered 2026-11-22, no bug (R-1859): the light pass reads a lamp map only within its reach, a lit point is shaded only by what stands between it and the lamp (within the reach), and the cull drops by a square of reach + pad, outside that circle",
+      "next": "",
       "refs": [],
       "aliases": [
         "lamp map cull outer band"
       ],
       "records": [
-        "R-1228"
+        "R-1228",
+        "R-1859"
       ]
     },
     {
@@ -42685,6 +42686,13 @@
       "title": "N-410 fixed (f97f9370): the bus's sun card stood on its far wheels (contact within 1.5 px; the near wheels hide under the body), now within max(1.5, a fifth of the frame's heights); card vs height map 40 661 -> 35 255 px over 12 facings, none worse",
       "verdict": "kept-hygiene",
       "text": "**N-410 fixed (f97f9370): the cut was the sun card's contact, measured on the bus's far wheels.**\n\nReproduced by captures of the light bench (`only=colectivo_amarillo`, `carSun=sprite`, `hour=16`, `still=1`, zoom 2.5 on\nthe bus). At 172.5° the shadow is cut along a straight line, on both backends and with the full caster rows too\n(`fullRows=1`). With `sun=layer` or the height map the shadow is whole. At 180° it is whole, and at 150° the card and the\nheight map agree: the sun comes along the bus there.\n\nBisected by temporary shader changes. Without the card's turn (N-297) nothing changed (1 410 px). Without the card's\nalpha cut, the whole card showed: its edge towards the sun crossed the middle of the bus, not its rear.\n\nThe sun's frame at 172.5° is `colectivo_amarillo_41` (heading 297.5°, seen from behind). Its contact, as atlasBuild\nmeasures it (`measureLowestContact`: opaque pixels within 1.5 px of the lowest point), was row 62.5: the far (front)\nwheels. Seen from behind and above, the near wheels hide under the body, whose lowest pixels stand 3 to 5 px up. The\ncontact sat above the anchor's row 81, so the card stood on the far side of the bus. Its rear half cast nothing.\n\nA survey of every render sheet in the repo (`demos/img/autos` and the bench's farm) found 30 car sheets with frames whose\ncontact is above their anchor's row (deportivo 7 frames, muscle 6, colectivo 4, lujo 4, superauto 4, …). A tolerance of\nmax(1.5, share × the frame's height range) was tried at shares of 0.08 to 0.4. 0.16 still left deportivo_rojo_07 on its\nfar wheels; 0.2 fixes every frame. None of the farm's renders (vaca, mesa, granero, …) moves even at 0.4.\n\nKept at 0.2 (`CONTACT_SHARE`). The measure: the light bench's three farm cars at 16:00 without lamps, pixels apart from\ntheir height map's shadow (compareCaptures, card against height map, as N-297 measured it), HEAD against the fix:\n\n| facing | 0 | 30 | 60 | 90 | 120 | 150 | 172.5 | 210 | 240 | 270 | 300 | 330 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| HEAD | 2804 | 2199 | 2090 | 4662 | 4382 | 4074 | 6437 | 2017 | 1946 | 2461 | 3663 | 3926 |\n| fix | 2791 | 2198 | 2086 | 2460 | 4234 | 4039 | 3638 | 1953 | 1946 | 2454 | 3570 | 3926 |\n\nThe total goes 40 661 -> 35 255 (-13 %), and no facing is worse.\n\nThe atlas cache's key holds frameBase.js's text, so no cached base survives. Tests: `npm run test:node` 3 579 / 3 579 and\n`npm run test:demos` 143 / 143. A new frameBase test covers a bus seen from behind and a cow's head held out below its\nhooves."
+    },
+    {
+      "id": "R-1859",
+      "date": "2026-11-22",
+      "title": "N-241 answered, no bug: a lit point's occluder stands between it and the lamp, so within the reach; the light pass reads nothing past the reach, and the cull's square with its pad holds the reach's circle",
+      "verdict": "answered",
+      "text": "**N-241 answered: the lamps' map cull by reach drops nothing that draws.** Read from the code, no capture needed (the\nE-453 agent's captures had found 0 pixels changed).\n\n- **What a texel past the reach serves.** The light pass reads a lamp's map only for a point whose floor distance\n  from the lamp is under the reach the tile spans (`lightingBasic.frag.glsl` `lampVisibility`: `farSq >= reach * reach`\n  returns lit). The reach is E-510's shadowRange under the radius, or the radius, the same that `writeLampTile` gives\n  the tile. Landings in the tile's outer band (DX-LAMPPANO, out to the horizon) are where such a point's ray lands.\n- **Where a lit point's occluder stands.** It is on the segment from the point to the lamp, in 3D. On the floor it\n  stands on the segment from the point's floor point to the lamp's, so it is nearer the lamp than the point. A point\n  within the reach can only be shaded by something within the reach: on either half of the tile, above or below the\n  lamp.\n- **What the cull drops.** `volumeShadowMap.js` LAMP_GLSL drops a mesh whose anchor stands farther than reach + pad\n  from the lamp, by the larger of the two floor offsets: a square, never inside the circle. The pad is the mesh's reach\n  (its farthest vertex), scaled up by its pose's scale, the floor's f and 1 / groundScaleY. Every vertex it drops\n  stands past the reach, so none of them can shade a point the pass reads.\n\nThe cull is conservative as it stands: closed with no code change."
     }
   ],
   "leads": [
