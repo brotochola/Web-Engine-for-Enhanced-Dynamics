@@ -2180,12 +2180,12 @@
 
   function overlapAabbQuery(x0, y0, x1, y1, categoryBits, maskBits, results, cap) {
     var n = world.overlapAABB(x0, y0, x1, y1, world._querySlots, queryFilter(categoryBits, maskBits));
-    return Box2dQueryAabb.copyUniqueSlots(world._querySlots, n, results, cap, 'queryAABB');
+    return Box2dQueryAabb.copyQuerySlots(world._querySlots, n, results, cap, 'queryAABB');
   }
 
   function overlapCircleQuery(cx, cy, radius, categoryBits, maskBits, results, cap) {
     var n = world.overlapCircle(cx, cy, radius, queryFilter(categoryBits, maskBits));
-    return Box2dQueryAabb.copyUniqueSlots(world._querySlots, n, results, cap, 'overlapCircle');
+    return Box2dQueryAabb.copyQuerySlots(world._querySlots, n, results, cap, 'overlapCircle');
   }
 
   function serviceQueryAabb() {

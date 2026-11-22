@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { instantiateBox2dWasm as instantiateShared } from '../helpers/box2dWasmInstance.mjs';
-import { copyUniqueSlots } from '../../src/box2d/box2dQueryAabb.js';
+import { copyQuerySlots } from '../../src/box2d/box2dQueryAabb.js';
 
 const BODY_STATIC = 0;
 
@@ -94,10 +94,11 @@ test('a body with three shapes is listed once by every overlap query (N-22)', ()
   const box = fn('overlap_box')(worldId, 100, 0, 150, 50, 0, 1, 0xffffffff);
   assert.deepEqual(querySlots(memory, fn, box).sort((x, y) => x - y), [11, 22]);
 
-  // Physics still passes results through copyUniqueSlots; it now has nothing to drop.
+  // Physics copies the slots as they are (CR-31: its old dedupe had nothing to drop).
   const slots = new Int32Array(querySlots(memory, fn, aabb));
   const results = new Int32Array(8);
-  assert.equal(copyUniqueSlots(slots, aabb, results, 8, 'queryAABB'), 2);
+  assert.equal(copyQuerySlots(slots, aabb, results, 8, 'queryAABB'), 2);
+  assert.deepEqual(Array.from(results.subarray(0, 2)).sort((x, y) => x - y), [11, 22]);
 });
 
 test('each overlap query starts with a fresh stamp: the next one lists the same bodies', () => {

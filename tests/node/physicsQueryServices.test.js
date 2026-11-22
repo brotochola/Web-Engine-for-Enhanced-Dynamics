@@ -82,7 +82,7 @@ function fakeImpls() {
     copied,
     Box2dQueryAabb: {
       servicePendingQuery(fn) { handed.aabb.push(fn); },
-      copyUniqueSlots(slots, n, results, cap, label) {
+      copyQuerySlots(slots, n, results, cap, label) {
         copied.push([label, Array.from(slots.subarray(0, n))]);
         return n;
       },
