@@ -37,6 +37,15 @@ function starPoints(outer, inner, points) {
 export class MeshPicture extends GameObject {
   static components = [MeshRenderer];
 
+  constructor(...args) {
+    super(...args);
+    // Every picture has the same fields from the start, whatever its kind: only the rope fills the last two (in
+    // _rope). A field first written in onSpawned by some kinds only would give the class two shapes.
+    this._kind = '';
+    this._ropeN = 0;
+    this._ropePts = [];
+  }
+
   onSpawned(spawnConfig = {}) {
     this._kind = spawnConfig.kind;
     this.setLayer('gallery');

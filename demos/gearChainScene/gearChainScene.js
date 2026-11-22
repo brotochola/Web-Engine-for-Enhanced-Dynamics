@@ -61,10 +61,12 @@ export class GearChainScene extends Scene {
     worldWidth: WORLD_W,
     worldHeight: WORLD_H,
 
+    // Nothing here reads neighbours (the chain is joints, the gears are colliders): no spatial worker. With one, the
+    // 5 000 links packed along the chain overflowed its grid cells (368 entries a frame past maxEntitiesPerCell 64)
+    // for lists nobody read.
     spatial: {
-      cellSize: 96,
-      maxNeighbors: 32,
-      noLimitFPS: false,
+      numberOfSpatialWorkers: 0,
+      maxNeighbors: 0,
     },
 
     logic: {
