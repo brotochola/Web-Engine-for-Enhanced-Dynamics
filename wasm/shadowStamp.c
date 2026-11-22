@@ -27,7 +27,10 @@
    at a time and skip the unlit casters. The same rows, bit for bit (tests/node/shadowStampWasm.test.js and
    shadowStampKeyed.test.js).
    E-331: pre-render's keyed caster scan can hand the grid the casters' x and y and their bounds (the scan slots), so the
-   build skips its pass over the rows (grid_from_xy), and a grid that clamps nothing bins four casters at a time. */
+   build skips its pass over the rows (grid_from_xy), and a grid that clamps nothing bins four casters at a time.
+   N-330: after a caster's maxShadowsPerEntity pairs its record keeps the nearest distance left out (a light that kept
+   the caster but is past its cut), which fades the row of the last light shown (cut_fade): a caster crossing the cut
+   loses or gains that shadow gradually. */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -259,17 +262,26 @@ INLINE double pair_dist(uint64_t pair) {
 
 INLINE int32_t pair_light(uint64_t pair) { return (int32_t)(uint32_t)(pair >> 32); }
 
+/* N-330: a record's slot past its pairs before any light left out: an infinite distance. */
+#define NEXT_NONE ((uint64_t)0x7f800000u)
+
 /* noteNearest: keep the closest lights on this caster; ties go to the smaller light index. The caster's record is its
    maxPE pairs, nearest first: a pair moves as one word, the bits the float and the int had apart (a NaN distance
-   compares false whatever its bits). */
+   compares false whatever its bits). N-330: then one slot, the nearest distance left out (a light past the record, or
+   one it pushed out), as a float: the min of what was left out, as it is stored, so the twin keeps the same. */
 INLINE void note_nearest(uint64_t *near, uint8_t *nearCount, uint32_t caster, int32_t lightIndex, double d2,
                          uint32_t maxPE) {
-  uint64_t *rec = near + caster * maxPE;
+  uint64_t *rec = near + caster * (maxPE + 1u);
   uint32_t n = nearCount[caster];
+  if (n == 0) rec[maxPE] = NEXT_NONE;
   if (n == maxPE) {
     const uint64_t worst = rec[n - 1];
     const double wd = pair_dist(worst);
-    if (d2 > wd || (d2 == wd && lightIndex >= pair_light(worst))) return;
+    if (d2 > wd || (d2 == wd && lightIndex >= pair_light(worst))) {
+      if (d2 < pair_dist(rec[maxPE])) rec[maxPE] = (uint64_t)f32_bits((float)d2);
+      return;
+    }
+    if (wd < pair_dist(rec[maxPE])) rec[maxPE] = (uint64_t)(uint32_t)worst;
     n--;
   }
   uint32_t i = n;
@@ -569,10 +581,11 @@ INLINE int in_cone(double dx, double dy, const double *L) {
 
 /* DX-SPOT: the intensity a caster row of a cone or dim light takes: f·I·D² / (I + D² − f·I), which the unchanged shader
    turns into f × the alpha I / (I + D²) (D on the floor), f the cone's soft edge (1 without a cone) times the shade
-   (DX-LIGHTAPI: min(brightness, 1)). At f 1, the light's own. */
-INLINE double cone_intensity(double dx, double dy, double intensity, const double *L) {
+   (DX-LIGHTAPI: min(brightness, 1)) times `fade` (N-330: the per-entity cut's, cut_fade; 1 elsewhere). At f 1, the
+   light's own. */
+INLINE double faded_intensity(double dx, double dy, double intensity, const double *L, double fade) {
   const double fd2 = dx * dx + dy * dy * L[9];
-  double f = L[10];
+  double f = L[10] * fade;
   if (L[7] > -1.0 && fd2 != 0.0) {
     const double cosA = (dx * L[5] + dy * L[6]) / __builtin_sqrt(fd2);
     double t = (cosA - L[7]) * L[8];
@@ -583,6 +596,24 @@ INLINE double cone_intensity(double dx, double dy, double intensity, const doubl
   }
   if (f >= 1.0) return intensity;
   return f * intensity * fd2 / (intensity + fd2 - f * intensity);
+}
+
+INLINE double cone_intensity(double dx, double dy, double intensity, const double *L) {
+  return faded_intensity(dx, dy, intensity, L, 1.0);
+}
+
+/* N-330: the fade of a caster's last shown light (its record's pair `last`) by the nearest light left out (the record's
+   slot `next`, squared distances as floats): min(1, (dNext - dLast) / (0.2 dNext)) on the distances, so 0 where the two
+   are as near, the moment they swap places, and 1 from 20 % nearer. That is 1 whenever dLast² <= 0.64 dNext², tested
+   first without the roots (most casters; none left out is an infinite next); 1 on a NaN. */
+INLINE double cut_fade(uint64_t last, uint64_t next) {
+  const double dl2 = pair_dist(last);
+  const double dn2 = pair_dist(next);
+  if (!(dl2 > 0.64 * dn2)) return 1.0;
+  const double dl = __builtin_sqrt(dl2);
+  const double dn = __builtin_sqrt(dn2);
+  const double f = (dn - dl) / (0.2 * dn);
+  return f < 1.0 ? f : 1.0;
 }
 
 /* appendStampedCasters for one light vec4 lv (made once for the light). */
@@ -633,22 +664,39 @@ INLINE int32_t stamp_light_rows(float *stamp, uint32_t df, int32_t cursor, const
   return written;
 }
 
-/* The rows of one caster's nearest lights (its record rec, n pairs), in the record's order, until the stamp is full. lvt
-   (table 1): each light's vec4, made once a light; table 0 makes it row by row. folded: a cone or dim light's rows take
-   their caster's place in the cone and its shade. table and folded are constants once inlined. */
+/* One row of a caster's nearest lights: the caster s with light pair p's vec4. lvt (table 1): each light's vec4, made once
+   a light; table 0 makes it row by row. folded: a cone or dim light's row takes its caster's place in the cone and its
+   shade. A fade under 1 (N-330, cut_fade): the row takes it too. table and folded are constants once inlined, and the
+   loop's fade (1) too, so only the last row's copy tests it. */
+INLINE int32_t caster_row(float *stamp, uint32_t df, int32_t cursor, const float *s, uint32_t sf, uint32_t lightAt,
+                          int kind, const double *lights, const float *lvt, uint64_t p, uint16_t *stampLightIdx,
+                          const int table, const int folded, double fade) {
+  const int32_t li = pair_light(p);
+  const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
+  v128_t lv = table ? wasm_v128_load(lvt + 4 * (uint32_t)li) : light_vec(L);
+  if (fade < 1.0) {
+    lv = wasm_f32x4_replace_lane(lv, 2, (float)faded_intensity((double)s[0] - L[0], (double)s[1] - L[1], L[2], L, fade));
+  } else if (folded && (L[7] > -1.0 || L[10] < 1.0)) {
+    lv = wasm_f32x4_replace_lane(lv, 2, (float)cone_intensity((double)s[0] - L[0], (double)s[1] - L[1], L[2], L));
+  }
+  put_row(stamp + (uint32_t)cursor * df, s, sf, df, lightAt, kind, lv);
+  if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
+  return cursor + 1;
+}
+
+/* The rows of one caster's nearest lights (its record rec, n pairs), in the record's order, until the stamp is full.
+   N-330: a full record (n == maxPE) writes its last row out of the loop, faded by the nearest light left out (the slot
+   after its pairs: cut_fade), so the loop's rows are written as they were. */
 INLINE int32_t caster_rows(float *stamp, uint32_t df, int32_t cursor, int32_t cap, const float *s, uint32_t sf,
                            uint32_t lightAt, int kind, const double *lights, const float *lvt, const uint64_t *rec,
-                           uint32_t n, uint16_t *stampLightIdx, const int table, const int folded) {
-  for (uint32_t k = 0; k < n && cursor < cap; k++) {
-    const int32_t li = pair_light(rec[k]);
-    const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
-    v128_t lv = table ? wasm_v128_load(lvt + 4 * (uint32_t)li) : light_vec(L);
-    if (folded && (L[7] > -1.0 || L[10] < 1.0)) {
-      lv = wasm_f32x4_replace_lane(lv, 2, (float)cone_intensity((double)s[0] - L[0], (double)s[1] - L[1], L[2], L));
-    }
-    put_row(stamp + (uint32_t)cursor * df, s, sf, df, lightAt, kind, lv);
-    if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
-    cursor++;
+                           uint32_t n, uint32_t maxPE, uint16_t *stampLightIdx, const int table, const int folded) {
+  const uint32_t plain = n == maxPE ? maxPE - 1u : n;
+  for (uint32_t k = 0; k < plain && cursor < cap; k++) {
+    cursor = caster_row(stamp, df, cursor, s, sf, lightAt, kind, lights, lvt, rec[k], stampLightIdx, table, folded, 1.0);
+  }
+  if (n == maxPE && cursor < cap) {
+    cursor = caster_row(stamp, df, cursor, s, sf, lightAt, kind, lights, lvt, rec[maxPE - 1u], stampLightIdx, table, folded,
+                        cut_fade(rec[maxPE - 1u], rec[maxPE]));
   }
   return cursor;
 }
@@ -661,6 +709,8 @@ INLINE int32_t stamp_nearest_rows(float *stamp, uint32_t df, int32_t cursor, int
                                   const uint8_t *nearCount, uint32_t nSun, uint32_t maxPE, uint16_t *stampLightIdx,
                                   const int table, const int folded) {
   const int kind = row_kind(sf, df, lightAt);
+  /* N-330: a record's pairs, then its slot of the nearest light left out. */
+  const uint32_t stride = maxPE + 1u;
   const uint32_t blocks = nSun & ~15u;
   uint32_t c = 0;
   for (; c < blocks && cursor < cap; c += 16) {
@@ -669,13 +719,13 @@ INLINE int32_t stamp_nearest_rows(float *stamp, uint32_t df, int32_t cursor, int
     while (lit && cursor < cap) {
       const uint32_t at = c + (uint32_t)__builtin_ctz(lit);
       lit &= lit - 1u;
-      cursor = caster_rows(stamp, df, cursor, cap, sun + at * sf, sf, lightAt, kind, lights, lvt, near + at * maxPE,
-                           nearCount[at], stampLightIdx, table, folded);
+      cursor = caster_rows(stamp, df, cursor, cap, sun + at * sf, sf, lightAt, kind, lights, lvt, near + at * stride,
+                           nearCount[at], maxPE, stampLightIdx, table, folded);
     }
   }
   for (; c < nSun && cursor < cap; c++) {
-    cursor = caster_rows(stamp, df, cursor, cap, sun + c * sf, sf, lightAt, kind, lights, lvt, near + c * maxPE,
-                         nearCount[c], stampLightIdx, table, folded);
+    cursor = caster_rows(stamp, df, cursor, cap, sun + c * sf, sf, lightAt, kind, lights, lvt, near + c * stride,
+                         nearCount[c], maxPE, stampLightIdx, table, folded);
   }
   return cursor;
 }

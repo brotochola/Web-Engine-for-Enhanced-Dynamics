@@ -48,7 +48,7 @@ export function appendStampedCasters(dst, dstFloats, dstBase, src, srcFloats, in
  * (L.invG2 = 1 / groundScaleY², L.coneDirYW the direction's y over groundScaleY), with no root.
  */
 function inCone(dx, dy, L) {
-  const fd2 = dx * dx + dy * dy * L.invG2;
+  const fd2 = dx * dx + dy * dy * invG2Of(L);
   if (fd2 === 0) return true;
   const dot = dx * L.coneDirX + dy * L.coneDirYW;
   const c = L.coneCos;
@@ -56,15 +56,23 @@ function inCone(dx, dy, L) {
   return c >= 0 ? (dot > 0 && dot * dot > c2) : (dot >= 0 || dot * dot < c2);
 }
 
+/** 1 / groundScaleY², as writeStampLights writes it: 1 for a record without it. */
+function invG2Of(L) {
+  return L.invG2 > 0 ? L.invG2 : 1;
+}
+
 /** The shade a light's shadows take (DX-LIGHTAPI: min(brightness, 1)); a light without the field is full. */
 function shadeOf(L) {
   return L.shade < 1 ? L.shade : 1;
 }
 
-/** DX-SPOT, as cone_intensity: the intensity a cone or dim light's caster row takes (f × the alpha). */
-function coneIntensity(dx, dy, intensity, L) {
-  const fd2 = dx * dx + dy * dy * L.invG2;
-  let f = shadeOf(L);
+/**
+ * DX-SPOT, as faded_intensity: the intensity a cone or dim light's caster row takes (f × the alpha), f times `fade`
+ * (N-330: the per-entity cut's, cutFade; 1 elsewhere).
+ */
+function fadedIntensity(dx, dy, intensity, L, fade) {
+  const fd2 = dx * dx + dy * dy * invG2Of(L);
+  let f = shadeOf(L) * fade;
   if (L.coneCos > -1 && fd2 !== 0) {
     const cosA = (dx * L.coneDirX + dy * L.coneDirYW) / Math.sqrt(fd2);
     let t = (cosA - L.coneCos) * L.coneInvSpan;
@@ -75,6 +83,23 @@ function coneIntensity(dx, dy, intensity, L) {
   }
   if (f >= 1) return intensity;
   return f * intensity * fd2 / (intensity + fd2 - f * intensity);
+}
+
+/** DX-SPOT, as cone_intensity. */
+function coneIntensity(dx, dy, intensity, L) {
+  return fadedIntensity(dx, dy, intensity, L, 1);
+}
+
+/**
+ * N-330, as cut_fade: the fade of a caster's last shown light by the nearest light left out, from their squared
+ * distances (the records' floats): min(1, (dNext - dLast) / (0.2 dNext)); 1 whenever dLast² <= 0.64 dNext², and on a NaN.
+ */
+function cutFade(dl2, dn2) {
+  if (!(dl2 > 0.64 * dn2)) return 1;
+  const dl = Math.sqrt(dl2);
+  const dn = Math.sqrt(dn2);
+  const f = (dn - dl) / (0.2 * dn);
+  return f < 1 ? f : 1;
 }
 
 /** World-unit bins for the per-light caster walk. Larger than a character, smaller than the zoom-0.4 view. */
@@ -158,14 +183,22 @@ function ensureNearest(nSun, maxPE) {
   _nearCount.fill(0, 0, nSun);
 }
 
-/** Keep the closest lights on this caster. Ties break toward the smaller light index. */
+/**
+ * Keep the closest lights on this caster. Ties break toward the smaller light index. N-330: after its maxPE slots, the
+ * nearest distance left out (a light past the record, or one it pushed out), as note_nearest keeps it.
+ */
 function noteNearest(caster, lightIndex, d2, maxPE) {
-  const base = caster * maxPE;
+  const base = caster * (maxPE + 1);
   let n = _nearCount[caster];
+  if (n === 0) _nearDist[base + maxPE] = Infinity;
   if (n === maxPE) {
     const worst = base + n - 1;
     const wd = _nearDist[worst];
-    if (d2 > wd || (d2 === wd && lightIndex >= _nearSlot[worst])) return;
+    if (d2 > wd || (d2 === wd && lightIndex >= _nearSlot[worst])) {
+      if (d2 < _nearDist[base + maxPE]) _nearDist[base + maxPE] = d2;
+      return;
+    }
+    if (wd < _nearDist[base + maxPE]) _nearDist[base + maxPE] = wd;
     n--;
   }
   let i = n;
@@ -252,7 +285,8 @@ export function stampLightRange({
   let cursor = stampBase | 0;
   const cap = stampCap | 0;
   if (!sun || !stamp || nSun <= 0 || !lights || !tmpIdx || !dist || !keepIdx || !lightVec) return cursor;
-  if (maxPE > 0) ensureNearest(nSun, maxPE);
+  // N-330: a caster's record, its maxPE slots and the nearest distance left out.
+  if (maxPE > 0) ensureNearest(nSun, maxPE + 1);
   const tmpCap = tmpIdx.length | 0;
   const grid = gridCounts && gridStarts && gridItems
     ? buildStampGrid(sun, nSun, sf, gridCounts, gridStarts, gridItems)
@@ -349,7 +383,7 @@ export function stampLightRange({
   if (maxPE <= 0) return cursor;
   for (let c = 0; c < nSun && cursor < cap; c++) {
     const n = _nearCount[c];
-    const base = c * maxPE;
+    const base = c * (maxPE + 1);
     for (let k = 0; k < n && cursor < cap; k++) {
       const li = _nearSlot[base + k];
       const L = lights[li];
@@ -361,7 +395,12 @@ export function stampLightRange({
       const written = appendStampedCasters(
         stamp, stampFloats, cursor, sun, sf, keepIdx, 1, lightVec, cap, 0
       );
-      if (written > cursor && (L.coneCos > -1 || shadeOf(L) < 1)) {
+      // N-330: a full record's last light takes cutFade by the nearest light left out.
+      const fade = n === maxPE && k === maxPE - 1 ? cutFade(_nearDist[base + k], _nearDist[base + maxPE]) : 1;
+      if (written > cursor && fade < 1) {
+        const b = c * sf;
+        stamp[cursor * stampFloats + CASTER_LIGHT_FLOAT + 2] = fadedIntensity(sun[b] - L.x, sun[b + 1] - L.y, L.intensity, L, fade);
+      } else if (written > cursor && (L.coneCos > -1 || shadeOf(L) < 1)) {
         const b = c * sf;
         stamp[cursor * stampFloats + CASTER_LIGHT_FLOAT + 2] = coneIntensity(sun[b] - L.x, sun[b + 1] - L.y, L.intensity, L);
       }

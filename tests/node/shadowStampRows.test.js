@@ -14,7 +14,7 @@ import {
   GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_SPRITE_FLOATS,
 } from '../../src/render/gpuQueueLayout.js';
 import { STAMP_SLOTS, bindShadowStamp, stampLightRangeWasm } from '../../src/render/shadowStampClient.js';
-import { NULL_GUARD_BYTES, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS, layoutRegions } from '../../src/util/wasmMemoryMap.js';
+import { NULL_GUARD_BYTES, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS, layoutRegions, stampNearPairs } from '../../src/util/wasmMemoryMap.js';
 import { stampLightRange } from '../reference/shadowStamp.mjs';
 import { LIGHTS, frame, rng } from '../helpers/shadowStampFrames.mjs';
 
@@ -43,7 +43,7 @@ async function memoryEndingWith(end) {
     gridCounts: STAMP_GRID_CELLS * 4,
     gridStarts: (STAMP_GRID_CELLS + 1) * 4,
     gridItems: MAX_SUN * 4,
-    near: MAX_SUN * MAX_PE * 8,
+    near: MAX_SUN * stampNearPairs(MAX_PE) * 8,
     nearCount: MAX_SUN,
     packedX: MAX_SUN * 4,
     packedY: MAX_SUN * 4,
@@ -74,7 +74,7 @@ async function memoryEndingWith(end) {
 function place(mem, nSun, sf, df, cap, maxPE) {
   const { end, b, R, memEnd } = mem;
   const span = (name, bytes) => (end === name ? memEnd - bytes : R[name].byte);
-  if (end === 'near') b.table[RECORDS_SLOT] = memEnd - nSun * maxPE * 8;
+  if (end === 'near') b.table[RECORDS_SLOT] = memEnd - nSun * stampNearPairs(maxPE) * 8;
   if (end === 'nearCount') b.table[COUNT_SLOT] = memEnd - nSun;
   const buf = b.buffer;
   return {
