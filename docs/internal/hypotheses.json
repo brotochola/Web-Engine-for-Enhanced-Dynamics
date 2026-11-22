@@ -20467,13 +20467,12 @@
     {
       "id": "N-245",
       "title": "Boids still has steady deopt loops: weedjsPost.js:665 `Atomics.load(poseGenEpoch)` (insufficient feedback for call) 47 in 8 s although N-214 fixed it in Predator (R-1158: 287 -> 0), and spatialWorker.js:1758, the publish loop's cold else-branch `this._entityReuseInitialized[entityA] = 0`, 36",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "status": "kept-hygiene",
+      "statusText": "closed 2026-11-22 (R-1831): both sites fixed (R-1158, R-1817, R-1743); Boids' steady deopts are one-time dependency changes",
       "date": "2026-11-16",
       "area": "physics",
       "kind": "bug",
       "result": "Deopt pass on the demos, 17:50 to 20:39 (newer main).",
-      "next": "Give each site feedback before it runs in an optimized frame (the N-214 way), or move the cold branch out of the loop; the deopt pass in Boids and Predator.",
       "refs": [],
       "aliases": [
         "boids deopt loops"
@@ -20481,7 +20480,8 @@
       "records": [
         "R-1229",
         "R-1817",
-        "R-1743"
+        "R-1743",
+        "R-1831"
       ]
     },
     {
@@ -42031,6 +42031,15 @@
       "title": "N-158: the frame loop's heap numbers, _runFrame about halved in every worker (stampStep and the frame wall through Float64Arrays, two clock reads a frame); samples of once-a-frame code need a 70 s warm-up",
       "verdict": "kept-hygiene",
       "text": "**N-158, the frame loop every worker runs (cb0cad0d): about half of _runFrame's heap numbers gone.** Heap samples of the balls scene (heapSampleWorkers, spatial, particle, pre-render and logic) at 05:02 to 05:12:\n\n- First a warning about the samples: with the usual 8 s warm-up the frame loop's functions (called 60 times a second) are barely past Sparkplug, which boxes nearly every double: logic read 421 B/frame then, 163 after a 70 s warm-up, pre-render 791 -> 302, spatial 296 -> 180. Samples of once-a-frame code need the long warm-up (TurboFan takes it at about 3 000 calls, some 50 s).\n- After 70 s, _runFrame alone still made 65 to 92 B a frame in each worker. Five performance.now() reads a frame became two (the start, which updateFrameTiming takes and leaves in lastFrameTime, and the end; STEP_MS now starts at the frame's start, a microsecond earlier); Math.min/max in updateFrameTiming became comparisons. That alone moved little (spatial 86 -> 79, logic 65 -> 65, particle 92 -> 57, pre-render 74 -> 64: within the sampling's noise), so the clock reads were not it.\n- The doubles passed to calls _runFrame does not inline were: stampStep's two ends now come in a Float64Array (FRAME_STAMP; the main thread's MAIN_STAMP), and the frame's wall time is written straight into timeScale's FRAME_WALL instead of through Time._noteFrameWall. _runFrame then: spatial 86 -> 34, logic 65 -> 39, particle 92 -> 31, pre-render 74 -> 48 B/frame (about 2.5 KB/s less in each worker, some 15 KB/s over a scene's six).\n- Left in the loop: update(deltaTime, dtRatio)'s two doubles (about 24 B/frame a worker; the fix reads them from this._timing, with every worker's signature and about 15 test calls), addFrame's (_writeFrameMeters, 10 to 20 B/frame; the same Float64Array fix as stampStep, with frameTotals' tests) and the wait meter's (waitMeterMs / addWaitMs return and take doubles; a Float64Array on the global, the classic physics scripts too). Together about 4 to 6 KB/s a worker.\n\nHygiene (allocation, not time): suites green; it rides the next Predator gate."
+    },
+    {
+      "id": "R-1831",
+      "date": "2026-11-22",
+      "time": "05:15",
+      "timeFrom": "recorded",
+      "title": "N-245 closed: Boids' deopt pass shows no steady deopt loop (both sites fixed: N-214's epoch read, the spatial publish split); what is left are one-time dependency changes",
+      "verdict": "kept-hygiene",
+      "text": "**N-245 closed: Boids has no steady deopt loop left.** Deopt pass on Boids (main at cc9eefc6), `--log-deopt --log-ic`, 10 s warm-up, 8 s measured, 05:15:\n\n- Neither of N-245's sites deopts: weedjsPost's pose-epoch read (N-214, R-1158; the ASUS saw it gone too, R-1743) and spatial's publish loop (fef668b7 and _scanOwnedEntities, R-1817; Predator 274 -> 0, R-1743).\n- Steady (after 10 s), every deopt is a one-time dependency change, none repeats in a loop: 9 at the wait meter and _runFrame (\"dependent prototype chain changed\", one per worker, when a global is added), and singles in camera, scene, gameObject and mouse (\"field type constness changed\"). 173 deopt-like lines in the whole run, warm-up included.\n\nThe scene ran its usual load (spatial 3.8 ms, physics 4.8 ms, logic 1.0 ms with the log on)."
     }
   ],
   "leads": [
