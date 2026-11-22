@@ -46,7 +46,7 @@ test('the physics host stamps byte for byte what stampStep stamps', () => {
     publishFrame(view, abs + 16.5);
   }
   const slot = frameClockSlot('physics');
-  stampStep(ours, slot, abs + 17, abs + 19.25);
+  stampStep(ours, slot, Float64Array.of(abs + 17, abs + 19.25));
   fcStamp({ fcI32: hosts.i32, fcF64: hosts.f64, fcSlot: slot }, abs + 17, abs + 19.25);
   assert.deepEqual(new Uint8Array(hosts.i32.buffer), new Uint8Array(ours.i32.buffer));
 });
@@ -67,8 +67,8 @@ test('publish and stamp round-trip on one buffer', () => {
   const abs = 1_700_000_000_000;
   const gen = publishFrame(view, abs);
   assert.equal(gen, 1);
-  stampStep(view, frameClockSlot('main'), abs, abs + 1.25);
-  stampStep(view, frameClockSlot('preRender'), abs + 0.4, abs + 7.1);
+  stampStep(view, frameClockSlot('main'), Float64Array.of(abs, abs + 1.25));
+  stampStep(view, frameClockSlot('preRender'), Float64Array.of(abs + 0.4, abs + 7.1));
   const sample = readPhaseSample(view);
   assert.equal(sample.mainGen, 1);
   assert.equal(sample.mainT0, abs);
@@ -79,8 +79,8 @@ test('publish and stamp round-trip on one buffer', () => {
   assert.equal(main.gen, 1);
   assert.equal(pre.start, abs + 0.4);
   assert.equal(pre.gen, 1);
-  stampStep(view, -1, abs, abs + 1);
-  stampStep(view, 99, abs, abs + 1);
+  stampStep(view, -1, Float64Array.of(abs, abs + 1));
+  stampStep(view, 99, Float64Array.of(abs, abs + 1));
   assert.equal(readPhaseSample(view).slots.length, 2);
 });
 

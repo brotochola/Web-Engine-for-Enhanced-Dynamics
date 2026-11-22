@@ -72,7 +72,7 @@ function spatialAt(w, { logic = 2, ago = [], period = 40, own = 2 } = {}) {
 /** The logic workers' last finished steps, begun `ago` ms before now (each its own) and 0.5 ms long. */
 function stampLogic(w, ago) {
   const now = wallMs();
-  for (let i = 0; i < ago.length; i++) stampStep(w._frameClock, frameClockSlot('logic', i), now - ago[i], now - ago[i] + 0.5);
+  for (let i = 0; i < ago.length; i++) stampStep(w._frameClock, frameClockSlot('logic', i), Float64Array.of(now - ago[i], now - ago[i] + 0.5));
 }
 
 test('a logicDone frame sleeps on the bell until every logic worker has ended its frame, and counts the wait', async () => {

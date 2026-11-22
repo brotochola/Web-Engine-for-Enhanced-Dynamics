@@ -145,11 +145,16 @@ function readGen(i32) {
 /**
  * One finished step. Called after the step, with both ends, so a reader never
  * pairs this frame's start with the previous frame's end. The gen stored is the
- * main-thread generation observed at stamp time.
+ * main-thread generation observed at stamp time. N-158: the two ends come in `times` ([0] the start, [1] the end, ms
+ * since the epoch), not as arguments: a frame loop that does not inline this call boxed both every frame.
  * @param {{ f64: Float64Array, i32: Int32Array }} view
+ * @param {number} slot
+ * @param {Float64Array} times
  */
-export function stampStep(view, slot, startAbs, endAbs) {
+export function stampStep(view, slot, times) {
   if (!view || slot < 0 || slot >= SLOT_COUNT) return;
+  const startAbs = times[0];
+  const endAbs = times[1];
   if (!(startAbs > 0) || !(endAbs >= startAbs)) return;
   const i32 = view.i32;
   const f64 = view.f64;

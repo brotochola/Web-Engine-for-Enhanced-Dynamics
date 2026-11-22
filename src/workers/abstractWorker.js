@@ -13,7 +13,7 @@ import { DecorationPool } from '../core/decorationPool.js';
 import { DecorationSpatial } from '../core/decorationSpatial.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { BulletComponent } from '../components/bulletComponent.js';
-import { Time } from '../core/timeScale.js';
+import { FRAME_WALL, Time } from '../core/timeScale.js';
 import { Tween } from '../core/tween.js';
 import { WORKER_WEED } from './workerWeed.js';
 import {
@@ -41,6 +41,9 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep, TIME_ORIGIN } from '../util/frameClock.js';
+
+/** A frame's two ends for stampStep (N-158: in a Float64Array, not as arguments). */
+const FRAME_STAMP = new Float64Array(2);
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import { useEngineWasmModule } from '../util/wasmKernel.js';
 import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
@@ -291,13 +294,14 @@ export class AbstractWorker {
   updateFrameTiming() {
     const now = performance.now();
     const rawDelta = now - this.lastFrameTime;
-    const wallDelta = Math.min(Math.max(rawDelta, 0), 100);
+    // 0..100 ms (comparisons, not Math.min/max, which ran out of line here and returned heap numbers: N-158).
+    const wallDelta = rawDelta > 100 ? 100 : rawDelta > 0 ? rawDelta : 0;
     this.lastFrameTime = now;
 
     // FPS from wall-clock delta; tiny or zero deltas happen (timer resolution, same-tick work).
     // Use a small floor only for FPS so we never divide by zero and stats stay interpretable.
     const FPS_MIN_DELTA_MS = 0.2;
-    const instantaneousFPS = 1000 / Math.max(wallDelta, FPS_MIN_DELTA_MS);
+    const instantaneousFPS = 1000 / (wallDelta > FPS_MIN_DELTA_MS ? wallDelta : FPS_MIN_DELTA_MS);
     this.currentFPS = instantaneousFPS;
 
     // Sim dt: injected lockstep step, else freeze when fixedFps > 0.
@@ -411,25 +415,27 @@ export class AbstractWorker {
    * Used by gameLoop and by `{ msg: 'step' }` lockstep.
    */
   _runFrame(resuming = false) {
-    // Scheduler idle since the previous frame. Measured before updateFrameTiming()
-    // so it cannot absorb any of the step it is meant to sit beside.
-    const frameStart = performance.now();
+    this.frameNumber++;
+    // Two clock reads a frame, its start and its end (N-158: each performance.now() returns a new heap number, and the
+    // frame read it five times). updateFrameTiming reads the start and leaves it in lastFrameTime; the idle gap, the
+    // frame clock's stamp and STEP_MS all start from it.
+    const timing = this.updateFrameTiming();
+    const frameStart = this.lastFrameTime;
     // Absolute ms. performance.now() alone is not comparable with other workers.
     const frameStartAbs = TIME_ORIGIN + frameStart;
     // This frame's clock reads take its start (E-174): the sim clock moves by frames, and asking the wall clock is slow.
-    Time._noteFrameWall(frameStartAbs);
-    this.idleTimeThisFrame = this._lastFrameEndAt > 0 ? Math.max(0, frameStart - this._lastFrameEndAt) : 0;
-
-    this.frameNumber++;
-    const timing = this.updateFrameTiming();
+    FRAME_WALL[0] = frameStartAbs;
+    // Scheduler idle since the previous frame: up to the frame's start, so it absorbs none of the step.
+    const sinceLastEnd = frameStart - this._lastFrameEndAt;
+    this.idleTimeThisFrame = this._lastFrameEndAt > 0 && sinceLastEnd > 0 ? sinceLastEnd : 0;
 
     // The sibling-block meter resets here, before update(), because every wait in
     // this engine happens inside update() (the sync Box2D query protocol). Reset
     // after reportFPS would publish the previous frame's value.
     resetWaitMeter();
 
-    // STEP_MS = wall time of the frame's work: the input edge flags, update() and the hooks around it.
-    const t0 = performance.now();
+    // STEP_MS = wall time of the frame's work: the input edge flags, update() and the hooks around it (from the frame's
+    // start: the timing above is a microsecond).
     this.beforeUpdate();
 
     if (this.needsGameScripts) {
@@ -440,15 +446,13 @@ export class AbstractWorker {
     // Call the worker-specific update logic
     this.update(timing.deltaTime, timing.dtRatio, resuming);
     this.afterUpdate();
-    this.stepTimeThisFrame = performance.now() - t0;
-    this._lastFrameEndAt = performance.now();
+    const frameEnd = performance.now();
+    this.stepTimeThisFrame = frameEnd - frameStart;
+    this._lastFrameEndAt = frameEnd;
     if (this._frameClock) {
-      stampStep(
-        this._frameClock,
-        this._frameClockSlot,
-        frameStartAbs,
-        TIME_ORIGIN + this._lastFrameEndAt
-      );
+      FRAME_STAMP[0] = frameStartAbs;
+      FRAME_STAMP[1] = TIME_ORIGIN + frameEnd;
+      stampStep(this._frameClock, this._frameClockSlot, FRAME_STAMP);
     }
 
     // Report FPS

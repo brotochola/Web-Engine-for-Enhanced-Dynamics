@@ -26,7 +26,9 @@ const TIME_ORIGIN = performance.timeOrigin;
  * read took the wall time from performance.now() (about 170 ns in Chrome 156, 320 with timeOrigin), which more than
  * doubled a busy emitGpu caller's call; the hold it serves is a hundred milliseconds, far coarser than a frame.
  */
-const FRAME_WALL = new Float64Array([NaN]);
+// N-158: a worker's frame loop writes [0] itself (Time._noteFrameWall takes the time as an argument, a heap number
+// where the loop does not inline it).
+export const FRAME_WALL = new Float64Array([NaN]);
 
 /** The wall time in ms since the epoch, comparable between threads. */
 function wallNowMs() {

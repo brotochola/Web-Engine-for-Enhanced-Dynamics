@@ -244,7 +244,7 @@ function runFrameBody() {
 test('idle is measured before the step, so it can never be part of STEP_MS', async () => {
   const frame = runFrameBody();
   const idleAt = frame.indexOf('this.idleTimeThisFrame =');
-  const stepAt = frame.indexOf('this.stepTimeThisFrame = performance.now() - t0;');
+  const stepAt = frame.indexOf('this.stepTimeThisFrame = frameEnd - frameStart;');
   const callAt = frame.indexOf('this.update(timing.deltaTime');
   assert.ok(idleAt >= 0 && stepAt >= 0 && callAt >= 0, 'could not locate the three points in _runFrame');
   assert.ok(idleAt < stepAt, 'idle must be measured before STEP_MS is recorded');

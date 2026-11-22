@@ -172,6 +172,9 @@ import {
   tryPushSpawn,
 } from '../util/spawnCommandRing.js';
 
+/** The main thread's frame ends for stampStep (N-158: in a Float64Array, not as arguments). */
+const MAIN_STAMP = new Float64Array(2);
+
 /** `wasm` keys a scene set that are not switches, already warned about (once per key per page). */
 const warnedWasmKeys = new Set();
 
@@ -2869,7 +2872,9 @@ class Scene {
         this.mainFPS = 1000 / averageFrameTime;
 
         if (clock) {
-          stampStep(clock, mainSlot, frameAbs, TIME_ORIGIN + performance.now());
+          MAIN_STAMP[0] = frameAbs;
+          MAIN_STAMP[1] = TIME_ORIGIN + performance.now();
+          stampStep(clock, mainSlot, MAIN_STAMP);
         }
       } else {
         // updateInternal does not run; a handler's write to the sun still goes out.
