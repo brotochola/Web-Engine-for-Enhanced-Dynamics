@@ -4,7 +4,8 @@
  * on its own while its corners keep their offsets (16 x zoom px), so two neighbours may leave a column of background
  * between them. The floor is white on a black page: a dark pixel inside it is a seam.
  *   ?zoom=1.3 (default)  ?camX=0.37 the camera's centre x past the floor's middle, in world px (fractions move the grid)
- *   ?snap=0 draws linear (no snap), the control.
+ *   ?snap=0 draws linear (no snap), the control.  ?backend=webgpu (default webgl).
+ *   ?corners=0 renderer.pixelSnapCorners false: each piece's origin snaps alone (N-302's seams).
  */
 import WEED from '/src/index.js';
 
@@ -18,6 +19,8 @@ const num = (key, fallback) => {
 export const ZOOM = num('zoom', 1.3);
 export const CAM_X = num('camX', 0.37);
 export const SNAP = params.get('snap') !== '0';
+export const BACKEND = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+export const CORNERS = params.get('corners') !== '0';
 const COLS = 120;
 const ROWS = 4;
 const PIECE = 16;
@@ -45,7 +48,7 @@ export class SnapSeamScene extends Scene {
     physics: { enabled: false },
     particle: { maxParticles: 0, decals: false },
     lighting: { enabled: false },
-    renderer: { backend: 'webgl', atlasScaleMode: SNAP ? 'nearest' : 'linear' },
+    renderer: { backend: BACKEND, atlasScaleMode: SNAP ? 'nearest' : 'linear', pixelSnapCorners: CORNERS },
   };
 
   static assets = { textures: {} };
