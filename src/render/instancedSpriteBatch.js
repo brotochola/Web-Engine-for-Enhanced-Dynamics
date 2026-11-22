@@ -37,7 +37,7 @@ import {
 } from './webgl/instancedSpriteGlsl.js';
 import {
   GPU_GBUF_FLOATS, GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS,
-  GPU_INDEXED_TEX_WORD, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows, gpuIndexedUpdateRows,
+  GPU_INDEXED_TEX_WORD, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows, gpuIndexedUpdateRows, makePackContext,
 } from './gpuQueueLayout.js';
 import {
   GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
@@ -912,6 +912,7 @@ export class InstancedSpriteBatch {
       filterTypes: false,
       depthDenom: 1,
       scanCount: 0,
+      particleCount: 0,
     };
   }
 
@@ -1973,37 +1974,20 @@ export class InstancedSpriteBatch {
    * @returns {object|null}
    */
   _beginUpload(q, opts) {
-    const o = opts || EMPTY_UPLOAD_OPTS;
-    const count = q.count | 0;
-    const indices = o.indices;
-    const indexCount = o.indexCount | 0;
-    const useIndices = indices != null;
-    if ((!useIndices && count <= 0) || (useIndices && indexCount <= 0)) {
+    // N-303 CR-18: the call's setup is makePackContext's (gpuQueueLayout.js; pre-render's packs use it too), on this
+    // batch's own context. The batch adds the empty mesh and the tile world.
+    const ctx = makePackContext(q, opts || EMPTY_UPLOAD_OPTS, this.capacity, this._uploadCtx);
+    if (ctx === null) {
       this.geometry.instanceCount = 0;
       this._show(false);
       return null;
     }
-    // N-102: a filter the options leave out is none (-1, as documented), not type 0.
-    const includeType = o.includeType == null ? -1 : o.includeType | 0;
-    const hasInclude = includeType >= 0;
-    if (!useIndices && hasInclude && !o.type) {
-      this.geometry.instanceCount = 0;
-      this._show(false);
-      return null;
-    }
-    const space = o.space | 0;
-    const zoom = o.zoom ?? 1;
-    const cameraX = o.cameraX ?? 0;
-    const cameraY = o.cameraY ?? 0;
-    const resolution = o.resolution ?? 1;
-    const useScreen = space === BATCH_SPACE.SCREEN;
-    const screenScale = zoom * resolution;
     const tw = this._tileWorld;
     if (tw) {
-      if (useScreen) {
-        tw[0] = cameraX;
-        tw[1] = cameraY;
-        tw[2] = screenScale > 0 ? 1 / screenScale : 1;
+      if (ctx.useScreen) {
+        tw[0] = ctx.cameraX;
+        tw[1] = ctx.cameraY;
+        tw[2] = ctx.screenScale > 0 ? 1 / ctx.screenScale : 1;
         tw[3] = 1;
       } else {
         tw[0] = 0;
@@ -2012,53 +1996,6 @@ export class InstancedSpriteBatch {
         tw[3] = 0;
       }
     }
-    const typeArr = o.type || null;
-    const exclude0 = o.excludeType0 == null ? -1 : o.excludeType0 | 0;
-    const exclude1 = o.excludeType1 == null ? -1 : o.excludeType1 | 0;
-    const hasExclude = exclude0 >= 0 || exclude1 >= 0;
-    const filterTypes = !useIndices && typeArr && (hasInclude || hasExclude);
-    const ctx = this._uploadCtx;
-    ctx.o = o;
-    ctx.indices = indices;
-    ctx.useIndices = useIndices;
-    ctx.useScreen = useScreen;
-    ctx.cameraX = cameraX;
-    ctx.cameraY = cameraY;
-    ctx.screenScale = screenScale;
-    const rot = o.cameraRot || 0;
-    ctx.cameraRot = rot;
-    if (rot && useScreen) {
-      const z = zoom || 1;
-      const canvasW = o.canvasW || 0;
-      const canvasH = o.canvasH || 0;
-      const res = resolution || 1;
-      ctx.camC = Math.cos(rot);
-      ctx.camS = Math.sin(rot);
-      ctx.focusX = cameraX + canvasW / (2 * z);
-      ctx.focusY = cameraY + canvasH / (2 * z);
-      ctx.halfW = canvasW * 0.5 * res;
-      ctx.halfH = canvasH * 0.5 * res;
-    } else {
-      ctx.camC = 1;
-      ctx.camS = 0;
-      ctx.focusX = 0;
-      ctx.focusY = 0;
-      ctx.halfW = 0;
-      ctx.halfH = 0;
-    }
-    ctx.typeArr = typeArr;
-    ctx.includeType = includeType;
-    ctx.exclude0 = exclude0;
-    ctx.exclude1 = exclude1;
-    ctx.hasInclude = hasInclude;
-    ctx.hasExclude = hasExclude;
-    ctx.filterTypes = filterTypes;
-    ctx.depthDenom = (o.depthDenom || this.capacity) + 1;
-    ctx.scanCount = useIndices
-      ? indexCount
-      : count > this.capacity && !filterTypes
-        ? this.capacity
-        : count;
     return ctx;
   }
 

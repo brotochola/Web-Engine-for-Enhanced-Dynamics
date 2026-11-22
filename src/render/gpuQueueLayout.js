@@ -325,7 +325,9 @@ export function writeGpuQueueHeader(header, counts, flags) {
 }
 
 /**
- * Call-level setup matching InstancedSpriteBatch._beginUpload, without touching a Mesh.
+ * A pack call's setup from its queue and options: the camera terms, the type filters, the depth denominator and the rows
+ * to scan, into `out` (a context declared with every field). Pre-render's packs and InstancedSpriteBatch._beginUpload use
+ * it (N-303 CR-18). Null when there is nothing to pack.
  */
 export function makePackContext(q, opts, capacity, out) {
   const o = opts || {};

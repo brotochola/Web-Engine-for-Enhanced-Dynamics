@@ -8,6 +8,8 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(dir, '../../src/render/instancedSpriteBatch.js'), 'utf8');
 const gpuJs = readFileSync(join(dir, '../../src/render/webgpu/instancedSpriteWgsl.js'), 'utf8');
 const wgsl = readFileSync(join(dir, '../../src/shaders/instancedSprite.wgsl'), 'utf8');
+// N-303 CR-18: the upload's call setup (camera terms, type filters, indices) is gpuQueueLayout.js's makePackContext.
+const packContext = readFileSync(join(dir, '../../src/render/gpuQueueLayout.js'), 'utf8');
 
 test('normal fragment scales PMA rgb by instance alpha without re-multiplying tex.a', () => {
   assert.match(wgsl, /let a = t\.a \* in\.vColor\.a;/);
@@ -45,7 +47,8 @@ test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
   assert.match(wgsl, /select\(world, world \* uniforms\.uTileWorld\.z \+ uniforms\.uTileWorld\.xy, uniforms\.uTileWorld\.w > 0\.5\)/);
   assert.match(src, /this\._tileWorld = new Float32Array\(4\)/);
   assert.match(src, /tw\[3\] = 1/);
-  assert.match(src, /useScreen = space === BATCH_SPACE\.SCREEN/);
+  assert.match(packContext, /useScreen = space === GPU_SPACE_SCREEN/);
+  assert.match(src, /makePackContext\(q, opts \|\| EMPTY_UPLOAD_OPTS, this\.capacity, this\._uploadCtx\)/);
   assert.match(wgsl, /textureLoad\(uTexLut/);
   assert.match(wgsl, /bitcast<u32>\(aInstTintBits\)/);
   assert.match(src, /instancedSpriteGpuProgram/);
@@ -56,10 +59,10 @@ test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
 test('ctor sets State.depthMask; upload excludeType0/1; indices skip filter', () => {
   assert.match(src, /depthMask = true/);
   assert.match(src, /state\.depthMask = depthMask !== false/);
-  assert.match(src, /excludeType0/);
-  assert.match(src, /excludeType1/);
-  assert.match(src, /o\.indices/);
-  assert.match(src, /useIndices/);
+  assert.match(packContext, /excludeType0/);
+  assert.match(packContext, /excludeType1/);
+  assert.match(packContext, /o\.indices/);
+  assert.match(packContext, /useIndices/);
 });
 
 const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8');
