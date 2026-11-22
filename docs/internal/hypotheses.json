@@ -24030,7 +24030,8 @@
         "R-1773",
         "R-1774",
         "R-1775",
-        "R-1844"
+        "R-1844",
+        "R-1845"
       ]
     },
     {
@@ -42393,6 +42394,15 @@
       "title": "Predator gate over the ASUS's batch 9 (CR-26/30/32) and CR-18 parts 3-5 (a66f2a63 -> 56ab3fae), owner logic, 8 pairs: NEUTRAL, logic +1.2 %; renderer +6.6 % inside its swing (watch the next gate)",
       "verdict": "kept-hygiene",
       "text": "**The ASUS's batch 9 (N-303 CR-26: one QuerySystem, CR-30: draw-call counting only with detailed stats, CR-32: Pixi's literals hold their fields) and the main PC's CR-18 parts 3-5 (_ringBuffers and dummyLutSource, renderStep.js, pixiGroupsLayout in 16 programs) pass Predator: NEUTRAL.** batch10-gate, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, a66f2a63 -> 56ab3fae (dist built), owner logic (CR-26 is on its query path), 8 pairs from the start (the last two gates needed them), 07:44 to 07:50:\n\n- logic 14.953 -> 15.004 ms (+1.2 %, worse 5/8, cv 2/2 %); spatial +2.5 %, physics +2.1 %, preRender +0.3 %.\n- renderer 6.751 -> 6.844 ms (+6.6 %, worse 5/8, cv 10/10 %, +5.8 % against the others): inside this scene's renderer swing (about ±10 % from sitting to sitting, R-1826), and every CR-18 part read byte-for-byte equal in captures; if the next gate reads the renderer up again, bisect CR-18 parts 3-5 against CR-30/CR-32.\n- Load keys within 0.9 %.\n\nKept as hygiene."
+    },
+    {
+      "id": "R-1845",
+      "date": "2026-11-22",
+      "time": "08:05",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-18 done: the render modules' cold copies, src/render -323 lines in seven commits (FillBatchBase, _beginUpload on makePackContext, _ringBuffers, RenderStep, pixiGroupsLayout, meshCorners slots, keyedPack), every one byte-for-byte in captures",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-18 done (the render modules' cold copies): src/render -323 lines net (+357 / -680) in seven commits, every one byte-for-byte equal in captures against main.** 2026-11-22, 07:25 to 08:05.\n\n- 67d03e16: ColliderFillBatch and MeshUvFillBatch extend FillBatchBase (the pose texture and its state, the atlas and LUT bindings, the immediate send, the mesh's draw state, uploadPoseTable; MeshUvFillBatch's version bump before it). dxCapture shade on both backends, volumeStress volume and mesh.\n- 5bb350ce: InstancedSpriteBatch._beginUpload is makePackContext (gpuQueueLayout.js, pre-render's packs' setup) on the batch's own context plus the empty mesh and the tile world; the context declares particleCount from the start (makePackContext wrote it on a literal that lacked it).\n- 976c1162: one _ringBuffers for the five ring-buffer makers, one dummyLutSource body for both backends.\n- 323f8461: renderStep.js's RenderStep (stencilStep, colorMaskStep) for the four ViewContainer render steps of instancedSpriteBatch.js and lightEdges.js, and STENCIL_* written once; the unshaded pass keeps its \"a mask drawn makes sure the target has a stencil\". depthPair, houseLight, wallShadow, dxCapture walls and light3d (the light's edges on: lighting.resolution 0.25 with pixel depth) on both backends.\n- b93a8aa3: pixiGroupsLayout / pixiGroupsGpuLayout for Pixi's group 0/1 layouts in 16 programs (the old meshUniformGroups folded in); eight WebGPU captures.\n- 1653ae50: meshCornersClient's two table writers share geometryBound and writeGenerationSlots (46 corner and UV tests).\n- 5074461f: gpuPackClient's keyed pair through one keyedPack, the general packs' params block through one writeGeneralParams (the instanced pack still guards the camera terms with || 0 and || 1, passed in); dxCapture keyed by row, by pose and with maps by night, both backends.\n\nOn the way: the double blank lines left in meshCornersClient.js, gpuPackClient.js and instancedSpriteBatch.js removed. The gates: R-1843 (CR-18 parts 1-2), R-1844 (parts 3-5, renderer +6.6 % inside its swing); parts 6-7 ride the next gate. N-242 (the unused UV rows) stays parked: CR-18 did not need it."
     }
   ],
   "leads": [
