@@ -20998,7 +20998,8 @@
         "split pixi worker"
       ],
       "records": [
-        "R-1852"
+        "R-1852",
+        "R-1853"
       ]
     },
     {
@@ -42474,6 +42475,15 @@
       "title": "N-256 phase 1 done: PW-1 assets (PixiAssets), PW-5 scenery and tilemap (PixiScenery), PW-2 initialize in 13 steps; pixiWorker.js 11 509 -> 10 596 lines, captures byte for byte, no steady deopt in the moved code",
       "verdict": "kept-hygiene",
       "text": "**N-256 phase 1 done (PW-1, PW-5, PW-2): pixiWorker.js 11 509 -> 10 596 lines, pure moves, every capture byte for\nbyte the same.**\n\n- cb8a4c00, PW-1. `src/render/pixi/assets.js`, PixiAssets (643 lines), holds:\n  - the textures, the spritesheets and proxy sheets, and the tileset textures;\n  - the atlas and its twin page, and the early atlas sheets;\n  - the tables made from the atlas: the texture lookup, the footprints, the maps table and the GPU particles'\n    animation lookup.\n\n  rebuildInstancedTextureLut splits at its seam: assets.rebuildTextureLut builds the tables, and the worker points its\n  batches at them.\n- 0c588ade, PW-5. `src/render/pixi/scenery.js`, PixiScenery (423 lines), holds:\n  - the static, cover, tiling and tilemap scenery entries;\n  - their camera;\n  - the tilemap's pages and its gid program.\n\n  The plan had a tilemap.js of its own. A tilemap's entry is bound and destroyed with the other scenery entries, so\n  they stay one class.\n- 5e23441b, PW-2. initialize goes from 457 lines to 22. It is now thirteen named steps, each one section of the old\n  body. decalBind, the one local two sections shared, is passed from one step to the next.\n\nThe rules held:\n- The bodies are verbatim. A field or method that moved keeps its body under a new name. What the classes still read\n  of the worker goes through `this.worker`: its renderer, backend, config and camera, and the programs and batches the\n  tables are bound to. That is the back-pointer rule 2 allows as a first step.\n- workerShape.test.js scans the new classes. It counts the steps as initialize's and checks that initialize alone\n  calls each one.\n- ESLint's no-undef found five Pixi classes the scenery used bare (GlProgram, Shader, TextureSource, Geometry, Mesh).\n  The worker's Pixi import has no semicolon, so the extraction script missed them. The suite caught it first.\n\nChecks:\n- Captures against main on WebGL and WebGPU, 0 of 921600 pixels differ on each, after every commit:\n  - dxCapture hour=12 and 22;\n  - light3dCompare all=1 hour=22 still=1;\n  - depthPair;\n  - tilemapStress;\n  - meshLayerOrder and volumeStress still=1 dayMinutes=0, for the cover scenery.\n- gpuParticlesStress, decalStampStress and sceneryCamStress draw with no page error. They move every frame, and an A/A\n  differs as much.\n- The V8 deopt summary of a Predator crowd=2.5 mix=1 run lists no steady deopt in pixiWorker.js or the new modules.\n- Suites: node 3553/0, demos 143/0.\n\nThe Pixi-owner sitting the plan asks for covers phases 1 and 2 together."
+    },
+    {
+      "id": "R-1853",
+      "date": "2026-11-22",
+      "time": "10:50",
+      "timeFrom": "recorded",
+      "title": "N-256 phase 1 and PW-4 through a Pixi-owner Predator sitting (29068f55 -> ee38e44a): NEUTRAL in 16 pairs, renderer +0.2 % (the first 8 pairs' +8.0 % did not hold); the light3d night sitting read under the floor",
+      "verdict": "kept-hygiene",
+      "text": "**The Pixi-owner sitting over N-256 phase 1 and PW-4 (29068f55 -> ee38e44a): NEUTRAL in 16 pairs. The first 8 read\nrenderer +8.0 %, which did not hold.**\n\nThe sitting: `runPredatorAbab.mjs --name n256p1-plain --vs 29068f55 --hyp-rev ee38e44a --owner renderer`, with\n`--query \"crowd=2.5&dayCycle=0&mix=1\"`. It ran headed, from the save, on AC power. Base 29068f55 is the commit just\nbefore PW-1, so only N-256's moves differ. It ran 8 pairs from 10:28 to 10:35, then 8 more with `--append`, up to 10:50.\n\n| worker | A -> B (ms), 16 pairs | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.476 -> 15.192 | -0.6 % | 6/16 | -0.7 % |\n| spatial | 7.315 -> 7.212 | +0.0 % | 8/16 | +1.5 % |\n| physics | 15.034 -> 14.824 | -1.3 % | 5/16 | -0.2 % |\n| renderer | 7.131 -> 6.967 | +0.2 % | 8/16 | +3.0 % |\n| preRender | 8.642 -> 8.577 | -0.9 % | 5/16 | -0.5 % |\n\nParticle stays under the 6 ms floor. The load keys are within 0.4 %.\n\n- The first 8 pairs read the renderer at +8.0 % paired. Its deltas ran from -18.9 % to +27.1 % (cv 7/10 %), a standard\n  error of about 4.6 %. The 8 appended pairs brought it to +0.2 %, with 8 of 16 worse.\n- The moves add one or two property loads a frame on the renderer's path: the scenery's camera, the texture table's\n  upload check, and one call per MESH layer.\n- A second sitting, Predator light3d=1 hour=22, read every worker under the 6 ms floor (renderer 2.9 -> 3.1 ms), so it\n  gives no reading.\n- PW-3 (custom layers) and phases 3 to 4 get their own sitting."
     }
   ],
   "leads": [
