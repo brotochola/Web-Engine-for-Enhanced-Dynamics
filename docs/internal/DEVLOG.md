@@ -33,7 +33,10 @@ The stress scenes built to hit those caps hit them, and Predator stays quiet (DX
   exact shadow from the height maps, the cards' error drops 13 % over twelve facings, and no facing gets worse (N-410).
 
 **Pixi stops sending what did not change.** Keyed sprites' G-buffer words went up to the GPU every frame. Now they go up
-only when they change: Pixi is 15 % faster at 150 000 sprites and 25 % faster at 80 000 (E-455). The same idea on
+only when they change: Pixi is 15 % faster at 150 000 sprites and 25 % faster at 80 000 (E-455). Later the same day the
+words stopped being worked out every frame at all. Each sprite's word now rides in the statics its slot already keeps,
+and goes up only when the sprite changes. The pack with the words costs what the pack without them does, half what it
+did, and Pixi runs 11 to 12 % faster in Predator's crowd by night, with map shadows and with light3d (E-455 step 3). The same idea on
 pre-render's path lost, because comparing cost more than the upload saved, so it was dropped.
 
 **One shader, one file.** The sprite shaders had copies:
