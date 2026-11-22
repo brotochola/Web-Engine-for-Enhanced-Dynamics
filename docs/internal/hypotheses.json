@@ -15359,7 +15359,8 @@
       "records": [
         "R-1062",
         "R-1160",
-        "R-1681"
+        "R-1681",
+        "R-1695"
       ],
       "date": "2026-11-14",
       "area": "render",
@@ -15369,7 +15370,7 @@
       "id": "DX-SELFSHADOW",
       "title": "Self-shadow: faces and sprites with height maps shade themselves from the sun and the lamps (DX-LIGHT3D F8)",
       "status": "kept",
-      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): self-shadow from the sun and the lamps on both backends, the entity id in the G-buffer (no shadow from its own map, N-181), 1/2/4 rays (E-365: the pass 3.33 -> 1.61 ms). Left: the owner's look at the car and the bed without the checkerboard (asked again 2026-11-21); the id wrap at 65 535 (N-185)."
+      "statusText": "Kept 2026-11-21 (R-1681, closing DX-LIGHT3D): self-shadow from the sun and the lamps on both backends, the entity id in the G-buffer (no shadow from its own map, N-181), 1/2/4 rays (E-365: the pass 3.33 -> 1.61 ms). The owner approved the car and the bed without the checkerboard (R-1695). Left: the id wrap at 65 535 (N-185)."
     },
     {
       "aliases": [
@@ -16544,7 +16545,7 @@
       "id": "N-212",
       "title": "Shadows flicker, not with the fire: some do not show right and some disappear now and then",
       "status": "kept",
-      "statusText": "Closed 2026-11-21 (R-1694) for the cause Predator showed: the light cut fades (R-1151) and the budget spares the lamps' map (R-1159); not confirmed in the owner's scene, which he does not remember. The other cuts' pops: N-330.",
+      "statusText": "Closed 2026-11-21 (R-1694) for the cause Predator showed: the light cut fades (R-1151) and the budget spares the lamps' map (R-1159), confirmed by the owner (R-1695). The other cuts' pops: N-330.",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
@@ -16557,7 +16558,8 @@
       "records": [
         "R-1151",
         "R-1159",
-        "R-1694"
+        "R-1694",
+        "R-1695"
       ]
     },
     {
@@ -40952,6 +40954,15 @@
       "title": "N-212 closed for the cause found (the cut's fade, R-1151; the budget, R-1159), not confirmed in the owner's scene, which he does not remember; the per-entity and per-light cuts' pops filed as N-330",
       "verdict": "kept",
       "text": "**N-212 closed for the cause found; what is left filed as N-330.** The owner does not remember the scene of his 2026-11-15 report (asked again 2026-11-21), so it was not confirmed there. The mechanism Predator showed was fixed that week: the lights near maxShadowCastingLights' cut fade their shadows over the last 20 % of the cut distance instead of popping (e47c5442, R-1151; stamps, cookies and the lamps' map), and the adaptive budget no longer cuts the lamps' map (3a160eac, R-1159). Left, smaller: the per-entity cut (each entity's 3 nearest lights) and the per-light caster cut still pop a shadow in or out (N-330)."
+    },
+    {
+      "id": "R-1695",
+      "date": "2026-11-21",
+      "time": "21:43",
+      "timeFrom": "recorded",
+      "title": "The owner confirms N-212 fixed and approves the self-shadow's car and bed (light bench captures, no checkerboard)",
+      "verdict": "kept",
+      "text": "**The owner confirmed two items on 2026-11-21.**\n- N-212: \"sí, N-212 está arreglado\" (the flickering shadows: the light cut's fade, R-1151, and the budget, R-1159; closed in R-1694 before his word, now confirmed). N-330 (the per-entity and per-light cuts) stays open.\n- DX-SELFSHADOW's last item: \"la cama y el auto se ven bien\", after the light bench's captures by the 16 h sun with self-shadow on (D:/tmp/films/carbed/a.png, the bed; D:/tmp/films/car/a.png, the hatchback): no checkerboard. Approved."
     }
   ],
   "leads": [
