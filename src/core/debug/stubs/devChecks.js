@@ -14,3 +14,5 @@ export function slotReleased() {}
 export function checkEmit() {}
 export function unknownKey() {}
 export function cellOverflow() {}
+export function staticsBeforeEmit() {}
+export function staticsAfterEmit() {}
