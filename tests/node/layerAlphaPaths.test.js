@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadWorker } from '../bench/workerHarness.mjs';
+import { loadWorker, cloneWorker } from '../bench/workerHarness.mjs';
 import { Layer } from '../../src/core/layer.js';
 import { lightEdgesGlsl, lightEdgesWgsl } from '../../src/render/lightEdges.js';
 import { UNSHADED_COMPOSITE_FRAG, UNSHADED_COMPOSITE_WGSL } from '../../src/render/unshadedComposite.js';
@@ -18,7 +18,7 @@ import { readEngineShader } from './engineShaderSources.mjs';
 /** The worker's own copy for one test: the harness hands out one instance, and a stub put on it would outlive the test. */
 async function pixi() {
   const shared = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  return Object.assign(Object.create(Object.getPrototypeOf(shared)), shared);
+  return cloneWorker(shared);
 }
 
 /** One frame of updateSpritesFromRenderQueue up to the opaque pass's gate, with the entities layer at `alpha`. */

@@ -133,32 +133,32 @@ test('OL-5: Pixi gives the named lamps tiles for a stamp row or a casting volume
   gpu.header[GPU_HDR_STAMP_LIGHTS] = 2;
   px._gpuQueueRead = gpu;
   px._groundInvScaleY = 1;
-  px._uploadLampTiles = () => {};
+  px.shadowMaps._uploadLampTiles = () => {};
 
   // No stamp row and no volume: nothing would be drawn into a tile.
-  px._readLampTiles();
-  assert.equal(px._lampTileCount, 0);
+  px.shadowMaps.readLampTiles();
+  assert.equal(px.shadowMaps.lampTileCount, 0);
   assert.equal(px._lampTileOf[1], -1);
   assert.equal(px._lampTileOf[2], -1);
 
   // A volumes' layer with triangles (a house): each named lamp takes its tile, in pre-render's order.
   const volumes = { sunProjected: true, uvFillBatch: { geometry: { instanceCount: 1 } } };
   px.customLayers.list = [volumes];
-  px._readLampTiles();
-  assert.equal(px._lampTileCount, 2);
+  px.shadowMaps.readLampTiles();
+  assert.equal(px.shadowMaps.lampTileCount, 2);
   assert.equal(px._lampTileOf[1], 0);
   assert.equal(px._lampTileOf[2], 1);
   assert.equal(px._lampTileOf[0], -1, 'the lamp past the cut has none');
 
   // The layer empty again (the houses left the view): the tiles go.
   volumes.uvFillBatch.geometry.instanceCount = 0;
-  px._readLampTiles();
-  assert.equal(px._lampTileCount, 0);
+  px.shadowMaps.readLampTiles();
+  assert.equal(px.shadowMaps.lampTileCount, 0);
   assert.equal(px._lampTileOf[1], -1);
 
   // A stamp row alone, as ever.
   gpu.header[GPU_HDR_STAMP] = 3;
-  px._readLampTiles();
-  assert.equal(px._lampTileCount, 2);
+  px.shadowMaps.readLampTiles();
+  assert.equal(px.shadowMaps.lampTileCount, 2);
   assert.equal(px._lampTileOf[2], 1);
 });

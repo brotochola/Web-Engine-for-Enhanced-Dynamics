@@ -110,9 +110,12 @@ test('visible lights SAB fills even when cookie shadows are off', () => {
 });
 
 test('shadow RT clears transparent each frame (not opaque black)', () => {
-  const fn = pixi.indexOf('updateShadowSprites() {');
-  const body = pixi.slice(fn, pixi.indexOf('\n  loadTextures(', fn));
+  // N-256 PW-8: the shadows' layer's pass is the shadow maps' _drawGpuCasterShadows (src/render/pixi/shadowMaps.js).
+  const shadowMaps = readFileSync(join(root, 'src/render/pixi/shadowMaps.js'), 'utf8');
+  const fn = shadowMaps.indexOf('  _drawGpuCasterShadows() {');
+  assert.ok(fn >= 0, 'the pass');
+  const body = shadowMaps.slice(fn, shadowMaps.indexOf('\n  }\n', fn));
   assert.match(body, /rtOpts\.clear = true/);
-  assert.match(body, /rtOpts\.clearColor = this\._clearTransparent/);
+  assert.match(body, /rtOpts\.clearColor = this\.worker\._clearTransparent/);
   assert.doesNotMatch(body, /_clearBlack|\[0,\s*0,\s*0,\s*1\]/);
 });

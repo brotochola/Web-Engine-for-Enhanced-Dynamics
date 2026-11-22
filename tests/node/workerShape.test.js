@@ -107,12 +107,15 @@ for (const [file, selfKey, className, minFields] of [
 
 // N-256: the renderer's subsystems that moved out of pixiWorker.js into classes of their own (src/render/pixi/) keep the
 // rule there: a field one of their methods writes exists from their constructor.
+/** Fields a subsystem's method writes by name (`this[key]`), which the scan cannot see (PW-8's keyed columns passes). */
+const BY_NAME_FIELDS = { PixiShadowMaps: ['sunMapKeyedColumns', 'lampMapKeyedColumns'] };
 for (const [file, className, minFields, make] of [
   ['render/pixi/assets.js', 'PixiAssets', 15, async () => new (await import('../../src/render/pixi/assets.js')).PixiAssets({})],
   ['render/pixi/scenery.js', 'PixiScenery', 5, async () => new (await import('../../src/render/pixi/scenery.js')).PixiScenery({})],
   ['render/pixi/meshLayers.js', 'PixiMeshLayers', 3, async () => new (await import('../../src/render/pixi/meshLayers.js')).PixiMeshLayers({})],
   ['render/pixi/customLayers.js', 'PixiCustomLayers', 5, async () => new (await import('../../src/render/pixi/customLayers.js')).PixiCustomLayers({})],
   ['render/pixi/glowLayer.js', 'PixiGlowLayer', 4, async () => new (await import('../../src/render/pixi/glowLayer.js')).PixiGlowLayer({})],
+  ['render/pixi/shadowMaps.js', 'PixiShadowMaps', 20, async () => new (await import('../../src/render/pixi/shadowMaps.js')).PixiShadowMaps({})],
 ]) {
   test(`${className}: every field its methods write exists from the constructor`, async () => {
     const subsystem = await make();
@@ -120,6 +123,11 @@ for (const [file, className, minFields, make] of [
     assert.ok(written.size > minFields, `the scan found its methods (${written.size} fields)`);
     const missing = [...written].filter(([name]) => !Object.hasOwn(subsystem, name));
     assert.deepEqual(missing.map(([name, where]) => `${name} (${where})`), [], 'declare these in the constructor');
+    // A method that picks its field by name (`this[key] = …`) is out of the scan's sight: its fields, listed, too.
+    const source = fs.readFileSync(new URL(`../../src/${file}`, import.meta.url), 'utf8');
+    const dynamic = BY_NAME_FIELDS[className] || [];
+    assert.equal(/this\[[^\]]+\]\s*=(?!=)/.test(source), dynamic.length > 0, 'a field written by name is listed in BY_NAME_FIELDS');
+    assert.deepEqual(dynamic.filter((name) => !Object.hasOwn(subsystem, name)), [], 'declare these in the constructor');
   });
 }
 

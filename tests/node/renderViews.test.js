@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 import * as real from '../../src/render/renderViews.js';
 import * as stub from '../../src/core/debug/stubs/renderViews.js';
-import { loadWorker, postedMessages } from '../bench/workerHarness.mjs';
+import { loadWorker, postedMessages, cloneWorker } from '../bench/workerHarness.mjs';
 
 const { RENDER_VIEW, availableRenderViews, renderViewTextures } = real;
 
@@ -50,7 +50,7 @@ test('the production stub exports what renderViews.js does, and draws no view', 
 
 test('the worker: setRenderView takes a view only where its buffer exists, and makes nothing while Final', async () => {
   const shared = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const px = Object.assign(Object.create(Object.getPrototypeOf(shared)), shared);
+  const px = cloneWorker(shared);
   assert.equal(px._renderView, 0);
   assert.ok(Number.isNaN(px._renderViewOpacity), 'a double field from the constructor');
   px.lightingRT = null;
@@ -107,7 +107,7 @@ test('the worker: setRenderView takes a view only where its buffer exists, and m
 
 test('the worker: lightTileAt names the tile under a canvas point and the lights its words list (DBG-7)', async () => {
   const shared = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const px = Object.assign(Object.create(Object.getPrototypeOf(shared)), shared);
+  const px = cloneWorker(shared);
   // A hand-made grid: 4 x 3 tiles of 16 px, a border of 1, two words a tile, rows of 4 texels, 4 rows a word band.
   const t = { cols: 4, rows: 3, tilePx: 16, border: 1, wordsUsed: 2, rowsPerWord: 4, texWidth: 4, bits: new Uint32Array(4 * 8) };
   const word = (x, y, k, value) => {

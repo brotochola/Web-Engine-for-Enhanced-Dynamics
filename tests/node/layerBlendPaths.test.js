@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadWorker } from '../bench/workerHarness.mjs';
+import { loadWorker, cloneWorker } from '../bench/workerHarness.mjs';
 import { Layer } from '../../src/core/layer.js';
 import { BLEND_MODES } from '../../src/util/configDefaults.js';
 
@@ -65,7 +65,7 @@ test('the setters write the SAB by name and mark the layer; an unknown mode or a
 
 async function pixi() {
   const shared = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const px = Object.assign(Object.create(Object.getPrototypeOf(shared)), shared);
+  const px = cloneWorker(shared);
   px.sorts = 0;
   px.pixiApp = { stage: { sortChildren: () => { px.sorts++; } } };
   return px;

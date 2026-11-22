@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadWorker } from '../bench/workerHarness.mjs';
+import { loadWorker, cloneWorker } from '../bench/workerHarness.mjs';
 import { Layer } from '../../src/core/layer.js';
 import { GPU_HDR_COOKIE, GPU_HDR_STAMP, GPU_HDR_SUN, GPU_HEADER_INTS } from '../../src/render/gpuQueueLayout.js';
 
@@ -46,7 +46,7 @@ function withLayers(hidden) {
 /** The worker's own copy for one test: the harness hands out one instance, and a stub put on it would outlive the test. */
 async function pixi() {
   const shared = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const px = Object.assign(Object.create(Object.getPrototypeOf(shared)), shared);
+  const px = cloneWorker(shared);
   px.submits = [];
   px._submitRender = function submit(opts) { this.submits.push(opts.target); };
   return px;
@@ -62,23 +62,23 @@ test('castedShadows hidden in map mode: the sun and lamp maps cleared once, draw
   px.lampMapRT = { name: 'lampMap' };
   px._sunMapOn = true;
   px._lampMapOn = true;
-  px.shadowUpdateInterval = 3;
-  px._shadowUpdateTick = 2;
-  px._drawGpuCasterShadows = function draw() {
-    draws.push(this._shadowUpdateTick - 1);
+  px.shadowMaps.shadowUpdateInterval = 3;
+  px.shadowMaps.shadowUpdateTick = 2;
+  px.shadowMaps._drawGpuCasterShadows = function draw() {
+    draws.push(this.shadowUpdateTick - 1);
     // What a drawn frame leaves: the maps hold shadows again.
-    this._sunMapDrew = true;
-    this._sunMapClear = false;
-    this._lampMapClear = false;
+    this.sunMapDrew = true;
+    this.sunMapClear = false;
+    this.lampMapClear = false;
   };
   const layers = withLayers(['castedShadows']);
   try {
-    px.updateShadowSprites();
-    px.updateShadowSprites();
+    px.shadowMaps.updateShadowSprites();
+    px.shadowMaps.updateShadowSprites();
     assert.deepEqual(px.submits.map((t) => t.name), ['sunMap', 'lampMap'], 'cleared once, not every frame');
     assert.deepEqual(draws, []);
     layers.show('castedShadows');
-    px.updateShadowSprites();
+    px.shadowMaps.updateShadowSprites();
     assert.deepEqual(draws, [0], 'the first frame shown draws, though the interval is 3');
   } finally {
     layers.restore();
@@ -104,10 +104,10 @@ async function shadowPass(counts) {
   px.lampMapRT = { name: 'lampMap' };
   px._lampMapOn = true;
   px._sunMapOn = false;
-  px._lampTileCount = 0;
-  px._ensureKeyedCasters = () => {};
+  px.shadowMaps.lampTileCount = 0;
+  px.shadowMaps._ensureKeyedCasters = () => {};
   px._shadowPixelScale = () => 1;
-  px._drawLampMap = (batch, gpu, n) => { lampDraws.push(n); return true; };
+  px.shadowMaps._drawLampMap = (batch, gpu, n) => { lampDraws.push(n); return true; };
   return { px, lampDraws };
 }
 
@@ -115,7 +115,7 @@ test('entities shown: their stamp rows go to the lamps\' map, and their counts a
   const layers = withLayers([]);
   try {
     const { px, lampDraws } = await shadowPass({ sun: 40, stamp: 12, cookie: 3 });
-    px._drawGpuCasterShadows();
+    px.shadowMaps._drawGpuCasterShadows();
     assert.deepEqual(lampDraws, [12]);
     assert.equal(px._gpuCastersThisFrame, 40);
     assert.equal(px._gpuShadowLightsThisFrame, 3);
@@ -128,7 +128,7 @@ test('entities hidden: no caster row is drawn, and the lamps\' map is cleared in
   const layers = withLayers(['entities']);
   try {
     const { px, lampDraws } = await shadowPass({ sun: 40, stamp: 12, cookie: 3 });
-    px._drawGpuCasterShadows();
+    px.shadowMaps._drawGpuCasterShadows();
     assert.deepEqual(lampDraws, []);
     assert.equal(px._gpuCastersThisFrame, 0);
     assert.equal(px._gpuShadowLightsThisFrame, 0);

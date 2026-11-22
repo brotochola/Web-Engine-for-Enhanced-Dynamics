@@ -65,6 +65,23 @@ export async function loadWorker(file, selfKey) {
   return worker;
 }
 
+/**
+ * A copy of a loaded worker for one test, so a stub put on it does not outlive the test (loadWorker hands out one
+ * instance). The renderer's subsystems (N-256: the objects that hold their worker in `worker`) are copied with it, each
+ * pointing at the copy, so a stub on the copy reaches them too.
+ * @param {object} shared what loadWorker returned
+ */
+export function cloneWorker(shared) {
+  const copy = Object.assign(Object.create(Object.getPrototypeOf(shared)), shared);
+  for (const key of Object.keys(shared)) {
+    const sub = shared[key];
+    if (sub && typeof sub === 'object' && sub.worker === shared) {
+      copy[key] = Object.assign(Object.create(Object.getPrototypeOf(sub)), sub, { worker: copy });
+    }
+  }
+  return copy;
+}
+
 /** Core component SABs for `n` entities (the ones every worker binds). */
 export function coreComponentData(n) {
   const out = {};

@@ -78,7 +78,8 @@ test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCo
   const { emptyInstancedMesh } = await import('../../src/render/pixi/meshLayers.js');
   assert.match(pixiSrc, /obj\.visible = !!on && !emptyInstancedMesh\(obj\)/);
   assert.match(pixiSrc, /this\._rtEmptyContainer = new Container\(\)/);
-  assert.match(pixiSrc, /rtOpts\.container = this\._rtEmptyContainer/);
+  // N-256 PW-8: the shadow maps' passes draw the empty container in its place (src/render/pixi/shadowMaps.js).
+  assert.match(readFileSync(join(dir, '../../src/render/pixi/shadowMaps.js'), 'utf8'), /rtOpts\.container = this\.worker\._rtEmptyContainer/);
   assert.match(customSrc, /emptyInstancedMesh\(densityMesh\)/);
 
   const start = pixiSrc.indexOf('function setDisplayVisible');

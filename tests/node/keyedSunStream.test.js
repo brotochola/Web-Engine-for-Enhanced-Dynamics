@@ -15,11 +15,11 @@ async function worker(interval, wanted) {
   px.shadowSpritesEnabled = true;
   px.shadowBatch = {};
   px.shadowRT = {};
-  px.shadowUpdateInterval = interval;
-  px._shadowUpdateTick = 0;
-  px._drawGpuCasterShadows = function draw() {
-    passes.push(this._shadowUpdateTick - 1);
-    this._keyedSunWanted = wanted();
+  px.shadowMaps.shadowUpdateInterval = interval;
+  px.shadowMaps.shadowUpdateTick = 0;
+  px.shadowMaps._drawGpuCasterShadows = function draw() {
+    passes.push(this.shadowUpdateTick - 1);
+    this.keyedSunWanted = wanted();
   };
   px.entitiesBatch = { keyedShadows: true, setKeyedShadowStream: (on) => calls.push(on) };
   return { px, calls, passes };
@@ -28,17 +28,17 @@ async function worker(interval, wanted) {
 test('every frame a sun pass: the stream is on while the pass has no keyed rows, off once it has them', async () => {
   let rows = false;
   const { px, calls } = await worker(1, () => !rows);
-  px.updateShadowSprites();
-  px.updateShadowSprites();
+  px.shadowMaps.updateShadowSprites();
+  px.shadowMaps.updateShadowSprites();
   rows = true;
-  px.updateShadowSprites();
-  px.updateShadowSprites();
+  px.shadowMaps.updateShadowSprites();
+  px.shadowMaps.updateShadowSprites();
   assert.deepEqual(calls, [true, true, false, false]);
 });
 
 test('a pass every other frame: the stream is on only for the frames whose pass runs', async () => {
   const { px, calls, passes } = await worker(2, () => true);
-  for (let f = 0; f < 6; f++) px.updateShadowSprites();
+  for (let f = 0; f < 6; f++) px.shadowMaps.updateShadowSprites();
   assert.deepEqual(passes, [0, 2, 4]);
   // After frame f, the setting for frame f + 1: on before a pass, off before a skipped frame.
   assert.deepEqual(calls, [false, true, false, true, false, true]);
@@ -53,7 +53,7 @@ test('the casted-shadows layer hidden: no pass and no stream', async () => {
   Layer._visible = new Uint8Array(Layer.MAX_LAYERS).fill(1);
   Layer._visible[2] = 0;
   try {
-    px.updateShadowSprites();
+    px.shadowMaps.updateShadowSprites();
   } finally {
     Layer._byName = byName;
     Layer._visible = visible;

@@ -460,7 +460,7 @@ export class PixiAssets {
       const h = flat[i]?.orig?.height ?? flat[i]?.frame?.height ?? 0;
       if (h > tallest) tallest = h;
     }
-    this.worker._sunMapTallestPx = tallest;
+    this.worker.shadowMaps.sunMapTallestPx = tallest;
     // N-111: one textureId a row would pass MAX_TEXTURE_SIZE with a big atlas (9 020 frames drew nothing on
     // SwiftShader's 8 192): past TEX_LUT_MAX_ROWS the rows hold several.
     const layout = textureLutLayout(this.texLutCount);
@@ -521,7 +521,7 @@ export class PixiAssets {
     this.footSource.uploadMethodId = this.worker._useWebGpu ? 'external' : 'unknown';
     // Never unloaded by Pixi's texture GC while bound (writeRgba32Float pins it too, but only when it makes the texture).
     this.footSource.autoGarbageCollect = false;
-    this.worker._pointFootPrograms();
+    this.worker.shadowMaps.pointFootPrograms();
     if (old !== null) old.destroy();
   }
 
@@ -559,7 +559,7 @@ export class PixiAssets {
     });
     this.mapsTableSource.uploadMethodId = this.worker._useWebGpu ? 'external' : 'unknown';
     this.mapsTableSource.autoGarbageCollect = false;
-    this.worker._pointMapsTablePrograms();
+    this.worker.shadowMaps.pointMapsTablePrograms();
     if (old !== null) old.destroy();
   }
 
