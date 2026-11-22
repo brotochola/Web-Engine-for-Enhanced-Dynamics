@@ -155,20 +155,15 @@
     pending: false,
   };
   let pendingLiquidFunEmit = pendingLiquidFunEmitA;
-  let pendingParticleTuning = {
-    dampingStrength: 1,
-    pressureStrength: 0.05,
-    viscousStrength: 0.25,
-    tensileStrength: 0.2,
-    powderStrength: 0.5,
-    springStrength: 0.25,
-    staticPressureStrength: 0.2,
-    staticPressureRelaxation: 0.2,
-    staticPressureIterations: 8,
-    ejectionStrength: 0.5,
-    colorMixingStrength: 0.5,
-    repulsiveStrength: 1,
-  };
+  // The particle system def's coefficients (lfParticleSystemDef), from physicsConfigImpl.js's defaults (CR-20: this
+  // file had a copy of them).
+  const LF_TUNING_KEYS = [
+    'dampingStrength', 'pressureStrength', 'viscousStrength', 'tensileStrength', 'powderStrength', 'springStrength',
+    'staticPressureStrength', 'staticPressureRelaxation', 'staticPressureIterations', 'ejectionStrength',
+    'colorMixingStrength', 'repulsiveStrength',
+  ];
+  let pendingParticleTuning = {};
+  for (const key of LF_TUNING_KEYS) pendingParticleTuning[key] = WeedPhysicsConfig.PHYSICS_SIM_DEFAULTS.liquidFun[key];
   let jointHandle = null; // Int32Array, -1 = none, -2 = fail this revision
   let jointSeenRev = null; // Uint32Array — last synced Joint.revision
   let jointDense = null; // Uint16Array — indices with live WASM handles
@@ -2982,36 +2977,10 @@
 
   function applyLiquidFunTuningFromConfig(lf) {
     if (!lf) return;
-    pendingParticleTuning.dampingStrength =
-      lf.dampingStrength != null ? lf.dampingStrength : pendingParticleTuning.dampingStrength;
-    pendingParticleTuning.pressureStrength =
-      lf.pressureStrength != null ? lf.pressureStrength : pendingParticleTuning.pressureStrength;
-    pendingParticleTuning.viscousStrength =
-      lf.viscousStrength != null ? lf.viscousStrength : pendingParticleTuning.viscousStrength;
-    pendingParticleTuning.tensileStrength =
-      lf.tensileStrength != null ? lf.tensileStrength : pendingParticleTuning.tensileStrength;
-    pendingParticleTuning.powderStrength =
-      lf.powderStrength != null ? lf.powderStrength : pendingParticleTuning.powderStrength;
-    pendingParticleTuning.springStrength =
-      lf.springStrength != null ? lf.springStrength : pendingParticleTuning.springStrength;
-    pendingParticleTuning.staticPressureStrength =
-      lf.staticPressureStrength != null
-        ? lf.staticPressureStrength
-        : pendingParticleTuning.staticPressureStrength;
-    pendingParticleTuning.staticPressureRelaxation =
-      lf.staticPressureRelaxation != null
-        ? lf.staticPressureRelaxation
-        : pendingParticleTuning.staticPressureRelaxation;
-    pendingParticleTuning.staticPressureIterations =
-      lf.staticPressureIterations != null
-        ? lf.staticPressureIterations | 0
-        : pendingParticleTuning.staticPressureIterations;
-    pendingParticleTuning.ejectionStrength =
-      lf.ejectionStrength != null ? lf.ejectionStrength : pendingParticleTuning.ejectionStrength;
-    pendingParticleTuning.colorMixingStrength =
-      lf.colorMixingStrength != null ? lf.colorMixingStrength : pendingParticleTuning.colorMixingStrength;
-    pendingParticleTuning.repulsiveStrength =
-      lf.repulsiveStrength != null ? lf.repulsiveStrength : pendingParticleTuning.repulsiveStrength;
+    for (const key of LF_TUNING_KEYS) {
+      const v = lf[key];
+      if (v != null) pendingParticleTuning[key] = key === 'staticPressureIterations' ? v | 0 : v;
+    }
   }
 
   /** Mark particles whose centers leave scene world AABB so SolveZombie compact removes them this step. */
