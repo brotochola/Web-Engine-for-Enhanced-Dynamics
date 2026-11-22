@@ -11,7 +11,7 @@
 import { Geometry, Shader, GpuProgram, GlProgram, Buffer, BufferUsage, Texture } from '../vendor/pixi.min.js';
 
 import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
-import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
+import { glProgramFrom } from './webgl/glProgram.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
 import { FillBatchBase, MESH_UV_VERT_FLOATS, MESH_UV_VERT_STRIDE } from './colliderFillBatch.js';
 
@@ -24,7 +24,7 @@ import { FillBatchBase, MESH_UV_VERT_FLOATS, MESH_UV_VERT_STRIDE } from './colli
  */
 export function meshUvFillProgram(useWebGpu, shaders, name) {
   if (useWebGpu) return { gpuProgram: colliderFillGpuProgram(GpuProgram, shaders?.meshUvFill, name, true) };
-  return { glProgram: colliderFillGlProgram(GlProgram, shaders?.meshUvFillVert, shaders?.meshUvFillFrag, name) };
+  return { glProgram: glProgramFrom(GlProgram, shaders?.meshUvFillVert, shaders?.meshUvFillFrag, name) };
 }
 
 /** The vec4 attributes a vertex record is read as (aVert0..aVert3): MESH_UV_VERT_FLOATS / 4. */

@@ -127,7 +127,8 @@ import {
   writeLampTile,
   writeLampTileOwner,
 } from '../render/lampShadowMap.js';
-import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
+import { glProgramFrom } from '../render/webgl/glProgram.js';
+import { pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
 import {
   LAMP_CACHE_COPY_FRAGMENT,
   LAMP_CACHE_COPY_VERTEX,
@@ -6289,7 +6290,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } else {
       if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
       const vertex = sunMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true }), { heights: true });
-      program = { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, shaders.sunMapFrag, 'sun-map-keyed') };
+      program = { glProgram: glProgramFrom(PIXI.GlProgram, vertex, shaders.sunMapFrag, 'sun-map-keyed') };
     }
     const r = batch.shadowShader.resources;
     const shader = entities.makeKeyedRowsShader(program, {
@@ -6601,7 +6602,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragLamp', name, { maps: columns, lampTiles: true }) };
     }
     const vertex = columns ? lampMapColumnsVertex(shaders.shadowVert) : lampMapVertex(shaders.shadowVert);
-    return { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), name) };
+    return { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), name) };
   }
 
   /**
@@ -6766,7 +6767,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       } else {
         if (!shaders?.shadowVert || !shaders?.sunMapFrag) return false;
         const vertex = lampMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: true }));
-        program = { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), 'lamp-map-keyed') };
+        program = { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), 'lamp-map-keyed') };
       }
       const r = casters.shadowShader.resources;
       const keyedShader = (uniforms) => entities.makeKeyedRowsShader(program, {
@@ -6852,7 +6853,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
       const keyed = spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: lamp });
       const vertex = lamp ? lampMapColumnsVertex(keyed) : sunMapColumnsVertex(keyed, SUN_MAP_COLUMNS, { heights: true });
-      program = { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, lamp ? lampMapFragment(shaders.sunMapFrag) : shaders.sunMapFrag, name) };
+      program = { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lamp ? lampMapFragment(shaders.sunMapFrag) : shaders.sunMapFrag, name) };
     }
     const r = batch.shadowShader.resources;
     const resources = (uniforms) => ({
@@ -7438,7 +7439,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       ? sunMapColumnsVertex(shaders.shadowVert, SUN_MAP_COLUMNS, { heights })
       : sunMapVertex(shaders.shadowVert, { heights });
     const fragment = heights ? shaders.sunMapFrag : pickInstancedSpriteFragmentGlsl(true, shaders);
-    return { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, fragment, name) };
+    return { glProgram: glProgramFrom(PIXI.GlProgram, vertex, fragment, name) };
   }
 
   /**

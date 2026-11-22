@@ -142,7 +142,7 @@ test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
   ].join('\n');
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, 0\.0\);/);
-  assert.match(src, /instancedSpriteGlProgram/);
+  assert.match(src, /glProgramFrom/);
   assert.match(src, /useWebGpu = true/);
 });
 

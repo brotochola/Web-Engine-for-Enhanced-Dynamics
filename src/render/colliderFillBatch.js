@@ -28,7 +28,7 @@ import {
 
 import { MAX_POLYGON_VERTICES, ShapeType, SPRITE_TILE_MODE } from '../util/configDefaults.js';
 import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
-import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
+import { glProgramFrom } from './webgl/glProgram.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
 import { MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 
@@ -1516,7 +1516,7 @@ export class ColliderFillBatch extends FillBatchBase {
     const name = label || 'collider-fill';
     const program = useWebGpu
       ? { gpuProgram: colliderFillGpuProgram(GpuProgram, shaders?.colliderFill, name) }
-      : { glProgram: colliderFillGlProgram(GlProgram, shaders?.colliderFillVert, shaders?.colliderFillFrag, name) };
+      : { glProgram: glProgramFrom(GlProgram, shaders?.colliderFillVert, shaders?.colliderFillFrag, name) };
     this._makeMesh(this.geometry, new Shader({ ...program, resources }), name);
   }
 

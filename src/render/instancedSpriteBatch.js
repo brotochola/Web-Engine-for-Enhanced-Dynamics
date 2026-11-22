@@ -30,10 +30,8 @@ import {
   instancedSpriteShadowGpuProgram,
   instancedSpriteShadowIndexedGpuProgram,
 } from './webgpu/instancedSpriteWgsl.js';
-import {
-  instancedSpriteGlProgram,
-  pickInstancedSpriteFragmentGlsl,
-} from './webgl/instancedSpriteGlsl.js';
+import { glProgramFrom } from './webgl/glProgram.js';
+import { pickInstancedSpriteFragmentGlsl } from './webgl/instancedSpriteGlsl.js';
 import {
   GPU_GBUF_FLOATS, GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS,
   GPU_INDEXED_TEX_WORD, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows, gpuIndexedUpdateRows, makePackContext,
@@ -725,7 +723,7 @@ export class InstancedSpriteBatch {
         );
         this.shadowShader = new Shader({ gpuProgram, resources });
       } else if (shaders.shadowVert) {
-        const glProgram = instancedSpriteGlProgram(
+        const glProgram = glProgramFrom(
           GlProgram,
           shaders.shadowVert,
           pickInstancedSpriteFragmentGlsl(true, shaders),
@@ -1042,7 +1040,7 @@ export class InstancedSpriteBatch {
     this._colorRowVertex = this._opWanted && rowBase ? rowBase : '';
     const rowVertex = this._colorRowVertex !== '' ? opaqueRowVertex(rowBase, false) : rowBase;
     const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, shaders);
-    const glProgram = instancedSpriteGlProgram(GlProgram, rowVertex, this._depthFragment(color), `${name}-rows`);
+    const glProgram = glProgramFrom(GlProgram, rowVertex, this._depthFragment(color), `${name}-rows`);
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -1060,7 +1058,7 @@ export class InstancedSpriteBatch {
     if (this._pixelDepth) {
       const edgeRowVertex = this._depthFaces || this._pixelDepth.plainEdge === true ? this._depthVertex(rowSource, 'edge') : rowVertex;
       this._edgeRowShader = new Shader({
-        glProgram: instancedSpriteGlProgram(GlProgram, edgeRowVertex, this._depthFragment(color, true), `${name}-rows-edge`),
+        glProgram: glProgramFrom(GlProgram, edgeRowVertex, this._depthFragment(color, true), `${name}-rows-edge`),
         resources: this._edgeResources(shader, this._staticsSource),
       });
       this._vdepthRowShader = this._vdepthTwin(rowSource, color, shader, this._staticsSource, `${name}-rows-vdepth`);
@@ -1101,7 +1099,7 @@ export class InstancedSpriteBatch {
   _vdepthTwin(base, color, shader, statics, name) {
     if (!this._depthFaces || !base || !color) return null;
     return new Shader({
-      glProgram: instancedSpriteGlProgram(
+      glProgram: glProgramFrom(
         GlProgram,
         this._depthVertex(base, 'heights'),
         pixelDepthFragment(color, { gbuf: this.gbuf, vertexDepth: true }),
@@ -1343,13 +1341,13 @@ export class InstancedSpriteBatch {
     }
     this._colorVertex = vert || '';
     this._colorFragment = frag || '';
-    const glProgram = instancedSpriteGlProgram(GlProgram, vert, frag, name);
+    const glProgram = glProgramFrom(GlProgram, vert, frag, name);
     const shader = new Shader({ glProgram, resources });
     if (depth) {
       // DX-DEPTH (F5 v2): the edge pass's twin, the same vertex shader (with faces, over every instance).
       const edgeVert = this._depthFaces || this._pixelDepth.plainEdge === true ? this._depthVertex(baseVert, 'edge') : vert;
       this._edgeShader = new Shader({
-        glProgram: instancedSpriteGlProgram(GlProgram, edgeVert, this._depthFragment(color, true), `${name}-edge`),
+        glProgram: glProgramFrom(GlProgram, edgeVert, this._depthFragment(color, true), `${name}-edge`),
         resources: this._edgeResources(shader, null),
       });
       this._vdepthShader = this._vdepthTwin(baseVert, color, shader, null, `${name}-vdepth`);
@@ -1398,7 +1396,7 @@ export class InstancedSpriteBatch {
     const indexedBase = shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null;
     const indexedVertex = this._depthVertex(indexedBase, 'flat');
     const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, shaders);
-    const glProgram = instancedSpriteGlProgram(GlProgram, indexedVertex, this._depthFragment(color), `${name}-indexed`);
+    const glProgram = glProgramFrom(GlProgram, indexedVertex, this._depthFragment(color), `${name}-indexed`);
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -1414,7 +1412,7 @@ export class InstancedSpriteBatch {
     const shader = new Shader({ glProgram, resources });
     if (this._pixelDepth && indexedVertex) {
       this._edgeIndexedShader = new Shader({
-        glProgram: instancedSpriteGlProgram(GlProgram, this._depthVertex(indexedBase, 'edge'), this._depthFragment(color, true), `${name}-indexed-edge`),
+        glProgram: glProgramFrom(GlProgram, this._depthVertex(indexedBase, 'edge'), this._depthFragment(color, true), `${name}-indexed-edge`),
         resources: this._edgeResources(shader, this._staticsSource),
       });
       this._vdepthIndexedShader = this._vdepthTwin(indexedBase, color, shader, this._staticsSource, `${name}-indexed-vdepth`);
@@ -1522,7 +1520,7 @@ export class InstancedSpriteBatch {
       this._opPoseRows, `${name}-opaque-poses`);
     const r = this.shader.resources;
     this._opShader = new Shader({
-      glProgram: instancedSpriteGlProgram(GlProgram, opaqueVertex(this._colorVertex, poseWords), opaqueFragment(this._colorFragment),
+      glProgram: glProgramFrom(GlProgram, opaqueVertex(this._colorVertex, poseWords), opaqueFragment(this._colorFragment),
         `${name}-opaque`),
       resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms: r.uniforms, uOpPoses: this._opPoseSource },
     });
@@ -1548,7 +1546,7 @@ export class InstancedSpriteBatch {
       });
       const rr = this._rowShader.resources;
       this._opRowShader = new Shader({
-        glProgram: instancedSpriteGlProgram(GlProgram, opaqueRowVertex(this._colorRowVertex, true), opaqueFragment(this._colorFragment),
+        glProgram: glProgramFrom(GlProgram, opaqueRowVertex(this._colorRowVertex, true), opaqueFragment(this._colorFragment),
           `${name}-opaque-rows`),
         resources: {
           uTexture: rr.uTexture, uSampler: rr.uSampler, uTexLut: rr.uTexLut, uniforms: rr.uniforms, uStatics: rr.uStatics, uPoses: rr.uPoses,
@@ -2301,7 +2299,7 @@ export class InstancedSpriteBatch {
       aux.shader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, entry, name, { maps: true }), resources });
     } else {
       const vertex = vertexOf(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert);
-      aux.shader = new Shader({ glProgram: instancedSpriteGlProgram(GlProgram, vertex, frag, name), resources });
+      aux.shader = new Shader({ glProgram: glProgramFrom(GlProgram, vertex, frag, name), resources });
     }
     // The shared group, for the kinds made after this one.
     if (kind === AUX_FACE) resources.uniforms = aux.shader.resources.uniforms;
@@ -2323,7 +2321,7 @@ export class InstancedSpriteBatch {
               resources: indexedResources,
             }
           : {
-              glProgram: instancedSpriteGlProgram(GlProgram, spriteIndexedVertex(vertexOf(shaders.spriteVert)), frag, indexedName),
+              glProgram: glProgramFrom(GlProgram, spriteIndexedVertex(vertexOf(shaders.spriteVert)), frag, indexedName),
               resources: indexedResources,
             },
       );
@@ -2331,7 +2329,7 @@ export class InstancedSpriteBatch {
     if (this._rowShader !== null) {
       // E-201: over a by-row keyed frame (WebGL only).
       aux.row = new Shader({
-        glProgram: instancedSpriteGlProgram(
+        glProgram: glProgramFrom(
           GlProgram,
           spriteIndexedVertex(vertexOf(shaders.spriteVert), { poseBlock: this._poseBlock }),
           frag,
@@ -2619,7 +2617,7 @@ export class InstancedSpriteBatch {
     }
     if (!shaders?.shadowVert) return null;
     return {
-      glProgram: instancedSpriteGlProgram(
+      glProgram: glProgramFrom(
         GlProgram,
         spriteIndexedVertex(shaders.shadowVert, opts),
         pickInstancedSpriteFragmentGlsl(true, shaders),
