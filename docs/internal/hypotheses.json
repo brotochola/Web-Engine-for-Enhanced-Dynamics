@@ -20989,7 +20989,7 @@
       "id": "N-256",
       "title": "Split src/workers/pixiWorker.js (11 140 lines, 269 methods, a 779-line constructor, 110 commits since 2026-11-01) into subsystem classes under src/render/pixi/, so Pixi work can run in parallel and agents read only what they change",
       "status": "open",
-      "statusText": "phases 1 and 2 done 2026-11-22 (R-1852, R-1853, R-1854): assets, scenery, initialize in steps, mesh layers, custom layers in src/render/pixi/; pixiWorker.js 11 509 -> 8 527 lines; phase 3 (lighting, shadow maps, glow, G-buffer) next",
+      "statusText": "done 2026-11-22 but the later items: PW-1 to PW-10 in src/render/pixi/ (assets, scenery, mesh and custom layers, glow, shadow maps, lighting, decal tiles, SCREEN layers), pixiWorker.js 11 481 -> 4 410 lines, every Predator sitting NEUTRAL (R-1852 to R-1857); left: PW-11 (the backend seam), PW-12 (preRenderWorker.js), and splitting shadowMaps.js (2 002) and customLayers.js (1 694) under the plan's 1 500",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "refactor",
@@ -21007,7 +21007,8 @@
         "R-1853",
         "R-1854",
         "R-1855",
-        "R-1856"
+        "R-1856",
+        "R-1857"
       ]
     },
     {
@@ -42664,6 +42665,15 @@
       "title": "N-256 PW-6 (light pass) and batch 11 (N-409) through Pixi-owner Predator sittings (82848a4c -> 1b4e85b5): night with light3d NEUTRAL (renderer +0.2 %); plain every worker drifted +5..+9 % together, renderer against the others +1.7 %: to run again on a quiet machine",
       "verdict": "kept-hygiene",
       "text": "**The Pixi-owner sittings over N-256 PW-6 (lighting.js) and the ASUS's batch 11 (N-409), 82848a4c -> 1b4e85b5:\nNEUTRAL by night with light3d. Plain, every worker drifted together and the renderer against the others reads\n+1.7 %. The plain sitting is to run again on a quiet machine.**\n\nBoth ran `runPredatorAbab.mjs --vs 82848a4c --hyp-rev 1b4e85b5 --owner renderer`, headed, on AC power.\n\n**Plain:** `--pairs 16 --query \"crowd=2.5&dayCycle=0&mix=1\"`, from the save, 13:47 to 14:00. The runner's verdict was\nREGRESSION.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.209 -> 15.794 | +7.2 % | 12/16 | +1.5 % |\n| spatial | 7.210 -> 7.530 | +5.9 % | 9/16 | -1.1 % |\n| physics | 14.826 -> 15.124 | +4.8 % | 13/16 | +0.7 % |\n| renderer | 6.841 -> 7.322 | +8.9 % | 12/16 | +1.7 % |\n| preRender | 8.524 -> 8.854 | +7.2 % | 10/16 | -1.7 % |\n\nLogic, spatial and physics run no code these commits touch: PW-6 moves the renderer's light pass, and N-409 changes the\nlight shaders. They rose 5 to 7 % with the rest, so this is drift (HOW_WE_MEASURE: read the owner against the\nothers). Against the others the renderer reads +1.7 % (7 of 16 lower), inside its swing (cv 10/10 %). The owner was\nstarting to use the machine for heavy work about then.\n\n**Night:** `--pairs 8 --fresh --query \"crowd=2.5&mix=1&light3d=1&hour=22\"`, 14:00 to 14:08. The runner's verdict was\nNEUTRAL.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 23.092 -> 24.445 | +1.1 % | 5/8 | +2.6 % |\n| spatial | 10.717 -> 10.934 | +2.8 % | 5/8 | -1.9 % |\n| physics | 28.168 -> 29.590 | +2.7 % | 6/8 | -0.5 % |\n| renderer | 11.696 -> 12.169 | +0.2 % | 4/8 | -1.6 % |\n| preRender | 11.694 -> 11.831 | +2.0 % | 5/8 | -1.1 % |\n\nThe load keys are within 0.9 % in both sittings.\n\nNext: the plain sitting again once the machine is quiet. It must read under 3 % on the renderer against the others,\nor the PW-6 path gets a per-frame look (one extra property load a light pass call)."
+    },
+    {
+      "id": "R-1857",
+      "date": "2026-11-22",
+      "time": "15:20",
+      "timeFrom": "recorded",
+      "title": "N-256 PW-6, batch 11 (N-409) and PW-10 through the plain Predator sitting again on a quiet machine (82848a4c -> c59113bb): NEUTRAL in 16 pairs, renderer +0.8 %; R-1856's plain REGRESSION was drift",
+      "verdict": "kept-hygiene",
+      "text": "**The plain Predator sitting again, on a quiet machine: N-256 PW-6 (lighting.js), the ASUS's batch 11 (N-409) and\nPW-10 (decalTiles.js, screenLayers.js), 82848a4c -> c59113bb: NEUTRAL in 16 pairs.** R-1856's plain sitting drifted.\n\nThe sitting: `runPredatorAbab.mjs --name n256pw610-plain --vs 82848a4c --hyp-rev c59113bb --owner renderer --pairs 16`,\nwith `--query \"crowd=2.5&dayCycle=0&mix=1\"`. It ran headed, from the save, on AC power, 15:07 to 15:20. The CPU load\nread 5 to 15 % before it.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.438 -> 15.557 | +1.0 % | 10/16 | +0.3 % |\n| spatial | 7.369 -> 7.533 | +0.3 % | 8/16 | -0.0 % |\n| physics | 14.956 -> 15.109 | +0.2 % | 9/16 | -0.7 % |\n| renderer | 6.964 -> 7.305 | +0.8 % | 9/16 | +2.0 % |\n| preRender | 8.621 -> 8.880 | +1.6 % | 10/16 | +0.8 % |\n\nParticle stays under the 6 ms floor. The load keys are within 0.3 %.\n\nR-1856 read every worker +5..+9 % together while the owner started heavy work on the PC. Here none moves past 1.6 %,\nso that sitting's REGRESSION was drift, as read then. R-1856's night sitting (light3d, NEUTRAL) stands for the light\npass by night."
     }
   ],
   "leads": [
