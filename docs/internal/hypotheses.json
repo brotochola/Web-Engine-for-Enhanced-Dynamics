@@ -15206,17 +15206,17 @@
         "R-1034",
         "R-1035",
         "R-1044",
-        "R-1046"
+        "R-1046",
+        "R-1804"
       ],
       "id": "E-310",
       "title": "Spatial workers at scale: at 57 600 entities two spatial workers would each spend ~7.3 ms where one spends ~12 ms (Predator sets one)",
-      "status": "mixed",
-      "statusText": "mixed 2026-11-14 (R-1035)",
+      "status": "kept",
+      "statusText": "Kept for Predator 2026-11-22 (R-1804): two spatial workers from crowd 2 on 12+ logical CPUs (crowd 2.5 spatial -34.2 %, logic +3.3 %). The engine's choice by entity count and CPUs is DX-AUTOQUALITY's.",
       "date": "2026-11-14",
       "area": "spatial",
       "kind": "speed",
-      "result": "mixed (R-1035): crowd 2.5, 2 spatial workers: spatial 10.767 -> 7.336 ms (-32.3 %, 4/4), logic +8.3 % (4/4 worse), physics +2.6 %; physics limits the frame there. Knob kept (55e0cdaa), no 'auto' default. The same trade as 2026-10-06's worker count (R-0325: spatial 2 vs 1 -35.5 %, renderer +8.1 %).",
-      "next": "When spatial is the longest step (past crowd 2.5, or once physics is faster): numberOfSpatialWorkers by entity count, and E-267's counting pass for the rebuild each worker repeats."
+      "result": "mixed (R-1035): crowd 2.5, 2 spatial workers: spatial 10.767 -> 7.336 ms (-32.3 %, 4/4), logic +8.3 % (4/4 worse), physics +2.6 %; physics limits the frame there. Knob kept (55e0cdaa), no 'auto' default. The same trade as 2026-10-06's worker count (R-0325: spatial 2 vs 1 -35.5 %, renderer +8.1 %)."
     },
     {
       "id": "E-308",
@@ -41191,6 +41191,15 @@
       "title": "N-328 not reproduced: CPU traces of spawnStorm 6000 read main's logic 4 % less busy than c01c6d51 (540/557 against 594/565 ms/s), _spawnAt -20 %; R-1679's +2.7 % failed on its load (BODY_COUNT -5.2 %)",
       "verdict": "answered",
       "text": "**N-328 not reproduced in CPU traces: the object way's spawn is not slower on main.** spawnStormScene `?storm=6000`, c01c6d51 (the register commit before E-532, its own worktree) against main 1d6df46c, single headed runs with `--trace-cpu`, 8 s warm-up and 8 s window, old new old new (00:21-00:22), summarized by summarizeChromeCpuTrace over the window:\n\n| | old 1 | old 3 | new 2 | new 4 |\n| --- | --- | --- | --- | --- |\n| logic busy (ms/s) | 594 | 565 | 540 | 557 |\n| logic0 exact step (ms, traced) | 10.08 | 9.28 | 8.85 | 9.37 |\n| `_spawnAt` self (ms in 8 s) | 1 136 | 1 092 | 864 | 921 |\n| publishBodyDirty + advanceBodyGeneration | 817 | 794 | 778 | 755 |\n| `_despawnAt` + `_deactivateSlotComponents` | 301 | 290 | 291 | 266 |\n\nMain is 4 % less busy on logic and its `_spawnAt` 20 % cheaper; new in its list: `hasParent` (DX-PARENT's link check on despawn and spawn, 92 ms in one trace, under the top 12 in the other) and the scene entity's `onSpawned` (125 ms in one). R-1679's +2.7 % (4/4) came with BODY_COUNT -5.2 % on the new side: the sitting failed on its load, and the two sides did not hold the same bodies. Closed as answered: no slower spawn to chase. Traces are not STEP_MS; a scene sitting could still read a percent either way, inside the 3 % bar."
+    },
+    {
+      "id": "R-1804",
+      "date": "2026-11-22",
+      "time": "00:29",
+      "timeFrom": "recorded",
+      "title": "E-310 at crowd 2.5: two spatial workers spatial 14.985 -> 9.982 ms (-34.2 %, 4/4), logic +3.3 %, others alike; Predator takes two from crowd 2 on 12+ logical CPUs",
+      "verdict": "kept",
+      "text": "**E-310 at crowd 2.5 now: a second spatial worker takes spatial off the long pole for 3.3 % of logic (it cost 8.3 % on 2026-11-14).** runPredatorAbab e310-sw2, `--vs main` (229429d6) with `--query-b spatialWorkers=2`, Predator `crowd=2.5&dayCycle=0` from the E-210 save, owner spatial, 4 pairs, to 00:29:\n\n- spatial 14.985 -> 9.982 ms (-34.2 %, worse 0/4, cv 3/2 %), each of the two workers 9.8-10.1 ms; spatial0's p99 28.9 -> 15.9 to 18.3 ms, long frames 18 -> 5 to 17.\n- logic 7.071 -> 7.237 (+3.3 %, worse 3/4, cv 6/1 %), physics 15.554 -> 15.665 (-0.3 % paired), renderer -1.7 %, pre-render -1.5 %, presented 60 = 60.\n- The sitting's FAIL (load) is ENTITIES_PROCESSED -48.4 %: a per-worker counter, each of two workers processes half; BODY_COUNT, VISIBLE_ENTITIES and RENDER_QUEUE_SIZE within 0.5 %.\n\nKept for Predator (01555a16, the demo's config): `predatorSpatialWorkers()` gives two from crowd 2 where navigator.hardwareConcurrency is 12 or more (this PC 16; the ASUS's 4 keeps one), one otherwise; `?spatialWorkers=` still sets it. Checked: crowd 2.5 boots spatial0 and spatial1, crowd 1 one. Physics (15.6 ms) is now the frame's one long pole at crowd 2.5. The engine's own choice by entity count and CPUs stays with DX-AUTOQUALITY."
     }
   ],
   "leads": [
