@@ -19,7 +19,7 @@
    W4c: the persist path of the entity queue, from the same table. persist_frame is _type0PersistHit (with
    _repairPersistFrame) and _writeType0PosesOnly (with _writeQueueShadow and _advancePersistFrame) in one
    walk (E-116), persist_remember is _rememberType0Set; the rows a queue buffer last held are the P_
-   columns, the slots of that buffer. */
+   columns, the slots of that buffer. persist_take_dirty takes the sprites' renderDirty before a full emit (N-408). */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -1634,10 +1634,33 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   return others;
 }
 
-/* _rememberType0Set after a full emit: the rows this buffer now holds, and the dirty flags of its sprites
-   cleared. Returns 1 when it cleared one (the other buffer then still shows the old columns). */
+/* N-408: before a full emit of the persist path, the queued sprites' renderDirty taken (an atomic exchange, a full
+   barrier, as sprite_row takes keyedDirty) before the emit reads their rows: a setter after that marks its sprite again
+   for the next frame. persist_remember cleared them after the emit, so a setter that landed while the emit ran (logic
+   writes beside pre-render) lost its mark: this buffer kept the old row on its persist frames while the other, due a
+   full emit, drew the new one, frame after frame. Returns 1 when it took one (the other buffer then still shows the old
+   columns). */
+__attribute__((export_name("persist_take_dirty")))
+uint32_t persist_take_dirty(uint32_t table, uint32_t count, uint32_t maxItems) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint8_t *cType = PTR(const uint8_t, C_TYPE);
+  const int32_t *cIndex = PTR(const int32_t, C_INDEX);
+  uint8_t *sDirty = PTR(uint8_t, S_DIRTY);
+  if (!sDirty) return 0;
+  const uint32_t n = count < maxItems ? count : maxItems;
+  uint32_t taken = 0;
+  for (uint32_t i = 0; i < n; i++) {
+    if (cType[i] != 0) continue;
+    const int32_t idx = cIndex[i];
+    if (sDirty[idx] && __atomic_exchange_n(&sDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST)) taken = 1;
+  }
+  return taken;
+}
+
+/* _rememberType0Set after a full emit: the rows this buffer now holds (persist_take_dirty took the sprites' dirty
+   flags before the emit). */
 __attribute__((export_name("persist_remember")))
-uint32_t persist_remember(uint32_t table, uint32_t count, uint32_t maxItems) {
+void persist_remember(uint32_t table, uint32_t count, uint32_t maxItems) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
   const uint8_t *cType = PTR(const uint8_t, C_TYPE);
   const int32_t *cIndex = PTR(const int32_t, C_INDEX);
@@ -1645,14 +1668,12 @@ uint32_t persist_remember(uint32_t table, uint32_t count, uint32_t maxItems) {
   int32_t *pEntity = PTR(int32_t, P_ENTITY);
   uint16_t *pFrame = PTR(uint16_t, P_FRAME);
   uint16_t *pAnim = PTR(uint16_t, P_ANIM);
-  uint8_t *sDirty = PTR(uint8_t, S_DIRTY);
   const uint8_t *sAnim = PTR(const uint8_t, S_ANIM);
   const uint16_t *aFrame = PTR(const uint16_t, A_FRAME);
   const uint32_t nEntities = t[A_ENTITIES];
 
   /* Stores past the buffer are dropped, as the JS's are. */
   const uint32_t n = count < maxItems ? count : maxItems;
-  uint32_t cleared = 0;
   for (uint32_t i = 0; i < n; i++) {
     const uint32_t ty = cType[i];
     const int32_t idx = cIndex[i];
@@ -1661,10 +1682,5 @@ uint32_t persist_remember(uint32_t table, uint32_t count, uint32_t maxItems) {
     /* frameIndex[idx] | 0 for every row; past the column it reads undefined. */
     pFrame[i] = (uint32_t)idx < nEntities ? aFrame[idx] : 0;
     pAnim[i] = ty == 0 ? sAnim[idx] : 0;
-    if (ty == 0 && sDirty && sDirty[idx]) {
-      sDirty[idx] = 0;
-      cleared = 1;
-    }
   }
-  return cleared;
 }

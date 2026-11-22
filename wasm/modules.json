@@ -81,6 +81,7 @@
         "pack_pose",
         "emit_rows",
         "persist_frame",
+        "persist_take_dirty",
         "persist_remember",
         "adobe_advance",
         "stamp_light_range",
@@ -267,6 +268,7 @@
       "exports": [
         "emit_rows",
         "persist_frame",
+        "persist_take_dirty",
         "persist_remember",
         "adobe_advance"
       ],

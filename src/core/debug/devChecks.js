@@ -18,6 +18,9 @@ let bodyMade = () => false;
 /** Turn the checks on or off in this thread. */
 export function setDevChecks(enabled) {
   on = enabled === true;
+  // DX-STATICSGEN: a scene booted again compares against copies of its own.
+  staticsPass = 0;
+  staticsMissPass.clear();
 }
 
 /** True while the checks are on in this thread. */
@@ -158,6 +161,137 @@ export function cellOverflow(entries, cap) {
     `${entries} times in a frame an entity did not fit a full spatial grid cell (spatial.maxEntitiesPerCell ${cap}): there it ` +
       'is in no neighbour list and no query of the cell finds it. Raise spatial.maxEntitiesPerCell, or make spatial.cellSize smaller.',
   );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// DX-STATICSGEN: a sprite's statics written without renderDirty and keyedDirty.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * The statics every setter marks (SpriteRenderer's, tweens, flips, the spawn's reset): renderDirty for pre-render's
+ * persist path, keyedDirty's bit 1 for the keyed frames. Not the texture: an animation moves it, and pre-render marks
+ * that itself.
+ */
+const STATICS = ['scaleX', 'scaleY', 'alpha', 'tint', 'anchorX', 'anchorY', 'repeatX', 'repeatY', 'tileMode', 'tileOffsetU', 'tileOffsetV'];
+/** Collector rows a frame compares and copies: the check costs the same however many sprites a scene draws. */
+const STATICS_ROWS_A_FRAME = 4096;
+/** Unmarked changes a compare keeps for its second look. */
+const STATICS_MISSES = 16;
+/** One copy per static, of its column's own class, by entity (staticsAfterEmit writes them). */
+let staticsShadow = [];
+/** The copy (staticsAfterEmit's count) that last took each entity's statics; 0: none. */
+let staticsStamp = new Uint32Array(0);
+let staticsPass = 0;
+/** The collector rows the last copy took (the next compare's), and where the next copy starts. */
+let staticsFrom = 0;
+let staticsTo = 0;
+let staticsNext = 0;
+const staticsMissEntity = new Int32Array(STATICS_MISSES);
+const staticsMissColumn = new Uint8Array(STATICS_MISSES);
+/** class name → the copy whose compare last found it writing a static unmarked. */
+const staticsMissPass = new Map();
+
+/** Both marks set: renderDirty, and keyedDirty's statics bit (pre-render's own texture bit is 2). */
+function staticsMarked(dirty, keyed, e) {
+  return dirty[e] !== 0 && (keyed[e] & 1) !== 0;
+}
+
+/**
+ * Before pre-render's emit, which takes the marks (a full emit clears renderDirty, a keyed one keyedDirty): the sprite
+ * rows the last staticsAfterEmit copied, against the copy. A static that changed with either mark clear was written
+ * without its setter, and a frame that keeps last frame's rows draws the old value (N-103). Logic writes beside this, a
+ * setter's value before its marks, so the marks of a change are read after its value and again after the whole compare,
+ * and a class is named only once its unmarked changes showed on two frames.
+ * @param {object} SpriteRenderer the component (its columns)
+ * @param {Uint8Array} types the collector's row types (0: a sprite)
+ * @param {Int32Array} entities the collector's row entities
+ * @param {number} rows the collector rows the emit takes
+ * @param {(entity: number) => string} className the entity's class's name
+ */
+export function staticsBeforeEmit(SpriteRenderer, types, entities, rows, className) {
+  if (!on || staticsPass === 0) return;
+  const dirty = SpriteRenderer.renderDirty;
+  const keyed = SpriteRenderer.keyedDirty;
+  if (!dirty || !keyed) return;
+  const stamp = staticsStamp;
+  const pass = staticsPass;
+  const from = staticsFrom;
+  const to = staticsTo < rows ? staticsTo : rows;
+  let misses = 0;
+  for (let c = 0; c < STATICS.length; c++) {
+    const col = SpriteRenderer[STATICS[c]];
+    const shadow = staticsShadow[c];
+    if (!col || !shadow) continue;
+    for (let k = from; k < to; k++) {
+      if (types[k] !== 0) continue;
+      const e = entities[k];
+      if (e < 0 || e >= stamp.length || stamp[e] !== pass) continue;
+      const v = col[e];
+      const was = shadow[e];
+      if (v === was || (v !== v && was !== was)) continue;
+      if (staticsMarked(dirty, keyed, e) || misses === STATICS_MISSES) continue;
+      staticsMissEntity[misses] = e;
+      staticsMissColumn[misses] = c;
+      misses++;
+    }
+  }
+  for (let m = 0; m < misses; m++) {
+    const e = staticsMissEntity[m];
+    if (staticsMarked(dirty, keyed, e)) continue;
+    const name = className(e);
+    const seen = staticsMissPass.get(name);
+    staticsMissPass.set(name, pass);
+    if (seen === undefined || seen === pass) continue;
+    const column = STATICS[staticsMissColumn[m]];
+    warnOnce(
+      name,
+      'unmarked-statics',
+      `${name} changed a sprite's ${column} without marking it (SpriteRenderer.renderDirty and keyedDirty): a frame that ` +
+        "keeps last frame's rows (pre-render's persist path, Pixi's keyed frames) draws the old value until something " +
+        `else marks the sprite. Set it with the setters (setAlpha, setScale, setTint, setAnchor, a tween), or call ` +
+        `markDirty() after writing SpriteRenderer.${column}[i] directly.`,
+    );
+  }
+}
+
+/**
+ * After pre-render's emit: the next window of sprite rows copied, for the next frame's staticsBeforeEmit. After the emit,
+ * so a change whose marks it took is in the copy.
+ * @param {object} SpriteRenderer
+ * @param {Uint8Array} types
+ * @param {Int32Array} entities
+ * @param {number} rows
+ * @param {number} entityCount the entities' count (the copies' length)
+ */
+export function staticsAfterEmit(SpriteRenderer, types, entities, rows, entityCount) {
+  if (!on) return;
+  if (staticsStamp.length < entityCount) {
+    staticsStamp = new Uint32Array(entityCount);
+    staticsShadow = STATICS.map((name) => {
+      const col = SpriteRenderer[name];
+      return col ? new col.constructor(entityCount) : null;
+    });
+  }
+  staticsPass = (staticsPass + 1) >>> 0 || 1;
+  const from = staticsNext < rows ? staticsNext : 0;
+  const to = rows - from > STATICS_ROWS_A_FRAME ? from + STATICS_ROWS_A_FRAME : rows;
+  staticsNext = to < rows ? to : 0;
+  staticsFrom = from;
+  staticsTo = to;
+  const stamp = staticsStamp;
+  for (let c = 0; c < STATICS.length; c++) {
+    const col = SpriteRenderer[STATICS[c]];
+    const shadow = staticsShadow[c];
+    if (!col || !shadow) continue;
+    for (let k = from; k < to; k++) {
+      const e = entities[k];
+      if (types[k] === 0 && e >= 0 && e < stamp.length) shadow[e] = col[e];
+    }
+  }
+  for (let k = from; k < to; k++) {
+    const e = entities[k];
+    if (types[k] === 0 && e >= 0 && e < stamp.length) stamp[e] = staticsPass;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

@@ -199,7 +199,8 @@ export async function setupPersistKernel(opts = {}) {
   const rememberWasm = (rows = count) => {
     const buf = nextFrame();
     table(buf);
-    worker._rememberType0SetWasm(buf, rows, MAX_ITEMS);
+    const taken = b.persistTakeDirty(b.tableByte, rows, MAX_ITEMS) !== 0;
+    worker._rememberType0SetWasm(buf, rows, MAX_ITEMS, taken);
     return worker._persistCount[buf];
   };
 

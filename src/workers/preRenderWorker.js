@@ -165,6 +165,7 @@ import { staticSceneryGen } from '../core/staticScenery.js';
 import { StaticSceneryGrid } from '../render/staticSceneryGrid.js';
 import { bindMeshPoseList, writeMeshPoseList } from '../util/meshPoseList.js';
 import { addWaitMs, waitMeterMs } from '../util/waitMeter.js';
+import { devChecksOn, staticsAfterEmit, staticsBeforeEmit } from '../core/debug/devChecks.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -1667,6 +1668,10 @@ class PreRenderWorker extends AbstractWorker {
         this._animEndByType = new Uint8Array(0);
         this._animEndAnim = new Uint16Array(0);
         this._animEndGen = new Uint16Array(0);
+        // DX-STATICSGEN (debug checks on): sprite statics written without their marks, named by the entity's class.
+        this._staticsCheck = false;
+        this._registeredClassList = [];
+        this._entityClassNameOf = (e) => this._entityClassName(e);
 
         // Scratch for published physics pose / Transform (no per-call alloc)
         // Display pose scratch: [x, y, rotC, rotS]. A typed array, as Chrome boxed the
@@ -2205,6 +2210,8 @@ class PreRenderWorker extends AbstractWorker {
             }
             this._bindAnimationEndTypes(data.registeredClasses);
             this._staticGrid.bindTypes(data.registeredClasses, this.globalEntityCount);
+            this._registeredClassList = data.registeredClasses || [];
+            this._staticsCheck = devChecksOn();
 
             // Pre-allocate renderable collector buffers
             this._renderableY = emitLayout
@@ -3238,6 +3245,15 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    /** DX-STATICSGEN: the class of entity `e`, by the registered classes' index ranges (a debug warning's subject). */
+    _entityClassName(e) {
+        const list = this._registeredClassList;
+        for (let r = 0; r < list.length; r++) {
+            if (e >= list[r].startIndex && e < list[r].endIndex) return list[r].name;
+        }
+        return 'An entity';
+    }
+
     /** Types whose class defines onAnimationEnd (main computed it per registered class). */
     _bindAnimationEndTypes(registeredClasses) {
         const list = registeredClasses || [];
@@ -4072,6 +4088,9 @@ class PreRenderWorker extends AbstractWorker {
         const hasOrder = this._queueHasOrder();
         this._queuePresorted = hasOrder && this._presortCollector(count, this._entityYSort());
         this._emitPresorted = this._queuePresorted;
+        // DX-STATICSGEN (debug checks): sprite statics changed without their marks, read before the emit takes the marks.
+        const checkRows = count < this.renderQueueMaxItems ? count : this.renderQueueMaxItems;
+        if (this._staticsCheck) staticsBeforeEmit(SpriteRenderer, this._renderableType, this._renderableIndex, checkRows, this._entityClassNameOf);
         const writeCount = this.emitSpriteQueue(deltaTime, this._fillEmitSource(
             count,
             this.renderQueueMaxItems,
@@ -4087,6 +4106,7 @@ class PreRenderWorker extends AbstractWorker {
             hasOrder && this._entityYSort()
         ));
         this._emitPresorted = false;
+        if (this._staticsCheck) staticsAfterEmit(SpriteRenderer, this._renderableType, this._renderableIndex, checkRows, this.globalEntityCount);
         this.renderQueueCount[0] = writeCount;
         this._emitWriteCount = writeCount;
         // DX-GBUF: where Pixi packs the sprites of a scene that does not key its frames, the rows' entities for its
@@ -4265,6 +4285,10 @@ class PreRenderWorker extends AbstractWorker {
             persistHit = persistOthers >= 0;
             if (!persistHit) persistOthers = 0;
         }
+        // N-408: a frame the persist path missed takes the sprites' renderDirty before the full emit reads their rows (a
+        // setter after that marks its sprite again); clearing them after the emit lost a mark set while it ran.
+        const b = this._emitWasm;
+        const dirtyTaken = persistWasm && !persistHit && b.persistTakeDirty(b.tableByte, count, maxItems) !== 0;
         let tiledRows = false;
         if (persistHit && persistOthers === 0) {
             // E-98b. A persist frame of sprites only: persist_frame wrote them.
@@ -4280,7 +4304,7 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
         // E-102b: from now on this queue's other rows must clear what a repeating sprite left.
         if (tiledRows && rqTileMode !== null) this._tiledTileColumns.add(rqTileMode);
-        if (persistWasm && !persistHit) this._rememberType0SetWasm(persistBuf, count, maxItems);
+        if (persistWasm && !persistHit) this._rememberType0SetWasm(persistBuf, count, maxItems, dirtyTaken);
         if (source.persist) {
             // E-82. A frame that only moved sprites keeps the count; anything else is a new one
             // (0 is skipped: it means unknown).
@@ -4392,13 +4416,16 @@ class PreRenderWorker extends AbstractWorker {
         return others;
     }
 
-    /** W4c. _rememberType0Set in preRenderEmit.wasm (persist_remember). */
-    _rememberType0SetWasm(bufIdx, count, maxItems) {
+    /**
+     * W4c. _rememberType0Set in preRenderEmit.wasm (persist_remember); `dirtyTaken`: persist_take_dirty took a sprite's
+     * renderDirty before this frame's emit (N-408).
+     */
+    _rememberType0SetWasm(bufIdx, count, maxItems, dirtyTaken) {
         const b = this._emitWasm;
-        const cleared = b.persistRemember(b.tableByte, count, maxItems);
+        b.persistRemember(b.tableByte, count, maxItems);
         this._persistCount[bufIdx] = count;
         // As in _rememberType0Set: the other buffer still holds the old columns of a sprite that changed.
-        if (cleared) this._persistCount[bufIdx ^ 1] = -1;
+        if (dirtyTaken) this._persistCount[bufIdx ^ 1] = -1;
     }
 
     /**
