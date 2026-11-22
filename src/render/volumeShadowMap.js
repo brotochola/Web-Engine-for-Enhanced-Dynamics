@@ -22,7 +22,7 @@
 
 import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX } from './sunShadowMap.js';
 import {
-  LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, LAMP_PANO_GLSL, LAMP_PANO_INNER, LAMP_PANO_WGSL, lampClipZGlsl, lampClipZWgsl, lampPanoLanding,
+  LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, LAMP_PANO_GLSL, LAMP_PANO_INNER, LAMP_PANO_WGSL, lampClipZGlsl, lampClipZWgsl,
 } from './lampShadowMap.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 import { hasOnce } from './shaderEdit.js';
@@ -140,32 +140,6 @@ export function volumeLampVertex(source) {
   return after(out, POSITION_GLSL, LAMP_GLSL, what);
 }
 
-/**
- * N-276: where a lamps' map texel's own ray meets a volume's face, as its place t along the ray (0 at the lamp, 1 on the
- * floor; the point's height E (1 - t)). The ray runs from the lamp (floor x, y, height E) to the floor point the texel's
- * place (u, v) in its half tile stands for (lampPanoLanding); the face is the plane through q with normal n. Edge-on (the
- * ray in the plane), q's own. A texel then keeps 1 / (1 + t) (lampRayDepth) at the depth (S - 1 / t) / (S - 1), S the
- * stretch's cap (lampClipZGlsl's). The shaders' lampVolumeT, which take n from their point's screen derivatives.
- *
- * Why: the vertices' interpolation is the projection only within the reach. The pano compresses the ring past it, and a
- * vertex above the lamp is drawn at the stretch's cap, so the inside of a triangle with a vertex there (a house's front,
- * taller than its lamp) got depths far nearer the lamp than its face is, won the texels of what stood in front of it (a
- * person's), and its walls, which skip their own house's texels (N-273), stood lit where the person's shadow fell.
- * @returns {number} t; 0 or less where the plane meets the ray at or above the lamp
- */
-export function lampVolumeRayT(qx, qy, qz, nx, ny, nz, u, v, lampX, lampY, elevation, reach) {
-  const off = lampPanoLanding(u, v, reach, RAY_OFF);
-  const dx = off[0];
-  const dy = off[1];
-  const dz = -elevation;
-  const den = nx * dx + ny * dy + nz * dz;
-  const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz);
-  const dLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  if (Math.abs(den) <= 1e-4 * nLen * dLen) return (elevation - qz) / elevation;
-  return (nx * (qx - lampX) + ny * (qy - lampY) + nz * (qz - elevation)) / den;
-}
-const RAY_OFF = new Float64Array(2);
-
 const INNER = LAMP_PANO_INNER.toFixed(2);
 const OUTER = (1 - LAMP_PANO_INNER).toFixed(2);
 const MIN_T = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
@@ -198,7 +172,7 @@ const VOLUME_LAMP_BODY_GLSL = `  vec3 dqx = dFdx(vLampP);
   t = clamp(t, ${MIN_T}, 1.0);
   float depth = (${STRETCH} - 1.0 / t) / ${STRETCH_LESS};
   gl_FragDepth = depth;
-  // N-211: the point's place along its lamp's ray (lampShadowMap.js lampRayDepth), not its height.
+  // N-211: the point's place along its lamp's ray (tests/reference/lightMapsJs.mjs lampRayDepth), not its height.
   float h = 1.0 / (1.0 + t);
   int id = int(vSunId + 0.5);
   finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);`;

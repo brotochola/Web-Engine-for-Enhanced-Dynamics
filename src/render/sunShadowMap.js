@@ -79,21 +79,6 @@ export function sunMapMargins(terms, tallest, heightScaleY, groundScaleY, screen
 }
 
 /**
- * Where a caster's picture point lands, in the floor's space (what the map's vertex shader does), for tests.
- * @param {{ footX: number, footY: number, localX: number, localY: number, heightScaleY: number, height?: number }} p
- *   the foot in world px (y on the screen), the picture point's offset from it in screen px (y down)
- * @param {ArrayLike<number>} terms sunMapTerms
- * @param {number} groundScaleY
- * @returns {{ x: number, y: number, z: number }} y in world px (on the screen), z the point's height
- */
-export function sunMapLanding({ footX, footY, localX, localY, heightScaleY, height = 1 }, terms, groundScaleY) {
-  const z = (Math.max(-localY, 0) * height) / heightScaleY;
-  const fx = footX + localX * terms[2] - z * terms[0];
-  const fy = footY / groundScaleY + localX * terms[3] - z * terms[1];
-  return { x: fx, y: fy * groundScaleY, z };
-}
-
-/**
  * DX-GBUF: a caster row's entity as the G-buffer's id ((entity % 65535) + 1, gbufWord.js gbufEntityId), 0 for none. A full
  * caster row carries its entity in its tint float (pre-render's _tagCasterEntities, a stamp row copies it); a row the
  * frame could not match keeps its tint's bits there, which this reads as none unless they happen to be a whole number.

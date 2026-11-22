@@ -24,18 +24,6 @@ import { hasOnce, requireMarks } from './shaderEdit.js';
 export const LAMP_MAP_ZMAX = 512;
 
 /**
- * N-211: what a lamps' map texel keeps of a caster point: its place along its lamp's ray, 1 / (1 + |E - z| / E) (1 at the
- * lamp's height, 1/2 on the floor, falling away from the lamp's height on both halves), in 8 bits. The point nearest the
- * lamp on a ray keeps the most; a point is in a caster's shade when its texel holds more than its own. Near the lamp's
- * height the rays are nearly level, where heights in 2 px steps could not tell a person from the wall behind them; there
- * this spends its steps (a 20 px lamp: 0.13 px a step around its height).
- * @param {number} z the point's height
- * @param {number} elevation the lamp's height
- */
-export function lampRayDepth(z, elevation) {
-  return 1 / (1 + Math.abs(elevation - z) / elevation);
-}
-/**
  * DX-LAMPPANO: the most a vertex's landing is drawn stretched (w at least its inverse), which also spans the depth that
  * keeps the point nearest the lamp's height: points nearer to it than 1/64 of its height tie.
  */
@@ -62,69 +50,6 @@ export function lampClipZGlsl(w) {
 export function lampClipZWgsl(w) {
   const s = LAMP_MAP_MAX_STRETCH;
   return `(${s.toFixed(1)} * ${w} - 1.0) / ${(s - 1).toFixed(1)}`;
-}
-
-/**
- * Where a point lands on the floor along a lamp's ray, in the floor's space (x, y on the floor, z up).
- * @param {number} x
- * @param {number} y
- * @param {number} z the point's height (px); DX-LAMPPANO: above the lamp it lands as its mirror (2E - z) does, and
- *   within 1/64 of the lamp's height LAMP_MAP_MAX_STRETCH times as far
- * @param {number} lx the lamp's floor point
- * @param {number} ly
- * @param {number} elevation the lamp's height (px)
- * @param {Float64Array|number[]} out x, y
- */
-export function lampLanding(x, y, z, lx, ly, elevation, out) {
-  const room = Math.abs(elevation - z);
-  const k = room > elevation / LAMP_MAP_MAX_STRETCH ? elevation / room : LAMP_MAP_MAX_STRETCH;
-  out[0] = lx + (x - lx) * k;
-  out[1] = ly + (y - ly) * k;
-  return out;
-}
-
-/**
- * DX-LAMPPANO: a landing's place in its half tile, 0..1 each way, from its offset (dx, dy) to the lamp on the floor:
- * linearly to LAMP_PANO_INNER of the half's radius within `reach`, beyond it LAMP_PANO_INNER + (1 - LAMP_PANO_INNER)
- * (1 - reach / R), the horizon at the half's edge. The shaders' lampPanoUv.
- * @param {Float64Array|number[]} out u, v
- */
-export function lampPanoUv(dx, dy, reach, out) {
-  const r = Math.sqrt(dx * dx + dy * dy);
-  const q = r / reach;
-  const c = q <= 1 ? LAMP_PANO_INNER * q : LAMP_PANO_INNER + (1 - LAMP_PANO_INNER) * (1 - 1 / q);
-  const k = r > 1e-4 ? (0.5 * c) / r : 0;
-  out[0] = 0.5 + dx * k;
-  out[1] = 0.5 + dy * k;
-  return out;
-}
-
-/**
- * N-276: lampPanoUv backwards: the landing (its offset to the lamp on the floor) a place (u, v) in a half tile stands for.
- * Past the half's edge (its square's corners) it stays at 1 / 1e-4 of the reach's ring. The volumes' fragments' ray
- * (volumeShadowMap.js lampVolumeRayT).
- * @param {Float64Array|number[]} out dx, dy
- */
-export function lampPanoLanding(u, v, reach, out) {
-  const du = u - 0.5;
-  const dv = v - 0.5;
-  const c = 2 * Math.sqrt(du * du + dv * dv);
-  const q = c <= LAMP_PANO_INNER ? c / LAMP_PANO_INNER : (1 - LAMP_PANO_INNER) / Math.max(1 - c, 1e-4);
-  const k = c > 1e-6 ? (2 * q * reach) / c : 0;
-  out[0] = du * k;
-  out[1] = dv * k;
-  return out;
-}
-
-/**
- * DX-LAMPPANO: where a world point reads a lamp's tile: its half (0 the floor, lower than the lamp; 1 the ceiling, higher)
- * and its place there (lampPanoUv of its landing). The light pass's lookup, in JS.
- * @returns {{ half: number, u: number, v: number }}
- */
-export function lampPanoTexel(x, y, z, lx, ly, elevation, reach) {
-  const land = lampLanding(x, y, z, lx, ly, elevation, new Float64Array(2));
-  const uv = lampPanoUv(land[0] - lx, land[1] - ly, reach, new Float64Array(2));
-  return { half: z > elevation ? 1 : 0, u: uv[0], v: uv[1] };
 }
 
 /**

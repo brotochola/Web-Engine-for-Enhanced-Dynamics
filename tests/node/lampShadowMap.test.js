@@ -5,11 +5,12 @@ import assert from 'node:assert/strict';
 
 import {
   LAMP_MAP_MAX_STRETCH, LAMP_MAP_MAX_TEXELS, LAMP_PANO_INNER, autoLampTileSize, lampColumnGrid, lampColumnIndex,
-  lampLanding, lampPanoLanding, lampPanoTexel, lampPanoUv, lampTileLayout, writeLampTile, writeLampTileOwner,
+  lampTileLayout, writeLampTile, writeLampTileOwner,
 } from '../../src/render/lampShadowMap.js';
 import {
-  VOLUME_LAMP_CACHE_FRAGMENT, VOLUME_LAMP_FRAGMENT, lampVolumeRayT, volumeLampVertex, volumeLampWgsl, writeVolumeLampTerms,
+  VOLUME_LAMP_CACHE_FRAGMENT, VOLUME_LAMP_FRAGMENT, volumeLampVertex, volumeLampWgsl, writeVolumeLampTerms,
 } from '../../src/render/volumeShadowMap.js';
+import { lampLanding, lampPanoLanding, lampPanoTexel, lampPanoUv, lampRayDepth, lampVolumeRayT } from '../reference/lightMapsJs.mjs';
 import fs from 'node:fs';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -141,7 +142,6 @@ test('N-196: lampShadowTile auto makes a tile as fine as the widest lamp and the
 });
 
 test('N-211: a texel keeps the place along the ray, finest around the lamp\'s height, nearer the lamp more', async () => {
-  const { lampRayDepth } = await import('../../src/render/lampShadowMap.js');
   close(lampRayDepth(20, 20), 1);
   close(lampRayDepth(0, 20), 0.5, 1e-12);
   // Nearer the lamp's height on both halves: more (a caster between a point and its lamp holds more than the point).

@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { SUN_MAP_ZMAX, sunMapLanding, sunMapMargins, sunMapTerms, sunMapVertex } from '../../src/render/sunShadowMap.js';
+import { SUN_MAP_ZMAX, sunMapMargins, sunMapTerms, sunMapVertex } from '../../src/render/sunShadowMap.js';
+import { sunMapLanding } from '../reference/lightMapsJs.mjs';
 import { shaderWithFlag } from '../../src/render/faceMap.js';
 import { HEIGHT_PER_ROW_CODES, HEIGHT_PER_ROW_STEPS } from '../../src/render/frameBase.js';
 import { LIGHTING_DEFAULTS } from '../../src/util/configDefaults.js';
