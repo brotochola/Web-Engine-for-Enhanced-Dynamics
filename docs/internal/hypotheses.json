@@ -20993,7 +20993,7 @@
       "id": "N-256",
       "title": "Split src/workers/pixiWorker.js (11 140 lines, 269 methods, a 779-line constructor, 110 commits since 2026-11-01) into subsystem classes under src/render/pixi/, so Pixi work can run in parallel and agents read only what they change",
       "status": "open",
-      "statusText": "done 2026-11-22 but the later items: PW-1 to PW-10 in src/render/pixi/ (assets, scenery, mesh and custom layers, glow, shadow maps, lighting, decal tiles, SCREEN layers), pixiWorker.js 11 481 -> 4 410 lines, every Predator sitting NEUTRAL (R-1852 to R-1857); left: PW-11 (the backend seam), PW-12 (preRenderWorker.js), and splitting shadowMaps.js (2 002) and customLayers.js (1 694) under the plan's 1 500",
+      "statusText": "done 2026-11-22 but the later items: PW-1 to PW-10 and the subsystems' splits (lampMap.js, lookShaders.js), pixiWorker.js 11 481 -> 4 413 lines, every src/render/pixi/ module under 1 500; Predator NEUTRAL each time (R-1852 to R-1857, R-1863); left: PW-11 (the backend seam), PW-12 (preRenderWorker.js)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "refactor",
@@ -21012,7 +21012,8 @@
         "R-1854",
         "R-1855",
         "R-1856",
-        "R-1857"
+        "R-1857",
+        "R-1863"
       ]
     },
     {
@@ -25212,6 +25213,26 @@
         "bus shadow cut",
         "colectivo shadow missing part",
         "silhouette shadow cut at one facing"
+      ]
+    },
+    {
+      "records": [
+        "R-1864"
+      ],
+      "refs": [],
+      "id": "N-411",
+      "title": "In map mode the casted shadows' composite multiplied an empty target over the whole canvas every frame, and the target was cleared every frame",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-22",
+      "result": "Fixed 2026-11-22 (6aabbee3, R-1864): the composite draws only while a pass drew into the target, which is cleared once when it empties; captures identical; light3d Predator 34 -> 32 draws and 776.5 -> 722.5 GL calls a frame, GPU time within noise.",
+      "statusText": "fixed 2026-11-22 (6aabbee3)",
+      "next": "",
+      "aliases": [
+        "empty shadow composite",
+        "castedShadows composite in map mode",
+        "transparent multiply pass"
       ]
     }
   ],
@@ -42721,6 +42742,22 @@
       "title": "E-468 answered: castedShadows multiplies under the entities, lighting and lightGlows above them; only those two are neighbours, and dst·L + G needs dual-source blending or the scene as a texture: not worth about 0.1 ms",
       "verdict": "answered",
       "text": "**E-468 answered: the three composites cannot be one pass, since the layers are not neighbours in the draw order.**\nRead from the code; nothing was measured.\n\nThe layers, from `configDefaults.js`, each drawn by a full-screen sprite of its target at its Layer's place:\n- `castedShadows`: zIndex 2, MULTIPLY;\n- `entities`: zIndex 3;\n- `lighting`: zIndex 4, MULTIPLY;\n- `lightGlows`: zIndex 5, ADD.\n\nThe shadows multiply the floor before the sprites are drawn over it, so they cannot join a pass after the entities. A\ngame may also move any of these layers (Layer.zIndex).\n\nOnly lighting and lightGlows sit together. Together they make `dst · L + G`, the light per channel and the glow added.\nFixed-function blending cannot form that with one source colour: `src + dst · src` mixes them, and the alpha factor is\none number where L is coloured. One draw would need either:\n- dual-source blending (WebGL2's `WEBGL_blend_func_extended` extension, WebGPU's optional `dual-source-blending`\n  feature), which Pixi does not drive: a patched pipeline and a fallback for 0.1 ms;\n- the scene behind as a texture: one more full-screen copy, which costs about what the pass saves.\n\nThe saving on record is 0.10 ms a composite at full clock (the WebGPU recorder, 2026-11-16), about 0.1 ms here. Not worth\neither route. Closed with no change. Two cheaper cases already hold: the glow pass is cut to a rect when one torch glows\n(E-404), and a target with nothing in it is not composited."
+    },
+    {
+      "id": "R-1863",
+      "date": "2026-11-22",
+      "time": "17:00",
+      "timeFrom": "recorded",
+      "title": "N-256 lampMap.js and lookShaders.js through Predator (78f20362 -> 249d7790): NEUTRAL by day (renderer -0.3 %); by night logic +4.8 % and physics +4.4 %, which the move cannot reach, drifted together, renderer -2.4 % against them",
+      "verdict": "kept-hygiene",
+      "text": "**N-256: the lamps' shadow map (lampMap.js, 6a3b2d0c) and the look shaders (lookShaders.js, 249d7790) through Predator,\n78f20362 -> 249d7790: NEUTRAL by day; by night the unreachable workers drifted together.**\n\nBy day: `runPredatorAbab.mjs --name n256split-plain --pairs 16 --query \"crowd=2.5&dayCycle=0&mix=1\"`, owner renderer,\n16:40 to 16:53. NEUTRAL.\n\n| worker | A -> B (ms) | paired | vs the others |\n| --- | --- | --- | --- |\n| logic | 15.718 -> 15.594 | -0.4 % | |\n| spatial | 7.586 -> 7.416 | -0.5 % | |\n| physics | 15.189 -> 15.121 | +0.5 % | |\n| renderer | 7.425 -> 7.121 | -0.3 % | -0.7 % |\n| preRender | 8.822 -> 8.944 | +1.5 % (11/16 worse) | +1.5 % |\n\nThe load keys are within 0.4 %.\n\nBy night: `--name n256split-night --pairs 8 --fresh --query \"crowd=2.5&mix=1&light3d=1&hour=22\"`, 16:53 to 17:00. The\nrunner said REGRESSION.\n\n| worker | paired | vs the others |\n| --- | --- | --- |\n| logic | +4.8 % (6/8 worse) | |\n| physics | +4.4 % (6/8 worse) | |\n| spatial | +2.3 % | |\n| preRender | +1.4 % | -2.8 % |\n| renderer | +1.1 % | -2.4 % |\n\nGPU_CASTERS +1.0 %, BODY_COUNT +0.3 %.\n\nThe change moves Pixi-worker code between modules: logic, physics and spatial run none of it. Every unreachable worker\nmoved worse together while the owner used the PC (a chat, ssh to the ASUS), and the renderer read against them is\n-2.4 %: drift, read as NEUTRAL for the owner. Not sat again: no primary worker can be reached by the change.\n\nWith these moves N-256's module limit holds: shadowMaps.js 1 092 lines, customLayers.js 1 464, every src/render/pixi/\nmodule under 1 500."
+    },
+    {
+      "id": "R-1864",
+      "date": "2026-11-22",
+      "title": "N-411 fixed (6aabbee3): the casted shadows' composite skips a frame whose target holds nothing; captures 0 px apart, 34 -> 32 draws and 776.5 -> 722.5 GL calls a frame in light3d Predator",
+      "verdict": "kept-hygiene",
+      "text": "**N-411 fixed (6aabbee3): the casted shadows' composite skips a frame whose shadows' target holds nothing.**\n\nIn map mode the sun's and the lamps' casters go to their maps, so most frames drew nothing into the shadows' target.\nStill, the castedShadows sprite multiplied that transparent target over the whole canvas, and the target was cleared\nevery frame. Both changed no pixel.\n\nThe composite now draws only when a pass drew into the target (`renderable`). The target is cleared once when it empties:\na debug view shows it, and the light pass never reads it (`uShadowComposite` stays 0, a dead branch of the light shader).\n\nCaptures against the parent, 0 px apart: the light bench by day and by night on WebGL and WebGPU, by day with\n`sun=layer`, and dxCaptureScene.\n\nglFrameRecorder `--gpu-draws` on Predator `dayCycle=0&light3d=1&hour=12&zoom=0.3`, 180 frames each:\n\n| | before | after |\n| --- | --- | --- |\n| draws a frame | 34 | 32 (the screen pass 20 -> 18) |\n| GL calls a frame | 776.5 | 722.5 |\n| GPU time in draws | 5.120 ms | 5.172 ms |\n\nThe GPU time is one run each, within the clocks' noise: the empty composite cost a few hundredths of a ms.\n\nKept as hygiene. Node suite 3 582 / 3 582, with a behavioural test (`shadowCompositeSkip.test.js`: cleared once, the\ncomposite off while empty, back on with the cookies' pass, cleared once when emptied again).\n\nThe light pass's dead `uShadowComposite` branch and its `uShadowMap` binding go with E-531's decision on the classic\nlayer."
     }
   ],
   "leads": [
