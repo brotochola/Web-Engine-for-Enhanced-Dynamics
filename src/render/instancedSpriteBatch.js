@@ -359,8 +359,6 @@ export class InstancedSpriteBatch {
    * @param {import('../vendor/pixi.min.js').TextureSource} opts.atlasSource
    * @param {boolean} [opts.depthTest=true]
    * @param {boolean} [opts.depthMask=true]
-   * @param {boolean} [opts.alphaDiscard=true] - false → blend-only fragment (no discard)
-   * @param {Float32Array} [opts.alphaCut] - xy: discard below x, discard at/above y (y=0 off). Default 0.01 when discarding.
    * @param {boolean} [opts.premultiplyAlpha=true] - true → normal PMA out; false → additive (glows)
    * @param {string} [opts.blendMode='normal'] - Pixi State blend mode
    * @param {boolean} [opts.useWebGpu=true] - compile GpuProgram vs GlProgram
@@ -395,8 +393,6 @@ export class InstancedSpriteBatch {
     atlasSource,
     depthTest = true,
     depthMask = true,
-    alphaDiscard = true,
-    alphaCut = null,
     premultiplyAlpha = true,
     blendMode = 'normal',
     lutSource = null,
@@ -649,7 +645,6 @@ export class InstancedSpriteBatch {
     this._useWebGpu = useWebGpu;
     this._engineShaders = shaders;
     this._premultiplyAlpha = premultiplyAlpha;
-    this._alphaDiscard = alphaDiscard !== false;
     // DX-DEPTH (F5, pixelDepth.js): { maps }: the colour programs write each pixel's floor depth (gl_FragDepth on WebGL,
     // frag_depth on WebGPU), tested. On WebGPU every target this batch draws into needs a depth attachment.
     this._pixelDepth = pixelDepth && pixelDepth.maps ? pixelDepth : null;
@@ -672,8 +667,6 @@ export class InstancedSpriteBatch {
 
     this._tileWorld = new Float32Array(4);
     this._tileWorld[2] = 1;
-    const cut = alphaCut || new Float32Array(this._alphaDiscard ? [0.01, 0, 0, 0] : [0, 0, 0, 0]);
-    this._alphaCut = cut;
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
     // DX-DEPTH (F5 v2): the edge pass's programs (the soft and unshaded pixels, depth tested, not written), a twin of each
@@ -691,7 +684,7 @@ export class InstancedSpriteBatch {
     this._opWanted = opaquePass !== null && typeof opaquePass?.make === 'function' && typeof opaquePass.fromBuffer === 'function'
       && !useWebGpu && this._twoStreams && this._premultiplyAlpha && (blendMode || 'normal') === 'normal'
       && this._pixelDepth === null && !this.gbuf && this.capacity <= OPAQUE_MAX_ROWS;
-    this.shader = this._makeSpriteShader(atlas, lut, cut, label || 'instanced-sprites');
+    this.shader = this._makeSpriteShader(atlas, lut, label || 'instanced-sprites');
     // E-162: the statics texture and the program that reads it; the mesh draws with it on indexed frames.
     this._statics = this.indexed ? statics : null;
     this._staticsSource = null;
@@ -735,7 +728,7 @@ export class InstancedSpriteBatch {
         const glProgram = instancedSpriteGlProgram(
           GlProgram,
           shaders.shadowVert,
-          pickInstancedSpriteFragmentGlsl(true, false, shaders),
+          pickInstancedSpriteFragmentGlsl(true, shaders),
           (label || 'instanced-sprites') + '-sun'
         );
         this.shadowShader = new Shader({ glProgram, resources });
@@ -1048,7 +1041,7 @@ export class InstancedSpriteBatch {
     // E-448: with the opaque pass, at the painter's depth (its own draw slot), which the pass's twin writes.
     this._colorRowVertex = this._opWanted && rowBase ? rowBase : '';
     const rowVertex = this._colorRowVertex !== '' ? opaqueRowVertex(rowBase, false) : rowBase;
-    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, shaders);
     const glProgram = instancedSpriteGlProgram(GlProgram, rowVertex, this._depthFragment(color), `${name}-rows`);
     const r = this.shader.resources;
     const resources = {
@@ -1165,7 +1158,7 @@ export class InstancedSpriteBatch {
     const wasIndexed = this._indexedShader !== null && this.mesh.shader === this._indexedShader;
     this._edgeShader = null;
     this._vdepthShader = null;
-    this.shader = this._makeSpriteShader(r.uTexture, r.uTexLut, this._alphaCut, this._label);
+    this.shader = this._makeSpriteShader(r.uTexture, r.uTexLut, this._label);
     if (this.indexed) this._indexedShader = this._makeIndexedShader(this._label);
     if (this.posesByRow) this._rowShader = this._makeRowShader(this._label);
     this.mesh.shader = wasRow ? this._rowShader : wasIndexed ? this._indexedShader : this.shader;
@@ -1269,7 +1262,7 @@ export class InstancedSpriteBatch {
     }
   }
 
-  _makeSpriteShader(atlas, lut, alphaCut, name) {
+  _makeSpriteShader(atlas, lut, name) {
     const uniforms = {
       uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
     };
@@ -1338,7 +1331,7 @@ export class InstancedSpriteBatch {
           'gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n  if (aInstShadow.x < -1000.0) gl_Position.x += aInstShadow.y + aInstShadow.z;'
         );
     }
-    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, shaders);
     let frag = color;
     const depth = !!(this._pixelDepth && vert && frag);
     // DX-GBUF: without pixel depth the colour program reads no words, yet the batch's geometry carries them.
@@ -1404,7 +1397,7 @@ export class InstancedSpriteBatch {
     const shaders = this._engineShaders;
     const indexedBase = shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null;
     const indexedVertex = this._depthVertex(indexedBase, 'flat');
-    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, shaders);
     const glProgram = instancedSpriteGlProgram(GlProgram, indexedVertex, this._depthFragment(color), `${name}-indexed`);
     const r = this.shader.resources;
     const resources = {
@@ -2629,7 +2622,7 @@ export class InstancedSpriteBatch {
       glProgram: instancedSpriteGlProgram(
         GlProgram,
         spriteIndexedVertex(shaders.shadowVert, opts),
-        pickInstancedSpriteFragmentGlsl(true, false, shaders),
+        pickInstancedSpriteFragmentGlsl(true, shaders),
         name
       ),
     };

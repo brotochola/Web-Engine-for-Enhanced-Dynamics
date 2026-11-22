@@ -32,13 +32,12 @@ const shaders = {
   spriteVert: read('instancedSprite.vert.glsl'),
   spriteFrag: read('instancedSprite.frag.glsl'),
   spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-  spriteFragBlend: read('instancedSpriteBlend.frag.glsl'),
 };
 
 test('the opaque fragment shader is the blend one discarding every alpha but 1', () => {
-  const out = opaqueFragment(shaders.spriteFragBlend);
+  const out = opaqueFragment(shaders.spriteFrag);
   assert.match(out, /float a = t\.a \* vColor\.a;\n {2}if \(a < 1\.0\) discard;\n {2}finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
-  assert.equal(out.replace('  if (a < 1.0) discard;\n', ''), shaders.spriteFragBlend);
+  assert.equal(out.replace('  if (a < 1.0) discard;\n', ''), shaders.spriteFrag);
   assert.throws(() => opaqueFragment(shaders.spriteFragAdd), /blend fragment shader/);
 });
 
@@ -238,7 +237,7 @@ async function setup() {
   const textures = recordTextures();
   const batch = new InstancedSpriteBatch({
     capacity: N, label: 'e448', poseInterp: true, useWebGpu: false, shaders, data: region, gpuPack: pack, opaquePass: textures,
-    depthTest: false, depthMask: false, alphaDiscard: false, arena,
+    depthTest: false, depthMask: false, arena,
   });
   assert.ok(batch.data.buffer === arena.buffer && batch.staticData.buffer === arena.buffer && batch.staticData.byteOffset > 0);
   const uploads = { pose: 0, opaque: 0, opaqueBytes: 0 };
@@ -412,7 +411,7 @@ test('a keyed batch draws its frames by queue row with the opaque pass, at the p
   textures.scatter = () => {};
   const batch = new InstancedSpriteBatch({
     capacity: K, label: 'e448-keyed', useWebGpu: false, shaders, gpuPack: pack, split: true, data: rows, statics: textures,
-    keyed, posesByRow: true, opaquePass: textures, depthTest: false, depthMask: false, alphaDiscard: false,
+    keyed, posesByRow: true, opaquePass: textures, depthTest: false, depthMask: false,
   });
   assert.ok(batch.keyed && batch.posesByRow && batch.opaqueOn && batch._opRowShader !== null);
   for (const x of [...batch._buffers, ...batch._staticBuffers, ...batch._slotBuffers, ...batch._opKeyedBuffers]) x.update = () => {};

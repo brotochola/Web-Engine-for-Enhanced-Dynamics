@@ -21,7 +21,6 @@ const shaders = {
   spriteVert: read('instancedSprite.vert.glsl'),
   spriteFrag: read('instancedSprite.frag.glsl'),
   spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-  spriteFragBlend: read('instancedSpriteBlend.frag.glsl'),
 };
 
 const N = 500;

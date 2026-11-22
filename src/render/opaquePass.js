@@ -116,7 +116,7 @@ export function opaquePoseTextureRows(rows, poseWords) {
 }
 
 /**
- * The opaque pass's fragment shader from the batch's blending one (instancedSpriteBlend.frag.glsl): the same colour, and
+ * The opaque pass's fragment shader from the batch's blending one (instancedSprite.frag.glsl): the same colour, and
  * a pixel whose alpha is not exactly 1 discarded.
  * @param {string} source
  * @returns {string}

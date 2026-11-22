@@ -2,9 +2,9 @@
  * Instanced sprite GLSL program factory. Sources are fetched at Pixi init.
  */
 
-export function pickInstancedSpriteFragmentGlsl(premultiplyAlpha, alphaDiscard, shaders) {
-  if (!premultiplyAlpha) return shaders?.spriteFragAdd;
-  return alphaDiscard !== false ? shaders?.spriteFrag : shaders?.spriteFragBlend;
+/** The sprite fragment: premultiplied alpha (spriteFrag), or additive (spriteFragAdd, the glows). */
+export function pickInstancedSpriteFragmentGlsl(premultiplyAlpha, shaders) {
+  return premultiplyAlpha ? shaders?.spriteFrag : shaders?.spriteFragAdd;
 }
 
 export function instancedSpriteGlProgram(GlProgram, vertex, fragment, name) {

@@ -19,7 +19,6 @@ const SHADERS = {
   spriteVert: read('instancedSprite.vert.glsl'),
   spriteFrag: read('instancedSprite.frag.glsl'),
   spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-  spriteFragBlend: read('instancedSpriteBlend.frag.glsl'),
 };
 
 const sharedMemory = (pages) => new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });

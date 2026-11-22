@@ -88,7 +88,6 @@ export async function setupPoseKernel({ n = 250000, seed = 0xb0ee5 } = {}) {
     spriteVert: read('instancedSprite.vert.glsl'),
     spriteFrag: read('instancedSprite.frag.glsl'),
     spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
-    spriteFragBlend: read('instancedSpriteBlend.frag.glsl'),
   };
   const batch = installBatchPackJs(new InstancedSpriteBatch({ capacity: n, label: 'w9e-bench', poseInterp: true, useWebGpu: false, shaders }));
   const opts = {

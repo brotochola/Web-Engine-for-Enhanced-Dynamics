@@ -45,7 +45,6 @@ const GL_SHADERS = {
   spriteVert: readShader('instancedSprite.vert.glsl'),
   spriteVertPose: readShader('instancedSpritePose.vert.glsl'),
   spriteFrag: readShader('instancedSprite.frag.glsl'),
-  spriteFragBlend: readShader('instancedSpriteBlend.frag.glsl'),
   spriteFragAdd: readShader('instancedSpriteAdditive.frag.glsl'),
 };
 const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl'), spritePose: readShader('instancedSpritePose.wgsl') };

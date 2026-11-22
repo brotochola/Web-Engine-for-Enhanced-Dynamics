@@ -105,7 +105,7 @@ test('particles share the painter list; glow stays ADD; no second particle batch
   assert.match(packLayer, /opts\.indices = idxG/);
   assert.match(pixiSrc, /splitGlow/);
   assert.match(pixiSrc, /_packGlowBatch\.upload\(this\._packQ, packOpts\)/);
-  assert.match(pixiSrc, /alphaDiscard: false/);
+  assert.doesNotMatch(pixiSrc, /alphaDiscard/);
   assert.doesNotMatch(pixiSrc, /entitiesParticleBatch/);
   assert.doesNotMatch(pixiSrc, /_rqIdxParticle/);
   assert.doesNotMatch(packLayer, /entitiesParticleBatch/);
@@ -138,7 +138,6 @@ test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
   const shaderDir = join(dir, '../../src/shaders');
   const glsl = [
     readFileSync(join(shaderDir, 'instancedSprite.frag.glsl'), 'utf8'),
-    readFileSync(join(shaderDir, 'instancedSpriteBlend.frag.glsl'), 'utf8'),
     readFileSync(join(shaderDir, 'instancedSpriteAdditive.frag.glsl'), 'utf8'),
   ].join('\n');
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);

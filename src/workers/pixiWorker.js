@@ -3044,8 +3044,6 @@ class PixiRenderer extends AbstractWorker {
       lutSource: this._texLutSource,
       depthTest: false,
       depthMask: false,
-      alphaDiscard: false,
-      alphaCut: null,
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
@@ -3112,7 +3110,6 @@ class PixiRenderer extends AbstractWorker {
       lutSource: this._texLutSource,
       depthTest: false,
       depthMask: false,
-      alphaDiscard: false,
       premultiplyAlpha: false,
       blendMode: 'add',
       useWebGpu: this._useWebGpu,
@@ -5960,7 +5957,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lutSource: this._texLutSource,
       depthTest: false,
       depthMask: false,
-      alphaDiscard: false,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       arena: this._batchArena(cookieCap * INSTANCED_SPRITE_FLOATS),
@@ -5972,7 +5968,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lutSource: this._texLutSource,
       depthTest: false,
       depthMask: false,
-      alphaDiscard: false,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       shadowCast: true,
@@ -7442,7 +7437,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const vertex = columns
       ? sunMapColumnsVertex(shaders.shadowVert, SUN_MAP_COLUMNS, { heights })
       : sunMapVertex(shaders.shadowVert, { heights });
-    const fragment = heights ? shaders.sunMapFrag : pickInstancedSpriteFragmentGlsl(true, false, shaders);
+    const fragment = heights ? shaders.sunMapFrag : pickInstancedSpriteFragmentGlsl(true, shaders);
     return { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, fragment, name) };
   }
 
@@ -9757,9 +9752,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/instancedSprite.frag.glsl').then((s) => {
           sh.spriteFrag = s;
         }),
-        fetchEngineShader('/src/shaders/instancedSpriteBlend.frag.glsl').then((s) => {
-          sh.spriteFragBlend = s;
-        }),
         fetchEngineShader('/src/shaders/instancedSpriteAdditive.frag.glsl').then((s) => {
           sh.spriteFragAdd = s;
         }),
@@ -10780,7 +10772,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           lutSource: this._texLutSource,
           depthTest: false,
           depthMask: false,
-          alphaDiscard: false,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
           data: layerRows,

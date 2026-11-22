@@ -109,13 +109,6 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 }
 
 @fragment
-fn mainFragBlend(in: VertexOut) -> @location(0) vec4<f32> {
-  let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
-  let a = t.a * in.vColor.a;
-  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a, a);
-}
-
-@fragment
 fn mainFragAdd(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
   return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a, 0.0);

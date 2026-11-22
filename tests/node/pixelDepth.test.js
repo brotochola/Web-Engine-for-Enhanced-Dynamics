@@ -35,7 +35,7 @@ test('the floor span covers the view and its margin', () => {
 });
 
 test('the opaque pass keeps the opaque pixels and the edge pass the others, in both languages', () => {
-  const frag = shader('instancedSpriteBlend.frag.glsl');
+  const frag = shader('instancedSprite.frag.glsl');
   assert.match(pixelDepthFragment(frag), /if \(!solid\) discard;/);
   assert.match(pixelDepthFragment(frag, { edge: true }), /if \(solid\) discard;/);
   assert.match(pixelDepthFragment(frag, { gbuf: true }), /flat in vec2 vDepthWord;/);
@@ -49,7 +49,7 @@ test('the opaque pass keeps the opaque pixels and the edge pass the others, in b
 });
 
 test('H-EDGE: each pass leaves before the twin page and the depth for the pixels it draws nothing for, in both languages', () => {
-  const frag = shader('instancedSpriteBlend.frag.glsl');
+  const frag = shader('instancedSprite.frag.glsl');
   // The opaque pass keeps no pixel under alpha 0.5; the edge pass draws one of alpha 0 as nothing (premultiplied 0, no
   // depth written), nor a solid one of a plain frame's instance (no soft or glowing texel, no emissive word: it cannot
   // glow), so neither needs the twin page's texel or the depth for them.
@@ -104,7 +104,7 @@ test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only
   const { FACE_INNER_Z_TIE } = await import('../../src/render/pixelDepth.js');
   const { encodeFaceHeight, encodeFaceNormal } = await import('../../src/render/faceMap.js');
   const vert = shader('instancedSprite.vert.glsl');
-  const frag = shader('instancedSpriteBlend.frag.glsl');
+  const frag = shader('instancedSprite.frag.glsl');
   for (const gbuf of [false, true]) {
     assert.equal(pixelDepthVertex(vert, { gbuf }), pixelDepthVertex(vert, { gbuf, faces: false, cull: 'heights' }), 'no faces: no cull');
     assert.doesNotMatch(pixelDepthVertex(vert, { gbuf }), /vDepthFloor|dfCode/);
@@ -180,7 +180,7 @@ test('every depth variant the batch builds is balanced, in both languages (an un
       }
     }
   }
-  for (const frag of ['instancedSpriteBlend.frag.glsl', 'instancedSprite.frag.glsl']) {
+  for (const frag of ['instancedSprite.frag.glsl']) {
     for (const gbuf of bools) {
       for (const edge of bools) {
         for (const faces of bools) {

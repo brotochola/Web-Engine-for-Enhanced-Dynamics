@@ -226,10 +226,10 @@ test('the depth programs read the bit after their own LUT read and the edge pass
     assert.ok(vert.includes('lutSize.x > 3 * lutPerRow'), 'only when the table has the flags texel');
     assert.ok(vert.includes('& 1u) == 0u) vPlain = 1.0;'), 'plain when the bit is clear');
     assert.equal(vert.includes('if (((uint(aInstGbuf.x + 0.5) >> 21u) & 1u) != 0u) vPlain = 0.0;'), gbuf, 'an unshaded word');
-    const edge = pixelDepthFragment(shader('instancedSpriteBlend.frag.glsl'), { edge: true, gbuf });
+    const edge = pixelDepthFragment(shader('instancedSprite.frag.glsl'), { edge: true, gbuf });
     assert.match(edge, /flat in float vPlain;/);
     assert.match(edge, /if \(ad <= 0\.0 \|\| \(ad >= 0\.5 && vPlain > 0\.5\)\) discard;/);
-    assert.doesNotMatch(pixelDepthFragment(shader('instancedSpriteBlend.frag.glsl'), { gbuf }), /vPlain/, 'the opaque pass does not read it');
+    assert.doesNotMatch(pixelDepthFragment(shader('instancedSprite.frag.glsl'), { gbuf }), /vPlain/, 'the opaque pass does not read it');
     const wgsl = pixelDepthWgsl(shader('instancedSprite.wgsl'), { gbuf });
     assert.match(wgsl, /@location\(14\) @interpolate\(flat\) vPlain: f32,/);
     assert.ok(wgsl.indexOf('textureLoad(uTexLut, vec2<i32>(3 * lutPerRow, tid / lutPerRow), 0)') > wgsl.indexOf('let lutPerRow = i32(lutSize.x) / 3;'));
