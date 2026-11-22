@@ -16956,7 +16956,8 @@
         "R-1244",
         "R-1250",
         "R-1252",
-        "R-1691"
+        "R-1691",
+        "R-1805"
       ]
     },
     {
@@ -41200,6 +41201,15 @@
       "title": "E-310 at crowd 2.5: two spatial workers spatial 14.985 -> 9.982 ms (-34.2 %, 4/4), logic +3.3 %, others alike; Predator takes two from crowd 2 on 12+ logical CPUs",
       "verdict": "kept",
       "text": "**E-310 at crowd 2.5 now: a second spatial worker takes spatial off the long pole for 3.3 % of logic (it cost 8.3 % on 2026-11-14).** runPredatorAbab e310-sw2, `--vs main` (229429d6) with `--query-b spatialWorkers=2`, Predator `crowd=2.5&dayCycle=0` from the E-210 save, owner spatial, 4 pairs, to 00:29:\n\n- spatial 14.985 -> 9.982 ms (-34.2 %, worse 0/4, cv 3/2 %), each of the two workers 9.8-10.1 ms; spatial0's p99 28.9 -> 15.9 to 18.3 ms, long frames 18 -> 5 to 17.\n- logic 7.071 -> 7.237 (+3.3 %, worse 3/4, cv 6/1 %), physics 15.554 -> 15.665 (-0.3 % paired), renderer -1.7 %, pre-render -1.5 %, presented 60 = 60.\n- The sitting's FAIL (load) is ENTITIES_PROCESSED -48.4 %: a per-worker counter, each of two workers processes half; BODY_COUNT, VISIBLE_ENTITIES and RENDER_QUEUE_SIZE within 0.5 %.\n\nKept for Predator (01555a16, the demo's config): `predatorSpatialWorkers()` gives two from crowd 2 where navigator.hardwareConcurrency is 12 or more (this PC 16; the ASUS's 4 keeps one), one otherwise; `?spatialWorkers=` still sets it. Checked: crowd 2.5 boots spatial0 and spatial1, crowd 1 one. Physics (15.6 ms) is now the frame's one long pole at crowd 2.5. The engine's own choice by entity count and CPUs stays with DX-AUTOQUALITY."
+    },
+    {
+      "id": "R-1805",
+      "date": "2026-11-22",
+      "time": "00:35",
+      "timeFrom": "recorded",
+      "title": "Five Box2D threads at crowd 2.5 (two spatial workers): physics -5.0 %, spatial +5.9 %, pre-render +5.4 %, logic +4.5 %, renderer +3.4 %: a trade, Predator keeps 4",
+      "verdict": "rejected",
+      "text": "**Five Box2D threads at crowd 2.5 with two spatial workers: physics -5.0 %, every other judged worker +3.4 to +5.9 %: a trade, not a gain; Predator keeps 4.** runPredatorAbab pw5, `--vs main` (8a6177a5, the knob taking up to 8) with `--query-b physicsWorkers=5`, Predator `crowd=2.5&dayCycle=0` from the E-210 save (two spatial workers since R-1804), owner physics, 4 pairs, to 00:35: REGRESSION. physics 15.445 -> 14.602 ms (-5.0 %, worse 0/4), spatial 9.852 -> 10.349 (+5.9 %, 3/4), pre-render 8.510 -> 8.767 (+5.4 %, 3/4), logic 7.165 -> 7.241 (+4.5 %, 3/4), renderer 6.265 -> 6.485 (+3.4 %, 3/4), presented 60 = 60. The fifth pool thread takes a core the others were using (16 logical CPUs, about 13 engine threads busy). With E-319's 3-thread result (+18.7 % physics, others -3 to -12 %), 4 is where the trade balances on this machine."
     }
   ],
   "leads": [
