@@ -1204,10 +1204,11 @@
     const angularVelocity = views.angularVelocity[i];
     const fixed = fixedRotation ? 1 : 0;
     const worldId = world.worldId;
-    // Circles, boxes and shapeless bodies go straight to the wasm creators, with the values the
-    // option-object API merged from these fields (every material field is set here, so its
-    // defaults never applied). The object, its spread copies and the handle were 8.6 MB/s of the
-    // physics thread's allocation in spawnStormScene (E-91). Polygons build a vertex array anyway.
+    // Every body goes straight to the wasm creators, with the values the old option-object API
+    // merged from these fields (every material field is set here, so its defaults never applied).
+    // The object, its spread copies and the handle were 8.6 MB/s of the physics thread's
+    // allocation in spawnStormScene (E-91). A polygon's vertices go through the fixtures' heap
+    // scratch (N-303 CR-2: it built an array and malloc'd a copy per body).
 
     multiShape[i] = 0;
     try {
@@ -1260,17 +1261,13 @@
       } else if (shape === ShapeType.Polygon) {
         const count = views.polyCount[i] | 0;
         if (count < 3) return false;
-        const base = i * MAX_POLY_VERTS;
-        const verts = [];
-        for (let v = 0; v < count; v++) {
-          verts.push(views.polyVertexX[base + v], views.polyVertexY[base + v]);
-        }
-        world.createPolygon({
-          type, x, y, angle, offsetX: views.offsetX[i], offsetY: views.offsetY[i],
-          density, friction, restitution, linearDamping, angularDamping, gravityScale: 1,
-          vx, vy, angularVelocity, isSensor: sensor === 1, enableHitEvents, categoryBits, maskBits,
-          groupIndex, fixedRotation, entityIndex: i, verts, radius: polygonSkin(i),
-        });
+        const vertices = writePolygonToHeapScratch(views.polyVertexX, views.polyVertexY, i * MAX_POLY_VERTS, count);
+        const slot = bodyCreators.createBodyPolygon(
+          worldId, type, x, y, angle, vertices, count, views.offsetX[i], views.offsetY[i],
+          density, friction, restitution, linearDamping, angularDamping, 1, vx, vy, angularVelocity,
+          sensor, hits, categoryBits, maskBits, groupIndex, fixed, i, polygonSkin(i)
+        );
+        if (slot < 0) throw new Error('createPolygon failed');
       } else {
         return false;
       }

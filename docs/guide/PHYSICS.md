@@ -46,7 +46,7 @@ Box2D always attaches **shapes to a body**. Weed maps ECS components like Unity:
 Host sync (`weedjsPost.syncBodySlot`):
 
 - `wantBody = entityActive && (rbActive || colActive)`
-- Create: RB-only → `world.create()` / `create_body`; Col-only → static `create_*` with shape; both → existing `createBox` / `createCircle` / `createPolygon`
+- Create: RB-only → `create_body` (shapeless); Col-only → static, `create_body_box` / `create_body_circle` / `create_body_polygon` with its shape; both → the same creators, dynamic
 - Geometry dirty with Collider on a shapeless body → `body_set_shape_*` **creates** the shape (`body_add_shape_*`)
 - Collider removed while RigidBody stays → `body_clear_shapes`; body keeps integrating
 - Spawn / despawn / save restore: `bumpBodyGeneration` / body dirty if **either** component is present (not only both)

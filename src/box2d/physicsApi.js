@@ -14,23 +14,7 @@ function createPhysicsApi(Module) {
   const createBodyCircle = wrap("create_body_circle");
   const createBodyPolygon = wrap("create_body_polygon");
   const createBody = wrap("create_body");
-  const bodyClearShapes = wrap("body_clear_shapes");
   const destroyBody = wrap("destroy_body");
-  const bodySetTransform = wrap("body_set_transform");
-  const bodySetLinearVelocity = wrap("body_set_linear_velocity");
-  const bodySetAngularVelocity = wrap("body_set_angular_velocity");
-  const bodySetFixedRotation = wrap("body_set_fixed_rotation");
-  const bodyApplyForce = wrap("body_apply_force");
-  const bodyApplyForceCenter = wrap("body_apply_force_center");
-  const bodySetLinearDamping = wrap("body_set_linear_damping");
-  const bodySetAngularDamping = wrap("body_set_angular_damping");
-  const bodySetGravityScale = wrap("body_set_gravity_scale");
-  const bodyApplyLinearImpulse = wrap("body_apply_linear_impulse");
-  const bodyApplyLinearImpulseCenter = wrap("body_apply_linear_impulse_center");
-  const bodyApplyAngularImpulse = wrap("body_apply_angular_impulse");
-  const bodyApplyTorque = wrap("body_apply_torque");
-  const bodySetAwake = wrap("body_set_awake");
-  const bodySetFilter = wrap("body_set_filter");
   const overlapAabbIntoFn = wrap("overlap_aabb_into");
   const overlapCircleFn = wrap("overlap_circle");
   const castRayClosestFn = wrap("cast_ray_closest");
@@ -87,8 +71,6 @@ function createPhysicsApi(Module) {
   const getCountersIntCount = wrap("get_counters_int_count");
   const getJointEventsByteOffset = wrap("get_joint_events_byte_offset");
   const getJointEventCapacity = wrap("get_joint_event_capacity");
-  const bodySetRestitution = wrap("body_set_restitution");
-  const bodySetSleepThreshold = wrap("body_set_sleep_threshold");
   const worldSetHitEventThreshold = wrap("world_set_hit_event_threshold");
   const worldExplode = wrap("world_explode");
   const jointConfigure = wrap("joint_configure");
@@ -165,21 +147,6 @@ function createPhysicsApi(Module) {
   const getExtractIndicesByteOffset = wrap("get_extract_indices_byte_offset");
   const getExtractIndicesMax = wrap("get_extract_indices_max");
   const extractParticlesFn = wrap("extract_particles");
-  const DEFAULT_MATERIAL = Object.freeze({
-    density: 1.0,
-    friction: 0.3,
-    restitution: 0.0,
-    linearDamping: 0.0,
-    angularDamping: 0.0,
-    gravityScale: 1.0,
-    vx: 0.0,
-    vy: 0.0,
-    angularVelocity: 0.0,
-    isSensor: false,
-    enableHitEvents: false,
-    categoryBits: 1,
-    maskBits: DEFAULT_FILTER_MASK,
-  });
 
   function filterArgs(filter = {}) {
     return {
@@ -313,95 +280,7 @@ function createPhysicsApi(Module) {
     }
   }
 
-  class BodyHandle {
-    constructor(world, slot) {
-      this._world = world;
-      this.slot = slot;
-    }
-
-    destroy() {
-      this._world.destroyBody(this.slot);
-    }
-
-    setTransform(x, y, rotC = 1, rotS = 0) {
-      bodySetTransform(this.slot, x, y, rotC, rotS);
-    }
-
-    setLinearVelocity(vx, vy) {
-      bodySetLinearVelocity(this.slot, vx, vy);
-    }
-
-    setAngularVelocity(angularVelocity) {
-      bodySetAngularVelocity(this.slot, angularVelocity);
-    }
-
-    setFixedRotation(locked = true) {
-      bodySetFixedRotation(this.slot, locked ? 1 : 0);
-    }
-
-    applyForce(fx, fy, px, py, wake = true) {
-      bodyApplyForce(this.slot, fx, fy, px, py, wake ? 1 : 0);
-    }
-
-    applyForceCenter(fx, fy, wake = true) {
-      bodyApplyForceCenter(this.slot, fx, fy, wake ? 1 : 0);
-    }
-
-    applyLinearImpulse(ix, iy, px, py, wake = true) {
-      bodyApplyLinearImpulse(this.slot, ix, iy, px, py, wake ? 1 : 0);
-    }
-
-    applyLinearImpulseCenter(ix, iy, wake = true) {
-      bodyApplyLinearImpulseCenter(this.slot, ix, iy, wake ? 1 : 0);
-    }
-
-    applyAngularImpulse(impulse, wake = true) {
-      bodyApplyAngularImpulse(this.slot, impulse, wake ? 1 : 0);
-    }
-
-    applyTorque(torque, wake = true) {
-      bodyApplyTorque(this.slot, torque, wake ? 1 : 0);
-    }
-
-    setAwake(awake = true) {
-      bodySetAwake(this.slot, awake ? 1 : 0);
-    }
-
-    setFilter(categoryBits, maskBits = DEFAULT_FILTER_MASK, groupIndex = 0) {
-      bodySetFilter(this.slot, categoryBits, maskBits, groupIndex);
-    }
-
-    setLinearDamping(damping) {
-      bodySetLinearDamping(this.slot, damping);
-    }
-
-    setAngularDamping(damping) {
-      bodySetAngularDamping(this.slot, damping);
-    }
-
-    setGravityScale(scale) {
-      bodySetGravityScale(this.slot, scale);
-    }
-
-    setRestitution(value) {
-      bodySetRestitution(this.slot, value);
-    }
-
-    setSleepThreshold(value) {
-      bodySetSleepThreshold(this.slot, value);
-    }
-
-    clearShapes() {
-      bodyClearShapes(this.slot);
-    }
-  }
-
   class PhysicsWorld {
-    static Box2dBodyType = Box2dBodyType;
-    static ShapeType = ShapeType;
-    static DEFAULT_MATERIAL = DEFAULT_MATERIAL;
-    static EVENT_HEADER = EVENT_HEADER;
-
     constructor(gravityX = 0.0, gravityY = -9.8, options = {}) {
       const o = options || {};
       this.worldId = createWorld(
@@ -460,144 +339,6 @@ function createPhysicsApi(Module) {
 
     getMaxBodySlots() {
       return getMaxBodySlots();
-    }
-
-    /** Shapeless body (RigidBody-only). No contacts until addShape*. */
-    create(options = {}) {
-      const o = { ...DEFAULT_MATERIAL, ...options };
-      const slot = createBody(
-        this.worldId,
-        o.type ?? Box2dBodyType.DYNAMIC,
-        o.x ?? 0,
-        o.y ?? 0,
-        o.angle ?? 0,
-        o.linearDamping,
-        o.angularDamping,
-        o.gravityScale,
-        o.vx,
-        o.vy,
-        o.angularVelocity,
-        o.fixedRotation ? 1 : 0,
-        o.entity ?? o.entityIndex ?? -1,
-      );
-      if (slot < 0) {
-        throw new Error("create failed");
-      }
-      return new BodyHandle(this, slot);
-    }
-
-    createBox(options = {}) {
-      const o = { ...DEFAULT_MATERIAL, ...options };
-      const slot = createBodyBox(
-        this.worldId,
-        o.type ?? Box2dBodyType.DYNAMIC,
-        o.x ?? 0,
-        o.y ?? 0,
-        o.angle ?? 0,
-        o.hx ?? 0.5,
-        o.hy ?? 0.5,
-        o.offsetX ?? 0,
-        o.offsetY ?? 0,
-        o.density,
-        o.friction,
-        o.restitution,
-        o.linearDamping,
-        o.angularDamping,
-        o.gravityScale,
-        o.vx,
-        o.vy,
-        o.angularVelocity,
-        o.isSensor ? 1 : 0,
-        o.enableHitEvents ? 1 : 0,
-        o.categoryBits,
-        o.maskBits,
-        o.groupIndex ?? 0,
-        o.fixedRotation ? 1 : 0,
-        o.entity ?? o.entityIndex ?? -1,
-      );
-      if (slot < 0) {
-        throw new Error("createBox failed");
-      }
-      return new BodyHandle(this, slot);
-    }
-
-    createCircle(options = {}) {
-      const o = { ...DEFAULT_MATERIAL, ...options };
-      const slot = createBodyCircle(
-        this.worldId,
-        o.type ?? Box2dBodyType.DYNAMIC,
-        o.x ?? 0,
-        o.y ?? 0,
-        o.angle ?? 0,
-        o.radius ?? 0.5,
-        o.offsetX ?? 0,
-        o.offsetY ?? 0,
-        o.density,
-        o.friction,
-        o.restitution,
-        o.linearDamping,
-        o.angularDamping,
-        o.gravityScale,
-        o.vx,
-        o.vy,
-        o.angularVelocity,
-        o.isSensor ? 1 : 0,
-        o.enableHitEvents ? 1 : 0,
-        o.categoryBits,
-        o.maskBits,
-        o.groupIndex ?? 0,
-        o.fixedRotation ? 1 : 0,
-        o.entity ?? o.entityIndex ?? -1,
-      );
-      if (slot < 0) {
-        throw new Error("createCircle failed");
-      }
-      return new BodyHandle(this, slot);
-    }
-
-    createPolygon(options = {}) {
-      const o = { ...DEFAULT_MATERIAL, ...options };
-      const verts = o.verts ?? o.vertices;
-      if (!Array.isArray(verts) || verts.length < 6 || verts.length % 2 !== 0) {
-        throw new Error("createPolygon requires verts as [x0,y0,x1,y1,...] length >= 6");
-      }
-      const vertCount = verts.length / 2;
-      const bytes = vertCount * 2 * 4;
-      const ptr = Module._malloc(bytes);
-      Module.HEAPF32.set(verts, ptr >> 2);
-      const slot = createBodyPolygon(
-        this.worldId,
-        o.type ?? Box2dBodyType.DYNAMIC,
-        o.x ?? 0,
-        o.y ?? 0,
-        o.angle ?? 0,
-        ptr,
-        vertCount,
-        o.offsetX ?? 0,
-        o.offsetY ?? 0,
-        o.density,
-        o.friction,
-        o.restitution,
-        o.linearDamping,
-        o.angularDamping,
-        o.gravityScale,
-        o.vx,
-        o.vy,
-        o.angularVelocity,
-        o.isSensor ? 1 : 0,
-        o.enableHitEvents ? 1 : 0,
-        o.categoryBits,
-        o.maskBits,
-        o.groupIndex ?? 0,
-        o.fixedRotation ? 1 : 0,
-        o.entity ?? o.entityIndex ?? -1,
-        o.radius > 0 ? o.radius : 0,
-      );
-      Module._free(ptr);
-      if (slot < 0) {
-        throw new Error("createPolygon failed");
-      }
-      return new BodyHandle(this, slot);
     }
 
     destroyBody(slot) {
@@ -1569,6 +1310,6 @@ function createPhysicsApi(Module) {
 
   // The raw creators, for the engine's own body sync (weedjsPost.js createBodyForEntity): one call
   // with the numbers, no option objects, spread copies or handle per body (E-91).
-  const bodyCreators = { createBody, createBodyBox, createBodyCircle };
-  return { PhysicsWorld, BodyHandle, JointHandle, bodyCreators };
+  const bodyCreators = { createBody, createBodyBox, createBodyCircle, createBodyPolygon };
+  return { PhysicsWorld, JointHandle, bodyCreators };
 }
