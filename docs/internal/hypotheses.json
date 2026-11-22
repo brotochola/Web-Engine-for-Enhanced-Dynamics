@@ -20392,8 +20392,8 @@
     {
       "id": "N-242",
       "title": "packMeshUvFill, the row kernel's UV path (rewrite_corners with stride 24) and the UV case of packColliderFillPoseOnly are unused by the engine since E-453; they stay only as test references",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "status": "parked",
+      "statusText": "parked 2026-11-22 (R-1832): with N-303's CR-18, which opens the same modules",
       "date": "2026-11-16",
       "area": "render",
       "kind": "bug",
@@ -20404,7 +20404,8 @@
         "dead uv row pack"
       ],
       "records": [
-        "R-1228"
+        "R-1228",
+        "R-1832"
       ]
     },
     {
@@ -42040,6 +42041,15 @@
       "title": "N-245 closed: Boids' deopt pass shows no steady deopt loop (both sites fixed: N-214's epoch read, the spatial publish split); what is left are one-time dependency changes",
       "verdict": "kept-hygiene",
       "text": "**N-245 closed: Boids has no steady deopt loop left.** Deopt pass on Boids (main at cc9eefc6), `--log-deopt --log-ic`, 10 s warm-up, 8 s measured, 05:15:\n\n- Neither of N-245's sites deopts: weedjsPost's pose-epoch read (N-214, R-1158; the ASUS saw it gone too, R-1743) and spatial's publish loop (fef668b7 and _scanOwnedEntities, R-1817; Predator 274 -> 0, R-1743).\n- Steady (after 10 s), every deopt is a one-time dependency change, none repeats in a loop: 9 at the wait meter and _runFrame (\"dependent prototype chain changed\", one per worker, when a global is added), and singles in camera, scene, gameObject and mouse (\"field type constness changed\"). 173 deopt-like lines in the whole run, warm-up included.\n\nThe scene ran its usual load (spatial 3.8 ms, physics 4.8 ms, logic 1.0 ms with the log on)."
+    },
+    {
+      "id": "R-1832",
+      "date": "2026-11-22",
+      "time": "05:25",
+      "timeFrom": "recorded",
+      "title": "N-242 parked with N-303's CR-18: the UV rows run only in tests, but removing them rewrites the corner kernel's uvOn branch and about 15 tests, and packMeshUvFill uses colliderFillBatch's private paint state",
+      "verdict": "note",
+      "text": "**N-242 parked, to go with N-303's CR-18 (the render modules' cold copies, the same files).** Read 2026-11-22: the engine calls the corner rewrite only with the 6-float collider rows and no UV generations (pixiWorker's one call passes COLLIDER_FILL_FLOATS), and packColliderFillPoseOnly only with its default stride, so the 24-float UV rows run in tests and benches alone. What removing them takes:\n\n- the C kernel's UV branch is a flag (uvOn) through six functions of wasm/meshCorners.c (indexed_run, fan_run, checked_run and their 32-bit copies) and the UV generations in rewrite_corners: engine.wasm rebuilt, about 15 test files and three benches that feed it UV rows rewritten or dropped;\n- packMeshUvFill and its writeUvTri (about 130 lines) use colliderFillBatch.js's private paint state and helpers (_paint, _packEntity, _instanceEntity, bindMeshPaint, readMeshFillPose, explicitMeshOffset, packOutU32): moving them to tests/reference means exporting those for the tests.\n\nAbout 200 lines of src for a day of test churn on a path nothing runs: not now. CR-18 opens these modules (ColliderFillBatch and MeshUvFillBatch's shared setup); do N-242 with it."
     }
   ],
   "leads": [
