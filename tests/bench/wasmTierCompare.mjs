@@ -4,7 +4,8 @@
  * WASM function compiled by TurboFan from the start), in alternating pairs, and every case's ops/s is compared. A case
  * clearly faster under --no-liftoff timed some Liftoff code, or code tiering left behind: its warm-up does not reach
  * TurboFan (wasmKernelHelpers.warmWasm does, where a bench uses it). kernelTierAudit.mjs sees this only in benches that
- * print the helpers' timing marker; this reads the numbers of any bench that writes --output JSON with cases.*.opsPerSec.
+ * print the helpers' timing marker; this reads the numbers of any bench that writes --output JSON (cases.*.opsPerSec, or
+ * a time a call: ms, medianMs).
  *
  *   node tests/bench/wasmTierCompare.mjs [--pairs 2] [--threshold 5] [--output out.json] [name filters...]
  *   (no filter: every *Microbench.mjs whose source mentions wasm)
@@ -43,15 +44,20 @@ function wasmBenches(filters) {
     .sort();
 }
 
-/** Every case's ops/s in a bench's JSON (cases.<name>.opsPerSec, at any depth under `cases`). */
+/**
+ * Every case's rate in a bench's JSON, at any depth under `cases` (the whole report when it has none): opsPerSec, or
+ * the inverse of a time a call (ms, medianMs), so higher is faster either way.
+ */
 function opsOf(json) {
   const out = {};
   const walk = (node, prefix) => {
     if (!node || typeof node !== 'object') return;
     if (typeof node.opsPerSec === 'number') out[prefix] = node.opsPerSec;
+    else if (typeof node.ms === 'number' && node.ms > 0) out[prefix] = 1000 / node.ms;
+    else if (typeof node.medianMs === 'number' && node.medianMs > 0) out[prefix] = 1000 / node.medianMs;
     for (const [k, v] of Object.entries(node)) if (v && typeof v === 'object') walk(v, prefix ? `${prefix}.${k}` : k);
   };
-  walk(json?.cases, '');
+  walk(json?.cases ?? json, '');
   return out;
 }
 
