@@ -2248,24 +2248,48 @@ class SpatialWorker extends AbstractWorker {
         stampFrame,
         g.truncatedByte,
       );
-      const cand = pub.cand;
-      const truncatedOf = this._neighborCandidateTruncated;
-      for (let k = 0; k < rebuilds; k++) {
-        const entityA = rebuild[k];
-        candCountOf[entityA] = cand[entityA * stride];
-        rowPoseGen[entityA] = poseGen;
-        pub.list[pub.queued++] = entityA;
-        if (!truncatedOf[entityA]) {
-          const b = entityA * 4;
-          // The range searched (a light's own reach, else its visualRange), as the next frame compares it.
-          this._storeNeighborReuseSignature(entityA, entityPosData[b], entityPosData[b + 1], entityPosData[b + 2], pub.range[entityA]);
-        } else {
-          // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
-          this._entityReuseInitialized[entityA] = 0;
-          framesSinceBuild[entityA] = 0;
-        }
+      this._finishRebuiltRows(rebuilds, poseGen);
+    }
+  }
+
+  /**
+   * The rows the gather just rebuilt (rebuild[0, rebuilds)): each one's candidate count, pose generation and publish
+   * slot, then its reuse signature, or for a truncated row the reuse reset. N-245: its own method, its arrays read into
+   * locals: as a loop at the end of _findNeighbors it ran in that function's OSR code, which the ASUS deoptimized again
+   * and again in steady state ("prepare for OSR" 221 times in 8 s of Predator, cold named loads in Boids).
+   * @param {number} rebuilds
+   * @param {number} poseGen
+   */
+  _finishRebuiltRows(rebuilds, poseGen) {
+    const rebuild = this._wasmGather.rebuild;
+    const pub = this._wasmPub;
+    const cand = pub.cand;
+    const list = pub.list;
+    const range = pub.range;
+    const stride = Grid._stride;
+    const candCountOf = this._candidateCountOf;
+    const rowPoseGen = this._rowPoseGen;
+    const truncatedOf = this._neighborCandidateTruncated;
+    const reuseInitialized = this._entityReuseInitialized;
+    const framesSinceBuild = this._entityFramesSinceBuild;
+    const entityPosData = this.entityPosData;
+    let queued = pub.queued;
+    for (let k = 0; k < rebuilds; k++) {
+      const entityA = rebuild[k];
+      candCountOf[entityA] = cand[entityA * stride];
+      rowPoseGen[entityA] = poseGen;
+      list[queued++] = entityA;
+      if (!truncatedOf[entityA]) {
+        const b = entityA * 4;
+        // The range searched (a light's own reach, else its visualRange), as the next frame compares it.
+        this._storeNeighborReuseSignature(entityA, entityPosData[b], entityPosData[b + 1], entityPosData[b + 2], range[entityA]);
+      } else {
+        // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
+        reuseInitialized[entityA] = 0;
+        framesSinceBuild[entityA] = 0;
       }
     }
+    pub.queued = queued;
   }
 
   /** The WASM publish of every entity queued this frame (the search ends here). */
