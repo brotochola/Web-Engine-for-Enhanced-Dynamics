@@ -12798,7 +12798,7 @@
       "area": "engine",
       "kind": "speed",
       "result": "Pre-render on the flashlight scene 127 -> 54.6 KB/s (2 605 -> 930 B a frame): the gather's and the sweep's doubles go through their tables (E-85).",
-      "next": "What is left: pre-render's _waitForPose, resolveDrawnCamera, _collectVisibleEntitiesWasm and reportFPS (sample with a 70 s warm-up: once-a-frame code sits in Sparkplug through the usual 8 s, R-1830); the frame loop in every worker (R-1830): update(deltaTime, dtRatio) read from this._timing (every worker's signature and about 15 test calls), addFrame's and the wait meter's doubles through Float64Arrays, about 4 to 6 KB/s a worker.",
+      "next": "Pre-render after a 70 s warm-up (R-1763): 15.7 KB/s on the flashlight scene, _runFrame 100 B a frame (main's cb0cad0d takes it to 31-48), the other sites one heap number a frame each (_waitForPose, resetFrameCounters, the pack and collect calls, _writeEmitTable). update()'s doubles, addFrame's and the wait meter's are main's (abstractWorker).",
       "refs": [
         "REVIEW_PLAN.md#N-158"
       ],
@@ -12817,7 +12817,8 @@
         "R-1760",
         "R-1828",
         "R-1829",
-        "R-1830"
+        "R-1830",
+        "R-1763"
       ]
     },
     {
@@ -21234,8 +21235,8 @@
     {
       "id": "N-259",
       "title": "GPU particles with sortWithEntities: true drew nothing, not even what stands above the fountain (the buenos-aires game's water layer, bundle fa59073a, Chromium without a GPU): the water goes over the entities",
-      "status": "open",
-      "statusText": "not reproduced 2026-11-22 on main in the stress scene (R-1738)",
+      "status": "answered",
+      "statusText": "answered 2026-11-22 on the ASUS: not reproduced on main on a GPU (R-1738) nor under SwiftShader (R-1764, compareCaptures --chrome-arg 1dfc5db43); reopen if the game shows it on a current bundle",
       "date": "2026-11-16",
       "area": "particle",
       "kind": "bug",
@@ -21244,9 +21245,10 @@
       "aliases": [
         "gpu particles sorted with entities"
       ],
-      "next": "The buenos-aires game's scene, or the stress scene under --disable-gpu (SwiftShader), which the capture tools cannot pass yet.",
+      "next": "",
       "records": [
-        "R-1738"
+        "R-1738",
+        "R-1764"
       ]
     },
     {
@@ -42147,6 +42149,27 @@
       "title": "N-406 closed: the ASUS's 24-parallel check passes, 0 of 72 runs of the input-wait test (13 of 72 before)",
       "verdict": "kept-hygiene",
       "text": "**N-406 closed: the ASUS's check passes.** At f7761a6e (the fix, 3a3ce144, R-1836), the same stress as before on the ASUS's 2 cores (24 copies of frameChainWait.test.js at once, 3 rounds, a detached tree): 432 tests passed, 0 failed; the input-wait test 0 of 72 runs (13 of 72 with 24 tries before, 49 of 72 with 8). Finished 05:34:07 (the ASUS's runner log)."
+    },
+    {
+      "id": "R-1763",
+      "date": "2026-11-22",
+      "time": "05:38",
+      "timeFrom": "recorded",
+      "title": "Pre-render after a 70 s warm-up: 15.7 KB/s (267 B a frame) on the flashlight scene, 14.2 KB/s (243) on balls; _runFrame 89-100 B a frame (main's cb0cad0d), every other site about one boxed double a frame",
+      "verdict": "note",
+      "text": "**Pre-render's allocations after a 70 s warm-up (main's R-1830: at 8 s, frame-loop code is still in Sparkplug and boxes its doubles). The ASUS, batch 6 (7523ae81, before main's cb0cad0d frame-loop change), heapSampleWorkers.mjs with --warmup-ms 70000 --sample-ms 15000.**\n\n| scene | KB/s | B/frame |\n| --- | --- | --- |\n| flashlight (cone=1, lights=360, crates=320) | 15.7 | 267 |\n| balls | 14.2 | 243 |\n\nThe flashlight scene read 54.6 KB/s after N-158 round 4 with the 8 s warm-up. Its sites:\n- `_runFrame`: 100 B/frame (89 on balls). This is abstractWorker's; main's cb0cad0d takes it to 31-48.\n- `(IDLE)`: 26.\n- `_waitForPose`: 16.\n- `resetFrameCounters`: 16.\n- `packInstancedRowsWasm`, `_collectVisibleEntitiesWasm`, `updateFrameTiming`: 14 each.\n- `_packGpuSprites`: 13.\n- `packSplitRowsWasm`, `_writeEmitTable`: 11 each.\n- `_emitRowsWasm`: 9.\n- `_writeFrameMeters`: 7.\n\n16 bytes a frame is one heap number: each site boxes about one double a frame. At these rates a 16 MB young generation fills in about 17 minutes, so pre-render's GC pressure is small. Not chased further: each site would need its double moved into a Float64Array, for a byte count that small."
+    },
+    {
+      "id": "R-1764",
+      "date": "2026-11-22",
+      "time": "05:40",
+      "timeFrom": "recorded",
+      "title": "N-259 answered: under SwiftShader (headless --disable-gpu, --enable-unsafe-swiftshader, ANGLE swiftshader; headed) GPU particles with sortWithEntities draw, as on the HD 620 (R-1738); the report was the game's bundle fa59073a",
+      "verdict": "answered",
+      "text": "**N-259 under Chromium without a GPU: not reproduced either. GPU particles with sortWithEntities draw.**\n\nThe ASUS ran job 0901p (2026-11-22, batch 6 7523ae81). compareCaptures took the new `--chrome-arg` knob (1dfc5db43), on gpuParticlesStressScene ?hold=6 with WebGL, sort=0 against sort=1, and a 6 s wait:\n\n| browser | pixels that differ | max delta |\n| --- | --- | --- |\n| headless, `--disable-gpu` | 50 903 | 153 |\n| headless, `--disable-gpu --enable-unsafe-swiftshader` | 27 227 | 129 |\n| headless, `--use-angle=swiftshader --enable-unsafe-swiftshader` | 58 556 | 153 |\n| headed, `--disable-gpu --enable-unsafe-swiftshader` | 2 681 | 70 |\n| headless on the GPU (reference) | 7 213 | 60 |\n\nEvery sort=1 capture shows the smoke columns, as its sort=0 capture does. The differences are where trees and columns overlap.\n\nWith R-1738 (WebGL headed and headless, WebGPU, on the HD 620), current main draws these particles on a GPU and on SwiftShader. The report's case was the buenos-aires game's water layer on its bundle fa59073a. Answered: reopen if the game shows it on a current bundle.",
+      "commits": [
+        "1dfc5db43"
+      ]
     }
   ],
   "leads": [
