@@ -1603,41 +1603,24 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
+  /**
+   * WebGL's draw calls counted per frame, only with collectDetailedStats: the count is read then alone
+   * (RENDERER_STATS.DRAW_CALLS), and each wrapped draw allocates its rest array (N-303 CR-30).
+   */
   setupDrawCallMonitoring() {
-    if (this._useWebGpu) return;
+    if (this._useWebGpu || !this.collectDetailedStats) return;
     const gl = this.pixiApp.renderer.gl;
     if (!gl) {
       console.warn('PIXI WORKER: Could not access WebGL context for draw call monitoring');
       return;
     }
-
     const renderer = this;
-
-    const originalDrawArrays = gl.drawArrays.bind(gl);
-    gl.drawArrays = function (...args) {
-      renderer.drawCallCount++;
-      return originalDrawArrays(...args);
-    };
-
-    const originalDrawElements = gl.drawElements.bind(gl);
-    gl.drawElements = function (...args) {
-      renderer.drawCallCount++;
-      return originalDrawElements(...args);
-    };
-
-    if (gl.drawArraysInstanced) {
-      const originalDrawArraysInstanced = gl.drawArraysInstanced.bind(gl);
-      gl.drawArraysInstanced = function (...args) {
+    for (const name of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced']) {
+      if (typeof gl[name] !== 'function') continue;
+      const draw = gl[name].bind(gl);
+      gl[name] = function (...args) {
         renderer.drawCallCount++;
-        return originalDrawArraysInstanced(...args);
-      };
-    }
-
-    if (gl.drawElementsInstanced) {
-      const originalDrawElementsInstanced = gl.drawElementsInstanced.bind(gl);
-      gl.drawElementsInstanced = function (...args) {
-        renderer.drawCallCount++;
-        return originalDrawElementsInstanced(...args);
+        return draw(...args);
       };
     }
   }
