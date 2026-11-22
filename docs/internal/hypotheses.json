@@ -23120,7 +23120,7 @@
       "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed. DBG-1 to DBG-3 fixed 2026-11-21 on the ASUS (R-1716, R-1717, R-1718)",
       "date": "2026-11-18",
       "result": "",
-      "next": "DBG-4 (the Layers panel lists every layer and says what it is), then DBG-5 (render views) before DBG-7; DBG-6 beside them. DBG-3 left the worldRect stage mesh (3.3.3).",
+      "next": "Done: DBG-1 to DBG-4, DBG-10, DBG-11. Left: DBG-5 (render views; DBG-7 is one more view), DBG-6 (a sheet's maps), DBG-8 (Light tab), DBG-9 (Camera), DBG-12 last.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23209,11 +23209,11 @@
     {
       "id": "DBG-4",
       "title": "The debug UI's Layers panel lists every layer the scene has (volumeShadows, SCREEN, GPU particles, not only DEFAULT_LAYERS plus custom ones), shows each one's kind and metadata, and its controls follow changes made by game code",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS, asus2/batch2-2026-11-22 (1b9969ef, R-1725)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Rows from Layer.getAll(); one read-only details line; the small defects the plan lists (Y-sort, Cont Blend refresh, sync every tick, focus lost on re-sort); a node test with a DOM shim.",
+      "result": "Rows from Layer.getAll(), a details line per layer, every control following its layer each tick, Cont Blend and Y-Sort disabled with the reason where they cannot apply, z re-sorted on blur. Layer#ySorting is a setter now (Layer#ySortable: the layers that started sorted), and Pixi reads a custom layer's flag each frame.",
+      "next": "Nothing left.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23224,7 +23224,8 @@
         "layer metadata"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1725"
       ]
     },
     {
@@ -23338,11 +23339,11 @@
     {
       "id": "DBG-10",
       "title": "The debug UI's inspector decodes what it shows as raw numbers: gbufFlags as named bits, Transform.parent as a link with children and world vs local, light cone and elevation in units, decorations and shadow casters",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (6ef0dff1, R-1727)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "A per-field formatter table keyed by component and field; a field without one stays raw (DBG-12 lists them).",
+      "result": "inspectorFormat.js: a formatter per component and field (a field without one stays the plain number); the parent is a link and a children line lists the followers.",
+      "next": "Left: gbufFlags as checkboxes (the inspector writes nothing yet) and a colour swatch; DBG-12 lists the fields without a formatter.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23353,17 +23354,18 @@
         "parent tree"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1727"
       ]
     },
     {
       "id": "DBG-11",
       "title": "The debug UI's Performance tab prints the renderer counters RENDERER_STATS already publishes (GPU passes, casters, shadow lights, scenery, decal tiles) plus the GPU, the backend and the opaque pass's state",
-      "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-22 on the ASUS (9c906dfb, R-1726)",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Check which are already printed; no new counters in the worker.",
+      "result": "The GPU row shows every always-on RENDERER_STATS counter the panel did not print; its title is scene.gpu and the opaque pass's setting for that GPU. No new counter in the worker.",
+      "next": "Nothing left.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -23373,7 +23375,8 @@
         "renderer counters"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1726"
       ]
     },
     {
@@ -23610,7 +23613,8 @@
       "records": [
         "R-1585",
         "R-1592",
-        "R-1719"
+        "R-1719",
+        "R-1724"
       ],
       "result": "Built: a load knob per floor-bound row, a calibration on the machine at hand and runScoreboard --loads. On the ASUS ray and rayVsBox2d now decide (tie), bullets and spawn read kept; spatial cannot reach the floor (40 000 entities: 2.7 ms); box2dRayJs has no knob that loads logic0.",
       "next": "spatial: a knob that loads it past the floor on a slow machine (denser neighbours or movers; 110 000 stationary entities would be needed); box2dRayJs: a primary its knob reaches (physics) or a protocol ceiling; queryAabb's +5.5 % at 1106 queries (wait-bound) rechecked; the spatial lead at 40 000 entities (main 3.99 against v0.14.0 2.62 ms) on the main PC.",
@@ -24854,6 +24858,45 @@
       "date": "2026-11-21",
       "statusText": "Filed 2026-11-21 from N-212 (R-1694): the maxShadowCastingLights cut fades since R-1151; these two cuts do not.",
       "next": "A fade in shadowStamp.c's per-entity and per-light cuts as the light cut has (the last share of the cut distance), both builds of the kernel; a film of Predator at night where walkers cross between lamps, before and after."
+    },
+    {
+      "records": [
+        "R-1724",
+        "R-1728"
+      ],
+      "refs": [],
+      "id": "N-402",
+      "title": "Scoreboard rows whose scene uses an API the base lacks compare different work: visPoly and flashlights use lighting.walls (v0.14.0 ignores it), four light rows throw on v0.14.0's load and wait 320 s twice; the load keys see none of it",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-22",
+      "result": "visPoly and flashlights need 94e31445 (lighting.walls), sunShadowMap, selfShadow, depthSort and unshaded 4bf4d21a (DirectionalSprite); against an older base the scene is skipped and the row is neither claimed nor a regression.",
+      "statusText": "fixed 2026-11-22 on the ASUS (d6928e01, R-1728)",
+      "next": "spotLights keeps no tag (no missing API shown). A base whose load throws still waits for its own runner's watchdog.",
+      "aliases": [
+        "scoreboard base mismatch",
+        "since tag"
+      ]
+    },
+    {
+      "records": [
+        "R-1724"
+      ],
+      "refs": [],
+      "id": "N-403",
+      "title": "stationarySpatialScene at 40 000 entities: spatial reads slower on main than on v0.14.0 on the ASUS (spatialMax 1.37 -> 3.89 ms, +184 %; +52 % the day before), while physics and logic read faster",
+      "status": "open",
+      "kind": "speed",
+      "area": "spatial",
+      "date": "2026-11-22",
+      "result": "",
+      "statusText": "seen 2026-11-21 and 2026-11-22 in ASUS scoreboards (R-1719, R-1724), under the 6 ms floor both times",
+      "next": "An owner-scene ABAB at ?entities=40000 with the spatial worker count fixed on both sides; if it holds, bisect v0.14.0..main on the ASUS, then the CPU profile of the side that loses.",
+      "aliases": [
+        "spatial 40k",
+        "spatial regression"
+      ]
     }
   ],
   "records": [
@@ -41163,6 +41206,63 @@
       "title": "N-329 fixed: a loaded game's guns stayed on cooldown (performance.now() stamps); the save keeps the sim clock (format 8) and Predator times guns on it; restored battle now tracks the fresh one (impacts 370 -> 7 500/s)",
       "verdict": "kept-hygiene",
       "text": "**N-329 found: after a load every gun stayed on cooldown.** Person stamped `PersonComponent.lastShotTime` with the logic worker's `performance.now()`; the save kept the stamps and a new page's `performance.now()` starts near 0, so `canFire` stayed false until the new clock passed the old stamps (tens of seconds). No bullets, no new deaths, no new panic: the restored world calmed down. Found with `tests/bench/restoreFidelity.mjs` (new: the same battle fresh, saved, and restored from that save beside it), Predator `crowd=2.5&dayCycle=0`:\n\n- saved at 12 s (mid-battle): bullet impacts published ~9 000/s fresh against ~370/s restored; live bullets 60-250 against 9-16.\n- saved at 20 s: civilians killed in the next 10 s, 29 fresh against 1 restored; soldiers in RANGED_ATTACKING were alike (10-20), so they aimed and never fired.\n- Per-entity sight, neighbours, guns and FSM state times came back right (probed by type): only the stamp was wrong.\n\n**Fix.** Engine (1bde21d5): the save keeps the sim clock and a load goes on from it (TIME section: scale f32 + `Time.simNowMs` f64; format 7 -> 8; `Time._setSimNow`). Demo (935a7ba9): Person's cooldown reads `Time.simNowMs`; the car scene's hit throttle, which shares the column, too. After it, same battles: saved at 12 s, ~7 500 impacts/s restored and civilians dying at the fresh rate (1 083 against 947 in 5 s); saved at 20 s, the restored series tracks the fresh one (deaths 27 against 28, panic 1 585 against 1 503 eight seconds on).\n\n**Load left after the fix** (same battle, the bench page's 6 s window 10 s after a 20 s save, three sittings): physics 15.0 / 15.5 / 15.6 ms fresh against 13.9 / 12.8 / 14.0 restored; Awake 18 116 / 16 887 / 18 348 against 16 675 / 16 276 / 17 525 (-4 to -8 %); Moved mixed (6 824 / 4 614 / 6 271 against 6 534 / 5 649 / 5 771); spatial -1 to -8 %, logic -4 to -8 %. Per awake body restored physics costs 6-14 % less: likely the Box2D world rebuilt in one pass against one grown over 30 s of spawns and deaths (not measured). Both sides of a from-save sitting load the same save, so the comparison stays even; the cached format 7 saves no longer match (the runner's key holds the format) and are remade."
+    },
+    {
+      "id": "R-1724",
+      "date": "2026-11-22",
+      "time": "00:02",
+      "timeFrom": "recorded",
+      "title": "The calibrated scoreboard on the ASUS: 21 KEPT, 15 TIE, 3 WORSE, 20 FAIL; two wall rows compare different work and four light rows cannot load on the base (N-402), spatial at 40 000 slower on main (N-403)",
+      "verdict": "note",
+      "text": "**The full scoreboard on the ASUS at the calibrated loads (DX-SCORELOAD), main's batch b58319b8 against v0.14.0: 21 rows KEPT, 15 TIE, 3 WORSE, 20 FAIL.** The runner's own line: \"9 row(s) FAIL/WORSE. Do not claim a better WeedJS. 12 are a protocol ceiling, 5 under the 3 ms floor\". Job 0900s, 21:59 to 00:01 (runner.log); headed gameplay 5 x 10/10 s, stress headless 2 x 8/10 s, node suite and lockstep skipped, the loads from C:\\weedlab\\scoreboard-loads.json. The job threw its own register record away (git checkout of hypotheses.json); this is the record.\n\n- **Scenes KEPT:**\n  - box2d (balls): physics 17.62 -> 13.20 ms, -25.1 %;\n  - liquidfunQuery: physics 55.26 -> 32.10 ms, -41.9 %;\n  - bullets at 40 000: particle 8.69 -> 7.60 ms, -12.6 %;\n  - spawn at storm 1800: logic 8.39 -> 7.89 ms, -5.9 %. Its BODY_COUNT reads 430 against 1153: main holds more bodies at the same storm, and the load keys (ENTITIES_PROCESSED) did not see it.\n- **Kernel rows KEPT:** gameObjectAccess +72 %, despawnLists +159 %, gpuQueuePack +32 %, decalPremultiply +17 %, painterRadix +18 %, publishPose +573 %, decorationCollectYSort +16 %, textureUpload +28 %, tweenPool +8 %, and the scans that v0.14.0 did in JS (layerFeed*, decorationVisibilityGrid, attachedScan*).\n- **TIE:** ray, rayVsBox2d (both decided now that DX-SCORELOAD gave them their loads), queryAabb (+6.8 % flagged, then 4 ABAB pairs read +2.7 % median, 3 of 4 worse: not confirmed), particleListsZoomed, liquidfun, liquidfunCouple, tilemap, decorations, decalBlit, audioStorm, and five kernels.\n- **WORSE:**\n  - particleLists: the kernel alone, 9 297 -> 8 063 ops/s (-13.3 %), with no recheck. Its zoomed twin, flagged -15.9 %, read -5.5 % over 4 pairs (2 of 4): ASUS kernel noise is about ±20 % (R-1721).\n  - steadyCombat: logic +11.1 %, but the base's cv is 23 %.\n  - visPoly: see N-402.\n- **Not comparable (N-402):** visPoly and flashlights now use `lighting.walls` (OL-4), which v0.14.0 ignores (spotLights' scene changed too, for DX-CAMERA and the faces, but no API it uses was shown missing). So the base computes no wall visibility. visPoly's spatial reads 0.026 against 2.189 ms and NEIGHBORS_REUSED 0 against 783. flashlights' RENDER_QUEUE_SIZE reads 120 against 240. The load keys (BODY_COUNT) saw none of it. sunShadowMap, selfShadow, depthSort and unshaded throw on load in v0.14.0 (\"reading 'requires'\"), and each failed run waited 320 s before it gave up, twice.\n- **spatial at 40 000 entities: main slower.** spatialMax 1.37 ms (cv 25 %) against 3.89 ms (+184 %), while physics -59.8 % and logic -18.6 %. It is under the 6 ms floor, so FAIL. The single run on 2026-11-21 read +52 %. Two sittings now point the same way: an owner-scene ABAB is owed (N-403)."
+    },
+    {
+      "id": "R-1725",
+      "date": "2026-11-22",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "DBG-4 done: the Layers panel lists every layer and says what it is; its controls follow game code; Y-Sort through a Layer setter",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-4 done on the ASUS (asus2/batch2-2026-11-22): the Layers panel lists every layer the scene registered and says what each one is, and its controls follow game code.**\n\n- **Rows:** from Layer.getAll(). volumeShadows had a row already: Scene._applyVolumeConfig adds it to config.layers, so it registers as a custom layer.\n- **Details line:** kind, resolution and upsample, maxItems, density, sunProjected, volumeFloor, alphaBySun, worldRect cached or direct, GPU particle options.\n- **Controls:** each follows its layer every tick, compared first and left alone while focused. The shader options rebuild only when the loaded sources change.\n- **Cont Blend:** shows every layer's value and is disabled, with the reason, where it cannot apply.\n- **The light's Out Blend** stays disabled: every attach re-enabled it since DBG-2.\n- **z:** a typed value re-sorts the rows on blur.\n- **Y-Sort:** goes through the new Layer#ySorting setter. Layer#ySortable says which layers can toggle: those that started sorted, since the scene reserves a painter only for them. Turning another on throws.\n- **Pixi fix:** Pixi used a custom layer's painter even after its flag went off, sorting by keys pre-render had stopped writing. It now reads the flag each frame.\n\nTests: layersPanel.test.js runs the real Layer table and a DOM shim; renderQueueSortPaths reads the live flag. Node suite on the ASUS: 3467 green (0900va), demos 143 green (0900v). No sitting: debug code off the hot path, plus one per-layer branch a frame in Pixi.",
+      "commits": [
+        "1b9969ef"
+      ]
+    },
+    {
+      "id": "R-1726",
+      "date": "2026-11-22",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "DBG-11 done: the GPU row prints mesh fill, scenery, decal tiles and input lag, and names the GPU, backend and opaque pass",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-11 done: the Performance tab's GPU row prints the renderer's always-on counters and names the GPU, the backend and the opaque pass.**\n\n- **Already shown:** passes, casters, shadow lights.\n- **Added, all published every frame by RENDERER_STATS:** mesh fill instances, mesh RT draws, scenery, dirty and uploaded decal tiles, input lag (median and p95). The Render row's chips need detailed stats; these do not.\n- **The row's title:** scene.gpu's name and backend, and opaquePassOn's setting for that GPU (\"off (WebGL only)\" on WebGPU).\n- **Worker:** no new counter.\n\nTest: performancePanelGpuRow.test.js.",
+      "commits": [
+        "9c906dfb"
+      ]
+    },
+    {
+      "id": "R-1727",
+      "date": "2026-11-22",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "DBG-10 done: the inspector decodes G-buffer bits, the parent and children as links, light cones, caster kinds and sway",
+      "verdict": "kept-hygiene",
+      "text": "**DBG-10 done: the inspector says what its numbers mean.**\n\nsrc/core/debug/tools/inspectorFormat.js holds one formatter per component and field:\n- gbufFlags: as normals, surface and unshaded;\n- Transform.parent: an entity, an orphan flagged;\n- localRotation: in degrees;\n- LightEmitter: colour, radius, elevation, shadow and glow ranges, cone aperture in degrees, softness;\n- ShadowCaster: sun and lamp kinds, orientation, opacity, self-shadow and frame, by name;\n- DecorationComponent: sway mode and amplitude, tint, parent.\n\nA field without a formatter stays the plain number. The Transform section's parent is a link that inspects it, and a children line lists the entities that follow the one inspected (Transform.parent), each a link.\n\nNot done:\n- the plan's gbufFlags checkboxes: the inspector is read-only text;\n- the light colour swatch.\n\nTest: inspectorFormat.test.js; every formatter names a real column.",
+      "commits": [
+        "6ef0dff1"
+      ]
+    },
+    {
+      "id": "R-1728",
+      "date": "2026-11-22",
+      "time": "00:15",
+      "timeFrom": "recorded",
+      "title": "N-402 fixed: scoreboard rows name the oldest revision their scene runs on (scene.since); an older base is not compared",
+      "verdict": "kept-hygiene",
+      "text": "**N-402 fixed: a scoreboard row names the oldest revision its scene runs on (scene.since), and the scoreboard does not compare it against an older base.**\n\n- **The since tags:** visPoly and flashlights 94e31445 (lighting.walls); sunShadowMap, selfShadow, depthSort and unshaded 4bf4d21a (DirectionalSprite).\n- **Against v0.14.0:** the scene is skipped, unless --full-rev, where each side runs its own scenes. The row reads FAIL with the reason, and it is neither claimed nor counted as a regression (\"N row(s) need a newer base\").\n- **Why:** R-1724's visPoly +1087 % and flashlights +2437 % were the base doing no wall work. The four DirectionalSprite scenes threw on v0.14.0's load and waited 320 s twice each.\n- **Not done:** spotLights' scene changed for DX-CAMERA and the faces since v0.14.0, but no API of it was shown missing, so it keeps no tag. A load that throws still waits for the old revision's watchdog: the base runs its own runner.\n\nTest: scoreboardSince.test.js.",
+      "commits": [
+        "d6928e01"
+      ]
     }
   ],
   "leads": [
