@@ -10,7 +10,7 @@ import {
   packDecalBlit,
   packDecalSpriteRecords,
   checksumDecalBlit,
-} from '../../src/render/decalBlitPack.js';
+} from '../reference/decalBlitPack.mjs';
 
 const TILES_X = 64;
 const TILES_Y = 64;

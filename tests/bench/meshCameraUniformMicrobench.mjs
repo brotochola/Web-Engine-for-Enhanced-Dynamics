@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
-import { writeMeshFillCameraMatrix, MESH_FILL_CAMERA_FLOATS } from '../../src/render/meshFillCamera.js';
+import { writeMeshFillCameraMatrix, MESH_FILL_CAMERA_FLOATS } from '../reference/meshFillCamera.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const reportDir = path.resolve(here, '../results/pixi-peel/h2-mesh-camera');
