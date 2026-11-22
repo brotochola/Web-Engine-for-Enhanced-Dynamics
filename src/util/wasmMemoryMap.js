@@ -10,6 +10,31 @@ import { poolSlotBytes } from './poolSlotWidth.js';
 import { publishedListBytes } from './publishedList.js';
 
 export const WASM_PAGE_BYTES = 65536;
+
+/** The kernels' import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages. */
+export const WASM_MAX_PAGES = 32768;
+
+/**
+ * A kernel memory of `pages` pages, shared, or an error that says what was asked (N-303 CR-21: one copy of the cap, the
+ * try/catch and the texts). `what` names the memory ("decal memory"), `holds` what made it that big ("(1200 tiles of
+ * 128x128 px)") and `advice` how to make it smaller.
+ * @param {number} pages
+ * @param {string} what
+ * @param {string} holds
+ * @param {string} advice
+ * @returns {WebAssembly.Memory}
+ */
+export function createWasmMemory(pages, what, holds, advice) {
+  const mb = Math.ceil((pages * WASM_PAGE_BYTES) / 1048576);
+  if (pages > WASM_MAX_PAGES) {
+    throw new Error(`${what}: ${mb} MB ${holds} is past the ${WASM_MAX_PAGES / 16} MB a kernel memory can take; ${advice}`);
+  }
+  try {
+    return new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+  } catch (err) {
+    throw new Error(`${what}: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
+  }
+}
 export const CACHE_LINE_BYTES = 64;
 
 // Nothing lives at address 0: a kernel that writes through a zero offset lands in the guard, and a

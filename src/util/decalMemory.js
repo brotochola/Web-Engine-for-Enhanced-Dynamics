@@ -7,10 +7,7 @@
 // names its size.
 
 import { Decal } from '../core/decal.js';
-import { DECAL_MAX_STAMPS, decalMemoryRegions } from './wasmMemoryMap.js';
-
-// The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 32768;
+import { DECAL_MAX_STAMPS, createWasmMemory, decalMemoryRegions } from './wasmMemoryMap.js';
 
 /**
  * @param {{ totalTiles: number, tilePixelSize: number, textures: Record<string, { width: number, height: number, rgba: ArrayBufferLike }> | null }} opts
@@ -31,19 +28,8 @@ export function createDecalMemory({ totalTiles, tilePixelSize, textures }) {
   }
   const map = decalMemoryRegions(tileBytes, tiles, textureBytes, pixels);
   if (map.regions.tiles.byte !== 0) throw new Error('decal memory: the tiles must start at byte 0');
-  const mb = Math.ceil((map.pages * 65536) / 1048576);
-  if (map.pages > WASM_MAX_PAGES) {
-    throw new Error(
-      `decal memory: ${mb} MB (${tiles} tiles of ${pixels}x${pixels} px) is past the ${WASM_MAX_PAGES / 16} MB a kernel memory ` +
-        'can take; lower particle.decalsResolution or the world size',
-    );
-  }
-  let memory;
-  try {
-    memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
-  } catch (err) {
-    throw new Error(`decal memory: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
-  }
+  const memory = createWasmMemory(map.pages, 'decal memory', `(${tiles} tiles of ${pixels}x${pixels} px)`,
+    'lower particle.decalsResolution or the world size');
   const r = map.regions;
   const buffer = memory.buffer;
   const textureLayout = {};

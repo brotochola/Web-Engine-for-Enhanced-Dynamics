@@ -6,10 +6,7 @@
 // the layout's offsets when their capacities are the ones it computes itself (meshLayerCapacities).
 
 import { LAYER_KIND, MAX_POLYGON_VERTICES } from './configDefaults.js';
-import { meshMemoryRegions } from './wasmMemoryMap.js';
-
-// The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 32768;
+import { createWasmMemory, meshMemoryRegions } from './wasmMemoryMap.js';
 
 /**
  * The batch capacities Pixi gives every MESH layer (pixiWorker initializeCustomLayers): fixtures or one
@@ -63,21 +60,13 @@ export function createMeshMemory(geometryBytes, entities, layerIds, caps) {
     entities | 0,
     layerIds.map(() => ({ fillRows: fill, uvVerts, uvIndices })),
   );
-  const mb = Math.ceil((map.pages * 65536) / 1048576);
-  if (map.pages > WASM_MAX_PAGES) {
-    throw new Error(
-      `mesh memory: ${mb} MB (${entities | 0} entities, ${layerIds.length} MESH layers of ${fill} rows and ${uvVerts} ` +
-        `vertices) is past the ${WASM_MAX_PAGES / 16} MB a kernel memory can take; lower renderer.maxMeshVerts or the ` +
-        'fixture pool',
-    );
-  }
   const r = map.regions;
-  let memory;
-  try {
-    memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
-  } catch (err) {
-    throw new Error(`mesh memory: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
-  }
+  const memory = createWasmMemory(
+    map.pages,
+    'mesh memory',
+    `(${entities | 0} entities, ${layerIds.length} MESH layers of ${fill} rows and ${uvVerts} vertices)`,
+    'lower renderer.maxMeshVerts or the fixture pool',
+  );
   return {
     memory,
     buffer: memory.buffer,
