@@ -24,7 +24,7 @@
 
 import { Container, Geometry, Mesh, Shader, State } from '../vendor/pixi.min.js';
 import { STENCIL_INVERSE_ACTIVE, STENCIL_MASK_ACTIVE, STENCIL_MASK_ADD, STENCIL_OFF, colorMaskStep, stencilStep } from './renderStep.js';
-import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
 
 /**
  * OL-14: whether a scene's walls ask for the entities' depth (pixel depth, with an oblique camera). A wall's own picture
@@ -228,10 +228,9 @@ export function lightEdgesGpuProgram(GpuProgram, kind) {
   const f = gpuStageF();
   const unfiltered = { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false };
   const filtered = { sampleType: 'float', viewDimension: '2d', multisampled: false };
-  const layout = { 0: { globalUniforms: 0 }, 1: { localUniforms: 0 } };
+  const layout = pixiGroupsLayout();
   const gpuLayout = [
-    [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-    [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+    ...pixiGroupsGpuLayout(),
   ];
   if (kind !== 'mark') {
     const group = [{ binding: 0, visibility: f, texture: { ...unfiltered } }];

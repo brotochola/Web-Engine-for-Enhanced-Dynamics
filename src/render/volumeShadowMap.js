@@ -24,7 +24,7 @@ import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX } from './sunShadowMap.js';
 import {
   LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, LAMP_PANO_GLSL, LAMP_PANO_INNER, LAMP_PANO_WGSL, lampClipZGlsl, lampClipZWgsl,
 } from './lampShadowMap.js';
-import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
 import { hasOnce } from './shaderEdit.js';
 
 /** The source with `add` after its one `find`, or a clear error. */
@@ -401,14 +401,9 @@ export function volumeMapGpuProgram(GpuProgram, source, fragEntry, name, { lampT
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: fragEntry },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: group2,
-    },
+    layout: pixiGroupsLayout(group2),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },
@@ -542,14 +537,9 @@ export function lampCacheCopyGpuProgram(GpuProgram, name) {
     name,
     vertex: { source: LAMP_CACHE_COPY_WGSL, entryPoint: 'mainVert' },
     fragment: { source: LAMP_CACHE_COPY_WGSL, entryPoint: 'mainFrag' },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: { uLampTiles: 0, uCacheColor: 1, uCacheDepth: 2, lampCopy: 3 },
-    },
+    layout: pixiGroupsLayout({ uLampTiles: 0, uCacheColor: 1, uCacheDepth: 2, lampCopy: 3 }),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: vf, texture: { ...data } },
         { binding: 1, visibility: vf, texture: { ...data } },

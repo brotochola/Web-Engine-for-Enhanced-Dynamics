@@ -7,7 +7,7 @@
 // (a group then draws a few sprites early or late). Without proxies the root holds the batch's mesh, as before.
 
 import { Buffer, BufferUsage, Geometry, GlProgram, GpuProgram, Mesh, Shader, State, UniformGroup } from '../vendor/pixi.min.js';
-import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
 import { RENDERER_DEFAULTS } from '../util/configDefaults.js';
 import { PROXY, PROXY_ENTRY_WORDS } from './gpuParticleProxies.js';
 
@@ -85,10 +85,9 @@ function regionGpuProgram(source, name) {
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: 'mainFrag' },
-    layout: { 0: { globalUniforms: 0 }, 1: { localUniforms: 0 }, 2: { uTexture: 0, uSampler: 1, uniforms: 2 } },
+    layout: pixiGroupsLayout({ uTexture: 0, uSampler: 1, uniforms: 2 }),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },

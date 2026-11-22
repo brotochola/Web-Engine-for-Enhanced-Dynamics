@@ -26,7 +26,7 @@ import {
   UniformGroup,
 } from '../vendor/pixi.min.js';
 
-import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
 import {
   GPU_GROUP,
   GPU_GROUP_WORDS,
@@ -127,14 +127,9 @@ export function gpuParticleGpuProgram(GpuProgramClass, source, fragEntry, name) 
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: fragEntry },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uAnimStart: 4 },
-    },
+    layout: pixiGroupsLayout({ uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uAnimStart: 4 }),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },

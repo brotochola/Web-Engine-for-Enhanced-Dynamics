@@ -11,7 +11,7 @@ import {
 } from '../vendor/pixi.min.js';
 import { bytesPerTexel } from '../core/layerTextureUpload.js';
 import { isFloatFormat } from './sharedTextureUpload.js';
-import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
 import { pinGpuTexture } from './webgpu/pinGpuTexture.js';
 import { buildWorldRectWgsl, findWgslUseBeforeDeclare } from './webgpu/wgslPrelude.js';
 
@@ -101,14 +101,9 @@ export function createWorldRectMesh(opts) {
       name: opts.name || 'world-rect',
       vertex: { source: wgsl, entryPoint: 'mainVert' },
       fragment: { source: wgsl, entryPoint: 'mainFrag' },
-      layout: {
-        0: { globalUniforms: 0 },
-        1: { localUniforms: 0 },
-        2: layout2,
-      },
+      layout: pixiGroupsLayout(layout2),
       gpuLayout: [
-        [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-        [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+        ...pixiGroupsGpuLayout(),
         gpuGroup,
       ],
     });

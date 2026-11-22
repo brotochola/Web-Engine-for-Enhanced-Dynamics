@@ -25,7 +25,19 @@ export function gpuStageF() {
   return S ? S.FRAGMENT : 2;
 }
 
-function meshUniformGroups(vf) {
+/**
+ * N-303 CR-18: a program's bind layout with Pixi's two first groups, as every engine program declares them (group 0 the
+ * global uniforms, group 1 the mesh's local uniforms), and `group2`, its own resources, when it has any.
+ */
+export function pixiGroupsLayout(group2) {
+  const layout = { 0: { globalUniforms: 0 }, 1: { localUniforms: 0 } };
+  if (group2 !== undefined) layout[2] = group2;
+  return layout;
+}
+
+/** pixiGroupsLayout's two groups in a gpuLayout: a uniform buffer each, seen by both stages. */
+export function pixiGroupsGpuLayout() {
+  const vf = gpuStageVF();
   return [
     [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
     [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
@@ -43,26 +55,22 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: 'mainFrag' },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: {
-        uLightData: 0,
-        uniforms: 1,
-        uShadowMap: 2,
-        uShadowSampler: 3,
-        ...(faces ? { uFaceMap: 4 } : {}),
-        ...(sunMap ? { uSunMap: 5 } : {}),
-        // DX-SHADOW3D (F7): the lamps' shadow map.
-        ...(lampMap ? { uLampMap: 6 } : {}),
-        // DX-GBUF: the G-buffer's entity ids map (faceMap.js FACE_IDS_SELF), with the faces.
-        ...(faces && ids ? { uFaceIds: 7 } : {}),
-        // OL-4: the walls' rows (lampWallRow.js); binding 8 is the light tiles' (lightTiles.js).
-        ...(faces && ids && walls ? { uWallRows: 9 } : {}),
-      },
-    },
+    layout: pixiGroupsLayout({
+      uLightData: 0,
+      uniforms: 1,
+      uShadowMap: 2,
+      uShadowSampler: 3,
+      ...(faces ? { uFaceMap: 4 } : {}),
+      ...(sunMap ? { uSunMap: 5 } : {}),
+      // DX-SHADOW3D (F7): the lamps' shadow map.
+      ...(lampMap ? { uLampMap: 6 } : {}),
+      // DX-GBUF: the G-buffer's entity ids map (faceMap.js FACE_IDS_SELF), with the faces.
+      ...(faces && ids ? { uFaceIds: 7 } : {}),
+      // OL-4: the walls' rows (lampWallRow.js); binding 8 is the light tiles' (lightTiles.js).
+      ...(faces && ids && walls ? { uWallRows: 9 } : {}),
+    }),
     gpuLayout: [
-      ...meshUniformGroups(vf),
+      ...pixiGroupsGpuLayout(),
       [
         {
           binding: 0,
@@ -107,13 +115,9 @@ export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, s
     name,
     vertex: { source: vertexSource, entryPoint: 'mainVert' },
     fragment: { source: fragmentSource, entryPoint: 'mainFrag' },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: scene ? { customUniforms: 0, uTexture: 1, uSampler: 2, uScene: 3 } : { customUniforms: 0, uTexture: 1, uSampler: 2 },
-    },
+    layout: pixiGroupsLayout(scene ? { customUniforms: 0, uTexture: 1, uSampler: 2, uScene: 3 } : { customUniforms: 0, uTexture: 1, uSampler: 2 }),
     gpuLayout: [
-      ...meshUniformGroups(vf),
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: vf, buffer: { type: 'uniform' } },
         { binding: 1, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },

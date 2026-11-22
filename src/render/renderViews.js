@@ -17,7 +17,7 @@
  * view) and pixel depth (the canvas's depth cannot be sampled without a copy each frame).
  */
 
-import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
 
 export const RENDER_VIEW = Object.freeze({
   FINAL: 0,
@@ -416,10 +416,9 @@ export function renderTilesGpuProgram(GpuProgram, name = 'weed-render-tiles') {
     name,
     vertex: { source: RENDER_TILES_WGSL, entryPoint: 'mainVert' },
     fragment: { source: RENDER_TILES_WGSL, entryPoint: 'mainFrag' },
-    layout: { 0: { globalUniforms: 0 }, 1: { localUniforms: 0 }, 2: { uTiles: 0, tileUniforms: 1 } },
+    layout: pixiGroupsLayout({ uTiles: 0, tileUniforms: 1 }),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { sampleType: 'uint', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: vf, buffer: { type: 'uniform' } },
@@ -437,14 +436,9 @@ export function renderViewGpuProgram(GpuProgram, name = 'weed-render-view') {
     name,
     vertex: { source: RENDER_VIEW_WGSL, entryPoint: 'mainVert' },
     fragment: { source: RENDER_VIEW_WGSL, entryPoint: 'mainFrag' },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: { uTex: 0, uTexSampler: 1, uTex2: 2, uTex2Sampler: 3, viewUniforms: 4 },
-    },
+    layout: pixiGroupsLayout({ uTex: 0, uTexSampler: 1, uTex2: 2, uTex2Sampler: 3, viewUniforms: 4 }),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { ...tex } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },

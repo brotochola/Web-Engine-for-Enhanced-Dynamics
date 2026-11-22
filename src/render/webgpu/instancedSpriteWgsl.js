@@ -1,4 +1,4 @@
-import { gpuStageF, gpuStageVF } from './pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './pixiMeshWgsl.js';
 import { MAPS_TABLE_BINDING } from '../twinTexel.js';
 
 export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
@@ -11,14 +11,9 @@ export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: 'mainFrag' },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3 },
-    },
+    layout: pixiGroupsLayout({ uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3 }),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },
@@ -62,14 +57,9 @@ export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps 
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: fragEntry },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: group2,
-    },
+    layout: pixiGroupsLayout(group2),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: vf, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },
@@ -109,14 +99,9 @@ export function instancedSpriteShadowIndexedGpuProgram(GpuProgram, source, name)
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: 'mainFrag' },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uStatics: 4 },
-    },
+    layout: pixiGroupsLayout({ uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uStatics: 4 }),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },
@@ -163,14 +148,9 @@ export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name, {
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: fragEntry },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: group2,
-    },
+    layout: pixiGroupsLayout(group2),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },
@@ -205,14 +185,9 @@ export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, 
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: fragEntry },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: group2,
-    },
+    layout: pixiGroupsLayout(group2),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },

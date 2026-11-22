@@ -11,7 +11,7 @@
  * The mesh is a quad over the canvas in screen px, drawn with additive blending.
  */
 
-import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
 
 export const UNSHADED_COMPOSITE_VERT = `in vec2 aPosition;
 in vec2 aUV;
@@ -101,14 +101,9 @@ export function unshadedCompositeGpuProgram(GpuProgram, name = 'weed-unshaded') 
     name,
     vertex: { source: UNSHADED_COMPOSITE_WGSL, entryPoint: 'mainVert' },
     fragment: { source: UNSHADED_COMPOSITE_WGSL, entryPoint: 'mainFrag' },
-    layout: {
-      0: { globalUniforms: 0 },
-      1: { localUniforms: 0 },
-      2: { uUnshaded: 0, uUnshadedSampler: 1, uLight: 2, uLightSampler: 3 },
-    },
+    layout: pixiGroupsLayout({ uUnshaded: 0, uUnshadedSampler: 1, uLight: 2, uLightSampler: 3 }),
     gpuLayout: [
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
-      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      ...pixiGroupsGpuLayout(),
       [
         { binding: 0, visibility: f, texture: { ...tex } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },
