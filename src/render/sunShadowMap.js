@@ -370,6 +370,13 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vec2 along = b - a;
   float len = length(along);
   vec2 across = len > 1e-3 ? vec2(-along.y, along.x) / len : vec2(1.0, 0.0);
+  // N-192: a quarter cell past both ends of the line. The strip's ends stopped at the cell's centre, its far edge in
+  // steps up to half a cell inside the outline; a whole half put it as far outside.
+  if (aInstBase.y < 1.0 && len > 1e-3) {
+    vec2 endPad = along / len * (0.25 * max(cell.x, cell.y * uGroundInvScaleY));
+    a -= endPad;
+    b += endPad;
+  }
   vec2 p = mix(a, b, aCell.z) + across * aCell.w * halfWidth;
   vec2 world = vec2(p.x, p.y / uGroundInvScaleY);
   vec2 screen = (world - uCam.xy) * uCam.z;
@@ -548,6 +555,12 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   let len = length(along);
   var across = vec2<f32>(1.0, 0.0);
   if (len > 1e-3) { across = vec2<f32>(-along.y, along.x) / len; }
+  // N-192: a quarter cell past both ends of the line (sunMapColumnsVertex says why).
+  if (aInstBase.y < 1.0 && len > 1e-3) {
+    let endPad = along / len * (0.25 * max(cell.x, cell.y * uniforms.uGroundInvScaleY));
+    a -= endPad;
+    b += endPad;
+  }
   let p = mix(a, b, aCell.z) + across * aCell.w * halfWidth;
   let world = vec2<f32>(p.x, p.y / uniforms.uGroundInvScaleY);
   let screen = (world - uniforms.uCam.xy) * uniforms.uCam.z;
