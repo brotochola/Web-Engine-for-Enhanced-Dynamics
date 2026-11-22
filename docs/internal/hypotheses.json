@@ -21006,7 +21006,8 @@
         "R-1852",
         "R-1853",
         "R-1854",
-        "R-1855"
+        "R-1855",
+        "R-1856"
       ]
     },
     {
@@ -25147,7 +25148,8 @@
       "records": [
         "R-1776",
         "R-1777",
-        "R-1781"
+        "R-1781",
+        "R-1856"
       ],
       "refs": [],
       "id": "N-409",
@@ -42635,6 +42637,15 @@
       "commits": [
         "93ebcc7b9"
       ]
+    },
+    {
+      "id": "R-1856",
+      "date": "2026-11-22",
+      "time": "14:08",
+      "timeFrom": "recorded",
+      "title": "N-256 PW-6 (light pass) and batch 11 (N-409) through Pixi-owner Predator sittings (82848a4c -> 1b4e85b5): night with light3d NEUTRAL (renderer +0.2 %); plain every worker drifted +5..+9 % together, renderer against the others +1.7 %: to run again on a quiet machine",
+      "verdict": "kept-hygiene",
+      "text": "**The Pixi-owner sittings over N-256 PW-6 (lighting.js) and the ASUS's batch 11 (N-409), 82848a4c -> 1b4e85b5:\nNEUTRAL by night with light3d. Plain, every worker drifted together and the renderer against the others reads\n+1.7 %. The plain sitting is to run again on a quiet machine.**\n\nBoth ran `runPredatorAbab.mjs --vs 82848a4c --hyp-rev 1b4e85b5 --owner renderer`, headed, on AC power.\n\n**Plain:** `--pairs 16 --query \"crowd=2.5&dayCycle=0&mix=1\"`, from the save, 13:47 to 14:00. The runner's verdict was\nREGRESSION.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 15.209 -> 15.794 | +7.2 % | 12/16 | +1.5 % |\n| spatial | 7.210 -> 7.530 | +5.9 % | 9/16 | -1.1 % |\n| physics | 14.826 -> 15.124 | +4.8 % | 13/16 | +0.7 % |\n| renderer | 6.841 -> 7.322 | +8.9 % | 12/16 | +1.7 % |\n| preRender | 8.524 -> 8.854 | +7.2 % | 10/16 | -1.7 % |\n\nLogic, spatial and physics run no code these commits touch: PW-6 moves the renderer's light pass, and N-409 changes the\nlight shaders. They rose 5 to 7 % with the rest, so this is drift (HOW_WE_MEASURE: read the owner against the\nothers). Against the others the renderer reads +1.7 % (7 of 16 lower), inside its swing (cv 10/10 %). The owner was\nstarting to use the machine for heavy work about then.\n\n**Night:** `--pairs 8 --fresh --query \"crowd=2.5&mix=1&light3d=1&hour=22\"`, 14:00 to 14:08. The runner's verdict was\nNEUTRAL.\n\n| worker | A -> B (ms) | paired | worse | vs the others |\n| --- | --- | --- | --- | --- |\n| logic | 23.092 -> 24.445 | +1.1 % | 5/8 | +2.6 % |\n| spatial | 10.717 -> 10.934 | +2.8 % | 5/8 | -1.9 % |\n| physics | 28.168 -> 29.590 | +2.7 % | 6/8 | -0.5 % |\n| renderer | 11.696 -> 12.169 | +0.2 % | 4/8 | -1.6 % |\n| preRender | 11.694 -> 11.831 | +2.0 % | 5/8 | -1.1 % |\n\nThe load keys are within 0.9 % in both sittings.\n\nNext: the plain sitting again once the machine is quiet. It must read under 3 % on the renderer against the others,\nor the PW-6 path gets a per-frame look (one extra property load a light pass call)."
     }
   ],
   "leads": [
