@@ -111,6 +111,7 @@ for (const [file, className, minFields, make] of [
   ['render/pixi/assets.js', 'PixiAssets', 15, async () => new (await import('../../src/render/pixi/assets.js')).PixiAssets({})],
   ['render/pixi/scenery.js', 'PixiScenery', 5, async () => new (await import('../../src/render/pixi/scenery.js')).PixiScenery({})],
   ['render/pixi/meshLayers.js', 'PixiMeshLayers', 3, async () => new (await import('../../src/render/pixi/meshLayers.js')).PixiMeshLayers({})],
+  ['render/pixi/customLayers.js', 'PixiCustomLayers', 5, async () => new (await import('../../src/render/pixi/customLayers.js')).PixiCustomLayers({})],
 ]) {
   test(`${className}: every field its methods write exists from the constructor`, async () => {
     const subsystem = await make();

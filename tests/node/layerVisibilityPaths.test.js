@@ -161,7 +161,7 @@ test('a MESH layer on the stage: its uvFill mesh follows Vis, and stays hidden w
   const fill = { visible: true };
   const uvMesh = { visible: true, geometry: { instanceCount: 1 } };
   px._layerRuntime = { floor: fill };
-  px._customLayers = { [IDS.floor]: { uvFillBatch: { mesh: uvMesh }, rt: null, meshLook: false } };
+  px.customLayers.byId = { [IDS.floor]: { uvFillBatch: { mesh: uvMesh }, rt: null, meshLook: false } };
   const layers = withLayers(['floor']);
   try {
     px._applyLayerVisibility();

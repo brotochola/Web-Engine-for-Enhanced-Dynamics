@@ -37,10 +37,8 @@ import {
   DEFAULT_LAYERS,
   RENDERER_DEFAULTS,
   LIGHTING_DEFAULTS,
-  LAYER_DENSITY_SOURCE,
   LAYER_FEEDER_KIND,
   LAYER_KIND,
-  LAYER_SCALE_MODE,
   PARTICLE_DEFAULTS,
   LIGHT_CULLING_TILE_SIZE_MAX,
   LIGHT_CULLING_TILE_SIZE_MIN,
@@ -205,33 +203,15 @@ import {
   textureLutSolid,
   textureLutTexels,
 } from '../render/instancedSpriteBatch.js';
-import { bindPainterRadix, createWasmPainterState, painterSlotList, wasmPainterState } from '../render/painterRadixClient.js';
+import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../render/painterRadixClient.js';
 import { LiquidFunDensitySplat, LF_SPLAT_STRIDE } from '../render/liquidFunDensitySplat.js';
 import { packParticleLights, resolveParticleLights } from '../render/particleLightSplat.js';
-import {
-  ColliderFillBatch,
-  packColliderFill,
-  packColliderFillPoseOnly,
-  packMeshUvVertsPaint,
-  colliderFillEpochsMatch,
-  trackMeshFillPose,
-  clearMeshFillPaintDirty,
-  MESH_FILL_PRESENCE_MOVED,
-  COLLIDER_FILL_PACK_FIRST_FRAME,
-  COLLIDER_FILL_FLOATS,
-} from '../render/colliderFillBatch.js';
-import { meshLayerCapacities } from '../util/meshMemory.js';
 import { LiquidFun } from '../core/liquidFun.js';
-import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
 import {
   rtPixelSize,
   rtPixelScale,
 } from '../render/gpuShadowCasters.js';
-
-function finiteOrZero(n) {
-  return Number.isFinite(n) ? n : 0;
-}
 
 /** Instanced Mesh with instanceCount 0 still GPU-draws if visible / used as RT root. */
 function setDisplayVisible(obj, on) {
@@ -276,82 +256,11 @@ function makeBatchViews() {
   };
 }
 
-function layerIsVisible(id) {
-  if (id == null || id < 0) return true;
-  if (!Layer._visible) return true;
-  const i = id | 0;
-  if (Layer._visibleDirty) Atomics.load(Layer._visibleDirty, i);
-  return Layer._visible[i] !== 0;
-}
-
-function setLookUniform1(map, floats, store, name, value) {
-  const e = map[name];
-  if (!e || e.size !== 1) return;
-  if (floats) floats[e.offset] = value;
-  if (store) store[name] = value;
-}
-
-function setLookUniform2(map, floats, store, name, x, y) {
-  const e = map[name];
-  if (!e || e.size < 2) return;
-  if (floats) {
-    floats[e.offset] = x;
-    floats[e.offset + 1] = y;
-  }
-  if (!store) return;
-  const target = store[name];
-  if (target) {
-    target[0] = x;
-    target[1] = y;
-  }
-}
-
-/** Engine Frame into declared look uniforms. Overwrites reserved names every frame. */
-function applyEngineLookUniforms(cl, frame) {
-  const map = Layer._uniformMaps[cl.layerId];
-  if (!map) return;
-  const floats = Layer._uniformFloats[cl.layerId];
-  const store = cl.uniformStore;
-  const zoom = frame.zoom > 0 ? frame.zoom : 1;
-  setLookUniform1(map, floats, store, 'uTime', frame.time);
-  setLookUniform1(map, floats, store, 'uDt', frame.dt);
-  setLookUniform1(map, floats, store, 'uZoom', zoom);
-  setLookUniform2(map, floats, store, 'uCameraPos', frame.cameraX, frame.cameraY);
-  setLookUniform2(map, floats, store, 'uCanvasSize', frame.canvasW, frame.canvasH);
-  setLookUniform2(map, floats, store, 'uWorldSize', frame.worldW, frame.worldH);
-  setLookUniform2(map, floats, store, 'uViewSize', frame.canvasW / zoom, frame.canvasH / zoom);
-}
-
-function applyComputeTexSizeUniform(cl) {
-  const map = Layer._uniformMaps[cl.layerId];
-  if (!map || !cl.compute) return;
-  setLookUniform2(
-    map,
-    Layer._uniformFloats[cl.layerId],
-    cl.uniformStore,
-    'uTexSize',
-    cl.compute.numX,
-    cl.compute.numY
-  );
-}
 import { pinGpuTexture, writeRgba32Float, writeRgba8 } from '../render/webgpu/pinGpuTexture.js';
 import { bindDecalPremultiply, premultiplyDecalTile } from '../render/decalPremultiplyClient.js';
-import { createSharedTextureSource, createWorldRectMesh } from '../render/worldTextureMesh.js';
-import {
-  createWorldRectCache,
-  readsFrameTime,
-  worldRectCacheStep,
-  worldRectGivesUp,
-  WORLD_RECT_DIRECT,
-  WORLD_RECT_SHOW,
-} from '../render/worldRectCache.js';
-import { uploadSharedImage } from '../render/sharedTextureUpload.js';
-import { SharedResource } from '../core/sharedResource.js';
-import { lightingGpuProgram, lookGpuProgram, isWgslSource } from '../render/webgpu/pixiMeshWgsl.js';
-import { prependLookPrelude, findWgslUseBeforeDeclare } from '../render/webgpu/wgslPrelude.js';
+import { lightingGpuProgram } from '../render/webgpu/pixiMeshWgsl.js';
 import {
   normalizeRendererBackend,
-  assertLookShaderCompatible,
   errorPixiTypeMismatch,
   errorMissingGpuDevice,
   errorCompileFailed,
@@ -370,6 +279,8 @@ import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import { PixiAssets } from '../render/pixi/assets.js';
 import { PixiScenery } from '../render/pixi/scenery.js';
 import { PixiMeshLayers, emptyInstancedMesh } from '../render/pixi/meshLayers.js';
+import { PixiCustomLayers } from '../render/pixi/customLayers.js';
+import { finiteOrZero, layerIsVisible, applyEngineLookUniforms } from '../render/pixi/layerHelpers.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
 import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
@@ -436,7 +347,6 @@ import { RENDERER_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { Time } from '../core/timeScale.js';
 import { GpuParticles } from '../core/gpuParticles.js';
 import { GpuParticleLayerBatch } from '../render/gpuParticleBatch.js';
-import { installInstanceRangeDraw } from '../render/instanceRangeDraw.js';
 import {
   PROXY, PROXY_CAMERA, PROXY_KIND, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, localProxyHalf, proxyView,
 } from '../render/gpuParticleProxies.js';
@@ -781,9 +691,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueCamera = null; // Float32Array[3] -> [zoom, x, y]
     this.renderQueuePoseReady = null; // Int32Array[1] -> pose generation stamped with this queue slot
 
-    // Custom layer rendering infrastructure (populated during initialize)
-    this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
-    this._customLayerList = []; // Cached array of custom layer objects, set once during init
     // DX-POST: the LAYER_KIND.SCREEN passes in zIndex order, and the frame they read (the stage drawn into a target).
     this._screenLayers = [];
     this._screenSceneRT = null;
@@ -814,8 +721,6 @@ class PixiRenderer extends AbstractWorker {
     this._nextDecalTileScanIndex = 0;
     this._decalTilesDirtyThisFrame = 0;
     this._decalTilesUploadedThisFrame = 0;
-    this._meshFillInstancesThisFrame = 0;
-    this._meshRtDrawsThisFrame = 0;
 
     // SharedArrayBuffer views (shared with particle_worker)
     this.decalsTilesDirty = null; // Uint8Array - dirty flags (0=clean, 1=modified)
@@ -1087,19 +992,6 @@ class PixiRenderer extends AbstractWorker {
     this._lightViewBounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
     this._renderZoom = 1.0;
     this._cameraInitialized = false;
-    // Reused compute pack pose (same generation as sprites). Filled on new queue frame.
-    this._computePose = {
-      poseX: null,
-      poseY: null,
-      poseRotC: null,
-      poseRotS: null,
-      prevPoseX: null,
-      prevPoseY: null,
-      prevPoseRotC: null,
-      prevPoseRotS: null,
-      // The frame's interpolation alpha (a fraction from the start: CR-32).
-      poseAlpha: NaN,
-    };
     this._computeFrame = {
       dt: 0,
       cameraX: 0,
@@ -1133,18 +1025,6 @@ class PixiRenderer extends AbstractWorker {
       excludeType1: -1,
       indices: null,
       indexCount: 0,
-    };
-    this._splatUploadOpts = {
-      layerId: 0,
-      zoom: 1,
-      cameraX: 0,
-      cameraY: 0,
-      resolution: 1,
-      radius: 48,
-      intensity: 1,
-      useParticleTint: true,
-      canvasW: 0,
-      canvasH: 0,
     };
     this._lfLightOpts = {
       zoom: 1,
@@ -1232,11 +1112,8 @@ class PixiRenderer extends AbstractWorker {
     this._colliderFillViews = null;
     this._colliderFillMeshBitsCached = 0;
     this._colliderFillLayerCount = -1;
-    // Per MESH layer: last packed ColliderFixture.revision + pose scratch.
-    // ponytail: first frame / replace / moving mesh always pack; skip keeps instanceCount.
-    this._colliderFillSkip = [];
-    /** E-504: cached worldRect layers drawn into their targets, since the start (tests read it). */
-    this._worldRectDraws = 0;
+    // N-256 PW-3: the custom layers' runtimes, targets, look shaders and compute passes (src/render/pixi/customLayers.js).
+    this.customLayers = new PixiCustomLayers(this);
     // N-256 PW-4: the MESH layers' memory, kernels, UV batches and look composite (src/render/pixi/meshLayers.js).
     this.meshLayers = new PixiMeshLayers(this);
 
@@ -1260,14 +1137,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueStaticGen = null;
     // E-177: the rows' statics keys (renderQueueLayout's key), which the keyed frames pack by.
     this.renderQueueKey = null;
-    this._poseSnapX = null;
-    this._poseSnapY = null;
-    this._poseSnapRotC = null;
-    this._poseSnapRotS = null;
-    this._poseSnapPrevX = null;
-    this._poseSnapPrevY = null;
-    this._poseSnapPrevRotC = null;
-    this._poseSnapPrevRotS = null;
     this._loggedSwapchainBind = false;
     this._renderQueueBindSrc = null;
     this._pixiLayerPack = null;
@@ -1350,84 +1219,6 @@ class PixiRenderer extends AbstractWorker {
   _tickPoseAlpha() {
     const elapsed = performance.now() - this._poseWall;
     this._poseAlpha = this._poseInterval > 0 ? Math.min(1, elapsed / this._poseInterval) : 1;
-  }
-
-  _hasComputeLayer() {
-    const list = this._customLayerList;
-    if (!list) return false;
-    for (let i = 0; i < list.length; i++) {
-      if (list[i].compute) return true;
-    }
-    return false;
-  }
-
-  /** Private pose copies. One alloc, size poseCapacity. Compute must not read the live SAB. */
-  _ensureComputePoseSnap() {
-    const n = this.poseCapacity | 0;
-    if (!(n > 0)) return false;
-    if (this._poseSnapX && this._poseSnapX.length === n) return true;
-    this._poseSnapX = new Float32Array(n);
-    this._poseSnapY = new Float32Array(n);
-    this._poseSnapRotC = new Float32Array(n);
-    this._poseSnapRotS = new Float32Array(n);
-    this._poseSnapPrevX = new Float32Array(n);
-    this._poseSnapPrevY = new Float32Array(n);
-    this._poseSnapPrevRotC = new Float32Array(n);
-    this._poseSnapPrevRotS = new Float32Array(n);
-    return true;
-  }
-
-  /**
-   * Copy the latched pose before pre-render is woken. publishPose reuses that
-   * SAB slot once the next consume lands; the stamp must keep this frame's numbers.
-   */
-  _snapshotComputePose() {
-    const computePose = this._computePose;
-    if (!this._hasComputeLayer() || !this._ensureComputePoseSnap()) {
-      computePose.poseX = this._poseX;
-      computePose.poseY = this._poseY;
-      computePose.poseRotC = this._poseRotC;
-      computePose.poseRotS = this._poseRotS;
-      computePose.prevPoseX = this._prevPoseX;
-      computePose.prevPoseY = this._prevPoseY;
-      computePose.prevPoseRotC = this._prevPoseRotC;
-      computePose.prevPoseRotS = this._prevPoseRotS;
-      return;
-    }
-    if (!this._poseX) {
-      computePose.poseX = null;
-      computePose.poseY = null;
-      computePose.poseRotC = null;
-      computePose.poseRotS = null;
-      computePose.prevPoseX = null;
-      computePose.prevPoseY = null;
-      computePose.prevPoseRotC = null;
-      computePose.prevPoseRotS = null;
-      return;
-    }
-    this._poseSnapX.set(this._poseX);
-    this._poseSnapY.set(this._poseY);
-    this._poseSnapRotC.set(this._poseRotC);
-    this._poseSnapRotS.set(this._poseRotS);
-    computePose.poseX = this._poseSnapX;
-    computePose.poseY = this._poseSnapY;
-    computePose.poseRotC = this._poseSnapRotC;
-    computePose.poseRotS = this._poseSnapRotS;
-    if (this._prevPoseX) {
-      this._poseSnapPrevX.set(this._prevPoseX);
-      this._poseSnapPrevY.set(this._prevPoseY);
-      this._poseSnapPrevRotC.set(this._prevPoseRotC);
-      this._poseSnapPrevRotS.set(this._prevPoseRotS);
-      computePose.prevPoseX = this._poseSnapPrevX;
-      computePose.prevPoseY = this._poseSnapPrevY;
-      computePose.prevPoseRotC = this._poseSnapPrevRotC;
-      computePose.prevPoseRotS = this._poseSnapPrevRotS;
-    } else {
-      computePose.prevPoseX = null;
-      computePose.prevPoseY = null;
-      computePose.prevPoseRotC = null;
-      computePose.prevPoseRotS = null;
-    }
   }
 
   /**
@@ -1578,8 +1369,8 @@ class PixiRenderer extends AbstractWorker {
         }
       }
       this.stats[RENDERER_STATS.SCENERY_COUNT] = sceneryN;
-      this.stats[RENDERER_STATS.MESH_FILL_INSTANCES] = this._meshFillInstancesThisFrame;
-      this.stats[RENDERER_STATS.MESH_RT_DRAWS] = this._meshRtDrawsThisFrame;
+      this.stats[RENDERER_STATS.MESH_FILL_INSTANCES] = this.customLayers.meshFillInstancesThisFrame;
+      this.stats[RENDERER_STATS.MESH_RT_DRAWS] = this.customLayers.meshRtDrawsThisFrame;
       if (this.collectDetailedStats) {
         this.stats[RENDERER_STATS.DRAW_CALLS] = this.drawCallCount;
 
@@ -1590,7 +1381,7 @@ class PixiRenderer extends AbstractWorker {
           (this.entitiesBatch ? 1 : 0) +
           (this.entitiesGlowBatch ? 1 : 0) +
           (this.shadowBatch ? 1 : 0) +
-          this._customLayerList.length;
+          this.customLayers.list.length;
         this.stats[RENDERER_STATS.SPRITES_CREATED] = instancedBatchCount;
         this.stats[RENDERER_STATS.VISIBLE_SPRITES] = totalVisibleSprites;
         this.stats[RENDERER_STATS.DECORATION_SPRITES] = instancedBatchCount;
@@ -1769,8 +1560,8 @@ class PixiRenderer extends AbstractWorker {
 
     // Apply camera to custom layer meshes (non-shader layers only).
     // Look-shader MESH keeps world verts; camera is the reused RT Container.
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      const cl = this.customLayers.list[i];
       if (!cl.rt) {
         const mesh = cl.worldMesh || cl.batch?.mesh || cl.fillBatch?.mesh || cl.gpu?.container;
         if (mesh) this._placeWorldCamera(mesh, zoom, cameraX, cameraY, rot);
@@ -2302,8 +2093,8 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setLutSource(lut);
     if (this.shadowBatch) this.shadowBatch.setLutSource(lut);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setLutSource(lut);
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      const cl = this.customLayers.list[i];
       if (cl.batch) cl.batch.setLutSource(lut);
       if (cl.fillBatch) cl.fillBatch.setLutSource(lut);
       if (cl.uvFillBatch) cl.uvFillBatch.setLutSource(lut);
@@ -2322,8 +2113,8 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.shadowBatch) this.shadowBatch.setAtlasSource(src);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setAtlasSource(src);
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      const cl = this.customLayers.list[i];
       if (cl.batch) cl.batch.setAtlasSource(src);
       if (cl.fillBatch) cl.fillBatch.setAtlasSource(src);
       if (cl.uvFillBatch) cl.uvFillBatch.setAtlasSource(src);
@@ -2486,8 +2277,8 @@ class PixiRenderer extends AbstractWorker {
     this._proxyLayerList = [];
     this._proxiesOn = false;
     if (this._entityChunks) this._entityChunks.clear();
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      const cl = this.customLayers.list[i];
       if (!cl.gpu || !cl.gpu.info.sortWithEntities) continue;
       let regions = null;
       if (cl.gpu.look && cl.rtOut) {
@@ -2649,39 +2440,6 @@ class PixiRenderer extends AbstractWorker {
       throw new Error(`[PIXI WORKER] the painter state holds ${layout.rows} rows for a queue of ${this.renderQueueMaxItems | 0}`);
     }
     this._painterWasm = await bindPainterRadix(memory, layout);
-  }
-
-  /**
-   * painterRadix.wasm for the y-sorted custom layers, whose painter states are regions of the render-queue memory
-   * next to their queues: Pixi's entities kernel when it has one (a kernel sorts any state of its memory), else one
-   * bound for them; null when no layer has such a state.
-   */
-  async _bindCustomLayerPainter(queues) {
-    const memory = this._renderQueueMemory;
-    let layout = null;
-    for (const q of Object.values(queues)) {
-      if (q && q.painter) {
-        layout = q.painter;
-        break;
-      }
-    }
-    if (!memory || !layout) return null;
-    if (this._painterWasm) return this._painterWasm.kernel;
-    return (await bindPainterRadix(memory, layout)).kernel;
-  }
-
-  /**
-   * A y-sorted custom layer's painter state, on its regions of the memory and sorted by `kernel`; null (the layer drawn
-   * in queue order, said once) when it has none there.
-   */
-  _customLayerPainterState(kernel, lrq, maxItems, layerName) {
-    const layout = lrq.painter;
-    if (!kernel || !layout || lrq.dataA !== kernel.buffer || layout.rows < maxItems) {
-      console.error(`[PIXI WORKER] custom layer "${layerName}" sorts by y, but its painter state is not in the render-queue `
-        + 'memory with its queues: it is drawn in queue order');
-      return null;
-    }
-    return wasmPainterState(kernel.buffer, layout, kernel);
   }
 
   /**
@@ -2925,8 +2683,8 @@ class PixiRenderer extends AbstractWorker {
       const readBufferIndex = (readyFrame - 1) & 1;
       this._setReadBuffer(readBufferIndex);
       this._proxyReadHalf = readBufferIndex;
-      for (let i = 0; i < this._customLayerList.length; i++) {
-        const layer = this._customLayerList[i];
+      for (let i = 0; i < this.customLayers.list.length; i++) {
+        const layer = this.customLayers.list[i];
         if (layer.buffers) layer.readRef = layer.buffers[readBufferIndex];
         if (layer.sortKeyU32ByBuf) layer.sortKeyU32 = layer.sortKeyU32ByBuf[readBufferIndex];
       }
@@ -2935,7 +2693,7 @@ class PixiRenderer extends AbstractWorker {
       if (this._meshPoseLists.length !== 0) {
         takeMeshPoseList(this._meshPoseLists[readBufferIndex], readyFrame, this._meshQueueStamp, this._meshQueuePose);
       }
-      this._snapshotComputePose();
+      this.customLayers.snapshotComputePose();
       this.lastReadFrame = readyFrame;
       if (this._presenting) this._deferredRenderQueueRelease = readyFrame;
       else {
@@ -2987,11 +2745,11 @@ class PixiRenderer extends AbstractWorker {
       if (Atomics.load(Layer._alphaDirty, i) !== 1) continue;
       Atomics.store(Layer._alphaDirty, i, 0);
       const name = Layer.getName(i);
-      if (Layer._alpha[i] !== 1) this.meshLayers.ensureLookComposite(this._customLayers[i]);
+      if (Layer._alpha[i] !== 1) this.meshLayers.ensureLookComposite(this.customLayers.byId[i]);
       const displayObject = name ? this._layerRuntime[name] : null;
       if (displayObject) displayObject.alpha = Layer._alpha[i];
       // On the stage a MESH layer's textured rows are a mesh of their own. Through an RT, the Sprite holds the alpha.
-      const cl = this._customLayers[i];
+      const cl = this.customLayers.byId[i];
       if (cl && cl.uvFillBatch && !cl.rt) cl.uvFillBatch.mesh.alpha = Layer._alpha[i];
       // DBG-3: the unshaded pixels are added where the light is short of them, so they fade with the light they make up for.
       if (name === 'lighting' && this._unshadedComposite !== null) this._unshadedComposite.alpha = Layer._alpha[i];
@@ -3025,9 +2783,9 @@ class PixiRenderer extends AbstractWorker {
     const layer = Layer.get(name);
     if (!layer) return;
     const display = this._layerRuntime[name] ?? null;
-    const cl = this._customLayers[id];
+    const cl = this.customLayers.byId[id];
     const z = layer.zIndex;
-    const blend = cl !== undefined && display !== null && this._customLayerForcesContainerBlend(cl, display)
+    const blend = cl !== undefined && display !== null && this.customLayers.forcesContainerBlend(cl, display)
       ? layer.containerBlendMode
       : layer.blendMode;
     if (display !== null) {
@@ -3064,7 +2822,7 @@ class PixiRenderer extends AbstractWorker {
       const spec = metas[i]?.alphaBySun;
       if (!spec) continue;
       list.push({ layerId: i, name: Layer.getName(i), spec });
-      this.meshLayers.ensureLookComposite(this._customLayers[i]);
+      this.meshLayers.ensureLookComposite(this.customLayers.byId[i]);
     }
     this._sunLayers = list;
     this._layerSunFactor = new Float32Array(Layer.count).fill(1);
@@ -3088,14 +2846,14 @@ class PixiRenderer extends AbstractWorker {
    * them. Before the passes that draw them, so this frame fills them.
    */
   syncLayerResolutionFromSharedState() {
-    const list = this._customLayerList;
+    const list = this.customLayers.list;
     const resolutions = Layer._resolution;
     for (let i = 0; i < list.length; i++) {
       const cl = list[i];
       const resolution = resolutions[cl.layerId];
       if (resolution === cl.resolution) continue;
       cl.resolution = resolution;
-      this._resizeCustomLayerRTs(cl, this.canvasWidth, this.canvasHeight);
+      this.customLayers.resizeRTs(cl, this.canvasWidth, this.canvasHeight);
     }
   }
 
@@ -3132,7 +2890,7 @@ class PixiRenderer extends AbstractWorker {
   drawFrameCustomLayers() {
     const started = this.collectDetailedStats ? performance.now() : 0;
     const sortBefore = this.sortTimeThisFrame;
-    this.updateCustomLayers();
+    this.customLayers.update();
     if (started) this.customLayersTimeThisFrame = performance.now() - started - (this.sortTimeThisFrame - sortBefore);
   }
 
@@ -4070,8 +3828,8 @@ class PixiRenderer extends AbstractWorker {
     this.miscTimeThisFrame = 0;
     this._decalTilesDirtyThisFrame = 0;
     this._decalTilesUploadedThisFrame = 0;
-    this._meshFillInstancesThisFrame = 0;
-    this._meshRtDrawsThisFrame = 0;
+    this.customLayers.meshFillInstancesThisFrame = 0;
+    this.customLayers.meshRtDrawsThisFrame = 0;
     this._gpuPassesThisFrame = 0;
     this._gpuCastersThisFrame = 0;
     this._gpuShadowLightsThisFrame = 0;
@@ -4258,13 +4016,13 @@ class PixiRenderer extends AbstractWorker {
     const layerId = config.id;
     const layerName = config.name;
     const name = config.shaderName || layerName;
-    const uniformDefs = this._buildCustomLayerUniformDefs(layerId, config.uniformMap, config.uniformTypes);
+    const uniformDefs = this.customLayers.buildUniformDefs(layerId, config.uniformMap, config.uniformTypes);
     // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it).
     const usesScene = typeof config.shaderFragment === 'string' && /\buScene\b/.test(config.shaderFragment);
     let shader;
     try {
       const empty = PIXI.Texture.EMPTY.source;
-      shader = this._createLookShader(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null);
+      shader = this.customLayers.createLookShader(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null);
     } catch (err) {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', name, layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
@@ -4280,7 +4038,7 @@ class PixiRenderer extends AbstractWorker {
       shader,
       uniformStore: shader.resources?.customUniforms?.uniforms || null,
       uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
-      mesh: this._makeLookShaderMesh(shader, false),
+      mesh: this.customLayers.makeLookShaderMesh(shader, false),
       usesScene,
       // Its output when it is not the last visible pass: the canvas's size times its resolution.
       target: null,
@@ -4431,7 +4189,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   _unbindScreenLayerTextures(cl) {
-    this._unbindLookShaderTexture(cl.shader);
+    this.customLayers.unbindLookShaderTexture(cl.shader);
     if (cl.usesScene) cl.shader.resources.uScene = PIXI.Texture.EMPTY.source;
   }
 
@@ -5990,8 +5748,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   /** N-190: whether a sun-projected volumes' layer has a volume this frame (they cast into the maps without sprite rows). */
   _volumesCast() {
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      const cl = this.customLayers.list[i];
       const batch = cl.sunProjected ? cl.uvFillBatch : null;
       if (batch && (batch.geometry.instanceCount | 0) > 0) return true;
     }
@@ -6019,8 +5777,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const t = this._sunMapTerms;
     const hs = this._heightScaleY > 0 ? this._heightScaleY : 1;
     const g = this._groundScaleY || 1;
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      const cl = this.customLayers.list[i];
       const batch = cl.sunProjected ? cl.uvFillBatch : null;
       if (!batch || (batch.geometry.instanceCount | 0) <= 0) continue;
       let entry = null;
@@ -6668,8 +6426,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     let count = 0;
     let indices = 0;
     let moved = false;
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      const cl = this.customLayers.list[i];
       const batch = cl.sunProjected ? cl.uvFillBatch : null;
       // instanceCount 1: the batch has triangles (MeshUvFillBatch.upload).
       if (batch === null || (batch.geometry.instanceCount | 0) <= 0) continue;
@@ -7373,7 +7131,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (msg === 'setLayerContent') {
       this.handleSetLayerContent(data);
     } else if (msg === 'setLayerProps') {
-      this.handleSetLayerProps(data);
+      this.customLayers.setLayerProps(data);
     } else {
       debugWorkerLog(`PIXI WORKER: Unhandled message type: ${msg}`);
     }
@@ -7399,49 +7157,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     setTimeout(() => lose.restoreContext(), Math.max(0, restoreAfterMs | 0));
   }
 
-  /**
-   * The debug UI's shader swap and splat radius for a layer. Visibility, alpha, blend and z are the Layer facade's
-   * setters (config SAB plus dirty flags), applied each frame (DBG-2).
-   * @param {Object} data - { layer, shader, shaderFragment, splatRadius }
-   */
-  handleSetLayerProps(data) {
-    const { layer, shader, shaderFragment, splatRadius } = data;
-
-    if (shader !== undefined || shaderFragment !== undefined) {
-      this._setCustomLayerShader(layer, shaderFragment || null, shader || null);
-    }
-
-    if (splatRadius !== undefined) {
-      const layerObj = Layer.get(layer);
-      if (layerObj) {
-        const cl = this._customLayers[layerObj.id];
-        if (cl && splatRadius > 0) {
-          cl.splatRadius = splatRadius;
-          if (cl.splat) cl.splat.radius = splatRadius;
-        }
-      }
-    }
-  }
-
-  _buildCustomLayerUniformDefs(layerId, uniformMap, uniformTypes) {
-    const uniformDefs = {};
-    if (!uniformMap) return uniformDefs;
-    const floats = Layer._uniformFloats[layerId];
-    for (const [uName, entry] of Object.entries(uniformMap)) {
-      const uType = uniformTypes?.[uName] || 'f32';
-      if (entry.size === 1) {
-        uniformDefs[uName] = { value: floats ? floats[entry.offset] : 0, type: uType };
-      } else {
-        const arr = new Float32Array(entry.size);
-        if (floats) {
-          for (let k = 0; k < entry.size; k++) arr[k] = floats[entry.offset + k];
-        }
-        uniformDefs[uName] = { value: arr, type: uType };
-      }
-    }
-    return uniformDefs;
-  }
-
   _createLayerFullscreenGeometry(flipV) {
     // Look-to-rtOut + Sprite already flips V (GL RT write). Look on stage
     // samples the fill RT directly. Flip is backend-specific (_meshLookFlipV).
@@ -7453,70 +7168,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       },
       indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
     });
-  }
-
-  _makeLookShaderMesh(shader, flipV) {
-    const state = new State();
-    state.blend = true;
-    state.depthTest = false;
-    state.depthMask = false;
-    state.culling = false;
-    const mesh = new Mesh({
-      geometry: this._createLayerFullscreenGeometry(!!flipV),
-      shader,
-      state,
-    });
-    mesh.eventMode = 'none';
-    mesh.cullable = false;
-    return mesh;
-  }
-
-  /**
-   * E-431: a GPU particle layer with a resolution under 1 and no look of its own is drawn into a target that share of the
-   * canvas (cl.rt, _renderGpuParticlesToRt) and composed onto the frame once by a sprite at the layer's place, as a look
-   * layer's picture is. Soft particles are fill: Predator's fire smoke cost about 0.9 to 1.3 ms of GPU a frame at 1920 x
-   * 1080, 0.003 under a 1 px scissor. Only where the target composes back what the particles drew (blend normal, whose
-   * over is associative, or add); a layer drawn among the entities (sortWithEntities) stays there. The layer's alpha then
-   * applies to its picture as a whole.
-   * @returns {boolean} whether the layer draws through a target
-   */
-  _gpuParticleLayerTarget(cl, gpuBatch, blend) {
-    const resolution = cl.resolution;
-    if (!(resolution > 0 && resolution < 1)) return false;
-    if (gpuBatch.look || gpuBatch.info.sortWithEntities) return false;
-    if (blend !== 'normal' && blend !== 'add') return false;
-    cl.rt = PIXI.RenderTexture.create({ width: this.canvasWidth * resolution, height: this.canvasHeight * resolution });
-    this._applyCustomLayerScaleMode(cl);
-    // No look: the sprite shows the target itself (_resizeCustomLayerRTs keeps it on cl.rt).
-    cl.shaderBypass = true;
-    const sprite = new PIXI.Sprite(cl.rt);
-    sprite.anchor.set(0, 0);
-    sprite.position.set(0, 0);
-    sprite.scale.set(1.0 / resolution);
-    sprite.renderable = false;
-    cl.displaySprite = sprite;
-    return true;
-  }
-
-  /**
-   * A GPU particle layer's density pass: its meshes keep world positions, and the camera into the layer's RT is
-   * the render transform (as a MESH layer's fill).
-   */
-  _renderGpuParticlesToRt(cl) {
-    const container = cl.gpu.container;
-    container.x = 0;
-    container.y = 0;
-    container.rotation = 0;
-    container.pivot.set(0, 0);
-    if (container.scale.x !== 1 || container.scale.y !== 1) container.scale.set(1);
-    const rtOpts = this._rtRenderOpts;
-    rtOpts.container = cl.gpu.liveRecords > 0 ? container : this._rtEmptyContainer;
-    rtOpts.target = cl.rt;
-    rtOpts.clear = true;
-    rtOpts.clearColor = this._clearTransparent;
-    rtOpts.transform = this._writeCameraRtTransform(this._meshRtTransform, cl);
-    this._submitRender(rtOpts);
-    rtOpts.transform = null;
   }
 
   /** World px -> RT px of a viewport-sized layer RT at `resolution`, rotation included, into `mx`. */
@@ -7555,46 +7206,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     mx.tx = screenCx - a * focusX - cc * focusY;
     mx.ty = screenCy - b * focusX - d * focusY;
     return mx;
-  }
-
-  _destroyCustomLayerPostProcess(cl) {
-    if (!cl) return;
-    if (cl.shaderMesh) {
-      cl.shaderMesh.destroy(true);
-      cl.shaderMesh = null;
-    }
-    cl.shader = null;
-    cl.uniformStore = null;
-  }
-
-  _destroyCustomLayerCompute(cl) {
-    if (!cl?.compute) return;
-    cl.compute.destroy();
-    cl.compute = null;
-  }
-
-  _destroyAllCustomLayerCompute() {
-    const ids = Object.keys(this._customLayers);
-    for (let i = 0; i < ids.length; i++) {
-      this._destroyCustomLayerCompute(this._customLayers[ids[i]]);
-    }
-  }
-
-  /**
-   * Pixi v8 TextureSource.scaleMode for RT upsample (LINEAR soft / NEAREST blocky).
-   * @param {import('../vendor/pixi.min.js').RenderTexture|null|undefined} rt
-   * @param {string} mode
-   */
-  _setRtScaleMode(rt, mode) {
-    if (!rt?.source) return;
-    rt.source.scaleMode = Layer.scaleModeString(mode);
-  }
-
-  _applyCustomLayerScaleMode(cl) {
-    if (!cl) return;
-    const mode = cl.scaleMode ?? LAYER_SCALE_MODE.LINEAR;
-    this._setRtScaleMode(cl.rt, mode);
-    this._setRtScaleMode(cl.rtOut, mode);
   }
 
   _lightingShadowSource() {
@@ -7637,14 +7248,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const src = this._lightingShadowSource();
     res.uShadowMap = src;
     res.uShadowSampler = src.style;
-  }
-
-  _unbindLookShaderTexture(shader) {
-    const res = shader?.resources;
-    if (!res) return;
-    const empty = PIXI.Texture.EMPTY;
-    if (res.uTexture) res.uTexture = empty.source;
-    if (res.uSampler) res.uSampler = empty.source.style;
   }
 
   /**
@@ -7710,123 +7313,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return next;
   }
 
-  _ensureCustomLayerDensityRT(cl) {
-    const resolution = cl.resolution || 1.0;
-    const w = this.canvasWidth * resolution;
-    const h = this.canvasHeight * resolution;
-    if (cl.batch?.mesh?.parent) cl.batch.mesh.parent.removeChild(cl.batch.mesh);
-    if (cl.fillBatch?.mesh?.parent) cl.fillBatch.mesh.parent.removeChild(cl.fillBatch.mesh);
-    if (cl.uvFillBatch?.mesh?.parent) cl.uvFillBatch.mesh.parent.removeChild(cl.uvFillBatch.mesh);
-    if (!cl.rt) cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
-    const meshLook = !!cl.fillBatch;
-    if (!meshLook && !cl.rtOut) cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
-    this._applyCustomLayerScaleMode(cl);
-    if (meshLook && !cl.shaderBypass) return;
-    const tex = (meshLook || cl.shaderBypass || !cl.rtOut) ? cl.rt : cl.rtOut;
-    if (!cl.displaySprite) {
-      cl.displaySprite = new PIXI.Sprite(tex);
-      cl.displaySprite.anchor.set(0, 0);
-      cl.displaySprite.position.set(0, 0);
-      cl.displaySprite.scale.set(1.0 / resolution);
-      this.pixiApp.stage.addChild(cl.displaySprite);
-    } else {
-      cl.displaySprite.texture = tex;
-      cl.displaySprite.scale.set(1.0 / resolution);
-      if (!cl.displaySprite.parent) this.pixiApp.stage.addChild(cl.displaySprite);
-    }
-  }
-
-  /**
-   * Live-swap custom layer fragment, or bypass post-process (shader=null).
-   * Bypass keeps density RT at layer resolution and shows raw accumulation —
-   * avoids dumping tens of thousands of sprites onto the full-res stage.
-   */
-  _setCustomLayerShader(layerName, fragmentSource, shaderName) {
-    const layerObj = Layer.get(layerName);
-    if (!layerObj || layerObj.builtIn) return;
-    const cl = this._customLayers[layerObj.id];
-    if (!cl || (!cl.batch && !cl.splatBatch && !cl.compute && !cl.fillBatch)) return;
-
-    const meta = Layer._metadata?.layers?.[layerObj.id];
-    if (meta) {
-      meta.shaderName = shaderName || null;
-      meta.shaderFragment = fragmentSource || null;
-    }
-
-    const resolution = cl.resolution || 1.0;
-
-    // (none): keep density RT, skip fullscreen frag, show raw cl.rt
-    if (!fragmentSource) {
-      if (!cl.compute && !cl.rt) this._ensureCustomLayerDensityRT(cl);
-      this._destroyCustomLayerPostProcess(cl);
-      cl.shaderBypass = true;
-      if (cl.fillBatch && cl.rt && !cl.displaySprite) {
-        cl.displaySprite = new PIXI.Sprite(cl.rt);
-        cl.displaySprite.anchor.set(0, 0);
-        cl.displaySprite.position.set(0, 0);
-        cl.displaySprite.scale.set(1.0 / resolution);
-        this.pixiApp.stage.addChild(cl.displaySprite);
-      } else if (cl.displaySprite && cl.rt) {
-        cl.displaySprite.texture = cl.rt;
-        cl.displaySprite.scale.set(1.0 / resolution);
-        if (!cl.displaySprite.parent) this.pixiApp.stage.addChild(cl.displaySprite);
-      }
-      this._registerLayerDisplayObject(layerName, cl.displaySprite);
-      this.pixiApp.stage.sortChildren();
-      this._syncLayerRefsFromRuntime();
-      return;
-    }
-
-    cl.shaderBypass = false;
-    if (!cl.compute) this._ensureCustomLayerDensityRT(cl);
-    this._destroyCustomLayerPostProcess(cl);
-
-    if (meta) meta.hasShader = true;
-    if (Layer._hasShader) Layer._hasShader[layerObj.id] = 1;
-
-    const uniformMap = meta?.uniformMap || null;
-    const uniformTypes = meta?.uniformTypes || null;
-    cl.uniformEntries = uniformMap ? Object.entries(uniformMap) : null;
-    const uniformDefs = this._buildCustomLayerUniformDefs(cl.layerId, uniformMap, uniformTypes);
-
-    try {
-      const lookSource = cl.lookSource || cl.rt.source;
-      cl.shader = this._createLookShader(fragmentSource, lookSource, uniformDefs, shaderName || 'look', layerName);
-      cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
-      cl.shaderMesh = this._makeLookShaderMesh(cl.shader, !!cl.fillBatch && this.meshLayers.lookFlipV());
-    } catch (err) {
-      if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
-      throw errorCompileFailed('look', shaderName || 'look', layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
-    }
-
-    if (cl.fillBatch && cl.rtOut) {
-      cl.meshLook = true;
-      cl.shaderMesh.geometry = this._createLayerFullscreenGeometry(false);
-      cl.displaySprite.texture = cl.rtOut; // (none) left it on cl.rt
-      cl.displaySprite.visible = true;
-      this._registerLayerDisplayObject(layerName, cl.displaySprite);
-    } else if (cl.fillBatch) {
-      cl.meshLook = true;
-      if (cl.displaySprite) {
-        cl.displaySprite.visible = false;
-        if (cl.displaySprite.parent) cl.displaySprite.parent.removeChild(cl.displaySprite);
-      }
-      if (!cl.shaderMesh.parent) this.pixiApp.stage.addChild(cl.shaderMesh);
-      this._registerLayerDisplayObject(layerName, cl.shaderMesh, false);
-      if (this.meshLayers.lookMustCompose(cl)) this.meshLayers.ensureLookComposite(cl);
-    } else {
-      cl.displaySprite.texture = cl.rtOut;
-      cl.displaySprite.scale.set(1.0 / resolution);
-      this._registerLayerDisplayObject(layerName, cl.displaySprite);
-    }
-    this.pixiApp.stage.sortChildren();
-    this._syncLayerRefsFromRuntime();
-
-    if (Layer._uniformDirty?.[cl.layerId]) {
-      Atomics.store(Layer._uniformDirty[cl.layerId], 0, 1);
-    }
-  }
-
   _applyLayerPresentation(layerName, displayObject, forceContainerBlend) {
     if (!displayObject) return;
     const layer = Layer.get(layerName);
@@ -7852,7 +7338,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (displayObj) setDisplayVisible(displayObj, show);
       // DBG-1: on the stage a MESH layer's textured rows are a mesh of their own beside the fill mesh (through an RT the
       // layer's sprite holds both). Its geometry's instanceCount says whether it has triangles (setDisplayVisible).
-      const cl = this._customLayers[i];
+      const cl = this.customLayers.byId[i];
       if (cl !== undefined && cl.uvFillBatch && !cl.rt && !cl.meshLook) setDisplayVisible(cl.uvFillBatch.mesh, show);
     }
   }
@@ -7861,17 +7347,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!layerName || !displayObject) return;
     this._applyLayerPresentation(layerName, displayObject, forceContainerBlend);
     this._layerRuntime[layerName] = displayObject;
-  }
-
-  /**
-   * N-79: whether a custom layer's display object draws with the container blend. A batch or a world-rect mesh on
-   * the stage is the layer's only pass: it takes blendMode, unless the config set shader.containerBlend. A display
-   * sprite or a look mesh composes the layer's picture, which its batches drew with the container blend: blendMode.
-   */
-  _customLayerForcesContainerBlend(cl, displayObject) {
-    const onePass = displayObject === cl.batch?.mesh || displayObject === cl.fillBatch?.mesh || displayObject === cl.worldMesh
-      || displayObject === cl.worldHolder;
-    return onePass && cl.containerBlendSet === true;
   }
 
   _syncLayerRefsFromRuntime() {
@@ -7884,52 +7359,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (runtimeObj) refs[layer.name] = runtimeObj;
     }
     this.layerRefs = refs;
-  }
-
-  _resizeCustomLayerRTs(cl, width, height) {
-    if (!Layer.customLayerNeedsViewportResize(cl)) return;
-    // The new RT is empty: a still layer would otherwise keep showing it.
-    const skip = this._colliderFillSkip[cl.layerId];
-    if (skip) skip.rtReady = false;
-    const resolution = cl.resolution || 1.0;
-    const lw = width * resolution;
-    const lh = height * resolution;
-
-    if (cl.displaySprite) cl.displaySprite.texture = PIXI.Texture.EMPTY;
-    this._unbindLookShaderTexture(cl.shader);
-    // A sorted layer's regions sample rtOut too. Releasing rtOut's bind groups would destroy theirs, and the next
-    // setTexture would write into the destroyed group: off it first, onto the new rtOut below.
-    const regions = this._proxyLayers[cl.layerId]?.regions ?? null;
-    if (regions !== null) regions.setTexture(PIXI.Texture.EMPTY);
-
-    if (cl.rt) {
-      this._releaseTextureBindGroups(cl.rt);
-      cl.rt.destroy(true);
-      cl.rt = PIXI.RenderTexture.create({ width: lw, height: lh });
-    }
-    if (cl.rtOut) {
-      this._releaseTextureBindGroups(cl.rtOut);
-      cl.rtOut.destroy(true);
-      cl.rtOut = PIXI.RenderTexture.create({ width: lw, height: lh });
-    }
-    if (regions !== null && cl.rtOut) regions.setTexture(cl.rtOut);
-
-    if (cl.shader) {
-      const lookTex = Layer.customLayerLookTexture(cl);
-      if (lookTex) {
-        cl.shader.resources.uTexture = lookTex;
-        if (cl.shader.resources.uSampler && lookTex.style) {
-          cl.shader.resources.uSampler = lookTex.style;
-        }
-      }
-    }
-
-    this._applyCustomLayerScaleMode(cl);
-
-    if (cl.displaySprite) {
-      cl.displaySprite.texture = (cl.shaderBypass || !cl.rtOut) ? cl.rt : cl.rtOut;
-      cl.displaySprite.scale.set(1.0 / resolution);
-    }
   }
 
   /**
@@ -8028,8 +7457,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this._glowLayerRT !== null) this._resizeGlowLayerTarget(this._glowLayerRes, width, height);
 
     // Viewport look/density RTs (compute layers have rtOut only).
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      this._resizeCustomLayerRTs(this._customLayerList[i], width, height);
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      this.customLayers.resizeRTs(this.customLayers.list[i], width, height);
     }
 
     this.scenery.applyCoverTransforms();
@@ -8312,7 +7741,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // E-453: a MESH layer's UV meshes (_ensureMeshUvBatch: one program for every layer's batch, the first layer's name);
     // DX-SHADOW3D: a sun-projected layer's volumes in the sun's map and the lamps' (_drawVolumesInSunMap,
     // _drawVolumesInLampMap), E-508: the lamps' cache's copy.
-    const uvLayers = this._customLayerList.filter((cl) => (cl.uvVertCapacity | 0) > 0 && (cl.uvIndexCapacity | 0) >= 3);
+    const uvLayers = this.customLayers.list.filter((cl) => (cl.uvVertCapacity | 0) > 0 && (cl.uvIndexCapacity | 0) >= 3);
     if (uvLayers.length > 0 && shaders.meshUvFillVert && shaders.meshUvFillFrag) {
       meshUvFillProgram(false, shaders, `mesh-uv-${uvLayers[0].layerId}`);
       if (casters && uvLayers.some((cl) => cl.sunProjected)) {
@@ -9013,7 +8442,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     // CUSTOM LAYER RENDERING INFRASTRUCTURE
     // ========================================
-    await this.initializeCustomLayers(data, true);
+    await this.customLayers.initialize(data, true);
 
     // ========================================
     // LAYER REFERENCES MAP - For debug UI control
@@ -9045,1138 +8474,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Maps NDC quad to UV space so the fragment shader can sample a RenderTexture.
    */
   /**
-   * @param {TextureSource|null} [sceneSource] DX-POST: a SCREEN pass that reads uScene (the frame before the first pass)
-   */
-  _createLookShader(fragmentSource, textureSource, uniformDefs, name, layerName, sceneSource = null) {
-    const asset = name || 'look';
-    const layer = layerName || name || 'look';
-    const backend = this._useWebGpu ? 'webgpu' : 'webgl';
-    assertLookShaderCompatible({
-      backend,
-      layerName: layer,
-      asset,
-      path: asset,
-      source: fragmentSource,
-    });
-    const backendLabel = this._useWebGpu ? 'WebGPU' : 'WebGL';
-    try {
-      if (this._useWebGpu) {
-        // Engine prelude generates GlobalUniforms/LocalUniforms/CustomUniforms/
-        // VertexOut + group(2) bindings from the layer uniform map.
-        let wgslSource = fragmentSource;
-        if (isWgslSource(wgslSource)) {
-          const layerObj = Layer.get(layer);
-          const lid = layerObj ? layerObj.id : -1;
-          wgslSource = prependLookPrelude(
-            wgslSource,
-            Layer._uniformMaps[lid] || null,
-            Layer._metadata?.layers?.[lid]?.uniformTypes || null,
-            { scene: sceneSource !== null }
-          );
-        }
-        const earlyLook = findWgslUseBeforeDeclare(wgslSource);
-        if (earlyLook.length) {
-          throw new Error(
-            earlyLook.map((e) => `'${e.name}' used before declaration (line ${e.line})`).join('; ')
-          );
-        }
-        const gpuProgram = lookGpuProgram(
-          GpuProgram,
-          wgslSource,
-          asset,
-          this._engineShaders.lookVert,
-          sceneSource !== null
-        );
-        return new Shader({
-          gpuProgram,
-          resources: sceneSource !== null
-            ? { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style, uScene: sceneSource }
-            : { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style },
-        });
-      }
-      const lookVert = this._engineShaders.lookVert;
-      if (!lookVert) {
-        throw new Error(
-          'WeedJS: Fullscreen look vertex shader was not loaded before look program creation.'
-        );
-      }
-      const glProgram = GlProgram.from({
-        vertex: lookVert,
-        fragment: fragmentSource,
-        name: asset,
-      });
-      return new Shader({
-        glProgram,
-        resources: sceneSource !== null
-          ? { customUniforms: uniformDefs, uTexture: textureSource, uScene: sceneSource }
-          : { customUniforms: uniformDefs, uTexture: textureSource },
-      });
-    } catch (err) {
-      throw errorCompileFailed('look', asset, layer, backendLabel, err);
-    }
-  }
-
-  /**
-   * Initialize custom layer rendering infrastructure.
-   *
-   * NON-SHADER LAYERS:
-   *   Instanced Mesh (InstancedSpriteBatch) added directly to stage at the layer's zIndex.
-   *   Camera transform applied via mesh.scale / mesh.position.
-   *
-   * SHADER LAYERS (two-RT pipeline):
-   *   1. Instanced Mesh rendered (container blend) → raw density RenderTexture (RT)
-   *   2. Fullscreen Mesh with custom fragment shader reads density RT → output RT
-   *   3. Output RT displayed on stage via Sprite at the layer's zIndex
-   *   This enables screen-space effects (metaballs, heat distortion, etc.)
-   *   driven by entity positions without per-entity shader overhead.
-   *
-   * Uniforms are shared via Layer SABs with Atomics dirty flags -- any thread
-   * can call Layer.water.setUniform('uThreshold', 0.4) and the change
-   * is picked up next frame with zero postMessage overhead.
-   */
-  _byteView(slot, raw) {
-    if (!raw) return null;
-    if (raw instanceof Uint8Array) return raw;
-    const prev = slot.byteView;
-    if (prev && prev.buffer === raw.buffer && prev.byteOffset === raw.byteOffset && prev.byteLength === raw.byteLength) {
-      return prev;
-    }
-    slot.byteView = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
-    return slot.byteView;
-  }
-
-  /** @returns {number} how many pictures went up this frame */
-  _uploadSharedPictures(cl) {
-    const bag = Layer.textureSlotsFor(cl.layerId);
-    if (!bag) return 0;
-    let uploaded = 0;
-    const renderer = this.pixiApp && this.pixiApp.renderer;
-    // for...in, not Object.keys: this runs per layer per frame (review G7).
-    for (const name in bag) {
-      const slot = bag[name];
-      const rect = Layer.consumeTextureUpload(cl.layerId, name);
-      if (!rect || rect.w < 1 || rect.h < 1) continue;
-      const raw = SharedResource.viewAt(rect.resourceIndex, rect.fieldIndex);
-      if (!raw) continue;
-      if (slot.buffer) {
-        if (cl.compute) cl.compute.uploadFromSharedBuffer(name, raw, rect);
-        continue;
-      }
-      if (slot.compute && cl.compute) {
-        cl.compute.uploadFromShared(name, this._byteView(slot, raw), rect);
-        continue;
-      }
-      const source = cl.sharedSources && cl.sharedSources[name];
-      if (!source) continue;
-      const gpu = renderer && source._gpuData && renderer.uid != null
-        ? source._gpuData[renderer.uid]
-        : null;
-      uploadSharedImage({
-        useWebGpu: this._useWebGpu,
-        device: renderer && renderer.gpu && renderer.gpu.device,
-        gpuTexture: gpu && gpu.gpuTexture,
-        gl: renderer && renderer.gl,
-        renderer,
-        source,
-        bytes: this._byteView(slot, raw),
-        width: slot.width,
-        height: slot.height,
-        format: slot.format,
-        rect,
-        glReady: !!source._weedGlReady,
-      });
-      source._weedGlReady = true;
-      source.uploadMethodId = 'external';
-      uploaded++;
-    }
-    return uploaded;
-  }
-
-  /**
-   * E-504. A cached worldRect layer this frame (worldRectCacheStep): its target shown as painted, painted again when
-   * what the layer shows changed (the camera, the canvas' size, its uniforms or pictures, every frame for a shader that
-   * reads the frame's time), with the camera placed on the paint mesh as the stage places the stage mesh
-   * (_placeWorldCamera), so the target holds what the stage mesh would draw; or, while the view keeps changing, the stage
-   * mesh drawn instead.
-   */
-  _drawWorldRectCache(cl, changed, uploaded) {
-    // N-292: a picture uploaded frame after frame never holds; the layer leaves its cache for the plain stage mesh.
-    if (worldRectGivesUp(cl.worldCache, uploaded)) {
-      this._dropWorldRectCache(cl);
-      return;
-    }
-    const zoom = this._renderZoom;
-    const x = this._renderCameraX;
-    const y = this._renderCameraY;
-    const rot = this._renderCameraRot || 0;
-    const w = Math.max(1, this.canvasWidth | 0);
-    const h = Math.max(1, this.canvasHeight | 0);
-    const step = worldRectCacheStep(cl.worldCache, zoom, x, y, rot, w, h, changed || cl.worldEveryFrame);
-    if (step === WORLD_RECT_SHOW) return;
-    // N-292: never paint the target in a frame a picture went up: painting a just-uploaded picture into the target made
-    // every later upload of it slow, for good (textureUploadStressScene's renderer 12 -> 40 ms, its cache given up or
-    // not). The mesh draws on the stage this frame; the view is marked unpainted, so the next frame without an upload
-    // paints.
-    if (step === WORLD_RECT_DIRECT || uploaded) {
-      if (uploaded) cl.worldCache.drawn = false;
-      if (!cl.worldMesh.visible || cl.displaySprite.visible) {
-        cl.worldMesh.visible = true;
-        cl.displaySprite.visible = false;
-      }
-      return;
-    }
-    if (cl.worldMesh.visible || !cl.displaySprite.visible) {
-      cl.worldMesh.visible = false;
-      cl.displaySprite.visible = true;
-    }
-    if (cl.worldRt.width !== w || cl.worldRt.height !== h) {
-      const old = cl.worldRt;
-      cl.worldRt = PIXI.RenderTexture.create({ width: w, height: h });
-      cl.displaySprite.texture = cl.worldRt;
-      old.destroy(true);
-    }
-    this._placeWorldCamera(cl.worldPaintMesh, zoom, x, y, rot);
-    const o = this._rtRenderOpts;
-    o.container = cl.worldRoot;
-    o.target = cl.worldRt;
-    o.clear = true;
-    o.clearColor = this._clearTransparent;
-    o.transform = null;
-    this._submitRender(o);
-    this._worldRectDraws++;
-  }
-
-  /**
-   * N-292: a cached worldRect layer back to the layout it has without a cache (shader.cache false): its mesh on the stage
-   * where the holder was, registered as the layer, the target, its sprite and the paint mesh gone. The custom-layer loop
-   * then treats it as an uncached worldRect layer (cl.worldRt null), its camera placed on the mesh every frame.
-   */
-  _dropWorldRectCache(cl) {
-    const holder = cl.worldHolder;
-    const mesh = cl.worldMesh;
-    const parent = holder ? holder.parent : null;
-    const at = parent ? parent.getChildIndex(holder) : -1;
-    if (holder) holder.removeChild(mesh);
-    mesh.visible = true;
-    if (parent) {
-      parent.addChildAt(mesh, at);
-      parent.removeChild(holder);
-    } else {
-      this.pixiApp.stage.addChild(mesh);
-    }
-    this._registerLayerDisplayObject(cl.layerName, mesh, cl.containerBlendSet);
-    // The paint mesh shares the stage mesh's geometry and shader, which stay with the stage mesh.
-    if (cl.worldPaintMesh) cl.worldPaintMesh.destroy(false);
-    if (cl.displaySprite) cl.displaySprite.destroy();
-    if (holder) holder.destroy({ children: false });
-    if (cl.worldRt) cl.worldRt.destroy(true);
-    cl.worldRt = null;
-    cl.worldPaintMesh = null;
-    cl.worldRoot = null;
-    cl.worldHolder = null;
-    cl.displaySprite = null;
-    cl.worldCache = null;
-    this._syncLayerRefsFromRuntime();
-  }
-
-  _initWorldTextureLayer(cl, config) {
-    const fragment = config.shaderFragment;
-    const rect = config.worldRect;
-    const pics = config.shaderTextures || [];
-    if (typeof fragment !== 'string' || !rect || !pics.length) {
-      console.warn(`PIXI WORKER: world-rect layer "${cl.layerName}" is missing its shader or pictures`);
-      return;
-    }
-    const renderer = this.pixiApp.renderer;
-    const pictures = [];
-    cl.sharedSources = {};
-    for (let i = 0; i < pics.length; i++) {
-      const spec = pics[i];
-      const source = createSharedTextureSource(spec, renderer, this._useWebGpu);
-      cl.sharedSources[spec.name] = source;
-      pictures.push({ name: spec.name, format: spec.format, source });
-    }
-    const uniformDefs = {};
-    if (config.uniformMap) {
-      for (const [uName, entry] of Object.entries(config.uniformMap)) {
-        const uType = config.uniformTypes?.[uName] || 'f32';
-        const floats = Layer._uniformFloats[cl.layerId];
-        if (entry.size === 1) {
-          uniformDefs[uName] = { value: floats[entry.offset], type: uType };
-        } else {
-          const arr = new Float32Array(entry.size);
-          for (let k = 0; k < entry.size; k++) arr[k] = floats[entry.offset + k];
-          uniformDefs[uName] = { value: arr, type: uType };
-        }
-      }
-    }
-    const built = createWorldRectMesh({
-      useWebGpu: this._useWebGpu,
-      worldW: rect.width,
-      worldH: rect.height,
-      fragmentSource: fragment,
-      uniformDefs,
-      uniformMap: config.uniformMap,
-      uniformTypes: config.uniformTypes,
-      pictures,
-      name: cl.layerName,
-    });
-    cl.worldMesh = built.mesh;
-    cl.shader = built.shader;
-    cl.uniformStore = built.shader.resources?.customUniforms?.uniforms || null;
-    cl.uniformEntries = config.uniformMap ? Object.entries(config.uniformMap) : null;
-    if (config.shaderCache === true) {
-      // E-504: painted into a target the canvas' size when what it shows changes (_drawWorldRectCache), by a mesh on the
-      // same geometry and shader; the target's sprite, 1:1 on the screen, shows it. A view that keeps changing draws the
-      // stage mesh instead (worldRectCacheStep). Both in one holder, which is the layer.
-      cl.worldRt = PIXI.RenderTexture.create({ width: Math.max(1, this.canvasWidth | 0), height: Math.max(1, this.canvasHeight | 0) });
-      cl.worldPaintMesh = new PIXI.Mesh({ geometry: built.mesh.geometry, shader: built.shader });
-      cl.worldPaintMesh.eventMode = 'none';
-      cl.worldPaintMesh.cullable = false;
-      cl.worldRoot = new PIXI.Container();
-      cl.worldRoot.addChild(cl.worldPaintMesh);
-      cl.worldCache = createWorldRectCache();
-      cl.worldEveryFrame = readsFrameTime(fragment);
-      cl.displaySprite = new PIXI.Sprite(cl.worldRt);
-      cl.displaySprite.anchor.set(0, 0);
-      cl.displaySprite.position.set(0, 0);
-      built.mesh.visible = false;
-      cl.worldHolder = new PIXI.Container();
-      cl.worldHolder.addChild(built.mesh);
-      cl.worldHolder.addChild(cl.displaySprite);
-      this._registerLayerDisplayObject(cl.layerName, cl.worldHolder, cl.containerBlendSet);
-      this.pixiApp.stage.addChild(cl.worldHolder);
-    } else {
-      this._registerLayerDisplayObject(cl.layerName, built.mesh, cl.containerBlendSet);
-      this.pixiApp.stage.addChild(built.mesh);
-    }
-    debugWorkerLog(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}${cl.worldRt ? ' (cached)' : ''}`);
-  }
-
-  /**
-   * @param {object} data the init message (or its layers' part)
-   * @param {boolean} [meshMemoryBound] initialize bound the mesh memory with its other kernels (_bindMeshMemory)
-   */
-  async initializeCustomLayers(data, meshMemoryBound = false) {
-    const prev = this._customLayerList || [];
-    for (let i = 0; i < prev.length; i++) {
-      const old = prev[i];
-      // E-504: the paint mesh shares the stage mesh's geometry and shader, which the stage mesh's destroy takes.
-      if (old && old.worldPaintMesh) old.worldPaintMesh.destroy(false);
-      if (old && old.worldMesh) old.worldMesh.destroy(true);
-      if (old && old.worldRt) {
-        old.displaySprite?.destroy();
-        old.worldHolder?.destroy({ children: false });
-        old.worldRt.destroy(true);
-      }
-      if (old && old.gpu) old.gpu.destroy();
-      const sources = old && old.sharedSources;
-      if (!sources) continue;
-      const keys = Object.keys(sources);
-      for (let k = 0; k < keys.length; k++) {
-        const source = sources[keys[k]];
-        if (source && typeof source.destroy === 'function') source.destroy();
-      }
-    }
-    this._destroyAllCustomLayerCompute();
-    this._destroyScreenLayers();
-    this._customLayers = {};
-    this._gpuParticleBatches = [];
-    if (!meshMemoryBound) await this.meshLayers.bindMemory(data);
-    if (!data.layerData) return;
-
-    const metadata = data.layerData.metadata;
-    if (!metadata?.layers) return;
-
-    const queues = data.customLayerRenderQueues || {};
-    // The y-sorted layers' painter states are regions of the render-queue memory, next to their queues.
-    const layerPainterKernel = await this._bindCustomLayerPainter(queues);
-    const lfMax =
-      (data.liquidFunMaxCount | 0) ||
-      (this.config?.physics?.liquidFun?.maxCount | 0) ||
-      10000;
-    const particleMax =
-      (this.config?.particle?.maxParticles | 0) || 0;
-
-    const layerMetas = metadata.layers;
-    for (let mi = 0; mi < layerMetas.length; mi++) {
-      const config = layerMetas[mi];
-      if (!config || config.builtIn || config.id === metadata.entitiesId) continue;
-
-      const isLfDensity = config.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN;
-      const isCompute = !!config.compute;
-      const isMesh = config.kind === LAYER_KIND.MESH;
-      const isWorldRect = !!(config.worldRect && config.shaderTextures && config.shaderTextures.length);
-      const isGpu = config.kind === LAYER_KIND.GPU_PARTICLES;
-      if (config.kind === LAYER_KIND.SCREEN) {
-        this._initScreenLayer(config);
-        continue;
-      }
-      if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh && !isWorldRect && !isGpu) continue;
-
-      const layerId = config.id;
-      const layerName = config.name;
-      const lrq = queues[layerId];
-      if (!isLfDensity && !isCompute && !isMesh && !isWorldRect && !isGpu && !lrq) continue;
-
-      const layerObj = Layer.getById(layerId);
-      if (!layerObj) continue;
-
-      const maxItems = lrq?.maxItems || 0;
-      const resolution = layerObj.resolution;
-      const hasShader = layerObj.hasShader;
-      const containerBlend = layerObj.containerBlendMode;
-      const layerYSort = !!layerObj.ySorting;
-      const splatCfg = config.splat || Layer._normalizeSplat({ splat: {} }, LAYER_DENSITY_SOURCE.LIQUID_FUN);
-
-      let buffers = null;
-      let batch = null;
-      let fillBatch = null;
-      let meshRegion = null;
-      // E-453: the UV batch's vertex records and indices, made when the layer first packs a mesh with UVs.
-      let uvVertCapacity = 0;
-      let uvIndexCapacity = 0;
-      if (isMesh) {
-        const maxFx =
-          (data.config?.physics?.maxFixturePoolSize | 0) ||
-          (this.config?.physics?.maxFixturePoolSize | 0);
-        const entitySlots = this.globalEntityCount | 0;
-        const maxMeshVerts =
-          (data.config?.renderer?.maxMeshVerts | 0) ||
-          (this.config?.renderer?.maxMeshVerts | 0);
-        const maxMeshIndices =
-          (data.config?.renderer?.maxMeshIndices | 0) ||
-          (this.config?.renderer?.maxMeshIndices | 0);
-        // Fixtures or one primary shape per entity; each convex is at most 6 fans (8-2).
-        const caps = meshLayerCapacities(maxFx, entitySlots, maxMeshVerts, maxMeshIndices);
-        // E-76 W11: the rows in the mesh memory, where the corner kernel rewrites them.
-        meshRegion = this.meshLayers.layerRegion(layerId, caps);
-        // Without MeshGeometry (renderer.maxMeshVerts 0) there is no mesh memory: the layer fills collider shapes in
-        // arrays of its own and no corner is ever rewritten. With it, every MESH layer has its regions there.
-        if (!meshRegion && this.meshLayers.memoryLayout) {
-          throw new Error(`MESH layer "${layerName}": its rows are not in the mesh memory (sized apart from meshLayerCapacities)`);
-        }
-        fillBatch = new ColliderFillBatch({
-          bufferSystem: this.pixiApp?.renderer?.buffer ?? null,
-          capacity: caps.fill,
-          label: `mesh-layer-${layerName}`,
-          useWebGpu: this._useWebGpu,
-          shaders: this._engineShaders,
-          atlasSource: this.assets.resolveAtlasSource(),
-          lutSource: this.assets.texLutSource,
-          data: meshRegion
-            ? new Float32Array(this.meshLayers.memoryBuffer, meshRegion.fillRowsByte, caps.fill * COLLIDER_FILL_FLOATS)
-            : null,
-        });
-        uvVertCapacity = caps.uvVerts;
-        uvIndexCapacity = caps.uvIndices;
-        fillBatch.mesh.blendMode = containerBlend;
-      }
-      let sortKeyU32ByBuf = null;
-      let painter = null;
-      if (lrq && maxItems > 0) {
-        buffers = [
-          createRenderQueueViews(lrq.dataA, maxItems, lrq.dataAByte | 0),
-          createRenderQueueViews(lrq.dataB, maxItems, lrq.dataBByte | 0),
-        ];
-        sortKeyU32ByBuf = buffers.map((b) => b.sortKeyU32);
-        painter = layerYSort ? this._customLayerPainterState(layerPainterKernel, lrq, maxItems, layerName) : null;
-        // Close-out group B: the layer's rows in the render-queue memory (next to its queues), where gpuPack.wasm
-        // packs them; copied out for the upload as the entities' are (W30's arena).
-        const layerRows = lrq.rowsByte >= 0 && this._pixiGpuPack && lrq.dataA === this._renderQueueMemory?.buffer
-          ? new Float32Array(lrq.dataA, lrq.rowsByte, maxItems * INSTANCED_SPRITE_FLOATS)
-          : null;
-        batch = new InstancedSpriteBatch({
-          capacity: maxItems,
-          label: `custom-layer-${layerName}`,
-          atlasSource: this.assets.resolveAtlasSource(),
-          lutSource: this.assets.texLutSource,
-          depthTest: false,
-          depthMask: false,
-          useWebGpu: this._useWebGpu,
-          shaders: this._engineShaders,
-          data: layerRows,
-          gpuPack: layerRows ? this._pixiGpuPack : null,
-          arena: layerRows ? this._batchArena(maxItems * INSTANCED_SPRITE_FLOATS) : null,
-        });
-        batch.mesh.blendMode = containerBlend;
-      }
-
-      // GPU particles: one instanced mesh per writer ring, evaluated in the vertex shader (gpuParticleBatch.js).
-      let gpuBatch = null;
-      if (isGpu) {
-        const info = GpuParticles.layerOf(layerId);
-        if (!info) continue;
-        installInstanceRangeDraw(this.pixiApp.renderer, this._useWebGpu);
-        if (!this.assets.gpuAnimStartSource) this.assets.rebuildGpuAnimStartLookup();
-        const looks = !!(hasShader && config.shaderFragment);
-        const blend = looks ? containerBlend : layerObj.blendMode;
-        gpuBatch = new GpuParticleLayerBatch({
-          info,
-          useWebGpu: this._useWebGpu,
-          shaders: this._engineShaders,
-          atlasSource: this.assets.resolveAtlasSource(),
-          lutSource: this.assets.texLutSource,
-          animStartSource: this.assets.gpuAnimStartSource,
-          blendMode: blend,
-          additive: !looks && blend === 'add',
-          pixelSnap: !!config.gpuParticles?.pixelSnap,
-          look: looks,
-          label: `gpu-particles-${layerName}`,
-          // New records go up as they are published, drawn this frame or not (WebGL uploads only at the next draw).
-          flush: (buffer) => this.pixiApp.renderer.buffer.updateBuffer(buffer),
-          recordTexture: this._useWebGpu ? null : this._gpuRecordTexture(),
-        });
-        gpuBatch.container.blendMode = blend;
-        this._gpuParticleBatches.push(gpuBatch);
-      }
-
-      let splatBatch = null;
-      if (isLfDensity) {
-        splatBatch = new LiquidFunDensitySplat({
-          capacity: Math.max(1, lfMax + particleMax),
-          label: `lf-splat-${layerName}`,
-          blendMode: containerBlend,
-          useWebGpu: this._useWebGpu,
-          shaders: this._engineShaders,
-        });
-        splatBatch.mesh.blendMode = containerBlend;
-      }
-
-      const cl = {
-        layerId,
-        layerName,
-        maxItems,
-        ySorting: layerYSort,
-        baseResolution: resolution,
-        resolution,
-        buffers,
-        readRef: buffers ? buffers[0] : null,
-        sortKeyU32ByBuf,
-        sortKeyU32: sortKeyU32ByBuf ? sortKeyU32ByBuf[0] : null,
-        painter,
-        prevCount: 0,
-        batch,
-        fillBatch,
-        uvFillBatch: null,
-        uvVertCapacity,
-        uvIndexCapacity,
-        // E-453: the UV batch's vertex records and the indices it draws.
-        uvPrevCount: 0,
-        uvIndexCount: 0,
-        // E-76 W11: this MESH layer's regions of the mesh memory, or null.
-        meshRegion,
-        splatBatch,
-        densitySource: isLfDensity ? LAYER_DENSITY_SOURCE.LIQUID_FUN : LAYER_DENSITY_SOURCE.SPRITES,
-        splat: splatCfg ? { ...splatCfg } : null,
-        splatRadius: splatCfg?.radius ?? 48,
-        scaleMode: Layer._normalizeScaleMode(config.scaleMode),
-        containerBlend,
-        // N-79: the config set shader.containerBlend (a batch drawn in one pass takes it over blendMode).
-        containerBlendSet: config.containerBlendSet === true,
-        rt: null,
-        rtOut: null,
-        shaderMesh: null,
-        shader: null,
-        displaySprite: null,
-        // E-504: a worldRect layer's mesh (on the stage), and with its cache the target, the mesh that paints it (the
-        // same geometry and shader) and the container it is painted from, the holder of the stage mesh and the target's
-        // sprite (the layer), what the target was painted for, and whether its shader reads the frame's time.
-        worldMesh: null,
-        worldRt: null,
-        worldPaintMesh: null,
-        worldRoot: null,
-        worldHolder: null,
-        worldCache: null,
-        worldEveryFrame: false,
-        uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
-        uniformStore: null,
-        shaderBypass: false,
-        meshLook: false,
-        sunProjected: isMesh && config.sunProjected === true,
-        volumeFloor: isMesh && config.volumeFloor === true,
-        compute: null,
-        lookSource: null,
-        // LAYER_KIND.GPU_PARTICLES: the layer's GpuParticleLayerBatch, or null.
-        gpu: gpuBatch,
-      };
-
-      if (isCompute) {
-        const device = this.pixiApp.renderer.gpu?.device;
-        if (!this._useWebGpu || !device) {
-          throw errorCompileFailed(
-            'compute',
-            config.shaderName || layerName,
-            layerName,
-            'WebGPU',
-            new Error('Compute layers require WebGPU')
-          );
-        }
-        cl.lookSource = PIXI.TextureSource.from({
-          resource: new Uint8Array(4),
-          width: 8,
-          height: 8,
-          format: 'rgba8unorm',
-          scaleMode: 'linear',
-          autoGenerateMipmaps: false,
-          alphaMode: 'no-premultiply-alpha',
-        });
-        cl.lookSource.autoGarbageCollect = false;
-        cl.lookSource.uploadMethodId = 'external';
-        cl.compute = new ComputeLayer({
-          device,
-          meta: config,
-          renderer: this.pixiApp.renderer,
-          lookSource: cl.lookSource,
-          live: () => this._gpuLive(),
-        });
-        try {
-          const ok = await cl.compute.compile();
-          if (!ok) {
-            throw new Error(cl.compute._compileErrorMessage || 'compute pipeline failed');
-          }
-        } catch (err) {
-          const computeAsset =
-            (config.compute?.passes || [])
-              .map((p) => p.source || p.entry)
-              .filter(Boolean)
-              .join(',') ||
-            config.shaderName ||
-            layerName;
-          throw errorCompileFailed('compute', computeAsset, layerName, 'WebGPU', err);
-        }
-      }
-
-      if (isWorldRect) {
-        try {
-          this._initWorldTextureLayer(cl, config);
-        } catch (err) {
-          if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
-          throw errorCompileFailed(
-            'look',
-            config.shaderName || layerName,
-            layerName,
-            this._useWebGpu ? 'WebGPU' : 'WebGL',
-            err
-          );
-        }
-      } else if (hasShader && config.shaderFragment) {
-        const w = this.canvasWidth * resolution;
-        const h = this.canvasHeight * resolution;
-
-        if (!isCompute) {
-          cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
-        }
-        if (!isMesh) {
-          cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
-        }
-        this._applyCustomLayerScaleMode(cl);
-
-        const uniformDefs = {};
-        if (config.uniformMap) {
-          for (const [uName, entry] of Object.entries(config.uniformMap)) {
-            const uType = config.uniformTypes?.[uName] || 'f32';
-            const floats = Layer._uniformFloats[layerId];
-            if (entry.size === 1) {
-              uniformDefs[uName] = { value: floats[entry.offset], type: uType };
-            } else {
-              const arr = new Float32Array(entry.size);
-              for (let k = 0; k < entry.size; k++) arr[k] = floats[entry.offset + k];
-              uniformDefs[uName] = { value: arr, type: uType };
-            }
-          }
-        }
-
-        try {
-          const lookSource = cl.lookSource || cl.rt.source;
-          cl.shader = this._createLookShader(
-            config.shaderFragment,
-            lookSource,
-            uniformDefs,
-            config.shaderName || layerName,
-            layerName
-          );
-          cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
-          cl.shaderMesh = this._makeLookShaderMesh(cl.shader, isMesh && this.meshLayers.lookFlipV());
-        } catch (err) {
-          if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
-          throw errorCompileFailed(
-            'look',
-            config.shaderName || layerName,
-            layerName,
-            this._useWebGpu ? 'WebGPU' : 'WebGL',
-            err
-          );
-        }
-
-        if (isMesh) {
-          cl.meshLook = true;
-          // The look mesh composes the layer's picture: blendMode, as a look layer's display sprite (N-79).
-          this._registerLayerDisplayObject(layerName, cl.shaderMesh, false);
-          this.pixiApp.stage.addChild(cl.shaderMesh);
-          debugWorkerLog(
-            `PIXI WORKER: Custom MESH look layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h})`
-          );
-        } else {
-          cl.displaySprite = new PIXI.Sprite(cl.rtOut);
-          cl.displaySprite.anchor.set(0, 0);
-          cl.displaySprite.position.set(0, 0);
-          cl.displaySprite.scale.set(1.0 / resolution);
-          this._registerLayerDisplayObject(layerName, cl.displaySprite);
-
-          this.pixiApp.stage.addChild(cl.displaySprite);
-          const densLabel = isLfDensity ? ', densitySource=liquidFun' : '';
-          debugWorkerLog(
-            `PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h}${densLabel})`
-          );
-        }
-      } else if (fillBatch && (config.alphaBySun || config.sunProjected)) {
-        // The sun's factor is one alpha over the whole layer: an RT composed once, or overlaps would darken twice.
-        cl.shaderBypass = true;
-        this._ensureCustomLayerDensityRT(cl);
-        this._registerLayerDisplayObject(layerName, cl.displaySprite);
-        debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized (composed, alphaBySun)`);
-      } else if (fillBatch) {
-        this._registerLayerDisplayObject(layerName, fillBatch.mesh, cl.containerBlendSet);
-        this.pixiApp.stage.addChild(fillBatch.mesh);
-        debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized`);
-      } else if (batch) {
-        this._registerLayerDisplayObject(layerName, batch.mesh, cl.containerBlendSet);
-        this.pixiApp.stage.addChild(batch.mesh);
-        debugWorkerLog(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
-      } else if (gpuBatch && this._gpuParticleLayerTarget(cl, gpuBatch, layerObj.blendMode)) {
-        // E-431: drawn into a target the layer's resolution of the canvas, composed once at the layer's place.
-        this._registerLayerDisplayObject(layerName, cl.displaySprite);
-        this.pixiApp.stage.addChild(cl.displaySprite);
-        debugWorkerLog(
-          `PIXI WORKER: GPU particle layer "${layerName}" initialized (${gpuBatch.rings.length} rings, resolution=${resolution})`
-        );
-      } else if (gpuBatch) {
-        // The layer's own blend mode on the container: its meshes draw with it (Pixi's group blend).
-        this._registerLayerDisplayObject(layerName, gpuBatch.container, false);
-        this.pixiApp.stage.addChild(gpuBatch.container);
-        debugWorkerLog(`PIXI WORKER: GPU particle layer "${layerName}" initialized (${gpuBatch.rings.length} rings)`);
-      } else {
-        console.warn(`PIXI WORKER: Layer "${layerName}" skipped (no shader RT and no sprite batch)`);
-        continue;
-      }
-
-      this._customLayers[layerId] = cl;
-    }
-
-    this._customLayerList = Object.values(this._customLayers);
-    this._bindLutToBatches();
-    this._initProxies();
-    this._collectSunLayers();
-
-    if (this._customLayerList.length > 0) {
-      this.pixiApp.stage.sortChildren();
-    }
-    this._syncLayerRefsFromRuntime();
-  }
-
-  /**
-   * Update all custom layer sprites from their render queues and render shader
-   * layers through the two-RT pipeline (density → threshold → display).
-   */
-  updateCustomLayers() {
-    for (let li = 0; li < this._customLayerList.length; li++) {
-      const cl = this._customLayerList[li];
-      if (!layerIsVisible(cl.layerId)) continue;
-      // DX-SHADOW3D (F6): in map mode the volumes cast into the sun's map (_drawVolumesInSunMap); their own layer, which
-      // darkens every light, shows nothing. Its rows are still packed: the map draws them.
-      if (cl.sunProjected && this._sunMapOn) {
-        if (cl.displaySprite) cl.displaySprite.renderable = false;
-        if (cl.uvFillBatch) cl.uvFillBatch.mesh.renderable = false;
-      }
-      const uploaded = this._uploadSharedPictures(cl);
-      const renderToRT = !!cl.rt;
-      let densityMesh = null;
-      let uniformsChanged = false;
-
-      if (cl.shader && Layer._uniformDirty[cl.layerId]) {
-        const dirtyRef = Layer._uniformDirty[cl.layerId];
-        if (Atomics.load(dirtyRef, 0) === 1) {
-          Atomics.store(dirtyRef, 0, 0);
-          uniformsChanged = true;
-          const floats = Layer._uniformFloats[cl.layerId];
-          const entries = cl.uniformEntries;
-          const u = cl.uniformStore;
-          if (floats && entries && u) {
-            for (let ei = 0; ei < entries.length; ei++) {
-              const [uName, entry] = entries[ei];
-              if (entry.size === 1) {
-                u[uName] = floats[entry.offset];
-              } else {
-                const target = u[uName];
-                if (target && typeof target === 'object' && target.length) {
-                  for (let k = 0; k < entry.size; k++) {
-                    target[k] = floats[entry.offset + k];
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      const frameUniforms = this._computeFrame;
-      frameUniforms.dt = this._lastDt || 1 / 60;
-      frameUniforms.cameraX = this._renderCameraX;
-      frameUniforms.cameraY = this._renderCameraY;
-      frameUniforms.canvasW = this.canvasWidth;
-      frameUniforms.canvasH = this.canvasHeight;
-      frameUniforms.zoom = this._renderZoom;
-      frameUniforms.time = (this.accumulatedTime || 0) * 0.001;
-      frameUniforms.worldW = finiteOrZero(this.worldWidth);
-      frameUniforms.worldH = finiteOrZero(this.worldHeight);
-      applyEngineLookUniforms(cl, frameUniforms);
-      // E-504: a cached worldRect layer draws its target when what it shows changed; nothing else of it runs here.
-      if (cl.worldRt !== null) {
-        this._drawWorldRectCache(cl, uploaded > 0 || uniformsChanged, uploaded > 0);
-        continue;
-      }
-
-      const rtOpts = this._rtRenderOpts;
-      if (cl.compute) {
-        if (!this._gpuLive()) continue;
-        this._computePose.poseAlpha = this._poseAlpha;
-        cl.compute.step(frameUniforms, this._computePose);
-        applyComputeTexSizeUniform(cl);
-        if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-          rtOpts.container = cl.shaderMesh;
-          rtOpts.target = cl.rtOut;
-          rtOpts.clear = true;
-          rtOpts.clearColor = this._clearTransparent;
-          this._submitRender(rtOpts);
-        }
-      } else if (cl.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN && cl.splatBatch) {
-        const views = LiquidFun.getViews();
-        const so = this._splatUploadOpts;
-        so.layerId = cl.layerId;
-        so.zoom = this._renderZoom;
-        so.cameraX = this._renderCameraX;
-        so.cameraY = this._renderCameraY;
-        so.resolution = cl.resolution || 1.0;
-        so.radius = cl.splatRadius || cl.splat?.radius || 48;
-        so.intensity = cl.splat?.intensity ?? 1;
-        so.useParticleTint = cl.splat?.useParticleTint !== false;
-        so.canvasW = this.canvasWidth;
-        so.canvasH = this.canvasHeight;
-        so.cameraRot = this._renderCameraRot || 0;
-        cl.splatBatch.upload(views, so);
-        densityMesh = cl.splatBatch.mesh;
-        cl.prevCount = views?.count ? views.count[0] | 0 : 0;
-      } else if (cl.gpu) {
-        // Updated this frame by updateGpuParticleLayers; with a look shader, its density pass is drawn here.
-        if (cl.rt) {
-          // E-431: a layer drawn at its resolution with no look shows nothing, and draws nothing, while no particle lives.
-          if (cl.shaderBypass && cl.displaySprite !== null) {
-            const live = cl.gpu.liveRecords > 0;
-            if (cl.displaySprite.renderable !== live) cl.displaySprite.renderable = live;
-            if (!live) continue;
-          }
-          this._renderGpuParticlesToRt(cl);
-          if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-            rtOpts.transform = null;
-            rtOpts.container = cl.shaderMesh;
-            rtOpts.target = cl.rtOut;
-            rtOpts.clear = true;
-            rtOpts.clearColor = this._clearTransparent;
-            this._submitRender(rtOpts);
-          }
-        }
-        continue;
-      } else if (cl.batch && cl.readRef) {
-        const ref = cl.readRef;
-        const count = ref.count[0];
-        cl.prevCount = count;
-        const q = this._entityUploadQ;
-        this._bindSpriteQueue(q, ref, count);
-        const opts = this._entityUploadOpts;
-        this._resetSpriteUploadOpts(opts);
-        opts.depthDenom = cl.maxItems;
-        opts.worldHeight = this.config?.worldHeight || 10000;
-        opts.type = ref.type;
-        if (renderToRT) {
-          opts.space = BATCH_SPACE.SCREEN;
-          opts.zoom = this._renderZoom;
-          opts.cameraX = this._renderCameraX;
-          opts.cameraY = this._renderCameraY;
-          opts.resolution = cl.resolution || 1.0;
-          opts.cameraRot = this._renderCameraRot || 0;
-          opts.canvasW = this.canvasWidth || 0;
-          opts.canvasH = this.canvasHeight || 0;
-        } else {
-          opts.space = BATCH_SPACE.WORLD;
-          opts.zoom = 1;
-          opts.cameraX = 0;
-          opts.cameraY = 0;
-          opts.resolution = 1;
-        }
-        // DBG-4: the layer's flag can change at run time (Layer#ySorting): unsorted, pre-render writes no sort keys and
-        // the rows go in queue order.
-        const painter = Layer._ySorting[cl.layerId] === 1 ? cl.painter : null;
-        this._uploadSortedSprites(cl.batch, q, opts, painter, cl.sortKeyU32, null, count);
-        densityMesh = cl.batch.mesh;
-      } else if (cl.fillBatch) {
-        const views = this._ensureColliderFillViews();
-        views.outU32 = cl.fillBatch.rowsU32;
-        let skip = this._colliderFillSkip[cl.layerId];
-        if (!skip) {
-          skip = this._colliderFillSkip[cl.layerId] = {
-            lastRevision: COLLIDER_FILL_PACK_FIRST_FRAME,
-            lastMeshRevision: 0,
-            lastPaintEpoch: -1,
-            lastOutsetEpoch: 0,
-            lastVertEpoch: 0,
-            lastVertGen: null,
-            frameVertGen: null,
-            // E-118: the UV generations drawn and this frame's copy (_captureUvGen).
-            lastUvGen: new Uint32Array(0),
-            frameUvGen: new Uint32Array(0),
-            // The fill batch's instance-to-entity list, written by its full pack (the UV batch holds its own, E-453).
-            instanceEntity: new Uint32Array(0),
-            // The layer's record of every mesh's presence and pose, which trackMeshFillPose compares and updates once a
-            // frame and the pose tables upload from; sized on the first frame.
-            prevPose: {
-              x: new Float32Array(0),
-              y: new Float32Array(0),
-              rotC: new Float32Array(0),
-              rotS: new Float32Array(0),
-              active: new Uint8Array(0),
-              visible: new Uint8Array(0),
-            },
-            camX: NaN,
-            camY: NaN,
-            zoom: NaN,
-            camRot: NaN,
-            rtReady: false,
-            // Rows changed while a sunProjected layer showed nothing: its RT is old when the sun comes back.
-            rtStale: false,
-            uvLocalsReady: false,
-            // Set later each frame (CR-32: there from the start): the fill's locals packed, and the RT pass skipped.
-            localsReady: false,
-            _skipRt: false,
-          };
-          if (cl.meshRegion) this.meshLayers.bindSkipRegions(skip, cl.meshRegion);
-        }
-        views.lastPaintEpoch = skip.lastPaintEpoch;
-        views.lastMeshRevision = skip.lastMeshRevision | 0;
-        views.lastOutsetEpoch = skip.lastOutsetEpoch | 0;
-        views.lastVertEpoch = skip.lastVertEpoch >>> 0;
-        let packedThisFrame = false;
-        // The layer's one pass over every entity this frame: whether any mesh's pose or presence moved since its
-        // record, and this frame's into the record, where the pose tables below take them from.
-        const moved = trackMeshFillPose(views, skip.prevPose);
-        const poseMoved = moved !== 0;
-        if (poseMoved || !colliderFillEpochsMatch(views, skip.lastRevision)) {
-          const cap = cl.fillBatch.capacity;
-          if (!skip.instanceEntity || skip.instanceEntity.length < cap) {
-            skip.instanceEntity = new Uint32Array(cap);
-          }
-          const lastPacked = cl.prevCount | 0;
-          const rev = views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
-          const meshRev = views.meshGeomRevision ? (views.meshGeomRevision[0] | 0) : 0;
-          const outsetRev = views.outsetEpoch ? (views.outsetEpoch[0] | 0) : 0;
-          const vertEpoch = views.meshVertEpoch ? Atomics.load(views.meshVertEpoch, 0) : 0;
-          const topologyStable =
-            skip.lastRevision !== COLLIDER_FILL_PACK_FIRST_FRAME &&
-            rev === (skip.lastRevision | 0) &&
-            meshRev === (skip.lastMeshRevision | 0) &&
-            outsetRev === (skip.lastOutsetEpoch | 0) &&
-            (moved & MESH_FILL_PRESENCE_MOVED) === 0;
-          const paintMoved = !!(
-            views.paintEpoch &&
-            (views.paintEpoch[0] | 0) !== (skip.lastPaintEpoch | 0)
-          );
-          const vertsMoved = vertEpoch !== (skip.lastVertEpoch >>> 0);
-          this.meshLayers.ensureVertGenScratch(skip, views);
-          let full = !topologyStable;
-          // Generations before vertices (B24): both paths below read vertices.
-          const genNow = full || vertsMoved ? this.meshLayers.captureVertGen(skip, views) : null;
-          // E-118: the UV generations right after, for the same reads.
-          const uvGenNow = genNow ? this.meshLayers.captureUvGen(skip, views) : null;
-          // The rows of each batch this frame's rewrite touched: a mesh edit anywhere moves the one vertex epoch. E-453: the
-          // UV batch's records, and the indices of its triangles.
-          let fillFirst = 0;
-          let fillPast = lastPacked;
-          let uvFirst = 0;
-          let uvPast = cl.uvPrevCount | 0;
-          let uvIndexFirst = 0;
-          let uvIndexPast = 0;
-          if (!full && vertsMoved) {
-            this.meshLayers.cornerFirstRow = 0;
-            this.meshLayers.cornerPastRow = lastPacked;
-            const fillRewrite = this.meshLayers.rewriteCorners(
-              cl.fillBatch.rows,
-              lastPacked,
-              skip.instanceEntity,
-              views,
-              COLLIDER_FILL_FLOATS,
-              skip.lastVertGen,
-              genNow,
-            );
-            fillFirst = this.meshLayers.cornerFirstRow;
-            fillPast = this.meshLayers.cornerPastRow;
-            const uvCount = cl.uvPrevCount | 0;
-            this.meshLayers.cornerFirstRow = 0;
-            this.meshLayers.cornerPastRow = !cl.uvFillBatch ? 0 : uvCount;
-            this.meshLayers.cornerFirstIndex = 0;
-            this.meshLayers.cornerPastIndex = 0;
-            const uvRewrite = !cl.uvFillBatch || uvCount <= 0
-              ? 1
-              : this.meshLayers.rewriteUvVerts(
-                cl.uvFillBatch,
-                uvCount,
-                views,
-                skip.lastVertGen,
-                genNow,
-                skip.lastUvGen,
-                uvGenNow,
-              );
-            uvFirst = this.meshLayers.cornerFirstRow;
-            uvPast = this.meshLayers.cornerPastRow;
-            uvIndexFirst = this.meshLayers.cornerFirstIndex;
-            uvIndexPast = this.meshLayers.cornerPastIndex;
-            if (fillRewrite < 0 || uvRewrite < 0) full = true;
-          }
-          const noRowMoved = !full && vertsMoved && !paintMoved && !poseMoved && fillPast <= fillFirst && uvPast <= uvFirst;
-          if (full) {
-            views.instanceEntity = skip.instanceEntity;
-            views.outU32 = cl.fillBatch.rowsU32;
-            const packed = packColliderFill(cl.fillBatch.rows, cap, cl.layerId, views);
-            skip.localsReady = packed > 0;
-            cl.fillBatch.upload(packed);
-            cl.prevCount = packed;
-            if (packed > 0) {
-              cl.fillBatch.uploadPoseTable(skip.instanceEntity, packed, views, skip.prevPose);
-              this.meshLayers.uploadPoseSource(cl.fillBatch, 'mesh-pose');
-            }
-            this.meshLayers.packUvLayer(cl, views, skip);
-            this.meshLayers.commitVertGen(skip, views);
-            this.meshLayers.commitUvGen(skip, views);
-          } else {
-            if (paintMoved) {
-              if (lastPacked > 0) {
-                views.outU32 = cl.fillBatch.rowsU32;
-                packColliderFillPoseOnly(
-                  cl.fillBatch.rows,
-                  cap,
-                  lastPacked,
-                  skip.instanceEntity,
-                  views,
-                );
-              }
-              const uvCount = cl.uvPrevCount | 0;
-              if (cl.uvFillBatch && uvCount > 0) packMeshUvVertsPaint(cl.uvFillBatch, uvCount, views);
-            }
-            if (paintMoved) {
-              if (lastPacked > 0) cl.fillBatch.upload(lastPacked);
-              const uvCount = cl.uvPrevCount | 0;
-              // The indices too: this frame's rewrite may have written some.
-              if (cl.uvFillBatch && uvCount > 0) cl.uvIndexCount = cl.uvFillBatch.upload(uvCount, cl.uvIndexCount);
-            } else if (vertsMoved) {
-              // Only the rows the rewrite wrote; none on a layer the edit did not reach.
-              if (fillPast > fillFirst) cl.fillBatch.uploadRange(fillFirst, fillPast);
-              if (cl.uvFillBatch && uvPast > uvFirst) cl.uvFillBatch.uploadRange(uvFirst, uvPast);
-              if (cl.uvFillBatch && uvIndexPast > uvIndexFirst) cl.uvFillBatch.uploadIndexRange(uvIndexFirst, uvIndexPast);
-            }
-            if (poseMoved) {
-              if (lastPacked > 0) {
-                cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views, skip.prevPose);
-                this.meshLayers.uploadPoseSource(cl.fillBatch, 'mesh-pose');
-              }
-              const uvCount = cl.uvPrevCount | 0;
-              if (cl.uvFillBatch && uvCount > 0) {
-                cl.uvFillBatch.uploadPoseTable(cl.uvFillBatch.vertexEntity, uvCount, views, skip.prevPose);
-                this.meshLayers.uploadPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
-              }
-            }
-            if (vertsMoved) {
-              this.meshLayers.commitVertGen(skip, views);
-              this.meshLayers.commitUvGen(skip, views);
-            }
-          }
-          skip.lastRevision = rev;
-          skip.lastMeshRevision = meshRev;
-          skip.lastPaintEpoch = views.paintEpoch ? (views.paintEpoch[0] | 0) : 0;
-          skip.lastOutsetEpoch = outsetRev;
-          skip.lastVertEpoch = vertEpoch;
-          clearMeshFillPaintDirty(views);
-          // An edit on another layer draws nothing new here: an RT layer keeps the picture it has.
-          packedThisFrame = !noRowMoved;
-        }
-        densityMesh = cl.fillBatch.mesh;
-        // Triangles, as when the UV batch drew a row a triangle (E-453: its indices over 3).
-        this._meshFillInstancesThisFrame += (cl.prevCount | 0) + (((cl.uvIndexCount | 0) / 3) | 0);
-        const camChanged =
-          skip.camX !== this._renderCameraX ||
-          skip.camY !== this._renderCameraY ||
-          skip.zoom !== this._renderZoom ||
-          skip.camRot !== (this._renderCameraRot || 0);
-        if (packedThisFrame) skip.rtStale = true;
-        skip._skipRt = !skip.rtStale && !camChanged && skip.rtReady;
-        if (cl.sunProjected) {
-          // The sun moves the shadows on the GPU: a new position redraws the layer's RT, no pack. With nothing to show
-          // (night, or the sun's factor at 0), it draws nothing.
-          const sunFactors = this._layerSunFactor;
-          if (cl.layerId < sunFactors.length && sunFactors[cl.layerId] === 0) {
-            if (skip.rtReady) skip._skipRt = true;
-          } else if (cl.uvFillBatch) {
-            const len = Sun.isInitialized ? Sun.shadowLengthRatio : 0;
-            if (cl.uvFillBatch.setSunShadow(len * Sun.shadowDirX, len * Sun.shadowDirY)) skip._skipRt = false;
-          }
-        }
-      } else {
-        continue;
-      }
-
-      if (cl.rt && densityMesh) {
-        if (cl.fillBatch) {
-          const skipRt = this._colliderFillSkip[cl.layerId];
-          if (!skipRt || !skipRt._skipRt) {
-            this.meshLayers.renderFillToRt(cl, densityMesh);
-            this._meshRtDrawsThisFrame++;
-            if (skipRt) {
-              skipRt.camX = this._renderCameraX;
-              skipRt.camY = this._renderCameraY;
-              skipRt.zoom = this._renderZoom;
-              skipRt.camRot = this._renderCameraRot || 0;
-              skipRt.rtReady = true;
-              skipRt.rtStale = false;
-              skipRt._skipRt = false;
-            }
-          }
-          // A composed look (_ensureMeshLookComposite) runs every frame, as a look on the stage does.
-          if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-            rtOpts.transform = null;
-            rtOpts.container = cl.shaderMesh;
-            rtOpts.target = cl.rtOut;
-            rtOpts.clear = true;
-            rtOpts.clearColor = this._clearTransparent;
-            this._submitRender(rtOpts);
-          }
-        } else {
-          rtOpts.transform = null;
-          rtOpts.container = emptyInstancedMesh(densityMesh)
-            ? this._rtEmptyContainer
-            : densityMesh;
-          rtOpts.target = cl.rt;
-          rtOpts.clear = true;
-          rtOpts.clearColor = this._clearTransparent;
-          this._submitRender(rtOpts);
-          if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-            rtOpts.container = cl.shaderMesh;
-            rtOpts.target = cl.rtOut;
-            this._submitRender(rtOpts);
-          }
-        }
-      }
-    }
-  }
-
-  /**
    * Build a map of layer name -> PIXI display object for debug UI control
    * Called after all layers are initialized
    */
@@ -10202,13 +8499,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this._lightEdges !== null) this._registerLayerDisplayObject('lighting', this._lightEdges.host);
     else if (this.lightingDisplaySprite) this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
     else if (this.lightingMesh) this._registerLayerDisplayObject('lighting', this.lightingMesh);
-    for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
+    for (let i = 0; i < this.customLayers.list.length; i++) {
+      const cl = this.customLayers.list[i];
       // E-504: a cached worldRect layer is its holder (the stage mesh and the target's sprite, one of them shown), not
       // the sprite: the layer's visibility, applied every frame, would show the sprite under the mesh drawn on the stage.
       const displayObject = cl.worldHolder || cl.displaySprite || cl.shaderMesh || cl.batch?.mesh || cl.fillBatch?.mesh;
       if (!displayObject) continue;
-      this._registerLayerDisplayObject(cl.layerName, displayObject, this._customLayerForcesContainerBlend(cl, displayObject));
+      this._registerLayerDisplayObject(cl.layerName, displayObject, this.customLayers.forcesContainerBlend(cl, displayObject));
     }
     this._syncLayerRefsFromRuntime();
 

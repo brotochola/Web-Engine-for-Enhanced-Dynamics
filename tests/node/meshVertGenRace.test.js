@@ -17,6 +17,8 @@ import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
+// N-256 PW-3: the MESH layer pass is the custom layers' update (src/render/pixi/customLayers.js).
+const customLayersSrc = readFileSync(join(root, 'src/render/pixi/customLayers.js'), 'utf8');
 
 /** The MESH layers' generation bookkeeping (N-256 PW-4: src/render/pixi/meshLayers.js), on its own. */
 function vertGenMethods() {
@@ -80,14 +82,14 @@ test('the dirty check reads the captured generations, not the live ones', () => 
 });
 
 test('Pixi captures before both vertex-reading paths and commits the capture', () => {
-  const block = pixi.slice(pixi.indexOf('const vertsMoved = vertEpoch'), pixi.indexOf('skip.lastRevision = rev;'));
-  const capture = block.indexOf('this.meshLayers.captureVertGen(skip, views)');
-  const rewrite = block.indexOf('this.meshLayers.rewriteCorners(');
+  const block = customLayersSrc.slice(customLayersSrc.indexOf('const vertsMoved = vertEpoch'), customLayersSrc.indexOf('skip.lastRevision = rev;'));
+  const capture = block.indexOf('this.worker.meshLayers.captureVertGen(skip, views)');
+  const rewrite = block.indexOf('this.worker.meshLayers.rewriteCorners(');
   assert.ok(capture > 0, 'captured');
   assert.ok(rewrite > 0 && capture < rewrite, 'before the rewrite');
   assert.ok(capture < block.indexOf('packColliderFill('), 'before the full pack');
   // E-118: the UV generations right after the vertex ones, committed with them.
-  const uvCapture = block.indexOf('this.meshLayers.captureUvGen(skip, views)');
+  const uvCapture = block.indexOf('this.worker.meshLayers.captureUvGen(skip, views)');
   assert.ok(uvCapture > capture && uvCapture < rewrite, 'the UV generations after the vertex ones, before the rewrite');
   assert.equal((block.match(/meshLayers\.commitVertGen\(skip, views\)/g) || []).length, 2);
   assert.equal((block.match(/meshLayers\.commitUvGen\(skip, views\)/g) || []).length, 2);

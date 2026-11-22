@@ -702,16 +702,16 @@ function buildWiredScene() {
 }
 
 async function initWiredPixi(px, scene) {
-  px._colliderFillSkip = [];
+  px.customLayers.fillSkip = [];
   px._colliderFillViews = null;
   px._colliderFillLayerCount = -1;
-  px._customLayerList = [];
+  px.customLayers.list = [];
   px.globalEntityCount = scene.totalEntityCount;
   px.config = scene.config;
   px._useWebGpu = true;
   px._engineShaders = W_SHADERS;
   px.pixiApp = { stage: { addChild() {}, sortChildren() {} }, renderer: null };
-  await px.initializeCustomLayers({
+  await px.customLayers.initialize({
     config: scene.config,
     layerData: Layer.getSerializableData(),
     customLayerRenderQueues: scene.customLayerRenderQueues,
@@ -819,7 +819,7 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
   px._meshQueuePose = new Float32Array(W_N * 4);
   await quietly(() => initWiredPixi(px, scene));
   const ids = [Layer.get('a').id, Layer.get('b').id];
-  const layers = ids.map((id) => px._customLayers[id]);
+  const layers = ids.map((id) => px.customLayers.byId[id]);
   assert.ok(layers.every((cl) => cl?.fillBatch), 'both MESH layers have their fill batch');
 
   const r = rng(0x9a55);
@@ -909,7 +909,7 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
         // The old flow's answers, from what each layer holds before the frame.
         const views = px._ensureColliderFillViews();
         const want = layers.map((cl, L) => {
-          const skip = px._colliderFillSkip[cl.layerId];
+          const skip = px.customLayers.fillSkip[cl.layerId];
           const v = {
             ...views,
             lastPaintEpoch: skip ? skip.lastPaintEpoch : -1,
@@ -938,10 +938,10 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
         log.full.clear();
         log.failedRewrite.clear();
         log.uploads.clear();
-        px.updateCustomLayers();
+        px.customLayers.update();
         layers.forEach((cl, L) => {
           const e = want[L];
-          const skip = px._colliderFillSkip[cl.layerId];
+          const skip = px.customLayers.fillSkip[cl.layerId];
           const where = `frame ${f} layer ${L}`;
           assert.equal(!log.nonSkip.has(skip), e.skip, `${where}: skip`);
           const fillUp = log.uploads.has(`layer ${L} fill`);

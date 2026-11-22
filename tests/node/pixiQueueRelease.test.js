@@ -53,7 +53,8 @@ function makeContext({ sync, gpuLive, presenting = true, backpressure = true }) 
     _queueBackpressure: backpressure,
     _queueInterp: false,
     _queueInterpSnapshot: false,
-    _customLayerList: [],
+    // N-256 PW-3: the custom layers, as consumeNextRenderQueue reads them.
+    customLayers: { list: [], snapshotComputePose() {} },
     _presenting: presenting,
     _deferredRenderQueueRelease: 0,
     renderQueueX: null,
@@ -83,7 +84,6 @@ function makeContext({ sync, gpuLive, presenting = true, backpressure = true }) 
     rememberDeltaTime() {},
     _setReadBuffer() {},
     _latchPose() {},
-    _snapshotComputePose() {},
     _notePosePublish() {},
   };
 }

@@ -80,7 +80,7 @@ async function initPixi(s, bindEntitiesPainter = false) {
   px.config = s.config;
   px._useWebGpu = true;
   px._engineShaders = GPU_SHADERS;
-  px._customLayerList = [];
+  px.customLayers.list = [];
   px.globalEntityCount = s.totalEntityCount;
   px.renderQueueEnabled = true;
   px.renderQueueMaxItems = MAX;
@@ -89,7 +89,7 @@ async function initPixi(s, bindEntitiesPainter = false) {
   px._renderQueueMemory = m.memory;
   await px._bindPixiGpuPack({ renderQueueMemory: m.memory, renderQueueLayout: m.layout });
   if (bindEntitiesPainter) await px._bindPainterRadix({ renderQueueMemory: m.memory, renderQueueLayout: m.layout });
-  await quietly(() => px.initializeCustomLayers({
+  await quietly(() => px.customLayers.initialize({
     config: s.config,
     layerData: Layer.getSerializableData(),
     customLayerRenderQueues: s.customLayerRenderQueues,
@@ -97,7 +97,7 @@ async function initPixi(s, bindEntitiesPainter = false) {
   return px;
 }
 
-const layerNamed = (px, name) => px._customLayerList.find((l) => l.layerName === name);
+const layerNamed = (px, name) => px.customLayers.list.find((l) => l.layerName === name);
 
 test('a y-sorted custom layer has a painter state next to its queues; a layer in queue order has none', () => {
   const s = scene();

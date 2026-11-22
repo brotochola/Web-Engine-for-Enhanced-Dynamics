@@ -143,7 +143,7 @@ test('OL-5: Pixi gives the named lamps tiles for a stamp row or a casting volume
 
   // A volumes' layer with triangles (a house): each named lamp takes its tile, in pre-render's order.
   const volumes = { sunProjected: true, uvFillBatch: { geometry: { instanceCount: 1 } } };
-  px._customLayerList = [volumes];
+  px.customLayers.list = [volumes];
   px._readLampTiles();
   assert.equal(px._lampTileCount, 2);
   assert.equal(px._lampTileOf[1], 0);

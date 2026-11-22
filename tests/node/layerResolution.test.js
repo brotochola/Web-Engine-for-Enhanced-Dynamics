@@ -60,12 +60,15 @@ test('the renderer remakes a layer\'s render textures once per resolution change
     const fx = record('fx');
     const resized = [];
     const ctx = {
-      _customLayerList: [smoke, fx],
+      // N-256 PW-3: the custom layers' list and their targets' resize.
+      customLayers: {
+        list: [smoke, fx],
+        resizeRTs(cl, width, height) {
+          resized.push([cl.layerName, width, height, cl.resolution]);
+        },
+      },
       canvasWidth: 1280,
       canvasHeight: 800,
-      _resizeCustomLayerRTs(cl, width, height) {
-        resized.push([cl.layerName, width, height, cl.resolution]);
-      },
     };
     const sync = () => PixiRenderer.prototype.syncLayerResolutionFromSharedState.call(ctx);
 

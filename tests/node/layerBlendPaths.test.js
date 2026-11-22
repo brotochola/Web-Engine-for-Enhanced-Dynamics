@@ -83,7 +83,7 @@ test('the worker applies a run-time blend to the entities\' batch and a layer\'s
     px.entitiesBatch = { setLayerBlend: (mode) => batchBlends.push(mode) };
     px._lightEdges = null;
     px._unshadedComposite = null;
-    px._customLayers = { 1: { batch: { mesh: fxPiece }, rt: {}, containerBlendSet: false } };
+    px.customLayers.byId = { 1: { batch: { mesh: fxPiece }, rt: {}, containerBlendSet: false } };
 
     layers.entities.blendMode = 'add';
     layers.fx.containerBlendMode = 'screen';
@@ -114,6 +114,6 @@ test('setLayerProps keeps only the shader swap and the splat radius', async () =
   const px = await pixi();
   const display = { blendMode: 'normal', zIndex: 0, visible: true };
   px.layerRefs = { fx: display };
-  px.handleSetLayerProps({ layer: 'fx', blendMode: 'add', zIndex: 5, visible: false });
+  px.customLayers.setLayerProps({ layer: 'fx', blendMode: 'add', zIndex: 5, visible: false });
   assert.deepEqual(display, { blendMode: 'normal', zIndex: 0, visible: true });
 });

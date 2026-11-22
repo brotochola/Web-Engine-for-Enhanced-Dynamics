@@ -60,7 +60,7 @@ test('the lighting layer\'s alpha reaches the unshaded composite', async () => {
   Layer._alphaDirty = new Int32Array(Layer.MAX_LAYERS);
   Layer.count = 1;
   px._layerRuntime = { lighting: { alpha: 1 } };
-  px._customLayers = {};
+  px.customLayers.byId = {};
   px._sunLayers = [];
   px._unshadedComposite = { alpha: 1 };
   try {

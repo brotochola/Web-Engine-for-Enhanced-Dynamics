@@ -61,7 +61,7 @@ test("a lit scene's maps, volumes and UV meshes: their programs made at init, an
   px._sunMapOn = true;
   px._lampMapOn = true;
   px._lampCacheOn = true;
-  px._customLayerList = [
+  px.customLayers.list = [
     { layerId: 3, uvVertCapacity: 0, uvIndexCapacity: 0, sunProjected: false },
     { layerId: 6, uvVertCapacity: 64, uvIndexCapacity: 96, sunProjected: true },
   ];
@@ -94,7 +94,7 @@ test("a lit scene's maps, volumes and UV meshes: their programs made at init, an
 test('without the maps or a UV mesh, no program is made for them', async () => {
   const px = await glRenderer();
   px.gpuCasterBatch = { mesh: {} };
-  px._customLayerList = [{ layerId: 2, uvVertCapacity: 0, uvIndexCapacity: 0, sunProjected: true }];
+  px.customLayers.list = [{ layerId: 2, uvVertCapacity: 0, uvIndexCapacity: 0, sunProjected: true }];
   px.atlasMapsSource = null;
   const made = programsMadeBy(() => px._makeFirstUsePrograms());
   assert.deepEqual(made.map(nameOf), []);

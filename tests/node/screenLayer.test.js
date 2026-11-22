@@ -72,19 +72,19 @@ async function pixiWith(layers) {
   px._useWebGpu = false;
   px._engineShaders = { lookVert: LOOK_VERT };
   // Compiling needs a GPU context (Node has none): the shader as Pixi would hold it, from the same uniform defs.
-  px._createLookShader = (source, texture, uniformDefs) => ({
+  px.customLayers.createLookShader = (source, texture, uniformDefs) => ({
     source,
     resources: {
       customUniforms: { uniforms: Object.fromEntries(Object.entries(uniformDefs).map(([k, d]) => [k, d.value])) },
       uTexture: texture,
     },
   });
-  px._customLayerList = [];
+  px.customLayers.list = [];
   px._screenLayers = [];
   px.globalEntityCount = 0;
   const staged = [];
   px.pixiApp = { stage: { addChild: (c) => staged.push(c), sortChildren() {} }, renderer: null };
-  await quietly(() => px.initializeCustomLayers({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
+  await quietly(() => px.customLayers.initialize({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
   return { px, staged };
 }
 
@@ -114,7 +114,7 @@ test('re-initializing the layers drops the passes of the scene before', async ()
   assert.equal(px._screenLayers.length, 1);
   Layer.reset();
   Layer.initializeFromConfig({ fx: { zIndex: 5 } }, BUILT_IN);
-  await quietly(() => px.initializeCustomLayers({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
+  await quietly(() => px.customLayers.initialize({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
   assert.equal(px._screenLayers.length, 0);
 });
 
@@ -122,7 +122,7 @@ test('a SCREEN pass that names uScene gets the frame before the first pass bound
   const SCENE = COPY.replace('uniform float uAmount;', 'uniform float uAmount;\nuniform sampler2D uScene;');
   const { px } = await pixiWith({ bloom: screen(100), crt: screen(110) });
   const calls = [];
-  px._createLookShader = (source, texture, uniformDefs, name, layerName, sceneSource) => {
+  px.customLayers.createLookShader = (source, texture, uniformDefs, name, layerName, sceneSource) => {
     calls.push({ layerName, scene: sceneSource !== null && sceneSource !== undefined });
     return { resources: { customUniforms: { uniforms: {} }, uTexture: texture, ...(sceneSource ? { uScene: sceneSource } : {}) } };
   };
@@ -130,7 +130,7 @@ test('a SCREEN pass that names uScene gets the frame before the first pass bound
   Layer.initializeFromConfig({ bloom: screen(100), crt: screen(110) }, BUILT_IN);
   Layer._metadata.layers[Layer.get('bloom').id].shaderFragment = SCENE;
   Layer._metadata.layers[Layer.get('crt').id].shaderFragment = COPY;
-  await quietly(() => px.initializeCustomLayers({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
+  await quietly(() => px.customLayers.initialize({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
   assert.deepEqual(calls, [{ layerName: 'bloom', scene: true }, { layerName: 'crt', scene: false }]);
   assert.deepEqual(px._screenLayers.map((cl) => cl.usesScene), [true, false]);
 });

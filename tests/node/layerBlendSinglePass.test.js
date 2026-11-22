@@ -86,15 +86,15 @@ async function initPixi(s) {
   px.config = s.config;
   px._useWebGpu = true;
   px._engineShaders = GPU_SHADERS;
-  px._customLayerList = [];
-  px._customLayers = [];
+  px.customLayers.list = [];
+  px.customLayers.byId = [];
   px._layerRuntime = {};
   px.globalEntityCount = s.totalEntityCount;
   px.renderQueueEnabled = true;
   px.renderQueueMaxItems = 64;
   px._packGpuSpritesOn = 'pixi';
   px.pixiApp = { stage: { addChild() {}, sortChildren() {} }, renderer: null };
-  await quietly(() => px.initializeCustomLayers({
+  await quietly(() => px.customLayers.initialize({
     config: s.config,
     layerData: Layer.getSerializableData(),
     customLayerRenderQueues: s.customLayerRenderQueues,
@@ -103,7 +103,7 @@ async function initPixi(s) {
 }
 
 const drawn = (px, name) => {
-  const cl = px._customLayers[Layer.get(name).id];
+  const cl = px.customLayers.byId[Layer.get(name).id];
   return (cl.batch || cl.fillBatch).mesh.blendMode;
 };
 

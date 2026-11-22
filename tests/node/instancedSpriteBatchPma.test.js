@@ -69,6 +69,8 @@ test('ctor sets State.depthMask; upload excludeType0/1; indices skip filter', ()
 const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8');
 // N-256 PW-1: the texture tables are made and uploaded by the renderer's assets.
 const assetsSrc = readFileSync(join(dir, '../../src/render/pixi/assets.js'), 'utf8');
+// N-256 PW-3: the custom layers' batches and targets are made and drawn by src/render/pixi/customLayers.js.
+const customSrc = readFileSync(join(dir, '../../src/render/pixi/customLayers.js'), 'utf8');
 const packLayer = readFileSync(join(dir, '../../src/render/packSpriteLayer.js'), 'utf8');
 
 test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', async () => {
@@ -77,7 +79,7 @@ test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCo
   assert.match(pixiSrc, /obj\.visible = !!on && !emptyInstancedMesh\(obj\)/);
   assert.match(pixiSrc, /this\._rtEmptyContainer = new Container\(\)/);
   assert.match(pixiSrc, /rtOpts\.container = this\._rtEmptyContainer/);
-  assert.match(pixiSrc, /emptyInstancedMesh\(densityMesh\)/);
+  assert.match(customSrc, /emptyInstancedMesh\(densityMesh\)/);
 
   const start = pixiSrc.indexOf('function setDisplayVisible');
   const end = pixiSrc.indexOf('function makeBatchViews');
@@ -131,7 +133,7 @@ test('entity and custom-layer uploads pass queue repeatX/Y and tile fields', () 
   assert.match(pixiSrc, /src\.tileMulX = this\.renderQueueTileMulX/);
   assert.match(pixiSrc, /src\.tileOffsetU = this\.renderQueueTileOffsetU/);
   assert.match(pixiSrc, /this\._bindRenderQueueTo\(q, count\)/);
-  assert.match(pixiSrc, /this\._bindSpriteQueue\(q, ref, count\)/);
+  assert.match(customSrc, /this\.worker\._bindSpriteQueue\(q, ref, count\)/);
   assert.match(src, /_beginUpload\(/);
   assert.match(src, /_finishUpload\(/);
   assert.doesNotMatch(src, /coveragePass/);
@@ -155,7 +157,7 @@ test('pixi binds packed LUT as rgba32float TextureSource', () => {
   assert.match(pixiSrc, /setLutSource/);
   assert.match(assetsSrc, /format: 'rgba32float'/);
   assert.match(assetsSrc, /uploadTexLutTexture/);
-  assert.match(pixiSrc, /uploadMethodId = 'external'/);
+  assert.match(customSrc, /uploadMethodId = 'external'/);
   assert.match(assetsSrc, /writeRgba32Float/);
   assert.match(pixiSrc, /preference: backend/);
 });

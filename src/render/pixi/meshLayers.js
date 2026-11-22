@@ -367,7 +367,7 @@ export class PixiMeshLayers {
     if (!cl || !cl.meshLook || cl.rtOut || !cl.shaderMesh) return;
     const resolution = cl.resolution || 1.0;
     cl.rtOut = PIXI.RenderTexture.create({ width: this.worker.canvasWidth * resolution, height: this.worker.canvasHeight * resolution });
-    this.worker._applyCustomLayerScaleMode(cl);
+    this.worker.customLayers.applyScaleMode(cl);
     // Look-to-rtOut + Sprite already flips V (_createLayerFullscreenGeometry).
     cl.shaderMesh.geometry = this.worker._createLayerFullscreenGeometry(false);
     if (cl.shaderMesh.parent) cl.shaderMesh.parent.removeChild(cl.shaderMesh);

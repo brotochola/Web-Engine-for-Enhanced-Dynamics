@@ -250,16 +250,16 @@ function buildScene() {
 }
 
 async function initPixi(px, scene) {
-  px._colliderFillSkip = [];
+  px.customLayers.fillSkip = [];
   px._colliderFillViews = null;
   px._colliderFillLayerCount = -1;
-  px._customLayerList = [];
+  px.customLayers.list = [];
   px.globalEntityCount = scene.totalEntityCount;
   px.config = scene.config;
   px._useWebGpu = true;
   px._engineShaders = SHADERS;
   px.pixiApp = { stage: { addChild() {}, sortChildren() {} }, renderer: null };
-  await px.initializeCustomLayers({
+  await px.customLayers.initialize({
     config: scene.config,
     layerData: Layer.getSerializableData(),
     customLayerRenderQueues: scene.customLayerRenderQueues,
@@ -374,7 +374,7 @@ async function run(px, kernel) {
     return code;
   };
   const layerId = Layer.get('mesh').id;
-  const cl = px._customLayers[layerId];
+  const cl = px.customLayers.byId[layerId];
   assert.ok(cl?.fillBatch, 'the MESH layer has its fill batch');
   const r = rng(0xb16);
   const api = [];
@@ -394,7 +394,7 @@ async function run(px, kernel) {
   await quietly(() => {
     for (let f = 0; f < FRAMES; f++) {
       if (f > 0) gameFrame(r, api);
-      px.updateCustomLayers();
+      px.customLayers.update();
       const fillN = cl.prevCount | 0;
       const uvN = cl.uvPrevCount | 0;
       const uvM = cl.uvIndexCount | 0;

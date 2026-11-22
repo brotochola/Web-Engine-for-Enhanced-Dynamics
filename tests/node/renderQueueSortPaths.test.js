@@ -39,10 +39,12 @@ test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter pat
   assert.match(packLayer, /return orderPainterSlotsWasm\(painter, idxE, n, keysU32\);/);
   assert.doesNotMatch(packLayer, /orderPainterSlots\(|radixSortIndicesBySortKey/);
   // Close-out group B: a y-sorted layer's state is the kernel's, on its regions (customLayerPainter.test.js).
-  assert.match(pixi, /painter = layerYSort \? this\._customLayerPainterState\(layerPainterKernel, lrq, maxItems, layerName\) : null/);
+  // N-256 PW-3: a custom layer's painter is the custom layers' (src/render/pixi/customLayers.js).
+  const customLayersSrc = readFileSync(join(root, 'src/render/pixi/customLayers.js'), 'utf8');
+  assert.match(customLayersSrc, /painter = layerYSort \? this\._painterState\(layerPainterKernel, lrq, maxItems, layerName\) : null/);
   // DBG-4: the painter only while the layer sorts now (Layer#ySorting is live); unsorted rows go in queue order.
-  assert.match(pixi, /const painter = Layer\._ySorting\[cl\.layerId\] === 1 \? cl\.painter : null;/);
-  assert.match(pixi, /this\._uploadSortedSprites\(cl\.batch, q, opts, painter, cl\.sortKeyU32, null, count\)/);
+  assert.match(customLayersSrc, /const painter = Layer\._ySorting\[cl\.layerId\] === 1 \? cl\.painter : null;/);
+  assert.match(customLayersSrc, /this\.worker\._uploadSortedSprites\(cl\.batch, q, opts, painter, cl\.sortKeyU32, null, count\)/);
 });
 
 test('y-sort is the CPU painter; no z-buffer and no bitonic', () => {

@@ -410,15 +410,17 @@ test('MESH look path is one RT, no fillSpace / SCREEN bake', () => {
   // N-256 PW-4: the MESH layers' own code is src/render/pixi/meshLayers.js; the worker calls it.
   const worker = fs.readFileSync(path.join(here, '../../src/workers/pixiWorker.js'), 'utf8');
   const meshSrc = fs.readFileSync(path.join(here, '../../src/render/pixi/meshLayers.js'), 'utf8');
-  const src = `${worker}\n${meshSrc}`;
+  // N-256 PW-3: and the custom layers' (src/render/pixi/customLayers.js), whose update draws them.
+  const customSrc = fs.readFileSync(path.join(here, '../../src/render/pixi/customLayers.js'), 'utf8');
+  const src = `${worker}\n${meshSrc}\n${customSrc}`;
   assert.equal(src.includes('fillSpace'), false);
-  assert.match(worker, /meshLayers\.renderFillToRt/);
+  assert.match(customSrc, /this\.worker\.meshLayers\.renderFillToRt/);
   assert.match(meshSrc, /return !this\.worker\._useWebGpu/);
   assert.match(src, /if\s*\(\s*!isMesh\s*\)/);
   assert.match(src, /cl\.rtOut\s*=/);
   assert.match(src, /meshLayers\.lookFlipV\(\)/);
-  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*isMesh\s*&&\s*this\.meshLayers\.lookFlipV\(\)\)/);
-  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*!!cl\.fillBatch\s*&&\s*this\.meshLayers\.lookFlipV\(\)\)/);
+  assert.match(customSrc, /makeLookShaderMesh\(cl\.shader,\s*isMesh\s*&&\s*this\.worker\.meshLayers\.lookFlipV\(\)\)/);
+  assert.match(customSrc, /makeLookShaderMesh\(cl\.shader,\s*!!cl\.fillBatch\s*&&\s*this\.worker\.meshLayers\.lookFlipV\(\)\)/);
   assert.match(src, /skip\._skipRt/);
   assert.match(src, /paintEpoch/);
   assert.match(src, /packColliderFillPoseOnly/);

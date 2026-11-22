@@ -15,6 +15,7 @@ import { EntityChunks, RegionQuads } from '../../src/render/gpuParticleChunks.js
 import { GpuParticleLayerBatch } from '../../src/render/gpuParticleBatch.js';
 import { Container, Matrix, RenderTexture, Texture } from '../../src/vendor/pixi.min.js';
 import { readEngineShader } from './engineShaderSources.mjs';
+import { PixiCustomLayers } from '../../src/render/pixi/customLayers.js';
 
 // The Pixi worker's side of the y-sort proxies: the entries of the frame it draws put the groups' meshes between
 // chunks of the entities batch under the entities root, a hidden layer's groups are left out, and the layers go
@@ -269,18 +270,12 @@ test('a resize moves a look layer\'s regions onto its new look target, with thei
   });
   const cl = { layerId, resolution: 0.5, rt: null, rtOut, shader: null, displaySprite: null, scaleMode: LAYER_SCALE_MODE.NEAREST };
   // The real resize path, as a canvas resize or a Layer.resolution change runs it; no renderer, so no texture hash.
-  const ctx = {
-    _proxyLayers: [],
-    _colliderFillSkip: [],
-    pixiApp: null,
-    _unbindLookShaderTexture: Pixi._unbindLookShaderTexture,
-    _releaseTextureBindGroups: Pixi._releaseTextureBindGroups,
-    _applyCustomLayerScaleMode: Pixi._applyCustomLayerScaleMode,
-    _setRtScaleMode: Pixi._setRtScaleMode,
-  };
-  ctx._proxyLayers[layerId] = { layerId, cl, regions };
+  // N-256 PW-3: the custom layers resize it, reading the worker's proxies and its bind-group release.
+  const worker = { _proxyLayers: [], pixiApp: null, _releaseTextureBindGroups: Pixi._releaseTextureBindGroups };
+  const ctx = new PixiCustomLayers(worker);
+  worker._proxyLayers[layerId] = { layerId, cl, regions };
   try {
-    Pixi._resizeCustomLayerRTs.call(ctx, cl, 200, 100);
+    ctx.resizeRTs(cl, 200, 100);
     assert.notEqual(cl.rtOut, rtOut);
     assert.equal(cl.rtOut.width, 100, 'the canvas at the layer\'s resolution');
     assert.equal(regions.source, cl.rtOut.source, 'the regions sample the new target');
