@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   CONTACT_HEIGHT,
+  CONTACT_SHARE,
   HEIGHT_PER_ROW_CODES,
   HEIGHT_PER_ROW_STEPS,
   isRenderDirections,
@@ -58,6 +59,21 @@ test('a render stands on its lowest contact: pixels within 1.5 px of its lowest 
   assert.equal(measureLowestContact(opaque, (i, j) => (j < 20 ? 22.5 : 2.5), 40, 40), 39.5);
   assert.equal(measureLowestContact(opaque, () => CONTACT_HEIGHT + 1, 40, 40), 39.5, 'a frame all at one height: its lowest row');
   assert.equal(measureLowestContact(() => false, () => 0, 8, 8), null, 'an empty frame');
+});
+
+test('N-410: a render whose near wheels hide under its body stands on the low body, not on its far wheels', () => {
+  // Seen from behind: the far wheels (height 0.9) at rows 10..14, the body above them, its lowest rows (height 3.7, the
+  // rear's underside) at rows 30..39, the roof 40 px high at the top. Within 1.5 px only the far wheels count, and the
+  // card stood on the far side of the bus; within a fifth of the heights the body's lowest row does.
+  const opaque = picture(40, 40, [[20, 10, 24, 15], [5, 0, 35, 40]]);
+  const height = (i, j) => (j < 10 ? 40 : j < 30 ? (i >= 20 && i < 24 && j < 15 ? 0.9 : 20) : 3.7);
+  assert.equal(measureLowestContact(opaque, height, 40, 40), 39.5);
+  assert.ok(CONTACT_SHARE * (40 - 0.9) > 3.7 - 0.9 && 3.7 - 0.9 > CONTACT_HEIGHT, 'the body is past 1.5 px and within the share');
+  // A cow's head drawn below its hooves (held out towards the camera, 12 px up of its 30) is past a fifth of its heights:
+  // the hooves' row stays its contact.
+  const cow = picture(40, 40, [[0, 0, 30, 25], [5, 25, 8, 33], [30, 20, 38, 40]]);
+  const cowHeight = (i, j) => (i >= 30 ? 12 : j < 25 ? 30 : 0);
+  assert.equal(measureLowestContact(cow, cowHeight, 40, 40), 32.5);
 });
 
 test('N-297: how much of the picture of a render is height, along its top edge', () => {

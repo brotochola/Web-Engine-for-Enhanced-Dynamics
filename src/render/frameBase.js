@@ -5,15 +5,23 @@
 //   radius come from the frame's lowest opaque rows (the trunk above the roots when there is one); the card stands on
 //   the ellipse's edge towards the light, so the whole base lies on its own shadow.
 // - a render with a height map (a car, a table, a cow drawn from many directions): it touches the floor where its height
-//   map is within 1.5 px of its lowest point (the wheels, the legs); the card stands on the contact nearest the light, not
-//   on the footprint's edge (a cow's head).
+//   map is near its lowest point (the wheels, the legs, and the low body that hides the near wheels); the card stands on
+//   the contact nearest the light, not on the footprint's edge (a cow's head).
 //
 // The atlas keeps the result in its json (each frame's `base`), in the frame's own pixels (screen px from its top
 // left, untrimmed); the Pixi worker writes it into the texture table's two spare floats (lutBaseFloats), which only the
 // shadow passes read.
 
-/** A render's pixel touches the floor within this height (px) of the frame's lowest point. */
+/** A render's pixel touches the floor within this height (px) of the frame's lowest point, */
 export const CONTACT_HEIGHT = 1.5;
+/**
+ * N-410: or within this share of the frame's heights (its highest point less its lowest). Seen from behind and above, a
+ * bus's near wheels hide under its body, whose lowest pixels stand 3 to 5 px up: within 1.5 px only the far wheels were
+ * left, and the card stood on the far side of the object (half the bus cast nothing). Of the repo's car sheets, 30 had
+ * frames like that; a fifth of the heights takes the low body in every one, and none of the farm's renders moves (their
+ * lowest rows are legs and walls on the floor).
+ */
+export const CONTACT_SHARE = 0.2;
 
 /**
  * H-EDGE: what a frame's texels hold, as the registry scans them (spriteSheetRegistry.js: the atlas's json frame base's
@@ -188,9 +196,10 @@ export function measureStandingBase(opaque, w, h) {
 
 /**
  * Where a render touches the floor nearest the camera: the lowest row (screen px, a pixel's centre) of its opaque pixels
- * within CONTACT_HEIGHT of its lowest point. The lowest point, not the floor: a render made smaller keeps its wheels'
- * lowest visible pixels a few px up (a hatchback's, 2.5 px from some directions). A light's frame of a render is the view
- * from that light, the light where the camera is, so this is the contact nearest the light. Null for an empty frame.
+ * within CONTACT_HEIGHT, or CONTACT_SHARE of its heights, of its lowest point. The lowest point, not the floor: a render
+ * made smaller keeps its wheels' lowest visible pixels a few px up (a hatchback's, 2.5 px from some directions). A light's
+ * frame of a render is the view from that light, the light where the camera is, so this is the contact nearest the
+ * light. Null for an empty frame.
  * @param {(i: number, j: number) => boolean} opaque
  * @param {(i: number, j: number) => number} heightAt px of height
  * @param {number} w
@@ -199,16 +208,18 @@ export function measureStandingBase(opaque, w, h) {
  */
 export function measureLowestContact(opaque, heightAt, w, h) {
   let floor = Infinity;
+  let highest = -Infinity;
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
       if (opaque(i, j)) {
         const z = heightAt(i, j);
         if (z < floor) floor = z;
+        if (z > highest) highest = z;
       }
     }
   }
   if (floor === Infinity) return null;
-  const top = floor + CONTACT_HEIGHT;
+  const top = floor + Math.max(CONTACT_HEIGHT, CONTACT_SHARE * (highest - floor));
   for (let j = h - 1; j >= 0; j--) {
     for (let i = 0; i < w; i++) {
       if (opaque(i, j) && heightAt(i, j) <= top) return j + 0.5;
