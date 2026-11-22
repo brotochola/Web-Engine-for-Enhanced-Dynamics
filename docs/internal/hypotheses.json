@@ -20984,7 +20984,7 @@
       "id": "N-256",
       "title": "Split src/workers/pixiWorker.js (11 140 lines, 269 methods, a 779-line constructor, 110 commits since 2026-11-01) into subsystem classes under src/render/pixi/, so Pixi work can run in parallel and agents read only what they change",
       "status": "open",
-      "statusText": "planned 2026-11-16 at the owner's ask (PIXI_WORKER_SPLIT_PLAN.md)",
+      "statusText": "phase 1 done 2026-11-22 (R-1852); phase 2 (PW-3 custom layers, PW-4 mesh layers) next, then the Pixi-owner sitting for both",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "refactor",
@@ -20997,7 +20997,9 @@
         "pixiWorker split",
         "split pixi worker"
       ],
-      "records": []
+      "records": [
+        "R-1852"
+      ]
     },
     {
       "id": "DX-DECO1M",
@@ -42463,6 +42465,15 @@
       "title": "N-303 CR-35 done: 34 behavioural tests for the public API no caller in the repo uses (none broken) and types for LiquidFun's five range wrappers",
       "verdict": "kept-hygiene",
       "text": "**N-303 CR-35 done (cecec670): tests for the public API no caller in the repo uses, and types for LiquidFun's range\nwrappers. 0 lines out of src/, as the owner decided (rule 9: they stay).**\n\nThere are 34 behavioural tests in two files: uncalledPublicApiCore.test.js and uncalledPublicApiData.test.js.\n- Scene: needsParticleWorker, numberOfPreRenderWorkers and getMemoryUsageSummary.\n- Grid's cell sleeping.\n- DebugFlags: SHOW_PROFILER, SHOW_COLLISION_CANDIDATES, enablePerformanceDebug and colors.\n- LiquidFun's range wrappers, each drained from the real command ring.\n- spriteSheetRegistry: validateSpriteConfig, getAnimationData and getAnimationFrameCount.\n- NavGrid: setWalkability and isPositionWalkable.\n- TileMap: getLayerNames and tileToWorld; hasTile lives on a layer, not on TileMap.\n- GameObject: clearTile, setAnimationLoop, getAllNeighborInstances and getJoints.\n- SoundManager: getSoundId and unloadMany.\n- The Pixi worker's self.PIXI, checked on the real worker through loadWorker.\n\nNone was broken. types/weed.d.ts gains the five `*Range` methods. The plan's \"seven\" also counted setUserDataList and\naddUserData, which are not ranges and stay untyped. An agent wrote the tests; I reviewed them and checked the types'\nJSDoc against the source and the command ring's clamp. check:types passes."
+    },
+    {
+      "id": "R-1852",
+      "date": "2026-11-22",
+      "time": "10:09",
+      "timeFrom": "recorded",
+      "title": "N-256 phase 1 done: PW-1 assets (PixiAssets), PW-5 scenery and tilemap (PixiScenery), PW-2 initialize in 13 steps; pixiWorker.js 11 509 -> 10 596 lines, captures byte for byte, no steady deopt in the moved code",
+      "verdict": "kept-hygiene",
+      "text": "**N-256 phase 1 done (PW-1, PW-5, PW-2): pixiWorker.js 11 509 -> 10 596 lines, pure moves, every capture byte for\nbyte the same.**\n\n- cb8a4c00, PW-1. `src/render/pixi/assets.js`, PixiAssets (643 lines), holds:\n  - the textures, the spritesheets and proxy sheets, and the tileset textures;\n  - the atlas and its twin page, and the early atlas sheets;\n  - the tables made from the atlas: the texture lookup, the footprints, the maps table and the GPU particles'\n    animation lookup.\n\n  rebuildInstancedTextureLut splits at its seam: assets.rebuildTextureLut builds the tables, and the worker points its\n  batches at them.\n- 0c588ade, PW-5. `src/render/pixi/scenery.js`, PixiScenery (423 lines), holds:\n  - the static, cover, tiling and tilemap scenery entries;\n  - their camera;\n  - the tilemap's pages and its gid program.\n\n  The plan had a tilemap.js of its own. A tilemap's entry is bound and destroyed with the other scenery entries, so\n  they stay one class.\n- 5e23441b, PW-2. initialize goes from 457 lines to 22. It is now thirteen named steps, each one section of the old\n  body. decalBind, the one local two sections shared, is passed from one step to the next.\n\nThe rules held:\n- The bodies are verbatim. A field or method that moved keeps its body under a new name. What the classes still read\n  of the worker goes through `this.worker`: its renderer, backend, config and camera, and the programs and batches the\n  tables are bound to. That is the back-pointer rule 2 allows as a first step.\n- workerShape.test.js scans the new classes. It counts the steps as initialize's and checks that initialize alone\n  calls each one.\n- ESLint's no-undef found five Pixi classes the scenery used bare (GlProgram, Shader, TextureSource, Geometry, Mesh).\n  The worker's Pixi import has no semicolon, so the extraction script missed them. The suite caught it first.\n\nChecks:\n- Captures against main on WebGL and WebGPU, 0 of 921600 pixels differ on each, after every commit:\n  - dxCapture hour=12 and 22;\n  - light3dCompare all=1 hour=22 still=1;\n  - depthPair;\n  - tilemapStress;\n  - meshLayerOrder and volumeStress still=1 dayMinutes=0, for the cover scenery.\n- gpuParticlesStress, decalStampStress and sceneryCamStress draw with no page error. They move every frame, and an A/A\n  differs as much.\n- The V8 deopt summary of a Predator crowd=2.5 mix=1 run lists no steady deopt in pixiWorker.js or the new modules.\n- Suites: node 3553/0, demos 143/0.\n\nThe Pixi-owner sitting the plan asks for covers phases 1 and 2 together."
     }
   ],
   "leads": [
