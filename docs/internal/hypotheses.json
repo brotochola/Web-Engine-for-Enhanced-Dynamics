@@ -18109,7 +18109,8 @@
       "records": [
         "R-1173",
         "R-1575",
-        "R-1687"
+        "R-1687",
+        "R-1688"
       ]
     },
     {
@@ -18199,19 +18200,20 @@
       "id": "E-395",
       "title": "Keyed caster rows for casters that ask for a kind (DX-CASTER): one such caster turns the keyed caster path off for the whole scene (_casterKindsOn), so light3d scenes pack full rows and E-372 does not serve them",
       "status": "open",
-      "statusText": "proposed 2026-11-16 from preRenderWorker.js _packGpuSun and the traces (pack_casters_scatter in Predator ?light3d=1)",
+      "statusText": "2026-11-21 (R-1688): in map mode the whole rows come from Pixi, not the kinds: _ensureKeyedCasters makes no keyed caster programs while the sun's map, the lamps' map or the solids are on, so the keyed statics never go LIVE (workerProbe on Predator: kinds false, live false).",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
       "result": "",
-      "next": "Carry the caster's code in the keyed row (a spare float, or the key's high bits) so the keyed scan and the keyed shadow programs serve kinds too; then Predator ?light3d=1's pre-render.",
+      "next": "Keyed caster rows the map passes can draw: the sun's map (cards and columns) and the lamps' map reading statics by key (the sun frame in the row's 4th float), GLSL and WGSL, stamps too; captures identical; then glFrameRecorder's buffers a frame (1.41 MB now in map mode, 0.52 classic) and pre-render's pack. Carrying a kind in the keyed row stays the second half. About a working day.",
       "refs": [],
       "aliases": [
         "keyed rows caster kinds"
       ],
       "records": [
         "R-1173",
-        "R-1687"
+        "R-1687",
+        "R-1688"
       ]
     },
     {
@@ -24495,7 +24497,8 @@
       "records": [
         "R-1573",
         "R-1623",
-        "R-1687"
+        "R-1687",
+        "R-1688"
       ],
       "refs": [],
       "id": "E-531",
@@ -40849,6 +40852,15 @@
       "title": "E-390's uploads found: the caster rows sent whole (about 1.14 MB a frame) since Predator's casters ask for a kind (E-395); by day the map arm's extra is the sun's map and the face map passes",
       "verdict": "note",
       "text": "**E-390's big uploads identified, and where E-531 stands by day with Predator's lamps off (2026-11-21, main bac85aa1, glFrameRecorder --gpu-passes, GTX 1650, Predator `dayCycle=0` against `dayCycle=0&sunShadows=map&lampShadows=map`, 3 s windows).**\n\n- Uploads: the map arm sends 1 413.7 KB of buffers a frame against the classic's 517.9: two 570.9 KB-a-frame buffers taking turns (buffer#12 and #22, a call every other frame each, about 1.14 MB a call), the caster batch's instance rows (13 287 instances; the sun's map draws with that batch's geometry, _drawSunMap). They go whole every frame because Predator's casters ask for a kind, which turns the keyed caster path off for the whole scene (_casterKindsOn): E-395 is the lever (keyed caster rows that carry their kind).\n- GPU by pass, the map arm: the sun's map 576x366 0.426 ms (13 287 instances), the face map 478x268 0.423 ms (13 467 instances, prog with uMaps), the 3072x178 strip 0.555, the light pass 0.156; the lamps' map is gone by day (the lamps are off). The classic: the shadows' layer 480x270 0.481, the strip 0.341, the light pass 0.063. The GPU was 27-29 % busy at mid clocks (P3/P5 675 MHz against P0/P5 900 MHz): the shape, not a ruler.\n- So at Predator's light resolution the light pass is cheap (0.16 ms) and E-408 to E-410 (its shader) would move Predator little; the extra is the two passes that draw every sprite again (the sun's map and the face map) and the caster rows sent whole."
+    },
+    {
+      "id": "R-1688",
+      "date": "2026-11-21",
+      "time": "21:07",
+      "timeFrom": "recorded",
+      "title": "Map mode packs whole caster rows because Pixi turns its keyed caster programs off while a shadow map is on, not because of kinds (workerProbe: keyed live false, kinds false)",
+      "verdict": "note",
+      "text": "**Why Predator's caster rows go whole in map mode: not the kinds, the maps (2026-11-21, workerProbe of the running pre-render, Predator `dayCycle=0&sunShadows=map&lampShadows=map`).** Pre-render read: _casterKindsOn false, _shadowFramesOn false, keyed casters allowed, keyed frames on (key base 62 633), but _keyedCastersLive() false every sample: Pixi never marks its keyed statics LIVE in this mode. Pixi's _ensureKeyedCasters returns before it makes the keyed caster programs whenever the sun's map, the lamps' map or the renders' solids are on (\"their columns need a frame's instance whole\"), so entitiesBatch.keyedCasters stays false and pre-render packs the full 22-float rows (about 1.14 MB a frame at 13 287 casters, R-1687).\n\nSo E-395's premise (a caster with a kind turns the keyed path off) is true but not Predator's case; the lever for map mode is keyed rows the map programs can draw: the sun's map's cards and columns and the lamps' map reading the statics by key from the entity batch's texture (with the sun frame in the row's fourth float, as the keyed sun rows already carry it), GLSL and WGSL, the stamp rows too; the captures identical, then the same glFrameRecorder pair (buffers a frame) and Predator's pre-render pack time. A larger job than E-395 as written: about a working day with both backends."
     }
   ],
   "leads": [
