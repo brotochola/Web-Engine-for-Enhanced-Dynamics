@@ -11023,7 +11023,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           opts.cameraY = 0;
           opts.resolution = 1;
         }
-        this._uploadSortedSprites(cl.batch, q, opts, cl.painter, cl.sortKeyU32, null, count);
+        // DBG-4: the layer's flag can change at run time (Layer#ySorting): unsorted, pre-render writes no sort keys and
+        // the rows go in queue order.
+        const painter = Layer._ySorting[cl.layerId] === 1 ? cl.painter : null;
+        this._uploadSortedSprites(cl.batch, q, opts, painter, cl.sortKeyU32, null, count);
         densityMesh = cl.batch.mesh;
       } else if (cl.fillBatch) {
         const views = this._ensureColliderFillViews();

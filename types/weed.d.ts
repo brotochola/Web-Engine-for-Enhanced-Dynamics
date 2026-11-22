@@ -3456,6 +3456,15 @@ export declare class Layer {
   set visible(value: boolean);
   get hasShader(): boolean;
   get ySorting(): boolean;
+  /**
+   * Whether the layer's sprites draw in y order. Any worker, for a layer that is `ySortable`; turning another on throws.
+   */
+  set ySorting(value: boolean);
+  /**
+   * Whether `ySorting` can change at run time: a layer with a sprite queue that started sorted (its config's ySorting,
+   * renderer.ySort for entities), so the scene reserved its painter at load.
+   */
+  get ySortable(): boolean;
   get available(): boolean;
   get blendMode(): string;
   /**
