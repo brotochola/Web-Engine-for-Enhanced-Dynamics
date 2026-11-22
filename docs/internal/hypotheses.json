@@ -25158,6 +25158,28 @@
         "shadow side reads part-lit",
         "wall edge line passes the lamp"
       ]
+    },
+    {
+      "id": "DX-PARTICLEOPTIONS",
+      "title": "Particles, four options (CPU or GPU, with or without y-sort): GPU particles sorted per particle by the depth buffer instead of the proxies, and GPU parity with CPU particles (floor, bounces, decals, fades, lights, zenithal) (nice to have)",
+      "status": "blocked",
+      "statusText": "Nice to have, low priority (owner, 2026-11-22): to talk over and define with the owner before any work; nothing is built until then. A draft plan in PARTICLE_OPTIONS_PLAN.md",
+      "date": "2026-11-22",
+      "result": "",
+      "next": "Talk it over with the owner first (the plan's \"To define in the talk\"); nothing is built until then.",
+      "area": "particle",
+      "kind": "dx",
+      "refs": [
+        "PARTICLE_OPTIONS_PLAN.md"
+      ],
+      "aliases": [
+        "particle options",
+        "gpu particles y-sort",
+        "cpu vs gpu particles",
+        "particle parity",
+        "particles by depth"
+      ],
+      "records": []
     }
   ],
   "records": [
