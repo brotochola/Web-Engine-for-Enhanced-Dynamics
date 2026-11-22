@@ -13,14 +13,17 @@ import { BulletPool } from '../../bulletPool.js';
 import {
   getComponentColor,
   getInspectorPropertyNames,
-  formatComponentValue,
   rng,
 } from '../../../util/utils.js';
 import { pointInCollider } from '../../../util/colliderUtils.js';
+import { entityIdNone } from '../../../util/entityIdWidth.js';
 import { GameObject } from '../../gameObject.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
+import { childrenOf, formatInspectorField } from './inspectorFormat.js';
 
 const PICK_CAP = 64;
+/** DBG-10: how many children the Transform section names (it counts them all). */
+const CHILDREN_SHOWN = 8;
 
 /**
  * Unified manager for all debug tools: paint / erase / inspect.
@@ -589,7 +592,7 @@ export class ToolManager {
       const prev = {};
       this._inspectorComponentRows[componentName] = rows;
       this._prevInspectorValues[componentName] = prev;
-      const rec = { Comp: ComponentClass, names: propNames, rows, prev, open, propsEl: propsContainer, chevron };
+      const rec = { Comp: ComponentClass, names: propNames, rows, prev, open, propsEl: propsContainer, chevron, children: null };
       this._inspectorWrites.push(rec);
 
       header.onclick = () => {
@@ -618,8 +621,32 @@ export class ToolManager {
         value.textContent = '--';
         row.appendChild(value);
 
+        // DBG-10: the parent is a link: a click inspects it.
+        if (componentName === 'Transform' && propName === 'parent') {
+          value.style.cursor = 'pointer';
+          value.style.textDecoration = 'underline';
+          value.title = 'Inspect the parent';
+          value.onclick = () => this._inspectParent();
+        }
+
         propsContainer.appendChild(row);
         rows[propName] = value;
+      }
+
+      // DBG-10: an entity's children (the entities whose Transform.parent is it), each a link.
+      if (componentName === 'Transform' && Transform.parent && !this.selectedPoolKind) {
+        const row = document.createElement('div');
+        row.className = 'debug-ui-inspector-prop';
+        const label = document.createElement('span');
+        label.className = 'debug-ui-inspector-prop-label';
+        label.textContent = 'children';
+        row.appendChild(label);
+        const value = document.createElement('span');
+        value.className = 'debug-ui-inspector-prop-value';
+        value.textContent = '--';
+        row.appendChild(value);
+        propsContainer.appendChild(row);
+        rec.children = { el: value, key: '', list: [] };
       }
 
       section.appendChild(propsContainer);
@@ -673,9 +700,44 @@ export class ToolManager {
         const rounded = typeof value === 'number' ? (value * 1000) | 0 : value;
         if (prev[propName] === rounded) continue;
         prev[propName] = rounded;
-        rows[propName].textContent = formatComponentValue(propName, value);
+        rows[propName].textContent = formatInspectorField(Comp.name, propName, value, index, Comp);
       }
+      if (rec.children !== null) this._updateChildrenLine(rec.children, index);
     }
+  }
+
+  /** DBG-10: the Transform section's children line, rebuilt only when the list changes. */
+  _updateChildrenLine(children, index) {
+    const count = childrenOf(Transform.parent, Transform.active, index, CHILDREN_SHOWN, children.list);
+    const key = `${count}:${children.list.join(',')}`;
+    if (key === children.key) return;
+    children.key = key;
+    const el = children.el;
+    el.textContent = '';
+    if (count === 0) {
+      el.textContent = 'none';
+      return;
+    }
+    for (let k = 0; k < children.list.length; k++) {
+      const child = children.list[k];
+      const link = document.createElement('span');
+      link.textContent = `#${child}`;
+      link.style.cssText = 'cursor:pointer;text-decoration:underline;margin-right:6px';
+      link.title = 'Inspect this child';
+      link.onclick = () => {
+        if (Transform.active[child]) this._selectEntity(child);
+      };
+      el.appendChild(link);
+    }
+    if (count > children.list.length) el.appendChild(document.createTextNode(`+${count - children.list.length} more`));
+  }
+
+  /** DBG-10: the parent link: inspect the selected entity's parent, while it lives. */
+  _inspectParent() {
+    const i = this.selectedEntityIndex;
+    if (i < 0 || !Transform.parent) return;
+    const parent = Transform.parent[i];
+    if (parent < entityIdNone && Transform.active[parent]) this._selectEntity(parent);
   }
 
   _syncToolButtons() {
