@@ -12713,13 +12713,13 @@
     {
       "id": "N-155",
       "title": "lightGalleryScene draws differently on WebGL and WebGPU: up to 52/255 on about 80 000 to 98 000 pixels",
-      "status": "open",
-      "statusText": "narrowed 2026-11-22 on the ASUS (R-1756): one lamp, its radius and glow; the light loop's text is the same on both",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-22 on the ASUS (2731a1d8, R-1757)",
       "date": "2026-11-12",
       "area": "render",
       "kind": "bug",
-      "result": "The same count with and without cones (raycast 79 499 both; basic 97 951 and 96 252); traced in the session to the lamp whose halo is on its own layer (glowLayer); predates the light API change.",
-      "next": "Lamp 8's light data texel as each backend uploads it and a 1 x 1 readback of the light pass at its core, to tell the data from the output stage; then weedDither and the target around values near 1.",
+      "result": "The WebGPU canvas was configured premultiplied; Pixi's add blend lowers the canvas alpha on WebGPU (src-alpha, one-minus-src-alpha) where WebGL keeps it at 1, so an ADD layer let the page through. Opaque now: lightGallery agrees within 5/255.",
+      "next": "",
       "refs": [
         "REVIEW_PLAN.md#N-155"
       ],
@@ -12733,7 +12733,8 @@
       "records": [
         "R-0940",
         "R-1741",
-        "R-1756"
+        "R-1756",
+        "R-1757"
       ]
     },
     {
@@ -41608,11 +41609,11 @@
     {
       "id": "R-1756",
       "date": "2026-11-22",
-      "time": "03:33",
+      "time": "03:45",
       "timeFrom": "recorded",
-      "title": "N-155 narrowed: lightGallery's WebGL/WebGPU difference is lamp 8's light alone (radius 260, glow 0), a brighter core on WebGPU; not its shadows, place or colour; the light loop is the same text",
+      "title": "N-155 narrowed: lightGallery's WebGL/WebGPU difference is lamp 8's halo on its own ADD layer ('glows', glow 0.288), a brighter core on WebGPU; not its shadows, place or colour",
       "verdict": "note",
-      "text": "**N-155 narrowed: lightGallery's WebGL/WebGPU difference is one lamp's light, lamp 8 (radius 260, no glow, the bottom-left cell at 160, 600); the other eleven agree within 5/255.** On the ASUS (HD 620), 2026-11-22: the gallery's finals compared pixel by pixel (pngDiffMap.mjs, a block map of the largest channel delta), then a probe copy of the scene (not committed) with knobs to keep one lamp and change its fields, each variant drawn on both backends.\n\n- **The full gallery:** 100 425 pixels differ, max 52, but the block map puts everything above 5 in one disc around (160, 590); WebGPU is the brighter (mean +6.3 to +6.9 where they differ).\n- **Lamp 8 alone:** 82 262 pixels, max 52, the same with no Collider (no shadows of its own) and with no barrels: not the shadows.\n- **Its fields, crossed with lamp 0 (radius 500, glow 0.05, which alone differs on 11 pixels by 1):** lamp 8 at radius 520: 17 254 pixels, max 52; with glow 0.05: 43 808, max 12; glow 0.05 and radius 500: 7 607, max 12; lamp 0 with glow 0: still 11 pixels.\n\n- **Not where it is, not its colour, not the shadows:** lamp 8 moved to lamp 0's place (160, 120) or to the middle: the same 82 299 and 91 820 pixels, max 52; lamp 8 in lamp 0's colour: the same 82 262; lamp 0 moved to lamp 8's place, with or without its glow: 0 pixels; lamp 8 with lighting.shadowsEnabled false: the same 82 262 (and 43 808 with glow 0.05), so neither its shadow map nor the barrels' shadows.\n- **The picture:** WebGPU draws a brighter core of about 40 px around the lamp (its pool's centre, 10 px above its foot); the rest of its reach matches.\n- **The light loop is the same text:** the GLSL and WGSL accumulate a lamp the same way (I / (I + d²) times reachWindow, the same reachWindow, min(total, 1) then weedDither). So the difference comes from what feeds or follows that loop for this lamp: its light data, the pass's target and blend, or the dither, not the loop's arithmetic.\n\nNext: dump lamp 8's light data texel (rows 0 to 3) as each backend uploads it, and read the light pass's output for one pixel of the core on each (a 1 x 1 readback), to tell the data from the output stage; then the dither (weedDither) and the target format around values near 1."
+      "text": "**N-155 narrowed to one lamp: lightGallery's WebGL/WebGPU difference is lamp 8, { radius: 1200, color: 0xffcc88, glow: 0.288, layer: 'glows' }, the lamp whose halo is on a layer of its own (the bottom-left cell, 160, 600); the other eleven agree within 5/255.** (This record first called it \"radius 260, glow 0\": LAMPS[0] is { radius: 200 } and I read the list one row off; the numbers below are as measured.) On the ASUS (HD 620), 2026-11-22, 03:00 to 03:45: the gallery's finals compared pixel by pixel (pngDiffMap.mjs), then a probe copy of the scene (not committed) with knobs to keep one lamp and change its fields, each variant drawn on both backends.\n\n- **The full gallery:** 100 425 pixels differ, max 52, but the block map puts everything above 5 in one disc around (160, 590); WebGPU is the brighter (mean +6.3 to +6.9 where they differ).\n- **Lamp 8 alone:** 82 262 pixels, max 52; the same with no Collider, no barrels, lighting.shadowsEnabled false, moved to another cell or in another colour: not its shadows, place or colour.\n- **Its glow drives it:** glow 0.05 instead of 0.288: 43 808 pixels, max 12; a smaller radius shrinks the halo and the count (200: 2 553, 500: 15 947), max 52 throughout.\n- **Its layer decides it:** its halo on the default glow layer (layer cleared): 13 pixels, max 1; the 'glows' layer in normal blend instead of ADD: 13, max 1; glowMode sorted: the same 82 262.\n- **The light loop is the same text** in GLSL and WGSL; the difference was in the canvas (R-1757)."
     },
     {
       "id": "R-1749",
@@ -41688,6 +41689,18 @@
       "text": "**N-303's CR-16 on the ASUS: the engine's string edits on shader sources go through render/shaderEdit.js.** hasOnce replaces the 27 inline `split(mark).length !== 2` checks, requireMarks the 7 loops that checked a list of marks (one call each), replaceOnce the local copies (opaquePass's and spriteIndexed's replaceOnce, pixelSnap's once) and sunShadowMap's wgslMarks. The errors still name the shader and the mark. The generated shader text is unchanged: the suites' shader tests and the bundle smoke (pages that compile the edited shaders) passed.\n\nSmall in lines (the checks were one line each before and after; the module's own doc comments take back most of what the helpers' removal saved): its point is one implementation of the check. CR-14 and CR-15 wait: the plan puts CR-17's shader fetch table first, and CR-17 waits for N-256.",
       "commits": [
         "b167ca2c"
+      ]
+    },
+    {
+      "id": "R-1757",
+      "date": "2026-11-22",
+      "time": "03:58",
+      "timeFrom": "recorded",
+      "title": "N-155 fixed: the WebGPU canvas opaque; an ADD layer's glow no longer lets the page through (lightGallery 100 425 px, max 52 -> 18 563 px, max 5)",
+      "verdict": "kept-hygiene",
+      "text": "**N-155 fixed: the WebGPU canvas is configured opaque (2731a1d8); lightGallery's WebGL and WebGPU pictures now agree within 5/255 (was 52).**\n\n**The cause.** Pixi's 'add' blend has the same colour factors on both backends (one, one) but not the same alpha: WebGL's is one, one, so the back buffer's alpha stays at 1; WebGPU's is src-alpha, one-minus-src-alpha, so a sprite added at alpha a leaves the canvas alpha at a² + (1 - a), 0.79 under lamp 8's halo (a = 0.288). The Pixi worker configured the WebGPU canvas with alphaMode 'premultiplied', so the page behind showed through wherever an ADD layer drew: the brighter core of R-1756. Pixi's own adaptor configures a non-transparent canvas 'opaque', and the engine's app is opaque (backgroundColor 0x000000); the swapchain bind now does the same.\n\n**Checked on the ASUS (job 0900zzzzzzzzzzzzz, 03:46 to 03:58), pngDiffMap between the backends:**\n\n| | before | after |\n| --- | --- | --- |\n| lamp 8 alone | 82 262 px, max 52 | 13 px, max 1 |\n| the whole gallery | 100 425 px, max 52 | 18 563 px, max 5 |\n| the gallery, sorted glows | 100 222 px, max 52 | 18 359 px, max 6 |\n\nNode 3496/3496, make_bundle clean, the bundle smoke 8/8. What is left between the backends is at most 5/255 (rounding along lamps' edges), as the other lamps already were.\n\nNo speed effect expected: it changes how the browser composites the canvas (opaque can only be cheaper), not the GPU's work.",
+      "commits": [
+        "2731a1d8"
       ]
     }
   ],
