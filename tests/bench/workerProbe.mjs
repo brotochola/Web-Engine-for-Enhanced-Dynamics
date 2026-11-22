@@ -3,7 +3,9 @@
 // (pre-render's instance is self.preRenderWorker, Pixi's self.pixiWorker), a few times a second; prints what it read.
 //   node tests/bench/workerProbe.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene \
 //     --query "dayCycle=0&sunShadows=map" --worker preRenderWorker --expr "({ kinds: self.preRenderWorker._casterKindsOn })"
-//     [--wait-ms 12000] [--samples 5]
+//     [--wait-ms 12000] [--samples 5] [--interval-ms 250]
+// Each line starts with the wall-clock seconds since the scene was prepared, so a long series (--samples 60
+// --interval-ms 1000) shows how a state evolves.
 // From Git Bash set MSYS_NO_PATHCONV=1. Headed Chrome (the bench's flags); read-only: the expression should not write.
 import { chromium } from 'playwright';
 import { parseArgs } from './microbenchHelpers.mjs';
@@ -18,6 +20,7 @@ const match = String(args.worker || 'preRenderWorker');
 const expr = String(args.expr || '({})');
 const waitMs = Number(args['wait-ms'] ?? 12000);
 const samples = Number(args.samples ?? 5);
+const intervalMs = Number(args['interval-ms'] ?? 250);
 
 const server = await createStaticBenchmarkServer(repoRoot);
 const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding'] });
@@ -29,15 +32,17 @@ try {
   await page.evaluate(({ scene, sceneExport }) => window.__WEED_BENCHMARK__.prepare({
     warmupMs: 1000, durationMs: 1000, sampleIntervalMs: 100, sceneModule: scene, sceneExport, canvasWidth: 1280, canvasHeight: 720,
   }), { scene, sceneExport });
+  const preparedAt = Date.now();
   await page.waitForTimeout(waitMs);
   const workers = page.workers().filter((w) => w.url().includes(match));
   if (workers.length === 0) throw new Error(`no worker matches ${match}: ${page.workers().map((w) => w.url()).join(', ')}`);
   for (let s = 0; s < samples; s++) {
     for (const w of workers) {
       const out = await w.evaluate(`(() => { try { return JSON.stringify(${expr}); } catch (e) { return 'error: ' + e.message; } })()`);
-      console.log(`${w.url().split('/').pop()} [${s}]: ${out}`);
+      const at = ((Date.now() - preparedAt) / 1000).toFixed(1);
+      console.log(`${w.url().split('/').pop().split('?')[0]} [${s}] ${at} s: ${out}`);
     }
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(intervalMs);
   }
 } finally {
   await browser.close();
