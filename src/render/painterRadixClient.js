@@ -46,8 +46,6 @@ export function painterSameSet(state, idxE, ne) {
   return true;
 }
 
-
-export const PAINTER_RADIX_URL = engineWasmUrl;
 export { PAINTER_HIST_WORDS, PAINTER_SLOTS };
 /** Radix variants: each has radix_sort_*, painter_order_* and reinsert_*. */
 export const CORES = ['scalar', 'kv8', 'kv11', 'adaptive', 'simd'];

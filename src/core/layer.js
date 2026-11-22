@@ -62,11 +62,6 @@ export const RESERVED_LOOK_UNIFORMS = {
     uTexSize: { value: [0, 0], type: 'vec2<f32>' },
 };
 
-/** @param {string} name */
-export function isReservedLookUniform(name) {
-    return name in RESERVED_LOOK_UNIFORMS;
-}
-
 /**
  * SAB float count of {@link RESERVED_LOOK_UNIFORMS} with the same vec2/vec4 pad
  * as {@link Layer._allocateUniformSAB}.

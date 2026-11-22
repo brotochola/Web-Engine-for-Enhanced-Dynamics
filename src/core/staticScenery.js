@@ -44,11 +44,6 @@ export function bindStaticTypes(registeredClasses) {
   }
 }
 
-/** Whether entity type `t` is static scenery. */
-export function isStaticType(t) {
-  return t < staticTypes.length && staticTypes[t] === 1;
-}
-
 /** A static entity changed what pre-render binned: bin again. */
 export function staticSceneryChanged() {
   if (gen !== null) Atomics.add(gen, 0, 1);

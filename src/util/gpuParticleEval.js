@@ -20,12 +20,6 @@ export function floatBits(v) {
   return _u[0];
 }
 
-/** The float whose bits are `u`. */
-export function bitsFloat(u) {
-  _u[0] = u >>> 0;
-  return _f[0];
-}
-
 /**
  * Position along one axis after `t` frames with constant acceleration `a` and drag `d` per frame.
  * @param {number} p0
@@ -38,13 +32,6 @@ export function gpuTravel(p0, v0, a, d, t) {
   if (d < 1e-5) return p0 + v0 * t + (a * (t * t + t)) * 0.5;
   const terminal = a / d;
   return p0 + terminal * t + ((v0 - terminal) * (1 - Math.exp(-d * t))) / d;
-}
-
-/** Velocity after `t` frames (the derivative of gpuTravel; without drag, the Euler step's v after t updates). */
-export function gpuVelocity(v0, a, d, t) {
-  if (d < 1e-5) return v0 + a * t;
-  const terminal = a / d;
-  return terminal + (v0 - terminal) * Math.exp(-d * t);
 }
 
 function lerpRgb(from, to, e) {

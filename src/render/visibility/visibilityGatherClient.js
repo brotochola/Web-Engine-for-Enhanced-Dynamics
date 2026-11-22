@@ -12,7 +12,6 @@ import { ShapeType } from '../../box2d/box2dConstants.js';
 import { engineWasmUrl } from '../../wasm/engine.js';
 import { putColumn } from '../../util/wasmColumnTable.js';
 
-
 /** wasm/visibilityGather.c's column table, slot for slot. */
 export const GATHER_SLOTS = [
   'nRows', 'nStride',
@@ -35,8 +34,6 @@ if (ShapeType.Box !== 0 || ShapeType.Circle !== 1 || ShapeType.Polygon !== 2 || 
   throw new Error('visibilityGather: ShapeType changed; wasm/visibilityGather.c holds the old codes');
 }
 
-/** Event kinds: an occluder packed while the self-lit list is on, a compound solid in reach. */
-export const GATHER_EV_OCCLUDER = 0;
 export const GATHER_EV_SOLID = 1;
 /** An event record in i32 words and in doubles (the pose starts at double 2). */
 export const GATHER_EVENT_I32 = GATHER_EVENT_BYTES >> 2;

@@ -76,11 +76,6 @@ export function gpuLogicWriterSlot(index) {
   return 1 + (index | 0);
 }
 
-/** The particle worker's writer slot. */
-export function gpuParticleWorkerWriterSlot(numberOfLogicWorkers) {
-  return 1 + Math.max(1, numberOfLogicWorkers | 0);
-}
-
 /** The largest power of two <= n (n >= 1). */
 function floorPow2(n) {
   let p = 1;

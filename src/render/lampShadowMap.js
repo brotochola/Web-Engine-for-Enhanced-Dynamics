@@ -209,11 +209,6 @@ export function writeLampTileOwner(out, width, t, entity) {
   out[at + 3] = 0;
 }
 
-/** The light data's tag for a light with a tile in the lamps' map: its first row's w, -(tile + 1) (rangeSq otherwise). */
-export function lampTileTag(tile) {
-  return -(tile + 1);
-}
-
 /** DX-LAMPPANO: lampPanoUv in GLSL (the light pass's lightingBasic.frag.glsl has its twin). */
 export const LAMP_PANO_GLSL = `// DX-LAMPPANO: a landing (its offset from the lamp on the floor) into its half tile, 0..1: linearly to ${LAMP_PANO_INNER} of
 // the half's radius within the reach, the rest of the world beyond it, the horizon at the half's edge (lampShadowMap.js).
