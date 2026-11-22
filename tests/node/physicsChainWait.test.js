@@ -28,25 +28,33 @@ function loadWait() {
   `);
 }
 
-// A thread that, once go() is called, spins until each event's time and then rings the bell (and adds frames).
+// A thread that, once go() is called, spins until each event's time and then rings the bell (and adds frames). N-401:
+// before each ring it waits (up to 500 ms) until the waiter has made one service pass per ring so far (`passes`, which
+// the test's service counts), so two rings never land in one sleep of the waiter: on 2 cores under the suite's parallel
+// files the ringer, late, rang twice at once, and the pass count read 2.
 const RINGER = `
 const { workerData, parentPort } = require('node:worker_threads');
 const a = new Int32Array(workerData.sab);
 const go = new Int32Array(workerData.go);
+const passes = new Int32Array(workerData.passes);
 parentPort.postMessage('ready');
 Atomics.wait(go, 0, 0);
 const t0 = performance.now();
-for (const e of workerData.events) {
+workerData.events.forEach((e, i) => {
+  const until = performance.now() + 500;
+  for (let p = Atomics.load(passes, 0); p < i + 1 && performance.now() < until; p = Atomics.load(passes, 0)) {
+    Atomics.wait(passes, 0, p, 5);
+  }
   while (performance.now() - t0 < e.at);
   if (e.frames) Atomics.add(a, 0, e.frames);
   Atomics.add(a, 2, 1);
   Atomics.notify(a, 2);
-}
+});
 `;
 
-async function ringer(sab, events) {
+async function ringer(sab, events, passes) {
   const go = new Int32Array(new SharedArrayBuffer(4));
-  const w = new Worker(RINGER, { eval: true, workerData: { sab, events, go: go.buffer } });
+  const w = new Worker(RINGER, { eval: true, workerData: { sab, events, go: go.buffer, passes: passes.buffer } });
   await new Promise((resolve) => w.once('message', resolve));
   return {
     go() {
@@ -65,10 +73,13 @@ test('physics sleeps until the bell rings: a query posted mid-wait is answered, 
   // before it sleeps, so its rings come after the wait began (started before the call, a main thread descheduled
   // between the two let it ring early: 3 of 144 runs under 48 parallel copies waited 2.9 to 7.8 ms).
   let r = null;
+  const passes = new Int32Array(new SharedArrayBuffer(4));
   const w = loadWait()({ chainI32: chain, chainLogicWorkers: 2, stepMs: 1, periodMs: 250, service: () => {
+    Atomics.add(passes, 0, 1);
+    Atomics.notify(passes, 0);
     if (services++ === 0) r.go();
   } });
-  r = await ringer(chain.buffer, [{ at: 3 }, { at: 6, frames: 1 }, { at: 9, frames: 1 }]);
+  r = await ringer(chain.buffer, [{ at: 3 }, { at: 6, frames: 1 }, { at: 9, frames: 1 }], passes);
   const out = w.wait();
   await r.stop();
   assert.equal(Atomics.load(chain, 0), 2, 'both logic frames in');
