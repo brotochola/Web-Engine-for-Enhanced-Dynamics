@@ -16586,13 +16586,13 @@
     {
       "id": "N-214",
       "title": "Steady-state deopts in Predator (main too): spatialWorker _flushWasmPublish, weedjsPost publishPose, logicWorker's spawn list",
-      "status": "open",
-      "statusText": "round 2 2026-11-22 on the ASUS (4e70bdd5, 53ae0ce7, R-1736); spatialWorker.js:2253 fixed on the main PC's fix/n245-spatial-rebuilt-rows",
+      "status": "kept-hygiene",
+      "statusText": "round 2 2026-11-22 on the ASUS (4e70bdd5, 53ae0ce7, R-1736), gated on the main PC (R-1745: neutral)",
       "date": "2026-11-15",
       "area": "engine",
       "kind": "bug",
       "result": "In steady state (8 s): spatialWorker.js:1764:22 (_flushWasmPublish, this._wasmPub.queued) deopt-eager \"Insufficient type feedback for generic named access\" x391; box2d/weedjsPost.js:662:31 (the N-86 epoch check after the pose copy) \"Insufficient type feedback for call\" x286; logicWorker.js:912:11 (compare) x70 and :901:10 (named access) x68 (the spawn batch sort); util/gameObjectActiveState.js:140:17 (unary) x13. A site that keeps deopting in steady state recompiles its function each time. Fixed 2026-11-15 (R-1158): the spatial publish (391 -> 0, e334063b) and the Box2D pose epoch (287 -> 0, 68c0d0c5): code compiled before a branch at its end had run, deopting there every frame and never replaced.",
-      "next": "The spatial owned loop (main PC, spatialWorker.js:2143); a Predator gate on the main PC for the logic changes.",
+      "next": "",
       "refs": [],
       "aliases": [
         "steady deopts predator"
@@ -16600,7 +16600,8 @@
       "records": [
         "R-1155",
         "R-1158",
-        "R-1736"
+        "R-1736",
+        "R-1745"
       ]
     },
     {
@@ -18304,19 +18305,20 @@
     {
       "id": "N-217",
       "title": "Steady-state deopts left in Predator crowd 2.5: particleWorker.js:1179 (visibleData[0] after the screen loop) x157 in 8 s, weedjsPost.js:720 and :689 (OSR exits) x150 and x53, box2dMovedBodiesImpl.js:186 x48, and N-214's logicWorker.js:901/912",
-      "status": "open",
-      "statusText": "found 2026-11-16 in the deopt passes of main ac73cf48 (q-predator-crowd, q-predator-day)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-22: weedjsPost's slot walks on the ASUS (26f74ed9), gated on the main PC (R-1744)",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "bug",
-      "result": "Deopt pass, Predator crowd 2.5 (8 s): particleWorker.js:1179:20 generic keyed access x157; weedjsPost.js:720:5 and :689:5 exit from OSR'd inner loop x150 and x53; logicWorker.js:901:10 x84. Predator ?light3d=1 by day: box2dMovedBodiesImpl.js:186:13 x48, logicWorker.js:901/912 x112 each.",
-      "next": "Read each with the V8 log (--keep-traces): code compiled before the store or branch after its loop had run, as N-214's; move the store out or hoist it.",
+      "result": "The pose publish and snapshot walk runs of slots with one loop per function: the OSR exits at weedjsPost.js:764/:796 went to 0; Predator crowd 2.5 physics 22.43 -> 21.10 ms (-4.4 %, 0/4 worse, every worker moved the same way); liquidFunStress and liquidFunBodyCouple neutral.",
+      "next": "particleWorker.js:2150 and :1423 still deopt in the ASUS crowd sweep (535 and 169 in 8 s, start-up included): another item if they hold in the tail window.",
       "refs": [],
       "aliases": [
         "steady deopts crowd"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1744"
       ]
     },
     {
@@ -41500,6 +41502,31 @@
       "title": "N-245: the ASUS numbers for the main PC's spatial fix: spatialWorker.js:2253 274 -> 0 in Predator; the OSR entry moves to the owned loop (2143, 84)",
       "verdict": "note",
       "text": "**N-245, the ASUS's numbers for the main PC's spatial fix** (fix/n245-spatial-rebuilt-rows, 7ea3fe24, against its base c8599a69). Deopt pass, one run a side, a 20 s warm-up, steady = the last 8 s of each log.\n\n- **Predator default:** spatialWorker.js:2253 (\"prepare for OSR\", the rows the gather rebuilt) went 274 -> 0. The per-frame OSR entry moved to the owned-entity loop of the same function (:2143, 0 -> 84), which the main PC plans to split the same way.\n- **bichos, Boids, renderQueueStress:** no steady spatial deopt either side. The sweep's spatialWorker.js:2222 (944) and Boids' 2253 were start-up (N-405).\n- **Boids:** weedjsPost.js:665, N-245's other site, is gone (N-214's fix, R-1158).\n\nCounts move a lot from run to run in code neither side changed, so one run each gives the shape."
+    },
+    {
+      "id": "R-1744",
+      "date": "2026-11-22",
+      "time": "01:47",
+      "timeFrom": "recorded",
+      "title": "N-217 round 2: the physics slot walks without nested loops (weedjsPost :764/:796 OSR exits 3307 -> 0); Predator crowd 2.5 physics -4.4 %, 0/4 worse; LiquidFun neutral",
+      "verdict": "kept",
+      "text": "**N-217 round 2: the physics worker's slot walks without nested loops (26f74ed9); KEPT on the main PC, physics -4.4 %.**\n\npublishPoseBySlot, publishPoseBySlotChecked and snapshotPrevPoseBySlot skipped the empty slots and walked each run of bodies in loops inside the run loop. V8 put those in OSR and left that code at every run of bodies:\n- the sweep's crowd 2.5 run on the ASUS: 6 580 in 8 s at weedjsPost.js:764 (publishPoseBySlot);\n- crowd 2.5 with a 20 s warm-up and steady = the last 8 s: 3 307 and 61 in two runs before, at :796 (the checked walk), against 0 after.\n\n**The change:** the skips are firstBodySlot and runEndSlot. A run is copied by copyPoseRange (the checked walk's already) or copyPrevRange. The checked walk's run is publishCheckedRun, its skips counted in a module word. The publish tests pass unchanged (21).\n\n**The gate (main PC, GTX 1650, 16 threads, 2026-11-22 01:45-01:47 by the result files):** Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, --full-rev (N-278 refused srcOnly: predatorScene.js differs since E-310), 4 pairs, 53ae0ce7 -> 26f74ed9.\n- physics, the owner: 22.429 -> 21.099 ms (-4.4 %, worse 0/4, cv 6/3 %): **KEPT**.\n- logic 18.573 -> 17.357 (-5.0 %, worse 1/4), spatial -1.2 %, renderer -2.0 %, pre-render -3.9 %.\n- presented 60 = 60, BODY_COUNT -0.6 %.\n\n**LiquidFun (srcOnly, 4 pairs, --early, 01:35-01:40):** liquidFunStress water=1.5 NEUTRAL, physics 6.885 -> 6.904 ms (+0.7 %, worse 2/4, cv 1/3 %); liquidFunBodyCouple NEUTRAL, physics 6.268 -> 6.020 ms (-1.9 %, worse 0/4, cv 2/3 %).\n\nEvery worker moved the same way in the Predator pairs (logic -5 % with no change of its own), so part of the 4.4 % may be drift; 0/4 worse pairs on the owner and the deopt counts make the keep.\n\nThe other sites the hypothesis named (particleWorker.js:1179, box2dMovedBodiesImpl.js:186) did not show in the 2026-11-22 crowd sweep on the ASUS.",
+      "commits": [
+        "26f74ed9"
+      ]
+    },
+    {
+      "id": "R-1745",
+      "date": "2026-11-22",
+      "time": "01:44",
+      "timeFrom": "recorded",
+      "title": "N-214 round 2 gate: Predator crowd 2.5 logic -1.6 % NEUTRAL (1/4 worse), every worker within 3 %; the deopt fixes stay",
+      "verdict": "passed",
+      "text": "**N-214 round 2's Predator gate on the main PC: NEUTRAL for logic, nothing worse; the hygiene keep stands.**\n\nMain PC, GTX 1650, 16 threads, 2026-11-22 01:41-01:44 by the result files. Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, --full-rev (N-278 refused srcOnly: predatorScene.js differs since E-310), 4 pairs, 5e6ce86d -> 53ae0ce7 (both N-214 commits, 4e70bdd5 and 53ae0ce7).\n\n- logic, the owner: 18.752 -> 18.644 ms (-1.6 %, worse 1/4, cv 5/1 %): NEUTRAL.\n- spatial -1.8 %, physics -2.6 %, renderer -0.7 %, pre-render -2.0 %.\n- presented 60 = 60, BODY_COUNT -0.3 %.\n\nNo primary worker 3 % worse, so the deopt fixes (2483 283 -> 0; 1076/1087 390 -> 0 over 3 runs on the ASUS, R-1736) stay.",
+      "commits": [
+        "4e70bdd5",
+        "53ae0ce7"
+      ]
     }
   ],
   "leads": [
