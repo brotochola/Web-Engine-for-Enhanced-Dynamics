@@ -36,7 +36,10 @@ test('a request on every sync query kind wakes physics', async () => {
       let fired = 0;
       assert.equal(R.armPendingWake(() => fired++), true, `${kind.name}: could not arm`);
       const pending = kind.post(R);
-      await tick(10);
+      // The wake is an Atomics.waitAsync callback: it comes when this thread next runs its event loop. A fixed 10 ms
+      // wait missed it now and then under the suite's parallel files on 2 cores (N-400): wait for it, up to 2 s.
+      const deadline = Date.now() + 2000;
+      while (fired === 0 && Date.now() < deadline) await tick(5);
       assert.ok(fired >= 1, `${kind.name}: the request did not wake physics`);
       assert.ok(kind.service(R), `${kind.name}: nothing pending to answer`);
       await pending;

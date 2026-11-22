@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 
 import { createRayCastSab, bindRayCastSab, box2dCastRayClosest, box2dCastRayClosestAsync } from '../../src/box2d/box2dRayCast.js';
+import { waitedUntil, wallMs } from '../helpers/wallClockWait.mjs';
 
 // M4. WAIT_MS (E-01) metered only waitUntilDoneSync. Two other blocks on a
 // sibling were invisible: a logic worker waiting in the claim loop while
@@ -15,17 +16,27 @@ const STATUS_PENDING = 1;
 const STATUS_DONE = 2;
 const STATUS_CLAIMED = 4;
 
-test('a blocked claim counts as wait', async () => {
+/**
+ * One try: a peer holds the slot until a wall-clock time given ahead (N-400, as N-326's frame chain tests), then
+ * answers the request. Before, it held the slot 30 ms from its own start, and on the ASUS's 2 cores under the suite's
+ * parallel files this thread sometimes reached the call after the slot was free (nothing to meter).
+ */
+async function claimTry(holdMs) {
   const sab = createRayCastSab();
   bindRayCastSab(sab);
   const i32 = new Int32Array(sab);
   Atomics.store(i32, 0, STATUS_CLAIMED); // another worker holds the slot
-  // The peer releases the slot after 30 ms, then answers the request at once.
+  const clock = new SharedArrayBuffer(16); // [0] Int32 go flag, [1] Float64 the release time
   const peer = new Worker(
     `const { workerData, parentPort } = require('node:worker_threads');
-     const i32 = new Int32Array(workerData);
+     const i32 = new Int32Array(workerData.sab);
+     const go = new Int32Array(workerData.clock, 0, 1);
+     const at = new Float64Array(workerData.clock, 8, 1);
+     const wallMs = () => performance.timeOrigin + performance.now();
+     const nap = new Int32Array(new SharedArrayBuffer(4));
      parentPort.postMessage('up');
-     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30);
+     Atomics.wait(go, 0, 0);
+     for (let left = at[0] - wallMs(); left > 0; left = at[0] - wallMs()) Atomics.wait(nap, 0, 0, left);
      Atomics.store(i32, 0, ${STATUS_IDLE});
      Atomics.notify(i32, 0);
      for (;;) {
@@ -35,18 +46,35 @@ test('a blocked claim counts as wait', async () => {
      }
      Atomics.store(i32, 0, ${STATUS_DONE});
      Atomics.notify(i32, 0);`,
-    { eval: true, workerData: sab },
+    { eval: true, workerData: { sab, clock } },
   );
   await new Promise((r) => peer.once('message', r));
   try {
+    const at = wallMs() + holdMs;
+    new Float64Array(clock, 8, 1)[0] = at;
+    const go = new Int32Array(clock, 0, 1);
+    Atomics.store(go, 0, 1);
+    Atomics.notify(go, 0);
+    const begun = wallMs();
     const before = meter().ms;
     box2dCastRayClosest(0, 0, 10, 0);
     const waited = meter().ms - before;
-    assert.ok(waited >= 20, `claim wait not metered: ${waited.toFixed(2)} ms`);
+    return { at, begun, waited };
   } finally {
     await peer.terminate();
     bindRayCastSab(null);
   }
+}
+
+test('a blocked claim counts as wait', async () => {
+  // A try counts when this thread reached the call before the release; it must then meter the wait up to it.
+  for (let t = 0; t < 5; t++) {
+    const { at, begun, waited } = await claimTry(30);
+    if (!(begun < at)) continue;
+    assert.ok(waitedUntil(at, begun, waited), `claim wait not metered: ${waited.toFixed(2)} ms of ${(at - begun).toFixed(2)}`);
+    return;
+  }
+  assert.fail('in 5 tries this thread never reached the claim before the peer released it');
 });
 
 test('the burst servicer waiting for the next query counts as wait', async () => {
