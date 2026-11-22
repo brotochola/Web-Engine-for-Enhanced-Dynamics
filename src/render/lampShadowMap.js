@@ -19,6 +19,10 @@
 import { CASTER_ID_GLSL, CASTER_ID_WGSL, FIRST_LINE, MAP_TEXEL_WGSL } from './sunShadowMap.js';
 import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
 import { hasOnce, requireMarks } from './shaderEdit.js';
+import { maplessBaseShader } from './frameBase.js';
+
+/** N-412: a render with no height map, by its base (frameBase.js baseIsMapless): it casts its card for the lamps. */
+const MAPLESS = maplessBaseShader('aInstBase');
 
 /** The highest height a tile's 8 bits spanned, as the sun map's (2 px a step); N-211: the volumes' fragment scale. */
 export const LAMP_MAP_ZMAX = 512;
@@ -259,7 +263,7 @@ function lampHeadGlsl(source, what) {
  */
 export function lampMapVertex(source) {
   return `${lampHeadGlsl(source, 'the lamps\' shadow map')}  float zPerRow = aInstTrim.w * abs(aInstScale.y) / uSunK.w * height;
-${lampTileGlsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0) || (uTileWorld.z > 0.5 && zPerRow <= lamp.z)')}  vec2 content = aInstTrim.xy + vec2(aQuad.x, 1.0) * aInstTrim.zw;
+${lampTileGlsl(` || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0 && !${MAPLESS}) || (uTileWorld.z > 0.5 && zPerRow <= lamp.z)`)}  vec2 content = aInstTrim.xy + vec2(aQuad.x, 1.0) * aInstTrim.zw;
   float bottom = aInstTrim.y + aInstTrim.w;
   // The picture's column at the card's foot, and the foot: under the lowest row, or the base's edge towards the lamp.
   float footCol = anchor.x * aInstSize.x;
@@ -326,7 +330,7 @@ export function lampMapColumnsVertex(source, cells = LAMP_MAP_COLUMNS) {
   vec4 m = twinTexel(uvc, win);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
   float z = twinHeights(win) ? twinZ(m) * height * abs(aInstScale.y) : 0.0;
-${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5 || (uTileWorld.z > 0.5 && z <= lamp.z)')}  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
+${lampTileGlsl(` || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && (aInstBase.x >= 0.0 || ${MAPLESS})) || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5 || (uTileWorld.z > 0.5 && z <= lamp.z)`)}  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
   // The column runs from the lamp's way (radially), its width across.
@@ -442,7 +446,7 @@ function lampPartsWgsl(source, what) {
 export function lampMapWgsl(source) {
   const { head, rest } = lampPartsWgsl(source, 'the lamps\' shadow map');
   return `${head}  let zPerRow = aInstTrim.w * abs(aInstScale.y) / uniforms.uSunK.w * height;
-${lampTileWgsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0) || (uniforms.uTileWorld.z > 0.5 && zPerRow <= lamp.z)')}  let content = aInstTrim.xy + vec2<f32>(aQuad.x, 1.0) * aInstTrim.zw;
+${lampTileWgsl(` || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0 && !${MAPLESS}) || (uniforms.uTileWorld.z > 0.5 && zPerRow <= lamp.z)`)}  let content = aInstTrim.xy + vec2<f32>(aQuad.x, 1.0) * aInstTrim.zw;
   let bottom = aInstTrim.y + aInstTrim.w;
   var footCol = anchor.x * aInstSize.x;
   var foot = vec2<f32>(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uniforms.uGroundInvScaleY);
@@ -518,7 +522,7 @@ export function lampMapColumnsWgsl(source, cells = LAMP_MAP_COLUMNS) {
   let m = twinTexel(uvc, win);
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
   let z = select(0.0, twinZ(m) * height * abs(aInstScale.y), twinHeights(win));
-${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5 || (uniforms.uTileWorld.z > 0.5 && z <= lamp.z)')}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
+${lampTileWgsl(` || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && (aInstBase.x >= 0.0 || ${MAPLESS})) || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5 || (uniforms.uTileWorld.z > 0.5 && z <= lamp.z)`)}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
   let fromLamp = base - lamp.xy;

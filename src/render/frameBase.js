@@ -269,6 +269,31 @@ export function measureHeightPerRow(opaque, heightAt, w, h, contact) {
  */
 export const HEIGHT_PER_ROW_CODES = 512;
 export const HEIGHT_PER_ROW_STEPS = 256;
+/**
+ * N-412: the code of a render with no height map (base.mapless): no height per row to measure, so every row is height
+ * (the shaders' share saturates past 1.3 px a row, as this code reads), and its contact is its lowest opaque row. Such a
+ * frame casts its card for every light; a measured code stops one short of it.
+ */
+export const MAPLESS_ROW_CODE = HEIGHT_PER_ROW_CODES - 1;
+
+/**
+ * N-412: whether a texture table's base float (lutBaseFloats' first) is a render with no height map: a contact whose
+ * code is MAPLESS_ROW_CODE. Such a frame stands on its contact but casts its card, never columns.
+ * @param {number} x
+ */
+export function baseIsMapless(x) {
+  if (!(x < 0)) return false;
+  const packed = -x - 1;
+  return Math.round((packed - Math.floor(packed)) * HEIGHT_PER_ROW_CODES) === MAPLESS_ROW_CODE;
+}
+
+/**
+ * N-412: baseIsMapless in a shader (GLSL and WGSL alike: fract and floor read the same): `b` the base's vec2 by name.
+ * @param {string} b
+ */
+export function maplessBaseShader(b) {
+  return `(${b}.x < 0.0 && floor(fract(-${b}.x - 1.0) * ${HEIGHT_PER_ROW_CODES}.0 + 0.5) > ${MAPLESS_ROW_CODE - 0.5})`;
+}
 
 /** A group spec's keys that are no direction (spriteDirections.js). */
 const GROUP_KEYS = new Set(['count', 'startAngle', 'clockwise', 'anims', 'mirrorX']);
@@ -295,7 +320,8 @@ export function isRenderDirections(spec) {
  * shaders: [0, 0] none; an ellipse [cx + 1, rx] (feet, ry = 0.6 rx) or [cx + 1, -rx] (a round trunk); a render
  * [-(1 + its lowest contact's whole row + its height per row's code / HEIGHT_PER_ROW_CODES), 0] (N-297: the contact is
  * that row's centre; base.heightPerRow, measureHeightPerRow), or -0.5 in the second when it casts its card for the sun
- * (base.card: the sheet's shadowCast.sun 'sprite'). writeLutSlot then puts its footprint row there, + 1, with that sign. H-EDGE: a base also says
+ * (base.card: the sheet's shadowCast.sun 'sprite'; N-412: a render with no height map, base.mapless, is one with
+ * MAPLESS_ROW_CODE). writeLutSlot then puts its footprint row there, + 1, with that sign. H-EDGE: a base also says
  * what its frame's texels hold (base.texels, FRAME_SOFT...), which the texture table keeps apart (buildTextureLut); a
  * base of that alone floats as none.
  * @param {{ cx?: number, rx?: number, ry?: number, contact?: number, heightPerRow?: number, texels?: number } | null | undefined} base
@@ -308,7 +334,8 @@ export function lutBaseFloats(base, out, at) {
   if (!base) return;
   if (base.contact >= 0) {
     const perRow = base.heightPerRow;
-    const code = perRow >= 0 ? 1 + Math.min(Math.round(perRow * HEIGHT_PER_ROW_STEPS), HEIGHT_PER_ROW_CODES - 2) : 0;
+    let code = perRow >= 0 ? 1 + Math.min(Math.round(perRow * HEIGHT_PER_ROW_STEPS), MAPLESS_ROW_CODE - 2) : 0;
+    if (base.mapless === true) code = MAPLESS_ROW_CODE;
     out[at] = -(1 + Math.floor(base.contact) + code / HEIGHT_PER_ROW_CODES);
     if (base.card === true) out[at + 1] = -0.5;
   } else if (base.rx > 0 && base.cx >= 0) {
@@ -352,7 +379,8 @@ function someFirstBase(json, proxy, solid) {
     const list = anims[a?.prefixedName];
     const first = list && list[0];
     const base = first !== undefined ? frames[first]?.base : undefined;
-    if (base && base.contact >= 0 && !(solid && base.card === true)) return true;
+    // N-412: a render with no height map stands on a contact for its card alone: it casts no solid for any light.
+    if (base && base.contact >= 0 && base.mapless !== true && !(solid && base.card === true)) return true;
   }
   return false;
 }

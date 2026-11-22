@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import {
   CONTACT_HEIGHT,
   CONTACT_SHARE,
+  MAPLESS_ROW_CODE,
+  baseIsMapless,
+  maplessBaseShader,
   HEIGHT_PER_ROW_CODES,
   HEIGHT_PER_ROW_STEPS,
   isRenderDirections,
@@ -14,6 +17,7 @@ import {
   measureLowestContact,
   measureStandingBase,
   sheetCastsSolid,
+  sheetStandsOnContact,
 } from '../../src/render/frameBase.js';
 import { buildTextureLut, packTextureLutRgba, TEX_LUT_FLOATS } from '../../src/render/instancedSpriteBatch.js';
 
@@ -161,4 +165,32 @@ test('a sheet casts its solid when a frame of it stands on a contact (a render w
   assert.equal(sheetCastsSolid(json, walker), true);
   assert.equal(sheetCastsSolid(json, { animations: { x: { prefixedName: 'missing' } } }), false);
   assert.equal(sheetCastsSolid(null, barn), false);
+});
+
+test('N-412: a render with no height map stands on its lowest row for its card, and casts no solid for any light', () => {
+  const out = new Float32Array(2);
+  lutBaseFloats({ contact: 394.5, heightPerRow: -1, card: true, mapless: true }, out, 0);
+  assert.equal(baseIsMapless(out[0]), true, 'its code is the mapless one');
+  assert.equal(out[1], -0.5, 'a card for the sun');
+  const packed = -out[0] - 1;
+  assert.equal(Math.floor(packed) + 0.5, 394.5, 'its contact, the row the shaders read');
+  // A measured render, however tall a row, keeps a code below it; ellipses and empty bases are no render at all.
+  lutBaseFloats({ contact: 10.5, heightPerRow: 9 }, out, 0);
+  assert.equal(baseIsMapless(out[0]), false, 'a measure past the codes stops one short of the mapless code');
+  assert.ok(Math.round((-out[0] - 1 - 10) * HEIGHT_PER_ROW_CODES) === MAPLESS_ROW_CODE - 1);
+  assert.equal(baseIsMapless(33), false);
+  assert.equal(baseIsMapless(0), false);
+  // The shaders' test reads the same float the same way (GLSL's floor and fract, here in JS).
+  const shader = maplessBaseShader('b');
+  const fract = (v) => v - Math.floor(v);
+  const read = (x) => new Function('b', 'floor', 'fract', `return ${shader};`)({ x }, Math.floor, fract);
+  lutBaseFloats({ contact: 394.5, mapless: true, card: true }, out, 0);
+  assert.equal(read(out[0]), true);
+  lutBaseFloats({ contact: 394.5, heightPerRow: 0.4, card: true }, out, 0);
+  assert.equal(read(out[0]), false);
+  // A sheet whose frames are such renders stands on no contact and casts no solid: its lamps and its sun take its card.
+  const json = { animations: { car_drive_0: ['car/0'] }, frames: { 'car/0': { base: { contact: 60.5, heightPerRow: -1, card: true, mapless: true } } } };
+  const car = { animations: { drive_0: { prefixedName: 'car_drive_0' } } };
+  assert.equal(sheetStandsOnContact(json, car), false);
+  assert.equal(sheetCastsSolid(json, car), false);
 });

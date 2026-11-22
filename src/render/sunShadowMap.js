@@ -15,7 +15,7 @@
  * the column under it, so its shadow is its solid's, turned as it is.
  */
 
-import { FOOTPRINT_MAX_VERTICES } from './frameBase.js';
+import { FOOTPRINT_MAX_VERTICES, baseIsMapless } from './frameBase.js';
 import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
 import { hasOnce, requireMarks } from './shaderEdit.js';
 
@@ -155,7 +155,8 @@ export function compactKeyedColumnRows(src, rows, rowFloats, statics, lut, lutFl
     const id = frame !== 0 ? ((frame < 0 ? -frame : frame) - 1) | 0 : statics[slot * 3] | 0;
     if (id < 0 || id >= ids) continue;
     const l = id * lutFloats;
-    if (!(lut[l + 10] < 0 && (light === 1 || lut[l + 11] >= 0))) continue;
+    // N-412: a render with no height map casts its card for every light, no columns.
+    if (!(lut[l + 10] < 0 && !baseIsMapless(lut[l + 10]) && (light === 1 || lut[l + 11] >= 0))) continue;
     const sx = statics[slot * 3 + 1];
     const w = lut[l + 8] * (frame < 0 ? -(sx < 0 ? -sx : sx) : sx);
     const h = lut[l + 9] * statics[slot * 3 + 2];
@@ -195,7 +196,7 @@ export function compactColumnRows(src, rows, rowFloats, lut, lutFloats, light, o
     const id = src[at + ROW_TEX] | 0;
     if (id < 0 || id >= ids) continue;
     const l = id * lutFloats;
-    if (kind === 0 && !(lut[l + 10] < 0 && (light === 1 || lut[l + 11] >= 0))) continue;
+    if (kind === 0 && !(lut[l + 10] < 0 && !baseIsMapless(lut[l + 10]) && (light === 1 || lut[l + 11] >= 0))) continue;
     const w = lut[l + 8] * src[at + ROW_SCALE];
     const h = lut[l + 9] * src[at + ROW_SCALE + 1];
     const side = Math.max(w < 0 ? -w : w, h < 0 ? -h : h);

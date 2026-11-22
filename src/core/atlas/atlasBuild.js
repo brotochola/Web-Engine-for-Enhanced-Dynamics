@@ -523,6 +523,14 @@ export async function buildBigAtlas(
   for (const d of imagesToPack) {
     const b = d.base;
     if (!b || !frames[d.name]) continue;
+    // N-412: a render with no height map (its frames drawn from many directions, a light shown the frame it sees) stands
+    // on its lowest opaque row, that far from its anchor towards the light, as a render with one stands on its contact;
+    // measured as a picture of one view, its card stood that far towards the camera, and a barn's or a car's shadow
+    // came out below it. It casts its card for every light (no heights to build columns from).
+    if (b.contact === undefined && d.renderDirections && !d.maps?.heightImg) {
+      frames[d.name].base = { contact: b.bottom - 0.5, heightPerRow: -1, card: true, mapless: true };
+      continue;
+    }
     frames[d.name].base = b.contact >= 0
       ? (d.sunCard ? { contact: b.contact, heightPerRow: b.heightPerRow, card: true } : { contact: b.contact, heightPerRow: b.heightPerRow })
       : { cx: b.cx, rx: b.rx, ry: b.ry };
