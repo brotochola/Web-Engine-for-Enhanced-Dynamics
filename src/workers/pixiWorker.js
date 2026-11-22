@@ -9900,15 +9900,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._queueInterp = rendererConfig.interpolation === true;
     this._keyedPosesByRow = (rendererConfig.keyedPosesByRow ?? RENDERER_DEFAULTS.keyedPosesByRow) === true;
 
-    // Configure scheduling (AbstractWorker may miss 'renderer' key before aliases)
-    const fixedFps = Number(rendererConfig.fixedFps);
-    if (fixedFps > 0) {
-      this.fixedFps = fixedFps;
-      this.noLimitFPS = false;
-    } else if (rendererConfig.noLimitFPS === true) {
-      this.noLimitFPS = true;
-    }
-
     this._ySortMode = rendererConfig.ySort;
     this._ySort = ySortEnabled(this._ySortMode);
     const preCfg = this.config.preRender || {};

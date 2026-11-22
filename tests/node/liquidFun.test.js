@@ -790,9 +790,15 @@ test('logic worker binds LiquidFun HEAP pose on box2dReady and liquidFunHeap', (
     join(dirname(fileURLToPath(import.meta.url)), '../../src/workers/logicWorker.js'),
     'utf8',
   );
-  // On the worker's handle of the engine block when it has one (AbstractWorker._liquidFunHeapPayload).
-  assert.match(src, /LiquidFun\.bindHeapPose\(this\._liquidFunHeapPayload\(data\.liquidFunHeap\)\)/);
+  const base = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../../src/workers/abstractWorker.js'),
+    'utf8',
+  );
+  // N-303 CR-21: logic's box2dReady binds through AbstractWorker's handler (liquidFunHeap reaches it by the default
+  // case), which binds the pose on the worker's handle of the engine block when it has one (_liquidFunHeapPayload).
+  assert.match(src, /case 'box2dReady': \{[^}]*super\.handleCustomMessage\(data\);/);
   assert.match(src, /default:\s*super\.handleCustomMessage\(data\);/);
+  assert.equal(base.split('LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap))').length - 1, 2);
 });
 
 test('bindSabs after bindHeapPose keeps HEAP userData and groupIndex', () => {

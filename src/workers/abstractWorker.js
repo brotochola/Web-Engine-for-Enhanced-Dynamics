@@ -583,14 +583,14 @@ export class AbstractWorker {
     // Boot: query/explode throw if no WASM worker. Not a per-tick gate.
     Box2d.physicsWorkerAbsent = data.config?.physics?.enabled === false;
 
-    // Check nested config for fixedFps / noLimitFPS (class name → config key)
+    // Check nested config for fixedFps / noLimitFPS (class name → config key). N-303 CR-21: the renderer's class is
+    // PixiRenderer, so its alias was 'pixi' in name only and the Pixi worker read the key again itself.
     const workerType = this.constructor.name.replace('Worker', '').toLowerCase();
     const configKeyAliases = {
       prerender: 'preRender',
-      pixi: 'renderer',
+      pixirenderer: 'renderer',
     };
-    const configKey = configKeyAliases[workerType] || workerType;
-    const workerConfig = this.config[configKey] || this.config[workerType] || {};
+    const workerConfig = this.config[configKeyAliases[workerType] || workerType] || {};
     const fixedFps = Number(workerConfig.fixedFps);
     if (fixedFps > 0) {
       this.fixedFps = fixedFps;

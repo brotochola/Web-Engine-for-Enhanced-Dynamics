@@ -64,17 +64,6 @@ import {
 import { bindNavRequestRing } from '../util/navRequestRing.js';
 import { NavGrid } from '../core/navGrid.js';
 import { EntityIdArray, unpackPair } from '../util/entityIdWidth.js';
-import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
-import { bindCommandRing } from '../box2d/box2dCommandRing.js';
-import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
-import { bindOverlapCircleSab } from '../box2d/box2dOverlapCircle.js';
-import { bindRayCastSab } from '../box2d/box2dRayCast.js';
-import { bindCastRayAllSab } from '../box2d/box2dCastRayAll.js';
-import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
-import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
-import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
-import { LiquidFun } from '../core/liquidFun.js';
-import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import {
   bindContactRing,
   drainContactRing,
@@ -3377,37 +3366,9 @@ class LogicWorker extends AbstractWorker {
 
     switch (msg) {
       case 'box2dReady': {
-        bindBox2dHotFields(data);
-        if (data.commandSab) {
-          bindCommandRing(data.commandSab);
-        }
-        if (data.queryAabbSab) {
-          bindQueryAabbSab(data.queryAabbSab);
-        }
-        if (data.overlapCircleSab) {
-          bindOverlapCircleSab(data.overlapCircleSab);
-        }
-        if (data.rayCastSab) {
-          bindRayCastSab(data.rayCastSab);
-        }
-        if (data.castRayAllSab) {
-          bindCastRayAllSab(data.castRayAllSab);
-        }
-        if (data.liquidFunQuerySab) {
-          bindLiquidFunQuerySab(data.liquidFunQuerySab);
-        }
-        if (data.liquidFunExtractSab) {
-          bindLiquidFunExtractSab(data.liquidFunExtractSab);
-        }
-        if (data.liquidFunUserDataListSab) {
-          bindLiquidFunUserDataListSab(data.liquidFunUserDataListSab);
-        }
-        if (data.liquidFunHeap) {
-          LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
-        }
-        if (data.movedSab) {
-          bindMovedBodies(data.movedSab);
-        }
+        // The hot fields, the command ring, the query buffers, the moved list and LiquidFun's heap: AbstractWorker's
+        // binders, as every worker binds them (N-303 CR-21). Logic adds the event rings it drains.
+        super.handleCustomMessage(data);
         if (data.contactSab) {
           bindContactRing(data.contactSab);
           this.box2dContactRingI32 = new Int32Array(data.contactSab);
