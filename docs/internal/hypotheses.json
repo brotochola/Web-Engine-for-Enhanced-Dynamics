@@ -24900,6 +24900,44 @@
         "spatial 40k",
         "spatial regression"
       ]
+    },
+    {
+      "records": [
+        "R-1732"
+      ],
+      "refs": [],
+      "id": "N-404",
+      "title": "box2dQueryProtocol.test.js's N-25 test slept 300 ms for each worker to reach its wait; under load the requester started after the answer and read 'not-equal'",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-22",
+      "result": "Each worker raises a flag just before it waits and the test waits for it within a wall-clock deadline: 24 copies at once on 2 cores, 3 rounds, 45 of 72 runs failed before, 0 after.",
+      "statusText": "fixed 2026-11-22 on the ASUS (284e25cf, R-1732)",
+      "next": "Nothing left.",
+      "aliases": [
+        "N-25 test flaky",
+        "ray cast queue test"
+      ]
+    },
+    {
+      "records": [
+        "R-1733"
+      ],
+      "refs": [],
+      "id": "N-405",
+      "title": "summarizeV8Deopt cut steady state at --warmup-ms from each log's start: a page that loads longer than the warm-up (the ASUS) put its start-up deopts in it",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-22",
+      "result": "summarizeV8Deopt --tail-ms takes the last n ms of each log (the measure window that ends the run); profileSceneSweep passes --duration-ms. The cut from the start stays without it.",
+      "statusText": "fixed 2026-11-22 on the ASUS (0397d082, R-1733)",
+      "next": "Nothing left.",
+      "aliases": [
+        "steady deopt window",
+        "deopt tail"
+      ]
     }
   ],
   "records": [
@@ -41301,6 +41339,30 @@
       "text": "**DBG-12 done: a node test fails when a lighting, sun or camera config key or a layer kind has neither a place in the debug UI nor a reason.**\n\nsrc/core/debug/debugUiCoverage.js maps each SUN_DEFAULTS key to the Sun property its Light tab control drives. NOT_SHOWN gives the keys the UI leaves out, each with a one-line reason: maxElevation, shadowAngleOffset, the shadow length ratios and stretch fade (set once from config), the hour colour table, and lighting.sun (shown live).\n\ndebugUiCoverage.test.js checks every LIGHTING_DEFAULTS, SUN_DEFAULTS and CAMERA_DEFAULTS key and every LAYER_KIND against the tables and against the panels' own functions: lightingOptionRows, the Sun setters, cameraProjectionText, layerDetailsText.\n\nRender views wait for DBG-5: the module's header records the convention for them.",
       "commits": [
         "e7b53472"
+      ]
+    },
+    {
+      "id": "R-1732",
+      "date": "2026-11-22",
+      "time": "01:00",
+      "timeFrom": "recorded",
+      "title": "N-404 fixed: the N-25 test waits for each worker's flag before its wait (45 of 72 failed under 24 parallel copies before, 0 after)",
+      "verdict": "kept-hygiene",
+      "text": "**N-404 fixed: box2dQueryProtocol.test.js's N-25 test (\"an answer wakes its requester even with another worker queued in front\") slept 300 ms for each worker to reach its wait.**\n\nUnder load the requester's thread started after the answer was out, and its wait read 'not-equal': once in 3480 tests in the suite beside the deopt sweep on the ASUS. 5 of 5 runs alone passed.\n\nEach worker now raises a flag in a SAB of its own just before it waits, and the test waits for the flag within a 10 s wall-clock deadline, then 50 ms more.\n\nThe stress run, 24 copies of the file at once on the ASUS's 2 cores with the deopt sweep running, 3 rounds:\n- before: 45 of 72 runs of the test failed;\n- after: 0 of 72, and 504 of 504 tests passed.",
+      "commits": [
+        "284e25cf"
+      ]
+    },
+    {
+      "id": "R-1733",
+      "date": "2026-11-22",
+      "time": "01:00",
+      "timeFrom": "recorded",
+      "title": "N-405 fixed: the deopt summary's steady window is the last --tail-ms of each log; the sweep's deopt pass passes its measure window",
+      "verdict": "kept-hygiene",
+      "text": "**N-405 fixed: the deopt summary's steady window was cut at --warmup-ms from each V8 log's start.**\n\n**The cause.** An isolate starts when its worker does, so on a machine where the page loads for longer than the warm-up, start-up deopts counted as steady. The ASUS's pages load in 5 to 10 s against a 6 s warm-up. In the sweep of 2026-11-22 (0900w, 86 scenes) the \"steady\" list held:\n- the tilemap's GID page packs (tilemapGid.js 253 and 122, 215 and 52), which run once at load (pixiWorker _fillTilemapPages);\n- initializeArrays' megamorphic loads;\n- each scene's waitMeter and abstractWorker prototype-chain changes.\n\n**The fix.** summarizeV8Deopt --tail-ms <n> takes the last n ms of each log: the measure window, which ends the run. profileSceneSweep's deopt pass passes its --duration-ms. Without --tail-ms the cut is as before.\n\nTest: summarizeV8DeoptTail.test.js.",
+      "commits": [
+        "0397d082"
       ]
     }
   ],
