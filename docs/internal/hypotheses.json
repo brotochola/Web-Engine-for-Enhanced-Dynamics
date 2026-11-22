@@ -12791,12 +12791,12 @@
       "id": "N-158",
       "title": "Per-frame allocations left in pre-render (61 KB/s) and Pixi in the flashlight trace: frame loop, waits, camera bounds, gather columns",
       "status": "open",
-      "statusText": "rounds 3 and 4 2026-11-22 on the ASUS (9c1f02c9, d4e750af; R-1758, R-1760): the visibility kernels take no doubles",
+      "statusText": "rounds 3 and 4 2026-11-22 on the ASUS (R-1758, R-1760): the visibility kernels take no doubles; the frame loop's _runFrame about halved in every worker (R-1830)",
       "date": "2026-11-12",
       "area": "engine",
       "kind": "speed",
       "result": "Pre-render on the flashlight scene 127 -> 54.6 KB/s (2 605 -> 930 B a frame): the gather's and the sweep's doubles go through their tables (E-85).",
-      "next": "What is left in pre-render: _waitForPose 122 B a frame, _runFrame 120 and reportFPS 105 (abstractWorker, every worker), resolveDrawnCamera 51, _collectVisibleEntitiesWasm 51; Predator crowd 2.5 sampled with a longer warm-up.",
+      "next": "What is left: pre-render's _waitForPose, resolveDrawnCamera, _collectVisibleEntitiesWasm and reportFPS (sample with a 70 s warm-up: once-a-frame code sits in Sparkplug through the usual 8 s, R-1830); the frame loop in every worker (R-1830): update(deltaTime, dtRatio) read from this._timing (every worker's signature and about 15 test calls), addFrame's and the wait meter's doubles through Float64Arrays, about 4 to 6 KB/s a worker.",
       "refs": [
         "REVIEW_PLAN.md#N-158"
       ],
@@ -12814,7 +12814,8 @@
         "R-1758",
         "R-1760",
         "R-1828",
-        "R-1829"
+        "R-1829",
+        "R-1830"
       ]
     },
     {
@@ -42021,6 +42022,15 @@
       "title": "Predator gate over the ASUS's batch 5 and dd5ab466 (3d98325b -> 3fdbd5ba): NEUTRAL, preRender +0.6 %",
       "verdict": "kept-hygiene",
       "text": "**The ASUS's batch 5 (N-158 round 4, the sweep's doubles through its consts) and dd5ab466 (CR-21: the renderer's config key, logic's box2dReady through super) pass Predator: NEUTRAL.** batch6-gate, Predator `crowd=2.5&dayCycle=0&mix=1` from the E-210 save, 3d98325b -> 3fdbd5ba, owner preRender, 4 pairs, 04:50 to 04:53:\n\n- preRender 8.091 -> 8.141 ms (+0.6 %, worse 2/4, cv 2/3 %);\n- logic +2.1 % (worse 3/4, cv 3/2 %, under the session's A/A of 3.2 %), spatial +0.4 %, physics -0.1 %, renderer +5.4 % (cv 6/11 %, its swing); particle under the floor.\n- Load keys within 0.7 %.\n\nKept as hygiene: N-158's measure is the heap sample (R-1760: _buildVisibilityPolygonsSwept 360 -> 19 B/frame, pre-render 83 -> 54.6 KB/s on the flashlight scene). Over the two gates (aeddffd7 -> 3fdbd5ba) pre-render read -2.5 % then +0.6 %."
+    },
+    {
+      "id": "R-1830",
+      "date": "2026-11-22",
+      "time": "05:12",
+      "timeFrom": "recorded",
+      "title": "N-158: the frame loop's heap numbers, _runFrame about halved in every worker (stampStep and the frame wall through Float64Arrays, two clock reads a frame); samples of once-a-frame code need a 70 s warm-up",
+      "verdict": "kept-hygiene",
+      "text": "**N-158, the frame loop every worker runs (cb0cad0d): about half of _runFrame's heap numbers gone.** Heap samples of the balls scene (heapSampleWorkers, spatial, particle, pre-render and logic) at 05:02 to 05:12:\n\n- First a warning about the samples: with the usual 8 s warm-up the frame loop's functions (called 60 times a second) are barely past Sparkplug, which boxes nearly every double: logic read 421 B/frame then, 163 after a 70 s warm-up, pre-render 791 -> 302, spatial 296 -> 180. Samples of once-a-frame code need the long warm-up (TurboFan takes it at about 3 000 calls, some 50 s).\n- After 70 s, _runFrame alone still made 65 to 92 B a frame in each worker. Five performance.now() reads a frame became two (the start, which updateFrameTiming takes and leaves in lastFrameTime, and the end; STEP_MS now starts at the frame's start, a microsecond earlier); Math.min/max in updateFrameTiming became comparisons. That alone moved little (spatial 86 -> 79, logic 65 -> 65, particle 92 -> 57, pre-render 74 -> 64: within the sampling's noise), so the clock reads were not it.\n- The doubles passed to calls _runFrame does not inline were: stampStep's two ends now come in a Float64Array (FRAME_STAMP; the main thread's MAIN_STAMP), and the frame's wall time is written straight into timeScale's FRAME_WALL instead of through Time._noteFrameWall. _runFrame then: spatial 86 -> 34, logic 65 -> 39, particle 92 -> 31, pre-render 74 -> 48 B/frame (about 2.5 KB/s less in each worker, some 15 KB/s over a scene's six).\n- Left in the loop: update(deltaTime, dtRatio)'s two doubles (about 24 B/frame a worker; the fix reads them from this._timing, with every worker's signature and about 15 test calls), addFrame's (_writeFrameMeters, 10 to 20 B/frame; the same Float64Array fix as stampStep, with frameTotals' tests) and the wait meter's (waitMeterMs / addWaitMs return and take doubles; a Float64Array on the global, the classic physics scripts too). Together about 4 to 6 KB/s a worker.\n\nHygiene (allocation, not time): suites green; it rides the next Predator gate."
     }
   ],
   "leads": [
