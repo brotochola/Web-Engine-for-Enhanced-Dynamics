@@ -19585,13 +19585,13 @@
     {
       "id": "N-226",
       "title": "Wasm kernel benches that warm a new export with a few short frames time its Liftoff code, not TurboFan's: a 5 000-row pack read 0.104 ms warmed so against 0.065 ms under --no-liftoff, and gpuPackKeyedMicrobench (20 warm frames) may have timed E-387's 0.1318 ms that way",
-      "status": "open",
-      "statusText": "screened 2026-11-21 on the ASUS with wasmTierCompare.mjs (R-1721); liquidFunExtract fixed (47ac1aab); four benches left",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-21 on the ASUS: wasmTierCompare.mjs (42aa376d, a2c9c8e9) screened the 56 WASM benches; liquidFunExtract (47ac1aab) and liquidFunComputeDepth (6645b189) warm to TurboFan (R-1721, R-1723)",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "gpuPackIndexedMicrobench, E-444's export: 0.104 ms (10 small warm frames) against 0.065 ms (--no-liftoff) at 5 000 rows; with 250 ms of warm-up per case the owner shape still read 13 % faster under --no-liftoff than under V8's default tiering (3.308 / 3.310 -> 3.283 / 3.083 against 3.400 / 3.560 -> 2.928 / 3.115), unexplained. HOW_WE_MEASURE asks for TurboFan, not Liftoff, in wasm kernels.",
-      "next": "liquidFunComputeDepth (x1.21), liquidFunPassProfile (x1.08 to x1.14), sunFrames (x1.17) and shadowStamp's stamp case (x1.19): confirm each with wasmTierCompare --pairs 4 on a quiet machine, then a time-based warm-up (as liquidFunExtract's); bodyForceCall's batch r1 (x1.10). warmWasm checks the export only: a callee can stay in Liftoff.",
+      "result": "Fixed: two LiquidFun benches timed Liftoff (extract 2 to 3.6x slow, ComputeDepth 1.15x) and now warm 1.5 s on one world; every other flag of the 2-pair screen read even at 4 pairs. warmWasm checks the export only, so a one-shot bench needs a time-based warm-up.",
+      "next": "Nothing left on the bench side; wasmTierCompare --pairs 2 then --pairs 4 checks a new WASM bench.",
       "refs": [],
       "aliases": [
         "liftoff in wasm benches",
@@ -19599,7 +19599,8 @@
       ],
       "records": [
         "R-1247",
-        "R-1721"
+        "R-1721",
+        "R-1723"
       ]
     },
     {
@@ -40861,6 +40862,18 @@
       "text": "**N-401 fixed: physicsChainWait's bell test let its ringer outrun the waiter on 2 cores.** Branch fix/n401-physics-bell-test, on the ASUS, by the main PC's session over ssh.\n\n- **Found** in the batch's full suite on the ASUS (3446 tests): \"physics sleeps until the bell rings: a query posted mid-wait is answered, the frames end the wait\" read 2 service passes (3 to 5 expected); 3 of 3 alone. Under 24 copies at once, 4 rounds: 7 failures in 384, each reading 1 pass.\n- **Cause:** the ringer rang on its own clock (3, 6 and 9 ms after go), spinning; on 2 cores under parallel files it rang twice or three times while the waiter was still asleep, or before it first slept, so the waiter woke once (or never) for several rings.\n- **Fix:** before each ring the ringer waits, up to 500 ms, until the waiter has made one pass per ring so far (the test's service counts passes in a shared word). Each ring now meets an awake waiter; a waiter that stopped serving on a ring still fails the count (the ringer rings anyway after 500 ms).\n- **Checked:** 24 copies at once, 4 rounds on the ASUS (C:\\weedlab\\flakeStress2.cmd): 7 failures in 384 before, 0 in 384 after. The same class as N-400 (a cross-thread test timed on one thread's own clock).",
       "commits": [
         "dde5b572"
+      ]
+    },
+    {
+      "id": "R-1723",
+      "date": "2026-11-21",
+      "time": "21:53",
+      "timeFrom": "recorded",
+      "title": "N-226 finished on the ASUS: only liquidFunComputeDepth held at 4 pairs (x1.145), now warmed to TurboFan (3.574 -> 3.094 ms); the other flags were noise",
+      "verdict": "kept-hygiene",
+      "text": "**N-226 finished on the ASUS: of the screen's flags, only liquidFunComputeDepth held at 4 pairs, and it now warms to TurboFan; nothing else left.** Branch tools/n226-compute-depth-warm, on the ASUS, by the main PC's session over ssh.\n\n- **Confirmation, 4 pairs** (job 0900r): liquidFunComputeDepth x1.145 LIFTOFF; liquidFunPassProfile (x1.017), sunFrames (x1.067), shadowStamp (x1.083) and decorationVisibilityGrid (x1.032) even: their 2-pair flags were the ASUS's noise.\n- **Fixed: liquidFunComputeDepthMicrobench** warms 1.5 s on one world for the process, as liquidFunExtract's. ASUS, median ms of the first step after the ice: before 3.574 (3.11 to 3.73), before under --no-liftoff 3.121, now 3.094 (3.09 to 3.20); the tool, 4 pairs: even (x1.002).\n- **Left of the earlier rounds:** bodyForceCall's batch r1 read x1.10 in one 4-pair round (one case of nine); not chased (one case, a 15 W CPU's noise of about +-20 %).\n- **How to use the tool:** wasmTierCompare.mjs --pairs 2 screens every WASM bench in about 6 minutes on the ASUS; confirm a flag with --pairs 4 before acting on it.",
+      "commits": [
+        "6645b189"
       ]
     }
   ],
