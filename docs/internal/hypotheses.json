@@ -11562,7 +11562,8 @@
         "R-0854",
         "R-0908",
         "R-1678",
-        "R-1682"
+        "R-1682",
+        "R-1690"
       ]
     },
     {
@@ -20794,8 +20795,8 @@
     {
       "id": "E-493",
       "title": "E-298's idle spin calls b2SchedulerHasPending every turn, which scans every enqueued task's status atomic (12-byte slots, about 5 a cache line, up to 256): the three spinning pool threads keep pulling the lines the claiming and completing threads write",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the physics agent reading box2d/src/scheduler.c",
+      "status": "kept",
+      "statusText": "Kept 2026-11-21 (R-1689): b2Scheduler's pending tasks in one padded word the spinners poll (Box2D ef43206); Predator's battle from a save physics -7.1 %, logic -8.8 %; LiquidFun couple -3.6 %.",
       "date": "2026-11-16",
       "area": "physics",
       "kind": "speed",
@@ -20806,7 +20807,8 @@
         "spin polls every task slot"
       ],
       "records": [
-        "R-1238"
+        "R-1238",
+        "R-1689"
       ]
     },
     {
@@ -24764,6 +24766,20 @@
       "date": "2026-11-21",
       "statusText": "Filed 2026-11-21 closing DX-LIGHT3D (R-1681), from DX-SHADOW3D's list. Low: the sun's map is in screen space, so a cache of still casters holds only while the camera is still (the 2026-11-21 E-531 study ranked it last).",
       "next": "Count the frames a game holds its camera still (Predator, the barrio); if they matter, a still-casters layer redrawn when the view or the static scenery changes and the movers drawn over it, as E-504 does for the colour pass."
+    },
+    {
+      "records": [
+        "R-1690"
+      ],
+      "refs": [],
+      "id": "N-329",
+      "title": "A restored Predator moves fewer bodies than a fresh one at the same game time: half as many awake (5 996 against 12 229) and a fifth fewer moved at crowd 2.5, physics 2.9 against 6.7 ms of work",
+      "status": "open",
+      "kind": "bug",
+      "area": "save",
+      "date": "2026-11-21",
+      "statusText": "Found 2026-11-21 gating E-493 (R-1690): the from-save default of Predator sittings (E-210) is a lighter world than the fresh one; the mixed battle still fights restored (physics 19 ms).",
+      "next": "Read which bodies sleep after a load (Box2D sleep timers and flags restored, or walkers whose FSM stands): a restored and a fresh run side by side, Awake and Moved by entity type; then restore what makes them walk. Meanwhile a physics owner at crowd 2.5 takes mix=1 or --fresh."
     }
   ],
   "records": [
@@ -40861,6 +40877,24 @@
       "title": "Map mode packs whole caster rows because Pixi turns its keyed caster programs off while a shadow map is on, not because of kinds (workerProbe: keyed live false, kinds false)",
       "verdict": "note",
       "text": "**Why Predator's caster rows go whole in map mode: not the kinds, the maps (2026-11-21, workerProbe of the running pre-render, Predator `dayCycle=0&sunShadows=map&lampShadows=map`).** Pre-render read: _casterKindsOn false, _shadowFramesOn false, keyed casters allowed, keyed frames on (key base 62 633), but _keyedCastersLive() false every sample: Pixi never marks its keyed statics LIVE in this mode. Pixi's _ensureKeyedCasters returns before it makes the keyed caster programs whenever the sun's map, the lamps' map or the renders' solids are on (\"their columns need a frame's instance whole\"), so entitiesBatch.keyedCasters stays false and pre-render packs the full 22-float rows (about 1.14 MB a frame at 13 287 casters, R-1687).\n\nSo E-395's premise (a caster with a kind turns the keyed path off) is true but not Predator's case; the lever for map mode is keyed rows the map programs can draw: the sun's map's cards and columns and the lamps' map reading the statics by key from the entity batch's texture (with the sun frame in the row's fourth float, as the keyed sun rows already carry it), GLSL and WGSL, the stamp rows too; the captures identical, then the same glFrameRecorder pair (buffers a frame) and Predator's pre-render pack time. A larger job than E-395 as written: about a working day with both backends."
+    },
+    {
+      "id": "R-1689",
+      "date": "2026-11-21",
+      "time": "21:20",
+      "timeFrom": "recorded",
+      "title": "Box2D's spinning workers poll one pending count: Predator's battle physics -7.1 % and every worker lower, LiquidFun couple -3.6 %, stress neutral",
+      "verdict": "kept",
+      "text": "**E-493 kept: Box2D's spinning workers poll one pending-task count, not every task's status.** Box2D ef43206 (merged 3625743): b2Scheduler counts its enqueued, unclaimed tasks in a padded word (counted before a task is published, uncounted on its claim); b2SchedulerHasPending reads it, b2SchedulerExecuteOne returns at once while it is 0. SIMD and no-SIMD built, the SSE2 check passed. WeedJS f201efc7, merged 3ddc6d58 (the .wasm only).\n\n- Predator crowd 2.5, one logic worker, the mixed battle, from one save (E-210), 4 pairs, ended 21:20: KEPT. Physics 19.54 -> 18.69 ms (-7.1 %, lower 3/4, cv 6/4 %), logic -8.8 %, spatial -4.5 %, renderer -3.7 %, pre-render -2.8 %; BODY_COUNT -0.0 %. Every worker lower: the spinning threads no longer sweep the task slots' cache lines (the session's from-save A/A read every worker within 1.6 %, R-1682).\n- liquidFunBodyCoupleStressScene, 4 pairs (21:10–21:14): KEPT, physics 6.34 -> 6.07 ms (-3.6 %).\n- liquidFunStressScene ?water=1.5, 2 pairs --early (21:09–21:10): NEUTRAL, physics 6.71 -> 6.67 ms (-0.5 %).\n- Predator crowd 2.5 without the battle, from its save (21:05–21:09): every worker under the floor (physics 3.2 ms): the restored world is lighter than the fresh one (N-329).\n- Node 3433/3433, demos 143/143."
+    },
+    {
+      "id": "R-1690",
+      "date": "2026-11-21",
+      "time": "21:17",
+      "timeFrom": "recorded",
+      "title": "A restored Predator is lighter than a fresh one at the same time: Awake 12 229 -> 5 996, Moved 3 824 -> 3 050, physics 6.7 -> 2.9 ms (crowd 2.5)",
+      "verdict": "note",
+      "text": "**A restored Predator is lighter than a fresh one at the same game time (found 2026-11-21 gating E-493).** Predator `crowd=2.5&dayCycle=0` (two logic workers), single runs, 6 s windows: fresh at 10-16 s physics 7.9 ms, Moved 6 968, Awake 15 989; fresh at 30-36 s physics 6.7 ms of work, Moved 3 824, Awake 12 229, spatial 7.1, logic 4.1; restored from a save taken at 20 s and measured at 30-36 s: physics 2.9 ms of work (5.85 step, 2.95 wait), Moved 3 050, Awake 5 996, spatial 5.2, logic 2.6. Half the bodies awake and a fifth fewer moving: the save brings the bodies back asleep or some walkers stand after a load. The mixed battle restored still fights (physics 19 ms, R-1682)."
     }
   ],
   "leads": [
