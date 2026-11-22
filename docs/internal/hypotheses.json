@@ -14813,12 +14813,12 @@
       "id": "E-292",
       "title": "Hot functions that stay in Maglev pay about 30 % (Predator logic with no JS in TurboFan: +29/+30 %); civilianBehaviorFsm's second neighbour loop never gets there",
       "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's code pass, not tested",
+      "statusText": "code pass 2026-11-22 (R-1834): engine code fine; one game function stuck in Maglev, cause unknown",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
       "result": "Code pass: the game's neighbour loop `civilianBehaviorFsm.js:63` (334 B) stayed in Maglev for the whole run, its sibling at line 38 reached TurboFan at 2.5 s. One run with `--efficiency-mode=false` (to test V8's efficiency-mode TurboFan delay) left every JS function below TurboFan, wasm still tiering: logic STEP_MS 3.51/3.19 → 4.53/4.15 ms, particle 0.66 → 0.94, renderer 6.58 → 7.62, physics a tie (one run a side, both with the code log: an estimate, not a verdict). That flag cannot test the delay.",
-      "next": "The code pass over the owner scenes: hot functions (≥ 1 % self) that end a run below TurboFan; engine ones, why (OSR from Maglev, deopts, size); demo loops, whether the per-entity body as its own function tiers up sooner. Then a kernel or scene for the largest.",
+      "next": "Why FleeingCivilianBehaviorState.onUpdate never leaves Maglev (R-1834): the same shape in Node or d8 (D:/perf-tools) with --trace-opt --trace-opt-verbose, called from a TurboFan dispatcher as tickOneFsm calls it; then, if it is a V8 heuristic, a scene with the loop body as its own function against not (Predator logic STEP_MS at crowd 2.5).",
       "refs": [
         "EXECUTION_PLAN.md#E-292"
       ],
@@ -14828,7 +14828,8 @@
         "efficiency mode"
       ],
       "records": [
-        "R-0994"
+        "R-0994",
+        "R-1834"
       ]
     },
     {
@@ -42059,6 +42060,15 @@
       "title": "E-290 answered: instances bind once per pool slot at boot (spawnStorm 2 001, then 0 a second; Predator 0, static ticks): nothing to gain while a scene runs",
       "verdict": "answered",
       "text": "**E-290 answered: an instance binds to its slot once, at boot, so the megamorphic bind costs nothing while a scene runs.** Its first step, counted (a temporary counter in GameObject.bindToEntitySlot, read by workerProbe in logic0, not committed), 05:30:\n\n- Predator `crowd=2.5&dayCycle=0&mix=1`: 0 binds from 15 s to 29 s, and 0 before: its people tick through static hooks (tickAll), which make no instances.\n- spawnStormScene: 2 001 binds by 10 s (one per pooled slot, made with the pool), then 0 more in 6 s of spawning and despawning: a spawn reuses its slot's instance.\n\nSo bindToEntitySlot's 10 megamorphic stores and 6 allocations are paid per pool slot at boot (2 001 binds, a few milliseconds), not per spawn. Dropped as a speed item; the shape work it proposed would only shorten the boot."
+    },
+    {
+      "id": "R-1834",
+      "date": "2026-11-22",
+      "time": "05:45",
+      "timeFrom": "recorded",
+      "title": "E-292's code pass over Predator: the engine's hot code is TurboFan (what stays in Maglev are waits and once-a-frame code); the game's FleeingCivilianBehaviorState.onUpdate stays in Maglev for 35 s with no deopt and no reason in the logs",
+      "verdict": "note",
+      "text": "**E-292's code pass over Predator (default crowd, 30 s warm-up, 8 s window), 05:36 to 05:45: the engine's hot code reaches TurboFan; one game function stays in Maglev for no reason the logs give.**\n\n- CPU pass and code pass (profileSceneSweep --only predatorScene), then the code log again with summarizeV8Code's new --game, which counts the game's code (demos/) with the engine's.\n- Engine functions that end the run below TurboFan with self time: only waits and once-a-frame functions. pixi `_waitForQueue` (2 557 ms), pre-render `_waitForPose` (1 695 ms) and logic `beforeUpdate` (134 ms, E-219's input wait) block in Atomics.wait, which V8's profiler counts as busy; particle's `updateFrameTiming`, `_runFrame`, `update` and `processNavigationRequests` are 2 to 7 ms in 8 s. The per-entity engine code (directionalSprite.resolve, tickOneFsm, _resolveListDirections, the spatial rebuilds) is TurboFan.\n- The game: `FleeingCivilianBehaviorState.onUpdate` (civilianBehaviorFsm.js:73, 393 B of bytecode), 298 ms self in 8 s over the two logic workers, the scene's second hottest game function: Ignition, Sparkplug and Maglev within 3 ms at 2.67 s, then no TurboFan compile in the remaining 35 s, no deopt, no code-disable-optimization event. Its sibling IdleCivilianBehaviorState.onUpdate (line 46, 144 B) is TurboFan from 2.4 s. The cause is not in the logs: --trace-opt prints to the renderer's stdout, which a Windows Chrome does not hand over.\n- Other findings for later, not E-292: directionalSprite.resolve (978 B) is compiled by TurboFan three times and calls pickDirectionArgs (799 B) and tableOf (761 B) as real calls (too big to inline), 236 + 52 ms in 8 s; findACivilianToShoot (soldierBehaviorFsm.js:122) is the hottest game function (870 ms) and calls the ray's _traverseGrid (905 B) as a real call."
     }
   ],
   "leads": [
