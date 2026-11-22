@@ -24735,6 +24735,25 @@
         "waitMeterClaimBurst",
         "two-core flaky test"
       ]
+    },
+    {
+      "records": [
+        "R-1722"
+      ],
+      "refs": [],
+      "id": "N-401",
+      "title": "physicsChainWait.test.js's bell test lets its ringer ring on its own clock, so on 2 cores several rings land in one sleep and the pass count reads 1 or 2",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "date": "2026-11-21",
+      "result": "Fixed: the ringer waits up to 500 ms for one service pass per ring so far before ringing again. 24 copies at once, 4 rounds on the ASUS: 7 failures in 384 before, 0 after.",
+      "statusText": "fixed 2026-11-21 (dde5b572), on fix/n401-physics-bell-test (R-1722)",
+      "next": "Nothing left.",
+      "aliases": [
+        "physicsChainWait",
+        "physics bell test"
+      ]
     }
   ],
   "records": [
@@ -40830,6 +40849,18 @@
         "42aa376d",
         "a2c9c8e9",
         "47ac1aab"
+      ]
+    },
+    {
+      "id": "R-1722",
+      "date": "2026-11-21",
+      "time": "21:50",
+      "timeFrom": "recorded",
+      "title": "N-401 fixed: physicsChainWait's ringer waits for the waiter's pass after each ring (7 failures in 384 under 24 copies before, 0 after)",
+      "verdict": "kept-hygiene",
+      "text": "**N-401 fixed: physicsChainWait's bell test let its ringer outrun the waiter on 2 cores.** Branch fix/n401-physics-bell-test, on the ASUS, by the main PC's session over ssh.\n\n- **Found** in the batch's full suite on the ASUS (3446 tests): \"physics sleeps until the bell rings: a query posted mid-wait is answered, the frames end the wait\" read 2 service passes (3 to 5 expected); 3 of 3 alone. Under 24 copies at once, 4 rounds: 7 failures in 384, each reading 1 pass.\n- **Cause:** the ringer rang on its own clock (3, 6 and 9 ms after go), spinning; on 2 cores under parallel files it rang twice or three times while the waiter was still asleep, or before it first slept, so the waiter woke once (or never) for several rings.\n- **Fix:** before each ring the ringer waits, up to 500 ms, until the waiter has made one pass per ring so far (the test's service counts passes in a shared word). Each ring now meets an awake waiter; a waiter that stopped serving on a ring still fails the count (the ringer rings anyway after 500 ms).\n- **Checked:** 24 copies at once, 4 rounds on the ASUS (C:\\weedlab\\flakeStress2.cmd): 7 failures in 384 before, 0 in 384 after. The same class as N-400 (a cross-thread test timed on one thread's own clock).",
+      "commits": [
+        "dde5b572"
       ]
     }
   ],
