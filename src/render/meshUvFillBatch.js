@@ -8,23 +8,12 @@
  * (emptyInstancedMesh); the lamps' map draws the same buffers once a tile in use (instanceCount the tiles).
  */
 
-import {
-  Geometry,
-  Mesh,
-  Shader,
-  GpuProgram,
-  GlProgram,
-  Buffer,
-  BufferUsage,
-  State,
-  Texture,
-  TextureSource,
-} from '../vendor/pixi.min.js';
+import { Geometry, Shader, GpuProgram, GlProgram, Buffer, BufferUsage, Texture } from '../vendor/pixi.min.js';
 
 import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
 import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
-import { MESH_UV_VERT_FLOATS, MESH_UV_VERT_STRIDE, writeMeshPoseTable } from './colliderFillBatch.js';
+import { FillBatchBase, MESH_UV_VERT_FLOATS, MESH_UV_VERT_STRIDE } from './colliderFillBatch.js';
 
 /**
  * The batch's program as a Shader's options. On WebGL it comes from GlProgram.from, one program for every layer's batch
@@ -41,7 +30,7 @@ export function meshUvFillProgram(useWebGpu, shaders, name) {
 /** The vec4 attributes a vertex record is read as (aVert0..aVert3): MESH_UV_VERT_FLOATS / 4. */
 export const MESH_UV_VERT_VEC4 = MESH_UV_VERT_FLOATS / 4;
 
-export class MeshUvFillBatch {
+export class MeshUvFillBatch extends FillBatchBase {
   /**
    * @param {object} opts
    * @param {number} opts.capacity vertex records
@@ -73,9 +62,9 @@ export class MeshUvFillBatch {
     bufferSystem = null,
     geometrySystem = null,
   }) {
+    super(bufferSystem);
     this.capacity = Math.max(1, capacity | 0);
     this.indexCapacity = Math.max(3, (indexCapacity | 0) > 0 ? indexCapacity | 0 : this.capacity * 3);
-    this._bufferSystem = bufferSystem;
     this._geometrySystem = geometrySystem;
     const floats = this.capacity * MESH_UV_VERT_FLOATS;
     this.data = new Float32Array(floats);
@@ -127,24 +116,6 @@ export class MeshUvFillBatch {
 
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
-    const posePx = new Float32Array(4);
-    this._poseSource = TextureSource.from({
-      resource: posePx,
-      width: 1,
-      height: 1,
-      format: 'rgba32float',
-      scaleMode: 'nearest',
-      addressMode: 'clamp-to-edge',
-      autoGenerateMipmaps: false,
-    });
-    this._poseSource.uploadMethodId = 'external';
-    this.poseTable = new Float32Array(256 * 4);
-    // ColliderFillBatch's uploadPoseTable state, declared here as there.
-    this._poseGen = new Int32Array(0);
-    this._poseStamp = 0;
-    this._poseWidth = 0;
-    this._poseHeight = 0;
-    this._poseDirty = false;
     this._sunShadow = new Float32Array(4);
     const resources = {
       uTexture: atlas,
@@ -155,36 +126,7 @@ export class MeshUvFillBatch {
     };
 
     const name = label || 'mesh-uv-fill';
-    this.shader = new Shader({ ...meshUvFillProgram(useWebGpu, shaders, name), resources });
-
-    const state = new State();
-    state.blend = true;
-    state.blendMode = 'normal';
-    // Triangles paint in order and layers by zIndex. Every layer numbers its depth from 0 in one depth buffer: a test here
-    // let a lower layer's late rows beat a higher layer's first ones (N-119).
-    state.depthTest = false;
-    state.depthMask = false;
-    state.culling = false;
-
-    this.mesh = new Mesh({
-      geometry: this.geometry,
-      shader: this.shader,
-      state,
-      label: name,
-    });
-    this.mesh.blendMode = 'normal';
-    this.mesh.visible = false;
-    this.mesh.cullable = false;
-  }
-
-  setAtlasSource(source) {
-    if (!source) return;
-    this.shader.resources.uTexture = source;
-    this.shader.resources.uSampler = source.style;
-  }
-
-  setLutSource(source) {
-    if (source) this.shader.resources.uTexLut = source;
+    this._makeMesh(this.geometry, new Shader({ ...meshUvFillProgram(useWebGpu, shaders, name), resources }), name);
   }
 
   /**
@@ -224,11 +166,6 @@ export class MeshUvFillBatch {
     }
     this._indexView = m === this.indexData.length ? this.indexData : this.indexData.subarray(0, m);
     this.indexBuffer.setDataWithSize(this._indexView, m, true);
-  }
-
-  /** ColliderFillBatch._send. */
-  _send() {
-    if (this._bufferSystem) this._bufferSystem.updateBuffer(this.buffer);
   }
 
   /**
@@ -283,24 +220,9 @@ export class MeshUvFillBatch {
     this._sendIndices();
   }
 
-  /** ColliderFillBatch.uploadPoseTable for the records: `instanceEntity` is vertexEntity, `count` the records. */
+  /** FillBatchBase.uploadPoseTable for the records: `instanceEntity` is vertexEntity, `count` the records. */
   uploadPoseTable(instanceEntity, count, views, framePose = null) {
     this.version = (this.version + 1) | 0;
-    const n = count | 0;
-    if (n <= 0 || !instanceEntity) return 0;
-    const entityCount = views.entityCount | 0;
-    const width = 256;
-    const height = Math.max(1, ((entityCount + width - 1) / width) | 0);
-    const need = width * height * 4;
-    if (!this.poseTable || this.poseTable.length < need) this.poseTable = new Float32Array(need);
-    if (!this._poseGen || this._poseGen.length < entityCount) this._poseGen = new Int32Array(entityCount);
-    const stamp = (this._poseStamp + 1) | 0 || 1;
-    this._poseStamp = stamp;
-    writeMeshPoseTable(this.poseTable, this._poseGen, stamp, instanceEntity, n, entityCount, views, framePose);
-    this._poseWidth = width;
-    this._poseHeight = height;
-    this._poseDirty = true;
-    this.mesh.visible = true;
-    return n;
+    return super.uploadPoseTable(instanceEntity, count, views, framePose);
   }
 }

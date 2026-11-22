@@ -1358,7 +1358,99 @@ export function packMeshUvVertsPaint(target, count, views) {
   return n;
 }
 
-export class ColliderFillBatch {
+/**
+ * N-303 CR-18: what ColliderFillBatch and MeshUvFillBatch share, all of it cold: the pose table's texture and its state,
+ * the atlas and LUT bindings, the immediate buffer send, the mesh's draw state and the pose upload. Their rows, their
+ * attributes and their per-entity packs stay their own.
+ */
+export class FillBatchBase {
+  /** @param {{ updateBuffer: (buffer: object) => unknown }|null} bufferSystem the renderer's: see _send */
+  constructor(bufferSystem) {
+    this._bufferSystem = bufferSystem;
+    this._poseSource = TextureSource.from({
+      resource: new Float32Array(4),
+      width: 1,
+      height: 1,
+      format: 'rgba32float',
+      scaleMode: 'nearest',
+      addressMode: 'clamp-to-edge',
+      autoGenerateMipmaps: false,
+    });
+    this._poseSource.uploadMethodId = 'external';
+    this.poseTable = new Float32Array(256 * 4);
+    // uploadPoseTable's state, declared here: written first at the first upload, it reshaped the batch mid-run (N-32).
+    this._poseGen = new Int32Array(0);
+    this._poseStamp = 0;
+    this._poseWidth = 0;
+    this._poseHeight = 0;
+    this._poseDirty = false;
+    this.shader = null;
+    this.mesh = null;
+  }
+
+  /**
+   * The batch's mesh: its rows or triangles paint in order and layers by zIndex. Every layer numbers its depth from 0 in
+   * one depth buffer: a test here let a lower layer's late rows beat a higher layer's first ones (N-119).
+   */
+  _makeMesh(geometry, shader, name) {
+    this.shader = shader;
+    const state = new State();
+    state.blend = true;
+    state.blendMode = 'normal';
+    state.depthTest = false;
+    state.depthMask = false;
+    state.culling = false;
+    this.mesh = new Mesh({ geometry, shader, state, label: name });
+    this.mesh.blendMode = 'normal';
+    this.mesh.visible = false;
+    this.mesh.cullable = false;
+  }
+
+  setAtlasSource(source) {
+    if (!source) return;
+    this.shader.resources.uTexture = source;
+    this.shader.resources.uSampler = source.style;
+  }
+
+  setLutSource(source) {
+    if (source) this.shader.resources.uTexLut = source;
+  }
+
+  /**
+   * Now, not at the next draw. WebGL's buffer system holds one range and sends it when the mesh binds, so a layer that
+   * skips a draw would lose every range but the last, and with them the rows those ranges held.
+   */
+  _send() {
+    if (this._bufferSystem) this._bufferSystem.updateBuffer(this.buffer);
+  }
+
+  /**
+   * One texel per body: xy in rg, rot cs in ba. The fat VBO stays resident.
+   * @param {object|null} [framePose] the layer's record after this frame's trackMeshFillPose: its poses, not sampled
+   *   again (writeMeshPoseTable)
+   * @returns {number} instance count left on the mesh
+   */
+  uploadPoseTable(instanceEntity, count, views, framePose = null) {
+    const n = count | 0;
+    if (n <= 0 || !instanceEntity) return 0;
+    const entityCount = views.entityCount | 0;
+    const width = 256;
+    const height = Math.max(1, ((entityCount + width - 1) / width) | 0);
+    const need = width * height * 4;
+    if (!this.poseTable || this.poseTable.length < need) this.poseTable = new Float32Array(need);
+    if (!this._poseGen || this._poseGen.length < entityCount) this._poseGen = new Int32Array(entityCount);
+    const stamp = (this._poseStamp + 1) | 0 || 1;
+    this._poseStamp = stamp;
+    writeMeshPoseTable(this.poseTable, this._poseGen, stamp, instanceEntity, n, entityCount, views, framePose);
+    this._poseWidth = width;
+    this._poseHeight = height;
+    this._poseDirty = true;
+    this.mesh.visible = true;
+    return n;
+  }
+}
+
+export class ColliderFillBatch extends FillBatchBase {
   /**
    * @param {object} opts
    * @param {number} opts.capacity
@@ -1372,8 +1464,8 @@ export class ColliderFillBatch {
    * @param {{ updateBuffer: (buffer: object) => unknown }|null} [opts.bufferSystem] the renderer's: see _send
    */
   constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null, bufferSystem = null }) {
+    super(bufferSystem);
     this.capacity = Math.max(1, capacity | 0);
-    this._bufferSystem = bufferSystem;
     const floats = this.capacity * COLLIDER_FILL_FLOATS;
     // What the Pixi Buffer uploads: always an array of its own. Uploading every frame from a view on shared
     // memory made every other worker slower in Chrome (E-123).
@@ -1414,24 +1506,6 @@ export class ColliderFillBatch {
 
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
-    const posePx = new Float32Array(4);
-    this._poseSource = TextureSource.from({
-      resource: posePx,
-      width: 1,
-      height: 1,
-      format: 'rgba32float',
-      scaleMode: 'nearest',
-      addressMode: 'clamp-to-edge',
-      autoGenerateMipmaps: false,
-    });
-    this._poseSource.uploadMethodId = 'external';
-    this.poseTable = new Float32Array(256 * 4);
-    // uploadPoseTable's state, declared here: written first at the first upload, it reshaped the batch mid-run (N-32).
-    this._poseGen = new Int32Array(0);
-    this._poseStamp = 0;
-    this._poseWidth = 0;
-    this._poseHeight = 0;
-    this._poseDirty = false;
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
@@ -1440,47 +1514,10 @@ export class ColliderFillBatch {
     };
 
     const name = label || 'collider-fill';
-    if (useWebGpu) {
-      const gpuProgram = colliderFillGpuProgram(GpuProgram, shaders?.colliderFill, name);
-      this.shader = new Shader({ gpuProgram, resources });
-    } else {
-      const glProgram = colliderFillGlProgram(
-        GlProgram,
-        shaders?.colliderFillVert,
-        shaders?.colliderFillFrag,
-        name
-      );
-      this.shader = new Shader({ glProgram, resources });
-    }
-
-    const state = new State();
-    state.blend = true;
-    state.blendMode = 'normal';
-    // Rows paint in order and layers by zIndex. Every layer numbers its depth from 0 in one depth buffer: a test here
-    // let a lower layer's late rows beat a higher layer's first ones (N-119).
-    state.depthTest = false;
-    state.depthMask = false;
-    state.culling = false;
-
-    this.mesh = new Mesh({
-      geometry: this.geometry,
-      shader: this.shader,
-      state,
-      label: name,
-    });
-    this.mesh.blendMode = 'normal';
-    this.mesh.visible = false;
-    this.mesh.cullable = false;
-  }
-
-  setAtlasSource(source) {
-    if (!source) return;
-    this.shader.resources.uTexture = source;
-    this.shader.resources.uSampler = source.style;
-  }
-
-  setLutSource(source) {
-    if (source) this.shader.resources.uTexLut = source;
+    const program = useWebGpu
+      ? { gpuProgram: colliderFillGpuProgram(GpuProgram, shaders?.colliderFill, name) }
+      : { glProgram: colliderFillGlProgram(GlProgram, shaders?.colliderFillVert, shaders?.colliderFillFrag, name) };
+    this._makeMesh(this.geometry, new Shader({ ...program, resources }), name);
   }
 
   /**
@@ -1504,14 +1541,6 @@ export class ColliderFillBatch {
   }
 
   /**
-   * Now, not at the next draw. WebGL's buffer system holds one range and sends it when the mesh binds, so a layer that
-   * skips a draw would lose every range but the last, and with them the rows those ranges held.
-   */
-  _send() {
-    if (this._bufferSystem) this._bufferSystem.updateBuffer(this.buffer);
-  }
-
-  /**
    * Send only rows [first, past), which an upload(count) of the same layout already placed. Mesh edits touch a few rows
    * of a big layer: DX-MESHUPLOAD.
    * @param {number} first
@@ -1522,30 +1551,5 @@ export class ColliderFillBatch {
     if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * COLLIDER_FILL_FLOATS), from);
     this.buffer.update((past - first) * COLLIDER_FILL_STRIDE, first * COLLIDER_FILL_STRIDE);
     this._send();
-  }
-
-  /**
-   * One texel per body: xy in rg, rot cs in ba. The fat VBO stays resident.
-   * @param {object|null} [framePose] the layer's record after this frame's trackMeshFillPose: its poses, not sampled
-   *   again (writeMeshPoseTable)
-   * @returns {number} instance count left on the mesh
-   */
-  uploadPoseTable(instanceEntity, count, views, framePose = null) {
-    const n = count | 0;
-    if (n <= 0 || !instanceEntity) return 0;
-    const entityCount = views.entityCount | 0;
-    const width = 256;
-    const height = Math.max(1, ((entityCount + width - 1) / width) | 0);
-    const need = width * height * 4;
-    if (!this.poseTable || this.poseTable.length < need) this.poseTable = new Float32Array(need);
-    if (!this._poseGen || this._poseGen.length < entityCount) this._poseGen = new Int32Array(entityCount);
-    const stamp = (this._poseStamp + 1) | 0 || 1;
-    this._poseStamp = stamp;
-    writeMeshPoseTable(this.poseTable, this._poseGen, stamp, instanceEntity, n, entityCount, views, framePose);
-    this._poseWidth = width;
-    this._poseHeight = height;
-    this._poseDirty = true;
-    this.mesh.visible = true;
-    return n;
   }
 }
