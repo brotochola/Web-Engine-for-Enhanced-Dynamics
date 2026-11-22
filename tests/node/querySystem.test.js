@@ -436,8 +436,6 @@ test('worker queryActiveEntities requires precomputed queries', () => {
       precomputedQueries: [],
     },
     {
-      entityMetadataSAB: new SharedArrayBuffer(0),
-      queryCacheSAB: new SharedArrayBuffer(0),
       queryResultsSAB: new SharedArrayBuffer(0),
     },
     null,
@@ -464,8 +462,6 @@ test('worker queryActiveEntitiesSlow caches until query version changes', () => 
         precomputedQueries: [],
       },
       {
-        entityMetadataSAB: new SharedArrayBuffer(0),
-        queryCacheSAB: new SharedArrayBuffer(0),
         queryResultsSAB: new SharedArrayBuffer(0),
       },
       null,
@@ -523,8 +519,6 @@ test('worker queries visit a sparse 64-type mask in ascending type order', () =>
       precomputedQueries: [{ name: 'A+B', queryMask: '3', typeMask: typeMask.toString(), resultOffset: 0 }],
     },
     {
-      entityMetadataSAB: new SharedArrayBuffer(0),
-      queryCacheSAB: new SharedArrayBuffer(0),
       queryResultsSAB: new SharedArrayBuffer(calculateQueryResultsSABSize(1, capacity)),
     },
     activeEntitiesData,
@@ -572,4 +566,25 @@ test('a fresh classes literal gets the same query mask without the string key', 
   }
   Late.componentId = 5;
   assert.equal(querySystem._generateQueryMask([QueryTestComponentA, Late]), (1n << 0n) | (1n << 5n));
+});
+
+// N-303 CR-3: the shared buffers hold what the workers read (the results and the version), whatever the number of
+// precomputed queries. The query cache SAB nothing read was sized for 64 queries, so a scene with 65 threw a
+// RangeError while making the buffers.
+test('createSharedBuffers takes more precomputed queries than 64', () => {
+  const querySystem = new QuerySystem();
+  querySystem.entityMetadata = createFallbackMetadata().map((meta) => ({
+    ...meta,
+    entityClass: globalThis[meta.className],
+  }));
+  querySystem.precomputedQueries = Array.from({ length: 65 }, (_, i) => ({
+    name: `q${i}`,
+    componentClasses: [],
+    queryMask: BigInt(i + 1),
+    typeMask: 1n,
+    resultOffset: i,
+  }));
+  const buffers = querySystem.createSharedBuffers();
+  assert.ok(buffers.queryResultsSAB.byteLength >= calculateQueryResultsSABSize(65, querySystem.queryEntityCapacity));
+  assert.ok(buffers.queryVersionSAB instanceof SharedArrayBuffer);
 });

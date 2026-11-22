@@ -298,8 +298,6 @@ export function buildSceneSharedBuffers(scene) {
     typeListVersions: scene.buffers.typeListVersions || null,
     mouseData: scene.buffers.mouseData,
     gamepadData: scene.buffers.gamepadData,
-    queryEntityMetadata: scene.buffers.queryEntityMetadata,
-    queryCache: scene.buffers.queryCache,
     queryResults: scene.buffers.queryResults,
     queryVersion: scene.buffers.queryVersion,
     bodyDirtyFlags: scene.buffers.bodyDirtyFlags,

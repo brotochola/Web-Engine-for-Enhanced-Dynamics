@@ -8,9 +8,9 @@
 #include <stdint.h>
 #include <wasm_simd128.h>
 
-/* The JS line for line: the u32 word moves as is at a = 255, is 0 at a = 0, else the per-channel math. */
-__attribute__((export_name("premultiply_scalar")))
-void premultiply_scalar(uint32_t src, uint32_t dst, uint32_t pixels) {
+/* The JS line for line: the u32 word moves as is at a = 255, is 0 at a = 0, else the per-channel math. The simd
+   loop's tail; exported only by the test module (wasm/test/decalPremultiplyVariants.c, N-303 CR-11). */
+static void premultiply_scalar_run(uint32_t src, uint32_t dst, uint32_t pixels) {
   const uint32_t *s = (const uint32_t *)(uintptr_t)src;
   uint32_t *d = (uint32_t *)(uintptr_t)dst;
   for (uint32_t p = 0; p < pixels; p++) {
@@ -49,5 +49,5 @@ void premultiply_simd(uint32_t src, uint32_t dst, uint32_t pixels) {
     const v128_t premultiplied = wasm_u8x16_narrow_i16x8(lo, hi);
     wasm_v128_store(d + p * 4u, wasm_v128_bitselect(v, premultiplied, alphaByte));
   }
-  if (p < pixels) premultiply_scalar(src + p * 4u, dst + p * 4u, pixels - p);
+  if (p < pixels) premultiply_scalar_run(src + p * 4u, dst + p * 4u, pixels - p);
 }

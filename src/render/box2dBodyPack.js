@@ -15,7 +15,6 @@ import { MAX_POLYGON_VERTICES, ShapeType, COMPUTE_FLAG_STATIC, COMPUTE_FLAG_SWEE
 import { snapshotColliderFeed } from '../util/layerFeed.js';
 
 export const BODY_FLOATS = 16;
-export const BODY_STRIDE_BYTES = BODY_FLOATS * 4;
 
 /** Reused pack result (no alloc in the hot loop). */
 export const PACK_OUT = { bodyCount: 0, vertCount: 0 };

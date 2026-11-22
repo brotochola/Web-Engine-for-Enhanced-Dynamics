@@ -17,7 +17,6 @@ export const MAX_ENTITIES_U16 = 65535;
 export const MAX_ENTITIES_U32 = (1 << 20) - 1;
 export const ENTITY_ID_NONE_U16 = 0xffff;
 export const ENTITY_ID_NONE_U32 = 0xffffffff;
-export const PAIR_U32_STRIDE = 4294967296;
 
 /**
  * Id bits in the spatial processed-pair stamp (wasm/spatialGather.c packs the same): room for MAX_ENTITIES_U32. The
@@ -155,15 +154,6 @@ export function EntityIdArray() {
 
 export function maxEntitiesForWidth(w = width) {
   return w === ENTITY_ID_WIDTH_32 ? MAX_ENTITIES_U32 : MAX_ENTITIES_U16;
-}
-
-export function createEntityIdList(length) {
-  return new ArrayType(length);
-}
-
-export function viewEntityIdList(sab, byteOffset = 0, length) {
-  if (length == null) return new ArrayType(sab, byteOffset);
-  return new ArrayType(sab, byteOffset, length);
 }
 
 export function collisionPairKeyWide(minE, maxE) {

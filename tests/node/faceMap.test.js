@@ -17,7 +17,11 @@ import {
   shaderWithFlag,
 } from '../../src/render/faceMap.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
-import { TWIN_GLSL, TWIN_WGSL, twinPresent, twinZ } from '../../src/render/twinTexel.js';
+import { twinGlsl, twinPresent, twinWgsl, twinZ } from '../../src/render/twinTexel.js';
+import { turnFrameNormal } from '../reference/renderMathJs.mjs';
+
+const TWIN_GLSL = twinGlsl('A');
+const TWIN_WGSL = twinWgsl('A');
 import { encodeOctahedral, twinTexels } from '../../src/render/spriteMaps.js';
 import { pixelDepthFragment, pixelDepthWgsl } from '../../src/render/pixelDepth.js';
 import { sunMapColumnsVertex, sunMapColumnsWgsl } from '../../src/render/sunShadowMap.js';
@@ -349,7 +353,6 @@ test('every reader of the twin page asks twinTexel.js whether a texel holds a ma
 // N-258: a mirrored or rotated sprite's normals turn with it in the G-buffer pass. A mirrored car (flipX, a negative scale
 // x) lit by a lamp on its left: its frame's normal that faces right must face left on the screen, as its pixels do.
 test('a sprite\'s normals mirror with a negative scale and turn with its rotation, in both languages', async () => {
-  const { turnFrameNormal } = await import('../../src/render/faceMap.js');
   const out = [0, 0, 0];
   assert.deepEqual(turnFrameNormal([0.6, 0.3, 0.74], 1, 0, 1, 1, out), [0.6, 0.3, 0.74], 'unturned: the same bits');
   assert.deepEqual(turnFrameNormal([0.6, 0.3, 0.74], 1, 0, -1, 1, out), [-0.6, 0.3, 0.74], 'flipX mirrors x');

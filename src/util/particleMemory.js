@@ -11,10 +11,7 @@
 import { PARTICLE_DEFAULTS } from './configDefaults.js';
 import { MAX_POOL_SLOTS, poolSlotBytes } from './poolSlotWidth.js';
 import { initPublishedList, publishedListCopyByte } from './publishedList.js';
-import { particleMemoryRegions } from './wasmMemoryMap.js';
-
-// The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 32768;
+import { createWasmMemory, particleMemoryRegions } from './wasmMemoryMap.js';
 
 /** Entries in each EXPO ease table (particleTween.js builds three of expoLutSize + 1). */
 export const PARTICLE_LUT_ENTRIES = (PARTICLE_DEFAULTS.expoLutSize | 0) + 1;
@@ -44,26 +41,14 @@ export function createParticleMemory(maxParticles, componentBytes, place = null)
   if (n > MAX_POOL_SLOTS) throw new Error(`particle memory: ${n} particles is past the ${MAX_POOL_SLOTS} a pool holds`);
   const slotBytes = poolSlotBytes(n);
   const map = particleMemoryRegions(n, componentBytes | 0, 3 * PARTICLE_LUT_ENTRIES);
-  const mb = Math.ceil((map.pages * 65536) / 1048576);
   const base = place ? place.baseByte | 0 : 0;
-  if (place) {
-    if ((base & 63) !== 0 || map.bytes > (place.bytes | 0) || base + map.bytes > place.memory.buffer.byteLength) {
-      throw new Error(`particle memory: ${map.bytes} bytes do not fit the ${place.bytes | 0} reserved at byte ${base}`);
-    }
-  } else if (map.pages > WASM_MAX_PAGES) {
-    throw new Error(`particle memory: ${mb} MB (${n} particles) is past the ${WASM_MAX_PAGES / 16} MB a kernel memory can take`);
+  if (place && ((base & 63) !== 0 || map.bytes > (place.bytes | 0) || base + map.bytes > place.memory.buffer.byteLength)) {
+    throw new Error(`particle memory: ${map.bytes} bytes do not fit the ${place.bytes | 0} reserved at byte ${base}`);
   }
   // Every region's byte from the memory's start: the place's offset added.
   const r = {};
   for (const [name, region] of Object.entries(map.regions)) r[name] = { ...region, byte: region.byte + base };
-  let memory = place ? place.memory : null;
-  if (!memory) {
-    try {
-      memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
-    } catch (err) {
-      throw new Error(`particle memory: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
-    }
-  }
+  const memory = place ? place.memory : createWasmMemory(map.pages, 'particle memory', `(${n} particles)`);
   initPublishedList(memory.buffer, r.activeList.byte);
   initPublishedList(memory.buffer, r.visibleList.byte);
   return {

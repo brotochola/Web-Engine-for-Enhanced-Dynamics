@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolvePreRenderInterpolation } from '../../src/util/configDefaults.js';
-import { poseDisplayAlpha, poseLerp } from '../../src/render/poseQueueInterp.js';
+import { poseDisplayAlpha, poseLerp } from '../reference/poseQueueInterp.mjs';
 import {
   INSTANCED_SPRITE_FLOATS,
   POSE_DYN_FLOATS,

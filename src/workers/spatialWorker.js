@@ -565,17 +565,6 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * Get circle pattern for a specific cellRadius
-   * @param {number} cellRadius - Radius in cells
-   * @returns {Int32Array} Pattern array with [dr, dc, dr, dc, ...] pairs
-   */
-  _getCirclePattern(cellRadius) {
-    // Clamp to max supported radius
-    const clampedRadius = cellRadius > this._maxCellRadius ? this._maxCellRadius : cellRadius;
-    return this._circlePatterns[clampedRadius] || this._circlePatterns[0];
-  }
-
-  /**
    * E-328: spatial.startOn, 'vsync' (the default) or 'logicDone', or an array of them, one per spatial worker (a worker
    * past its end starts on the vsync). 'logicDone' needs logic workers and frames on the vsync: a worker or a logic paced
    * by a timer (noLimitFPS, fixedFps) has no vsync to share, and starts when its timer fires.
@@ -2072,38 +2061,13 @@ class SpatialWorker extends AbstractWorker {
    * (tests/reference/spatialGather.mjs; tests/node/spatialGatherWasm.test.js).
    */
   _findNeighbors() {
-    const visualRange = Collider.visualRange;
-    const active = Transform.active;
-    // SST-21: a list for every entity with a visualRange (that is what it is for: its code reads its neighbours), and
-    // with walls (lighting.walls) for an active light that casts shadows (pre-render gathers its occluders from it;
-    // N-153: nothing reads a light's list in basic lighting).
-    const lightActive = this._raycastLights ? LightEmitter.active || null : null; // null: no light takes a list
-    const lightCasts = lightActive !== null ? LightEmitter.castShadows : null;
-    const lightRadius = lightActive !== null ? LightEmitter.radius : null;
-    const lightShadowRange = lightActive !== null ? LightEmitter.shadowRange : null;
-    const lightOffsetX = lightActive !== null ? LightEmitter.offsetX : null;
-    const lightOffsetY = lightActive !== null ? LightEmitter.offsetY : null;
     const maxNeighbors = Grid.maxNeighbors;
-    const stride = Grid._stride;
     const skinFrac = this._neighborReuseSkin;
-    const tickInterval = this._neighborTickInterval;
-    const nextTick = this._entityNeighborNextTick;
-    const scheduleReuseCap = this._scheduleReuseCap;
-    const framesSinceBuild = this._entityFramesSinceBuild;
-    const candCountOf = this._candidateCountOf;
-    const neighborData = Grid.neighborData;
-    const entityPosData = this.entityPosData;
-    const pub = this._wasmPub;
     const g = this._wasmGather;
-    const rebuild = g.rebuild;
     // E-136: read before the publish reads a pose (update() adds to it after this worker's poses).
     const poseGen = Atomics.load(this._poseGen, 0);
-    const rowPoseGen = this._rowPoseGen;
-    const sharedRows = this.totalSpatialWorkers > 1;
     // E-200: logic frames since this worker's last search (0 until logic publishes one, or if it has not moved),
     // and each typed class's place in its period. A list is due when its refresh frame fell in those frames.
-    const typedClass = this._typedNeighborClass;
-    const typedOffset = this._typedNeighborOffset;
     const typedPeriods = this._typedNeighborPeriods;
     const typedNow = this._typedNeighborNow;
     let logicStep = 0;
@@ -2134,9 +2098,83 @@ class SpatialWorker extends AbstractWorker {
       clearFrame = 2;
     }
     this._clearHeldFrame = clearFrame;
+
+    const rebuilds = this._scanOwnedEntities(poseGen, logicStep, clearFrame);
+
+    this.neighborsRebuiltThisFrame += rebuilds;
+    if (rebuilds) {
+      const meta = this._wasmMeta;
+      // The same results in any order; in cell order the cells each entity walks are still in cache.
+      if (this._gatherCellOrder && g.order) {
+        g.order(rebuilds, g.rebuildByte, meta.posByte, this.invCellSize, this.gridWidth, this.gridHeight, g.orderByte);
+      }
+      this.cellsCheckedThisFrame += g.gather(
+        rebuilds,
+        g.rebuildByte,
+        meta.posByte,
+        meta.rangeByte,
+        meta.candByte,
+        maxNeighbors,
+        meta.gridByte,
+        Grid.cellByteSize,
+        Grid._cellIdStride,
+        Grid._headerIds,
+        this.gridWidth,
+        this.gridHeight,
+        this.invCellSize,
+        skinFrac,
+        this._maxCellRadius,
+        g.patternByte,
+        g.patternIndexByte,
+        g.markerByte,
+        stampFrame,
+        g.truncatedByte,
+      );
+      this._finishRebuiltRows(rebuilds, poseGen);
+    }
+  }
+
+  /**
+   * The owned entities' pass of _findNeighbors: each active one's row cleared (no range), kept (its schedule or its skin
+   * says so; queued for the publish when its poses moved), or listed for the gather (g.rebuild). N-245: its own method,
+   * as the gather's rows' pass (_finishRebuiltRows): as a loop of _findNeighbors, the frame's OSR entry into that big
+   * function landed here (the ASUS: "prepare for OSR" 84 times in 8 s of Predator once the next loop was split).
+   * @param {number} poseGen this frame's pose generation (E-136)
+   * @param {number} logicStep logic frames since the last search (E-200)
+   * @param {number} clearFrame this frame's clear stamp (E-268)
+   * @returns {number} the rows listed in g.rebuild for the gather
+   */
+  _scanOwnedEntities(poseGen, logicStep, clearFrame) {
+    const visualRange = Collider.visualRange;
+    const active = Transform.active;
+    // SST-21: a list for every entity with a visualRange (that is what it is for: its code reads its neighbours), and
+    // with walls (lighting.walls) for an active light that casts shadows (pre-render gathers its occluders from it;
+    // N-153: nothing reads a light's list in basic lighting).
+    const lightActive = this._raycastLights ? LightEmitter.active || null : null; // null: no light takes a list
+    const lightCasts = lightActive !== null ? LightEmitter.castShadows : null;
+    const lightRadius = lightActive !== null ? LightEmitter.radius : null;
+    const lightShadowRange = lightActive !== null ? LightEmitter.shadowRange : null;
+    const lightOffsetX = lightActive !== null ? LightEmitter.offsetX : null;
+    const lightOffsetY = lightActive !== null ? LightEmitter.offsetY : null;
+    const stride = Grid._stride;
+    const tickInterval = this._neighborTickInterval;
+    const nextTick = this._entityNeighborNextTick;
+    const scheduleReuseCap = this._scheduleReuseCap;
+    const framesSinceBuild = this._entityFramesSinceBuild;
+    const candCountOf = this._candidateCountOf;
+    const neighborData = Grid.neighborData;
+    const entityPosData = this.entityPosData;
+    const rebuild = this._wasmGather.rebuild;
+    const rowPoseGen = this._rowPoseGen;
+    const sharedRows = this.totalSpatialWorkers > 1;
+    const typedClass = this._typedNeighborClass;
+    const typedOffset = this._typedNeighborOffset;
+    const pub = this._wasmPub;
+    const skinFrac = this._neighborReuseSkin;
+    const typedPeriods = this._typedNeighborPeriods;
+    const typedNow = this._typedNeighborNow;
     const clearHeld = this._clearHeld;
     const clearHeldBefore = clearFrame - 1;
-
     let rebuilds = 0;
     const ownedList = this._ownedEntityList;
     const ownedCount = this._ownedEntityCount;
@@ -2219,53 +2257,47 @@ class SpatialWorker extends AbstractWorker {
       }
     }
 
-    this.neighborsRebuiltThisFrame += rebuilds;
-    if (rebuilds) {
-      const meta = this._wasmMeta;
-      // The same results in any order; in cell order the cells each entity walks are still in cache.
-      if (this._gatherCellOrder && g.order) {
-        g.order(rebuilds, g.rebuildByte, meta.posByte, this.invCellSize, this.gridWidth, this.gridHeight, g.orderByte);
-      }
-      this.cellsCheckedThisFrame += g.gather(
-        rebuilds,
-        g.rebuildByte,
-        meta.posByte,
-        meta.rangeByte,
-        meta.candByte,
-        maxNeighbors,
-        meta.gridByte,
-        Grid.cellByteSize,
-        Grid._cellIdStride,
-        Grid._headerIds,
-        this.gridWidth,
-        this.gridHeight,
-        this.invCellSize,
-        skinFrac,
-        this._maxCellRadius,
-        g.patternByte,
-        g.patternIndexByte,
-        g.markerByte,
-        stampFrame,
-        g.truncatedByte,
-      );
-      const cand = pub.cand;
-      const truncatedOf = this._neighborCandidateTruncated;
-      for (let k = 0; k < rebuilds; k++) {
-        const entityA = rebuild[k];
-        candCountOf[entityA] = cand[entityA * stride];
-        rowPoseGen[entityA] = poseGen;
-        pub.list[pub.queued++] = entityA;
-        if (!truncatedOf[entityA]) {
-          const b = entityA * 4;
-          // The range searched (a light's own reach, else its visualRange), as the next frame compares it.
-          this._storeNeighborReuseSignature(entityA, entityPosData[b], entityPosData[b + 1], entityPosData[b + 2], pub.range[entityA]);
-        } else {
-          // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
-          this._entityReuseInitialized[entityA] = 0;
-          framesSinceBuild[entityA] = 0;
-        }
+    return rebuilds;
+  }
+
+  /**
+   * The rows the gather just rebuilt (rebuild[0, rebuilds)): each one's candidate count, pose generation and publish
+   * slot, then its reuse signature, or for a truncated row the reuse reset. N-245: its own method, its arrays read into
+   * locals: as a loop at the end of _findNeighbors it ran in that function's OSR code, which the ASUS deoptimized again
+   * and again in steady state ("prepare for OSR" 221 times in 8 s of Predator, cold named loads in Boids).
+   * @param {number} rebuilds
+   * @param {number} poseGen
+   */
+  _finishRebuiltRows(rebuilds, poseGen) {
+    const rebuild = this._wasmGather.rebuild;
+    const pub = this._wasmPub;
+    const cand = pub.cand;
+    const list = pub.list;
+    const range = pub.range;
+    const stride = Grid._stride;
+    const candCountOf = this._candidateCountOf;
+    const rowPoseGen = this._rowPoseGen;
+    const truncatedOf = this._neighborCandidateTruncated;
+    const reuseInitialized = this._entityReuseInitialized;
+    const framesSinceBuild = this._entityFramesSinceBuild;
+    const entityPosData = this.entityPosData;
+    let queued = pub.queued;
+    for (let k = 0; k < rebuilds; k++) {
+      const entityA = rebuild[k];
+      candCountOf[entityA] = cand[entityA * stride];
+      rowPoseGen[entityA] = poseGen;
+      list[queued++] = entityA;
+      if (!truncatedOf[entityA]) {
+        const b = entityA * 4;
+        // The range searched (a light's own reach, else its visualRange), as the next frame compares it.
+        this._storeNeighborReuseSignature(entityA, entityPosData[b], entityPosData[b + 1], entityPosData[b + 2], range[entityA]);
+      } else {
+        // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
+        reuseInitialized[entityA] = 0;
+        framesSinceBuild[entityA] = 0;
       }
     }
+    pub.queued = queued;
   }
 
   /** The WASM publish of every entity queued this frame (the search ends here). */

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { PIXEL_DEPTH_FLOOR_STEPS, gbufDepthFragment, gbufDepthVertex, gbufDepthWgsl, pixelDepthValue } from '../../src/render/pixelDepth.js';
+import { PIXEL_DEPTH_FLOOR_STEPS, gbufDepthFragment, gbufDepthVertex, gbufDepthWgsl } from '../../src/render/pixelDepth.js';
+import { pixelDepthValue } from '../reference/renderMathJs.mjs';
 import { faceGbufFragment, faceMapVertex, faceMapWgsl, faceUnshadedFragment, gbufAttributeWgsl } from '../../src/render/faceMap.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
 

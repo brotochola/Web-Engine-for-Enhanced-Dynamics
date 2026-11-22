@@ -10,6 +10,31 @@ import { poolSlotBytes } from './poolSlotWidth.js';
 import { publishedListBytes } from './publishedList.js';
 
 export const WASM_PAGE_BYTES = 65536;
+
+/** The kernels' import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages. */
+export const WASM_MAX_PAGES = 32768;
+
+/**
+ * A kernel memory of `pages` pages, shared, or an error that says what was asked (N-303 CR-21: one copy of the cap, the
+ * try/catch and the texts). `what` names the memory ("decal memory"), `holds` what made it that big ("(1200 tiles of
+ * 128x128 px)") and `advice`, if any, how to make it smaller.
+ * @param {number} pages
+ * @param {string} what
+ * @param {string} holds
+ * @param {string} [advice]
+ * @returns {WebAssembly.Memory}
+ */
+export function createWasmMemory(pages, what, holds, advice = '') {
+  const mb = Math.ceil((pages * WASM_PAGE_BYTES) / 1048576);
+  if (pages > WASM_MAX_PAGES) {
+    throw new Error(`${what}: ${mb} MB ${holds} is past the ${WASM_MAX_PAGES / 16} MB a kernel memory can take${advice ? `; ${advice}` : ''}`);
+  }
+  try {
+    return new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+  } catch (err) {
+    throw new Error(`${what}: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
+  }
+}
 export const CACHE_LINE_BYTES = 64;
 
 // Nothing lives at address 0: a kernel that writes through a zero offset lands in the guard, and a
@@ -304,7 +329,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'collectResults', owner: 'pre-render', bytes: 16 },
     );
     // W19: with physics, the bullet pool's block and the bullet tick's regions too (bulletTickClient.js): the
-    // active list (u16) and the impact records it writes, the slots it returns, its ray stamps, table, results.
+    // active list (u16) and the impact records it writes, the slots it returns, its table, results.
     const b = collect.bullets;
     if (b) {
       regions.push(
@@ -313,7 +338,6 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
         { name: 'bulletActive', owner: 'particle', bytes: ((b.bullets | 0) + 1) * ((b.bullets | 0) > 65535 ? 4 : 2) },
         { name: 'bulletImpacts', owner: 'particle', bytes: (b.impacts | 0) * 6 * 4 },
         { name: 'bulletReturned', owner: 'particle', bytes: (b.bullets | 0) * 4 },
-        { name: 'bulletStamp', owner: 'particle', bytes: (b.entities | 0) * 4 },
         { name: 'bulletTable', owner: 'particle', bytes: BULLET_TABLE_SLOTS * 4 },
         { name: 'bulletResults', owner: 'particle', bytes: 16 },
       );

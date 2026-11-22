@@ -65,7 +65,6 @@ import { PIXI_KEYED_HEADER, PIXI_KEYED_HEADER_WORDS } from '../util/wasmMemoryMa
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
  *  A pose batch splits the same terms, with the previous xy, into two streams (below). */
 export const INSTANCED_SPRITE_FLOATS = 15;
-export const INSTANCED_SPRITE_STRIDE = INSTANCED_SPRITE_FLOATS * 4;
 // E-82. A pose batch uploads two streams instead of one 17-float record. The pose (x, y, rotC, rotS,
 // prevX, prevY) goes up every frame; the statics (scale, anchor, depth, tint, texture, tile terms)
 // only when they change: when the queue's staticGen, the rows packed, the type filter or the screen

@@ -9,7 +9,7 @@ import {
   SCENERY_CAM_FLOATS,
   packSceneryCamera,
   packSceneryDummies,
-} from '../../src/render/sceneryCamPack.js';
+} from '../reference/sceneryCamPack.mjs';
 
 const N = 256;
 const here = path.dirname(fileURLToPath(import.meta.url));

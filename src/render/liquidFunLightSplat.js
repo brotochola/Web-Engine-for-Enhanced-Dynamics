@@ -7,7 +7,6 @@
 import { lightInfluenceRadius } from '../util/utils.js';
 
 export const LF_LIGHT_SPLAT_FLOATS = 4;
-export const LF_LIGHT_SPLAT_STRIDE = LF_LIGHT_SPLAT_FLOATS * 4;
 
 /**
  * @param {Float32Array} data

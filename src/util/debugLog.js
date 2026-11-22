@@ -8,10 +8,6 @@ export function setVerboseWorkers(on) {
   verboseWorkers = !!on;
 }
 
-export function isVerboseWorkers() {
-  return verboseWorkers;
-}
-
 export function debugWorkerLog(...args) {
   if (verboseWorkers) console.log(...args);
 }

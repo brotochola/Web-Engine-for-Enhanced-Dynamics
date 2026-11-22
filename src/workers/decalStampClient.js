@@ -8,12 +8,9 @@ import { loadWasmKernel } from '../util/wasmKernel.js';
 import { DECAL_STAMP_BYTES, DECAL_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
-
 /** wasm/decalStamp.c's table, slot for slot. */
 export const DECAL_SLOTS = ['tiles', 'dirty', 'tilesX', 'tilesY', 'tilePixels', 'stamps', 'columns', 'columnsCap', 'flags'];
 if (DECAL_SLOTS.length > DECAL_TABLE_SLOTS) throw new Error('decalStamp: the column table outgrew its region');
-/** Table flag: every stamp through the kernel's scalar loop (the bench's wasm-scalar). */
-export const DECAL_F_SCALAR = 1;
 
 export async function bindDecalStamp(memory, layout, tilesX, tilesY) {
   const k = await loadWasmKernel('decalStamp', engineWasmUrl, memory, ['stamp_tiles']);

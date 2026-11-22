@@ -50,7 +50,7 @@ const k = await setupSpatialKernel({
             Base,
             [
               {
-                method: '_findNeighbors',
+                method: '_scanOwnedEntities',
                 edits: [
                   mutant === 'noClear'
                     ? ['rowPoseGen[entityA] = POSE_GEN_NONE;', '']

@@ -298,19 +298,6 @@ export function visitColliderFeed(layerId, visitor) {
   return true;
 }
 
-/**
- * Visit dense particle feed indices (test helper).
- * @param {number} layerId
- * @param {(index: number) => void} visitor
- * @returns {boolean}
- */
-export function visitParticleFeed(layerId, visitor) {
-  const snap = snapshotParticleFeed(layerId);
-  if (!snap) return false;
-  for (let f = 0; f < snap.count; f++) visitor(snap.indices[f] | 0);
-  return true;
-}
-
 /** Test helper: live feeder count for a compute layer. */
 export function colliderFeedCount(layerId) {
   const counts = Layer._feedCount;

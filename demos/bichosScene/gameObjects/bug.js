@@ -65,7 +65,7 @@ export class Bug extends GameObject {
     }
 
     followMouse() {
-        if (Mouse.isDown && Mouse.isPresent) {
+        if (Mouse.isButton0Down && Mouse.isPresent) {
             this.rigidBody.sleeping = 0
             const sqDistToMouse = distanceSq2D(this.x, this.y, Mouse.x, Mouse.y);
             if (sqDistToMouse > Bug.sqDistToFollow) {

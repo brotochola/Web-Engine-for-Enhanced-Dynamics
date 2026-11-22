@@ -404,7 +404,6 @@ function saveRoundTrip(meshes) {
   return decodeSaveUncompressed(encodeSaveUncompressed({
     sceneName: 'T',
     engineVersion: '0',
-    layout: { types: [], totalEntityCount: 0 },
     camera: null,
     sun: null,
     entities: [],

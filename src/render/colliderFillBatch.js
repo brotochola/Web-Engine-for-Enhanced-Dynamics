@@ -945,11 +945,6 @@ export function packColliderFill(out, cap, layerId, views) {
   return written;
 }
 
-/** Prior full pack wrote instance→entity, so pose-only refill is legal. */
-export function meshFillHasLocals(views) {
-  return !!(views && views.instanceEntity);
-}
-
 /**
  * Rewrite pose/paint on already-packed local tris. Fixture topology must match.
  * @returns {number} instance count (same as `count`)

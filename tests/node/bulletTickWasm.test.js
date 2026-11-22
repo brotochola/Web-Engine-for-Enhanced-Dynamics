@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
-import { bindBullets, bulletWorld } from '../bench/bulletTickKernel.mjs';
+import { BULLET_TICK_VARIANTS, bindBullets, bulletWorld } from '../bench/bulletTickKernel.mjs';
 import { BulletPool } from '../../src/core/bulletPool.js';
 import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { Grid } from '../../src/core/grid.js';
-import { BULLET_TICK_VARIANTS, readyBulletStamps, writeBulletColumns } from '../../src/core/bulletTickClient.js';
+import { readyBulletStamps, writeBulletColumns } from '../../src/core/bulletTickClient.js';
 import { bindEntityIdWidth } from '../../src/util/entityIdWidth.js';
 
 // E-76 W19, the bullet tick kernel (wasm/bulletTick.c). On the same bytes, one bullet_tick over the pool must

@@ -47,7 +47,6 @@ function samplePayload(overrides = {}) {
   return {
     sceneName: 'TestScene',
     engineVersion: '0.0.0-test',
-    layout: { types: [{ name: 'FakeEntity', poolSize: 10 }], totalEntityCount: 10 },
     camera: [1, 2, 3, 4, 5, 6],
     sun: null,
     entities: [
@@ -87,8 +86,8 @@ test('a serializable class can leave some of its entities out of a save (N-5)', 
   assert.equal(shouldSaveEntity(Chunk, 2, { active }), true);
 });
 
-test('SAVE_FORMAT_VERSION is 8 (N-329: the sim clock; N-314: decal tiles deflated; E-539: entities by columns)', () => {
-  assert.equal(SAVE_FORMAT_VERSION, 8);
+test('SAVE_FORMAT_VERSION is 9 (N-303 CR-33: META without the layout hint; N-329: the sim clock; N-314: decal tiles deflated; E-539: entities by columns)', () => {
+  assert.equal(SAVE_FORMAT_VERSION, 9);
 });
 
 test('binary uncompressed roundtrip', () => {
@@ -96,7 +95,7 @@ test('binary uncompressed roundtrip', () => {
   const bytes = encodeSaveUncompressed(payload);
   const decoded = decodeSaveUncompressed(bytes);
   assert.equal(decoded.magic, SAVE_MAGIC);
-  assert.equal(decoded.formatVersion, 8);
+  assert.equal(decoded.formatVersion, 9);
   assert.equal(decoded.sceneName, 'TestScene');
   assert.equal(decoded.entities.length, 1);
   assert.deepEqual([...decoded.entities[0].indices], [7]);
@@ -111,13 +110,12 @@ test('binary deflate roundtrip', async () => {
   const payload = samplePayload({
     entities: [entityTable('A', [0])],
     camera: null,
-    layout: { types: [], totalEntityCount: 0 },
   });
   const compressed = await encodeSave(payload);
   assert.ok(compressed.byteLength > 0);
   const decoded = await decodeSave(compressed);
   assert.equal(decoded.entities[0].typeName, 'A');
-  assert.equal(decoded.formatVersion, 8);
+  assert.equal(decoded.formatVersion, 9);
 });
 
 test('applyEntitySaveRestore writes a row of SoA fields', () => {
@@ -164,7 +162,6 @@ test('isEntityClassSerializable own false wins over ancestor true', () => {
 
 test('joints + entityIndex binary roundtrip', () => {
   const payload = samplePayload({
-    layout: { types: [], totalEntityCount: 0 },
     camera: null,
     entities: [entityTable('MachineBox', [7]), entityTable('MachineWheel', [9])],
     joints: [
@@ -186,7 +183,7 @@ test('joints + entityIndex binary roundtrip', () => {
   });
   const bytes = encodeSaveUncompressed(payload);
   const decoded = decodeSaveUncompressed(bytes);
-  assert.equal(decoded.formatVersion, 8);
+  assert.equal(decoded.formatVersion, 9);
   assert.deepEqual([...decoded.entities[0].indices], [7]);
   assert.equal(decoded.joints.length, 1);
   assert.equal(decoded.joints[0].entityA, 7);

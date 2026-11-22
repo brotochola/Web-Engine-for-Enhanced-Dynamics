@@ -492,7 +492,7 @@ export const ENGINE_FEATURES = [
   {
     id: 'decalBlit',
     name: 'Decal tile blit',
-    module: 'src/render/decalBlitPack.js',
+    module: 'src/workers/pixiWorker.js', // the decal tiles' upload; the kernel times tests/reference/decalBlitPack.mjs
     kernel: {
       script: 'tests/bench/decalBlitPackMicrobench.mjs',
       opsKey: 'packDecalBlit.opsPerSec',
@@ -512,7 +512,7 @@ export const ENGINE_FEATURES = [
   {
     id: 'sceneryCam',
     name: 'Scenery camera',
-    module: 'src/render/sceneryCamPack.js',
+    module: 'src/render/coverBackground.js', // the kernel times tests/reference/sceneryCamPack.mjs over it
     kernel: { script: 'tests/bench/sceneryCamMicrobench.mjs', opsKey: 'pack.opsPerSec' },
     scene: {
       key: 'sceneryCam',
@@ -543,7 +543,7 @@ export const ENGINE_FEATURES = [
   {
     id: 'meshFillPan',
     name: 'MESH fill camera pan',
-    module: 'src/render/meshFillCamera.js',
+    module: 'src/workers/pixiWorker.js', // the MESH fill RT's camera matrix; the kernel times tests/reference/meshFillCamera.mjs
     kernel: { script: 'tests/bench/meshCameraUniformMicrobench.mjs', opsKey: 'timed.opsPerSec' },
     scene: {
       key: 'meshFillPan',

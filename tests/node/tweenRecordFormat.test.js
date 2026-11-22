@@ -11,7 +11,8 @@ import { encodeBinarySaveBody, decodeBinarySaveBody } from '../../src/core/save/
 // record: +9 bytes each, 190 -> 208); size and hash re-taken. The
 // layout 1 bytes still decode (tweenOptions.test.js). E-539 gave the ENTITIES
 // section a layout byte (208 -> 209); size and hash re-taken. N-329 gave the TIME section
-// the sim clock (an f64, NaN here: 209 -> 217); size and hash re-taken.
+// the sim clock (an f64, NaN here: 209 -> 217); size and hash re-taken. N-303 CR-33 dropped META's layout hint
+// (217 -> 211); size and hash re-taken.
 
 const TWEENS = [
   { kind: 2, ease: 5, mask: 9, entity: 70000, duration: 1.5, elapsed: 0.25, from0: 0.1, to0: 0.9, from1: 2, to1: 3, from2: -4, to2: 4.5, from3: 0, to3: 0, tintFrom: 0xff8800, tintTo: 0x00ffaa },
@@ -22,7 +23,6 @@ function payload() {
   return {
     sceneName: 'T',
     engineVersion: 'x',
-    layout: { types: [], totalEntityCount: 0 },
     entities: [],
     joints: [],
     camera: null,
@@ -34,10 +34,10 @@ function payload() {
 
 test('a save with tweens encodes to the same bytes as before the record table', () => {
   const bytes = encodeBinarySaveBody(payload());
-  assert.equal(bytes.length, 217);
+  assert.equal(bytes.length, 211);
   assert.equal(
     crypto.createHash('sha256').update(bytes).digest('hex'),
-    '1140a6252f671d2c65d8e9c6f915be0c3410b304aee862425ee81159a3904120',
+    'aff4265b39bf76ead673e489bbf9c4cd9b085d22ca3e4de6816bad3358599236',
   );
 });
 

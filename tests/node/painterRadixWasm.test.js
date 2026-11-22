@@ -54,7 +54,8 @@ const idx = new Uint32Array(buffer, R.idx.byte, CAP + 16);
 const idxE = new Uint32Array(buffer, R.idxE.byte, CAP);
 const ws = wasmPainterState(buffer, painterStateLayout(R, 'w.', CAP));
 wasmPainterState(buffer, painterStateLayout(R, 'other.', 64));
-const kernel = await loadPainterRadix(memory);
+// Every variant: the test module (N-303 CR-11; engine.wasm ships PAINTER_VARIANT's three exports).
+const kernel = await loadPainterRadix(memory, new URL('../fixtures/wasm/painterRadix.wasm', import.meta.url));
 const variants = Object.fromEntries(VARIANTS.map((v) => [v, painterRadixVariant(kernel, v, buffer)]));
 
 const ALL_REGIONS = Object.keys(R);

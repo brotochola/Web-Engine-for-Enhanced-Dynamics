@@ -269,8 +269,6 @@ export interface SceneBuffers {
   physicsStats: SharedArrayBuffer | null;
   spatialStats: SharedArrayBuffer | null;
   logicStats: SharedArrayBuffer | null;
-  queryEntityMetadata: SharedArrayBuffer | null;
-  queryCache: SharedArrayBuffer | null;
   queryResults: SharedArrayBuffer | null;
   queryVersion: SharedArrayBuffer | null;
   bodyDirtyFlags: SharedArrayBuffer | null;
@@ -714,8 +712,6 @@ export interface QuerySystemPrecomputeComponentMap {
 }
 
 export interface QuerySystemSharedBuffersResult {
-  entityMetadataSAB: SharedArrayBuffer;
-  queryCacheSAB: SharedArrayBuffer;
   queryResultsSAB: SharedArrayBuffer;
   queryVersionSAB: SharedArrayBuffer;
 }
@@ -2087,8 +2083,6 @@ export declare class QuerySystem {
   queryToTypeMask: Map<bigint, bigint>;
   precomputedQueries: QueryPrecomputedDefinition[];
   queryMaskToIndex: Map<bigint, number>;
-  entityMetadataSAB: SharedArrayBuffer | null;
-  queryCacheSAB: SharedArrayBuffer | null;
   queryResultsSAB: SharedArrayBuffer | null;
   queryVersionSAB: SharedArrayBuffer | null;
   queryMaskCache: Map<string, bigint>;
@@ -2660,19 +2654,6 @@ export declare class Mouse {
   static get prevWheel(): number;
   static addWheel(deltaY: number): void;
 
-  static get isDown(): boolean;
-  static get isInWorld(): boolean;
-  static get isLeftButtonDown(): boolean;
-  static get isMiddleButtonDown(): boolean;
-  static get isRightButtonDown(): boolean;
-  static get clicked(): boolean;
-  static get isLeftButtonPressed(): boolean;
-  static get isLeftButtonReleased(): boolean;
-  static get isMiddleButtonPressed(): boolean;
-  static get isMiddleButtonReleased(): boolean;
-  static get isRightButtonPressed(): boolean;
-  static get isRightButtonReleased(): boolean;
-
   static pinchRatio(): number;
   static get pinchX(): number;
   static get pinchY(): number;
@@ -2978,12 +2959,6 @@ export declare class NavGrid {
   static registerStaticFlowfield(name: string, data: NavGridStaticFlowfieldInput): void;
   /** Loads binary ("WEFF") and JSON flowfields, all at once; main thread only. */
   static loadStaticFlowfields(
-    flowfieldUrls: Record<string, string>,
-    sceneWorldWidth: number,
-    sceneWorldHeight: number
-  ): Promise<void>;
-  /** @deprecated The old name of {@link NavGrid.loadStaticFlowfields}, which reads binary files too. */
-  static loadStaticFlowfieldsFromJSON(
     flowfieldUrls: Record<string, string>,
     sceneWorldWidth: number,
     sceneWorldHeight: number
@@ -5338,7 +5313,6 @@ export declare class LiquidFun {
   static bindHeapPose(payload: LiquidFunHeapPose | null): void;
   static getParticleCount(): number;
   static getViews(): Record<string, unknown> | null;
-  static getParticleViews(): Record<string, unknown> | null;
   static getGroupViews(): Record<string, unknown> | null;
   static createSystem(opts?: Record<string, unknown>): void;
   static setTuning(tuning: Record<string, unknown>): void;
@@ -5353,7 +5327,6 @@ export declare class LiquidFun {
   static groupApplyForce(groupId: number, fx: number, fy: number): void;
   static groupApplyLinearImpulse(groupId: number, ix: number, iy: number): void;
   static getGroups(): unknown[];
-  static getParticleGroups(): unknown[];
   static emit(options: Record<string, unknown>): number;
   static createParticleBox(options: Record<string, unknown>): number;
   static createParticleCircle(options: Record<string, unknown>): number;
@@ -5372,7 +5345,6 @@ export declare const DECORATION_INNER_Z_MAX: number;
 export declare const ENTITY_GLOW_SORT_BIAS: number;
 /** Particles' y-sort offset inside their ground pixel row: in front of a body on the same row, behind its glow. */
 export declare const PARTICLE_SORT_BIAS: number;
-export declare const DECORATION_NO_PARENT: number;
 export declare const SWAY_OFF: 0;
 export declare const SWAY_LOOP: 1;
 export declare const SWAY_IMPULSE: 2;
@@ -5784,7 +5756,6 @@ export interface WeedNamespace extends WeedEnums {
   DECORATION_INNER_Z_MAX: number;
   ENTITY_GLOW_SORT_BIAS: number;
   PARTICLE_SORT_BIAS: number;
-  DECORATION_NO_PARENT: number;
   /** The "no parent" id for the scene's entity id width. */
   decorationNoParent(): number;
   SharedResourceMailbox: typeof SharedResourceMailbox;

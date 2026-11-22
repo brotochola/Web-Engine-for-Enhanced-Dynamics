@@ -80,17 +80,6 @@ test('Layer.resolveSubscriptions: omit, empty, one name, oil+fire, unknown, buil
   );
 });
 
-test('Layer.maskFromLegacy: layerId 0 is ENTITIES; feed bit ORs', () => {
-  withLayers({}, () => {
-    const entities = Layer.entitiesMask();
-    const mask = Layer.maskFromLegacy(new Uint8Array([0, 5]), new Uint8Array([3, 255]));
-    assert.equal(mask[0], entities | (1 << 3));
-    assert.equal(mask[1], 1 << 5);
-    const already = Layer.maskFromLegacy(new Uint16Array([7, 9]), null);
-    assert.deepEqual([...already], [7, 9]);
-  });
-});
-
 test('collect writes once per sprite-queue bit', () => {
   withLayers(
     {

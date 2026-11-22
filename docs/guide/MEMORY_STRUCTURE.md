@@ -579,8 +579,6 @@ One writer per slot, so slots need no cross-writer lock. Readers use `readFrame`
 
 | Buffer                | Size | Layout |
 | --------------------- | ---- | ------ |
-| `queryEntityMetadata` | `16 + numTypes * 16` | `[numTypes, pad, per-type: componentMask, startIndex, endIndex]` |
-| `queryCacheSAB`       | `8 + maxQueries * 16` | `[numQueries, maxQueries, pad, per-query: queryMask, typeMask]` |
 | `queryResultsSAB`     | `numQueries * (16 + 3 * (1+N) * idBytes)` | Per query: Int32 header `[publishedSnapshot, publishedCount, publishedFrame, reserved]` + **3** snapshots of `[count, entityIndices…]`. `idBytes` is 2 or 4. `N` is the scene entity capacity (65535 at width 16, 1048575 at width 32). Triple buffering avoids torn reads when a reader lags one publish. |
 | `queryVersionSAB`     | `4` | `[activeQueryVersion: Int32]` bumped whenever logic 0 mutates active/query lists |
 

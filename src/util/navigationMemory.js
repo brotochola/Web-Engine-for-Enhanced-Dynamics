@@ -3,10 +3,7 @@
 // it, so navFlowfield.wasm reads the walkability and writes its vectors in one memory. The flowfield runs only there,
 // so a scene with navigation always has one: past the 2 GB cap, or refused by the browser, is an error.
 
-import { navigationMemoryRegions } from './wasmMemoryMap.js';
-
-// The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 32768;
+import { createWasmMemory, navigationMemoryRegions } from './wasmMemoryMap.js';
 
 /**
  * @param {number} navBytes NavGrid.calculateSABSize(...)
@@ -17,20 +14,8 @@ export function createNavigationMemory(navBytes, cells) {
   const n = cells | 0;
   if (n <= 0 || (navBytes | 0) <= 0) return null;
   const map = navigationMemoryRegions(navBytes, n);
-  const mb = Math.ceil((map.pages * 65536) / 1048576);
-  if (map.pages > WASM_MAX_PAGES) {
-    throw new Error(
-      `navigation memory: ${mb} MB (${n} cells) is past the ${WASM_MAX_PAGES / 16} MB a kernel memory can take; ` +
-        'raise navigation.cellSize or lower maxFlowfields',
-    );
-  }
   const r = map.regions;
-  let memory;
-  try {
-    memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
-  } catch (err) {
-    throw new Error(`navigation memory: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
-  }
+  const memory = createWasmMemory(map.pages, 'navigation memory', `(${n} cells)`, 'raise navigation.cellSize or lower maxFlowfields');
   return {
     memory,
     buffer: memory.buffer,

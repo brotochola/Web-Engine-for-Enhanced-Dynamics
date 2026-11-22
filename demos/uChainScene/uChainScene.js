@@ -325,7 +325,7 @@ export class UChainScene extends Scene {
   }
 
   update(_dtRatio, deltaTime) {
-    if (Mouse.isMiddleButtonPressed) {
+    if (Mouse.isButton1Pressed) {
       Drop.spawn({
         x: Mouse.x,
         y: Mouse.y,
@@ -333,7 +333,7 @@ export class UChainScene extends Scene {
       });
     }
 
-    const down = Mouse.isRightButtonDown;
+    const down = Mouse.isButton2Down;
     const justDown = down && !this._rightWasDown;
     this._rightWasDown = down;
     if (!down) {

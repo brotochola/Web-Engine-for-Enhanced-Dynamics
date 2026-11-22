@@ -338,32 +338,14 @@ function pushSection(sections, tag, buildFn) {
   sections.push({ tag, body: inner.finish() });
 }
 
+// META: the scene's name and the engine's version.
 function writeMeta(w, payload) {
   w.str(payload.sceneName || 'Scene');
   w.str(payload.engineVersion || '');
-  const layout = payload.layout || { types: [], totalEntityCount: 0 };
-  const types = layout.types || [];
-  w.u16(types.length);
-  for (let i = 0; i < types.length; i++) {
-    w.str(types[i].name || '');
-    w.u32(types[i].poolSize | 0);
-  }
-  w.u32(layout.totalEntityCount | 0);
 }
 
 function readMeta(r) {
-  const sceneName = r.str();
-  const engineVersion = r.str();
-  const typeCount = r.u16();
-  const types = [];
-  for (let i = 0; i < typeCount; i++) {
-    types.push({ name: r.str(), poolSize: r.u32() });
-  }
-  return {
-    sceneName,
-    engineVersion,
-    layout: { types, totalEntityCount: r.u32() },
-  };
+  return { sceneName: r.str(), engineVersion: r.str() };
 }
 
 function writeCamera(w, camera) {
@@ -979,7 +961,6 @@ export function decodeBinarySaveBody(bytes) {
   return {
     sceneName: meta.sceneName,
     engineVersion: meta.engineVersion,
-    layout: meta.layout,
     camera: map[SECTION.CAMERA] ? readCamera(new Reader(map[SECTION.CAMERA])) : null,
     sun: map[SECTION.SUN] ? readSun(new Reader(map[SECTION.SUN])) : null,
     entities: map[SECTION.ENTITIES] ? readEntities(new Reader(map[SECTION.ENTITIES])) : [],

@@ -240,18 +240,6 @@ test('a binary field reaches a worker as it is and samples there as on the main 
   );
 });
 
-test('the old name, loadStaticFlowfieldsFromJSON, loads binary files too', async () => {
-  NavGrid.reset();
-  const json = jsonField(3, 2, 10, 8);
-  const server = serve({ '/f.bin': await encodeStaticFlowfield(staticFlowfieldFromJSON(json)) });
-  try {
-    await NavGrid.loadStaticFlowfieldsFromJSON({ f: '/f.bin' }, 30, 20);
-  } finally {
-    server.restore();
-  }
-  assert.deepEqual(cells('f').vectors, Array.from(staticFlowfieldFromJSON(json).vectors));
-});
-
 test('the cells sit in shared memory once, so every worker init message shares them instead of copying (SST-10)', async () => {
   NavGrid.reset();
   const json = jsonField(6, 4, 10, 3);

@@ -62,22 +62,6 @@ export function pixelDepthTerms(out, floorScaleY, heightScaleY, viewTopY, viewHe
 }
 
 /**
- * A pixel's depth as the programs write it (for tests): band (0 back to 7 front), the floor place's u (0 north of the
- * view's span, 1 south), the painter step (an instance index). DX-FACEDEPTH: with `faces`, the continuous form (no floor()
- * of the floor place) and the painter step as given (a face's is 0; its innerZ is in u: FACE_INNER_Z_TIE).
- */
-export function pixelDepthValue(band, u, instance, faces = false) {
-  const b = Math.min(Math.max(band, 0), PIXEL_DEPTH_BANDS - 1);
-  const uc = Math.min(Math.max(u, 0), 1) * (PIXEL_DEPTH_FLOOR_STEPS - 1);
-  const q = faces ? uc : Math.floor(uc);
-  const p = instance & (PIXEL_DEPTH_PAINTER_STEPS - 1);
-  const d = (PIXEL_DEPTH_BANDS - 1 - b) * PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS
-    + (PIXEL_DEPTH_FLOOR_STEPS - 1 - q) * PIXEL_DEPTH_PAINTER_STEPS
-    + (PIXEL_DEPTH_PAINTER_STEPS - 1 - p);
-  return d / (PIXEL_DEPTH_BANDS * PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS);
-}
-
-/**
  * H-EDGE: whether this instance's frame is plain (vPlain 1.0, GLSL): its soft-or-glow bit clear in its row's flags texel
  * (frameBase.js TEX_LUT_SOFT_OR_GLOW), read after the vertex shader's own LUT read (its tid, lutSize and lutPerRow), and
  * with `gbuf` no unshaded bit in its word (DX-UNSHADED). A table without the texel, or a slot past it, reads as not plain.

@@ -130,7 +130,7 @@ test('tweens save repeat / yoyo / onComplete, and a section of another layout re
     slots.push(rec);
   }
   const payload = {
-    sceneName: 'T', engineVersion: '0', layout: { types: [], totalEntityCount: 0 },
+    sceneName: 'T', engineVersion: '0',
     camera: null, sun: null, entities: [], joints: [], tweens: slots,
   };
   const bytes = encodeBinarySaveBody(payload);

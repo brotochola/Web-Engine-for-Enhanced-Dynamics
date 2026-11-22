@@ -10,8 +10,8 @@ import {
   gidPageSize,
   gidPageByteLength,
   packGidPageRgba8,
-  unpackGidRgba8,
 } from '../../src/render/tilemapGid.js';
+import { unpackGidRgba8 } from '../reference/tilemapGidJs.mjs';
 import { parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();

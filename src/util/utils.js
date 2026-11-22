@@ -188,19 +188,6 @@ export function lerp(a, b, t) {
  * 2D rotation helpers (cos/sin as unit complex). Zero alloc.
  */
 
-/** Compose R0 * R1 into out = { c, s } (caller reuses out). */
-export function composeRotTo(out, c0, s0, c1, s1) {
-  out.c = c0 * c1 - s0 * s1;
-  out.s = s0 * c1 + c0 * s1;
-  return out;
-}
-
-/** Compose R0 * R1 into typed arrays at index. */
-export function composeRotInto(c0, s0, c1, s1, cArr, sArr, index) {
-  cArr[index] = c0 * c1 - s0 * s1;
-  sArr[index] = s0 * c1 + c0 * s1;
-}
-
 /** Write cos/sin of radians into typed arrays at index. */
 export function setRotCSFromAngle(cArr, sArr, index, angle) {
   cArr[index] = Math.cos(angle);
@@ -308,19 +295,6 @@ export function clearUnusedLightDataTexels(data, maxLights, liveCount, upTo = ma
   const end = Math.max(live, Math.min(upTo | 0, n));
   if (live >= end) return;
   for (let row = 0; row < LIGHT_DATA_TEX_HEIGHT; row++) data.fill(0, row * n * 4 + live * 4, row * n * 4 + end * 4);
-}
-
-/** Read back a packed light (for tests / debug). Writes into `out` and returns it. */
-export function readLightDataTexel(data, maxLights, lightIndex, out = {}) {
-  const i0 = lightIndex * 4;
-  const i1 = maxLights * 4 + lightIndex * 4;
-  out.x = data[i0];
-  out.y = data[i0 + 1];
-  out.intensity = data[i0 + 2];
-  out.r = data[i1];
-  out.g = data[i1 + 1];
-  out.b = data[i1 + 2];
-  return out;
 }
 
 /** Instanced sprite scale so cookie world radius == lightInfluenceRadius. */

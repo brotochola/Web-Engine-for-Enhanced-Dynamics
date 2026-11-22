@@ -21,10 +21,6 @@ export const MESH_NO_TEXTURE = 0xffff;
 let _warnedDrawable = false;
 let _warnedVolume = false;
 
-export function resetMeshRendererFixtureWarn() {
-  _warnedDrawable = false;
-}
-
 export function resetMeshRendererDrawableWarn() {
   _warnedDrawable = false;
 }
@@ -36,11 +32,6 @@ export function warnMeshRendererNeedsDrawableCollider() {
   console.warn(
     'WeedJS: MeshRenderer has no drawable collider (fixtures or primary box/circle/polygon)',
   );
-}
-
-/** @deprecated use warnMeshRendererNeedsDrawableCollider */
-export function warnMeshRendererNeedsFixtures() {
-  warnMeshRendererNeedsDrawableCollider();
 }
 
 let _pointXY = null;

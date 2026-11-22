@@ -229,10 +229,6 @@ ${rawWgsl(format)}fn twinTexel(uv: vec2<f32>, win: vec4<f32>) -> vec4<f32> {
 ${normalWgsl(format)}`;
 }
 
-/** Format A's helpers (the default; tests and readers that strip them compare against these). */
-export const TWIN_GLSL = twinGlsl('A');
-export const TWIN_WGSL = twinWgsl('A');
-
 /**
  * E-496: the maps table in GLSL 300 (its uniform and twinWindow): textureId tid's texel (mapsTable.js), zeros past it.
  */

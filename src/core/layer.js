@@ -85,11 +85,6 @@ export const RESERVED_LOOK_UNIFORMS = {
     uTexSize: { value: [0, 0], type: 'vec2<f32>' },
 };
 
-/** @param {string} name */
-export function isReservedLookUniform(name) {
-    return name in RESERVED_LOOK_UNIFORMS;
-}
-
 /**
  * SAB float count of {@link RESERVED_LOOK_UNIFORMS} with the same vec2/vec4 pad
  * as {@link Layer._allocateUniformSAB}.
@@ -108,8 +103,6 @@ export function reservedLookUniformFloatCount() {
 
 /** Panel hint keys carried into metadata (LayersPanel widgets). */
 const UNIFORM_HINT_KEYS = ['min', 'max', 'step', 'label', 'tip', 'negate', 'widget'];
-
-const LEGACY_FEED_NONE = 255;
 
 function isAllCapsName(name) {
     return typeof name === 'string' && name.length > 1 && name === name.toUpperCase() && /[A-Z]/.test(name);
@@ -1506,38 +1499,6 @@ export class Layer {
         // entities, as a game object is, instead of never. An empty list stays 0.
         if (mask === 0 && missed) return this.entitiesMask();
         return mask;
-    }
-
-    /**
-     * Old saves stored u8 layerId + feedLayerId (255 = none).
-     * layerId 0 means ENTITIES bit. Non-255 feed bits are OR'd in.
-     * @param {Uint8Array|Uint16Array|null|undefined} layerField
-     * @param {Uint8Array|null|undefined} feedLayerId
-     * @returns {Uint16Array|null}
-     */
-    static maskFromLegacy(layerField, feedLayerId) {
-        const n = Math.max(layerField?.length || 0, feedLayerId?.length || 0);
-        if (!n) return layerField instanceof Uint16Array ? layerField : null;
-        if (layerField instanceof Uint16Array && !feedLayerId) return layerField;
-        const out = new Uint16Array(n);
-        const entities = this.entitiesMask();
-        if (layerField instanceof Uint16Array) {
-            out.set(layerField.subarray(0, n));
-        } else if (layerField) {
-            const len = Math.min(n, layerField.length);
-            for (let i = 0; i < len; i++) {
-                const id = layerField[i] | 0;
-                out[i] = id === 0 ? entities : (1 << id);
-            }
-        }
-        if (feedLayerId) {
-            const len = Math.min(n, feedLayerId.length);
-            for (let i = 0; i < len; i++) {
-                const fid = feedLayerId[i] | 0;
-                if (fid !== LEGACY_FEED_NONE && fid >= 0 && fid < this.MAX_LAYERS) out[i] |= 1 << fid;
-            }
-        }
-        return out;
     }
 
     /**

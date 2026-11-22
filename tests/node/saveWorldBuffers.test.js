@@ -46,7 +46,6 @@ function roundtrip(partial) {
   return decodeSaveUncompressed(encodeSaveUncompressed({
     sceneName: 'T',
     engineVersion: '0',
-    layout: { types: [], totalEntityCount: 0 },
     camera: null,
     sun: null,
     entities: [],
@@ -115,8 +114,8 @@ test('world-buffer sections round-trip, and a save without them leaves them empt
     }],
   };
   const decoded = roundtrip(payload);
-  assert.equal(decoded.formatVersion, 8);
-  assert.equal(SAVE_FORMAT_VERSION, 8);
+  assert.equal(decoded.formatVersion, 9);
+  assert.equal(SAVE_FORMAT_VERSION, 9);
   assert.equal(decoded.sharedResources[0].name, 'Grid');
   assert.deepEqual([...decoded.sharedResources[0].bytes], [1, 2, 3, 4]);
   assert.equal(decoded.chains[0].entityIndex, 2);
@@ -137,7 +136,7 @@ test('world-buffer sections round-trip, and a save without them leaves them empt
   assert.equal(decoded.tweens[0].from0, 0.25);
 
   const old = roundtrip({});
-  assert.equal(old.formatVersion, 8);
+  assert.equal(old.formatVersion, 9);
   assert.equal(old.sharedResources, null);
   assert.equal(old.chains, null);
   assert.equal(old.fixtures, null);

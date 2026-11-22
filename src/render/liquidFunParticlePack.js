@@ -6,7 +6,6 @@ import { ParticleComponent } from '../components/particleComponent.js';
 import { snapshotParticleFeed } from '../util/layerFeed.js';
 
 export const PARTICLE_FLOATS = 8;
-export const PARTICLE_STRIDE_BYTES = PARTICLE_FLOATS * 4;
 
 /** Reused pack result (no alloc in the hot loop). */
 export const PARTICLE_OUT = { particleCount: 0 };

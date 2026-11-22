@@ -59,8 +59,6 @@ export const DECORATION_SWAY_EPOCH = 6;
 export function decorationNoParent() {
   return entityIdNone;
 }
-/** @deprecated use decorationNoParent() — live sentinel follows entityIdWidth */
-export const DECORATION_NO_PARENT = 0xffff;
 
 export {
   SWAY_OFF,

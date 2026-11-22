@@ -202,12 +202,7 @@ export class AbstractWorker {
     this.registeredClasses = [];
     this._noParent = 0xffff;
 
-    // Query system cache for component-based entity filtering
-    this.emptyQueryWarnings = new Set(); // Track empty query warnings (log once per query key)
     this.queryVersionData = null; // Shared version for active query result invalidation
-
-    // Pre-allocated empty array for query fallbacks
-    this._emptyUint16Array = new Uint16Array(0);
 
     // MessagePorts for direct worker-to-worker communication
     this.workerPorts = new Map(); // Map<workerName, MessagePort>
@@ -995,21 +990,16 @@ export class AbstractWorker {
     this.registeredClasses = data.registeredClasses || [];
 
     // Initialize query system for component-based entity filtering (SAB-based only)
-    if (data.queries && data.buffers?.queryEntityMetadata) {
+    if (data.queries && data.buffers?.queryResults) {
       const queryFunctions = createWorkerQueryFunctions(
         data.queries,
-        {
-          entityMetadataSAB: data.buffers.queryEntityMetadata,
-          queryCacheSAB: data.buffers.queryCache,
-          queryResultsSAB: data.buffers.queryResults,
-        },
+        { queryResultsSAB: data.buffers.queryResults },
         this.activeEntitiesData,
         this.queryVersionData
       );
 
       this._publishPrecomputedActiveQueries = queryFunctions.publishPrecomputedActiveQueries;
       this._precomputedQueries = queryFunctions._precomputedQueries;
-      this._queryEntityMetadata = queryFunctions._entityMetadata;
 
       Query.bindWorker(queryFunctions);
 
@@ -1017,7 +1007,7 @@ export class AbstractWorker {
         `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries`
       );
     } else if (data.queries) {
-      throw new Error('Query system requires SAB buffers (queryEntityMetadata/queryCache/queryResults)');
+      throw new Error('Query system requires its SAB (queryResults)');
     }
 
     if (data.adobeAnimateMetadata) {
@@ -1620,26 +1610,6 @@ export class AbstractWorker {
 
   /** Reconfigure the GPU swapchain. Renderer overrides; other workers no-op. */
   rebindSurface() {}
-
-  /**
-   * Get the count of active entities from the shared activeEntitiesData list.
-   * @returns {number} - Number of active entities
-   */
-  getActiveEntityCount() {
-    return this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
-  }
-
-  /**
-   * Get an active entity index by its position in the active list
-   * @param {number} activeIndex - Index in the active list (0 to count-1)
-   * @returns {number} - Actual entity index, or -1 if invalid
-   */
-  getActiveEntityIndex(activeIndex) {
-    if (!this.activeEntitiesData) return -1;
-    const count = this.activeEntitiesData[0];
-    if (activeIndex < 0 || activeIndex >= count) return -1;
-    return this.activeEntitiesData[1 + activeIndex];
-  }
 
   // ==========================================
   // ABSTRACT METHODS - Must be implemented by subclasses

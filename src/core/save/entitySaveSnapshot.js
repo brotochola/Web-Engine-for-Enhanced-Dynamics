@@ -25,9 +25,9 @@ import {
 } from './worldBufferSave.js';
 
 export const SAVE_MAGIC = 'WEEDSAVE1';
-/** 8: the sim clock's time (N-329); 7: decal tiles deflated, not PNG (N-314); 6: entities by columns, one table per type
- * (E-539). A save of any other version does not load. */
-export const SAVE_FORMAT_VERSION = 8;
+/** 9: META without the layout hint nothing read (N-303 CR-33); 8: the sim clock's time (N-329); 7: decal tiles deflated, not
+ * PNG (N-314); 6: entities by columns, one table per type (E-539). A save of any other version does not load. */
+export const SAVE_FORMAT_VERSION = 9;
 
 /** @param {Function} EntityClass */
 export function isEntityClassSerializable(EntityClass) {
@@ -505,20 +505,6 @@ export function collectSerializableEntities(scene, options = {}) {
   return tables;
 }
 
-/**
- * Soft layout hint from scene registry (detect missing types on load).
- * @param {object} scene
- */
-export function buildLayoutHint(scene, allEntities = false) {
-  const types = [];
-  for (const reg of scene.registeredClasses || []) {
-    if (!allEntities && !isEntityClassSerializable(reg.class)) continue;
-    types.push({ name: reg.class.name, poolSize: reg.count | 0 });
-  }
-  types.sort((a, b) => a.name.localeCompare(b.name));
-  return { types, totalEntityCount: scene.totalEntityCount | 0 };
-}
-
 export function readCameraGlobals() {
   if (!Camera._data) return null;
   // The tail slot is the follow seqlock, not camera state.
@@ -575,7 +561,6 @@ export function buildSavePayload(scene, globals = {}, options = {}) {
     formatVersion: SAVE_FORMAT_VERSION,
     engineVersion: VERSION,
     sceneName: scene.constructor?.name || 'Scene',
-    layout: buildLayoutHint(scene, allEntities),
     camera: globals.camera !== undefined ? globals.camera : readCameraGlobals(),
     sun: globals.sun !== undefined ? globals.sun : readSunGlobals(),
     entities,
@@ -620,30 +605,19 @@ export function buildSavePayload(scene, globals = {}, options = {}) {
   return payload;
 }
 
-// --- Binary encode/decode (JSON body after header for simplicity + deflate) ---
+// --- The file: magic, u32 format version, then the sectioned binary body (binarySaveCodec), deflated or not ---
 
 function encodeUtf8(str) {
   return new TextEncoder().encode(str);
 }
 
-function decodeUtf8(bytes) {
-  return new TextDecoder().decode(bytes);
-}
-
 /**
- * Encode payload object to uncompressed ArrayBuffer (magic + u32 ver + utf8 JSON).
+ * Encode payload object to uncompressed bytes (magic + u32 version + the binary body).
  * @param {object} payload
  * @returns {Uint8Array}
  */
 export function encodeSaveUncompressed(payload) {
-  const body = encodeBinarySaveBody(payload);
-  const magicBytes = encodeUtf8(SAVE_MAGIC);
-  const out = new Uint8Array(magicBytes.length + 4 + body.byteLength);
-  out.set(magicBytes, 0);
-  const view = new DataView(out.buffer);
-  view.setUint32(magicBytes.length, SAVE_FORMAT_VERSION, true);
-  out.set(body, magicBytes.length + 4);
-  return out;
+  return frameSave(encodeBinarySaveBody(payload));
 }
 
 /**
@@ -651,6 +625,21 @@ export function encodeSaveUncompressed(payload) {
  * @returns {object}
  */
 export function decodeSaveUncompressed(data) {
+  return payloadOf(decodeBinarySaveBody(unframeSave(data)));
+}
+
+/** The file around a body (N-303 CR-24: one framing for both forms): the magic, the u32 format version, the body. */
+function frameSave(body) {
+  const magicBytes = encodeUtf8(SAVE_MAGIC);
+  const out = new Uint8Array(magicBytes.length + 4 + body.byteLength);
+  out.set(magicBytes, 0);
+  new DataView(out.buffer).setUint32(magicBytes.length, SAVE_FORMAT_VERSION, true);
+  out.set(body, magicBytes.length + 4);
+  return out;
+}
+
+/** The body of a file, once its magic and version are this build's (any other throws). */
+function unframeSave(data) {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   const magicBytes = encodeUtf8(SAVE_MAGIC);
   for (let i = 0; i < magicBytes.length; i++) {
@@ -663,13 +652,11 @@ export function decodeSaveUncompressed(data) {
   if (formatVersion !== SAVE_FORMAT_VERSION) {
     throw new Error(`SaveGame: unsupported formatVersion ${formatVersion}`);
   }
-  const body = bytes.subarray(magicBytes.length + 4);
-  const decoded = decodeBinarySaveBody(body);
-  return {
-    magic: SAVE_MAGIC,
-    formatVersion: SAVE_FORMAT_VERSION,
-    ...decoded,
-  };
+  return bytes.subarray(magicBytes.length + 4);
+}
+
+function payloadOf(decoded) {
+  return { magic: SAVE_MAGIC, formatVersion: SAVE_FORMAT_VERSION, ...decoded };
 }
 
 export async function deflateBytes(input) {
@@ -699,14 +686,7 @@ export async function inflateBytes(input) {
  * @returns {Promise<Uint8Array>}
  */
 export async function encodeSave(payload) {
-  const body = encodeBinarySaveBody(payload);
-  const compressed = await deflateBytes(body);
-  const magicBytes = encodeUtf8(SAVE_MAGIC);
-  const out = new Uint8Array(magicBytes.length + 4 + compressed.byteLength);
-  out.set(magicBytes, 0);
-  new DataView(out.buffer).setUint32(magicBytes.length, SAVE_FORMAT_VERSION, true);
-  out.set(compressed, magicBytes.length + 4);
-  return out;
+  return frameSave(await deflateBytes(encodeBinarySaveBody(payload)));
 }
 
 /**
@@ -714,25 +694,7 @@ export async function encodeSave(payload) {
  * @returns {Promise<object>}
  */
 export async function decodeSave(compressed) {
-  const bytes = compressed instanceof Uint8Array ? compressed : new Uint8Array(compressed);
-  const magicBytes = encodeUtf8(SAVE_MAGIC);
-  for (let i = 0; i < magicBytes.length; i++) {
-    if (bytes[i] !== magicBytes[i]) {
-      throw new Error('SaveGame: bad magic');
-    }
-  }
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const formatVersion = view.getUint32(magicBytes.length, true);
-  if (formatVersion !== SAVE_FORMAT_VERSION) {
-    throw new Error(`SaveGame: unsupported formatVersion ${formatVersion}`);
-  }
-  const body = await inflateBytes(bytes.subarray(magicBytes.length + 4));
-  const decoded = decodeBinarySaveBody(body);
-  return {
-    magic: SAVE_MAGIC,
-    formatVersion: SAVE_FORMAT_VERSION,
-    ...decoded,
-  };
+  return payloadOf(decodeBinarySaveBody(await inflateBytes(unframeSave(compressed))));
 }
 
 export function shouldSaveEntity(EntityClass, entityIndex, transformLike = Transform) {

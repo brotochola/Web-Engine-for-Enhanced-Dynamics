@@ -416,17 +416,6 @@ export class FSM extends Component {
   }
 
   /**
-   * Get state name by index (internal helper)
-   * @private
-   * @param {number} stateIndex - State index
-   * @returns {string|null} State name
-   */
-  static _getStateNameByIndex(stateIndex) {
-    if (!this._stateNames) return null;
-    return this._stateNames[stateIndex] || null;
-  }
-
-  /**
    * Check if entity is in a specific state
    * @param {number} i - Entity index
    * @param {Class} StateClass - State class to check (from this.fsm.states.X)

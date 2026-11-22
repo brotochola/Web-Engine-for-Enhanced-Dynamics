@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { meshLookFullscreenUvs, meshLookPassUvs, MESH_LOOK_UV_FLOATS } from '../../src/render/meshLookUv.js';
+import { meshLookFullscreenUvs, MESH_LOOK_UV_FLOATS } from '../../src/render/meshLookUv.js';
+
+// A look pass's UVs: the fullscreen ones without the flip (both backends).
+const meshLookPassUvs = () => meshLookFullscreenUvs(false);
 
 test('MESH look pass UVs are one convention (no backend flip in geometry)', () => {
   const pass = meshLookPassUvs();

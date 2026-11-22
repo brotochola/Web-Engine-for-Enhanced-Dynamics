@@ -99,14 +99,6 @@ export function resolveSpritePipeline(opts) {
   return { packGpuSprites: pack, sortSprites: sort };
 }
 
-/**
- * @param {unknown} ySort
- * @returns {false|'cpu'}
- */
-export function resolveYSort(ySort) {
-  return normalizeYSort(ySort);
-}
-
 const WGSL_RE = /@(?:vertex|fragment|compute)\b/;
 const GLSL_RE = /(?:#version\s+\d+|gl_FragColor|gl_FragCoord|gl_Position|precision\s+(?:highp|mediump|lowp)\s+float|void\s+main\s*\()/;
 
@@ -416,7 +408,7 @@ export function assertSceneRendererConfig(config) {
     }
   }
   if (config?.renderer) {
-    config.renderer.ySort = resolveYSort(config.renderer.ySort);
+    config.renderer.ySort = normalizeYSort(config.renderer.ySort);
   }
   return backend;
 }

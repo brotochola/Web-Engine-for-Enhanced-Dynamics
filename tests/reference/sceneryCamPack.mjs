@@ -3,7 +3,7 @@
  * World layers: x = -camX * zoom * px, scale = zoom * sx. Cover uses coverBackgroundTransform.
  */
 
-import { coverBackgroundTransform } from './coverBackground.js';
+import { coverBackgroundTransform } from '../../src/render/coverBackground.js';
 
 export const SCENERY_CAM_FLOATS = 4;
 

@@ -328,7 +328,7 @@ export class ConstraintsTestScene extends Scene {
     }
 
     update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
-        if (Mouse.isDown) {
+        if (Mouse.isButton0Down) {
             [...Ball.getAllActive()].forEach(i => {
                 RigidBody.sleeping[i] = 0
             });
@@ -392,15 +392,15 @@ export class ConstraintsTestScene extends Scene {
         if (!kb.b) this._bPressed = false;
 
         // Handle click-to-connect/remove in constraint mode
-        if ((this.constraintMode || this._removeMode) && Mouse.isDown && !this._mouseWasDown) {
+        if ((this.constraintMode || this._removeMode) && Mouse.isButton0Down && !this._mouseWasDown) {
             this._handleConstraintClick();
         }
 
         // Handle builder mode click
-        if (this.builderMode && Mouse.isDown && !this._mouseWasDown) {
+        if (this.builderMode && Mouse.isButton0Down && !this._mouseWasDown) {
             this._handleBuilderClick();
         }
-        this._mouseWasDown = Mouse.isDown;
+        this._mouseWasDown = Mouse.isButton0Down;
 
         // Log FPS periodically
         if (frameNumber % (60 * 5) === 0) {
