@@ -1576,7 +1576,11 @@ class PixiRenderer extends AbstractWorker {
         GPUTextureUsage.RENDER_ATTACHMENT |
         GPUTextureUsage.COPY_SRC,
       format,
-      alphaMode: 'premultiplied',
+      // N-155: opaque, as the WebGL canvas is in effect (its back buffer starts at alpha 1 and every blend keeps it there).
+      // Premultiplied let the page show through wherever a blend lowered the alpha: Pixi's 'add' on WebGPU takes
+      // src-alpha, one-minus-src-alpha for alpha (WebGL's add is one, one), so a light's glow on an ADD layer drew a
+      // brighter core on WebGPU (lightGallery's lamp 8, up to 52/255).
+      alphaMode: 'opaque',
     });
     if (source) source._gpuContext = context;
     this._surfaceUnconfigured = false;
