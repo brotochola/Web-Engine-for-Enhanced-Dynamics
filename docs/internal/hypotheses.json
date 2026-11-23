@@ -18526,7 +18526,8 @@
         "R-1177",
         "R-1236",
         "R-1573",
-        "R-1623"
+        "R-1623",
+        "R-1893"
       ],
       "rank": 12
     },
@@ -18606,13 +18607,13 @@
     {
       "id": "E-408",
       "title": "The 3D light pass compiles to 1131 instruction slots and 24 temp registers in ANGLE's HLSL (the plain pass: 116 slots, 8 temps): one uber-shader whose register count caps the warps in flight (E-406's 16 % unallocated)",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from angleHlslDump + d3dShaderStats (ANGLE D3D11 HLSL of the light pass, d3dcompiler_47 ps_5_0)",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (R-1893): the fetch order, not the temps; merging the arms dropped",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Static counts (ps_5_0, optimization level 3): plain 116 slots, 8 temps; flat 332, 13; light3d without lamps 562, 15; light3d pixel art 857, 21; light3d 1131 slots, 24 temps, 4 loops, 34 branches.",
-      "next": "Fewer live values across the light loop (the sun map's, the faces' and self-shadow's results computed before it), or the pass split by feature (sun and faces once, lamps in their own additive pass); d3dShaderStats' temps and the recorder's GPU time per pass before and after.",
+      "result": "A light's two rows fetched together in a face's arms: light3d -3.6 % WebGL, -2.0 % WebGPU (3a908cd0); one body a light was slower (+4..12 %), dropped",
+      "next": "The pass split by feature (sun and faces once, the lamps in an additive pass of their own) was not tried: it reads the G-buffer twice; d3dShaderStats' temps stayed 23 to 24.",
       "refs": [],
       "aliases": [
         "light pass registers",
@@ -18620,38 +18621,40 @@
       ],
       "records": [
         "R-1177",
-        "R-1230"
+        "R-1230",
+        "R-1893"
       ]
     },
     {
       "id": "E-409",
       "title": "The 3D light pass has 45 divisions or reciprocals and 14 square roots in its HLSL (the plain pass 4 and 1): per-light constants divided per pixel (the reach, the landing's length, e/room) where a multiply by a value packed once a light would do, without the extra fetch E-380 and E-381 added",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from angleHlslDump + d3dShaderStats (ANGLE D3D11 HLSL of the light pass, d3dcompiler_47 ps_5_0)",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (R-1894)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "d3dShaderStats light3d: div/rcp 45, sqrt/rsq 14; light3d without lamps 18 and 6; plain 4 and 1. E-380/E-381 moved them to the light data but read a fourth row per light, and the pass got 10 % slower (R-1173 era sittings, 2026-11-16 02:25).",
-      "next": "Pack the per-light constants into slots the pass already fetches (row 0's w with the tag in its sign, row 2's spare lanes for lights without a cone), never a new fetch per light; count the HLSL again and time light3d with gpuPassBench.",
+      "result": "A lamp's reach packed once a light and lampPanoUv's inner part without a length: light3d -1.1 % WebGL, -3.6 % WebGPU (39ced1cd)",
+      "next": "reachWindow's divide by 100 (I' - h²) a light a pixel stays: packing 1 / radius² needs a slot every light fetches, and a fourth fetch a light cost E-380 10 %.",
       "refs": [],
       "aliases": [
         "light pass divisions"
       ],
       "records": [
         "R-1177",
-        "R-1230"
+        "R-1230",
+        "R-1894"
       ]
     },
     {
       "id": "E-410",
       "title": "The 3D light pass samples 31 times in its HLSL (the lamps' map five taps per lamp, the sun's map's taps): hardware comparison or a gather (four texels in one fetch) would cut the dependent fetches a pixel waits on (E-405)",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from angleHlslDump + d3dShaderStats (ANGLE D3D11 HLSL of the light pass, d3dcompiler_47 ps_5_0)",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-23 on the record (R-1895)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "d3dShaderStats light3d: 31 sample instructions, 14 ld (texelFetch); light3d without lamps 9 and 10; pixel art (one tap) 11 and 14.",
-      "next": "The lamps' map's 5 taps as one textureGather on its depth channel plus one tap, or a comparison sampler where the map holds depths; the same for the sun's; image within tolerance (captures), GPU time per pass.",
+      "result": "Bounded by shadowSamples 1 vs 5 (R-1547: 8-10 % on the GTX 1650; R-1499: nothing on the HD 620); a gather changes the footprint",
+      "next": "",
       "refs": [],
       "aliases": [
         "shadow taps gather",
@@ -18659,7 +18662,8 @@
       ],
       "records": [
         "R-1177",
-        "R-1230"
+        "R-1230",
+        "R-1895"
       ]
     },
     {
@@ -43284,6 +43288,33 @@
       "title": "CR-37 done: the light pass has one path, by tiles (the loops over every light, _lightTilesOn, uLightCount and uLightTexWidth gone); pixel-identical on both backends",
       "verdict": "kept",
       "text": "7e30643a (main), CODE_REDUCTION_PLAN's CR-37, approved by the owner on 2026-11-23 (R-1890): E-205's tiles were set\nwherever lighting was, so the !TILES blocks of lightingBasic.frag.glsl and .wgsl ran only as gpuPass's untiled baseline.\nGone: the blocks, pixiWorker's _lightTilesOn, lightingSource's tiles flag, the two uniforms only those loops read\n(uLightCount, uLightTexWidth; WGSL's nLights and texW) and gpuPass's lightUntiled, light3dUntiled, selfShadowUntiled.\nuTileGrid and uTileWords move into the pass's base group (the struct and Pixi's group in one order: sunNight.test.js).\nThe shipped source equals the old tiled one less those dead lines (three flag sets, both backends, line by line).\ncompareCaptures --vs HEAD~1, dxCaptureScene hour 22 and 12, WebGPU and WebGL: 0 of 921 600 pixels differ in all four.\nNode suite 3590/3590. A deletion of a path that never ran: no sitting (it cannot change a verdict)."
+    },
+    {
+      "id": "R-1893",
+      "date": "2026-11-23",
+      "time": "13:45",
+      "timeFrom": "recorded",
+      "title": "E-408: one body a light (the cones' arm and the others' merged) is slower on the GTX 1650 (light +4..12 %); a light's two rows fetched together in a face's arms is faster (light3d -3.6 % WebGL, -2.0 % WebGPU), kept",
+      "verdict": "kept",
+      "text": "gpuPassBench on the GTX 1650 through gpuPassAbab (new: ABAB from worktrees, each side's src at its revision), light3d\nand light at half of 1080p, 32 lamps with tiles (light3d: 94 % of its pixels faces), 4 pairs each; an A/A of main\n(13:28) read within 0.2 % on every pass, spreads about 1 %.\n- One body a light in each path (the cones' arm and the others' were two copies, each inlining the lamps' map's lookup):\n  ANGLE's HLSL for Predator's variant 1069 -> 752 slots, 31 -> 21 samples, 24 -> 23 temps; but slower, 0/4 pairs:\n  light3d +7.8 % WebGL, +7.7 % WebGPU, light +9.9 %, +3.5 % (13:19). The merged body tested the intensity before\n  fetching the second row, and the D3D compiler sinks a fetch below a test that does not read it: the second fetch waited\n  out the first. With the test reading both rows: light3d +0.2 %, +4.4 %, light +11.6 %, +8.4 % (13:22): the floor's\n  small body pays a real branch a light where the old point arm's test was a select. Dropped (not merged).\n- The same fix on the old arms (a face's two arms tested before the second fetch): light3d -3.6 % WebGL, -2.0 % WebGPU,\n  4/4 each (13:25). The floor's cone arm changed too cost the plain pass +1.7 % on WebGL (13:33), so it stays as it was.\n  Kept: 3a908cd0, merged in 1f69bd0c with E-409.\n- Both changes against main (13:45): light3d -4.6 % WebGL (0.422 -> 0.404 ms), -2.8 % WebGPU (0.473 -> 0.462 ms), 4/4;\n  light +0.1 %, -1.1 %. Predator ?light3d=1&hour=22, the light pass's GPU time (glFrameRecorder --gpu-passes, 4 pairs,\n  13:44, the floor's cone arm still changed): 1.151 -> 1.117 ms, -3.0 %, 4/4. Predator crowd 0.5 at night (its light\n  pass 0.2 ms at 480 x 270, the GPU at 555 MHz): runs spread 12 %, no verdict.\nThe temps E-408 named did not move (24 -> 23 with E-409); the fetch latency E-405 found is what moved."
+    },
+    {
+      "id": "R-1894",
+      "date": "2026-11-23",
+      "time": "13:29",
+      "timeFrom": "recorded",
+      "title": "E-409 kept: a lamp's shadow reach in its fourth row (minus its radius, or a shadowRange under it) and lampPanoUv's inner part without a length: light3d -1.1 % WebGL, -3.6 % WebGPU, 4/4",
+      "verdict": "kept",
+      "text": "39ced1cd (merged 1f69bd0c): the light pass took a lamp's reach as 10 sqrt(I' - h²) at every pixel of every lamp with a\ntile; pixi/lighting.js now writes it in the fourth row's y (minus the radius; a shadowRange under the radius stays\npositive and its last fifth fades out). lampPanoUv within the reach is linear, so no length or division there; the floor's\nlookup, always within the reach, takes that part directly. HLSL (Predator's variant): 1075 -> 1024 slots, 15 -> 11 sqrt,\n43 -> 41 div. The first sitting read -47 % with the image changed: gpuPass's scenery wrote 0 in that y, which E-409\nreads as no reach (no lamp shadows); the scenery now writes minus the radius (bc95a6a8), which the old pass reads as its\nradius too. Then (13:29), against the fetch change: light3d -1.1 % WebGL, -3.6 % WebGPU, 4/4 each; light flat. The light\ngallery (lamps with tiles, one with a shadowRange under its radius) and dxCaptureScene: 0 pixels apart on both backends.\nNode 3590/3590, demos 143/143."
+    },
+    {
+      "id": "R-1895",
+      "date": "2026-11-23",
+      "time": "13:46",
+      "timeFrom": "recorded",
+      "title": "E-410 dropped on the record: shadowSamples 1 against 5 bounds what fewer tap fetches can buy, 8-10 % of the light pass on the GTX 1650 and nothing on the HD 620; a gather would also change the shadows' look",
+      "verdict": "dropped",
+      "text": "No sitting: R-1547 (GTX 1650, Predator ?light3d=1): the light pass 0.95 / 1.03 / 1.10 ms with 1 / 5 / 9 taps; R-1499\n(the ASUS's HD 620): 11-12.5 ms whatever the taps. A textureGather reads four texels of one channel: the lamps' map's\ncross of five taps needs the depth, the opacity and the entity id (three channels for a face's pixel), so it would take\ntwo to four gathers for four texels and a new footprint (2 x 2, not the cross: a different softness to show the owner).\nAt most part of the GTX 1650's 8-10 % and none on the HD 620. E-408's sitting found the lever there was the fetch order\n(R-1893)."
     }
   ],
   "leads": [
