@@ -16,7 +16,8 @@ const { Scene, Camera, Sun, Decoration, LAYER_KIND, BLEND_MODES } = WEED;
  * mesh's, `?shadeSun=` its alphaBySun (shadow, night, or ramp for { from: 0.1, to: 0.4 }). `?deco=1`: decorations on a
  * sprite layer, `?screen=1` a SCREEN layer that copies the frame. `?lookPasses=<n>` (default 1) runs every look of the
  * scene as n copies (DX-LAYERPASSES), `?passScale=` (default 1) the earlier ones' resolution, `?lookLast=source` the last
- * one returning uSource. `?shadeHeight=` the squares' far corners at that height on a sunProjected layer, `?decoAlpha=` (default 1) the layer's alpha, `?decoLook=1` through a look, `?decoSun=` its alphaBySun.
+ * one returning uSource. `?postVignette=<n>` (default 0) puts n SCREEN layers that darken and warm the frame, each with its own
+ * uAmount, over it; `?postPoint=1` as pointwise maps the renderer fuses (DX-POSTFUSE). `?shadeHeight= the squares' far corners at that height on a sunProjected layer, `?decoAlpha=` (default 1) the layer's alpha, `?decoLook=1` through a look, `?decoSun=` its alphaBySun.
  */
 const SEED = 0xd7ca;
 const WORLD_W = 1280;
@@ -56,6 +57,23 @@ export const DECO_LOOK = queryNumber('decoLook', 0) === 1;
 const LOOK_PASSES = Math.max(1, Math.min(8, Math.floor(queryNumber('lookPasses', 1))));
 const PASS_SCALE = queryNumber('passScale', 1);
 const SCREEN = queryNumber('screen', 0) === 1;
+const POST_VIGNETTE = Math.max(0, Math.min(6, Math.floor(queryNumber('postVignette', 0))));
+const POST_POINT = queryNumber('postPoint', 0) === 1;
+function vignetteLayers() {
+  const layers = {};
+  for (let i = 0; i < POST_VIGNETTE; i++) {
+    layers[`vignette${i}`] = {
+      kind: LAYER_KIND.SCREEN,
+      zIndex: 200 + i,
+      shader: {
+        fragment: POST_POINT ? 'dxVignettePoint' : 'dxVignette',
+        ...(POST_POINT ? { pointwise: true } : {}),
+        uniforms: { uAmount: { value: [0.35, 0.2, 0.5, 0.1, 0.4, 0.25][i], type: 'f32' } },
+      },
+    };
+  }
+  return layers;
+}
 function copyLook() {
   if (LOOK_PASSES === 1) return { fragment: 'dxPass' };
   const passes = [];
@@ -144,6 +162,7 @@ export class DxCaptureScene extends Scene {
         ...(SHADE_LOOK ? { shader: { ...copyLook(), containerBlend: BLEND_MODES.NORMAL } } : {}),
       },
       ...(SCREEN ? { post: { kind: LAYER_KIND.SCREEN, zIndex: 100, shader: copyLook() } } : {}),
+      ...vignetteLayers(),
     },
     lighting: {
       enabled: true,
@@ -175,6 +194,8 @@ export class DxCaptureScene extends Scene {
     },
     shaders: {
       dxPass: { webgl: '/tests/bench/stressScenes/shaders/dxPass.frag', webgpu: '/tests/bench/stressScenes/shaders/dxPass.wgsl' },
+      dxVignette: { webgl: '/tests/bench/stressScenes/shaders/dxVignette.frag', webgpu: '/tests/bench/stressScenes/shaders/dxVignette.wgsl' },
+      dxVignettePoint: { webgl: '/tests/bench/stressScenes/shaders/dxVignettePoint.frag', webgpu: '/tests/bench/stressScenes/shaders/dxVignettePoint.wgsl' },
       dxSource: { webgl: '/tests/bench/stressScenes/shaders/dxSource.frag', webgpu: '/tests/bench/stressScenes/shaders/dxSource.wgsl' },
     },
   };
