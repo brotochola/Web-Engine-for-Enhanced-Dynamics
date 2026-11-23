@@ -4,10 +4,10 @@
  * block of exactly the queue's rows (the tests' setups, which lay them out back to back in one memory), binds the client
  * on the ASan module's memory with its tables, index scratch, inverse and results malloc'd at the product's sizes, and
  * gives each call outputs of exactly the rows it may write (min(count, capacity): the pose, slots, updates, texture
- * updates, shadow terms, G-buffer words, keyed caster rows). Each call runs on the ASan build, then on the shipped kernel,
+ * updates, G-buffer words, keyed caster rows). Each call runs on the ASan build, then on the shipped kernel,
  * the scratch (the scatter's inverse) filled with a byte of its own each time: the same return, counts and outputs.
  * Groups: gpuPackKeyed.test.js's keyed pack (painter order, capacity under count, no list, no type column, indices
- * copied, a short list; texture updates and shadow terms on and off; the pose and the by-row form), gpuPackKeyedGbuf's
+ * copied, a short list; texture updates on and off; the pose and the by-row form), gpuPackKeyedGbuf's
  * G-buffer words (every column variant, bands, ids past the wrap), pack_casters_keyed and the keyed caster scan
  * (gpuPackKeyed's cases, plus outputs exactly as long as the casters, caps of 0 and 1), the other forms (gpuPackWasm,
  * Scatter, Split, Indexed, poseInterpPack's cases: the gather and the scatter, the slow path, the split and indexed
@@ -60,7 +60,7 @@ const FNS = {
 };
 const POSE_DYN_FLOATS = 6; // gpuPack.c POSE_DYN_FLOATS (instancedSpriteBatch.js)
 const KEY_NONE = 0xffffffff;
-const U16_COLUMNS = new Set(['textureId', 'tileOffsetU', 'tileOffsetV']);
+const U16_COLUMNS = new Set(['textureId']);
 
 async function imports(ctx) {
   const [client, gql] = await Promise.all([ctx.importRepo('src/render/gpuPackClient.js'), ctx.importRepo('src/render/gpuQueueLayout.js')]);
@@ -251,7 +251,7 @@ const nOf = (opts, rows, cap) => Math.min(opts.indices ? opts.indexCount : rows,
 
 // --- gpuPackKeyed.test.js: the keyed pack ----------------------------------------------------------------------------
 
-function keyedCase(S, seed, variant, { tex, shadow, byRow }) {
+function keyedCase(S, seed, variant, { tex, byRow }) {
   return async (ctx) => {
     const { session } = ctx;
     const N = 5000;
@@ -275,19 +275,17 @@ function keyedCase(S, seed, variant, { tex, shadow, byRow }) {
     const slots = session.alloc(Float32Array, n * G.GPU_INDEXED_SLOT_FLOATS, 'slots');
     const updates = session.alloc(Uint32Array, n * S.client.GPU_KEYED_ROW_WORDS, 'updates');
     const texUpdates = tex ? session.alloc(Uint32Array, n * S.client.GPU_KEYED_TEX_WORDS, 'texture updates') : null;
-    const shadowOut = shadow ? session.alloc(Float32Array, n * 3, 'shadow terms') : null;
     const outs = [[byRow ? 'rows' : 'pose', first], ['slots', slots], ['updates', updates]];
     if (texUpdates) outs.push(['texture updates', texUpdates]);
-    if (shadowOut) outs.push(['shadow terms', shadowOut]);
     const m2 = dual(session, P, outs, () => {
       const keyed = {
         keyBase: ENTITIES, updatesByte: updates.byteOffset, updates: 0,
-        texUpdatesByte: texUpdates ? texUpdates.byteOffset : 0, texUpdates: 0, shadowByte: shadowOut ? shadowOut.byteOffset : 0,
+        texUpdatesByte: texUpdates ? texUpdates.byteOffset : 0, texUpdates: 0,
       };
       const c = G.makePackContext(q, opts, cap, {});
       const pack = byRow ? S.client.packKeyedRowsByRowWasm : S.client.packKeyedRowsWasm;
       const got = pack(P.b, q, c, first, slots, keyed, cap);
-      return [got, c.particleCount, keyed.updates, keyed.texUpdates, keyed.shadowed];
+      return [got, c.particleCount, keyed.updates, keyed.texUpdates];
     });
     return { calls: P.counter.n, rows: n, mismatch: firstMismatch([m1, m2]) };
   };
@@ -307,14 +305,12 @@ function keyedGroup(S, quick) {
   for (const seed of quick ? [177] : [177, 178]) {
     for (const [label, v] of variants) {
       for (const tex of [false, true]) {
-        for (const shadow of [false, true]) {
-          for (const byRow of [false, true]) {
-            if (quick && (tex !== shadow)) continue;
-            cases.push({
-              label: `seed ${seed}, ${label}${tex ? ', texture updates' : ''}${shadow ? ', shadow terms' : ''}${byRow ? ', by row' : ''}`,
-              run: keyedCase(S, seed, v, { tex, shadow, byRow }),
-            });
-          }
+        for (const byRow of [false, true]) {
+          if (quick && tex !== byRow) continue;
+          cases.push({
+            label: `seed ${seed}, ${label}${tex ? ', texture updates' : ''}${byRow ? ', by row' : ''}`,
+            run: keyedCase(S, seed, v, { tex, byRow }),
+          });
         }
       }
     }
@@ -367,21 +363,19 @@ function gbufCase(S, seed, byRow, variant) {
     const slots = session.alloc(Float32Array, n, 'slots');
     const updates = session.alloc(Uint32Array, n * S.client.GPU_KEYED_ROW_WORDS, 'updates');
     const texUpdates = v.texUpdates ? session.alloc(Uint32Array, n * S.client.GPU_KEYED_TEX_WORDS, 'texture updates') : null;
-    const shadowOut = v.shadow ? session.alloc(Float32Array, n * 3, 'shadow terms') : null;
     const gbufOut = session.alloc(Float32Array, n * G.GPU_GBUF_FLOATS, 'G-buffer words');
     const outs = [[byRow ? 'rows' : 'pose', first], ['slots', slots], ['updates', updates], ['G-buffer words', gbufOut]];
     if (texUpdates) outs.push(['texture updates', texUpdates]);
-    if (shadowOut) outs.push(['shadow terms', shadowOut]);
     let mismatch = dual(session, P, outs, () => {
       const keyed = {
         keyBase: KEY_BASE, updatesByte: updates.byteOffset, updates: 0,
-        shadowByte: shadowOut ? shadowOut.byteOffset : 0, texUpdatesByte: texUpdates ? texUpdates.byteOffset : 0, texUpdates: 0,
+        texUpdatesByte: texUpdates ? texUpdates.byteOffset : 0, texUpdates: 0,
         gbufOut, gbufFlags: flags, gbufSelf: v.self, gbufZ: v.z,
       };
       const c = G.makePackContext(q, v.opts, cap, {});
       const pack = byRow ? S.client.packKeyedRowsByRowWasm : S.client.packKeyedRowsWasm;
       const got = pack(P.b, q, c, first, slots, keyed, cap);
-      return [got, c.particleCount, keyed.updates, keyed.texUpdates, keyed.shadowed, keyed.gbufWritten];
+      return [got, c.particleCount, keyed.updates, keyed.texUpdates, keyed.gbufWritten];
     });
     // E-387: the words' own export ran (a pack that declined the words would run the plain one).
     if (!mismatch) mismatch = ranExports(P, [byRow ? 'spritesKeyedRowsGbuf' : 'spritesKeyedGbuf'], ['spritesKeyed', 'spritesKeyedRows']);
@@ -401,10 +395,10 @@ function gbufGroup(S, quick) {
     ['selfShadow shorter than the flags', (s) => ({ opts: painter(s), self: s.selfShort, z: s.zIndex })],
     ['no selfShadow', (s) => ({ opts: painter(s), self: null, z: s.zIndex })],
     ['an empty selfShadow', (s) => ({ opts: painter(s), self: new Uint8Array(0), z: null })],
-    ['shadow terms and texture updates', (s) => ({ opts: painter(s), self: s.selfShadow, z: s.zIndex, shadow: true, texUpdates: true })],
-    ['shadow terms, no bands', (s) => ({ opts: zFirst(s), self: s.selfShort, z: null, shadow: true })],
+    ['texture updates', (s) => ({ opts: painter(s), self: s.selfShadow, z: s.zIndex, texUpdates: true })],
+    ['no bands, a short selfShadow', (s) => ({ opts: zFirst(s), self: s.selfShort, z: null })],
     ['capacity under count', (s) => ({ opts: painter(s), cap: 3210, self: s.selfShadow, z: s.zIndex })],
-    ['capacity under count, no bands', (s) => ({ opts: zFirst(s), cap: 1777, self: s.selfShadow, z: null, shadow: true })],
+    ['capacity under count, no bands', (s) => ({ opts: zFirst(s), cap: 1777, self: s.selfShadow, z: null })],
     ['no list', (s) => ({ opts: { space: W, type: s.q.type }, self: s.selfShadow, z: s.zIndex })],
     ['no type column', (s) => ({ opts: { space: W, indices: s.order, indexCount: s.N }, self: s.selfShadow, z: s.zIndex })],
     ['indices copied', (s) => ({ opts: { space: W, indices: Uint32Array.from(s.zOrder), indexCount: s.N, type: s.q.type }, self: s.selfShadow, z: s.zIndex })],
@@ -694,17 +688,16 @@ function edgeGroup(S) {
     const slots = session.alloc(Float32Array, n, 'slots');
     const updates = session.alloc(Uint32Array, n * S.client.GPU_KEYED_ROW_WORDS, 'updates');
     const texUpdates = session.alloc(Uint32Array, n * S.client.GPU_KEYED_TEX_WORDS, 'texture updates');
-    const shadowOut = session.alloc(Float32Array, n * 3, 'shadow terms');
     const gbufOut = session.alloc(Float32Array, n * G.GPU_GBUF_FLOATS, 'G-buffer words');
-    const outs = [['pose', first], ['slots', slots], ['updates', updates], ['texture updates', texUpdates], ['shadow terms', shadowOut], ['G-buffer words', gbufOut]];
+    const outs = [['pose', first], ['slots', slots], ['updates', updates], ['texture updates', texUpdates], ['G-buffer words', gbufOut]];
     let mismatch = dual(session, P, outs, () => {
       const keyed = {
-        keyBase, updatesByte: updates.byteOffset, updates: 0, shadowByte: shadowOut.byteOffset,
+        keyBase, updatesByte: updates.byteOffset, updates: 0,
         texUpdatesByte: texUpdates.byteOffset, texUpdates: 0, gbufOut, gbufFlags: flags, gbufSelf: self, gbufZ: z,
       };
       const c = G.makePackContext(q, opts, cap, {});
       const pack = byRow ? S.client.packKeyedRowsByRowWasm : S.client.packKeyedRowsWasm;
-      return [pack(P.b, q, c, first, slots, keyed, cap), c.particleCount, keyed.updates, keyed.texUpdates, keyed.shadowed, keyed.gbufWritten];
+      return [pack(P.b, q, c, first, slots, keyed, cap), c.particleCount, keyed.updates, keyed.texUpdates, keyed.gbufWritten];
     });
     if (!mismatch) mismatch = ranExports(P, [byRow ? 'spritesKeyedRowsGbuf' : 'spritesKeyedGbuf'], ['spritesKeyed', 'spritesKeyedRows']);
     return { calls: P.counter.n, rows: n, mismatch };
