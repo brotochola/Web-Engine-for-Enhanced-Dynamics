@@ -47,6 +47,11 @@ process 11 % lower.
 affine in its distance, so it starts from the pixel's own place and adds a step. The self-shadow pass is 4 to 5 % cheaper
 (E-424).
 
+**And decals are sent in bunches.** Every decal tile that changed went up to the GPU in a call of its own, a thousand of 1 KB
+a frame in the decal stress scene. With the tiles as layers of one texture, neighbouring layers now go up together: Pixi
+went from 2.08 to 0.81 ms there (-61 %), Chrome's GPU process from 931 to 225 ms of CPU a second (-76 %), and the GL calls
+from 7 208 to 71 a frame. The stamped tiles also stopped keeping a copy of their texels each (E-270).
+
 **Each lamp pays for its own shadow map.** Every lamp's tile in the lamps' shadow map had the same size, whatever
 the lamp's reach. Each has its own now, by its reach, at most what it was. The tiles hold 52 % fewer texels by night and
 41 % fewer by day in Predator; drawing it costs 25 % less on the GTX 1650 by night and 53 % less on the HD 620 (a medium

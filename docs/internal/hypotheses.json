@@ -14280,13 +14280,13 @@
     {
       "id": "E-270",
       "title": "Decal tiles are premultiplied into a scratch, copied into the tile's array, and uploaded whole (texSubImage2D of the full tile) for any stamp",
-      "status": "open",
-      "statusText": "re-read 2026-11-22 (R-1835): the lever is the upload count, not the rows; E-552 (R-1953) keeps the per-tile whole-tile uploads, now into an array layer",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (R-1957)",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "result": "CPU sweep: decalStampStressScene's Pixi spends 173 ms in _uploadDecalRgba8 (89 % on its texSubImage2D of the whole tile) and 157 ms in premultiplyDecalTile (100 % on dst.set(b.scratch)); decalBlitStressScene 415 ms in the upload (68 %).",
-      "next": "Fewer upload calls (R-1835): decal tiles laid out as the world is in a few large textures (one sprite or mesh per texture instead of one per tile), so a run of dirty tiles goes up as one rectangle (texSubImage2D or writeTexture of the run's rows); decalBlitStressScene's renderer STEP_MS (7.7 ms, over a thousand 1 KB uploads a frame) is the owner pair, decalStamp at resolution=1 the second. A stamp's rows alone are not worth it (R-1835).",
+      "result": "Runs of consecutive layers in one upload: decalBlitStressScene's Pixi 2.08 -> 0.81 ms (-61 %, 4/4), Chrome's GPU process 931 -> 225 ms/s (-76 %), GL calls 7 208 -> 71 a frame (c8f90881)",
+      "next": "",
       "refs": [
         "EXECUTION_PLAN.md#E-270"
       ],
@@ -14299,7 +14299,8 @@
       "records": [
         "R-1427",
         "R-1835",
-        "R-1953"
+        "R-1953",
+        "R-1957"
       ]
     },
     {
@@ -43632,6 +43633,15 @@
       "title": "DX-LAYERPASSES kept: shader.passes, a layer's look in several passes; the platformer's bloom draws 5.06 -> 1.62 ms raw (-83 % at equal clock) on the GTX 1650",
       "verdict": "kept",
       "text": "**DX-LAYERPASSES kept: `shader.passes` gives a look several passes, each into a target the next samples; the platformer's bloom draws 5.06 -> 1.62 ms raw (-68 %) on the GTX 1650, -83 % at equal clock (about 0.9 ms) and -88 % against the draws it leaves alone (about 0.6). Branch feat/layer-passes; owner-approved API; design DX_LAYERPASSES_DESIGN.md.**\n\n**What it is.** `shader.passes: [{ fragment, resolution? }, ...]` in place of `shader.fragment`, for SPRITES, MESH, DENSITY, COMPUTE, GPU_PARTICLES and SCREEN layers (not worldRect nor the scenery kinds: errors at load). The last pass is the look as it was; the ones before it (src/render/pixi/lookPasses.js) draw full-screen into targets of their own. `uTexture` is the pass before, `uSource` what the first one read, `uTexelSize` (a reserved look uniform of every look now) one over `uTexture`'s size. A layer without earlier passes tests one null.\n\n**The picture.** Copies chained are exact: 0 of 921 600 pixels differ for a SPRITES look, a MESH look on the stage and composed (alpha 0.5), and a SCREEN layer, in 2 and 3 passes, with `uSource`, on WebGL and WebGPU (dxCaptureScene ?lookPasses=, ?passScale=, ?lookLast=, ?screen=; the controls differ: a quarter-size pass in 422 857 pixels, WebGL against WebGPU in 76). The platformer's bloom against the 289-fetch blur: the two passes at full size 7 446 pixels at most 2/255 (E-450's 81 fetches: 9 814, at most 1); with the rows at half size (the shipped demo) 31 756 at most 5, not visible. COMPUTE, DENSITY and GPU_PARTICLES looks in passes run the same code and were not captured.\n\n**Timed** (glFrameRecorder --gpu-draws, headed, 1920 x 1080, 4 ABBA pairs each, every run's HEAD checked, main f11365c9 against the branch): the bloom's draws, rows at full size 5.31 -> 3.12 ms (4/4), at half size 5.06 -> 1.62 (4/4). The GPU's clock follows the load (1400-1530 MHz -> 720-885), so the raw gain is a floor: ms x MHz -67 % and -83 %, the ratio to the untouched draws (about 2.5 times slower in B by the clock) -74 % and -88 %. node 3604/3604, demos 143/143."
+    },
+    {
+      "id": "R-1957",
+      "date": "2026-11-23",
+      "time": "17:18",
+      "timeFrom": "recorded",
+      "title": "E-270 kept: dirty decal tiles go up in runs of consecutive layers: decalBlit's Pixi 2.08 -> 0.81 ms (-61 %), Chrome's GPU process -76 %, GL calls 7 208 -> 71 a frame",
+      "verdict": "kept",
+      "text": "c8f90881 (perf/decal-upload-runs): src/render/pixi/decalTiles.js. A claimed dirty tile is premultiplied after the others of its\nrun, and the run goes up with one texSubImage3D (writeTexture on WebGPU) over its layers; it ends at a tile whose layer does not\nfollow, at a chunk's first layer and at 256 KB (256 tiles of 16 px, 4 of 128). E-552's array textures made it possible: before\nit each tile was a texture of its own. The tiles' own copy arrays are gone (one a stamped tile: 64 KB at 128 px), one run's\narray is left.\n- decalBlitStressScene, GTX 1650, headed, main fc085e4b against c8f90881, 4 pairs (--pool, 17:11 to 17:14 by the result files),\n  1 024 tiles uploaded a frame on both sides: renderer STEP - WAIT 2.083 -> 0.807 ms (-60.7 %, pairs -68, -60, -61, -59 %, 4/4;\n  cv 10 % and 2 %). Both sides are under the 6 ms floor, so the runner's word is NEUTRAL; every pair is past ten times the\n  bar. DECAL_TILES_DIRTY 3 927 against 3 660 (the backlog the cap leaves, cv 32 and 20 %).\n- Chrome's GPU process main thread (gpuProcessTrace, untraced, 3 ABAB pairs, to 17:18): 931 -> 225 ms/s (-76 %, 3/3),\n  PutChanged 865 -> 186 ms/s (-79 %).\n- glFrameRecorder, a side each: 7 208 -> 71 GL calls a frame (bindTexture 2 049 -> 10), the same 1 024 KB of texels.\n- decalCaptureScene, main against it: 0 of 921 600 pixels differ on WebGL and on WebGPU. tests/node/decalUploadRuns.test.js: every\n  claimed tile's layer holds its texels, in any stamping order, chunk size, run room and upload cap, on both backends. Suite 3612/3612.\nNot run: a Predator gate (a few tiles a frame there, its renderer about 1 ms, under the floor)."
     }
   ],
   "leads": [
