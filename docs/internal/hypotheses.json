@@ -18625,7 +18625,8 @@
       "records": [
         "R-1177",
         "R-1230",
-        "R-1893"
+        "R-1893",
+        "R-1899"
       ]
     },
     {
@@ -18645,7 +18646,8 @@
       "records": [
         "R-1177",
         "R-1230",
-        "R-1894"
+        "R-1894",
+        "R-1899"
       ]
     },
     {
@@ -43417,6 +43419,15 @@
       "title": "E-424 kept: the self-shadow walks the face map by a step's delta: gpuPassBench selfShadow -3.8 % WebGL, -4.9 % WebGPU, 4/4, the same pixels",
       "verdict": "kept",
       "text": "b27b38f4 (merged f3cf3e08): selfShadowToward projected every step from scratch (p + l t, the oblique y s - z heightScaleY,\nweedWorldToNorm's zoom and turn, the flip); a step's place is affine in t, so the walk now projects the pixel's own place\nonce and adds a step's delta, in GLSL and WGSL. ANGLE's HLSL reads slightly bigger (?light3d=1's variant 1213 -> 1230\nslots, 28 -> 29 temps: FXC had hoisted part of it already), yet gpuPassAbab (GTX 1650, half of 1080p, 32 lamps with\ntiles, 6 steps, 4 pairs, 14:27): selfShadow -3.8 % on WebGL (0.666 -> 0.641 ms), -4.9 % on WebGPU (0.854 -> 0.818 ms),\n4/4 each; light3d without self-shadow +0.2 % and +0.3 % (the control). Captures against main: houseLightScene\n(lighting.selfShadow on) and selfShadowStressScene, 0 of 921 600 pixels apart on both backends. Node 3590/3590.\nE-423's DDA (a texel-by-texel walk, a different picture) stays open, now against this stepping."
+    },
+    {
+      "id": "R-1899",
+      "date": "2026-11-23",
+      "time": "14:36",
+      "timeFrom": "recorded",
+      "title": "E-408 and E-409 in Predator's light pass: the GTX 1650 by day -5.1 % (4/4); the HD 620 by night -3.8 % (3/4) and by day flat (4/6, medians +0.9 %)",
+      "verdict": "note",
+      "text": "Predator crowd 0.5 (mix=1, dayCycle=0), the light pass's GPU time a run (glFrameRecorder --gpu-passes, its pass labelled\nby uLightData), main before (d9332d64) and after (4906f6a3) both changes, each in a worktree, ABAB:\n- GTX 1650 (this PC, 14:23), hour 12, 4 pairs: 0.254 -> 0.241 ms, -5.1 %, 4/4. (By night at this crowd the pass is\n  0.2 ms and its runs spread 12 %: no verdict, R-1893.)\n- HD 620 (the ASUS, jobs 0909a 14:05-14:18 and 0911a 14:24-14:36 by its result files), at 480 x 270:\n  - hour 22, 4 pairs: before 3.060, 3.112, 2.758, 3.009 ms, after 2.866, 2.979, 2.973, 2.786: medians 3.035 -> 2.920,\n    -3.8 %, 3/4;\n  - hour 12, 6 pairs: before 1.098, 1.060, 1.072, 1.226, 1.120, 1.270, after 1.151, 1.188, 1.053, 1.201, 1.087, 1.061:\n    medians 1.109 -> 1.119, faster in 4/6; the first two pairs read +5 % and +12 %, the next four -2 to -16 %: flat\n    within the ASUS's spread;\n  - ?light3d=1 at hour 22 (960 x 540), 2 pairs: 13.02 -> 12.66 ms median, one pair each way.\nSo the night gain holds on the Intel GPU too, and by day nothing moved there."
     }
   ],
   "leads": [
