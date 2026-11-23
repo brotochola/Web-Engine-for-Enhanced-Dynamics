@@ -24061,10 +24061,10 @@
     {
       "id": "DX-POSTFUSE",
       "title": "SCREEN passes that only map their pixel's colour fused into one shader (an opt-in pointwise contract), as three.js's RenderPipeline fuses every effect that samples no neighbours: each fused pass saves a full-screen read and write",
-      "status": "open",
-      "statusText": "approved by the owner 2026-11-23, option (a): the opt-in pointwise mark; after DX-LAYERPASSES (same files)",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (R-1915): shader.pointwise on feat/post-fuse; the owner chose the opt-in mark",
       "date": "2026-11-18",
-      "result": "",
+      "result": "the SCREEN chain's draws, GTX 1650: three passes 0.412 -> 0.155 ms (-63 %), Sun Street's two 0.529 -> 0.273 (-48 % raw, -28 % at equal clock); the picture within 2 of 255",
       "next": "Contract and generation as REVIEW_PLAN.md#DX-POSTFUSE describes (shader.pointwise with a weedPass(color, uv) function, consecutive pointwise passes generated into one fragment, uniforms renamed by layer). Judged by GPU per pass (the recorders) on a three-pass grading stack, the picture identical on both backends; goes with DX-POST's phase 2.",
       "area": "render",
       "kind": "dx",
@@ -24079,7 +24079,8 @@
       "records": [
         "R-1422",
         "R-1429",
-        "R-1589"
+        "R-1589",
+        "R-1915"
       ]
     },
     {
@@ -43662,6 +43663,15 @@
       "title": "N-185 parked: the 16-bit G-buffer ids repeat past 65 535 entities; documented, the wider id not built",
       "verdict": "note",
       "text": "The word is full (id 16 bits, gbufFlags 6, selfShadow 2, an exact integer under 2^24), and so is the shadow maps' texel (height 8 bits, opacity 8, id 16). A wider id takes 4 bits from the opacity and puts the rest in the word's second float (its bits 8 up are free), through the two gbuf word writers, gpuPack.c's packs, the casters' id in three map vertex shaders, the ids map and the light pass, on both backends. What it buys: two entities 65 535 apart that overlap on screen, or one in the other's shadow. The guide says it now (bible, uGbufIds). Built when a game has lit crowds past 65 535 entities on screen; Predator's pools are 57 633."
+    },
+    {
+      "id": "R-1915",
+      "date": "2026-11-23",
+      "time": "17:30",
+      "timeFrom": "recorded",
+      "title": "DX-POSTFUSE kept: shader.pointwise, consecutive SCREEN passes that only map a colour in one draw; three passes 0.412 -> 0.155 ms of GPU (-63 %), Sun Street's two -48 % raw",
+      "verdict": "kept",
+      "text": "**DX-POSTFUSE kept: `shader.pointwise` draws consecutive SCREEN layers that only map a colour as one full-screen pass; the chain's GPU -63 % for three passes (0.412 -> 0.155 ms, 4/4) and -48 % for Sun Street's two (0.529 -> 0.273, 3/4; -28 % at equal clock), GTX 1650. Branch feat/post-fuse; the owner chose the opt-in mark.**\n\n**What it is.** A LAYER_KIND.SCREEN layer marked `pointwise` writes `vec4 weedPass(vec4 color, vec2 uv)` (GLSL) or `fn weedPass(color: vec4f, uv: vec2f) -> vec4f` (WGSL) and no entry point; it samples nothing. The renderer generates one fragment for each run of them (src/render/pointwisePass.js): each member's names and uniforms suffixed, its `visible` a uniform switch, the colour clamped to 0 to 1 between members, the engine's look uniforms shared. A whole-fragment layer between two, or another `resolution`, starts another draw. Refused at load with the layer's name: no weedPass, a `main` of its own, or a sampled texture. Not built: pointwise passes fused into the fragment of a pass that samples neighbours (the row's second half).\n\n**The picture.** dxCaptureScene ?postVignette=1 and 3, whole fragments against pointwise maps, WebGL and WebGPU: one pass exact (0 pixels), three at most 2 of 255 (the fused chain does not round to 8 bits between passes); the control, none against three, differs in all 921 600. Sun Street still (paused, no cars, 18:30 and 22:00): outside its moving panel the extra differing pixels against the A/A are all of 1 (190 000 to 220 000 of 648 000), those of 3 or more equal the A/A's. Both demos load without page errors on both backends.\n\n**Timed** (glFrameRecorder --gpu-draws, headed, 1920 x 1080, 4 ABBA pairs, every run's HEAD checked): the SCREEN chain's own draws (the one-draw-a-frame [uTexture] rows).\n- Three passes (dxCapture): 3 draws -> 1; 0.412 -> 0.155 ms (-63 %, ms x MHz -65 %, against the untouched draws -65 %, 4/4).\n- Sun Street: 2 draws -> 1; 0.529 -> 0.273 ms (-48 %, ms x MHz -28 %, against the untouched draws -40 %, 3/4; clocks 480 to 795 MHz).\nAbout 0.13 ms a fused pass at the clock the GPU held (about 0.08 at full clock). The frame's sum of draws moved with the clock, not the fusion (dx 3.465 -> 3.537): the saving is 0.26 ms of about 3.5. HD 620 not measured (estimated 0.5 to 0.8 ms a pass). node 3618/3618, demos 143/143 with main merged in."
     }
   ],
   "leads": [
