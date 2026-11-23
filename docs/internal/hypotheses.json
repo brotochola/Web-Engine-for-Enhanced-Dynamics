@@ -18919,7 +18919,7 @@
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "spriteMaps: fbo#0 1920 x 1080 [uTextures] 4 draws 1 204 instances 2.436 ms of 4.242.",
+      "result": "spriteMapsStressScene colour pass 2.436 ms on 2026-11-16, 0.859 on 2026-11-23 (R-1961); the lamps' map there 5.40 ms.",
       "next": "Count the maps' fetches per pixel in the sprite program (d3dShaderStats on its HLSL) and skip the maps' work where the sprite's map is flat.",
       "refs": [],
       "aliases": [
@@ -18927,7 +18927,8 @@
       ],
       "records": [
         "R-1181",
-        "R-1190"
+        "R-1190",
+        "R-1961"
       ]
     },
     {
@@ -20069,19 +20070,20 @@
       "id": "E-466",
       "title": "volumeStressScene's mesh draw takes 7.45 ms a drawn frame on WebGL against 2.27 on WebGPU for about 500 000 instances, and WebGL draws the scene's passes in only 60 to 70 % of frames",
       "status": "open",
-      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "statusText": "cause found 2026-11-23 (R-1961), not decided",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "WebGL 5.35 ms a recorded frame (7.6 a drawn frame) at 1785 MHz; WebGPU 2.72 at 1635 MHz, every frame drawn. E-419 cut the GL draw from 1.88 to 0.83 ms in meshFillGpuBench; E-453 (indexed rows) is being built.",
-      "next": "Compare the GLSL and WGSL mesh-uv vertex paths (the pose fetch, attribute layout after E-419); measure after E-453 lands, per draw on both backends.",
+      "next": "Decide perf/e466-static (R-1961): the mesh draw's GPU time (glFrameRecorder), captures, 4 pairs of volumeStressScene and of a scene whose mesh buffers change whole each frame, the HD 620. If the staging copy costs there: vertices in a texture (partial uploads), the index buffer STATIC and sent only when an index changes.",
       "refs": [],
       "aliases": [
         "volume mesh webgl slow"
       ],
       "records": [
         "R-1215",
-        "R-1960"
+        "R-1960",
+        "R-1961"
       ]
     },
     {
@@ -20428,7 +20430,8 @@
         "scene fill vs bench"
       ],
       "records": [
-        "R-1228"
+        "R-1228",
+        "R-1961"
       ]
     },
     {
@@ -43684,6 +43687,15 @@
       "title": "Both backends pass by pass again: the sun map on WebGL 0.09 ms now (E-465 closed); the colour pass 2.31 against 2.41 ms in Predator (E-467 parked); the volumes' mesh draw still 5.2 ms on WebGL against 1.9 on WebGPU (E-466 open)",
       "verdict": "note",
       "text": "glFrameRecorder and webgpuFrameRecorder --gpu-draws, main b052a061 (and the guide and register commits made while it ran), headed\nChrome 158, GTX 1650, 1920 x 1080, 3 s after 12 s, one recording a cell, 17:21 to 17:23 by the result files. Chrome 158's\nWebGPU no longer gives timestamps inside passes, so the WebGPU side is a pass at a time. Clocks are the window's median.\n\n| | WebGL | WebGPU |\n| --- | --- | --- |\n| light3dCompare hour 12, all passes | 2.317 ms (900 MHz) | 2.085 (645) |\n| - colour | 0.796 | 0.907 |\n| - sun map (976 x 748, 3 400 instances) | 0.059 and a clear of 0.033 | 0.000 (not credible) |\n| Predator light3d hour 22, all passes | 5.384 (1620) | 5.064 (1785) |\n| - colour | 2.305 | 2.412 |\n| - light pass, lamps' map, unshaded, G-buffer | 1.113, 0.746, 0.543, 0.478 | 0.984, 0.691, 0.506, 0.433 |\n| volumeStress, all passes | 5.538 (1365) | 2.650 (855) |\n| - the mesh draw | 5.172 | 1.910 |\n\n- E-465: 0.460 ms on 2026-11-16 at 21 900 instances of 960 x 540; now 0.092 with its clear, at 3 400 instances of 976 x 748\n  (another load, so not a before and after). Nothing to win: closed.\n- E-467: the colour pass is 5 % slower on WebGPU in Predator at a 10 % higher clock, and at a 28 % lower one in\n  light3dCompare 14 % slower in time (faster in cycles). Not one sign; parked.\n- E-466: the gap is real, at a lower clock on WebGPU. Next: what ANGLE does with the batch's DYNAMIC buffers (25.8 MB of\n  vertices and 11 MB of indices, of which about 200 KB change a frame); the bench that draws it in 0.6 ms makes them STATIC."
+    },
+    {
+      "id": "R-1961",
+      "date": "2026-11-23",
+      "time": "17:35",
+      "timeFrom": "recorded",
+      "title": "E-466's cause: ANGLE streams the mesh batch's DYNAMIC buffers whole at each draw; the STATIC hint takes Chrome's GPU process from 564 to 81 ms/s in volumeStress (trial, not decided: no GPU time, captures or pairs yet)",
+      "verdict": "note",
+      "text": "Trial branch perf/e466-static (0850ec23): MeshUvFillBatch's vertex and index buffers with Pixi's BufferUsage.STATIC on WebGL, two\nlines. 17:33 to 17:35 by the result files, GTX 1650, headed, volumeStressScene defaults (about 200 KB of its 37 MB of records and\nindices move a frame, with bufferSubData):\n- gpuProcessTrace --decoder on main: glDrawElements 518 of the GPU process main thread's 611 ms/s, over 299 draws a second, so\n  about 8.7 ms a frame if it is the mesh draw's (one of about five a frame).\n- gpuProcessTrace untraced, main be31535e against 0850ec23, 2 pairs ABBA: CrGpuMain 576, 552 -> 82, 80 ms/s (-86 %, 2/2), PutChanged\n  537, 508 -> 43, 42 (-92 %). The GL calls are the same (74.9 and 78.0 a frame).\nRead as: a DYNAMIC buffer's used range is copied by ANGLE (Direct3D 11) into a streaming buffer at each draw, and the index range\nsearched; meshFillGpuBench (0.6 ms a draw) makes its buffers STATIC. Not proven by a trace of ANGLE's own, and E-477 (the same\ngap in other scenes) has a case with no uploads that this does not explain.\nNot measured, so not decided: the draw's GPU time (a changed STATIC buffer is copied from a staging one, whole, and mapping it may\nwait for the GPU), captures (the hint changes no shader or state), the renderer's STEP_MS, other GPUs and other ANGLE backends, and\nthe cost where the whole buffer changes every frame (paint, a corner rewrite of the layer).\nE-422 in the same sitting: spriteMapsStressScene's colour pass 0.859 ms a frame (7 draws, 1 207 instances, 1785 MHz); 2.4 ms on\n2026-11-16. The lamps' map is 5.40 ms there, 5.2 of it two column draws of 179 instances each."
     }
   ],
   "leads": [
