@@ -297,11 +297,6 @@ export function clearUnusedLightDataTexels(data, maxLights, liveCount, upTo = ma
   for (let row = 0; row < LIGHT_DATA_TEX_HEIGHT; row++) data.fill(0, row * n * 4 + live * 4, row * n * 4 + end * 4);
 }
 
-/** Instanced sprite scale so cookie world radius == lightInfluenceRadius. */
-export function lightCookieScale(sqrtIntensity) {
-  return lightInfluenceRadius(sqrtIntensity) / LIGHT_GRADIENT_TEXTURE_RADIUS;
-}
-
 /** Soft glow world radius = √I * this. Calibrated: I=20000 matches old (visualRange*4) at VR=300. */
 export const LIGHT_GLOW_RADIUS_SCALE = (300 * 4) / Math.sqrt(20000); // ~8.485
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
 import {
-  GPU_CASTER_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_SPRITE_FLOATS,
+  GPU_CASTER_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS,
 } from '../../src/render/gpuQueueLayout.js';
 import { PIXI_KEYED_HEADER, PIXI_KEYED_HEADER_WORDS } from '../../src/util/wasmMemoryMap.js';
 
@@ -18,14 +18,13 @@ function buffer() {
     sun: new Float32Array(8 * GPU_CASTER_FLOATS),
     stamp: new Float32Array(8 * GPU_CASTER_FLOATS),
     stampLightIdx: new Uint16Array(8),
-    cookie: new Float32Array(8 * GPU_SPRITE_FLOATS),
   };
 }
 
 test('every published shadow buffer holds the rows its counts describe', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   pre.shadowsEnabled = true;
-  pre.gpuQueueCaps = { maxSun: 8, maxStamp: 8, maxCookie: 8 };
+  pre.gpuQueueCaps = { maxSun: 8, maxStamp: 8 };
   pre.shadowUpdateInterval = 2;
   pre._shadowUpdateTick = 0;
   pre._gpuShadowsFrom = null;
@@ -40,10 +39,6 @@ test('every published shadow buffer holds the rows its counts describe', async (
     dst.stampLightIdx.fill(frame + 7, 0, 2);
     return 2;
   };
-  pre._packGpuCookies = (dst) => {
-    dst.cookie.fill(frame + 1.25, 0, GPU_SPRITE_FLOATS);
-    return 1;
-  };
 
   const bufs = [buffer(), buffer()];
   for (frame = 0; frame < 6; frame++) {
@@ -55,7 +50,6 @@ test('every published shadow buffer holds the rows its counts describe', async (
     assert.equal(dst.sun[3 * GPU_CASTER_FLOATS - 1], packedFrame + 1);
     assert.equal(dst.stamp[0], packedFrame + 1.5, `frame ${frame}: stamp rows`);
     assert.equal(dst.stampLightIdx[1], packedFrame + 7);
-    assert.equal(dst.cookie[0], packedFrame + 1.25, `frame ${frame}: cookie rows`);
   }
 });
 
@@ -84,7 +78,7 @@ test('keyed caster rows follow the LIVE word, and a skipped frame republishes th
   pre._keyedKeyBase = 100;
 
   pre.shadowsEnabled = true;
-  pre.gpuQueueCaps = { maxSun: 8, maxStamp: 8, maxCookie: 8 };
+  pre.gpuQueueCaps = { maxSun: 8, maxStamp: 8 };
   pre.shadowUpdateInterval = 2;
   pre._shadowUpdateTick = 0;
   pre._gpuShadowsFrom = null;
@@ -100,7 +94,6 @@ test('keyed caster rows follow the LIVE word, and a skipped frame republishes th
     dst.stamp.fill(packs + 0.5, 0, 2 * GPU_KEYED_STAMP_FLOATS);
     return 2;
   };
-  pre._packGpuCookies = () => 0;
   const bufs = [buffer(), buffer()];
   header[PIXI_KEYED_HEADER.LIVE] = 41;
   let res = pre._packGpuShadows(bufs[0], {});

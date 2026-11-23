@@ -1084,7 +1084,7 @@ test('E-370: _packGpuShadows on the real worker (sun pack and stamp stood in for
     Object.assign(pre, {
       config,
       shadowsEnabled: true,
-      gpuQueueCaps: { maxSun: 8, maxStamp: stampN, maxCookie: 8 },
+      gpuQueueCaps: { maxSun: 8, maxStamp: stampN },
       shadowUpdateInterval: 1,
       visibilityPolygonsEnabled: false,
       _emitSkippedStatics: false,
@@ -1105,12 +1105,10 @@ test('E-370: _packGpuShadows on the real worker (sun pack and stamp stood in for
       dst.stampLightIdx.set(lightIdx);
       return stampN;
     };
-    pre._packGpuCookies = () => 0;
     const dst = {
       sun: new Float32Array(8 * GPU_CASTER_FLOATS),
       stamp: new Float32Array(stampN * floats),
       stampLightIdx: new Uint8Array(stampN),
-      cookie: new Float32Array(8 * GPU_SPRITE_FLOATS),
     };
     const res = pre._packGpuShadows(dst, {});
     assert.equal(res.stamp, stampN, `case ${c}: the stamp rows`);
@@ -1867,7 +1865,7 @@ test('E-393: _packGpuShadows on the real worker, the lamp frames through lamp_fr
       Object.assign(pre, {
         config,
         shadowsEnabled: true,
-        gpuQueueCaps: { maxSun: 8, maxStamp: stampN, maxCookie: 8 },
+        gpuQueueCaps: { maxSun: 8, maxStamp: stampN },
         shadowUpdateInterval: 1,
         visibilityPolygonsEnabled: false,
         _emitSkippedStatics: false,
@@ -1889,12 +1887,10 @@ test('E-393: _packGpuShadows on the real worker, the lamp frames through lamp_fr
         dst.stampLightIdx.set(lightIdx);
         return stampN;
       };
-      pre._packGpuCookies = () => 0;
       const dst = {
         sun: new Float32Array(8 * GPU_CASTER_FLOATS),
         stamp: lm.mem.rows,
         stampLightIdx: k.lightIdxOut ? new Uint16Array(stampN) : lm.mem.lightIdx,
-        cookie: new Float32Array(8 * GPU_SPRITE_FLOATS),
       };
       const res = pre._packGpuShadows(dst, {});
       assert.equal(res.stamp, stampN, `${k.what}: the stamp rows`);
@@ -1914,7 +1910,6 @@ test('E-393: _packGpuShadows on the real worker, the lamp frames through lamp_fr
     // The worker is the module's one instance: later tests run its own methods.
     delete pre._stampAgainstSun;
     delete pre._packGpuSun;
-    delete pre._packGpuCookies;
     pre._gpuPackWasm = null;
     Object.assign(ShadowCaster, caster);
   }

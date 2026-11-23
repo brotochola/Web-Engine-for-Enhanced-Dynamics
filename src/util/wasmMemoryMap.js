@@ -267,8 +267,6 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampScanBounds', owner: 'pre-render', bytes: STAMP_SCAN_BOUNDS_DOUBLES * 8 },
       { name: 'stampLights', owner: 'pre-render', bytes: (stamp.maxLights | 0) * STAMP_LIGHT_DOUBLES * 8 },
       { name: 'stampTable', owner: 'pre-render', bytes: STAMP_TABLE_SLOTS * 4 },
-      // The light cookies' queue, the render queue's layout at maxCookie rows (renderQueueLayout.js).
-      { name: 'cookieQueue', owner: 'pre-render', bytes: stamp.cookieBytes | 0 },
     );
   }
   if (sway) {

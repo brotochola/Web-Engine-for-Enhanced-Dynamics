@@ -70,7 +70,6 @@ import { Sun } from '../core/sun.js';
 import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
-    lightCookieScale,
     LIGHT_GLOW_EXTENT,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
@@ -93,7 +92,7 @@ import {
 } from '../util/configDefaults.js';
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
-import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
+import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
     bindGpuPack, diffIndexedStaticsWasm, lampFramesWasm, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
     KEYED_SUN_CONTACT, KEYED_SUN_DEFER, KEYED_SUN_LAMP_GEO, KEYED_SUN_SHEET, KEYED_SUN_SHEETS, KEYED_SUN_SHEET_WORDS,
@@ -138,7 +137,6 @@ import {
     GPU_KEYED_CASTER_FLOATS,
     GPU_KEYED_STAMP_FLOATS,
     GPU_SPACE_WORLD,
-    GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
     GPU_FLAG_SPLIT,
     GPU_FLAG_INDEXED,
@@ -151,11 +149,7 @@ import {
     writeGpuQueueHeader,
     makePackContext,
 } from '../render/gpuQueueLayout.js';
-import {
-    compactShadowCasterIndices,
-    rtPixelSize,
-    rtPixelScale,
-} from '../render/gpuShadowCasters.js';
+import { compactShadowCasterIndices } from '../render/gpuShadowCasters.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
@@ -1322,7 +1316,7 @@ export const STAMP_CUT_FADE = 0.2;
  * N-212: lighting.maxShadowCastingLights keeps the `cap` lights nearest the view's centre (`lights` sorted by
  * stampLightOrder, `n` of them); the rest cast no shadows. The kept ones near that cut fade theirs out: each one's `fade`
  * runs from 1 down to 0 at the first light left out, over STAMP_CUT_FADE of its distance, and its `shade` (its stamps'
- * darkness and its cookie's strength) takes it. A light crossing the cut as the camera moves, or one coming or going,
+ * darkness) takes it. A light crossing the cut as the camera moves, or one coming or going,
  * fades in or out instead of its shadows popping. Every light keeps fade 1 when none is left out.
  */
 export function fadeStampLightsAtCut(lights, n, cap) {
@@ -1377,7 +1371,7 @@ const PARENT_SORT_KEY = new Float64Array(1);
  * 1. Entity visibility; consume particle/decoration visible lists from particle_worker
  * 2. Animation frame advancement for entities
  * 3. Building main render queue (sortKey for the CPU painter)
- * 4. Building shadow render queue (light cookies + black shadow sprites)
+ * 4. Building the shadow casters' rows (the sun's, and the stamps for each casting lamp's tile)
  *
  * Data Flow:
  * - Reads: Transform, SpriteRenderer, ParticleComponent, DecorationComponent, LightEmitter, ShadowCaster
@@ -2292,7 +2286,6 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuCasterUsed = new Uint8Array(Math.max(1, caps.maxSun | 0, maxItems));
                 this._gpuKeepIdx = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
                 this._gpuPackOpts = {};
-                this._gpuCookieQ = null;
                 // E-76 W9: the pack is gpuPack.wasm, on the render-queue memory where both queues live (the scene
                 // makes the memory, or does not start).
                 if (!data.renderQueueMemory || !data.renderQueueLayout) {
@@ -2308,29 +2301,7 @@ class PreRenderWorker extends AbstractWorker {
                 // shadows and sun casters; without them nothing is stamped).
                 this._stampWasm = stampBound;
                 this._stampScan = stampBound !== null ? stampScanTarget(stampBound) : null;
-                const cookieN = Math.max(1, caps.maxCookie | 0);
-                if (cookieN > 0) {
-                    // A render queue of the cookies' rows: in the stamp's regions of the render-queue memory when it
-                    // has them (with shadows), where the pack kernel packs it; else views of a buffer of its own.
-                    const st = data.renderQueueLayout?.stamp;
-                    const inMemory = data.renderQueueMemory && st && st.cookieQueueByte >= 0 && st.cookies >= cookieN;
-                    const cv = inMemory
-                        ? createRenderQueueViews(data.renderQueueMemory.buffer, cookieN, st.cookieQueueByte)
-                        : createRenderQueueViews(new SharedArrayBuffer(computeBufferSize(cookieN)), cookieN, 0);
-                    cv.rotC.fill(1);
-                    cv.anchorX.fill(0.5);
-                    cv.anchorY.fill(0.5);
-                    cv.tint.fill(0xffffff);
-                    this._gpuCookieQ = {
-                        count: 0,
-                        x: cv.x, y: cv.y, scaleX: cv.scaleX, scaleY: cv.scaleY, rotC: cv.rotC, rotS: cv.rotS,
-                        alpha: cv.alpha, tint: cv.tint, textureId: cv.textureId, anchorX: cv.anchorX, anchorY: cv.anchorY,
-                        // No tiling, no shadow terms: zeros the kernel reads as the JS reads absent columns.
-                        tileMulX: cv.tileMulX, tileMulY: cv.tileMulY, tileOffsetU: cv.tileOffsetU, tileOffsetV: cv.tileOffsetV,
-                        shadowH: cv.shadowH, shadowOffX: cv.shadowOffX, shadowOffY: cv.shadowOffY,
-                    };
-                }
-                this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
+                this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, particle: 0 };
                 this._gpuPainter = this._ySort && this._gpuPainterWasm ? createWasmPainterState(this._gpuPainterWasm) : null;
             }
 
@@ -2441,7 +2412,7 @@ class PreRenderWorker extends AbstractWorker {
                     id: 0, x: NaN, y: NaN, intensity: NaN, rangeSq: NaN, sqrtI: NaN, distSq: NaN, maxShadows: 0,
                     // DX-SPOT: the cone on the floor (coneCos -2: none), as the stamp's light table takes it.
                     coneDirX: NaN, coneDirYW: NaN, coneCos: NaN, coneInvSpan: NaN, invG2: NaN,
-                    // DX-LIGHTAPI: min(brightness, 1), how dark its shadows are and how strong its cookie.
+                    // DX-LIGHTAPI: min(brightness, 1), how dark its shadows are.
                     shade: NaN,
                     // N-212: 1, or down to 0 near the cut of maxShadowCastingLights (fadeStampLightsAtCut).
                     fade: NaN,
@@ -5138,82 +5109,12 @@ class PreRenderWorker extends AbstractWorker {
         return stampLightRangeWasm(this._stampWasm, spec);
     }
 
-    _packGpuCookies(dst) {
-        const caps = this.gpuQueueCaps;
-        const cq = this._gpuCookieQ;
-        const lights = this._stampLights;
-        const capL = lights ? Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0) : 0;
-        if (!cq || capL <= 0 || !caps || !(caps.maxCookie > 0)) return 0;
-        const texId = this._resolveBuiltinTextureId('_lightGradient');
-        // DX-SPOT: a cone light up to 180 degrees takes the gradient's half disc, turned along its cone, so its cookie
-        // does not lighten the sun's shadows behind it.
-        const halfId = this._resolveBuiltinTextureId('_lightGradientHalf');
-        let n = 0;
-        const room = cq.x.length;
-        const shadowRes = this.config.lighting?.shadowResolution;
-        const res = rtPixelScale(this.canvasWidth, rtPixelSize(this.canvasWidth, shadowRes));
-        // The cookie covers the light's pool on the floor: R across, R * groundScaleY tall.
-        const groundY = cameraFloorScaleY(this.config);
-        for (let i = 0; i < capL && n < room; i++) {
-            const L = lights[i];
-            if (!(L.rangeSq > 0) || !(L.intensity > 0)) continue;
-            cq.x[n] = L.x;
-            cq.y[n] = L.y;
-            const scale = lightCookieScale(L.sqrtI);
-            // DX-LIGHTAPI: a dim light lightens the sun's shadows as much less as its own shadows are lighter.
-            const shade = L.shade < 1 ? L.shade : 1;
-            cq.alpha[n] = (L.intensity / 50000) * shade;
-            if (L.coneCos >= 0) {
-                // The cone's axis on the screen (the floor direction, y times groundScaleY) and the floor's
-                // perpendicular there: the half disc's length along each.
-                const fx = L.coneDirX;
-                const fy = L.coneDirYW * groundY;
-                const ax = fx;
-                const ay = fy * groundY;
-                const la = Math.sqrt(ax * ax + ay * ay);
-                const px = -fy;
-                const py = fx * groundY;
-                cq.rotC[n] = ax / la;
-                cq.rotS[n] = ay / la;
-                cq.scaleX[n] = scale * la;
-                cq.scaleY[n] = scale * Math.sqrt(px * px + py * py);
-                cq.anchorX[n] = 0;
-                cq.textureId[n] = halfId;
-            } else {
-                cq.rotC[n] = 1;
-                cq.rotS[n] = 0;
-                cq.scaleX[n] = scale;
-                cq.scaleY[n] = scale * groundY;
-                cq.anchorX[n] = 0.5;
-                cq.textureId[n] = texId;
-            }
-            n++;
-        }
-        cq.count = n;
-        if (n <= 0) return 0;
-        const opts = this._gpuPackOpts;
-        this._resetGpuPackOpts(opts);
-        opts.space = GPU_SPACE_SCREEN;
-        opts.zoom = this._frameCameraZoom;
-        opts.cameraX = this._frameCameraX;
-        opts.cameraY = this._frameCameraY;
-        opts.resolution = res;
-        opts.sortKey = null;
-        opts.type = null;
-        opts.depthDenom = Math.max(1, n);
-        const cctx = makePackContext(cq, opts, caps.maxCookie, this._gpuPackCtx);
-        return cctx
-            ? this._packRows(cq, cctx, dst.cookie, dst.cookieU32, GPU_SPRITE_FLOATS, caps.maxCookie, false)
-            : 0;
-    }
-
     _packGpuShadows(dst, q) {
         const caps = this.gpuQueueCaps;
-        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, cookie: 0, keyed: false, stampLights: 0 });
+        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, keyed: false, stampLights: 0 });
         if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) {
             res.sun = 0;
             res.stamp = 0;
-            res.cookie = 0;
             res.keyed = false;
             res.stampLights = 0;
             return res;
@@ -5246,13 +5147,8 @@ class PreRenderWorker extends AbstractWorker {
                 else dropOwnStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
             }
         }
-        // OL-7: a cookie lightens what the casters drew on the shadows' layer inside its lamp's pool (N-154). A frame
-        // with no sun caster and no stamp leaves that layer empty, and the cookies were a pass over half the canvas that
-        // changed no pixel (a flat scene of walls: every lamp's, each frame).
-        const cookie = sunN <= 0 && stamp <= 0 ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;
         res.stamp = stamp;
-        res.cookie = cookie;
         res.keyed = this._gpuSunKeyed;
         res.stampLights = this._writeStampLightIds(dst, stamp);
         this._gpuShadowsFrom = dst;
@@ -5296,7 +5192,6 @@ class PreRenderWorker extends AbstractWorker {
         const lightN = res.stampLights | 0;
         for (let i = 0; i < lightN; i++) dst.stampLightIds[i] = src.stampLightIds[i];
         if (dst.stampLightFade && src.stampLightFade) copyF32(dst.stampLightFade, src.stampLightFade, lightN);
-        copyF32(dst.cookie, src.cookie, (res.cookie | 0) * GPU_SPRITE_FLOATS);
     }
 
     _allowGpuPainter() {
@@ -5604,7 +5499,6 @@ class PreRenderWorker extends AbstractWorker {
         counts.particle = sprites.particle | 0;
         counts.sun = shadows.sun | 0;
         counts.stamp = shadows.stamp | 0;
-        counts.cookie = shadows.cookie | 0;
         counts.stampLights = shadows.stampLights | 0;
         // N-188: rows with casters' own ways tell Pixi to draw them (not the entity batch's keyed instances).
         const own = this._casterKindsOn || this._shadowFramesOn || !this._keyedCastersAllowed;
@@ -5716,8 +5610,8 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * LightEmitter list → visibleLightsData SAB (cookie shadows not required).
-     * Independent of cookie ShadowCaster queue (the walls' sweep still needs this).
+     * LightEmitter list → visibleLightsData SAB (shadows not required).
+     * Independent of the shadow casters' rows (the walls' sweep still needs this).
      */
     _collectVisibleLights() {
         const lightEntities = this._sortedLightEntities;

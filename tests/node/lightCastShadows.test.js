@@ -1,5 +1,5 @@
 // DX-LIGHTAPI A3 (N-149) and A4: LightEmitter.castShadows and shadowRange on a real pre-render worker. A light that
-// casts no shadow is not among the shadow stamp's lights (no cookie, no casters), and Flash.spawn({ castShadows: false })
+// casts no shadow is not among the shadow stamp's lights (no casters, no tile), and Flash.spawn({ castShadows: false })
 // reaches it: it used to write FlashComponent.castShadows, which nothing read. A light's stamp range is its shadowRange,
 // or its radius when that is 0, whatever its Collider's visualRange.
 import { test } from 'node:test';

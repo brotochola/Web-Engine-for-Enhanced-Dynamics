@@ -92,7 +92,7 @@ test('instancedSprites config flag removed (always instanced)', () => {
   assert.doesNotMatch(defaults, /instancedSprites/);
 });
 
-test('visible lights SAB fills even when cookie shadows are off', () => {
+test('visible lights SAB fills even when shadows are off', () => {
   assert.match(preRender, /_collectVisibleLights\(\)/);
   const updateCall = preRender.indexOf('this._collectVisibleLights();');
   const packCall = preRender.indexOf('this._packGpuQueues(');
