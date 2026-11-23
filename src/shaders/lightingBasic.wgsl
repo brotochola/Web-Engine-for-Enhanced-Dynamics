@@ -385,13 +385,21 @@ fn faceHeight(face: vec4<f32>) -> f32 {
 fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32, selfId: f32) -> f32 {
   let s = 1.0 / uniforms.uGroundInvScaleY;
   let size = vec2<f32>(textureDimensions(uFaceMap, 0));
+  // E-424: a step's place in the face map is affine in t (lightingBasic.frag.glsl says how): the pixel's own place plus
+  // a step's delta.
+  let n0 = weedWorldToNorm(vec2<f32>(p.x, p.y * s - p.z * uniforms.uFaceLight.x));
+  let wl = vec2<f32>(l.x, l.y * s - l.z * uniforms.uFaceLight.x) * uniforms.uSelfShadow.x;
+  let rot = uniforms.uCameraRot;
+  let dn = vec2<f32>(rot.x * wl.x - rot.y * wl.y, rot.y * wl.x + rot.x * wl.y) * uniforms.uZoom / uniforms.uFullCanvasSize;
+  let flip = uniforms.uFlipY > 0.5;
+  let fcStart = vec2<f32>(n0.x, select(n0.y, 1.0 - n0.y, flip));
+  let fcStep = vec2<f32>(dn.x, select(dn.y, -dn.y, flip));
   for (var i = 2; i <= 9; i++) {
     if (f32(i) > uniforms.uSelfShadow.y + 1.0) { break; }
     let t = f32(i) * uniforms.uSelfShadow.x;
     if (t >= reach) { break; }
-    let q = p + l * t;
-    let nc = weedWorldToNorm(vec2<f32>(q.x, q.y * s - q.z * uniforms.uFaceLight.x));
-    let fc = vec2<f32>(nc.x, select(nc.y, 1.0 - nc.y, uniforms.uFlipY > 0.5));
+    let fc = fcStart + fcStep * f32(i);
+    let qz = p.z + l.z * t;
     if (any(fc < vec2<f32>(0.0)) || any(fc >= vec2<f32>(1.0))) { continue; }
     let f = textureLoad(uFaceMap, vec2<i32>(fc * size), 0);
 // #if IDS
@@ -400,7 +408,7 @@ fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32, selfId: f32) -> f32 
       if (abs(floor(g.r * 255.0 + 0.5) * 256.0 + floor(g.g * 255.0 + 0.5) - selfId) > 0.5) { continue; }
     }
 // #endif IDS
-    if (f.r > 0.0 && faceHeight(f) > q.z + uniforms.uSelfShadow.z + t * 0.25) { return 0.0; }
+    if (f.r > 0.0 && faceHeight(f) > qz + uniforms.uSelfShadow.z + t * 0.25) { return 0.0; }
   }
   return 1.0;
 }
