@@ -18955,13 +18955,13 @@
     {
       "id": "E-424",
       "title": "Self-shadow projects every step from scratch (p + l·t, the oblique y·s − z·heightScaleY, weedWorldToNorm's zoom and rotation, the flip): all affine in t, so the face map coordinate could be set once and stepped by adding",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from reading Ville Mönkkönen's Pixel Art Parallax (shadertoy t33yRl; instantkingdom.com/2026/01/16, its HLSL in instantkingdom.com/2026/01/pixelartparallax.txt) (it projects the ray's ends once and only adds after)",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (R-1898)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "gpu",
-      "result": "Not measured. Each of the up to 6 steps a light (the sun, and every lamp with a tile) redoes a vec3 multiply-add, the oblique projection, weedWorldToNorm (focus, zoom, a 2 x 2 rotation, a divide by the canvas) and the flip, though the start and the step in face map coordinates are the same for every step; the ray's height is linear in t too. Fewer ALU a step; whether the pass is bound by its ALU or by its two fetches a step (the face map and the ids) is not known.",
-      "next": "Variant (b) of E-423's tournament, and worth it without the DDA: gpuPassBench selfShadow, sun only and 32 lamps (the lamps' steps were 96 % of the pass, E-365), WebGL and WebGPU; keep if the pass gets 3 % cheaper with the same picture.",
+      "result": "The self-shadow walks the face map by a step's delta: selfShadow -3.8 % WebGL, -4.9 % WebGPU (b27b38f4)",
+      "next": "",
       "refs": [
         "EXECUTION_PLAN.md#E-365"
       ],
@@ -18969,7 +18969,9 @@
         "self-shadow affine steps",
         "self-shadow projection once"
       ],
-      "records": []
+      "records": [
+        "R-1898"
+      ]
     },
     {
       "id": "N-220",
@@ -43406,6 +43408,15 @@
       "title": "Predator gate over CR-38, N-192 part four and E-411 (main vs fix/e411-keyed-links), owner preRender, 4 pairs: NEUTRAL, every worker within 1.6 % (renderer -1.6 %, preRender +1.4 %)",
       "verdict": "passed",
       "text": "**The Predator gate over CR-38, N-192 part four and E-411 (main a7b18103 vs fix/e411-keyed-links bd28ee51, src/ of each in its own worktree), owner preRender, 4 pairs: NEUTRAL, every worker within 1.6 %.** Hygiene keeps for CR-38 and N-192; E-411 is start-only.\n\nrunPredatorAbab --vs main --hyp-rev fix/e411-keyed-links --owner preRender --query crowd=2.5&dayCycle=0&mix=1, GTX 1650, on AC power, the machine otherwise quiet (session 11 held its runs).\n\n| worker | main | branch | paired | worse |\n| --- | --- | --- | --- | --- |\n| logic | 17.960 | 17.789 | +0.4 % | 2/4 |\n| spatial | 8.045 | 8.122 | +0.2 % | 2/4 |\n| physics | 16.695 | 16.870 | +1.1 % | 3/4 |\n| renderer | 7.750 | 7.626 | -1.6 % | 2/4 |\n| preRender | 9.425 | 9.517 | +1.4 % | 2/4 |\n\npresented 60.0 on both sides. The load keys stay within 0.5 % (VISIBLE_ENTITIES 33 646 / 33 659, GPU_CASTERS 33 223 / 33 373). preRender's +1.4 % is under the session A/A's 3.2 %."
+    },
+    {
+      "id": "R-1898",
+      "date": "2026-11-23",
+      "time": "14:27",
+      "timeFrom": "recorded",
+      "title": "E-424 kept: the self-shadow walks the face map by a step's delta: gpuPassBench selfShadow -3.8 % WebGL, -4.9 % WebGPU, 4/4, the same pixels",
+      "verdict": "kept",
+      "text": "b27b38f4 (merged f3cf3e08): selfShadowToward projected every step from scratch (p + l t, the oblique y s - z heightScaleY,\nweedWorldToNorm's zoom and turn, the flip); a step's place is affine in t, so the walk now projects the pixel's own place\nonce and adds a step's delta, in GLSL and WGSL. ANGLE's HLSL reads slightly bigger (?light3d=1's variant 1213 -> 1230\nslots, 28 -> 29 temps: FXC had hoisted part of it already), yet gpuPassAbab (GTX 1650, half of 1080p, 32 lamps with\ntiles, 6 steps, 4 pairs, 14:27): selfShadow -3.8 % on WebGL (0.666 -> 0.641 ms), -4.9 % on WebGPU (0.854 -> 0.818 ms),\n4/4 each; light3d without self-shadow +0.2 % and +0.3 % (the control). Captures against main: houseLightScene\n(lighting.selfShadow on) and selfShadowStressScene, 0 of 921 600 pixels apart on both backends. Node 3590/3590.\nE-423's DDA (a texel-by-texel walk, a different picture) stays open, now against this stepping."
     }
   ],
   "leads": [
