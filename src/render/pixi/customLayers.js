@@ -50,7 +50,10 @@ import {
   worldRectGivesUp,
 } from '../worldRectCache.js';
 import { createSharedTextureSource, createWorldRectMesh } from '../worldTextureMesh.js';
-import { finiteOrZero, layerIsVisible, applyEngineLookUniforms, applyComputeTexSizeUniform } from './layerHelpers.js';
+import {
+  applyComputeTexSizeUniform, applyEngineLookUniforms, applyTexelSizeUniform, copyLookUniforms, finiteOrZero, layerIsVisible,
+} from './layerHelpers.js';
+import { emptyLookTextures, lookReads } from './lookPasses.js';
 
 // The Pixi classes the moved bodies name as PIXI.X, as pixiWorker.js's namespace does.
 const PIXI = Object.freeze({ Container, Mesh, RenderTexture, Sprite, Texture, TextureSource });
@@ -122,6 +125,7 @@ export class PixiCustomLayers {
         old.worldRt.destroy(true);
       }
       if (old && old.gpu) old.gpu.destroy();
+      if (old && old.earlierPasses) this.worker.lookPasses.destroy(old);
       const sources = old && old.sharedSources;
       if (!sources) continue;
       const keys = Object.keys(sources);
@@ -344,6 +348,9 @@ export class PixiCustomLayers {
         uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
         uniformStore: null,
         shaderBypass: false,
+        // DX-LAYERPASSES: the passes of the look before its last one (null: one), and what the last one reads besides.
+        earlierPasses: null,
+        reads: lookReads(config.shaderFragment, false, config.shaderEarlier !== null && config.shaderEarlier !== undefined),
         meshLook: false,
         sunProjected: isMesh && config.sunProjected === true,
         volumeFloor: isMesh && config.volumeFloor === true,
@@ -446,10 +453,12 @@ export class PixiCustomLayers {
             lookSource,
             uniformDefs,
             config.shaderName || layerName,
-            layerName
+            layerName,
+            emptyLookTextures(cl.reads)
           );
           cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
           cl.shaderMesh = this.worker.lookShaders.makeMesh(cl.shader, isMesh && this.worker.meshLayers.lookFlipV());
+          cl.earlierPasses = this.worker.lookPasses.make(config, false);
         } catch (err) {
           if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
           throw errorCompileFailed(
@@ -552,23 +561,8 @@ export class PixiCustomLayers {
           Atomics.store(dirtyRef, 0, 0);
           uniformsChanged = true;
           const floats = Layer._uniformFloats[cl.layerId];
-          const entries = cl.uniformEntries;
-          const u = cl.uniformStore;
-          if (floats && entries && u) {
-            for (let ei = 0; ei < entries.length; ei++) {
-              const [uName, entry] = entries[ei];
-              if (entry.size === 1) {
-                u[uName] = floats[entry.offset];
-              } else {
-                const target = u[uName];
-                if (target && typeof target === 'object' && target.length) {
-                  for (let k = 0; k < entry.size; k++) {
-                    target[k] = floats[entry.offset + k];
-                  }
-                }
-              }
-            }
-          }
+          copyLookUniforms(cl.uniformEntries, floats, cl.uniformStore);
+          this.worker.lookPasses.syncUniforms(cl, cl.uniformEntries, floats);
         }
       }
 
@@ -586,6 +580,7 @@ export class PixiCustomLayers {
       frameUniforms.gbufW = 0;
       frameUniforms.gbufH = 0;
       applyEngineLookUniforms(cl, frameUniforms);
+      if (cl.earlierPasses === null) applyTexelSizeUniform(cl, cl.lookSource || (cl.rt !== null ? cl.rt.source : null));
       // E-504: a cached worldRect layer draws its target when what it shows changed; nothing else of it runs here.
       if (cl.worldRt !== null) {
         this._drawWorldRectCache(cl, uploaded > 0 || uniformsChanged, uploaded > 0);
@@ -599,6 +594,7 @@ export class PixiCustomLayers {
         cl.compute.step(frameUniforms, this.computePose);
         applyComputeTexSizeUniform(cl);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+          this._drawEarlierPasses(cl);
           rtOpts.container = cl.shaderMesh;
           rtOpts.target = cl.rtOut;
           rtOpts.clear = true;
@@ -633,6 +629,7 @@ export class PixiCustomLayers {
           }
           this._renderGpuParticlesToRt(cl);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+            this._drawEarlierPasses(cl);
             rtOpts.transform = null;
             rtOpts.container = cl.shaderMesh;
             rtOpts.target = cl.rtOut;
@@ -903,7 +900,8 @@ export class PixiCustomLayers {
               skipRt._skipRt = false;
             }
           }
-          // A composed look (_ensureMeshLookComposite) runs every frame, as a look on the stage does.
+          // A composed look (_ensureMeshLookComposite) runs every frame, as a look on the stage does; so do its earlier passes.
+          if (!cl.shaderBypass && cl.shaderMesh) this._drawEarlierPasses(cl);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
             rtOpts.transform = null;
             rtOpts.container = cl.shaderMesh;
@@ -922,6 +920,7 @@ export class PixiCustomLayers {
           rtOpts.clearColor = this.worker._clearTransparent;
           this.worker._submitRender(rtOpts);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+            this._drawEarlierPasses(cl);
             rtOpts.container = cl.shaderMesh;
             rtOpts.target = cl.rtOut;
             this.worker._submitRender(rtOpts);
@@ -929,6 +928,17 @@ export class PixiCustomLayers {
         }
       }
     }
+  }
+
+  /**
+   * DX-LAYERPASSES: the passes of a layer's look before its last one (lookPasses.js), just before it: they read the layer's
+   * own picture and draw at the layer's size, and the last one's input becomes what they drew. One null test without them.
+   */
+  _drawEarlierPasses(cl) {
+    if (cl.earlierPasses === null) return;
+    const size = cl.rtOut || cl.rt;
+    this.worker.lookPasses.draw(cl, Layer.customLayerLookTexture(cl), size.source.pixelWidth, size.source.pixelHeight);
+    applyTexelSizeUniform(cl, cl.shader.resources.uTexture);
   }
 
   /**
@@ -1003,6 +1013,7 @@ export class PixiCustomLayers {
 
     if (cl.displaySprite) cl.displaySprite.texture = PIXI.Texture.EMPTY;
     this.worker.lookShaders.unbindTexture(cl.shader);
+    if (cl.earlierPasses) this.worker.lookPasses.unbind(cl);
     // A sorted layer's regions sample rtOut too. Releasing rtOut's bind groups would destroy theirs, and the next
     // setTexture would write into the destroyed group: off it first, onto the new rtOut below.
     const regions = this.worker._proxyLayers[cl.layerId]?.regions ?? null;

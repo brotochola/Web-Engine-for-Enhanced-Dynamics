@@ -33,6 +33,7 @@ import {
     isSceneryKind,
     isSkipSubscribeKind,
 } from '../util/configDefaults.js';
+import { assertLookPasses, earlierPassesOf, lookPassesOf } from '../render/lookPassConfig.js';
 import {
     normalizeCoverBackgroundOptions,
     normalizeWorldParallax,
@@ -83,6 +84,8 @@ export const RESERVED_LOOK_UNIFORMS = {
     uWorldSize: { value: [0, 0], type: 'vec2<f32>' },
     uViewSize: { value: [0, 0], type: 'vec2<f32>' },
     uTexSize: { value: [0, 0], type: 'vec2<f32>' },
+    // DX-LAYERPASSES: one over the size in texels of what the look's uTexture holds (a blur's step).
+    uTexelSize: { value: [0, 0], type: 'vec2<f32>' },
     // DX-GBUFSHADER: the G-buffer's size in texels, for a SCREEN pass that reads it (uGbufFace, uGbufIds); 0 0 elsewhere.
     uGbufSize: { value: [0, 0], type: 'vec2<f32>' },
 };
@@ -853,6 +856,7 @@ export class Layer {
         // Register built-in pipeline layers (decals, castedShadows, entities, lighting)
         for (const [name, config] of Object.entries(builtInLayers)) {
             const kind = config.kind || this._deriveKind(name, true, config);
+            assertLookPasses(name, true, kind, config.shader);
             const layer = this._register(name, {
                 ...config,
                 _builtIn: true,
@@ -870,6 +874,7 @@ export class Layer {
             const densitySource = Layer._normalizeDensitySource(config.shader);
             const compute = Layer._normalizeCompute(config.shader);
             const kind = this._deriveKind(name, false, config, densitySource, compute);
+            assertLookPasses(name, false, kind, config.shader);
             const layer = this._register(name, {
                 ...config,
                 _builtIn: false,
@@ -956,10 +961,10 @@ export class Layer {
         for (let i = 0; i < this.count; i++) {
             const layer = this._byId[i];
             if (layer._kind !== LAYER_KIND.SCREEN) continue;
-            if (!layersConfig[layer.name]?.shader?.fragment) {
+            if (lookPassesOf(layersConfig[layer.name]?.shader).length === 0) {
                 throw new Error(
                     `WeedJS: layer "${layer.name}" is LAYER_KIND.SCREEN and has no shader.fragment: a SCREEN layer is a look ` +
-                    'over the frame below it. Give it shader: { fragment }.'
+                    'over the frame below it. Give it shader: { fragment } (or { passes }).'
                 );
             }
             if (lowestScreen === null || this._zIndex[i] < this._zIndex[lowestScreen.id]) lowestScreen = layer;
@@ -1719,7 +1724,9 @@ export class Layer {
                     ? 0
                     : (config.maxItems || LAYER_DEFAULTS.maxItemsPerLayer),
                 uniformMap: this._uniformMaps[layer.id] || null,
-                shaderFragment: config.shader?.fragment || null,
+                // DX-LAYERPASSES: the last pass's (the one that draws the layer), with the passes before it or null.
+                shaderFragment: lookPassesOf(config.shader).at(-1)?.fragment || null,
+                shaderEarlier: earlierPassesOf(config.shader),
                 alphaBySun: normalizeAlphaBySun(name, config.alphaBySun ?? (config.sunProjected ? 'shadow' : null)),
                 sunProjected: config.sunProjected === true,
                 volumeFloor: config.volumeFloor === true,

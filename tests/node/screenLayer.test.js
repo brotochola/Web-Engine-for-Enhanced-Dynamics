@@ -41,7 +41,7 @@ test('a SCREEN layer without a fragment is refused at load', () => {
   Layer.reset();
   assert.throws(() => Layer.initializeFromConfig({ crt: { kind: LAYER_KIND.SCREEN, zIndex: 100 } }, BUILT_IN), {
     message: 'WeedJS: layer "crt" is LAYER_KIND.SCREEN and has no shader.fragment: a SCREEN layer is a look over the ' +
-      'frame below it. Give it shader: { fragment }.',
+      'frame below it. Give it shader: { fragment } (or { passes }).',
   });
 });
 
@@ -122,9 +122,9 @@ test('a SCREEN pass that names uScene gets the frame before the first pass bound
   const SCENE = COPY.replace('uniform float uAmount;', 'uniform float uAmount;\nuniform sampler2D uScene;');
   const { px } = await pixiWith({ bloom: screen(100), crt: screen(110) });
   const calls = [];
-  px.lookShaders.create = (source, texture, uniformDefs, name, layerName, sceneSource) => {
-    calls.push({ layerName, scene: sceneSource !== null && sceneSource !== undefined });
-    return { resources: { customUniforms: { uniforms: {} }, uTexture: texture, ...(sceneSource ? { uScene: sceneSource } : {}) } };
+  px.lookShaders.create = (source, texture, uniformDefs, name, layerName, textures = {}) => {
+    calls.push({ layerName, scene: !!textures.scene });
+    return { resources: { customUniforms: { uniforms: {} }, uTexture: texture, ...(textures.scene ? { uScene: textures.scene } : {}) } };
   };
   Layer.reset();
   Layer.initializeFromConfig({ bloom: screen(100), crt: screen(110) }, BUILT_IN);
@@ -132,5 +132,5 @@ test('a SCREEN pass that names uScene gets the frame before the first pass bound
   Layer._metadata.layers[Layer.get('crt').id].shaderFragment = COPY;
   await quietly(() => px.customLayers.initialize({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
   assert.deepEqual(calls, [{ layerName: 'bloom', scene: true }, { layerName: 'crt', scene: false }]);
-  assert.deepEqual(px.screenLayers.passes.map((cl) => cl.usesScene), [true, false]);
+  assert.deepEqual(px.screenLayers.passes.map((cl) => cl.reads.scene), [true, false]);
 });

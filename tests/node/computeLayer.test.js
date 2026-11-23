@@ -1017,10 +1017,10 @@ test('compute FrameData is prefix + scene uniforms, not reserved look slots', ()
     );
     const fire = Layer.get('fire');
     const map = Layer._uniformMaps[fire.id];
-    assert.equal(reservedLookUniformFloatCount(), 16);
+    assert.equal(reservedLookUniformFloatCount(), 18);
     assert.equal(map.uTime.offset, 0);
-    assert.equal(map.uRise.offset, 16);
-    assert.equal(map.uCellSize.offset, 17);
+    assert.equal(map.uRise.offset, 18);
+    assert.equal(map.uCellSize.offset, 19);
     const prelude = buildComputePrelude(map, Layer._metadata.layers[fire.id].uniformTypes);
     assert.match(prelude, /uRise: f32/);
     assert.match(prelude, /uCellSize: f32/);

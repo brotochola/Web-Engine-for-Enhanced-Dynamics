@@ -911,6 +911,39 @@ Layer.crt.visible = false;            // turns that pass off
 
 The Sun Street demo grades its frame by the hour and adds a vignette (`P` turns them off).
 
+#### A look in several passes (`shader.passes`)
+
+A look is one full-screen draw. A wide blur in one draw reads every texel around the pixel (17 x 17 is 289 fetches);
+along x first and then along y it reads 17 + 17. `shader.passes`, in place of `shader.fragment`, gives a look several
+passes, each drawn into a target the next one samples:
+
+```javascript
+layers: {
+  bloom: {
+    zIndex: 3.5,
+    shader: {
+      passes: [
+        { fragment: 'bloomRows', resolution: 0.5 }, // the bright parts, blurred along x, at half size
+        { fragment: 'bloomColumns' },               // blurred along y, added to the layer's picture
+      ],
+      uniforms: { uBlurSize: { value: 8, type: 'f32' } },
+    },
+  },
+}
+```
+
+- **`uTexture`** is what the pass before drew; the first pass's is the layer's own picture (a SCREEN layer's: the frame
+  under it). **`uSource`** is, in any pass, what the first one read: `uniform sampler2D uSource;` in GLSL, declared by the
+  prelude in WGSL. **`uTexelSize`** (every look has it) is one over the size in texels of what `uTexture` holds, a blur's
+  step.
+- **`resolution`** on a pass, over 0 and up to 1 (default 1), is its target's size over the layer's. The last pass draws
+  the layer, at the layer's own `resolution`.
+- The layer's uniforms are every pass's. `scaleMode` is how each one samples what it reads.
+- SPRITES, MESH, DENSITY, COMPUTE, GPU_PARTICLES and SCREEN layers take passes; a `worldRect` layer and the scenery kinds
+  do not (an error at load).
+
+The platformer's bloom is these two passes.
+
 #### Reading the G-buffer in a pass
 
 A lit scene that draws shadows (or has sheets with maps, faces, walls or unshaded sprites) draws a G-buffer each frame:

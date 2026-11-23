@@ -56,6 +56,33 @@ export function applyEngineLookUniforms(cl, frame) {
   setLookUniform2(map, floats, store, 'uGbufSize', frame.gbufW, frame.gbufH);
 }
 
+/**
+ * DX-LAYERPASSES: uTexelSize, one over the size in texels of what the look's uTexture holds (0 0 where it reads none), in
+ * the look's own uniforms: a layer's passes read pictures of different sizes.
+ */
+export function applyTexelSizeUniform(cl, source) {
+  const store = cl.uniformStore;
+  if (!store || !store.uTexelSize) return;
+  store.uTexelSize[0] = source && source.pixelWidth > 0 ? 1 / source.pixelWidth : 0;
+  store.uTexelSize[1] = source && source.pixelHeight > 0 ? 1 / source.pixelHeight : 0;
+}
+
+/** A layer's shared uniform floats (written from any thread) into a look's uniforms. */
+export function copyLookUniforms(entries, floats, store) {
+  if (!floats || !entries || !store) return;
+  for (let ei = 0; ei < entries.length; ei++) {
+    const [uName, entry] = entries[ei];
+    if (entry.size === 1) {
+      store[uName] = floats[entry.offset];
+      continue;
+    }
+    const target = store[uName];
+    if (target && typeof target === 'object' && target.length) {
+      for (let k = 0; k < entry.size; k++) target[k] = floats[entry.offset + k];
+    }
+  }
+}
+
 export function applyComputeTexSizeUniform(cl) {
   const map = Layer._uniformMaps[cl.layerId];
   if (!map || !cl.compute) return;

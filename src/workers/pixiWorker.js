@@ -174,6 +174,7 @@ import { PixiAssets } from '../render/pixi/assets.js';
 import { PixiScenery } from '../render/pixi/scenery.js';
 import { PixiMeshLayers, emptyInstancedMesh } from '../render/pixi/meshLayers.js';
 import { PixiCustomLayers } from '../render/pixi/customLayers.js';
+import { PixiLookPasses } from '../render/pixi/lookPasses.js';
 import { PixiLookShaders } from '../render/pixi/lookShaders.js';
 import { PixiGlowLayer } from '../render/pixi/glowLayer.js';
 import { PixiShadowMaps } from '../render/pixi/shadowMaps.js';
@@ -735,6 +736,8 @@ class PixiRenderer extends AbstractWorker {
     this.customLayers = new PixiCustomLayers(this);
     // N-256: the custom layers' look shaders, made, swapped and unbound (src/render/pixi/lookShaders.js).
     this.lookShaders = new PixiLookShaders(this);
+    // DX-LAYERPASSES: the passes of a look before its last one (src/render/pixi/lookPasses.js).
+    this.lookPasses = new PixiLookPasses(this);
     // N-256 PW-4: the MESH layers' memory, kernels, UV batches and look composite (src/render/pixi/meshLayers.js).
     this.meshLayers = new PixiMeshLayers(this);
 
