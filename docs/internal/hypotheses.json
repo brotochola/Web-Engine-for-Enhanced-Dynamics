@@ -15969,8 +15969,8 @@
     {
       "id": "N-192",
       "title": "shadowOutlineCheck: shadow outlines 2.6 to 5.8 px from the analytic projection (tolerance 1.5) on both backends; a card passes only with the sun from 225 to 315 degrees; under a lamp lower than a crate the stretch cap ends in steps",
-      "status": "open",
-      "statusText": "open: part fixed 2026-11-15 (c8963250, the floor bias), 2026-11-22 (72d7375f, the columns' width; 34852891, the check; 74bde9fa, the strips' ends) and 2026-11-23 (405125aa, the sun map's least height step: box and card pass under the sun, R-1901); the crate's columns and the lamps left",
+      "status": "kept-hygiene",
+      "statusText": "closed by the owner 2026-11-23 (R-1912): the sun's box and card pass (R-1901); the crate's cells and the lamps' map texels are resolution limits",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
@@ -15989,7 +15989,8 @@
         "R-1860",
         "R-1861",
         "R-1901",
-        "R-1905"
+        "R-1905",
+        "R-1912"
       ]
     },
     {
@@ -24057,7 +24058,7 @@
       "id": "DX-POSTFUSE",
       "title": "SCREEN passes that only map their pixel's colour fused into one shader (an opt-in pointwise contract), as three.js's RenderPipeline fuses every effect that samples no neighbours: each fused pass saves a full-screen read and write",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from three.js's RenderPipeline (convertToTexture inserts a target only where an effect samples neighbours) (R-1429); an API decision for the owner; not built",
+      "statusText": "owner 2026-11-23: asked whether it is automatic (the dev never notices, the picture the same, only faster), then yes; told it is opt-in, the dev marks a pass pointwise and writes weedPass (the engine cannot know a shader that reads neighbours from one that does not); waiting for the second answer",
       "date": "2026-11-18",
       "result": "",
       "next": "Contract and generation as REVIEW_PLAN.md#DX-POSTFUSE describes (shader.pointwise with a weedPass(color, uv) function, consecutive pointwise passes generated into one fragment, uniforms renamed by layer). Judged by GPU per pass (the recorders) on a three-pass grading stack, the picture identical on both backends; goes with DX-POST's phase 2.",
@@ -24145,7 +24146,7 @@
       "kind": "dx",
       "area": "render",
       "date": "2026-11-18",
-      "statusText": "proposed 2026-11-18 by E-450: the platformer's bloom could drop from about 4.3 ms to well under 1 ms with a separable blur, which a one-pass layer shader cannot do; an engine feature, the owner's call"
+      "statusText": "approved by the owner 2026-11-23 (\"si, queremos esa nueva api!\"): a layer shader in two passes, the second sampling the first (a separable blur/bloom); design, then the platformer's bloom as its measure (4.3 ms to well under 1)"
     },
     {
       "records": [
@@ -25537,7 +25538,7 @@
       "area": "renderer",
       "date": "2026-11-23",
       "result": "",
-      "statusText": "dropped 2026-11-23 (R-1908): per-lamp sides -31 % by night on the HD 620 but a loss by day; capped flat; the widest lamps' tiles fill the map; the code is on perf/e551-lamp-tiles",
+      "statusText": "dropped 2026-11-23 (R-1908): per-lamp sides -31 % by night on the HD 620 but a loss by day; capped flat; the widest lamps' tiles fill the map; the code is on perf/e551-lamp-tiles; the owner accepted the coarser small-lamp edges (2026-11-23), kept dropped because capped it measured flat",
       "next": "Where the fill goes on the HD 620 (--gpu-draws there: the floor half, the ceiling half, the clear); then a smaller auto tile where many lamps share the atlas (the rule rounds the wanted size up), the clear of the tiles in use only, and whether a lamp whose light the sun outshines by day needs its shadows.",
       "aliases": [
         "lamp map HD 620",
@@ -43582,6 +43583,15 @@
       "title": "The HD 620 per draw after E-552 (Predator crowd 0.5, 1080p): the screen's pass 8.7 ms by night and 9.6 by day, of it entity sprites 1.94 ms, tilemap 1.35, light composite 1.0, decal tiles 2.2",
       "verdict": "note",
       "text": "ASUS job 0915a (16:02 to 16:04 by its result files; main e5823a55, glFrameRecorder --gpu-draws, 4 s after 20 s; a recorded frame each, the pass x 0.5 to 1.1 a\nframe), ms a frame:\n- Night (hour 22), 16.0 ms: the screen's pass 8.68 (36.2 draws before E-552, 7.3 now; 10.24 ms then, R-1891's recorder), the\n  lamps' map 2.72, the light pass 1.58, the unshaded screen pass 1.49, the G-buffer 0.77, the sun map 0.19. In the screen's\n  pass: the entity sprites (prog uTexLut, uStatics, uPoses, uTexture) 1.94 at 7 223 instances, the tilemap 1.35, the light\n  layer's composite 1.00 (x 0.7), the decal chunks 2.20 (seven, 57 to 61 tiles each), the unshaded layer 0.51 (x 0.7).\n- Day (hour 12), 15.8 ms: the screen's pass 9.60, the lamps' map 3.11, the unshaded 1.01, the G-buffer 0.70, the light pass\n  0.64.\nThe GTX 1650 of this PC, same scene: 5.36 ms of draws a frame; the decal chunks 0.15 ms, the entity sprites 1.24, the tilemap\n0.92, so only the HD 620 feels the decals' fill (E-553)."
+    },
+    {
+      "id": "R-1912",
+      "date": "2026-11-23",
+      "time": "16:35",
+      "timeFrom": "recorded",
+      "title": "N-192 closed by the owner: the sun's box and card pass on both backends; the crate's columns' cells (3.75 px) and the lamps' map's texels (up to 2 floor px) are resolution limits",
+      "verdict": "kept-hygiene",
+      "text": "**N-192 closed by the owner (2026-11-23): the sun's box and card pass on both backends since part four (R-1901); what is left is resolution, not errors.**\n\n- **The crate (a render with a height map) under the sun at 1.8-2.5 px:** its shadow's edge steps in its columns' cells, 24 x 24 of 3.75 px (E-379's grid), over the exact outline drawn on the captures (a picture for the owner). Finer cells cost vertices (R-1194: 2 304 vertex invocations an instance whatever its frame's size).\n- **The box and the card under lamps at 1.5-2.2 px:** the lamps' map's texels are up to 2 floor px (lampShadowTile auto, shadowResolution 1), and the lookup is in the light pass.\n\nshadowOutlineCheck keeps failing its 1.5 px on those (a bench, not a CI gate): the numbers above are the expected state, and a later change that beats them should move its tolerance there."
     }
   ],
   "leads": [
