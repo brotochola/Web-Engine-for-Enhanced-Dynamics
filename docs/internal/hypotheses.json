@@ -18422,7 +18422,8 @@
       ],
       "records": [
         "R-1174",
-        "R-1236"
+        "R-1236",
+        "R-1954"
       ],
       "rank": 14
     },
@@ -25545,7 +25546,8 @@
     },
     {
       "records": [
-        "R-1953"
+        "R-1953",
+        "R-1954"
       ],
       "refs": [],
       "id": "E-552",
@@ -25560,6 +25562,26 @@
       "aliases": [
         "decal tiles atlas",
         "decal batcher binds"
+      ]
+    },
+    {
+      "records": [
+        "R-1954"
+      ],
+      "refs": [],
+      "id": "E-553",
+      "title": "Decal tiles draw their whole 128 x 128 texels where a stamp covers only a few: on the HD 620 the chunks' draws are about 2.2 ms of a Predator night frame (0.15 ms on the GTX 1650)",
+      "status": "open",
+      "kind": "gpu",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "filed 2026-11-23 from E-552 (R-1954)",
+      "next": "Occupancy of each tile in 4 x 4 cells from its texels at upload (a 16 384-texel scan a tile), an instance a non-empty cell (its uv rect in the layer), so transparent cells draw nothing; the captures of decalCaptureScene must stay identical. Measure on the HD 620 (glFrameRecorder --gpu-draws).",
+      "rank": 30,
+      "aliases": [
+        "decal transparent fill",
+        "decal tile cells"
       ]
     }
   ],
@@ -43551,6 +43573,15 @@
       "title": "E-460 parked: still casters apart from the budget pays only where many non-volume casters stand still under lamps, which no scene here has (Predator's casters move every frame, E-508 caches the volumes)",
       "verdict": "parked",
       "text": "**E-460 parked: still casters apart from the budget.** Its best case is the sunShadowMap stress scene at night (E-418's attempt: about 2.2 ms saved less 0.6-0.7 ms for the blit). Predator's casters move every frame, so a tile's cache would rarely hold; the still volumes (houses) already have E-508's cache. No scene here has many still, non-volume casters per lamp."
+    },
+    {
+      "id": "R-1954",
+      "date": "2026-11-23",
+      "time": "16:04",
+      "timeFrom": "recorded",
+      "title": "The HD 620 per draw after E-552 (Predator crowd 0.5, 1080p): the screen's pass 8.7 ms by night and 9.6 by day, of it entity sprites 1.94 ms, tilemap 1.35, light composite 1.0, decal tiles 2.2",
+      "verdict": "note",
+      "text": "ASUS job 0915a (16:02 to 16:04 by its result files; main e5823a55, glFrameRecorder --gpu-draws, 4 s after 20 s; a recorded frame each, the pass x 0.5 to 1.1 a\nframe), ms a frame:\n- Night (hour 22), 16.0 ms: the screen's pass 8.68 (36.2 draws before E-552, 7.3 now; 10.24 ms then, R-1891's recorder), the\n  lamps' map 2.72, the light pass 1.58, the unshaded screen pass 1.49, the G-buffer 0.77, the sun map 0.19. In the screen's\n  pass: the entity sprites (prog uTexLut, uStatics, uPoses, uTexture) 1.94 at 7 223 instances, the tilemap 1.35, the light\n  layer's composite 1.00 (x 0.7), the decal chunks 2.20 (seven, 57 to 61 tiles each), the unshaded layer 0.51 (x 0.7).\n- Day (hour 12), 15.8 ms: the screen's pass 9.60, the lamps' map 3.11, the unshaded 1.01, the G-buffer 0.70, the light pass\n  0.64.\nThe GTX 1650 of this PC, same scene: 5.36 ms of draws a frame; the decal chunks 0.15 ms, the entity sprites 1.24, the tilemap\n0.92, so only the HD 620 feels the decals' fill (E-553)."
     }
   ],
   "leads": [
