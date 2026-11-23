@@ -22,7 +22,9 @@ import {
 } from '../gpuQueueLayout.js';
 import {
   LAMP_MAP_COLUMNS,
-  autoLampTileSize,
+  LAMP_MAP_MAX_TEXELS,
+  LAMP_PACK_SIZE,
+  LAMP_RECT_UNIT,
   lampCardStrip,
   lampColumnGrid,
   lampColumnIndex,
@@ -34,6 +36,8 @@ import {
   lampGridRects,
   lampRectCode,
   lampTileLayout,
+  lampTileSide,
+  packLampTiles,
   writeLampTile,
   writeLampTileOwner,
 } from '../lampShadowMap.js';
@@ -69,9 +73,10 @@ const PIXI = Object.freeze({ Container, Geometry, GlProgram, Mesh, RenderTexture
 const LAMP_STRIP_SOURCES = 8;
 
 /**
- * The frames a smaller or differently sized lamps' map must be asked for, in a row, before the atlas is made again: a
- * light that lives a few frames (a muzzle flash) moved the auto tile's count and size, and a 4096 px atlas was made again
- * every few frames (Predator by night with gunfire). A map too small for this frame's lamps is made at once.
+ * The frames a much smaller lamps' map must be asked for, in a row, before the atlas is made again (E-551: past twice the
+ * texels the tiles take, so a light that lives a few frames, a muzzle flash, does not make a 4096 px atlas again every few
+ * frames, N-416; a fixed tile's layout changes are settled the same). A map too small for this frame's tiles is made at once,
+ * at most to the budget.
  */
 export const LAMP_MAP_SETTLE_FRAMES = 120;
 
@@ -114,6 +119,12 @@ export class PixiLampMap {
     this.planHeight = 0;
     // E-551: each tile's rect in the map (its floor half's corner x0, y0 and its side, texels), three floats a tile.
     this.tileRects = new Float32Array(0);
+    // E-551: the packing's order scratch, the budget's scale this frame (the cache's halves hold only at one) and the map's
+    // size as made.
+    this.packOrder = new Int32Array(0);
+    this.planScale = NaN;
+    this.mapWidth = 0;
+    this.mapHeight = 0;
     this.lights = 0;
     // The frames in a row another layout than the map's has been asked for (LAMP_MAP_SETTLE_FRAMES).
     this.settleFrames = 0;
@@ -213,10 +224,10 @@ export class PixiLampMap {
     this.maxReach = maxReach;
     // E-551: the layout planned before the light data is packed, so the rects the light pass reads from the tags
     // (lampRectCode) and the map's programs from row 1 are those of the map drawn later this frame (_ensureMap).
-    this._planLayout(gpu, n);
     if (this.tileRects.length < cap * 3) this.tileRects = new Float32Array(cap * 3);
+    if (this.packOrder.length < cap) this.packOrder = new Int32Array(cap);
+    this._planLayout(gpu, n);
     const rects = this.tileRects;
-    lampGridRects(rects, n, this.planPerRow, this.planSize);
     const lighting = this.worker.lighting;
     if (lighting.lampRectCodes.length < cap) lighting.lampRectCodes = new Float64Array(cap);
     const codes = lighting.lampRectCodes;
@@ -300,14 +311,8 @@ export class PixiLampMap {
     let lights = most;
     let size = this.worker._lampTileSize;
     if (this.worker._lampTileAuto) {
-      // N-196: a tile for each lamp casting now, rounded up to a power of two (the map is made again only when that
-      // count or the tile's size changes), each as fine as the widest lamp's reach and the shadows' resolution ask.
-      lights = 1;
-      while (lights < count && lights < most) lights *= 2;
-      if (lights > most) lights = most;
-      // DX-PIXELSHADOW: with pixel-art lighting a texel a floor px (twice the resolution), so a lamp's shadow steps on the
-      // art's pixels rather than on pairs of them, as far as the map's room allows.
-      size = autoLampTileSize(this.maxReach, this.worker.shadowResolution * (this.worker._pixelArtLight ? 2 : 1), lights);
+      this._planPacked(count, most);
+      return;
     }
     if (this.worker.lighting.lampMapRT !== null) {
       if (this.lights === lights && this.worker._lampTileSize === size) {
@@ -326,6 +331,102 @@ export class PixiLampMap {
     this.planPerRow = layout.perRow;
     this.planWidth = layout.width;
     this.planHeight = layout.height;
+    lampGridRects(this.tileRects, count, layout.perRow, size);
+  }
+
+  /**
+   * E-551, lampShadowTile 'auto': each tile at its own lamp's side (lampTileSide: its reach, the shadows' resolution;
+   * DX-PIXELSHADOW: twice it with pixel-art lighting, so a lamp's shadow steps on the art's pixels), shelf-packed
+   * (packLampTiles) into a map of at most 4096 a side and LAMP_MAP_MAX_TEXELS; when they do not fit, every side shrinks by
+   * steps of 7/8. The map grows at once to what the tiles take and shrinks only after LAMP_MAP_SETTLE_FRAMES frames in a
+   * row at under half its texels: a light that lives a few frames (a muzzle flash, a fire) does not make it again.
+   * @param {number} count this frame's tiles
+   * @param {number} most the most stamp lights
+   */
+  _planPacked(count, most) {
+    let lights = 1;
+    while (lights < count && lights < most) lights *= 2;
+    if (lights > most) lights = most;
+    const res = this.worker.shadowResolution * (this.worker._pixelArtLight ? 2 : 1);
+    let scale = 1;
+    let largest = this._packAt(count, res, scale, 4096);
+    while (largest > 64 && !(LAMP_PACK_SIZE[1] <= 4096 && LAMP_PACK_SIZE[0] * LAMP_PACK_SIZE[1] <= LAMP_MAP_MAX_TEXELS)) {
+      scale *= 0.875;
+      largest = this._packAt(count, res, scale, 4096);
+    }
+    let width = Math.min(4096, Math.max(256, Math.ceil(LAMP_PACK_SIZE[0] / 256) * 256));
+    let height = Math.min(4096, Math.max(64, Math.ceil(LAMP_PACK_SIZE[1] / 64) * 64));
+    if (this.worker.lighting.lampMapRT !== null) {
+      const mapW = this.mapWidth;
+      const mapH = this.mapHeight;
+      if (mapW >= width && mapH >= height) {
+        // Room enough: kept, and made smaller only after LAMP_MAP_SETTLE_FRAMES frames in a row at under half its texels.
+        if (mapW * mapH <= 2 * width * height) {
+          this.settleFrames = 0;
+          width = mapW;
+          height = mapH;
+        } else if (++this.settleFrames < LAMP_MAP_SETTLE_FRAMES) {
+          width = mapW;
+          height = mapH;
+        } else {
+          this.settleFrames = 0;
+        }
+      } else {
+        const w = Math.max(width, mapW);
+        const h = Math.max(height, mapH);
+        if (w * h <= LAMP_MAP_MAX_TEXELS) {
+          // Not enough room, and within the budget what the tiles and the others take (a lamp that comes and goes, a muzzle
+          // flash or a fire, grows the map at most once to it): made again at once.
+          this.settleFrames = 0;
+          width = w;
+          height = h;
+        } else if (++this.settleFrames < LAMP_MAP_SETTLE_FRAMES) {
+          // Past the budget: this frame's tiles shrink into the map (coarser shadows) until the larger one has been asked
+          // for a while.
+          while (largest > 64 && !(LAMP_PACK_SIZE[0] <= mapW && LAMP_PACK_SIZE[1] <= mapH)) {
+            scale *= 0.875;
+            largest = this._packAt(count, res, scale, mapW);
+          }
+          if (LAMP_PACK_SIZE[0] <= mapW && LAMP_PACK_SIZE[1] <= mapH) {
+            width = mapW;
+            height = mapH;
+          }
+        } else {
+          this.settleFrames = 0;
+        }
+      }
+    }
+    this.planSize = largest;
+    // The cache's halves are drawn at each tile's side: a new scale makes every one of them again.
+    if (scale !== this.planScale) {
+      this.planScale = scale;
+      this.volumesEpoch = (this.volumesEpoch + 1) | 0;
+    }
+    this.planLights = lights;
+    this.planPerRow = 1;
+    this.planWidth = width;
+    this.planHeight = height;
+  }
+
+  /**
+   * E-551: the tiles' sides at `scale` (lampTileSide: each one's reach, the tiles' texture's row 0 w) and their shelves
+   * (packLampTiles) at most `maxWidth` wide, into tileRects; LAMP_PACK_SIZE says what they take. Returns the largest side.
+   * @param {number} count
+   * @param {number} res the shadows' resolution
+   * @param {number} scale
+   * @param {number} maxWidth
+   */
+  _packAt(count, res, scale, maxWidth) {
+    const rects = this.tileRects;
+    const data = this.tileData;
+    let largest = LAMP_RECT_UNIT;
+    for (let t = 0; t < count; t++) {
+      const side = lampTileSide(data[t * 4 + 3], res, scale);
+      rects[t * 3 + 2] = side;
+      if (side > largest) largest = side;
+    }
+    packLampTiles(rects, count, this.packOrder, maxWidth);
+    return largest;
   }
 
   /**
@@ -338,7 +439,11 @@ export class PixiLampMap {
     if (this.planLights === 0) this._planLayout(gpu, this.tileCount);
     const lights = this.planLights;
     const size = this.planSize;
-    if (this.worker.lighting.lampMapRT !== null && this.lights === lights && this.worker._lampTileSize === size) return true;
+    if (this.worker.lighting.lampMapRT !== null && this.mapWidth === this.planWidth && this.mapHeight === this.planHeight) {
+      this.lights = lights;
+      this.worker._lampTileSize = size;
+      return true;
+    }
     this.worker._lampTileSize = size;
     const layout = { perRow: this.planPerRow, width: this.planWidth, height: this.planHeight, size };
     // The light pass lets go of the old map before it goes (Pixi warns of a source destroyed while bound).
@@ -351,6 +456,8 @@ export class PixiLampMap {
     this.worker._ensureTargetDepth(this.worker.lighting.lampMapRT);
     this.lights = lights;
     this.tilesPerRow = layout.perRow;
+    this.mapWidth = layout.width;
+    this.mapHeight = layout.height;
     const a = this.worker.lighting.lampAtlas;
     a[0] = layout.perRow;
     a[1] = layout.size;
@@ -804,7 +911,9 @@ export class PixiLampMap {
    * holds). False where it cannot be made (no RenderTarget class: the volumes then draw directly).
    */
   _ensureCache(slots, size) {
-    if (this.cacheTarget !== null && this.cacheSlots === slots && this.cacheSize === size) return true;
+    // E-551: slots of at least the largest tile's side (each tile's half is drawn at its own side in its slot's corner):
+    // a cache with larger ones keeps them.
+    if (this.cacheTarget !== null && this.cacheSlots === slots && this.cacheSize >= size) return true;
     const RenderTargetClass = this.worker.pixiApp?.renderer?.view?.renderTarget?.constructor;
     if (slots <= 0 || typeof RenderTargetClass !== 'function') return false;
     const layout = lampCacheLayout(slots, size, 4096);

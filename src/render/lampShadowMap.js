@@ -110,24 +110,69 @@ export function lampGridRects(out, n, perRow, size) {
 }
 
 /**
- * N-196, lampShadowTile 'auto': a half tile's side, a power of two from 64 to 1024, at which the widest casting lamp's reach
- * (its diameter on LAMP_PANO_INNER of the half: DX-LAMPPANO) spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a
- * texel, as far as `tiles` such tiles (two halves each) fit LAMP_MAP_MAX_TEXELS and `maxSide`. A fixed 256 drew a lamp of reach 900 at 7 floor px a texel whatever the
- * shadows' resolution.
- * @param {number} maxReach the widest casting lamp's reach (floor px)
- * @param {number} resolution lighting.shadowResolution
- * @param {number} tiles the tiles the map holds
+ * N-196, E-551, lampShadowTile 'auto': one lamp's half tile's side, the texels at which its reach (its diameter on
+ * LAMP_PANO_INNER of the half: DX-LAMPPANO) spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a texel, in steps of
+ * LAMP_RECT_UNIT, from 64 to 1024; `scale` (1, or less when the atlas's budget asks) shrinks it. Each lamp takes its own
+ * (E-551): the widest one's for every tile gave Predator's street lamps (shadowRange 400) the 1000 px fire's texels, and the
+ * map's fill and clear go with its texels (the HD 620: 4.5 ms by night at 4096 x 1536, 1.0 at a quarter of the texels).
+ * A tile that casts nothing (no reach) takes LAMP_RECT_UNIT.
+ * @param {number} reach the lamp's shadows' reach (floor px; 0: it casts none)
+ * @param {number} resolution lighting.shadowResolution (twice it with pixel-art lighting)
+ * @param {number} scale
  */
-export function autoLampTileSize(maxReach, resolution, tiles, maxSide = 4096) {
-  const want = (2 * Math.max(0, maxReach) * Math.max(0.05, resolution)) / (LAMP_TEXEL_FLOOR_PX * LAMP_PANO_INNER);
-  let size = 64;
-  while (size < 1024 && size < want) size *= 2;
-  for (;;) {
-    if (size <= 64) return 64;
-    const l = lampTileLayout(tiles, size, maxSide);
-    if (l.height <= maxSide && l.width * l.height <= LAMP_MAP_MAX_TEXELS) return size;
-    size /= 2;
+export function lampTileSide(reach, resolution, scale) {
+  if (!(reach > 0)) return LAMP_RECT_UNIT;
+  const want = (2 * reach * Math.max(0.05, resolution) * scale) / (LAMP_TEXEL_FLOOR_PX * LAMP_PANO_INNER);
+  const side = Math.ceil(want / LAMP_RECT_UNIT) * LAMP_RECT_UNIT;
+  if (!(side >= 64)) return 64;
+  return side > 1024 ? 1024 : side;
+}
+
+/** E-551: packLampTiles' result: the atlas's width and height the tiles take, texels. */
+export const LAMP_PACK_SIZE = new Int32Array(2);
+
+/**
+ * E-551: `n` tiles of 2 side x side (their sides in `rects`, three floats a tile: x0, y0, side) laid in shelves, the
+ * largest first, each shelf as wide as `maxWidth` allows; writes each tile's x0 and y0 (multiples of LAMP_RECT_UNIT, as
+ * the sides are) and the width and height they take in LAMP_PACK_SIZE. `order` is scratch, at least `n` long.
+ * @param {Float32Array} rects
+ * @param {number} n
+ * @param {Int32Array} order
+ * @param {number} maxWidth
+ */
+export function packLampTiles(rects, n, order, maxWidth) {
+  for (let t = 0; t < n; t++) order[t] = t;
+  // By side, the largest first (ties in tile order): an insertion sort, n is the stamp lights (64 at most).
+  for (let i = 1; i < n; i++) {
+    const v = order[i];
+    const side = rects[v * 3 + 2];
+    let j = i - 1;
+    while (j >= 0 && rects[order[j] * 3 + 2] < side) {
+      order[j + 1] = order[j];
+      j--;
+    }
+    order[j + 1] = v;
   }
+  let x = 0;
+  let y = 0;
+  let shelf = 0;
+  let width = 0;
+  for (let k = 0; k < n; k++) {
+    const t = order[k];
+    const side = rects[t * 3 + 2];
+    if (x > 0 && x + 2 * side > maxWidth) {
+      y += shelf;
+      x = 0;
+      shelf = 0;
+    }
+    rects[t * 3] = x;
+    rects[t * 3 + 1] = y;
+    x += 2 * side;
+    if (x > width) width = x;
+    if (side > shelf) shelf = side;
+  }
+  LAMP_PACK_SIZE[0] = width;
+  LAMP_PACK_SIZE[1] = y + shelf;
 }
 
 /** Cells across (and down) a render's frame when it casts columns towards a lamp: the sun's grid. */
