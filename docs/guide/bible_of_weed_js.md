@@ -951,7 +951,8 @@ what every pixel is, at the light pass's size (`lighting.resolution` of the canv
 whose look names `uGbufFace` or `uGbufIds` reads this frame's:
 
 - **`uGbufIds`**, the entity under each pixel, RGBA8: `R * 256 + G` is the entity's id, `(entity % 65535) + 1`,
-  0 where none (the floor, a decoration, a face); `B` its flags (1: it shades itself); `A` 1 where written.
+  0 where none (the floor, a decoration, a face). In a scene of more than 65 535 entities two that are 65 535 apart share
+  an id, and the light pass takes them for one: where they overlap, one's shadow leaves the other lit; `B` its flags (1: it shades itself); `A` 1 where written.
 - **`uGbufFace`**, the surface, RGBA8: `R` and `G` the normal, octahedral (`(rg * 255 - 127) / 126`; 0 0 no face,
   254 254 a flat card); `B * 256 + A` the height code: its bit 15 says the normal is the sprite's own, and the rest
   divided by 8 is the height in px above the floor.
