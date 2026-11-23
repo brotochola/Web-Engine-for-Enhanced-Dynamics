@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.14.452",
+  "version": "0.14.453",
   "description": "A multi-threaded 2D web game engine for high-entity-count browser games",
   "type": "module",
   "main": "dist/weed.prod.bundle.min.js",
