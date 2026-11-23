@@ -6,6 +6,40 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Monday 23 November 2026 (afternoon): A Light Pass That Stops Waiting, and Passes That See the G-buffer
+
+**The light pass was waiting on itself.** Each light it visits needs two rows of the light data, its place and its
+colour. Two of the face pass's arms tested the first row before asking for the second, and ANGLE's Direct3D compiler
+keeps a fetch below any test that does not read it, so every light waited out one fetch before the next was even asked
+for. The test now reads both rows, and the 3D light pass costs 4.6 % less on WebGL and 2.8 % less on WebGPU on the GTX
+1650; in Predator's 3D light by night it went from 1.151 to 1.117 ms (E-408). A lamp's shadow reach is also packed once
+a light instead of taken as a square root at every pixel, and the landing in its map needs no length inside the reach
+(E-409). The pictures are the same pixels.
+
+**Two ideas that read well and lost.** Writing each light's body once instead of twice (the cones' copy and the others')
+cut the shader by 30 %, and made it 4 to 12 % slower: the floor's small body paid a real branch per light where the old
+one had a select. Asking for a lamp's fourth row with the first two won 7.5 % on WebGL when every light is a lamp with a
+tile, and lost a little everywhere else; real scenes have 28 to 45 % of such lights. Both stayed out. The new
+`gpuPassAbab` tool runs the light pass's GPU kernel A against B from two worktrees in about three minutes, with an A/A
+inside 0.2 %, which is what made these calls cheap.
+
+**One light path.** The light pass's loop over every light, kept beside the tiled one since tiles came in, never ran
+outside a benchmark; it is gone, with the two uniforms only it read (CR-37).
+
+**Passes that see the G-buffer.** A screen pass can read the frame's G-buffer now: `uGbufIds` (whose pixel each one is),
+`uGbufFace` (the surface's normal and height) and `uGbufSize`, on WebGL and WebGPU, with helpers that hide WebGL's
+upside-down targets. The guide shows an outline drawn where the entity changes (DX-GBUFSHADER). And `renderer: 'auto'`
+picks WebGPU where the browser has it and every look has its WGSL, WebGL otherwise (DX-BACKENDAUTO).
+
+**From the other session working on shadows today:**
+- Pre-render's JavaScript visibility gather is gone: the WASM gather is the only one, and the gather's regions are laid
+  out in every case (CR-38).
+- The floor along a caster's base stays shaded under the sun: a covered texel of the sun's map now holds at least one
+  height step. Box outlines under the sun went from 1.5 px to 0.64 px (N-192, part four).
+- The two shadow-map programs that were linked on first use, the two 100 ms frames at a scene's start, now link ahead
+  with the others. Time blocked on links over a day cycle went from 215 to 22 ms (E-411).
+- A Predator gate over the three: neutral.
+
 ## Monday 23 November 2026: One Way to Draw Shadows, and Halos That Belong to Their Lamp
 
 **Shadows have one way now.** WeedJS drew them two ways: a classic layer that stamped a darkening card for each caster
