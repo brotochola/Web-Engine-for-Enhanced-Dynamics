@@ -382,13 +382,19 @@ float faceHeight(vec4 face) {
 // map, only the heights of the pixel's own entity (selfId) count; a pixel of no entity counts every height.
 float selfShadowToward(vec3 p, vec3 l, float reach, float selfId) {
   float s = 1.0 / uGroundInvScaleY;
+  // E-424: a step's place in the face map is affine in t (the oblique projection, weedWorldToNorm's zoom and turn, the
+  // flip), so the walk starts from the pixel's own place and adds a step's delta.
+  vec2 n0 = weedWorldToNorm(vec2(p.x, p.y * s - p.z * uFaceLight.x));
+  vec2 wl = vec2(l.x, l.y * s - l.z * uFaceLight.x) * uSelfShadow.x;
+  vec2 dn = vec2(uCameraRot.x * wl.x - uCameraRot.y * wl.y, uCameraRot.y * wl.x + uCameraRot.x * wl.y) * uZoom / uFullCanvasSize;
+  vec2 fcStart = vec2(n0.x, uFlipY > 0.5 ? 1.0 - n0.y : n0.y);
+  vec2 fcStep = vec2(dn.x, uFlipY > 0.5 ? -dn.y : dn.y);
   for (int i = 2; i <= 9; i++) {
     if (float(i) > uSelfShadow.y + 1.0) break;
     float t = float(i) * uSelfShadow.x;
     if (t >= reach) break;
-    vec3 q = p + l * t;
-    vec2 nc = weedWorldToNorm(vec2(q.x, q.y * s - q.z * uFaceLight.x));
-    vec2 fc = vec2(nc.x, uFlipY > 0.5 ? 1.0 - nc.y : nc.y);
+    vec2 fc = fcStart + fcStep * float(i);
+    float qz = p.z + l.z * t;
     vec4 f = textureLod(uFaceMap, fc, 0.0);
 // #if IDS
     if (selfId > 0.5) {
@@ -396,7 +402,7 @@ float selfShadowToward(vec3 p, vec3 l, float reach, float selfId) {
       if (abs(floor(g.r * 255.0 + 0.5) * 256.0 + floor(g.g * 255.0 + 0.5) - selfId) > 0.5) continue;
     }
 // #endif IDS
-    if (f.r > 0.0 && faceHeight(f) > q.z + uSelfShadow.z + t * 0.25) return 0.0;
+    if (f.r > 0.0 && faceHeight(f) > qz + uSelfShadow.z + t * 0.25) return 0.0;
   }
   return 1.0;
 }
