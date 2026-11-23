@@ -18510,13 +18510,13 @@
     {
       "id": "E-405",
       "title": "Predator ?light3d=1 keeps the GPU 78 % busy, mostly pixel work (pixel warps 55 %, vertex 0.7 %), at 29 % SM issue and 10 % DRAM read: the pixel shaders wait on fetch latency, not bandwidth or arithmetic",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from Nsight Systems 2026.6.1 on Predator ?light3d=1&hour=12&zoom=0.3 (GPU metrics, scheduling)",
+      "status": "kept",
+      "statusText": "closed 2026-11-23 (R-1893, R-1897)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "GPU metrics over 9.95 s (03:57:00 to 03:57:10, GTX 1650, Chrome window 1400 x 900): GR Active 78.4 % (74 to 82 % each 500 ms), SMs Active 71.3 %, SM Issue 28.8 %, Pixel Warps in Flight 54.6 %, Vertex/Tess/Geometry 0.74 %, DRAM read 9.9 %, write 4.4 %.",
-      "next": "Fewer dependent fetches a pixel: the lamps' five taps each (four for the sun's map), the light data per light (E-205's tiles cut the lights a pixel visits), hardware comparison (a shadow sampler, textureGather) for the taps; GPU Trace per pass after each change.",
+      "result": "The fetch order (E-408, R-1893: a light's two rows together) kept; the fourth row's prefetch (R-1897) and gathers (E-410) did not pay",
+      "next": "",
       "refs": [],
       "aliases": [
         "light3d fetch latency",
@@ -18528,9 +18528,9 @@
         "R-1236",
         "R-1573",
         "R-1623",
-        "R-1893"
-      ],
-      "rank": 12
+        "R-1893",
+        "R-1897"
+      ]
     },
     {
       "id": "E-406",
@@ -43325,6 +43325,15 @@
       "title": "E-373 superseded: the 3D light pass now costs less on WebGL than on WebGPU (gpuPassBench light3d 0.404 against 0.462 ms on the GTX 1650, main after E-408 and E-409)",
       "verdict": "note",
       "text": "No sitting of its own: E-408/E-409's last sitting (R-1893, 13:45; gpuPassBench light3d, half of 1080p, 32 lamps with\ntiles, 4 pairs) read main after both changes at 0.404 ms on WebGL and 0.462 ms on WebGPU (before them 0.422 and 0.473):\nWebGL is 13 % cheaper, where E-373 found it 11 % dearer (1.26 against 1.13 ms, an older bench and pass). Its levers went in\nalong the way: texelFetch for the light data (a0f12347), the reach per light (E-409), and the fetch order (E-408), which\nwas ANGLE's D3D compiler keeping a light's second fetch behind the first's test. The WGSL side keeps the same shape."
+    },
+    {
+      "id": "R-1897",
+      "date": "2026-11-23",
+      "time": "14:08",
+      "timeFrom": "recorded",
+      "title": "E-405: a lamp's fourth row fetched with its first two helps WebGL only where nearly every light has a tile (-7.5 % all, +0.6 % at a quarter), and not WebGPU: dropped; E-405 closed on E-408's fetch order",
+      "verdict": "dropped",
+      "text": "A lamp with a tile waits three fetches in a row (its first two rows, then its fourth, then its taps). gpuPassAbab,\ngpuPassBench light3d (half of 1080p, 32 lights), GTX 1650, 4 pairs each, against main a7b18103:\n- Every light fetching its fourth row with the first two (WebGL only, 13:53): -8.4 % when all 32 lights are lamps with\n  tiles, +3.1 % with 8 of 32 (an extra fetch for each light without a tile).\n- The lamps with a tile in the first slots of their kind (pixi/lighting.js packing them first; uTiledConeEnd and\n  uTiledPointEnd), only they fetching it (probe 05483790, 14:08): all 32 tiled -7.5 % on WebGL (4/4), -0.4 % on WebGPU\n  (2/4); 8 of 32 tiled +0.6 % (0/4) and +1.4 % (0/4).\n- The scenes' share of lights with a tile (workerProbe, by night): Predator ?light3d=1 48 of 123 (39 %), crowd 0.5 38 of 84\n  (45 %), Buenos Aires 11 of 40 (28 %), headlights 13 of 13. So about -1 to +0.3 % on WebGL and a loss on WebGPU. Dropped,\n  not merged.\nE-405 itself (the pixel shaders wait on fetch latency) is closed on what moved it: E-408's fetch order (R-1893: a light's\ntwo rows together, light3d -3.6 % WebGL, -2.0 % WebGPU); its taps (E-410) and this prefetch did not pay."
     }
   ],
   "leads": [
