@@ -241,10 +241,11 @@ float lampOwner(int li) {
 // DX-LAMPPANO: a landing (its offset from the lamp on the floor) into its half tile, 0..1 (lampShadowMap.js lampPanoUv:
 // linearly to 0.8 of the half's radius within the reach, the rest of the world beyond it, the horizon at the edge).
 vec2 lampPanoUv(vec2 v, float reach) {
-  float r = length(v);
-  float q = r / reach;
-  float c = q <= 1.0 ? 0.80 * q : 0.80 + 0.20 * (1.0 - 1.0 / q);
-  return vec2(0.5) + (r > 1e-4 ? v * (0.5 * c / r) : vec2(0.0));
+  float r2 = dot(v, v);
+  // E-409: within the reach the landing is linear (0.8 of the half's radius at the reach): no length.
+  if (r2 <= reach * reach) return vec2(0.5) + v * (0.40 / reach);
+  float r = sqrt(r2);
+  return vec2(0.5) + v * (0.5 * (0.80 + 0.20 * (1.0 - reach / r)) / r);
 }
 
 // One tap: a point is shaded under a caster nearer the lamp on its ray than `bound` (N-211: a texel keeps the place along
@@ -255,19 +256,20 @@ float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float bound, float self
 }
 
 // How much of the light at floor point l, height e reaches point p (x, y on the floor, z up): 1 lit, 0 in its shadow,
-// shadowSamples' taps. tag: the light's first row's w; intensity: its I'; selfId: the pixel's entity (its own shade skipped); li: its
+// shadowSamples' taps. tag: the light's first row's w; selfId: the pixel's entity (its own shade skipped); li: its
 // column in the light data, whose fourth row holds its fade at the cut (N-212: the shade lightens as it fades, read only
 // for a point the lamp's map covers).
-float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float selfId, int li) {
+float lampVisibility(vec3 p, vec2 l, float e, float tag, float selfId, int li) {
   if (tag >= 0.0 || e <= 0.0) return 1.0;
-  // E-510: the fourth row: the fade at the cut (x) and, for a light whose shadowRange is under its radius, how far its
-  // shadows reach (y), the span of its tile, over whose last fifth they fade out; 0 there, its radius.
+  // E-510: the fourth row: the fade at the cut (x) and how far its shadows reach (y), the span of its tile: a shadowRange
+  // under its radius, positive, over whose last fifth they fade out; minus its radius otherwise (E-409: packed once a
+  // light, not 10 sqrt(I' - h²) at every pixel).
   vec4 cut = texelFetch(uLightData, ivec2(li, 3), 0);
-  float reach = cut.y > 0.0 ? cut.y : 10.0 * sqrt(max(intensity - e * e, 0.0));
+  float reach = abs(cut.y);
   // DX-LAMPPANO: past the reach on the floor the lamp casts nothing (past its radius it gives no light), nothing to read.
   vec2 fromLamp = p.xy - l;
   float farSq = dot(fromLamp, fromLamp);
-  if (reach <= 0.0 || farSq >= reach * reach) return 1.0;
+  if (farSq >= reach * reach) return 1.0;
   float fade = cut.y > 0.0 ? cut.x * clamp(5.0 * (1.0 - sqrt(farSq) / reach), 0.0, 1.0) : cut.x;
   if (fade <= 0.0) return 1.0;
   // DX-LAMPPANO: a point higher than the lamp reads the ceiling's half, landing as its mirror (2E - z) does.
@@ -313,17 +315,18 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
 // DX-LAMPPANO: lampVisibility for a floor point (z 0, the flat path): always under the lamp, on the floor's half, no bias.
 // Its own small body: with the full lookup inlined at the flat path's two loops too, ANGLE's D3D11 compiler failed to link
 // the light pass (2.9 s, no log); so it links in about the time the stretch-capped map's pass did.
-float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, int li) {
+float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, int li) {
   if (tag >= 0.0 || e <= 0.0) return 1.0;
   // N-212, E-510: its fade at the cut and its shadows' reach (lampVisibility says how).
   vec4 cut = texelFetch(uLightData, ivec2(li, 3), 0);
-  float reach = cut.y > 0.0 ? cut.y : 10.0 * sqrt(max(intensity - e * e, 0.0));
+  float reach = abs(cut.y);
   vec2 fromLamp = p - l;
   float farSq = dot(fromLamp, fromLamp);
-  if (reach <= 0.0 || farSq >= reach * reach) return 1.0;
+  if (farSq >= reach * reach) return 1.0;
   float fade = cut.y > 0.0 ? cut.x * clamp(5.0 * (1.0 - sqrt(farSq) / reach), 0.0, 1.0) : cut.x;
   if (fade <= 0.0) return 1.0;
-  vec2 uv = lampPanoUv(fromLamp, reach);
+  // Within the reach: lampPanoUv's linear part.
+  vec2 uv = vec2(0.5) + fromLamp * (0.40 / reach);
   float tile = lampTile(tag);
   vec2 cell = vec2(mod(tile, uLampAtlas.x) * 2.0, floor(tile / uLampAtlas.x));
   vec2 toAtlas = vec2(uLampAtlas.y) / uLampAtlas.zw;
@@ -485,7 +488,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     float cone = coneFactor(p.xy - posInt.xy, texelFetch(uLightData, ivec2(i, 2), 0))
       * reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
 // #if LAMPMAP
-    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
+    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, selfId, i);
 // #endif LAMPMAP
 // #if WALLS
     // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
@@ -517,7 +520,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     float lampVis = 1.0;
     float lampSelf = 1.0;
 // #if LAMPMAP
-    lampVis = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
+    lampVis = lampVisibility(p, posInt.xy, col.a, posInt.w, selfId, i);
     cosine *= lampVis;
 // #if SELFSHADOW
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
@@ -526,11 +529,11 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     // Only inside the lamp's radius (its tile's reach: I' = (radius / 10)² + h²): past it the lamp gives under
     // 1 % of its light and its map casts nothing, while the steps cost what they cost near it (E-365: with 32 lamps they were
     // 96 % of the pass).
-    // E-510: within its shadows' reach, when its shadowRange is under its radius (the fourth row's y).
+    // E-510: within its shadows' reach (the fourth row's y: its shadowRange or minus its radius).
     if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && cosine > 0.05) {
       vec2 fromLamp = p.xy - posInt.xy;
       float shadowReach = texelFetch(uLightData, ivec2(i, 3), 0).y;
-      float nearSq = shadowReach > 0.0 ? shadowReach * shadowReach : 100.0 * max(posInt.z - col.a * col.a, 0.0);
+      float nearSq = shadowReach * shadowReach;
       if (dot(fromLamp, fromLamp) < nearSq) lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d, selfId);
     }
     if (cosine > 0.05) cosine *= lampSelf;
@@ -678,7 +681,7 @@ void main() {
     float attenuation = intensityScaled / (intensityScaled + d2Scaled)
       * reachWindow(dot(fragWorld - posInt.xy, fragWorld - posInt.xy), posInt.z, col.a);
 // #if LAMPMAP
-    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
+    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, i);
 // #endif LAMPMAP
 // #if WALLS
     if (attenuation > 0.0) attenuation *= wallVisibility(fragWorld, texelFetch(uLightData, ivec2(i, 3), 0).z, wallSelf);
@@ -701,7 +704,7 @@ void main() {
       float attenuation = intensityScaled / (intensityScaled + d2Scaled)
         * reachWindow(dot(fragWorld - lightWorld, fragWorld - lightWorld), intensity, col.a);
 // #if LAMPMAP
-      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, i);
+      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, i);
 // #endif LAMPMAP
 // #if WALLS
       if (attenuation > 0.0) attenuation *= wallVisibility(fragWorld, texelFetch(uLightData, ivec2(i, 3), 0).z, wallSelf);
