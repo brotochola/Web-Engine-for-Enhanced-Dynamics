@@ -47,7 +47,7 @@ function textureMetadata() {
   const animationNameToIndex = { bunny: 0 };
   const animationFrameStart = [0];
   const animationFrameCount = [1];
-  for (const name of ['_lightGradient', '_whiteCircle', '_bulletTrail']) {
+  for (const name of ['_lightGlow', '_whiteCircle', '_bulletTrail']) {
     animationNameToIndex[name] = animationFrameStart.length;
     animationFrameStart.push(animationFrameStart.length);
     animationFrameCount.push(1);

@@ -9,7 +9,7 @@ const { Scene, Camera, GameObject, SpriteRenderer, LightEmitter } = WEED;
  * join the entities, each right after its lamp's sprite, unshaded (DX-GLOWRADIUS: a sort key a halo, and the unshaded
  * pass on); `?glowMode=add`: the halos in the lightGlows layer, additive, over everything: the arm to read it against.
  *
- * `?lamps=` (default 2000), `?glowRadius=` px (default 35, the glow one sees: E-498's compact glow; 0 keeps the wide gradient at 0.85 of the light's radius),
+ * `?lamps=` (default 2000), `?glowRadius=` px (default 35, the glow one sees: E-498's compact glow; 0 sizes it from the light, about 0.14 of its radius),
  * `?radius=` the lights' reach (default 90), `?resolution=` (lighting.resolution, default 0.5), `?backend=webgpu`.
  * Owner workers: pre-render (the halo rows and their keys) and Pixi (the unshaded pass with 'sprite').
  */

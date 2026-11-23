@@ -41,7 +41,7 @@ export const EMIT_SLOTS = [
   'adDir', 'adAssets', 'adList',
   'bActive', 'bX', 'bY', 'bStartX', 'bStartY', 'bOffsetY', 'bScale', 'bAlpha', 'bTint', 'bTexture',
   'bSpriteRotC', 'bSpriteRotS', 'bRotC', 'bRotS', 'bTrailWidth', 'bAnchorX', 'bAnchorY', 'bTrailTexture',
-  'lColor', 'lBrightness', 'lRadius', 'lGlowOffset', 'lGlow', 'tX', 'tY', 'lGradientTexture',
+  'lColor', 'lBrightness', 'lRadius', 'lGlowOffset', 'lGlow', 'tX', 'tY', 'lGlowTexture',
   'pcX', 'pcY', 'pcZ', 'pcScaleX', 'pcScaleY', 'pcFlipX', 'pcFlipY', 'pcRotC', 'pcRotS', 'pcAlpha', 'pcTint',
   'pcTexture', 'pcFlat', 'pcView', 'pcWhiteTexture', 'eParams',
   'lfX', 'lfY', 'lfScaleX', 'lfScaleY', 'lfAlpha', 'lfBaseAlpha', 'lfRotC', 'lfRotS', 'lfTint', 'lfTexture',
@@ -66,8 +66,6 @@ export const EMIT_SLOTS = [
   'kSkip',
   // DX-GLOWRADIUS: the glow rows' halo radius (LightEmitter.glowRadius).
   'lGlowRadius',
-  // E-498: the compact glow's texture (a value), what a halo with its own radius draws.
-  'lGlowTexture',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -553,18 +551,16 @@ export function writeEmitBulletColumns(b, BulletComponent, trailTexture) {
 }
 
 /**
- * The glow rows' columns and the gradient's texture, after writeEmitColumns: LightEmitter's (in the emit's blocks)
+ * The glow rows' columns and the halo's texture, after writeEmitColumns: LightEmitter's (in the emit's blocks)
  * and Transform's x and y (in the collect's), all in the memory, or lColor 0 and emit_rows lists the glow rows for
  * the JS.
- * @param {number} gradientTexture the glow's texture (_resolveBuiltinTextureId('_lightGradient'))
- * @param {number} glowTexture E-498: the compact glow's (_resolveBuiltinTextureId('_lightGlow')), a halo with its own radius's
+ * @param {number} glowTexture E-498, E-547: the compact glow's (_resolveBuiltinTextureId('_lightGlow')), every halo's
  * @returns {boolean} whether the kernel writes the glow rows this frame
  */
-export function writeEmitGlowColumns(b, LightEmitter, Transform, gradientTexture, glowTexture) {
+export function writeEmitGlowColumns(b, LightEmitter, Transform, glowTexture) {
   let ok = putSlot(b, 'tX', Transform.x) && putSlot(b, 'tY', Transform.y)
     && putSlot(b, 'tRotC', Transform.rotC) && putSlot(b, 'tRotS', Transform.rotS);
   for (let k = 0; ok && k < EMIT_GLOW_COLUMNS.length; k++) ok = putSlot(b, EMIT_GLOW_COLUMNS[k][0], LightEmitter[EMIT_GLOW_COLUMNS[k][1]]);
-  b.table[SLOT.lGradientTexture] = gradientTexture;
   b.table[SLOT.lGlowTexture] = glowTexture;
   if (!ok) b.table[SLOT.lColor] = 0;
   return ok;

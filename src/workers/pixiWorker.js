@@ -1342,7 +1342,7 @@ class PixiRenderer extends AbstractWorker {
    * Upload main render queue SoA into ENTITIES (one blend, CPU Y-order when
    * ySorting) + glow (add). Particles, decorations, bullets, adobe pieces, and
    * liquid share the entity list — same painter as a custom sprite layer.
-   * Type 3 = light glow (_lightGradient) — separate ADD batch avoids gray halos.
+   * Type 3 = light glow (_lightGlow) — separate ADD batch avoids gray halos.
    */
   updateSpritesFromRenderQueue() {
     if (!this.renderQueueEnabled || !this.entitiesBatch) return;

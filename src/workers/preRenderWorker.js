@@ -71,6 +71,7 @@ import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
     LIGHT_GLOW_EXTENT,
+    LIGHT_GLOW_COMPACT_SPAN,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
@@ -3159,7 +3160,8 @@ class PreRenderWorker extends AbstractWorker {
                         // sprite popped in at the screen's edge), at least the sprite's. DX-GLOWRADIUS: its glowRadius,
                         // or 0.85 of the light's radius.
                         const ownRadius = leGlowRadius[i];
-                        let halfExtent = ownRadius > 0 ? ownRadius : leRadius[i] * LIGHT_GLOW_EXTENT;
+                        // E-547: without one, the compact glow's quad (LIGHT_GLOW_COMPACT_SPAN of the wide one).
+                        let halfExtent = ownRadius > 0 ? ownRadius : leRadius[i] * LIGHT_GLOW_EXTENT * LIGHT_GLOW_COMPACT_SPAN;
                         const halfW = glowHalfW ? (glowHalfW[i] ?? 0) : 0;
                         const halfH = glowHalfH ? (glowHalfH[i] ?? 0) : 0;
                         if (halfW > halfExtent) halfExtent = halfW;
@@ -4276,7 +4278,7 @@ class PreRenderWorker extends AbstractWorker {
         const b = this._emitWasm;
         if (!b.texturesReady || !writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return false;
         writeEmitBulletColumns(b, BulletComponent, trailTexture);
-        writeEmitGlowColumns(b, LightEmitter, Transform, this._resolveBuiltinTextureId('_lightGradient'), this._resolveBuiltinTextureId('_lightGlow'));
+        writeEmitGlowColumns(b, LightEmitter, Transform, this._resolveBuiltinTextureId('_lightGlow'));
         const white = this._resolveBuiltinTextureId('_whiteCircle');
         writeEmitParticleColumns(b, ParticleComponent, white, this.zenithalMaxHeight, this.zenithalScaleFactor, this.zenithalAlphaFade);
         // A LiquidFun row interpolates when emitSpriteQueue would: interpolatePhysicsPose, _prevLfX, _prevLfCount > idx.

@@ -56,10 +56,11 @@ enum {
   B_ACTIVE, B_X, B_Y, B_START_X, B_START_Y, B_OFFSET_Y, B_SCALE, B_ALPHA, B_TINT, B_TEXTURE,
   B_SPRITE_ROT_C, B_SPRITE_ROT_S, B_ROT_C, B_ROT_S, B_TRAIL_W, B_ANCHOR_X, B_ANCHOR_Y, B_TRAIL_TEX,
   /* The glow rows (type 3): LightEmitter's columns (L_COLOR 0: not in the memory, so they are listed for the JS),
-     the light entity's Transform x and y, and the gradient's texture (a value: _resolveBuiltinTextureId).
+     the light entity's Transform x and y, and the halo's texture (a value: _resolveBuiltinTextureId('_lightGlow'),
+     E-498's compact glow, every halo's since E-547).
      DX-LIGHTAPI: brightness, radius, glowOffsetY and glow, in the slots intensity, its root, the glow's height and
      hasGlowSprite had (append, don't move). */
-  L_COLOR, L_BRIGHTNESS, L_RADIUS, L_GLOW_OFFSET, L_GLOW, T_X, T_Y, L_GRADIENT_TEX,
+  L_COLOR, L_BRIGHTNESS, L_RADIUS, L_GLOW_OFFSET, L_GLOW, T_X, T_Y, L_GLOW_TEX,
   /* The particle rows (type 1): ParticleComponent's columns (PC_X 0: not in the memory, so they are listed for the
      JS; PC_FLAT and PC_VIEW may be 0), the default texture (a value: _resolveBuiltinTextureId('_whiteCircle')) and
      the emit's doubles (E_PARAMS: zenithalMaxHeight, zenithalScaleFactor, zenithalAlphaFade). */
@@ -109,9 +110,6 @@ enum {
   K_SKIP,
   /* DX-GLOWRADIUS: the glow rows' halo radius (LightEmitter.glowRadius, px; 0: 0.85 of the light's radius). */
   L_GLOW_RADIUS,
-  /* E-498: the compact glow's texture (a value: _resolveBuiltinTextureId('_lightGlow')), what a halo with its own radius
-     draws. */
-  L_GLOW_TEX,
   SLOT_COUNT
 };
 
@@ -161,6 +159,8 @@ enum {
 
 /* lightGlowScale (src/util/utils.js): LIGHT_GLOW_RADIUS_SCALE, LIGHT_GRADIENT_TEXTURE_RADIUS. */
 #define GLOW_RADIUS_SCALE ((300.0 * 4.0) / __builtin_sqrt(20000.0))
+/* E-498, E-547: LIGHT_GLOW_COMPACT_SPAN (src/util/utils.js), the share of the gradient's curve the compact glow holds. */
+#define GLOW_COMPACT_SPAN 0.16
 #define GRADIENT_RADIUS 100.0
 
 /* W27: an asset directory record (preRenderEmitClient.js writeEmitAdobeAssets). Each array is a byte offset
@@ -331,7 +331,6 @@ typedef struct {
   uint32_t bTrailTex;
   const uint32_t *lColor;
   const float *lBright, *lRadius, *lGlowOff, *lGlow, *tX, *tY, *lOffX, *lOffY, *tRc, *tRs, *lGlowRadius;
-  uint32_t lGradientTex;
   uint32_t lGlowTex;
   const float *pcX, *pcY, *pcZ, *pcScaleX, *pcScaleY;
   const uint8_t *pcFlipX, *pcFlipY;
@@ -492,7 +491,6 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->lOffY = PTR(const float, L_OFFSET_Y);
   e->tRc = PTR(const float, T_ROT_C);
   e->tRs = PTR(const float, T_ROT_S);
-  e->lGradientTex = t[L_GRADIENT_TEX];
   e->lGlowTex = t[L_GLOW_TEX];
   e->pcX = PTR(const float, PC_X);
   e->pcY = PTR(const float, PC_Y);
@@ -963,14 +961,17 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   if (e->qShadowOffX) e->qShadowOffX[out] = 0.0f;
   if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
   /* DX-GLOWRADIUS: its own radius (px) over the gradient's; without one, 0.85 of the light's radius (sqrt(I) = radius /
-     10 times lightGlowScale's factor), hidden under a scale of 0.1 as before. An own radius is hidden under 1 px. */
+     10 times lightGlowScale's factor), hidden under a scale of 0.1 as before. An own radius is hidden under 1 px.
+     E-547: without one it still draws the compact glow, on GLOW_COMPACT_SPAN of that quad: the wide gradient's part past
+     it is under 2^-7 of the halo, and drawn whole it was most of a halo's fill (sorted halos: Predator light3d's
+     unshaded pass 0.70 -> 4.85 ms of GPU). */
   const double glowRadius = (double)or0(e->lGlowRadius[idx]);
   const int ownRadius = glowRadius > 0.0;
-  const double scale = ownRadius ? glowRadius / GRADIENT_RADIUS
-    : (((double)or0(e->lRadius[idx]) / 10.0) * GLOW_RADIUS_SCALE) / GRADIENT_RADIUS;
+  const double wide = (((double)or0(e->lRadius[idx]) / 10.0) * GLOW_RADIUS_SCALE) / GRADIENT_RADIUS;
+  const double scale = ownRadius ? glowRadius / GRADIENT_RADIUS : wide * GLOW_COMPACT_SPAN;
   const double glowAlpha = (double)e->lGlow[idx] * (double)e->lBright[idx];
   double anchorY = 0.5;
-  if (scale < (ownRadius ? 0.01 : 0.1) || glowAlpha < 0.001) {
+  if ((ownRadius ? scale < 0.01 : wide < 0.1) || glowAlpha < 0.001) {
     hide_row(e, out);
   } else {
     const double ox = (double)e->lOffX[idx];
@@ -989,8 +990,8 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   }
   e->qRotC[out] = 1.0f;
   e->qRotS[out] = 0.0f;
-  /* E-498: a halo with its own radius draws the compact glow (its visible part fills the quad). */
-  e->qTexture[out] = (uint16_t)(ownRadius ? e->lGlowTex : e->lGradientTex);
+  /* E-498, E-547: every halo draws the compact glow (its visible part fills the quad). */
+  e->qTexture[out] = (uint16_t)e->lGlowTex;
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = (float)anchorY;
   if (e->qType) e->qType[out] = 3;

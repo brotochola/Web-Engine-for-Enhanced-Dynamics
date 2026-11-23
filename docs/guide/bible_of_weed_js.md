@@ -1573,7 +1573,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A lamp | `this.lightEmitter.radius = 300` (px it reaches) and `color = 0xffcc88` |
 | A dimmer or an overbright light | `brightness = 0.5` (default 1; it scales the colour and the halo, and under 1 lightens its layer shadows too) |
 | A halo on the bulb | `glow = 0.6` (default 0: none), `glowOffsetY = -40` (40 px up the screen), `glowLayer = 'glows'` |
-| A small halo on a lamp that lights a whole street | `glowRadius = 30` (px, the glow you see; default 0: the light's wide gradient at 0.85 of its radius) |
+| A small halo on a lamp that lights a whole street | `glowRadius = 30` (px, the glow you see; default 0: about 0.14 of the light's radius) |
 | Halos hidden by what stands in front of their lamp, and not darkened at night | `lighting.lightGlow: 'sorted'` (each halo drawn right after its entity's sprite, unshaded) |
 | Two lights on one entity (a car's headlights, a police beacon) | a child entity with a `LightEmitter`: `CarLight.spawn({ parent: this, localX: 50, localY: 12 })` (`transform.parent`, above) |
 | A lamp post's even pool | `elevation = 110` (the bulb's height above the floor: a wider, flatter pool, same reach) |
@@ -1625,7 +1625,7 @@ class StreetLamp extends GameObject {
     light.elevation = 110;     // the bulb's height: an even pool under it
     light.glow = 0.5;
     light.glowOffsetY = -110;  // the halo on the bulb
-    light.glowRadius = 24;     // a glow 24 px round the bulb (left at 0, the wide gradient at 0.85 of the 900 px radius)
+    light.glowRadius = 24;     // a glow 24 px round the bulb (left at 0, about 0.14 of the 900 px radius: 122 px)
     light.shadowRange = 500;   // its layer shadows stop at 500 px
   }
 }
@@ -1662,7 +1662,7 @@ It is read when the scene loads. Values are clamped to `[0.05, 1]`; anything tha
 `LightEmitter.elevation` (default `0`, world px) is how high the source sits above the floor. The falloff becomes `I / (I + h² + d²)`: the pool keeps its centre and its reach, but it is flatter, like a lamp post rather than a torch on the ground. A floor light is at full strength at its foot; a raised one peaks at `I / (I + h²)` (a radius of 20h gives 0.8), so raise the radius when the foot gets too dim. Where things go:
 
 - `offsetX` / `offsetY` move the whole light, pool included (local px, turned by the entity).
-- `glowOffsetY` moves only the halo on the screen (negative is up: put it on the bulb), and `glowRadius` sizes it: the radius of the glow you see, in px (a compact glow that falls to under 1 % there, so its quad is no bigger than it). 0, the default, draws the light's wide gradient at 0.85 of its radius, a big soft flash for a spark; give a lamp that lights a whole street a small one.
+- `glowOffsetY` moves only the halo on the screen (negative is up: put it on the bulb), and `glowRadius` sizes it: the radius of the glow you see, in px (a compact glow that falls to under 1 % there, so its quad is no bigger than it). 0, the default, sizes it from the light, about 0.14 of its radius (the same compact glow), a big soft flash for a spark; give a lamp that lights a whole street a small one.
 - `elevation` lifts the source without moving anything.
 
 ```javascript

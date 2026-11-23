@@ -14,7 +14,7 @@ import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
 import { AdobeAnimRegistry } from '../../src/core/adobeAnimRegistry.js';
 import { CAMERA_TYPES, SPRITE_TILE_MODE } from '../../src/util/configDefaults.js';
-import { LIGHT_GRADIENT_TEXTURE_RADIUS, lightGlowScale } from '../../src/util/utils.js';
+import { LIGHT_GLOW_COMPACT_SPAN, LIGHT_GRADIENT_TEXTURE_RADIUS, lightGlowScale } from '../../src/util/utils.js';
 
 // As in preRenderWorker.js (that module installs its worker when it is imported, so it is not imported here).
 const INVALID_TEXTURE_ID = 0xFFFF;
@@ -162,7 +162,6 @@ function emitSpriteQueue(deltaTime, source) {
     const entityRotS = Transform.rotS;
     const glowSprite = LightEmitter.glow;
     const glowRadius = LightEmitter.glowRadius;
-    const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
     const lightGlowTextureId = this._resolveBuiltinTextureId('_lightGlow');
     const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
 
@@ -598,12 +597,14 @@ function emitSpriteQueue(deltaTime, source) {
         } else {
             // === LIGHT GLOW (type=3) ===
             // DX-GLOWRADIUS: its own radius, or 0.85 of the light's; an own radius is hidden under 1 px.
+            // E-547: without one, the compact glow on LIGHT_GLOW_COMPACT_SPAN of that quad.
             const ownRadius = glowRadius[idx] > 0;
-            const scale = ownRadius ? glowRadius[idx] / LIGHT_GRADIENT_TEXTURE_RADIUS : lightGlowScale(lightRadius[idx] / 10);
+            const wide = lightGlowScale(lightRadius[idx] / 10);
+            const scale = ownRadius ? glowRadius[idx] / LIGHT_GRADIENT_TEXTURE_RADIUS : wide * LIGHT_GLOW_COMPACT_SPAN;
             const glowAlpha = glowSprite[idx] * lightBrightness[idx];
             let anchorY = 0.5;
 
-            if (scale < (ownRadius ? 0.01 : 0.1) || glowAlpha < 0.001) {
+            if ((ownRadius ? scale < 0.01 : wide < 0.1) || glowAlpha < 0.001) {
                 rqAlpha[out] = 0;
                 rqScaleX[out] = 0;
                 rqScaleY[out] = 0;
@@ -622,8 +623,8 @@ function emitSpriteQueue(deltaTime, source) {
             }
             rqRotC[out] = 1;
             rqRotS[out] = 0;
-            // E-498: a halo with its own radius draws the compact glow.
-            rqTextureId[out] = ownRadius ? lightGlowTextureId : lightGradientTextureId;
+            // E-498, E-547: every halo draws the compact glow.
+            rqTextureId[out] = lightGlowTextureId;
             rqAnchorX[out] = 0.5;
             rqAnchorY[out] = anchorY;
             if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;

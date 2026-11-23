@@ -1314,7 +1314,7 @@ export interface FlashCreateConfig {
   brightness?: number;
   /** Initial halo alpha, 0 = none. Default 0.2. */
   glow?: number;
-  /** The halo's radius in px, as it shows (a compact glow); 0 draws the wide gradient at 0.85 of the radius. Default 0. */
+  /** The halo's radius in px, as it shows (a compact glow); 0 sizes it from the light, about 0.14 of its radius. Default 0. */
   glowRadius?: number;
   /** Point shadows. Default true. */
   castShadows?: boolean;
@@ -4773,7 +4773,7 @@ export declare class LightEmitter extends Component {
   set glow(value: number);
   /**
    * The halo's radius in px as it shows (a compact glow that falls to under 1 % there), at least 0; 0 (the default)
-   * draws the light's wide gradient at 0.85 of its radius (a spark's big soft flash), so give a lamp that lights a whole
+   * sizes it from the light, about 0.14 of its radius (a spark's big soft flash), so give a lamp that lights a whole
    * street a small one here.
    */
   get glowRadius(): number;

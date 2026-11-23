@@ -31,7 +31,7 @@ Flash.spawn({
   radius: 1000,       // starting reach in px; default 1000
   brightness: 1,      // times the colour and the glow; default 1
   glow: 0.2,          // starting halo alpha, 0 = none; default 0.2
-  glowRadius: 24,     // the halo's radius in px, as it shows; default 0 (the wide gradient at 0.85 of the radius)
+  glowRadius: 24,     // the halo's radius in px, as it shows; default 0 (about 0.14 of the light's radius)
   castShadows: true,  // point shadows; default true
   coneAngle: Math.PI / 2, // a cone, its whole aperture in radians; default 2π (round)
   coneSoftness: 0.5,  // 0..1, how much of its edge fades; default 0
@@ -48,7 +48,7 @@ Flash.spawn({
 | `radius` | `1000` | Initial reach in px (`LightEmitter.radius`). |
 | `brightness` | `1` | Times the colour and the glow. |
 | `glow` | `0.2` | Initial halo alpha (`LightEmitter.glow`); `0` draws none. |
-| `glowRadius` | `0` | The halo's radius in px, as it shows (`LightEmitter.glowRadius`: a compact glow, cheaper to draw); `0` draws the wide gradient at 0.85 of the radius. |
+| `glowRadius` | `0` | The halo's radius in px, as it shows (`LightEmitter.glowRadius`: a compact glow, cheaper to draw); `0` sizes it from the light, about 0.14 of its radius. |
 | `castShadows` | `true` | `false` / `0` = still lights the scene, casts nothing (`LightEmitter.castShadows` 0: the flash is not one of the stamp's lights). |
 | `coneAngle` | `2π` | A cone's whole aperture in radians, as `LightEmitter.coneAngle`: a muzzle flash that lights ahead of the barrel only. |
 | `coneSoftness` | `0` | 0..1, how much of the cone's edge fades. |
