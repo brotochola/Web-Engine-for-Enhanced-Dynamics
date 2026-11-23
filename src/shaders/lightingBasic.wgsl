@@ -472,9 +472,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     let i = tw * 32 + i32(firstTrailingBit(bits));
     bits &= bits - 1u;
     if (i < nCones) {
+    // E-408: both rows asked for at once. A shader compiler may sink a fetch below a test that does not read it, so the
+    // test reads both (a light's height is never under -1e30) and the second fetch does not wait out the first.
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
-    if (posInt.z <= 0.0) { continue; }
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
+    if (posInt.z <= 0.0 || col.a < -1e30) { continue; }
     let toLight = vec3<f32>(posInt.xy, col.a) - p;
     let d = length(toLight);
     let cosine = dot(n, toLight) / max(d, 0.001);
@@ -498,9 +500,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
         * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
     } else {
+    // E-408: both rows asked for at once. A shader compiler may sink a fetch below a test that does not read it, so the
+    // test reads both (a light's height is never under -1e30) and the second fetch does not wait out the first.
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
-    if (posInt.z <= 0.0) { continue; }
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
+    if (posInt.z <= 0.0 || col.a < -1e30) { continue; }
     let toLight = vec3<f32>(posInt.xy, col.a) - p;
     let d = length(toLight);
     let cosine = dot(n, toLight) / max(d, 0.001);

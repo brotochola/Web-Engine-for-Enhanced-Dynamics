@@ -471,9 +471,11 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     int i = tw * 32 + lowBit(bits);
     bits &= bits - 1u;
     if (i < coneCount) {
+    // E-408: both rows asked for at once. The D3D compiler sinks a fetch below a test that does not read it, so the test
+    // reads both (a light's height is never under -1e30) and the second fetch does not wait out the first.
     vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
-    if (posInt.z <= 0.0) continue;
     vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
+    if (posInt.z <= 0.0 || col.a < -1e30) continue;
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
     float cosine = dot(n, toLight) / max(d, 0.001);
@@ -498,9 +500,11 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
         * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
     } else {
+    // E-408: both rows asked for at once. The D3D compiler sinks a fetch below a test that does not read it, so the test
+    // reads both (a light's height is never under -1e30) and the second fetch does not wait out the first.
     vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
-    if (posInt.z <= 0.0) continue;
     vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
+    if (posInt.z <= 0.0 || col.a < -1e30) continue;
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
     float cosine = dot(n, toLight) / max(d, 0.001);
