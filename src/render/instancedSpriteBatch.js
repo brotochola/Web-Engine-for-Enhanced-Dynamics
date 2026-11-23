@@ -116,8 +116,6 @@ const OPAQUE_RECHECK_FRAMES = 15;
 export const KEYED_SAVED_BYTES = (GPU_STATIC_FLOATS - GPU_INDEXED_SLOT_FLOATS) * 4;
 export const KEYED_LOSS_FRAMES = 10;
 export const KEYED_PAUSE_FRAMES = 1800;
-/** E-395: the frames enableStaticsMirror asks every slot's statics for, so the CPU copy holds them all. */
-const STATICS_MIRROR_FILL_FRAMES = 4;
 
 const EMPTY_UPLOAD_OPTS = Object.freeze({
   space: BATCH_SPACE.WORLD,
@@ -685,13 +683,15 @@ export class InstancedSpriteBatch {
     this._statics = this.indexed ? statics : null;
     this._staticsSource = null;
     this._staticsHeight = 0;
-    // E-395: the keyed slots' texture and scale (three floats a slot), copied from the keyed updates once something asks
-    // (enableStaticsMirror: the renders' columns over keyed rows pick their rows by them); empty until then. The updates'
-    // float views read them.
+    // E-395: the keyed slots' texture and scale (three floats a slot), copied from the keyed updates (the renders' columns
+    // over keyed rows pick their rows by them). N-417: a keyed WebGL batch keeps it from its first frame (made below with
+    // the statics texture), so it sees every update the statics took: begun when something asked, it waited for updates
+    // that never came for a slot that did not change again (FULL has pre-render write every row's statics into the queue,
+    // not send them). And it read the updates through their float views (above), which were set to empty arrays here after
+    // them: every value it copied was NaN, so the renders' columns over keyed rows found no render (texture 0).
     this._staticsMirror = new Float32Array(0);
-    this._keyUpdatesF = new Float32Array(0);
-    this._keyTexUpdatesF = new Float32Array(0);
     this._indexedShader = this.indexed ? this._makeIndexedShader(labelName) : null;
+    if (this.keyed && this._staticsHeight > 0) this._staticsMirror = new Float32Array(this._staticsHeight * STATICS_TEX_ROW * 3);
     this._rowShader = this.posesByRow ? this._makeRowShader(labelName) : null;
     this.shadowShader = null;
     if (this.shadowCast && (shaders?.shadowVert || shaders?.shadowWgsl)) {
@@ -2407,23 +2407,15 @@ export class InstancedSpriteBatch {
   }
 
   /**
-   * E-395: keep a CPU copy of each keyed slot's texture and scale (staticsMirror), for the renders' columns over keyed
-   * caster rows. The keyed updates carry only what changed, so this asks pre-render for every slot's statics again (the
-   * keyed pause, as after a loss) and the copy fills from them. False without keyed frames or a statics texture yet.
+   * E-395: whether the batch keeps a CPU copy of each keyed slot's texture and scale (staticsMirror), for the renders'
+   * columns over keyed caster rows: a keyed batch with a statics texture (WebGL) does, from its first frame (N-417).
    * @returns {boolean}
    */
   enableStaticsMirror() {
-    if (!this.keyed || this._staticsHeight <= 0) return false;
-    const slots = this._staticsHeight * STATICS_TEX_ROW;
-    if (this._staticsMirror.length < slots * 3) this._staticsMirror = new Float32Array(slots * 3);
-    // A few frames of every slot's statics (KEYED_PAUSE_FRAMES is the loss's long pause): the copy fills from them.
-    this._keyPause = Math.max(this._keyPause, STATICS_MIRROR_FILL_FRAMES);
-    this._keyFull = true;
-    Atomics.store(this._keyHeader, PIXI_KEYED_HEADER.FULL, 1);
-    return true;
+    return this.keyed && this._staticsHeight > 0 && this._staticsMirror.length > 0;
   }
 
-  /** E-395: the keyed slots' texture and scale (textureId, scaleX, scaleY a slot), or null before enableStaticsMirror. */
+  /** E-395: the keyed slots' texture and scale (textureId, scaleX, scaleY a slot), or null without the copy. */
   get staticsMirror() {
     return this._staticsMirror.length > 0 ? this._staticsMirror : null;
   }
