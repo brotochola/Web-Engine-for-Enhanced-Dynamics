@@ -29,6 +29,8 @@ export class PixiScreenLayers {
     // DX-DEPTH: the frame target given a depth attachment for the entities' pixel depth (WebGPU), so it is asked once.
     this.sceneDepth = null;
     this.clearColor = [0, 0, 0, 1];
+    // DX-GBUFSHADER: gbufSources' answer, one object kept.
+    this._gbuf = { face: null, ids: null };
   }
 
   /**
@@ -45,10 +47,13 @@ export class PixiScreenLayers {
     const uniformDefs = this.worker.lookShaders.buildUniformDefs(layerId, config.uniformMap, config.uniformTypes);
     // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it).
     const usesScene = typeof config.shaderFragment === 'string' && /\buScene\b/.test(config.shaderFragment);
+    // DX-GBUFSHADER: one that names uGbufFace or uGbufIds reads this frame's G-buffer (gbufSources).
+    const usesGbuf = typeof config.shaderFragment === 'string' && /\buGbuf(Face|Ids)\b/.test(config.shaderFragment);
     let shader;
     try {
       const empty = PIXI.Texture.EMPTY.source;
-      shader = this.worker.lookShaders.create(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null);
+      shader = this.worker.lookShaders.create(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null,
+        usesGbuf);
     } catch (err) {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', name, layerName, this.worker._useWebGpu ? 'WebGPU' : 'WebGL', err);
@@ -66,6 +71,7 @@ export class PixiScreenLayers {
       uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
       mesh: this.worker.lookShaders.makeMesh(shader, false),
       usesScene,
+      usesGbuf,
       // Its output when it is not the last visible pass: the canvas's size times its resolution.
       target: null,
     });
@@ -151,6 +157,10 @@ export class PixiScreenLayers {
     frame.cameraY = this.worker._renderCameraY;
     frame.canvasW = width;
     frame.canvasH = height;
+    // DX-GBUFSHADER: the G-buffer's size in texels (uGbufSize), 0 0 in a scene that draws none.
+    const gb = this.gbufSources();
+    frame.gbufW = gb.face.pixelWidth > 1 ? gb.face.pixelWidth : 0;
+    frame.gbufH = gb.face.pixelWidth > 1 ? gb.face.pixelHeight : 0;
     frame.zoom = this.worker._renderZoom;
     frame.time = (this.worker.accumulatedTime || 0) * 0.001;
     frame.worldW = finiteOrZero(this.worker.worldWidth);
@@ -168,6 +178,11 @@ export class PixiScreenLayers {
       if (res.uTexture !== input) res.uTexture = input;
       if (res.uSampler !== undefined && res.uSampler !== input.style) res.uSampler = input.style;
       if (cl.usesScene && res.uScene !== this.sceneRT.source) res.uScene = this.sceneRT.source;
+      if (cl.usesGbuf) {
+        const g = this.gbufSources();
+        if (res.uGbufFace !== g.face) res.uGbufFace = g.face;
+        if (res.uGbufIds !== g.ids) res.uGbufIds = g.ids;
+      }
       if (i === last) {
         // The canvas, cleared to its background first: a pass that copies gives the frame the stage would have.
         this.worker._submitRender(cl.mesh);
@@ -205,6 +220,25 @@ export class PixiScreenLayers {
   _unbindTextures(cl) {
     this.worker.lookShaders.unbindTexture(cl.shader);
     if (cl.usesScene) cl.shader.resources.uScene = PIXI.Texture.EMPTY.source;
+    if (cl.usesGbuf) {
+      cl.shader.resources.uGbufFace = PIXI.Texture.EMPTY.source;
+      cl.shader.resources.uGbufIds = PIXI.Texture.EMPTY.source;
+    }
+  }
+
+  /**
+   * DX-GBUFSHADER: this frame's G-buffer for a pass that reads it: the face map and the entity ids map (faceMap.js), at the
+   * light pass's size; a 1 x 1 empty texture (alpha 0: nothing written) for one the scene does not draw (no lit G-buffer:
+   * no map shadows, maps, faces, walls or unshaded sprites). The passes run after the frame's light pass, so they read its own.
+   * @returns {{ face: TextureSource, ids: TextureSource }}
+   */
+  gbufSources() {
+    const lighting = this.worker.lighting;
+    const empty = PIXI.Texture.EMPTY.source;
+    const out = this._gbuf;
+    out.face = lighting && lighting.faceRT ? lighting.faceRT.source : empty;
+    out.ids = lighting && lighting.faceIdsRT ? lighting.faceIdsRT.source : empty;
+    return out;
   }
 
   /** A SCREEN layer's uniforms written from any thread (Layer.x.setUniform), as updateCustomLayers does for looks. */

@@ -83,6 +83,8 @@ export const RESERVED_LOOK_UNIFORMS = {
     uWorldSize: { value: [0, 0], type: 'vec2<f32>' },
     uViewSize: { value: [0, 0], type: 'vec2<f32>' },
     uTexSize: { value: [0, 0], type: 'vec2<f32>' },
+    // DX-GBUFSHADER: the G-buffer's size in texels, for a SCREEN pass that reads it (uGbufFace, uGbufIds); 0 0 elsewhere.
+    uGbufSize: { value: [0, 0], type: 'vec2<f32>' },
 };
 
 /**

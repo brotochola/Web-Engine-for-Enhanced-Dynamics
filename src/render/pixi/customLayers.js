@@ -582,6 +582,9 @@ export class PixiCustomLayers {
       frameUniforms.time = (this.worker.accumulatedTime || 0) * 0.001;
       frameUniforms.worldW = finiteOrZero(this.worker.worldWidth);
       frameUniforms.worldH = finiteOrZero(this.worker.worldHeight);
+      // DX-GBUFSHADER: a layer's look reads no G-buffer (a SCREEN pass does).
+      frameUniforms.gbufW = 0;
+      frameUniforms.gbufH = 0;
       applyEngineLookUniforms(cl, frameUniforms);
       // E-504: a cached worldRect layer draws its target when what it shows changed; nothing else of it runs here.
       if (cl.worldRt !== null) {

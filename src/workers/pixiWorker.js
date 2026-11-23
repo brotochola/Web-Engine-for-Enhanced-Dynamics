@@ -686,6 +686,9 @@ class PixiRenderer extends AbstractWorker {
       time: 0,
       worldW: 0,
       worldH: 0,
+      // DX-GBUFSHADER: the G-buffer's size a SCREEN pass reads it at (0 for the other looks).
+      gbufW: 0,
+      gbufH: 0,
     };
     this._clearTransparent = [0, 0, 0, 0];
     this._rtEmptyContainer = new Container();

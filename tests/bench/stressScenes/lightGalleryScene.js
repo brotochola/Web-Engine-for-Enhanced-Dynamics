@@ -37,6 +37,7 @@ export const GROUND_SCALE_Y = queryNumber('groundScaleY', 1);
 export const BACKEND = ['webgpu', 'auto'].includes(query('backend')) ? query('backend') : 'webgl';
 export const GLOW_MODE = query('glowMode') === 'add' ? 'add' : 'sorted';
 export const AMBIENT = queryNumber('ambient', 0.05);
+export const OUTLINE = query('outline') === '1';
 export const CONES = queryNumber('cones', 0) === 1;
 /** E-404: lighting.lightGlowResolution, written only when given (a revision without it ignores the key). */
 export const GLOW_RES = queryNumber('glowRes', NaN);
@@ -93,6 +94,8 @@ export class LightGalleryScene extends Scene {
     layers: {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
       glows: { zIndex: 4, blendMode: BLEND_MODES.ADD, ySorting: false },
+      // ?outline=1 (DX-GBUFSHADER): a SCREEN pass that draws each entity's outline from the G-buffer's ids map.
+      ...(OUTLINE ? { outline: { kind: LAYER_KIND.SCREEN, zIndex: 100, shader: { fragment: 'galleryOutline' } } } : {}),
     },
     camera: { floorScaleY: GROUND_SCALE_Y },
     lighting: {
@@ -113,6 +116,9 @@ export class LightGalleryScene extends Scene {
     },
   };
   static assets = {
+    shaders: {
+      galleryOutline: { webgl: '/tests/bench/stressScenes/lightGallery/outline.frag', webgpu: '/tests/bench/stressScenes/lightGallery/outline.wgsl' },
+    },
     textures: {
       ground: '/demos/img/box_100_100.png',
       barrel1: '/demos/img/bola.png',

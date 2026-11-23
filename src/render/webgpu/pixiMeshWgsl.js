@@ -99,8 +99,9 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
 
 /**
  * @param {boolean} [scene] DX-POST: a SCREEN pass that reads uScene too, at binding 3 of group 2 (wgslPrelude)
+ * @param {boolean} [gbuf] DX-GBUFSHADER: one that reads the G-buffer too (uGbufFace, uGbufIds) at the next two bindings
  */
-export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, scene = false) {
+export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, scene = false, gbuf = false) {
   if (!vertexSource) {
     throw new Error(
       'WeedJS: Fullscreen look vertex WGSL was not loaded before look program creation.'
@@ -112,7 +113,11 @@ export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, s
     name,
     vertex: { source: vertexSource, entryPoint: 'mainVert' },
     fragment: { source: fragmentSource, entryPoint: 'mainFrag' },
-    layout: pixiGroupsLayout(scene ? { customUniforms: 0, uTexture: 1, uSampler: 2, uScene: 3 } : { customUniforms: 0, uTexture: 1, uSampler: 2 }),
+    layout: pixiGroupsLayout({
+      customUniforms: 0, uTexture: 1, uSampler: 2,
+      ...(scene ? { uScene: 3 } : {}),
+      ...(gbuf ? { uGbufFace: scene ? 4 : 3, uGbufIds: scene ? 5 : 4 } : {}),
+    }),
     gpuLayout: [
       ...pixiGroupsGpuLayout(),
       [
@@ -120,6 +125,9 @@ export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, s
         { binding: 1, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 2, visibility: f, sampler: { type: 'filtering' } },
         ...(scene ? [{ binding: 3, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } }] : []),
+        ...(gbuf ? [scene ? 4 : 3, scene ? 5 : 4].map((binding) => (
+          { binding, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } }
+        )) : []),
       ],
     ],
   });
