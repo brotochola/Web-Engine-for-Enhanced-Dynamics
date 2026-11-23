@@ -294,7 +294,6 @@ export class PixiLighting {
         uSunG: { value: 1.0, type: 'f32' },
         uSunB: { value: 1.0, type: 'f32' },
         uFlipY: { value: 0, type: 'f32' },
-        uShadowComposite: { value: 0, type: 'f32' },
         uGroundInvScaleY: { value: this.worker._groundInvScaleY || 1, type: 'f32' },
         uNightR: { value: 0, type: 'f32' },
         uNightG: { value: 0, type: 'f32' },
@@ -303,7 +302,6 @@ export class PixiLighting {
         // WebGPU Pixi writes an i32 uniform with a float's bits (uLightCount survives that only by its loop's texW guard).
         uConeCount: { value: 0, type: 'f32' },
       },
-      ...this._lightingShadowResources(),
     };
 
     const facesOn = this.worker._facesOn;
@@ -961,11 +959,6 @@ export class PixiLighting {
     return rtPixelScale(this.worker.canvasWidth, rtPixelSize(this.worker.canvasWidth, this.worker.shadowResolution));
   }
 
-  /** The pass's old shadows' layer binding (uShadowComposite stays 0): an empty texture. */
-  _lightingShadowResources() {
-    const src = PIXI.Texture.EMPTY.source;
-    return { uShadowMap: src, uShadowSampler: src.style };
-  }
 
   /**
    * An additive light splat (LiquidFun lit groups, particle lights), or null

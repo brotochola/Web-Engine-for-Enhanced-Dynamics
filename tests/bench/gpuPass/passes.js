@@ -384,7 +384,6 @@ export function buildFrame(p, sh, sc, backend) {
           uSunG: 0.96,
           uSunB: 0.9,
           uFlipY: 0,
-          uShadowComposite: 0,
           uGroundInvScaleY: 1 / g,
           uNightR: p.night ? 0.05 : 0,
           uNightG: p.night ? 0.06 : 0,
