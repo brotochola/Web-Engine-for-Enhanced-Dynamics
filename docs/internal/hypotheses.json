@@ -25313,18 +25313,19 @@
       "aliases": []
     },
     {
-      "records": [],
+      "records": [
+        "R-1876"
+      ],
       "refs": [],
       "id": "E-547",
       "title": "With lightGlow 'sorted' the unshaded pass draws the halos' big quads three times at the canvas's size: 0.70 -> 4.85 ms of GPU a frame in Predator light3d by night (drawn 59.8 -> 50.0 fps)",
-      "status": "open",
+      "status": "kept",
       "kind": "gpu",
       "area": "renderer",
       "date": "2026-11-23",
-      "result": "",
-      "statusText": "filed 2026-11-23 from the lightGlows measure (R-1872); blocks making sorted the default",
-      "next": "instancedSpriteBatch.unshadedPass: the stencil mask, the colour and (pixel depth) the edge draws each run every instance at the unshaded target's size, and a sorted halo is unshaded and big (glowRadius or 0.85 of its light's radius). Ideas: the halos (type 3 rows) out of the mask and edge draws, their own draw into the unshaded target at the light pass's size, or kept to their glow's visible disc (E-498's compact glow) so the quad is small; check with glFrameRecorder --gpu-passes on Predator ?light3d=1&lightGlow=sorted and pixel parity on the light bench.",
-      "rank": 20,
+      "result": "Every halo draws the compact glow on its visible part's quad: sorted halos' unshaded pass 4.33 -> 1.27 ms, the 'add' layer 0.24 -> 0.03 ms (Predator light3d by night, GTX 1650)",
+      "statusText": "kept 2026-11-23 on exp/one-shadow-path (712599cb, R-1876), merges with E-531",
+      "next": "",
       "aliases": [
         "sorted glow unshaded pass cost"
       ]
@@ -42968,6 +42969,15 @@
       "title": "N-415 parts 1 and 2: the light pass's old layer input and the sun map programs' heights:false forms gone",
       "verdict": "kept-hygiene",
       "text": "exp/one-shadow-path: de4123af takes uShadowComposite (always 0) and uShadowMap out of lightingBasic's GLSL and WGSL,\nthe WebGPU layout's bindings 2 and 3, the uniform group and the GPU pass bench; 649b0c79 leaves sunMapVertex,\nsunMapColumnsVertex and their WGSL forms one form (heights). The light bench draws the same pixels on WebGL and WebGPU by\nday and by night. Part 3 (the cone cookie's built-in frame, which littleCity's baked atlas carries) stays open."
+    },
+    {
+      "id": "R-1876",
+      "date": "2026-11-23",
+      "time": "10:03",
+      "timeFrom": "recorded",
+      "title": "E-547 kept: every halo draws the compact glow on its visible part's quad; sorted halos' unshaded pass 4.33 -> 1.27 ms, the 'add' layer 0.24 -> 0.03 ms",
+      "verdict": "kept",
+      "text": "exp/one-shadow-path 712599cb: a halo without its own glowRadius drew the wide gradient (_lightGradient) on a quad 0.85\nof its light's radius, and past 0.16 of that quad the curve is under 2^-7. Every halo now draws E-498's compact glow\n(_lightGlow, that inner 0.16 over the whole texture) on a quad 0.16 the size; glowRadius 0 means about 0.14 of the\nlight's radius. The emit kernel's gradient slot gave its place to the glow's; pre-render's cull reaches as far as the halo\nshows (lightCulls.test.js moved its far light in). Emit parity and ASan's preRenderEmit groups pass.\nglFrameRecorder --gpu-passes, Predator light3d by night (crowd 2.5, mix 1), whole revisions 977b0753 against c098f309 (712599cb's code),\nGTX 1650, two recordings a side:\n- lightGlow 'sorted': the unshaded pass at the canvas's size (mask, colour, edge) 4.302 / 4.357 -> 1.264 / 1.267 ms a\n  frame; the GPU 88 / 89 -> 59 / 60 % busy (nvidia-smi); every other pass alike.\n- lightGlow 'add': the glows layer 0.239 / 0.241 -> 0.028 / 0.028 ms; the unshaded pass (no halos in it) 0.62 -> 0.65 /\n  0.68 ms; the GPU 56 / 57 -> 56 / 55 % busy.\n'sorted' against 'add' after it: 1.27 ms against 0.65 + 0.03 ms, the GPU 60 against 55 % busy (R-1872: 4.85 against\n0.70 ms, 93 against 60 %).\ncompareCaptures, the light gallery (its halos have no glowRadius), the same revisions: 'add' 319 678 pixels differ, max 9 of\n255, mean 2.7 round its brightest halo (luminance 157.5 -> 155.9 there: the cut tail, and rings where the wide texture's\n16 texels of core were stretched); 'sorted' max 7. Side by side no edge and no change can be seen."
     }
   ],
   "leads": [
