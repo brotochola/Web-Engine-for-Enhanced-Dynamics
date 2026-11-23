@@ -105,7 +105,8 @@ export async function bindGpuPack(memory, layout) {
     'pack_casters_keyed_scan_xy',
     'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
     'pack_casters_framed', 'pack_casters_scatter_framed', 'pack_sprites_split_gbuf', 'pack_sprites_split_scatter_gbuf',
-    'pack_sprites_indexed_scatter_gbuf', 'diff_indexed_statics',
+    'pack_sprites_indexed_scatter_gbuf', 'diff_indexed_statics', 'pack_sprites_keyed_gbuf_statics',
+    'pack_sprites_keyed_rows_gbuf_statics',
   ]);
   return {
     buffer: memory.buffer,
@@ -135,6 +136,9 @@ export async function bindGpuPack(memory, layout) {
     // E-387: the two with the instances' G-buffer words too (exports of their own: the plain ones keep their code).
     spritesKeyedGbuf: k.pack_sprites_keyed_gbuf,
     spritesKeyedRowsGbuf: k.pack_sprites_keyed_rows_gbuf,
+    // E-455 step 3: the two with each slot's word in its statics updates and none a drawn instance (no bands).
+    spritesKeyedGbufStatics: k.pack_sprites_keyed_gbuf_statics,
+    spritesKeyedRowsGbufStatics: k.pack_sprites_keyed_rows_gbuf_statics,
     // E-191: keyed caster rows (a pose, a key, the shadow terms) of a list of queue rows.
     castersKeyed: k.pack_casters_keyed,
     // E-192: the same rows for the casters it finds in the queue itself.
@@ -522,7 +526,7 @@ function splitGbufByte(b, gbuf, n, rows) {
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   if (!b || !b.spritesKeyed) return -1;
-  return keyedPack(b, q, ctx, pose, slots, keyed, capacity, b.spritesKeyed, b.spritesKeyedGbuf);
+  return keyedPack(b, q, ctx, pose, slots, keyed, capacity, b.spritesKeyed, b.spritesKeyedGbuf, b.spritesKeyedGbufStatics);
 }
 
 /**
@@ -533,14 +537,15 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
  */
 export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) {
   if (!b || !b.spritesKeyedRows) return -1;
-  return keyedPack(b, q, ctx, rows, slots, keyed, capacity, b.spritesKeyedRows, b.spritesKeyedRowsGbuf);
+  return keyedPack(b, q, ctx, rows, slots, keyed, capacity, b.spritesKeyedRows, b.spritesKeyedRowsGbuf, b.spritesKeyedRowsGbufStatics);
 }
 
 /**
  * The keyed packs' one body (N-303 CR-18): `at` is each drawn instance's pose (packKeyedRowsWasm) or its queue row
- * (packKeyedRowsByRowWasm), `pack` and `packGbuf` the kernel pair for it, without and with the G-buffer words.
+ * (packKeyedRowsByRowWasm), `pack` and `packGbuf` the kernel pair for it, without and with the G-buffer words, and
+ * `packGbufStatics` the form with each slot's word in its statics updates alone (E-455 step 3).
  */
-function keyedPack(b, q, ctx, at, slots, keyed, capacity, pack, packGbuf) {
+function keyedPack(b, q, ctx, at, slots, keyed, capacity, pack, packGbuf, packGbufStatics) {
   if (!q || !at || !slots || !ctx || !keyed) return -1;
   if (ctx.useScreen || ctx.filterTypes) return -1;
   const key = q.key;
@@ -561,18 +566,22 @@ function keyedPack(b, q, ctx, at, slots, keyed, capacity, pack, packGbuf) {
   const texByte = keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0;
   // E-337: the type column only for the shadow terms' glow test; without them it fed only an unread particle count.
   const typeByte = shadowByte > 0 && typeArr ? typeArr.byteOffset : 0;
+  // E-455 step 3: with keyed.gbufStatics and no bands, the words ride in the slots' statics (every gbuf form writes them
+  // there), none a drawn instance: keyed.gbufInStatics says so.
+  const inStatics = gbufByte > 0 && keyed.gbufStatics === true && !(keyed.gbufZ && keyed.gbufZ.length > 0) && !!packGbufStatics;
   const out = gbufByte > 0
-    ? packGbuf(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
+    ? (inStatics ? packGbufStatics : packGbuf)(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
       slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte, gbufByte)
     : pack(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
       slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte);
   keyed.shadowed = shadowByte > 0;
-  keyed.gbufWritten = gbufByte > 0;
+  keyed.gbufWritten = gbufByte > 0 && !inStatics;
+  keyed.gbufInStatics = inStatics;
   const r = b.particlesByte >> 2;
   ctx.particleCount = b.u32[r];
   keyed.updates = b.u32[r + 1];
   keyed.texUpdates = keyed.texUpdatesByte > 0 ? b.u32[r + 2] : 0;
-  keyed.gbufChanged = gbufByte > 0 ? b.u32[r + 3] !== 0 : true;
+  keyed.gbufChanged = gbufByte > 0 && !inStatics ? b.u32[r + 3] !== 0 : !inStatics;
   return out;
 }
 

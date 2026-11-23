@@ -457,6 +457,9 @@ export class ShadowCaster extends Component {
   static setSelfShadow(i, value) {
     ShadowCaster.selfShadow[i] =
       value === 'auto' || value == null ? SELF_SHADOW.AUTO : !value || value === 'off' ? SELF_SHADOW.OFF : SELF_SHADOW.ON;
+    // E-455 step 3: selfShadow is part of the G-buffer word a keyed frame keeps in the sprite's statics.
+    const dirty = SpriteRenderer.keyedDirty;
+    if (dirty && i < dirty.length) dirty[i] = 1;
   }
 }
 
