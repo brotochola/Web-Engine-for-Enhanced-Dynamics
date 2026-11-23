@@ -31,6 +31,25 @@ outside a benchmark; it is gone, with the two uniforms only it read (CR-37).
 upside-down targets. The guide shows an outline drawn where the entity changes (DX-GBUFSHADER). And `renderer: 'auto'`
 picks WebGPU where the browser has it and every look has its WGSL, WebGL otherwise (DX-BACKENDAUTO).
 
+**The GPU process was drowning in commands.** Chrome runs the game's GL calls on a process of its own, and it was
+spending up to 9 ms of every frame decoding them. Two things fed it. Each decal tile was a picture of its own drawn by
+Pixi's sprite batcher, which holds sixteen pictures at a time, so in a Predator night it bound about 730 of them, and
+switched texture units as many times, every frame. The stamped tiles now live as layers of a few array textures, and one
+instanced draw a texture puts the ones in view on screen (E-552). GL calls a frame went from 1746 to 330 in Predator's 3D
+light by night, and Chrome's GPU process from 539 to 145 ms of CPU a second (-73 %); at crowd 2.5 by day from 625 calls
+to 245 and 287 to 194 ms (-32 %). The same pixels, checked with a new still scene of seeded decals. Our sprite shader sync
+gave each program's textures the first units, and set the same sampler over and over; it keeps each texture on the unit
+it already holds and writes a sampler once (E-417, E-389). On WebGPU, Pixi sent each render call's uniforms to a second
+buffer by a copy in a submit of its own; it writes them now, and the frame's submits went from 12.7 to 7 (E-464), the GPU
+process 11 % lower.
+
+**The self-shadow walks.** Its eight steps over the face map projected each point from scratch; a step's place is
+affine in its distance, so it starts from the pixel's own place and adds a step. The self-shadow pass is 4 to 5 % cheaper
+(E-424).
+
+**What today's re-measure of Chrome's GPU process says:** light3d's extra over plain is 0.35 ms a frame, where 2026-11-16
+found 2.7; an instanced draw 33 us where 79; WebGPU costs it 40 % more than WebGL at crowd 2.5, through its submits.
+
 **From the other session working on shadows today:**
 - Pre-render's JavaScript visibility gather is gone: the WASM gather is the only one, and the gather's regions are laid
   out in every case (CR-38).
