@@ -111,8 +111,8 @@ export function createDecalArrayTexture(renderer, source, px, layers) {
   pinGpuTexture(renderer, source, gpuTex);
 }
 
-/** E-552: `data` (px x px rgba8unorm) into layer `layer` of the source's array texture. */
-export function writeRgba8Layer(renderer, source, data, px, layer) {
+/** E-552, E-270: `data` (px x px rgba8unorm a layer) into `layers` layers from `layer` on of the source's array texture. */
+export function writeRgba8Layers(renderer, source, data, px, layer, layers) {
   const device = renderer?.gpu?.device;
   const gpuTex = source?._gpuData?.[renderer?.uid]?.gpuTexture;
   if (!device || !gpuTex || !data || px < 1) return;
@@ -120,7 +120,7 @@ export function writeRgba8Layer(renderer, source, data, px, layer) {
     { texture: gpuTex, origin: { x: 0, y: 0, z: layer } },
     data,
     { bytesPerRow: px * RGBA8_BYTES, rowsPerImage: px },
-    { width: px, height: px, depthOrArrayLayers: 1 }
+    { width: px, height: px, depthOrArrayLayers: layers }
   );
 }
 

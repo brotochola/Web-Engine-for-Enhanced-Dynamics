@@ -1,7 +1,8 @@
 /**
  * N-256 PW-10: the blood decal grid's tiles, moved out of pixiWorker.js as they were. The decal memory's RGBA tiles (W26)
  * drawn, the stamped ones in view (the cull, on a camera move), and each frame the dirty tiles premultiplied
- * (decalPremultiply.wasm, W21c) and uploaded, a few at a time (renderer.maxDecalTileUploadsPerFrame).
+ * (decalPremultiply.wasm, W21c) and uploaded, a few at a time (renderer.maxDecalTileUploadsPerFrame), the ones whose
+ * layers follow one another in one call (E-270).
  *
  * E-552: the stamped tiles' texels are layers of array textures (a chunk holds decalChunkLayers of them), and each chunk
  * draws the tiles in view as one instanced mesh (decalTile.*): a sprite a tile made a texture of its own for each and
@@ -16,12 +17,14 @@ import { debugWorkerLog } from '../../util/debugLog.js';
 import { Buffer, BufferUsage, Geometry, GlProgram, GpuProgram, Mesh, Shader, TextureSource } from '../../vendor/pixi.min.js';
 import { premultiplyDecalTile } from '../decalPremultiplyClient.js';
 import { gpuProgramFromWgsl } from '../webgpu/pixiMeshWgsl.js';
-import { createDecalArrayTexture, writeRgba8Layer } from '../webgpu/pinGpuTexture.js';
+import { createDecalArrayTexture, writeRgba8Layers } from '../webgpu/pinGpuTexture.js';
 
 /** E-552: a chunk's array texture holds at most this many bytes of texels, so big tiles make chunks of fewer layers. */
 export const DECAL_CHUNK_BYTES = 8 << 20;
 /** E-552: a chunk has at least this many layers (WebGPU's default view of a 1-layer texture is not an array). */
 export const DECAL_CHUNK_MIN_LAYERS = 2;
+/** E-270: one upload takes at most this many bytes of tiles (at least one tile). */
+export const DECAL_RUN_BYTES = 1 << 18;
 
 /**
  * E-552: the layers of a chunk of tiles of `tilePx` texels a side: DECAL_CHUNK_BYTES' worth, at least two, at most what the
@@ -31,6 +34,11 @@ export function decalChunkLayers(tilePx, maxLayers, totalTiles) {
   const bytes = Math.max(1, tilePx * tilePx * 4);
   const byBytes = Math.floor(DECAL_CHUNK_BYTES / bytes);
   return Math.max(DECAL_CHUNK_MIN_LAYERS, Math.min(byBytes, Math.max(DECAL_CHUNK_MIN_LAYERS, maxLayers | 0), Math.max(DECAL_CHUNK_MIN_LAYERS, totalTiles | 0)));
+}
+
+/** E-270: the tiles of one upload: DECAL_RUN_BYTES' worth, at least one, at most a chunk's layers. */
+export function decalRunTiles(tilePx, layersPerChunk) {
+  return Math.max(1, Math.min(Math.floor(DECAL_RUN_BYTES / Math.max(1, tilePx * tilePx * 4)), layersPerChunk));
 }
 
 /** E-552: the array texture one chunk draws from, its instance buffer and its mesh. */
@@ -48,7 +56,6 @@ class DecalChunk {
     this.buffer = buffer;
     this.count = 0;
     this.used = 0; // layers taken
-    this.copyBuffer = null;
   }
 }
 
@@ -71,7 +78,11 @@ export class PixiDecalTiles {
     this.stamped = new Uint8Array(0);
     this.view = new Int32Array([-1, -1, -1, -1]);
     this.instancesDirty = false;
-    this.copyBuffers = null;
+    // E-270: the run of tiles the next upload takes, premultiplied, one after another: its tiles so far and the first's slot.
+    this.run = new Uint8ClampedArray(0);
+    this.runCap = 1;
+    this.runTiles = 0;
+    this.runSlot = 0;
   }
 
   /**
@@ -86,7 +97,10 @@ export class PixiDecalTiles {
     const gl = this.worker._useWebGpu ? null : this.worker.pixiApp?.renderer?.gl;
     const limits = this.worker._useWebGpu ? this.worker.pixiApp?.renderer?.gpu?.device?.limits : null;
     const maxLayers = gl ? gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) : (limits?.maxTextureArrayLayers ?? 256);
-    this.layersPerChunk = decalChunkLayers(this.worker.decalsTilePixelSize, maxLayers, tiles);
+    const px = this.worker.decalsTilePixelSize;
+    this.layersPerChunk = decalChunkLayers(px, maxLayers, tiles);
+    this.runCap = decalRunTiles(px, this.layersPerChunk);
+    this.run = new Uint8ClampedArray(this.runCap * px * px * 4);
     const shaders = this.worker._engineShaders;
     this.programOpts = this.worker._useWebGpu
       ? { gpuProgram: gpuProgramFromWgsl(GpuProgram, shaders.decalTile, 'decal-tiles') }
@@ -233,8 +247,10 @@ export class PixiDecalTiles {
   /**
    * Update decal tile textures for any dirty tiles
    * Called each frame to check for tiles modified by particle_worker
-   * Copies the SAB into a reused buffer and uploads with texSubImage2D / writeTexture.
+   * Copies the SAB into a reused buffer and uploads with texSubImage3D / writeTexture.
    * Bytes are premultiplied so they match ImageBitmap UNPACK_PREMULTIPLY.
+   * E-270: tiles claimed one after another whose layers are too go up in one call (the scan's order is the order they
+   * were first stamped in wherever a scene stamps in order).
    */
   update() {
     if (!this.worker.decalsEnabled) return;
@@ -271,6 +287,9 @@ export class PixiDecalTiles {
     let processed = 0;
     let scanned = 0;
     let tileIndex = this.nextScanIndex % totalTiles;
+    const perChunk = this.layersPerChunk;
+    const runCap = this.runCap;
+    const run = this.run;
 
     // B-03. This flag has two agents writing it from two workers: the stamp
     // side sets 1, this loop sets 0. Both transitions are atomic now, and the
@@ -289,18 +308,14 @@ export class PixiDecalTiles {
         continue;
       }
 
-      let tileRGBA = this.copyBuffers?.[tileIndex];
-      if (!tileRGBA) {
-        this.copyBuffers ??= [];
-        tileRGBA = new Uint8ClampedArray(bytesPerTile);
-        this.copyBuffers[tileIndex] = tileRGBA;
-      }
-      // The tile, premultiplied in the decal memory's scratch, into its own array for the upload.
-      premultiplyDecalTile(this.worker._decalPremultiply, tileIndex, tileRGBA);
-
       const slot = this._chunkSlot(tileIndex);
-      const chunk = this.chunks[(slot / this.layersPerChunk) | 0];
-      this._uploadLayer(chunk.source, tileRGBA, tilePixelSize, slot % this.layersPerChunk);
+      // E-270: a tile whose layer does not follow the run's, the first layer of a chunk, or one past the run's room
+      // sends the run and starts the next.
+      if (this.runTiles > 0 && (slot !== this.runSlot + this.runTiles || slot % perChunk === 0 || this.runTiles === runCap)) this._uploadRun();
+      if (this.runTiles === 0) this.runSlot = slot;
+      // The tile, premultiplied in the decal memory's scratch, after the run's others.
+      premultiplyDecalTile(this.worker._decalPremultiply, tileIndex, run, this.runTiles * bytesPerTile);
+      this.runTiles++;
       if (this.stamped[tileIndex] === 0) {
         this.stamped[tileIndex] = 1;
         this.instancesDirty = true;
@@ -311,16 +326,24 @@ export class PixiDecalTiles {
       scanned++;
     }
 
+    this._uploadRun();
     this.nextScanIndex = tileIndex;
     this.worker._decalTilesUploadedThisFrame = processed;
   }
 
-  /** E-552: `data` (a tile's premultiplied RGBA) into layer `layer` of the chunk's array texture. */
-  _uploadLayer(source, data, tilePx, layer) {
+  /** E-270: the run's tiles (premultiplied RGBA, one after another) into their layers of the chunk's array texture. */
+  _uploadRun() {
+    const layers = this.runTiles;
+    if (layers === 0) return;
+    this.runTiles = 0;
+    const source = this.chunks[(this.runSlot / this.layersPerChunk) | 0].source;
+    const layer = this.runSlot % this.layersPerChunk;
+    const data = this.run;
+    const tilePx = this.worker.decalsTilePixelSize;
     const renderer = this.worker.pixiApp?.renderer;
-    if (!renderer || !source || !data) return;
+    if (!renderer) return;
     if (this.worker._useWebGpu) {
-      writeRgba8Layer(renderer, source, data, tilePx, layer);
+      writeRgba8Layers(renderer, source, data, tilePx, layer, layers);
       return;
     }
     const gl = renderer.gl;
@@ -343,7 +366,7 @@ export class PixiDecalTiles {
     if (gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL != null) {
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
     }
-    gl.texSubImage3D(target, 0, 0, 0, layer, tilePx, tilePx, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texSubImage3D(target, 0, 0, 0, layer, tilePx, tilePx, layers, gl.RGBA, gl.UNSIGNED_BYTE, data);
     gl.bindTexture(target, prev);
   }
 }

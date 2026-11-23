@@ -79,7 +79,7 @@ test('the premultiply kernel writes what copyPremultiplyRgba writes, scalar and 
   }
 });
 
-test('premultiplyDecalTile premultiplies a tile of the decal memory into the tile\'s own array', async () => {
+test('premultiplyDecalTile premultiplies a tile of the decal memory into its place in a run of tiles (E-270)', async () => {
   const { createDecalMemory } = await import('../../src/util/decalMemory.js');
   const { bindDecalPremultiply, premultiplyDecalTile } = await import('../../src/render/decalPremultiplyClient.js');
   const m = createDecalMemory({ totalTiles: 6, tilePixelSize: 64, textures: null });
@@ -89,11 +89,12 @@ test('premultiplyDecalTile premultiplies a tile of the decal memory into the til
   const tiles = new Uint8Array(m.buffer, 0, 6 * tileBytes);
   for (let i = 0; i < tiles.length; i++) tiles[i] = (i & 3) === 3 ? [0, 255, (rng() * 256) | 0][(rng() * 3) | 0] : (rng() * 256) | 0;
   for (let t = 0; t < 6; t++) {
-    const own = new Uint8ClampedArray(tileBytes);
-    const want = new Uint8ClampedArray(tileBytes);
-    premultiplyDecalTile(b, t, own);
-    copyPremultiplyRgba(want, new Uint8ClampedArray(m.buffer, t * tileBytes, tileBytes));
-    assert.deepEqual(Buffer.from(own), Buffer.from(want), `tile ${t}`);
+    const run = new Uint8ClampedArray(3 * tileBytes).fill(0x5a);
+    const at = (t % 3) * tileBytes;
+    const want = new Uint8ClampedArray(3 * tileBytes).fill(0x5a);
+    premultiplyDecalTile(b, t, run, at);
+    copyPremultiplyRgba(want.subarray(at, at + tileBytes), new Uint8ClampedArray(m.buffer, t * tileBytes, tileBytes));
+    assert.deepEqual(Buffer.from(run), Buffer.from(want), `tile ${t}`);
   }
   assert.ok(m.layout.premultipliedByte >= 6 * tileBytes, 'the scratch tile is past the tiles');
 });

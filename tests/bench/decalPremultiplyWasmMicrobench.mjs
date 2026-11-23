@@ -81,7 +81,7 @@ export async function setupPremultiplyKernel() {
   for (let i = 3; i < stamped.length; i += 4) if (stamped[i] !== 0 && stamped[i] !== 255) partial++;
   // wasm: the shipped path (premultiplyDecalTile, as Pixi's dirty-tile sweep calls it).
   const runShipped = (n = tiles) => {
-    for (let t = 0; t < n; t++) premultiplyDecalTile(bound, t, own[t]);
+    for (let t = 0; t < n; t++) premultiplyDecalTile(bound, t, own[t], 0);
     return n;
   };
   return { tiles, runJs, runSimd: runShipped, runScalar: runWith(k.premultiply_scalar), k: { ...k, premultiply_simd: bound.premultiply }, hash, partial };
