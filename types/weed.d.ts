@@ -332,7 +332,10 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   maxPolygonVertices?: number;
   /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
   keyedCasters?: boolean;
-  /** Texels a side of a lamp's tile in the lamps' map, 32 to 1024 (default 256). The tile spans the lamp's radius. */
+  /**
+   * Texels a side of a lamp's tile in the lamps' map, 32 to 1024, the same for every lamp; 'auto' (the default): each lamp's
+   * own, by how far its shadows reach and `shadowResolution`. A tile spans twice that reach.
+   */
   lampShadowTile?: number | 'auto';
   /**
    * A lamp that stays still draws the volumes' shadows (VolumeShadowCaster) into its tile once,
