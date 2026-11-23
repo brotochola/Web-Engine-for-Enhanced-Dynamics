@@ -47,6 +47,22 @@ process 11 % lower.
 affine in its distance, so it starts from the pixel's own place and adds a step. The self-shadow pass is 4 to 5 % cheaper
 (E-424).
 
+**Each lamp pays for its own shadow map.** Every lamp's tile in the lamps' shadow map had the same size, whatever
+the lamp's reach. Each has its own now, by its reach, at most what it was. The tiles hold 52 % fewer texels by night and
+41 % fewer by day in Predator; drawing it costs 25 % less on the GTX 1650 by night and 53 % less on the HD 620 (a medium
+laptop's integrated GPU), and by day between nothing and 14 % less. Small lamps' shadow edges are a little coarser
+(E-551). The first sitting called it flat: its B side's worktree was never made, so B ran A's code, and the two
+identical map sizes it printed went unexplained at first.
+
+**A look in several passes.** A layer's shader can be a list now, `shader.passes`, where each pass draws into a target
+the next one samples, at a resolution of its own. A blur that reads 289 texels a pixel becomes a pass of rows and a pass of
+columns. The platformer's bloom went from 5.06 to 1.62 ms raw on the GTX 1650, and the raw figure is the floor: the GPU
+slows its clock when it has less to do, and at the same clock the gain is 83 % (DX-LAYERPASSES).
+
+**Drawing only the part of a tile that has blood on it** does not pay. The decal tiles' empty cells were found by a small
+WASM kernel and skipped; the HD 620's decal draws lost 0.3 to 0.7 ms of a 15 ms frame, about what its runs differ by, and
+the GTX 1650's are 0.15 ms to begin with. Dropped, with its kernel (E-553).
+
 **What today's re-measure of Chrome's GPU process says:** light3d's extra over plain is 0.35 ms a frame, where 2026-11-16
 found 2.7; an instanced draw 33 us where 79; WebGPU costs it 40 % more than WebGL at crowd 2.5, through its submits.
 
