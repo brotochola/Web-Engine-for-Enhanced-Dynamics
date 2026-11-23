@@ -11449,7 +11449,8 @@
         "R-1175",
         "R-1198",
         "R-1206",
-        "R-1230"
+        "R-1230",
+        "R-1892"
       ]
     },
     {
@@ -43274,6 +43275,15 @@
       "title": "The HD 620 by pass, main against the unified branch: the lamps' map 4.5 ms by night and 3.5 ms by day, the light pass 0.36 -> 2.00 ms by night",
       "verdict": "note",
       "text": "The ASUS's HD 620, job 0908a (2026-11-23, 12:18 to 12:22 by its log): glFrameRecorder --gpu-passes, Predator crowd 0.5,\nmain before the merge (pcmain1122c) and the unified branch (pcone1123c, at 4bbdf324), one recording each, ms a frame:\n- By night: the frame's passes 16.1 -> 19.2. Unified: the lamps' map (4096 x 1536, 7 647 instances) 4.51; the light pass\n  (480 x 270, sun map, lamps' map, faces, ids, tiles) 2.00 against main's 0.36; the G-buffer (478 x 268, 9 827) 0.92;\n  the 'add' halos 0.93 -> 0.08 (E-547). Main's classic shadow layer (480 x 270, 3 512 stamps) 0.40.\n- By day: 12.5 -> 15.9. Unified: the lamps' map (4096 x 1024, 8 771) 3.47; the G-buffer 0.79; the light pass 0.75\n  against 0.10; main's sun stamps (480 x 270, 8 574) 0.52.\nThe lamps' map is the merge's cost on that GPU, by day too; the light pass with the maps next (E-405..E-410)."
+    },
+    {
+      "id": "R-1892",
+      "date": "2026-11-23",
+      "time": "13:04",
+      "timeFrom": "recorded",
+      "title": "CR-37 done: the light pass has one path, by tiles (the loops over every light, _lightTilesOn, uLightCount and uLightTexWidth gone); pixel-identical on both backends",
+      "verdict": "kept",
+      "text": "7e30643a (main), CODE_REDUCTION_PLAN's CR-37, approved by the owner on 2026-11-23 (R-1890): E-205's tiles were set\nwherever lighting was, so the !TILES blocks of lightingBasic.frag.glsl and .wgsl ran only as gpuPass's untiled baseline.\nGone: the blocks, pixiWorker's _lightTilesOn, lightingSource's tiles flag, the two uniforms only those loops read\n(uLightCount, uLightTexWidth; WGSL's nLights and texW) and gpuPass's lightUntiled, light3dUntiled, selfShadowUntiled.\nuTileGrid and uTileWords move into the pass's base group (the struct and Pixi's group in one order: sunNight.test.js).\nThe shipped source equals the old tiled one less those dead lines (three flag sets, both backends, line by line).\ncompareCaptures --vs HEAD~1, dxCaptureScene hour 22 and 12, WebGPU and WebGL: 0 of 921 600 pixels differ in all four.\nNode suite 3590/3590. A deletion of a path that never ran: no sitting (it cannot change a verdict)."
     }
   ],
   "leads": [
