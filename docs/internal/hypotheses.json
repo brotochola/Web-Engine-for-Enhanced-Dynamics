@@ -15781,7 +15781,7 @@
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "Dropped (R-1906): after E-368 to E-370 and E-372 the frames cost pre-render 3.5-3.7 % in Predator light3d (lamp_frames ~0.3-0.4 ms), the sun's frames in the keyed scan; a GPU pick in every shadow program on both backends is not worth it.",
+      "result": "",
       "next": "Texture-id and frame tables to the GPU; every shadow program picks the frame; pre-render writes none. Predator crowd 2.5 against main, captures unchanged.",
       "refs": [
         "EXECUTION_PLAN.md#E-371"
@@ -15969,8 +15969,8 @@
     {
       "id": "N-192",
       "title": "shadowOutlineCheck: shadow outlines 2.6 to 5.8 px from the analytic projection (tolerance 1.5) on both backends; a card passes only with the sun from 225 to 315 degrees; under a lamp lower than a crate the stretch cap ends in steps",
-      "status": "open",
-      "statusText": "open: part fixed 2026-11-15 (c8963250, the floor bias), 2026-11-22 (72d7375f, the columns' width; 34852891, the check; 74bde9fa, the strips' ends) and 2026-11-23 (405125aa, the sun map's least height step: box and card pass under the sun, R-1901); the crate's columns and the lamps left",
+      "status": "kept-hygiene",
+      "statusText": "closed by the owner 2026-11-23 (R-1912): the sun's box and card pass (R-1901); the crate's cells and the lamps' map texels are resolution limits",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
@@ -15989,7 +15989,8 @@
         "R-1860",
         "R-1861",
         "R-1901",
-        "R-1905"
+        "R-1905",
+        "R-1912"
       ]
     },
     {
@@ -18422,7 +18423,8 @@
       ],
       "records": [
         "R-1174",
-        "R-1236"
+        "R-1236",
+        "R-1954"
       ],
       "rank": 14
     },
@@ -18867,11 +18869,11 @@
       "id": "E-420",
       "title": "Column casters cost the shadow maps 1 to 2 us an instance: selfShadowStressScene's sun map 2.1 ms for 1 006 instances, sunShadowMapStressScene's lamps' map 2.84 ms for 2 864",
       "status": "dropped",
-      "statusText": "dropped 2026-11-23 (R-1907): the premise (overdraw) was wrong (R-1194: vertex work, the 24 x 24 grid); the lever is E-461's",
+      "statusText": "dropped 2026-11-23 (R-1907): the premise (overdraw) was wrong (R-1194: vertex work); the lever is E-461's",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Dropped (R-1907): the columns' cost is vertex work (R-1194), not overdraw; E-461 is the lever.",
+      "result": "selfShadow: fbo#3 960 x 540 [uTexLut,uTexture] 2 draws 1 006 instances 2.115 ms; sunShadowMap lamps=48 hour=22: lamps' map 4 draws 2 864 instances 2.841 ms (Predator's: 30 700 instances in 1.2 ms).",
       "next": "The columns' quads stretched along the light cover far more texels than the column casts on (overdraw in the map): clip each to the map region its shadow can reach (as E-375 did for the lamps' tile edges), or a coarser grid for columns far from the camera.",
       "refs": [],
       "aliases": [
@@ -19852,8 +19854,8 @@
     {
       "id": "E-460",
       "title": "E-418 v2: pre-render picks each lamp's static casters apart from its per-frame nearest-first budget, so a per-tile cache of them stays valid; the map then copies the cache and draws only the moving casters, its columns compacted to the moving rows",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "status": "parked",
+      "statusText": "parked 2026-11-23 (R-1911): no scene here has many still non-volume casters per lamp",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
@@ -19866,14 +19868,15 @@
       "records": [
         "R-1210",
         "R-1212",
-        "R-1315"
+        "R-1315",
+        "R-1911"
       ]
     },
     {
       "id": "E-461",
       "title": "The lamps' map columns are vertex-bound: culled in the vertex shader they still cost 1.09 + 1.07 ms against 1.80 + 1.07 drawn (sunShadowMapStressScene lamps=48 hour=22 movers=0): the rows that cast nothing must be left out of the draw before it, or drawn with fewer cells",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "status": "parked",
+      "statusText": "parked 2026-11-23 (R-1910): the columns' vertex work is a stress-scene cost; Predator has none, the barrio's lamps' map is about 0.5 ms in all; the ceiling pass row partition is the way in if it reopens",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
@@ -19885,7 +19888,8 @@
       ],
       "records": [
         "R-1210",
-        "R-1212"
+        "R-1212",
+        "R-1910"
       ]
     },
     {
@@ -24054,7 +24058,7 @@
       "id": "DX-POSTFUSE",
       "title": "SCREEN passes that only map their pixel's colour fused into one shader (an opt-in pointwise contract), as three.js's RenderPipeline fuses every effect that samples no neighbours: each fused pass saves a full-screen read and write",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from three.js's RenderPipeline (convertToTexture inserts a target only where an effect samples neighbours) (R-1429); an API decision for the owner; not built",
+      "statusText": "owner 2026-11-23: asked whether it is automatic (the dev never notices, the picture the same, only faster), then yes; told it is opt-in, the dev marks a pass pointwise and writes weedPass (the engine cannot know a shader that reads neighbours from one that does not); waiting for the second answer",
       "date": "2026-11-18",
       "result": "",
       "next": "Contract and generation as REVIEW_PLAN.md#DX-POSTFUSE describes (shader.pointwise with a weedPass(color, uv) function, consecutive pointwise passes generated into one fragment, uniforms renamed by layer). Judged by GPU per pass (the recorders) on a three-pass grading stack, the picture identical on both backends; goes with DX-POST's phase 2.",
@@ -24142,7 +24146,7 @@
       "kind": "dx",
       "area": "render",
       "date": "2026-11-18",
-      "statusText": "proposed 2026-11-18 by E-450: the platformer's bloom could drop from about 4.3 ms to well under 1 ms with a separable blur, which a one-pass layer shader cannot do; an engine feature, the owner's call"
+      "statusText": "approved by the owner 2026-11-23 (\"si, queremos esa nueva api!\"): a layer shader in two passes, the second sampling the first (a separable blur/bloom); design, then the platformer's bloom as its measure (4.3 ms to well under 1)"
     },
     {
       "records": [
@@ -25008,16 +25012,17 @@
     {
       "records": [
         "R-1681",
-        "R-1903"
+        "R-1903",
+        "R-1909"
       ],
       "refs": [],
       "id": "E-544",
       "title": "The sun's shadow map has no static cache: every frame redraws every caster into it, also the scenery that never moves (the lamps' map keeps still volumes since E-508)",
-      "status": "open",
+      "status": "parked",
       "kind": "gpu",
       "area": "render",
       "date": "2026-11-21",
-      "statusText": "measured 2026-11-23 (R-1903): 0.46 ms GPU in Predator by day, 0.44 (+0.3 columns) in the barrio at dusk; a cache pays only with a fixed sun and a still camera; the owner's call at the end of the backlog (park until a game asks)",
+      "statusText": "parked 2026-11-23 (owner): measured (R-1903); a cache pays only with a fixed sun and a still camera; reopen when a game asks",
       "next": "Count the frames a game holds its camera still (Predator, the barrio); if they matter, a still-casters layer redrawn when the view or the static scenery changes and the movers drawn over it, as E-504 does for the colour pass."
     },
     {
@@ -25522,19 +25527,19 @@
     },
     {
       "records": [
-        "R-1891"
+        "R-1891",
+        "R-1908"
       ],
       "refs": [],
       "id": "E-551",
       "title": "The lamps' map costs the HD 620 4.5 ms of GPU a frame by night and 3.5 ms by day in Predator crowd 0.5 (4096 x 1536 and 4096 x 1024, about 8 000 instances): the unified path's largest pass there",
-      "status": "open",
+      "status": "dropped",
       "kind": "gpu",
       "area": "renderer",
       "date": "2026-11-23",
       "result": "",
-      "statusText": "filed 2026-11-23 from the ASUS job 0908a (R-1891)",
+      "statusText": "dropped 2026-11-23 (R-1908): per-lamp sides -31 % by night on the HD 620 but a loss by day; capped flat; the widest lamps' tiles fill the map; the code is on perf/e551-lamp-tiles; the owner accepted the coarser small-lamp edges (2026-11-23), kept dropped because capped it measured flat",
       "next": "Where the fill goes on the HD 620 (--gpu-draws there: the floor half, the ceiling half, the clear); then a smaller auto tile where many lamps share the atlas (the rule rounds the wanted size up), the clear of the tiles in use only, and whether a lamp whose light the sun outshines by day needs its shadows.",
-      "rank": 16,
       "aliases": [
         "lamp map HD 620",
         "lamps map weak GPU"
@@ -25542,7 +25547,8 @@
     },
     {
       "records": [
-        "R-1953"
+        "R-1953",
+        "R-1954"
       ],
       "refs": [],
       "id": "E-552",
@@ -25557,6 +25563,26 @@
       "aliases": [
         "decal tiles atlas",
         "decal batcher binds"
+      ]
+    },
+    {
+      "records": [
+        "R-1954"
+      ],
+      "refs": [],
+      "id": "E-553",
+      "title": "Decal tiles draw their whole 128 x 128 texels where a stamp covers only a few: on the HD 620 the chunks' draws are about 2.2 ms of a Predator night frame (0.15 ms on the GTX 1650)",
+      "status": "open",
+      "kind": "gpu",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "filed 2026-11-23 from E-552 (R-1954)",
+      "next": "Occupancy of each tile in 4 x 4 cells from its texels at upload (a 16 384-texel scan a tile), an instance a non-empty cell (its uv rect in the layer), so transparent cells draw nothing; the captures of decalCaptureScene must stay identical. Measure on the HD 620 (glFrameRecorder --gpu-draws).",
+      "rank": 30,
+      "aliases": [
+        "decal transparent fill",
+        "decal tile cells"
       ]
     }
   ],
@@ -43451,24 +43477,6 @@
       "text": "b27b38f4 (merged f3cf3e08): selfShadowToward projected every step from scratch (p + l t, the oblique y s - z heightScaleY,\nweedWorldToNorm's zoom and turn, the flip); a step's place is affine in t, so the walk now projects the pixel's own place\nonce and adds a step's delta, in GLSL and WGSL. ANGLE's HLSL reads slightly bigger (?light3d=1's variant 1213 -> 1230\nslots, 28 -> 29 temps: FXC had hoisted part of it already), yet gpuPassAbab (GTX 1650, half of 1080p, 32 lamps with\ntiles, 6 steps, 4 pairs, 14:27): selfShadow -3.8 % on WebGL (0.666 -> 0.641 ms), -4.9 % on WebGPU (0.854 -> 0.818 ms),\n4/4 each; light3d without self-shadow +0.2 % and +0.3 % (the control). Captures against main: houseLightScene\n(lighting.selfShadow on) and selfShadowStressScene, 0 of 921 600 pixels apart on both backends. Node 3590/3590.\nE-423's DDA (a texel-by-texel walk, a different picture) stays open, now against this stepping."
     },
     {
-      "id": "R-1906",
-      "date": "2026-11-23",
-      "time": "14:14",
-      "timeFrom": "recorded",
-      "title": "E-371 dropped: the frames cost pre-render 3.5-3.7 % in Predator light3d (lamp_frames; ~0.3-0.4 ms), the sun's now in the keyed scan; not worth rewriting every shadow program (GLSL and WGSL) for that",
-      "verdict": "dropped",
-      "text": "**E-371 dropped: after E-368 to E-370 and E-372, what the frames still cost pre-render is lamp_frames, 3.5-3.7 % of it in Predator light3d (about 0.3-0.4 ms a frame). The sun's frames now ride in the keyed pack's scan. Moving the pick into every shadow program (cards, columns, stamps; the sun's and the lamps' maps; GLSL and WGSL), with a flag per row for sheets without DirectionalSprite, is not worth that.**\n\nprofileSceneSweep --pass cpu, Predator crowd 2.5 ?light3d=1&dayCycle=0, main aa5765ac, 15 s warm-up, 8 s window, GTX 1650. Shares of pre-render's busy time:\n\n| | night (hour 22) | day (hour 12) |\n| --- | --- | --- |\n| pre-render busy | 632 ms/s | 516 ms/s |\n| emit_rows | 29.0 % | 29.2 % |\n| stamp_light_range | 27.0 % | 26.7 % |\n| collect_sprites | 13.4 % | 15.1 % |\n| pack_casters_keyed_scan_xy | 8.3 % | 9.0 % |\n| radix_select | 5.5 % | 4.7 % |\n| lamp_frames | 3.7 % | 3.5 % |\n\nNo sun-frame function is listed by day: E-370/E-372 write the frame in the keyed scan. The 2026-11-15 premise was about 1 ms (11 % of pre-render, R-1155); about a third of it is left.\n\nReopen if a scene with many directional casters and lamps shows lamp_frames far larger."
-    },
-    {
-      "id": "R-1907",
-      "date": "2026-11-23",
-      "time": "14:20",
-      "timeFrom": "recorded",
-      "title": "E-420 dropped: its premise (overdraw) was measured wrong by R-1194 (the columns are vertex-bound); the lever is E-461's",
-      "verdict": "dropped",
-      "text": "**E-420 dropped: its premise (the column quads stretched over far more texels than their shadow: overdraw) was measured wrong by R-1194. Under a 1 px scissor the sun map's columns keep 1.28 of their 2.09 ms, and the lamps' map's keep all of theirs: the cost is the 24 x 24 grid's vertex work, 2 304 invocations an instance.** That lever is E-461's: leave out the instances that cast nothing, or draw only a frame's solid cells. E-447, a grid per frame size, was reverted, because the frames there span about 35 map texels."
-    },
-    {
       "id": "R-1899",
       "date": "2026-11-23",
       "time": "14:36",
@@ -43512,6 +43520,78 @@
       "title": "E-552 kept: decal tiles from array textures, one instanced mesh a chunk: Chrome's GPU process main thread -73 % by night and -32 % by day, GL calls 1746 -> 330 a frame in Predator light3d",
       "verdict": "kept",
       "text": "e55682b9 (merged cdc6c556): src/render/pixi/decalTiles.js. The stamped decal tiles' texels are layers of 2D array textures (a\nchunk of at most 8 MB), each chunk draws the tiles in view as an instanced mesh (decalTile.vert.glsl, .frag.glsl, .wgsl);\ninstances rebuilt when the view's tile range moves or a tile is stamped. A sprite a tile, each with its own texture, had\nPixi's sixteen-unit batcher rebind them every frame.\n- GL calls a frame (glFrameRecorder, 3 s): Predator ?light3d=1&hour=22&crowd=0.5 1746 -> 330 (bindTexture 732 -> 38,\n  activeTexture 714 -> 19); crowd 2.5 by day 625 -> 245.\n- Chrome's GPU process main thread (gpuProcessTrace, untraced, GTX 1650, main e85c2304 against it, ABAB), 15:46 by the result file: light3d night\n  crowd 0.5 539 -> 145 ms/s (-73 %, 4/4), PutChanged 482 -> 93 ms/s; crowd 2.5 day 287 -> 194 ms/s (-32 %, 3/3),\n  PutChanged 229 -> 139 ms/s.\n- Predator gate (light3d night crowd 0.5 from the restored save, 4 pairs, 15:38 by the result files): NEUTRAL, every worker below the 6 ms\n  floor (a quiet save: physics 0.5 ms); the renderer 1.115 -> 0.962 ms (-14 %), presented 60.0 both, so the gate judges\n  nothing but shows no regression.\n- Captures against main: decalCaptureScene (new: seeded decals over the whole world, a still floor) at ?resolution=2 (512 px\n  tiles, several chunks) and ?zoom=2, and with no query, WebGL and WebGPU: 0 of 921 600 pixels apart in all six. An A/A of\n  the scene reads 0 too. Node 3593/3593, demos 143/143.\nE-270 (tiles copied whole per stamp) is untouched: the upload is still the whole tile."
+    },
+    {
+      "id": "R-1906",
+      "date": "2026-11-23",
+      "time": "14:14",
+      "timeFrom": "recorded",
+      "title": "E-371 dropped: the frames cost pre-render 3.5-3.7 % in Predator light3d (lamp_frames; ~0.3-0.4 ms), the sun's now in the keyed scan; not worth rewriting every shadow program (GLSL and WGSL) for that",
+      "verdict": "dropped",
+      "text": "**E-371 dropped: after E-368 to E-370 and E-372, what the frames still cost pre-render is lamp_frames, 3.5-3.7 % of it in Predator light3d (about 0.3-0.4 ms a frame). The sun's frames now ride in the keyed pack's scan. Moving the pick into every shadow program (cards, columns, stamps; the sun's and the lamps' maps; GLSL and WGSL), with a flag per row for sheets without DirectionalSprite, is not worth that.**\n\nprofileSceneSweep --pass cpu, Predator crowd 2.5 ?light3d=1&dayCycle=0, main aa5765ac, 15 s warm-up, 8 s window, GTX 1650. Shares of pre-render's busy time:\n\n| | night (hour 22) | day (hour 12) |\n| --- | --- | --- |\n| pre-render busy | 632 ms/s | 516 ms/s |\n| emit_rows | 29.0 % | 29.2 % |\n| stamp_light_range | 27.0 % | 26.7 % |\n| collect_sprites | 13.4 % | 15.1 % |\n| pack_casters_keyed_scan_xy | 8.3 % | 9.0 % |\n| radix_select | 5.5 % | 4.7 % |\n| lamp_frames | 3.7 % | 3.5 % |\n\nNo sun-frame function is listed by day: E-370/E-372 write the frame in the keyed scan. The 2026-11-15 premise was about 1 ms (11 % of pre-render, R-1155); about a third of it is left.\n\nReopen if a scene with many directional casters and lamps shows lamp_frames far larger."
+    },
+    {
+      "id": "R-1907",
+      "date": "2026-11-23",
+      "time": "14:20",
+      "timeFrom": "recorded",
+      "title": "E-420 dropped: its premise (overdraw) was measured wrong by R-1194 (the columns are vertex-bound); the lever is E-461's",
+      "verdict": "dropped",
+      "text": "**E-420 dropped: its premise (the column quads stretched over far more texels than their shadow: overdraw) was measured wrong by R-1194. Under a 1 px scissor the sun map's columns keep 1.28 of their 2.09 ms, and the lamps' map's keep all of theirs: the cost is the 24 x 24 grid's vertex work, 2 304 invocations an instance.** That lever is E-461's: leave out the instances that cast nothing, or draw only a frame's solid cells. E-447, a grid per frame size, was reverted, because the frames there span about 35 map texels."
+    },
+    {
+      "id": "R-1908",
+      "date": "2026-11-23",
+      "time": "16:05",
+      "timeFrom": "recorded",
+      "title": "E-551 dropped: per-lamp tile sides take the lamps' map -31 % by night on the HD 620 uncapped and lose by day, and capped measure flat; the per-tile plumbing (5bb84592) and the sides (8419b32d, 04eb2737) stay on perf/e551-lamp-tiles, unmerged",
+      "verdict": "dropped",
+      "text": "**E-551 dropped after two versions: per-lamp tiles (perf/e551-lamp-tiles, unmerged) take a third off the lamps' map by night without a cap and lose by day, and with the cap (no lamp above the uniform rule's side) measure flat on the HD 620.** The per-tile plumbing stays in the branch, not main.\n\n**Where the pass goes (0910a, HD 620, Predator crowd 0.5, --gpu-draws, per drawn frame).** By night the floor half's draw about 4.1 ms, the ceiling half's 2.4, the clear 1.1; by day 1.95, 2.3 and 0.7. The ceiling half does real work (low lamps under taller people). A 4x smaller atlas (lampTile=128, 0912a) ran in 0.96-1.03 ms against 3.5-5.0: the cost goes with the texels.\n\n**Stage 1** (5bb84592): each tile's rect carried per tile in the light pass's tag and the tiles' texture, the layout planned before the light data is packed; byte-for-byte equal. **Stage 2** (8419b32d): each lamp's side from its own reach, shelf-packed. **Capped** (04eb2737): a side at most the uniform rule's.\n\n| HD 620, lamps' map ms, ABAB | pairs | before (fa502a11) | after |\n| --- | --- | --- | --- |\n| uncapped, night | 3 | 4.34 / 3.32 / 4.30 | 2.53 / 3.12 / 2.56 (-31 %, 3/3) |\n| uncapped, day | 2 | 2.24 / 4.42 | 7.12 / 4.29 |\n| capped, night | 3 | 3.11 / 3.88 / 4.44 | 3.69 / 3.42 / 4.57 (+2 %) |\n| capped, day | 2 | 3.94 / 2.94 | 2.81 / 4.09 (flat) |\n\nRuns on that laptop swing 2x between pairs. The cap removes the day's loss and with it the gain: what fills the map is the wide lamps' tiles (the fires', the explosions'), which the cap leaves as they were; only the narrow lamps' tiles shrink. Wide lamps at lower density would need a quality trade (coarser wide shadows), or a game's shadowResolution; DX-AUTOQUALITY is where an automatic one would live.\n\nRaw files: the ASUS's C:\\weedlab\\logs\\0910a-*, 0912a-*, 0913a-*, 0914a-*. node 3593/3593 on the branch."
+    },
+    {
+      "id": "R-1909",
+      "date": "2026-11-23",
+      "time": "16:06",
+      "timeFrom": "recorded",
+      "title": "E-544 parked (owner, 2026-11-23): a sun-map cache of still casters pays only with a fixed sun and a still camera; reopen when a game asks (R-1903's numbers)",
+      "verdict": "parked",
+      "text": "**E-544 measured: the sun's map costs 0.46 ms of GPU a frame in Predator by day and 0.44 ms (+0.3 ms of columns) in the barrio at dusk (GTX 1650 at P0). A cache of still casters holds only while the camera and the sun stand still, and both demos run a day cycle, so it would save nothing there.**\n\nglFrameRecorder --gpu-passes:\n\n- **Predator** (crowd 2.5, hour 12, dayCycle=0): the sun map (496 x 302) draws 34 428 instances in 0.459 ms. They are mostly people, which move. GPU 37 % busy.\n- **The barrio** (hour 17.5, default): the sun map (1408 x 764 with long dusk margins) draws 375 instances, the houses, in 0.439 ms. A 3072 x 425 pass adds 0.28-0.38 ms.\n\nWhat a cache would need: the still casters' map (colour and depth) kept and copied under the movers each frame, as E-508 does for the lamps' tiles; pre-render to tell still casters from movers; and invalidation when the view, the sun or the static scenery changes.\n\nIt pays only in a game with a fixed sun and a camera that holds still (a strategy game's), up to about 0.4 ms of GPU on this card. My recommendation: park it until such a game asks; the owner's call at the end of the backlog."
+    },
+    {
+      "id": "R-1910",
+      "date": "2026-11-23",
+      "time": "16:06",
+      "timeFrom": "recorded",
+      "title": "E-461 parked: the lamps' map columns are a stress-scene cost; Predator's map has none, the barrio's is about 0.5 ms in all; reopen with a scene that has many height-mapped casters under lamps",
+      "verdict": "parked",
+      "text": "**E-461 parked: the lamps' map's columns cost vertex work only where height-mapped casters stand under lamps, and no game scene here has that at a cost that matters.** Predator's lamps' map draws no columns (its people are cards; keyed rows carry none), the barrio's whole lamps' map is about 0.5 ms of GPU on the GTX 1650 (403 instances, 2026-11-23). It stays a stress-scene number (sunShadowMapStressScene lamps=48: 1.09 + 1.07 ms).\n\nA way in if it reopens: the ceiling half's draw runs all 24 x 24 cells for rows whose caster stands wholly below its lamp (nothing lands there), so compactColumnRows could put those rows last and draw the ceiling with the first instances only."
+    },
+    {
+      "id": "R-1911",
+      "date": "2026-11-23",
+      "time": "16:06",
+      "timeFrom": "recorded",
+      "title": "E-460 parked: still casters apart from the budget pays only where many non-volume casters stand still under lamps, which no scene here has (Predator's casters move every frame, E-508 caches the volumes)",
+      "verdict": "parked",
+      "text": "**E-460 parked: still casters apart from the budget.** Its best case is the sunShadowMap stress scene at night (E-418's attempt: about 2.2 ms saved less 0.6-0.7 ms for the blit). Predator's casters move every frame, so a tile's cache would rarely hold; the still volumes (houses) already have E-508's cache. No scene here has many still, non-volume casters per lamp."
+    },
+    {
+      "id": "R-1954",
+      "date": "2026-11-23",
+      "time": "16:04",
+      "timeFrom": "recorded",
+      "title": "The HD 620 per draw after E-552 (Predator crowd 0.5, 1080p): the screen's pass 8.7 ms by night and 9.6 by day, of it entity sprites 1.94 ms, tilemap 1.35, light composite 1.0, decal tiles 2.2",
+      "verdict": "note",
+      "text": "ASUS job 0915a (16:02 to 16:04 by its result files; main e5823a55, glFrameRecorder --gpu-draws, 4 s after 20 s; a recorded frame each, the pass x 0.5 to 1.1 a\nframe), ms a frame:\n- Night (hour 22), 16.0 ms: the screen's pass 8.68 (36.2 draws before E-552, 7.3 now; 10.24 ms then, R-1891's recorder), the\n  lamps' map 2.72, the light pass 1.58, the unshaded screen pass 1.49, the G-buffer 0.77, the sun map 0.19. In the screen's\n  pass: the entity sprites (prog uTexLut, uStatics, uPoses, uTexture) 1.94 at 7 223 instances, the tilemap 1.35, the light\n  layer's composite 1.00 (x 0.7), the decal chunks 2.20 (seven, 57 to 61 tiles each), the unshaded layer 0.51 (x 0.7).\n- Day (hour 12), 15.8 ms: the screen's pass 9.60, the lamps' map 3.11, the unshaded 1.01, the G-buffer 0.70, the light pass\n  0.64.\nThe GTX 1650 of this PC, same scene: 5.36 ms of draws a frame; the decal chunks 0.15 ms, the entity sprites 1.24, the tilemap\n0.92, so only the HD 620 feels the decals' fill (E-553)."
+    },
+    {
+      "id": "R-1912",
+      "date": "2026-11-23",
+      "time": "16:35",
+      "timeFrom": "recorded",
+      "title": "N-192 closed by the owner: the sun's box and card pass on both backends; the crate's columns' cells (3.75 px) and the lamps' map's texels (up to 2 floor px) are resolution limits",
+      "verdict": "kept-hygiene",
+      "text": "**N-192 closed by the owner (2026-11-23): the sun's box and card pass on both backends since part four (R-1901); what is left is resolution, not errors.**\n\n- **The crate (a render with a height map) under the sun at 1.8-2.5 px:** its shadow's edge steps in its columns' cells, 24 x 24 of 3.75 px (E-379's grid), over the exact outline drawn on the captures (a picture for the owner). Finer cells cost vertices (R-1194: 2 304 vertex invocations an instance whatever its frame's size).\n- **The box and the card under lamps at 1.5-2.2 px:** the lamps' map's texels are up to 2 floor px (lampShadowTile auto, shadowResolution 1), and the lookup is in the light pass.\n\nshadowOutlineCheck keeps failing its 1.5 px on those (a bench, not a CI gate): the numbers above are the expected state, and a later change that beats them should move its tolerance there."
     }
   ],
   "leads": [
