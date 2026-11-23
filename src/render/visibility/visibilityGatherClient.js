@@ -103,7 +103,8 @@ export async function bindVisibilityGather(memory, v, vm) {
 /**
  * The column table for this frame (the published pose generations move each frame) and b.gather for the
  * neighbour rows' width. False when a column the gather reads is not in the memory, or a row could hold more
- * neighbours than the event records: the JS gather runs instead.
+ * neighbours than the event records: no wall stops a lamp that frame, and pre-render says so once (CR-38: there is
+ * no JS gather; its twin for the tests is tests/reference/visibilityGatherJs.mjs).
  */
 export function writeGatherColumns(b, worker, Grid, Transform, Collider, LightOccluder, ColliderFixture, selfLit, occCodeByte = 0) {
   const t = b.table;

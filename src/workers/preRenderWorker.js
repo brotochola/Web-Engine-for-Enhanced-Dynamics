@@ -34,14 +34,10 @@ import {
     bindPolarBins,
     clearPolarBins,
     ensureCompoundSolid,
-    OCC_CIRCLE,
-    OCC_POLY,
     POLAR_BINS,
     polarBinsActive,
     skipPolarBins,
     warnSweepOverflow,
-    writeOrientedBoxVerts,
-    writePolygonVerts,
 } from '../render/visibility/angularSweep.js';
 import {
     GATHER_EVENT_F64,
@@ -87,7 +83,6 @@ import {
     DECORATION_Y_SORT_SCALE,
     ENTITY_GLOW_SORT_BIAS,
     PARTICLE_SORT_BIAS,
-    ShapeType,
     MAX_POLYGON_VERTICES,
     resolveZenithalMaxHeight,
 } from '../util/configDefaults.js';
@@ -1782,6 +1777,7 @@ class PreRenderWorker extends AbstractWorker {
         this._warnedShadowSpriteCap = false;
         this._warnedVisibilityPolygonLightCap = false;
         this._warnedVisibilityPolygonOccluderCap = false;
+        this._warnedVisibilityGatherColumns = false;
         this._renderQueueOverflowWarned = false;
         this._adobeRenderQueueOverflowWarned = false;
         this._missingTextureWarns = null;
@@ -1842,7 +1838,8 @@ class PreRenderWorker extends AbstractWorker {
         // no compound solid comes, and collectSolidRefused says so if one does.
         this._visCollectSolid = collectSolidRefused;
         // W2b: the light's neighbour gather in visibilityGather.wasm (bindVisibilityGather's binding), with the
-        // visibility memory placed in the engine block; null gathers in JS (the spatial memory outside the block).
+        // visibility memory placed in the engine block; null when the scene lays out no gather (CR-38: then no wall
+        // stops a lamp; there is no JS gather).
         this._visGather = null;
         this._decorationZoomAlpha = 1;
         this._emitWriteCount = 0;
@@ -2527,7 +2524,9 @@ class PreRenderWorker extends AbstractWorker {
      * W1: with a fixture pool the memory also holds the compound solids' outlines, and solidSegments.wasm rasters
      * them into its bins.
      * W2b: when the scene laid the gather's regions in the engine block with these options, the memory is placed
-     * there and visibilityGather.wasm is bound on it; otherwise it is a memory of its own and the JS gathers.
+     * there and visibilityGather.wasm is bound on it. Otherwise (no LightOccluder, no spatial worker) it is a memory
+     * of its own and no wall stops a lamp: CR-38 removed the JS gather. A placement the scene laid out but that
+     * fails is said once.
      */
     async _bindVisibilitySweep(maxVerts, data) {
         const opts = visibilityMemoryOpts({
@@ -2544,6 +2543,9 @@ class PreRenderWorker extends AbstractWorker {
         if (!vm && place) {
             place = null;
             vm = createVisibilityMemory(opts, null);
+            console.warn('[PRE_RENDER] walls: the visibility memory could not be placed in the engine memory, so no wall casts a shadow. This is an engine bug: please report it.');
+        } else if (v && !place) {
+            console.warn('[PRE_RENDER] walls: the scene laid out the visibility gather for other options than pre-render\'s, so no wall casts a shadow. This is an engine bug: please report it.');
         }
         if (!vm) {
             throw new Error('[PRE_RENDER] the visibility memory could not be made (a shared WebAssembly.Memory was refused): '
@@ -5755,8 +5757,8 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * W2a, OL-4. The light loop: each casting lamp's walls gathered (visibilityGather.wasm where the scene placed its
-     * regions in the engine block, else the JS below) into the scratch on the visibility memory, one call a lamp for
+     * W2a, OL-4. The light loop: each casting lamp's walls gathered in visibilityGather.wasm (CR-38: the only gather;
+     * its JS twin is tests/reference/visibilityGatherJs.mjs) into the scratch on the visibility memory, one call a lamp for
      * the sweep and the polar clip in visibilitySweep.wasm, and the lamp's row for the light pass from the polygon it
      * left.
      */
@@ -5795,22 +5797,9 @@ class PreRenderWorker extends AbstractWorker {
         // Optional SoA may be absent when scene never registered LightEmitter / LightOccluder
         if (!LightEmitter.active || !LightOccluder.active || !Collider.active) return;
 
-        const transformActive = Transform.active;
-        const occluderActive = LightOccluder.active;
         const occluderBlock = LightOccluder.block;
-        const colliderActive = Collider.active;
-        const shapeType = Collider.shapeType;
-        const colRadius = Collider.radius;
-        const colWidth = Collider.width;
-        const colHeight = Collider.height;
         const colOffX = Collider.offsetX;
         const colOffY = Collider.offsetY;
-        const polyCountArr = Collider.polyCount;
-        const polyVertX = Collider.polyVertexX;
-        const polyVertY = Collider.polyVertexY;
-        const polyCentroidX = Collider.polyCentroidX;
-        const polyCentroidY = Collider.polyCentroidY;
-        const fixtureCountArr = Collider.fixtureCount;
         const fixtureHead = ColliderFixture.head;
         const fixtureNext = ColliderFixture.next;
         const fixtureActiveArr = ColliderFixture.active;
@@ -5823,19 +5812,10 @@ class PreRenderWorker extends AbstractWorker {
         const lightRadius = LightEmitter.radius;
         const lightCasts = LightEmitter.castShadows;
 
-        const neighborData = Grid.neighborData;
-        const stride = Grid._stride;
-
         const maxVerts = this._vpMaxVerts;
         const maxLts = this._vpMaxLights;
-        const kind = this._vpOccKind;
-        const cX = this._vpCircleX;
-        const cY = this._vpCircleY;
-        const cR = this._vpCircleR;
         const vertStart = this._vpVertStart;
         const vertCountArr = this._vpVertCount;
-        const vertsX = this._vpVertsX;
-        const vertsY = this._vpVertsY;
         const maxOccluders = this._vpMaxOccluders;
         const outX = this._vpOutX;
         const outY = this._vpOutY;
@@ -5870,13 +5850,22 @@ class PreRenderWorker extends AbstractWorker {
         // this frame (the published pose generations move); the compound solids come back as events, in neighbour
         // order, and the kernel writes each packed occluder's code itself (OL-12).
         const gk = this._visGather;
-        const gatherOn = gk !== null
-            && writeGatherColumns(gk, this, Grid, Transform, Collider, LightOccluder, ColliderFixture, false, this._wallOccCodeByte);
-        const gatherRes = gatherOn ? gk.results : null;
-        const evI32 = gatherOn ? gk.eventsI32 : null;
-        const evF64 = gatherOn ? gk.eventsF64 : null;
+        // CR-38: the kernel's gather is the only one (pre-render's JS gather went). A scene that lays out no gather has
+        // no wall to stop a lamp (no LightOccluder: the return above; no spatial worker: no neighbour rows), so it
+        // publishes no row. A column outside the engine memory is an engine bug, said once: no wall stops a lamp then.
+        if (gk === null) return;
+        if (!writeGatherColumns(gk, this, Grid, Transform, Collider, LightOccluder, ColliderFixture, false, this._wallOccCodeByte)) {
+            this._warnOnce(
+                '_warnedVisibilityGatherColumns',
+                '[PRE_RENDER] walls: a column the visibility gather reads is not in the engine memory, so no wall casts a shadow. This is an engine bug: please report it.'
+            );
+            return;
+        }
+        const gatherRes = gk.results;
+        const evI32 = gk.eventsI32;
+        const evF64 = gk.eventsF64;
         // N-158: each light's doubles go to the kernel through this block, not as arguments (E-85).
-        const gatherArgs = gatherOn ? gk.args : null;
+        const gatherArgs = gk.args;
 
         // The sweep marks no seen owner (the old fan pass's self-lit fills read them).
         sweepTable[SWEEP_OWNER_SEEN] = 0;
@@ -5932,194 +5921,50 @@ class PreRenderWorker extends AbstractWorker {
                 e2y /= l2;
             }
 
-            let occCount = 0;
-            let vertPool = 0;
-            let occluderLimitHit = false;
-            if (!gatherOn) clearPolarBins(influenceRadius);
-
-            if (gatherOn) {
-                // The bins are cleared before the light's first solid rasters; a light with none leaves them.
-                skipPolarBins();
-                let binsCleared = false;
-                gatherArgs[0] = lx;
-                gatherArgs[1] = ly;
-                gatherArgs[2] = influenceRadius;
-                gatherArgs[3] = this._poseAlpha;
-                if (cone) {
-                    gatherArgs[4] = e1x;
-                    gatherArgs[5] = e1y;
-                    gatherArgs[6] = e2x;
-                    gatherArgs[7] = e2y;
-                }
-                occCount = cone
-                    ? gk.gatherCone(gk.tableByte, lightIdx, coneCos < 0 ? 1 : 0)
-                    : gk.gather(gk.tableByte, lightIdx);
-                occluderLimitHit = gatherRes[3] !== 0;
-                const events = gatherRes[2];
-                for (let e = 0; e < events; e++) {
-                    // A compound solid, the only event the kernel sends: it names the packed occluders itself.
-                    const ei = e * GATHER_EVENT_I32;
-                    if (evI32[ei] !== GATHER_EV_SOLID) continue;
-                    const ef = e * GATHER_EVENT_F64;
-                    const nIdx = evI32[ei + 1];
-                    if (!binsCleared) {
-                        clearPolarBins(influenceRadius);
-                        binsCleared = true;
-                    }
-                    const solid = ensureCompoundSolid(
-                        nIdx,
-                        fixtureRevision ? fixtureRevision[0] : 0,
-                        fixtureHead, fixtureNext, fixtureActiveArr,
-                        fixtureVertCount, fixtureVertX, fixtureVertY,
-                        fixtureHead[nIdx], fixturePoolMax
-                    );
-                    SOLID_ARGS[0] = evF64[ef + 2];
-                    SOLID_ARGS[1] = evF64[ef + 3];
-                    SOLID_ARGS[2] = evF64[ef + 4];
-                    SOLID_ARGS[3] = evF64[ef + 5];
-                    SOLID_ARGS[4] = colOffX[nIdx] || 0;
-                    SOLID_ARGS[5] = colOffY[nIdx] || 0;
-                    collectSolid(solid, nIdx);
-                }
-            } else if (neighborData && stride > 0) {
-                const offset = lightIdx * stride;
-                const nCount = neighborData[offset];
-                for (let k = 0; k < nCount; k++) {
-                    if (occCount >= maxOccluders) {
-                        occluderLimitHit = true;
-                        break;
-                    }
-                    const nIdx = neighborData[offset + 1 + k];
-                    if (!transformActive[nIdx] || !occluderActive[nIdx] || !colliderActive[nIdx]) continue;
-                    if (occluderBlock && !(occluderBlock[nIdx] > 0)) continue;
-
-                    this._displayPose(nIdx, pose);
-                    const wx = pose[0];
-                    const wy = pose[1];
-                    const c = pose[2];
-                    const s = pose[3];
-
-                    const shape = shapeType[nIdx];
-                    if (shape === ShapeType.Chain) continue;
-                    const ox = colOffX[nIdx] || 0;
-                    const oy = colOffY[nIdx] || 0;
-                    const nFixtures = fixtureCountArr ? (fixtureCountArr[nIdx] | 0) : 0;
-                    if (nFixtures > 0 && fixtureHead && nIdx < fixtureHead.length) {
-                        const lcx = polyCentroidX ? polyCentroidX[nIdx] : 0;
-                        const lcy = polyCentroidY ? polyCentroidY[nIdx] : 0;
-                        const centX = wx + c * (ox + lcx) - s * (oy + lcy);
-                        const centY = wy + s * (ox + lcx) + c * (oy + lcy);
-                        const hw = (colWidth[nIdx] || 0) * 0.5;
-                        const hh = (colHeight[nIdx] || 0) * 0.5;
-                        const reach = Math.sqrt(hw * hw + hh * hh);
-                        const cdx = centX - lx;
-                        const cdy = centY - ly;
-                        const bound = influenceRadius + reach;
-                        if (cdx * cdx + cdy * cdy > bound * bound) continue;
-
-                        const solid = ensureCompoundSolid(
-                            nIdx,
-                            fixtureRevision ? fixtureRevision[0] : 0,
-                            fixtureHead, fixtureNext, fixtureActiveArr,
-                            fixtureVertCount, fixtureVertX, fixtureVertY,
-                            fixtureHead[nIdx], fixturePoolMax
-                        );
-                        SOLID_ARGS[0] = wx;
-                        SOLID_ARGS[1] = wy;
-                        SOLID_ARGS[2] = c;
-                        SOLID_ARGS[3] = s;
-                        SOLID_ARGS[4] = ox;
-                        SOLID_ARGS[5] = oy;
-                        collectSolid(solid, nIdx);
-                        continue;
-                    }
-                    const occX = wx + ox;
-                    const occY = wy + oy;
-                    const dx = occX - lx;
-                    const dy = occY - ly;
-                    let reach = 0;
-                    if (shape === ShapeType.Circle) {
-                        reach = colRadius[nIdx] || 0;
-                    } else {
-                        const hw = (colWidth[nIdx] || 0) * 0.5;
-                        const hh = (colHeight[nIdx] || 0) * 0.5;
-                        // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
-                        // Measured ~16x cheaper (5/5 counterbalanced rounds, 1e-3..1e7). NOT
-                        // bit-identical to hypot: it agrees on ~64% of in-range pairs and differs by
-                        // a few ulps on the rest, because hypot is deliberately the more accurate of
-                        // the two. That is ~1e-16 relative, far under the Float32 this value is
-                        // stored into. Overflow is unreachable (Float64 squares overflow past ~1.34e154).
-                        // Do not reintroduce hypot here without measuring it again.
-                        reach = Math.sqrt(hw * hw + hh * hh);
-                    }
-                    const maxReach = influenceRadius + reach;
-                    if (dx * dx + dy * dy > maxReach * maxReach) continue;
-
-                    let packed = false;
-
-                    if (shape === ShapeType.Circle) {
-                        const r = colRadius[nIdx];
-                        if (!(r > 0)) continue;
-                        kind[occCount] = OCC_CIRCLE;
-                        cX[occCount] = wx + ox;
-                        cY[occCount] = wy + oy;
-                        cR[occCount] = r;
-                        vertStart[occCount] = 0;
-                        vertCountArr[occCount] = 0;
-                        packed = true;
-                    } else if (shape === ShapeType.Box) {
-                        const w = colWidth[nIdx];
-                        const h = colHeight[nIdx];
-                        if (!(w > 0) || !(h > 0)) continue;
-                        kind[occCount] = OCC_POLY;
-                        vertStart[occCount] = vertPool;
-                        writeOrientedBoxVerts(
-                            vertsX, vertsY, vertPool,
-                            wx, wy, w, h, c, s, ox, oy
-                        );
-                        vertCountArr[occCount] = 4;
-                        vertPool += 4;
-                        packed = true;
-                    } else if (shape === ShapeType.Polygon) {
-                        const pc = polyCountArr[nIdx] | 0;
-                        if (pc >= 3) {
-                            kind[occCount] = OCC_POLY;
-                            vertStart[occCount] = vertPool;
-                            const base = nIdx * MAX_POLYGON_VERTICES;
-                            writePolygonVerts(
-                                vertsX, vertsY, vertPool,
-                                wx, wy, c, s, ox, oy,
-                                polyVertX, polyVertY, base, pc
-                            );
-                            vertCountArr[occCount] = pc;
-                            vertPool += pc;
-                            packed = true;
-                        } else {
-                            // Fallback to box extents when poly not filled
-                            const w = colWidth[nIdx];
-                            const h = colHeight[nIdx];
-                            if (!(w > 0) || !(h > 0)) continue;
-                            kind[occCount] = OCC_POLY;
-                            vertStart[occCount] = vertPool;
-                            writeOrientedBoxVerts(
-                                vertsX, vertsY, vertPool,
-                                wx, wy, w, h, c, s, ox, oy
-                            );
-                            vertCountArr[occCount] = 4;
-                            vertPool += 4;
-                            packed = true;
-                        }
-                    }
-
-                    if (!packed) continue;
-
-                    // The code its edges carry in the lamp's row (its entity and how much it blocks); the gather's kernel
-                    // writes the same (OL-12).
-                    wallOccCode[occCount] = wallEdgeCode(gbufEntityId(nIdx), occluderBlock[nIdx]);
-
-                    occCount++;
-                }
+            // The bins are cleared before the light's first solid rasters; a light with none leaves them.
+            skipPolarBins();
+            let binsCleared = false;
+            gatherArgs[0] = lx;
+            gatherArgs[1] = ly;
+            gatherArgs[2] = influenceRadius;
+            gatherArgs[3] = this._poseAlpha;
+            if (cone) {
+                gatherArgs[4] = e1x;
+                gatherArgs[5] = e1y;
+                gatherArgs[6] = e2x;
+                gatherArgs[7] = e2y;
             }
+            const occCount = cone
+                ? gk.gatherCone(gk.tableByte, lightIdx, coneCos < 0 ? 1 : 0)
+                : gk.gather(gk.tableByte, lightIdx);
+            const occluderLimitHit = gatherRes[3] !== 0;
+            const events = gatherRes[2];
+            for (let e = 0; e < events; e++) {
+                // A compound solid, the only event the kernel sends: it names the packed occluders itself.
+                const ei = e * GATHER_EVENT_I32;
+                if (evI32[ei] !== GATHER_EV_SOLID) continue;
+                const ef = e * GATHER_EVENT_F64;
+                const nIdx = evI32[ei + 1];
+                if (!binsCleared) {
+                    clearPolarBins(influenceRadius);
+                    binsCleared = true;
+                }
+                const solid = ensureCompoundSolid(
+                    nIdx,
+                    fixtureRevision ? fixtureRevision[0] : 0,
+                    fixtureHead, fixtureNext, fixtureActiveArr,
+                    fixtureVertCount, fixtureVertX, fixtureVertY,
+                    fixtureHead[nIdx], fixturePoolMax
+                );
+                SOLID_ARGS[0] = evF64[ef + 2];
+                SOLID_ARGS[1] = evF64[ef + 3];
+                SOLID_ARGS[2] = evF64[ef + 4];
+                SOLID_ARGS[3] = evF64[ef + 5];
+                SOLID_ARGS[4] = colOffX[nIdx] || 0;
+                SOLID_ARGS[5] = colOffY[nIdx] || 0;
+                collectSolid(solid, nIdx);
+            }
+
             if (occluderLimitHit) {
                 this._warnOnce(
                     '_warnedVisibilityPolygonOccluderCap',
