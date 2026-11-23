@@ -25348,6 +25348,44 @@
         "lamp map atlas churn",
         "lamps map remade every frame"
       ]
+    },
+    {
+      "records": [
+        "R-1877"
+      ],
+      "refs": [],
+      "id": "E-548",
+      "title": "The lamps' map's ceiling half runs its card program for every stamp row and leaves out, after the vertex work, each row under its lamp: 0.44 ms of GPU a frame in Predator light3d by night, thought wasted",
+      "status": "dropped",
+      "kind": "gpu",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "Dropped: half the rows reach above their lamp under Predator's oblique camera (6 700 of 13 300), and the ceiling's draw over them alone took 0.43 ms against 0.444: the rows it left out were cheap",
+      "statusText": "dropped 2026-11-23 (R-1877); found N-417 on the way",
+      "next": "",
+      "aliases": [
+        "lamp map ceiling rows",
+        "ceiling half culled rows"
+      ]
+    },
+    {
+      "records": [
+        "R-1877"
+      ],
+      "refs": [],
+      "id": "N-417",
+      "title": "The keyed statics' CPU copy (staticsMirror, E-395) read every value as NaN (its float views set to empty arrays after they were made) and, begun late, missed every slot that never changed again: the renders' columns over keyed caster rows found no render",
+      "status": "kept",
+      "kind": "bug",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "The views stay and a keyed WebGL batch makes the copy with its statics texture (4bbdf324)",
+      "statusText": "kept 2026-11-23 on exp/one-shadow-path (4bbdf324, R-1877), merges with E-531",
+      "next": "",
+      "aliases": [
+        "statics mirror NaN",
+        "keyed statics copy wrong"
+      ]
     }
   ],
   "records": [
@@ -42978,6 +43016,15 @@
       "title": "E-547 kept: every halo draws the compact glow on its visible part's quad; sorted halos' unshaded pass 4.33 -> 1.27 ms, the 'add' layer 0.24 -> 0.03 ms",
       "verdict": "kept",
       "text": "exp/one-shadow-path 712599cb: a halo without its own glowRadius drew the wide gradient (_lightGradient) on a quad 0.85\nof its light's radius, and past 0.16 of that quad the curve is under 2^-7. Every halo now draws E-498's compact glow\n(_lightGlow, that inner 0.16 over the whole texture) on a quad 0.16 the size; glowRadius 0 means about 0.14 of the\nlight's radius. The emit kernel's gradient slot gave its place to the glow's; pre-render's cull reaches as far as the halo\nshows (lightCulls.test.js moved its far light in). Emit parity and ASan's preRenderEmit groups pass.\nglFrameRecorder --gpu-passes, Predator light3d by night (crowd 2.5, mix 1), whole revisions 977b0753 against c098f309 (712599cb's code),\nGTX 1650, two recordings a side:\n- lightGlow 'sorted': the unshaded pass at the canvas's size (mask, colour, edge) 4.302 / 4.357 -> 1.264 / 1.267 ms a\n  frame; the GPU 88 / 89 -> 59 / 60 % busy (nvidia-smi); every other pass alike.\n- lightGlow 'add': the glows layer 0.239 / 0.241 -> 0.028 / 0.028 ms; the unshaded pass (no halos in it) 0.62 -> 0.65 /\n  0.68 ms; the GPU 56 / 57 -> 56 / 55 % busy.\n'sorted' against 'add' after it: 1.27 ms against 0.65 + 0.03 ms, the GPU 60 against 55 % busy (R-1872: 4.85 against\n0.70 ms, 93 against 60 %).\ncompareCaptures, the light gallery (its halos have no glowRadius), the same revisions: 'add' 319 678 pixels differ, max 9 of\n255, mean 2.7 round its brightest halo (luminance 157.5 -> 155.9 there: the cut tail, and rings where the wide texture's\n16 texels of core were stretched); 'sorted' max 7. Side by side no edge and no change can be seen."
+    },
+    {
+      "id": "R-1877",
+      "date": "2026-11-23",
+      "time": "10:55",
+      "timeFrom": "recorded",
+      "title": "E-548 dropped: the lamps' map's ceiling half over the rows that reach above their lamp saved nothing (0.444 -> 0.43 ms); N-417 found on the way and fixed (the keyed statics' copy read NaN)",
+      "verdict": "dropped",
+      "text": "E-548 (exp/one-shadow-path, not committed): glFrameRecorder --gpu-draws on Predator light3d by night (crowd 2.5, mix 1, GTX 1650)\nshowed the lamps' map's ceiling half (DX-LAMPPANO) at 0.444 ms a frame over all 13 366 stamp rows, and lampMapVertex leaves\nout a row whose picture tops out under its lamp only after its vertex work. Pixi copied the rows that reach above their\nlamp (the program's own test: the LUT's trim height times |scale y| over heightScaleY times the row's shadow height,\nagainst the lamp of its tile) into a buffer of the ceiling's own; the batch's rows kept their order (reordered in place,\nthe floor's half kept the other of two equal depths, whose entity decides a pixel's own shade: 49 977 pixels of\nlight3dCompare ?all=1). Captures byte-identical against 712599cb on 10 still scenes. The ceiling's draw, two recordings:\n6 818 / 6 613 instances, 0.434 / 0.431 ms (before 0.444): under Predator's oblique camera (heightScaleY 0.68) half the\nrows really reach above the 110 px lamps, and the rows left out were cheap. Dropped, not committed.\nAn earlier try read 0 rows above their lamps (0.444 -> 0.000 ms) because N-417's copy held NaN for every slot.\nN-417: the keyed statics' CPU copy (E-395) read the updates through float views the constructor set to empty arrays\nright after making them, so every value it held was NaN (light3dCompare ?all=1: texture 0 and NaN scales; Predator: all\nthree NaN), and begun when the maps first drew it would have missed every slot that did not change again (FULL has\npre-render write every row's statics into the queue, not send them as updates). Fixed in 4bbdf324: the views stay; a keyed\nWebGL batch makes the copy with its statics texture. After it every keyed stamp row of Predator and light3dCompare reads a\ntexture and a scale. Captures against 712599cb byte-identical (light3dCompare ?all=1 by night and day, the light bench by\nnight and at 16:00, dxCapture by night): no scene measured draws a render's columns over keyed rows, the copy's one\nreader."
     }
   ],
   "leads": [
