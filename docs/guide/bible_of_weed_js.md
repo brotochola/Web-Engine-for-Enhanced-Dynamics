@@ -911,6 +911,51 @@ Layer.crt.visible = false;            // turns that pass off
 
 The Sun Street demo grades its frame by the hour and adds a vignette (`P` turns them off).
 
+#### Reading the G-buffer in a pass
+
+A lit scene that draws shadows (or has sheets with maps, faces, walls or unshaded sprites) draws a G-buffer each frame:
+what every pixel is, at the light pass's size (`lighting.resolution` of the canvas, 0.25 by default). A SCREEN pass
+whose look names `uGbufFace` or `uGbufIds` reads this frame's:
+
+- **`uGbufIds`**, the entity under each pixel, RGBA8: `R * 256 + G` is the entity's id, `(entity % 65535) + 1`,
+  0 where none (the floor, a decoration, a face); `B` its flags (1: it shades itself); `A` 1 where written.
+- **`uGbufFace`**, the surface, RGBA8: `R` and `G` the normal, octahedral (`(rg * 255 - 127) / 126`; 0 0 no face,
+  254 254 a flat card); `B * 256 + A` the height code: its bit 15 says the normal is the sprite's own, and the rest
+  divided by 8 is the height in px above the floor.
+- **`uGbufSize`**, an engine look uniform: the G-buffer's size in texels, 0 0 in a scene that draws none (both textures
+  are then 1 x 1 and empty).
+
+Read them through the engine's helpers, which put a screen uv on the G-buffer on either backend: in GLSL, declare the
+samplers and read `texture2D(uGbufIds, gbufUv(uv))` (WebGL's render targets hold it upside down); in WGSL the prelude
+declares them, and `textureLoad(uGbufIds, gbufTexel(in.vTextureCoord), 0)` reads a texel. A texel covers several canvas
+pixels (`uCanvasSize / uGbufSize`). An outline where the entity changes:
+
+```glsl
+precision mediump float;
+varying vec2 vTextureCoord;
+uniform sampler2D uTexture;
+uniform sampler2D uGbufIds;
+uniform vec2 uGbufSize;
+
+float entityAt(vec2 uv) {
+    vec4 t = texture2D(uGbufIds, gbufUv(uv));
+    return t.a > 0.5 ? floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5) : 0.0;
+}
+
+void main() {
+    vec4 c = texture2D(uTexture, vTextureCoord);
+    if (uGbufSize.x < 1.0) { gl_FragColor = c; return; }
+    vec2 texel = 1.0 / uGbufSize;
+    float here = entityAt(vTextureCoord);
+    float edge = step(0.5, abs(entityAt(vTextureCoord + vec2(texel.x, 0.0)) - here));
+    edge = max(edge, step(0.5, abs(entityAt(vTextureCoord + vec2(0.0, texel.y)) - here)));
+    gl_FragColor = vec4(c.rgb * (1.0 - 0.8 * edge), c.a);
+}
+```
+
+The WGSL twin and a scene that runs it: `tests/bench/stressScenes/lightGallery/outline.wgsl`, the light gallery with
+`?outline=1`. A pass does not turn the G-buffer on: in a scene that draws none it reads the empty one.
+
 ### LiquidFun buffer density (`LAYER_DENSITY_SOURCE`)
 
 Two ways to fill a shader layer’s density RT:

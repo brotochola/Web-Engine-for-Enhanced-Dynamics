@@ -9,7 +9,7 @@ import { LIGHTING_DEFAULTS, lightCullingTileSizeOf, shadowSamplesOf } from '../.
 import { readEngineShader } from './engineShaderSources.mjs';
 
 const shader = (name) => readEngineShader(name);
-const FLAGS = { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true, tiles: true };
+const FLAGS = { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true };
 
 // Each language's three lookups: the call each tap makes and the offsets as the language writes them, in texels.
 const LANGS = [

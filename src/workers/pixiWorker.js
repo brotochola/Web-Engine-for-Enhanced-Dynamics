@@ -643,10 +643,6 @@ class PixiRenderer extends AbstractWorker {
     this._facesUsed = false;
     this._facesWatch = false;
     this._heightScaleY = NaN;
-    // E-205: the light pass loops over the lights of each pixel's tile (src/render/lightTiles.js), not over every light.
-    // The bins, their R32UI texture, the texture unit WebGL uploads it in (the shader sync's for integer textures, N-109)
-    // and whether that texture holds the grid's size yet.
-    this._lightTilesOn = false;
     /** lighting.lightCullingTileSize: the tiles' side asked for, px of the light pass's target (lightCullingTileSizeOf). */
     this._lightCullingTileSize = LIGHTING_DEFAULTS.lightCullingTileSize;
     /** lighting.shadowSamples: the shadow maps' taps a light pixel averages, 1 to 9 (shadowSamplesOf). */
@@ -686,6 +682,9 @@ class PixiRenderer extends AbstractWorker {
       time: 0,
       worldW: 0,
       worldH: 0,
+      // DX-GBUFSHADER: the G-buffer's size a SCREEN pass reads it at (0 for the other looks).
+      gbufW: 0,
+      gbufH: 0,
     };
     this._clearTransparent = [0, 0, 0, 0];
     this._rtEmptyContainer = new Container();
@@ -2633,7 +2632,7 @@ class PixiRenderer extends AbstractWorker {
       msg: 'lightTile', x: -1, y: -1, cols: t.cols, rows: t.rows, tilePx: t.tilePx, border: t.border, wordsUsed: t.wordsUsed,
       lights: [],
     };
-    if (!this._lightTilesOn || t.texWidth < 1 || !(t.tilePx > 0) || !Number.isFinite(x) || !Number.isFinite(y)) return out;
+    if (t.texWidth < 1 || !(t.tilePx > 0) || !Number.isFinite(x) || !Number.isFinite(y)) return out;
     const res = this.lightingResolution;
     const cx = Math.floor((x * res) / t.tilePx) + t.border;
     const cy = Math.floor((y * res) / t.tilePx) + t.border;
@@ -4187,9 +4186,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (lightingConfig.lightCullingTileSize !== undefined && lightingConfig.lightCullingTileSize !== this._lightCullingTileSize) {
         console.warn(`WeedJS: lighting.lightCullingTileSize is a whole number of px from ${LIGHT_CULLING_TILE_SIZE_MIN} to ${LIGHT_CULLING_TILE_SIZE_MAX}, not ${JSON.stringify(lightingConfig.lightCullingTileSize)}: the light's tiles take ${this._lightCullingTileSize}`);
       }
-      // E-205: the light pass loops over the lights of each pixel's screen tile: the same picture, faster at every light
-      // count gpuPassBench measured (4 to 128). The shader keeps the loop over every light for when this is false.
-      this._lightTilesOn = true;
       // DX-GBUF (plan §6.4): the G-buffer's targets in one pass (MRT, the default: E-377) or a pass each.
       const gbufMode = lightingConfig.gbuffer ?? 'mrt';
       if (gbufMode !== 'pass' && gbufMode !== 'mrt') {

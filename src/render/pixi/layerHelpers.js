@@ -53,6 +53,7 @@ export function applyEngineLookUniforms(cl, frame) {
   setLookUniform2(map, floats, store, 'uCanvasSize', frame.canvasW, frame.canvasH);
   setLookUniform2(map, floats, store, 'uWorldSize', frame.worldW, frame.worldH);
   setLookUniform2(map, floats, store, 'uViewSize', frame.canvasW / zoom, frame.canvasH / zoom);
+  setLookUniform2(map, floats, store, 'uGbufSize', frame.gbufW, frame.gbufH);
 }
 
 export function applyComputeTexSizeUniform(cl) {

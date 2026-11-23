@@ -229,7 +229,7 @@ test('the layout: a header, the directions, the vertices and the closing one', (
 test('the light pass reads rows by the module\'s numbers, in the WALLS variant alone', () => {
   for (const name of ['lightingBasic.frag.glsl', 'lightingBasic.wgsl']) {
     const source = readEngineShader(name);
-    const on = lightingSource(source, { faces: true, sunMap: false, ids: true, tiles: true, walls: true });
+    const on = lightingSource(source, { faces: true, sunMap: false, ids: true, walls: true });
     const number = (id) => Number(on.match(new RegExp(`const (?:int |float )?${id}(?:: (?:i32|f32))? = ([0-9.]+);`))[1]);
     assert.equal(number('WALL_BINS'), WALL_BINS, `${name}: WALL_BINS`);
     assert.equal(number('WALL_VERT0'), WALL_VERT0, `${name}: WALL_VERT0`);
@@ -241,7 +241,7 @@ test('the light pass reads rows by the module\'s numbers, in the WALLS variant a
     assert.equal(on.split('wallVisibility(').length - 1, 5, `${name}: the function and its four calls`);
     assert.ok(!on.includes('#if') && !on.includes('#endif'), `${name}: no block left open`);
     // Without walls, or without the ids a wall's own pixels are told by, nothing of it is left.
-    for (const flags of [{ faces: true, sunMap: false, ids: true, tiles: true }, { faces: true, sunMap: false, ids: false, tiles: true, walls: true }]) {
+    for (const flags of [{ faces: true, sunMap: false, ids: true }, { faces: true, sunMap: false, ids: false, walls: true }]) {
       const off = lightingSource(source, flags);
       assert.ok(!off.includes('uWallRows') && !off.includes('wallVisibility') && !off.includes('uWalls'), `${name}: the walls are out`);
     }

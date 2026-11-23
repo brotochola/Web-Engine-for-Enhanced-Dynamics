@@ -13,7 +13,7 @@
  *   instances, which cast none: 0)  lamps (48)  casters (a lamp, 64)
  *   tile (a lamp's tile texels, 256)  steps (self-shadow steps, 6)  rays (1)  format (the shadow maps' target: rgba8,
  *   r16f, r32f, rgba16f; rgba8)  mapDepth (the maps' depth buffer: 24, as Pixi's depth-stencil, or 16)  night (1: no sun term)  intBits (WebGPU i32 uniforms: 'exact', as the vendored
- *   Pixi writes them, or 'float', a float's bits: then uLightCount reads huge and the loops run to maxLights)  samples (12)  targetMs (25)  maxK (512)  warmupMs (300)  hangMs (10000)  capacity (0)
+ *   Pixi writes them, or 'float', a float's bits: then an i32 uniform reads huge)  samples (12)  targetMs (25)  maxK (512)  warmupMs (300)  hangMs (10000)  capacity (0)
  *   floorScaleY, heightScaleY (the light bench's camera: 0.736, 0.752)  lightTile (E-205: the light passes' tiles, px of
  *   their target: 16, src/render/lightTiles.js LIGHT_TILE_PX)
  */

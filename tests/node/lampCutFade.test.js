@@ -74,7 +74,7 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   px.lighting.visibleLightsAllCount = 2;
   px.lighting._stampLightCamera = () => {};
   px.lighting.applyLightingViewport = () => {};
-  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0, uConeCount: 0 }, update() {} } } };
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uConeCount: 0 }, update() {} } } };
   px.lighting.updateLighting();
   const d = px.lighting.lightDataFloats;
   const slotOf = (x) => (d[0] === x ? 0 : 1);
@@ -83,6 +83,15 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   assert.equal(d[lamp * 4 + 3], -1, 'the lamp\'s tag: -(tile + 1)');
   assert.equal(d[MAX_LIGHTS * 12 + lamp * 4], 0.25, 'its fade in the fourth row');
   assert.equal(d[MAX_LIGHTS * 12 + plain * 4], 1, 'a light without a tile: 1');
+  // E-409: its shadows' reach in the fourth row's y, minus its radius (no shadowRange under it); 0 for a light without a
+  // tile (the light pass reads it for a lamp with a tile only).
+  assert.equal(d[MAX_LIGHTS * 12 + lamp * 4 + 1], -400, 'minus its radius');
+  assert.equal(d[MAX_LIGHTS * 12 + plain * 4 + 1], 0);
+  // A shadowRange under its radius: that range, positive (its shadows fade out over its last fifth).
+  LightEmitter.shadowRange[1] = 150;
+  px.lighting.updateLighting();
+  assert.equal(d[MAX_LIGHTS * 12 + lamp * 4 + 1], 150);
+  LightEmitter.shadowRange[1] = 0;
 
   // The next frame, the lamp out of the cut's band: back to 1.
   gpu.stampLightFade[0] = 1;

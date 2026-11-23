@@ -102,6 +102,16 @@ export function buildLookPrelude(uniformMap, uniformTypes, options = {}) {
   s += '@group(2) @binding(1) var uTexture: texture_2d<f32>;\n';
   s += '@group(2) @binding(2) var uSampler: sampler;\n';
   if (options.scene === true) s += '@group(2) @binding(3) var uScene: texture_2d<f32>;\n';
+  // DX-GBUFSHADER: a SCREEN pass that names them reads the frame's G-buffer (textureLoad: the face map, the ids map).
+  if (options.gbuf === true) {
+    const at = options.scene === true ? 4 : 3;
+    s += `@group(2) @binding(${at}) var uGbufFace: texture_2d<f32>;\n`;
+    s += `@group(2) @binding(${at + 1}) var uGbufIds: texture_2d<f32>;\n`;
+    s += 'fn gbufTexel(uv: vec2<f32>) -> vec2<i32> {\n';
+    s += '  let size = vec2<i32>(textureDimensions(uGbufIds));\n';
+    s += '  return clamp(vec2<i32>(uv * vec2<f32>(size)), vec2<i32>(0, 0), size - vec2<i32>(1, 1));\n';
+    s += '}\n';
+  }
   s += '\n';
   s += 'struct VertexOut {\n';
   s += '  @builtin(position) position: vec4<f32>,\n';

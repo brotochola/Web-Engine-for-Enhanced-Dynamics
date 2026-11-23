@@ -14,6 +14,22 @@ import { assertLookShaderCompatible, errorCompileFailed } from '../rendererBacke
 import { isWgslSource, lookGpuProgram } from '../webgpu/pixiMeshWgsl.js';
 import { findWgslUseBeforeDeclare, prependLookPrelude } from '../webgpu/wgslPrelude.js';
 
+/**
+ * DX-GBUFSHADER: a GLSL look that reads the G-buffer takes gbufUv(uv), the G-buffer's uv for a screen uv: WebGL's render
+ * targets hold it upside down against vTextureCoord (WGSL's prelude gives gbufTexel instead). After the shader's float
+ * precision, so the function has one; first where it declares none (Pixi adds one above).
+ * @param {string} source
+ * @returns {string}
+ */
+export function withGbufUvGlsl(source) {
+  const fn = 'vec2 gbufUv(vec2 uv) { return vec2(uv.x, 1.0 - uv.y); }\n';
+  const m = /precision\s+\w+\s+float\s*;[^\n]*\n/.exec(source);
+  if (m) return source.slice(0, m.index + m[0].length) + fn + source.slice(m.index + m[0].length);
+  const version = /^\s*#version[^\n]*\n/.exec(source);
+  if (version) return source.slice(0, version[0].length) + fn + source.slice(version[0].length);
+  return fn + source;
+}
+
 // The Pixi classes the moved bodies name as PIXI.X, as pixiWorker.js's namespace does.
 const PIXI = Object.freeze({ Sprite, Texture });
 
@@ -45,8 +61,9 @@ export class PixiLookShaders {
 
   /**
    * @param {TextureSource|null} [sceneSource] DX-POST: a SCREEN pass that reads uScene (the frame before the first pass)
+   * @param {boolean} [gbuf] DX-GBUFSHADER: it reads the G-buffer (uGbufFace, uGbufIds), bound empty until a frame binds them
    */
-  create(fragmentSource, textureSource, uniformDefs, name, layerName, sceneSource = null) {
+  create(fragmentSource, textureSource, uniformDefs, name, layerName, sceneSource = null, gbuf = false) {
     const asset = name || 'look';
     const layer = layerName || name || 'look';
     const backend = this.worker._useWebGpu ? 'webgpu' : 'webgl';
@@ -70,7 +87,7 @@ export class PixiLookShaders {
             wgslSource,
             Layer._uniformMaps[lid] || null,
             Layer._metadata?.layers?.[lid]?.uniformTypes || null,
-            { scene: sceneSource !== null }
+            { scene: sceneSource !== null, gbuf }
           );
         }
         const earlyLook = findWgslUseBeforeDeclare(wgslSource);
@@ -84,13 +101,16 @@ export class PixiLookShaders {
           wgslSource,
           asset,
           this.worker._engineShaders.lookVert,
-          sceneSource !== null
+          sceneSource !== null,
+          gbuf
         );
         return new Shader({
           gpuProgram,
-          resources: sceneSource !== null
-            ? { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style, uScene: sceneSource }
-            : { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style },
+          resources: {
+            customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style,
+            ...(sceneSource !== null ? { uScene: sceneSource } : {}),
+            ...(gbuf ? { uGbufFace: Texture.EMPTY.source, uGbufIds: Texture.EMPTY.source } : {}),
+          },
         });
       }
       const lookVert = this.worker._engineShaders.lookVert;
@@ -101,14 +121,16 @@ export class PixiLookShaders {
       }
       const glProgram = GlProgram.from({
         vertex: lookVert,
-        fragment: fragmentSource,
+        fragment: gbuf ? withGbufUvGlsl(fragmentSource) : fragmentSource,
         name: asset,
       });
       return new Shader({
         glProgram,
-        resources: sceneSource !== null
-          ? { customUniforms: uniformDefs, uTexture: textureSource, uScene: sceneSource }
-          : { customUniforms: uniformDefs, uTexture: textureSource },
+        resources: {
+          customUniforms: uniformDefs, uTexture: textureSource,
+          ...(sceneSource !== null ? { uScene: sceneSource } : {}),
+          ...(gbuf ? { uGbufFace: Texture.EMPTY.source, uGbufIds: Texture.EMPTY.source } : {}),
+        },
       });
     } catch (err) {
       throw errorCompileFailed('look', asset, layer, backendLabel, err);

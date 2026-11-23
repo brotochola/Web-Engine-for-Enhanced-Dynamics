@@ -180,7 +180,7 @@ test('packTextureLutRgba writes 12 floats (the last two the frame base) into 3 R
 
 test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
   const lighting = readEngineShader('lightingBasic.frag.glsl');
-  assert.match(lighting, /for \(int i = 0; i < MAX_LIGHTS; i\+\+\)/);
+  assert.match(lighting, /for \(int ts = 0; ts < 2 \* MAX_LIGHTS; ts\+\+\)/);
   assert.doesNotMatch(lighting, /\$\{this\.maxLights\}/);
   // N-256 PW-6: the light pass is src/render/pixi/lighting.js's.
   assert.match(readFileSync(join(dir, '../../src/render/pixi/lighting.js'), 'utf8'), /\/MAX_LIGHTS\/g/);

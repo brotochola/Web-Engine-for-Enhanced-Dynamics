@@ -96,7 +96,7 @@ export function renderViewTextures(w, view, out) {
       // DBG-7: the tiles' R32UI texture itself (a TextureSource, not a target), while the light pass bins by tile and has
       // made it (WebGL: allocated; WebGPU, which keeps no such flag: the grid laid out, its texture made at that upload).
       // The worker draws this view with a program of its own (RENDER_TILES_*).
-      out[0] = w._lightTilesOn && l.lightTilesSource
+      out[0] = l.lightTilesSource
         && (l.lightTilesMade || (w._useWebGpu === true && l.lightTiles.texWidth > 0)) ? l.lightTilesSource : null;
       break;
     default:

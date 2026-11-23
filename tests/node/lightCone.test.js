@@ -138,11 +138,10 @@ test('a cone light takes the first slot with its third row, on the floor; the co
   px.lighting.visibleLightsAllCount = 2;
   px.lighting._stampLightCamera = () => {};
   px.lighting.applyLightingViewport = () => {};
-  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0, uConeCount: 0 }, update() {} } } };
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uConeCount: 0 }, update() {} } } };
   px.lighting.updateLighting();
   const d = px.lighting.lightDataFloats;
   const u = px.lighting.lightingShader.resources.uniforms.uniforms;
-  assert.equal(u.uLightCount, 2);
   assert.equal(u.uConeCount, 1);
   assert.equal(d[0], 300, 'the cone light first');
   assert.equal(d[4], 100, 'then the point light');
@@ -262,7 +261,7 @@ test('updateLighting reads each light\'s coneCos once: a light the logic worker 
     px.lighting.visibleLightsAllCount = 3;
     px.lighting._stampLightCamera = () => {};
     px.lighting.applyLightingViewport = () => {};
-    px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0, uConeCount: 0 }, update() {} } } };
+    px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uConeCount: 0 }, update() {} } } };
     px.lighting.updateLighting();
     const d = px.lighting.lightDataFloats;
     const u = px.lighting.lightingShader.resources.uniforms.uniforms;

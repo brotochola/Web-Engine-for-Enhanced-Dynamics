@@ -7,8 +7,6 @@ struct LightingUniforms {
   uFullCanvasSize: vec2<f32>,
   uCameraRot: vec2<f32>,
   uInvResolution: f32,
-  uLightTexWidth: f32,
-  uLightCount: i32,
   uBaseAmbient: f32,
   uSunIntensity: f32,
   uSunR: f32,
@@ -24,6 +22,8 @@ struct LightingUniforms {
   // DX-SPOT: the first uConeCount lights are cones, with a third row (direction on the floor, cos of the half aperture,
   // 1 / the soft edge's width); they loop apart, so a point light runs the loop it always ran. A float (see pixiWorker).
   uConeCount: f32,
+  uTileGrid: vec4<f32>, // E-205: a tile's px, the border's tiles, the grid's columns and rows (border included)
+  uTileWords: vec4<f32>, // words in use, texel rows a word's band (the grid's rows + 1)
 // #if FACES
   uFaceLight: vec4<f32>, // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
   uFaceSun: vec4<f32>, // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
@@ -39,10 +39,6 @@ struct LightingUniforms {
 // #if LAMPMAP
   uLampAtlas: vec4<f32>, // tiles a row, a tile's texels, the atlas's width and height in texels
 // #endif LAMPMAP
-// #if TILES
-  uTileGrid: vec4<f32>, // E-205: a tile's px, the border's tiles, the grid's columns and rows (border included)
-  uTileWords: vec4<f32>, // words in use, texel rows a word's band (the grid's rows + 1)
-// #endif TILES
 // #if WALLS
   uWalls: vec4<f32>, // OL-4: lighting.wallDepth (px the light enters a wall from its edge; 0: its own sprite, whole), lighting.lightBehindWalls
 // #endif WALLS
@@ -65,10 +61,8 @@ struct LightingUniforms {
 // DX-GBUF (plan §6.4): the G-buffer's entity ids (faceMap.js FACE_IDS_SELF), drawn with the face map.
 @group(2) @binding(7) var uFaceIds: texture_2d<f32>;
 // #endif IDS
-// #if TILES
 // E-205: the lights by tile (src/render/lightTiles.js; lightingBasic.frag.glsl says how they are read).
 @group(2) @binding(8) var uLightTiles: texture_2d<u32>;
-// #endif TILES
 // #if WALLS
 // OL-4: the walls' rows (src/render/visibility/lampWallRow.js), a row a lamp with walls in its reach.
 @group(2) @binding(9) var uWallRows: texture_2d<f32>;
@@ -181,7 +175,6 @@ fn weedWorldToNorm(world: vec2<f32>) -> vec2<f32> {
   return (sxy + uniforms.uFullCanvasSize * 0.5) / uniforms.uFullCanvasSize;
 }
 
-// #if TILES
 // E-205: the tile of a point of this pass's target in unflipped px (weedWorldToNorm × uViewport); past the grid, the
 // every-light row (lightingBasic.frag.glsl lightTile).
 fn lightTile(px: vec2<f32>) -> vec2<i32> {
@@ -196,7 +189,6 @@ fn tileWord(tile: vec2<i32>, k: i32) -> u32 {
   return textureLoad(uLightTiles, vec2<i32>(tile.x, tile.y + k * i32(uniforms.uTileWords.y)), 0).r;
 }
 
-// #endif TILES
 // DX-GBUF: whether a shadow map's texel keeps the pixel's own entity (selfId, 0 none) as its highest caster
 // (lightingBasic.frag.glsl ownTexel): a caster's own shadow never paints its own sprite.
 fn ownTexel(m: vec4<f32>, selfId: f32) -> bool {
@@ -267,12 +259,11 @@ fn lampOwner(li: i32) -> f32 {
 
 // DX-LAMPPANO: a landing into its half tile, 0..1 (lightingBasic.frag.glsl's lampPanoUv).
 fn lampPanoUv(v: vec2<f32>, reach: f32) -> vec2<f32> {
-  let r = length(v);
-  let q = r / reach;
-  let c = select(0.80 + 0.20 * (1.0 - 1.0 / q), 0.80 * q, q <= 1.0);
-  var off = vec2<f32>(0.0);
-  if (r > 1e-4) { off = v * (0.5 * c / r); }
-  return vec2<f32>(0.5) + off;
+  let r2 = dot(v, v);
+  // E-409: within the reach the landing is linear (0.8 of the half's radius at the reach): no length.
+  if (r2 <= reach * reach) { return vec2<f32>(0.5) + v * (0.40 / reach); }
+  let r = sqrt(r2);
+  return vec2<f32>(0.5) + v * (0.5 * (0.80 + 0.20 * (1.0 - reach / r)) / r);
 }
 
 // One tap: a point is shaded under a caster nearer the lamp on its ray than `bound` (N-211: lightingBasic.frag.glsl).
@@ -282,15 +273,15 @@ fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, bound: f32, selfId: f32) 
 }
 
 // li: the light's column in the light data, whose fourth row holds its fade at the cut (N-212; lightingBasic.frag.glsl).
-fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, selfId: f32, li: i32) -> f32 {
+fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, selfId: f32, li: i32) -> f32 {
   if (tag >= 0.0 || e <= 0.0) { return 1.0; }
-  // E-510: the fade at the cut and the shadows' reach (lightingBasic.frag.glsl says how).
+  // E-510, E-409: the fade at the cut and the shadows' reach, packed once a light (lightingBasic.frag.glsl says how).
   let cut = textureLoad(uLightData, vec2<i32>(li, 3), 0);
-  let reach = select(10.0 * sqrt(max(intensity - e * e, 0.0)), cut.y, cut.y > 0.0);
+  let reach = abs(cut.y);
   // DX-LAMPPANO: past the reach on the floor the lamp casts nothing, so nothing to read.
   let fromLamp = p.xy - l;
   let farSq = dot(fromLamp, fromLamp);
-  if (reach <= 0.0 || farSq >= reach * reach) { return 1.0; }
+  if (farSq >= reach * reach) { return 1.0; }
   let fade = select(cut.x, cut.x * clamp(5.0 * (1.0 - sqrt(farSq) / reach), 0.0, 1.0), cut.y > 0.0);
   if (fade <= 0.0) { return 1.0; }
   // DX-LAMPPANO: a point higher than the lamp reads the ceiling's half, landing as its mirror (2E - z) does.
@@ -336,17 +327,18 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, 
 
 // DX-LAMPPANO: lampVisibility for a floor point (z 0, the flat path): the floor's half, no bias (lightingBasic.frag.glsl
 // says why it has its own body).
-fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, li: i32) -> f32 {
+fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, li: i32) -> f32 {
   if (tag >= 0.0 || e <= 0.0) { return 1.0; }
   // N-212, E-510: its fade at the cut and its shadows' reach.
   let cut = textureLoad(uLightData, vec2<i32>(li, 3), 0);
-  let reach = select(10.0 * sqrt(max(intensity - e * e, 0.0)), cut.y, cut.y > 0.0);
+  let reach = abs(cut.y);
   let fromLamp = p - l;
   let farSq = dot(fromLamp, fromLamp);
-  if (reach <= 0.0 || farSq >= reach * reach) { return 1.0; }
+  if (farSq >= reach * reach) { return 1.0; }
   let fade = select(cut.x, cut.x * clamp(5.0 * (1.0 - sqrt(farSq) / reach), 0.0, 1.0), cut.y > 0.0);
   if (fade <= 0.0) { return 1.0; }
-  let uv = lampPanoUv(fromLamp, reach);
+  // Within the reach: lampPanoUv's linear part.
+  let uv = vec2<f32>(0.5) + fromLamp * (0.40 / reach);
   let tile = lampTile(tag);
   let a = uniforms.uLampAtlas;
   let perRow = i32(a.x);
@@ -434,11 +426,9 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
   let z = select(q, q - 32768.0, kRule) / 8.0;
   let lit = uniforms.uFaceLight;
   let p = vec3<f32>(world.x, (world.y + z * lit.x) * uniforms.uGroundInvScaleY, z);
-// #if TILES
   // E-205: the tile of the floor point under p, where a light's reach is measured (lightTiles.js bins the floor's).
   let tile = lightTile(weedWorldToNorm(vec2<f32>(world.x, world.y + z * lit.x)) * uniforms.uViewport);
   let tileWords = i32(uniforms.uTileWords.x);
-// #endif TILES
   var sunDirect = min(max(dot(n, uniforms.uFaceSun.xyz), 0.0) * uniforms.uFaceSun.w, 1.6);
   // The sun on a pixel lit as drawn: the floor's, its map's shade and its own shade.
   var sunFlat = 1.0;
@@ -465,18 +455,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
   // shading, 1 - cosine, less the amount subtracted, times the strength (uNormalShade.w and .z).
   var lampDrawn = vec3<f32>(0.0);
   let lampShading = select(uniforms.uNormalShade.z, 0.0, isFlat);
-  let nLights = uniforms.uLightCount;
   let nCones = i32(uniforms.uConeCount);
-  let texW = i32(uniforms.uLightTexWidth);
   let DISTANCE_SCALE = 1.0 / 1024.0;
   // The cones first, then every other light as before.
-// #if !TILES
-  for (var i = 0; i < MAX_LIGHTS; i++) {
-    if (i >= nCones || i >= texW) { break; }
-// #endif !TILES
-// #if TILES
   // E-205: one loop over the tile's lights, a step a light or a step on to the next word (each word read once); the
-  // cones are the first slots, so they come first, as the two loops without tiles take them.
+  // cones are the first slots, so they come first.
   var tw = -1;
   var bits = 0u;
   for (var ts = 0; ts < 2 * MAX_LIGHTS; ts++) {
@@ -489,10 +472,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     let i = tw * 32 + i32(firstTrailingBit(bits));
     bits &= bits - 1u;
     if (i < nCones) {
-// #endif TILES
+    // E-408: both rows asked for at once. A shader compiler may sink a fetch below a test that does not read it, so the
+    // test reads both (a light's height is never under -1e30) and the second fetch does not wait out the first.
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
-    if (posInt.z <= 0.0) { continue; }
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
+    if (posInt.z <= 0.0 || col.a < -1e30) { continue; }
     let toLight = vec3<f32>(posInt.xy, col.a) - p;
     let d = length(toLight);
     let cosine = dot(n, toLight) / max(d, 0.001);
@@ -502,7 +486,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     var cone = coneFactor(p.xy - posInt.xy, textureLoad(uLightData, vec2<i32>(i, 2), 0))
       * reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
 // #if LAMPMAP
-    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
+    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, selfId, i);
 // #endif LAMPMAP
 // #if WALLS
     // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
@@ -515,18 +499,12 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
       lampDrawn += col.rgb * (cone * (1.0 - min(max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading, 1.0 - max(cosine, 0.0))))
         * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-// #if !TILES
-  }
-  for (var j = 0; j < MAX_LIGHTS; j++) {
-    let i = j + nCones;
-    if (i >= nLights || i >= texW) { break; }
-// #endif !TILES
-// #if TILES
     } else {
-// #endif TILES
+    // E-408: both rows asked for at once. A shader compiler may sink a fetch below a test that does not read it, so the
+    // test reads both (a light's height is never under -1e30) and the second fetch does not wait out the first.
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
-    if (posInt.z <= 0.0) { continue; }
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
+    if (posInt.z <= 0.0 || col.a < -1e30) { continue; }
     let toLight = vec3<f32>(posInt.xy, col.a) - p;
     let d = length(toLight);
     let cosine = dot(n, toLight) / max(d, 0.001);
@@ -537,7 +515,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     var shade = 1.0;
     var lampSelf = 1.0;
 // #if LAMPMAP
-    shade = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
+    shade = lampVisibility(p, posInt.xy, col.a, posInt.w, selfId, i);
 // #if SELFSHADOW
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
     // of the lamp's own entity.
@@ -545,11 +523,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     // Only inside the lamp's radius (its tile's reach: I' = (radius / 10)² + h²): past it the lamp gives under
     // 1 % of its light and its map casts nothing, while the steps cost what they cost near it (E-365: with 32 lamps they were
     // 96 % of the pass).
-    // E-510: within its shadows' reach, when its shadowRange is under its radius (the fourth row's y).
+    // E-510: within its shadows' reach (the fourth row's y: its shadowRange or minus its radius).
     if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && cosine * shade > 0.05) {
       let fromLamp = p.xy - posInt.xy;
       let shadowReach = textureLoad(uLightData, vec2<i32>(i, 3), 0).y;
-      let nearSq = select(100.0 * max(posInt.z - col.a * col.a, 0.0), shadowReach * shadowReach, shadowReach > 0.0);
+      let nearSq = shadowReach * shadowReach;
       if (dot(fromLamp, fromLamp) < nearSq) {
         lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d, selfId);
       }
@@ -577,9 +555,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
       lampDrawn += col.rgb * (lampShade * (1.0 - min(max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading, 1.0 - max(cosine, 0.0))))
         * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-// #if TILES
     }
-// #endif TILES
   }
   if (!both) { return total; }
   // A FLAT pixel gets the sun as drawn (sunFlat). OL-6: on a sprite's own normal, less the sun's shading (what the
@@ -664,22 +640,13 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let wallIds = textureLoad(uFaceIds, vec2<i32>(in.position.xy), 0);
   let wallSelf = floor(wallIds.r * 255.0 + 0.5) * 256.0 + floor(wallIds.g * 255.0 + 0.5);
 // #endif WALLS
-  let nLights = uniforms.uLightCount;
   let nCones = i32(uniforms.uConeCount);
-  let texW = i32(uniforms.uLightTexWidth);
-// #if TILES
   // E-205: this pixel's tile (a floor pixel: its own place).
   let tile = lightTile(vec2<f32>(in.position.x, y));
   let tileWords = i32(uniforms.uTileWords.x);
-// #endif TILES
   // The cones first (each times its cone), then every other light as before.
-// #if !TILES
-  for (var i = 0; i < MAX_LIGHTS; i++) {
-    if (i >= nCones || i >= texW) { break; }
-// #endif !TILES
-// #if TILES
   // E-205: one loop over the tile's lights, a step a light or a step on to the next word (each word read once); the
-  // cones are the first slots, so they come first, as the two loops without tiles take them.
+  // cones are the first slots, so they come first.
   var tw = -1;
   var bits = 0u;
   for (var ts = 0; ts < 2 * MAX_LIGHTS; ts++) {
@@ -692,7 +659,6 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let i = tw * 32 + i32(firstTrailingBit(bits));
     bits &= bits - 1u;
     if (i < nCones) {
-// #endif TILES
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
     if (posInt.z <= 0.0) { continue; }
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
@@ -704,21 +670,13 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     var attenuation = intensityScaled / (intensityScaled + d2Scaled)
       * reachWindow(dot(fragWorld - posInt.xy, fragWorld - posInt.xy), posInt.z, col.a);
 // #if LAMPMAP
-    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
+    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, i);
 // #endif LAMPMAP
 // #if WALLS
     if (attenuation > 0.0) { attenuation *= wallVisibility(fragWorld, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, wallSelf); }
 // #endif WALLS
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
-// #if !TILES
-  }
-  for (var j = 0; j < MAX_LIGHTS; j++) {
-    let i = j + nCones;
-    if (i >= nLights || i >= texW) { break; }
-// #endif !TILES
-// #if TILES
     } else {
-// #endif TILES
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
     let lightWorld = posInt.xy;
@@ -731,16 +689,14 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
       var attenuation = intensityScaled / (intensityScaled + d2Scaled)
         * reachWindow(dot(fragWorld - lightWorld, fragWorld - lightWorld), intensity, col.a);
 // #if LAMPMAP
-      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, i);
+      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, i);
 // #endif LAMPMAP
 // #if WALLS
       if (attenuation > 0.0) { attenuation *= wallVisibility(fragWorld, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, wallSelf); }
 // #endif WALLS
       totalLight += col.rgb * attenuation;
     }
-// #if TILES
     }
-// #endif TILES
   }
   totalLight = weedDither(min(totalLight, vec3<f32>(1.0)), ditherAt);
 // #if EDGES
