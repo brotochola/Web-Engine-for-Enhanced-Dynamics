@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21",
+  "updated": "2026-11-23",
   "about": "The register of WeedJS's work, the project's one backlog, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, every bug (kind `bug`, with its review item in REVIEW_PLAN.md) and the approved features and developer-experience todos (kinds `feature`, `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, docs/internal/hypotheses.html, which reads this file itself: `npm run dev`, then `/docs/internal/hypotheses.html` (it reads the file again when it changes). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -15968,12 +15968,12 @@
       "id": "N-192",
       "title": "shadowOutlineCheck: shadow outlines 2.6 to 5.8 px from the analytic projection (tolerance 1.5) on both backends; a card passes only with the sun from 225 to 315 degrees; under a lamp lower than a crate the stretch cap ends in steps",
       "status": "open",
-      "statusText": "open: part fixed 2026-11-15 (c8963250, the floor bias) and 2026-11-22 (72d7375f, the columns' width; 34852891, the check); the rest to investigate",
+      "statusText": "open: part fixed 2026-11-15 (c8963250, the floor bias), 2026-11-22 (72d7375f, the columns' width; 34852891, the check; 74bde9fa, the strips' ends) and 2026-11-23 (405125aa, the sun map's least height step: box and card pass under the sun, R-1901); the crate's columns and the lamps left",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
       "result": "Part fixed (c8963250): a floor point took the shadow maps' bias, outlines 2.6-3.5 -> 1.4-1.6 px. Part fixed (72d7375f, R-1860): a render's columns were strips twice as wide as their cells, the crate's outline 3.5-5.9 -> 2.2-4.1 px under the sun, 8.5 -> 5.5, 3.0 -> 1.6 and 3.1 -> 0.7 px under lamps at 60, 150 and 300 px; the check stopped giving an uncompared caster's shadow to another and failing a shadow hidden behind its sprite (34852891). Left: the crate's columns under the sun (3.75 px cells), the box and the card about half a px inside, the card under lamps 1.7-2.2 px, the 60 px lamp's crate near the cap.",
-      "next": "The crate under the sun: sample a cell where its strip ends meet the outline (extend each strip a quarter cell along its line, or finer cells for small trims) and measure the cost on the columns pass. The half px inside for the box and the card: the map texel a floor pixel reads (its centre against the texel's) and the volume's rasterization. The card under lamps at 1.7-2.2 px and the 60 px lamp's crate at 5.5 / 3.5 near the stretch cap.",
+      "next": "The crate under the sun at 1.8-2.5 px: its height map's columns (24 x 24 cells of 3.75 px) step the outline on both sides of the projection; finer cells for small trims, measured on the columns pass. Under lamps the box and the card at 1.5-2.2 px, mostly inside: the lamps' map's texels (up to 2 floor px) and its lookup in the light pass.",
       "refs": [
         "REVIEW_PLAN.md#N-192"
       ],
@@ -15985,7 +15985,9 @@
         "R-1123",
         "R-1133",
         "R-1860",
-        "R-1861"
+        "R-1861",
+        "R-1901",
+        "R-1905"
       ]
     },
     {
@@ -18670,12 +18672,12 @@
     {
       "id": "E-411",
       "title": "The 3D light pass takes 594 ms to link on WebGL (ANGLE + fxc; pixel art 373 ms, without lamps 231 ms): a program built while the game runs (a feature toggled, a variant first used) stalls the GPU process that long",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from angleHlslDump + d3dShaderStats (ANGLE D3D11 HLSL of the light pass, d3dcompiler_47 ps_5_0)",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (R-1902, bd28ee51): nothing links while a game runs; the maps' keyed programs link ahead with the others",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "angleHlslDump link times 2026-11-16 04:36 (headed Chrome, GTX 1650): plain 27 ms, flat 96, light3d without lamps 231, pixel art 373, light3d 594.",
+      "result": "Kept (R-1902): E-475 already links the light pass ahead (0 ms blocked) and a day cycle links nothing after the first second; the sun's and the lamps' keyed map programs, made on first use (93 and 100 ms), are made at start: blocked on LINK_STATUS 215 -> 22 ms (day cycle), 128 -> 25 ms (night).",
       "next": "List when the engine builds light pass variants after start (hour changes, lamps' map on, pixel art, a light count past MAX_LIGHTS) with the recorder's linkProgram calls; build them at load or with KHR_parallel_shader_compile; split the uber-shader (E-408) so each piece links fast. From Phaser 4 (R-1423): link the new variant in the background and keep drawing with the one it replaces until COMPLETION_STATUS_KHR answers (Phaser's skipUnreadyShaders skips the batch instead).",
       "refs": [],
       "aliases": [
@@ -18685,7 +18687,9 @@
       "records": [
         "R-1177",
         "R-1230",
-        "R-1423"
+        "R-1423",
+        "R-1902",
+        "R-1905"
       ]
     },
     {
@@ -23107,7 +23111,9 @@
     },
     {
       "refs": [],
-      "records": [],
+      "records": [
+        "R-1904"
+      ],
       "date": "2026-11-18",
       "aliases": [
         "rim flat view walls",
@@ -23121,7 +23127,7 @@
       "area": "render",
       "status": "open",
       "title": "A flat view (pitch 90 or 0) with walls and the light under the canvas's size: a lit wall's light spills a light texel or two onto the dark floor round its outline, since nothing writes entity depth there and the light's edges stay off",
-      "statusText": "open (render, low): found 2026-11-18 with OL-14, which covers an oblique camera"
+      "statusText": "read 2026-11-23 (R-1904): a stencil mark from the entities' colour draw (\"always, replace\"), a Pixi patch on both backends and discards in the sprite programs, about 4-6 h; resolution 1 has no rim; the owner's call at the end of the backlog"
     },
     {
       "refs": [],
@@ -24105,7 +24111,9 @@
         "R-1847",
         "R-1848",
         "R-1849",
-        "R-1851"
+        "R-1851",
+        "R-1900",
+        "R-1905"
       ]
     },
     {
@@ -24984,7 +24992,8 @@
     },
     {
       "records": [
-        "R-1681"
+        "R-1681",
+        "R-1903"
       ],
       "refs": [],
       "id": "E-544",
@@ -24993,7 +25002,7 @@
       "kind": "gpu",
       "area": "render",
       "date": "2026-11-21",
-      "statusText": "Filed 2026-11-21 closing DX-LIGHT3D (R-1681), from DX-SHADOW3D's list. Low: the sun's map is in screen space, so a cache of still casters holds only while the camera is still (the 2026-11-21 E-531 study ranked it last).",
+      "statusText": "measured 2026-11-23 (R-1903): 0.46 ms GPU in Predator by day, 0.44 (+0.3 columns) in the barrio at dusk; a cache pays only with a fixed sun and a still camera; the owner's call at the end of the backlog (park until a game asks)",
       "next": "Count the frames a game holds its camera still (Predator, the barrio); if they matter, a still-casters layer redrawn when the view or the static scenery changes and the movers drawn over it, as E-504 does for the colour pass."
     },
     {
@@ -43325,6 +43334,69 @@
       "title": "E-373 superseded: the 3D light pass now costs less on WebGL than on WebGPU (gpuPassBench light3d 0.404 against 0.462 ms on the GTX 1650, main after E-408 and E-409)",
       "verdict": "note",
       "text": "No sitting of its own: E-408/E-409's last sitting (R-1893, 13:45; gpuPassBench light3d, half of 1080p, 32 lamps with\ntiles, 4 pairs) read main after both changes at 0.404 ms on WebGL and 0.462 ms on WebGPU (before them 0.422 and 0.473):\nWebGL is 13 % cheaper, where E-373 found it 11 % dearer (1.26 against 1.13 ms, an older bench and pass). Its levers went in\nalong the way: texelFetch for the light data (a0f12347), the reach per light (E-409), and the fetch order (E-408), which\nwas ANGLE's D3D compiler keeping a light's second fetch behind the first's test. The WGSL side keeps the same shape."
+    },
+    {
+      "id": "R-1900",
+      "date": "2026-11-23",
+      "time": "12:58",
+      "timeFrom": "recorded",
+      "title": "N-303 CR-38 done: pre-render's JS visibility gather goes (fc3f5c31); visibilityGather.wasm is the only gather, no scene took the JS path (probe over the 9 scenes with walls)",
+      "verdict": "kept-hygiene",
+      "text": "**N-303 CR-38 done: pre-render's JS visibility gather goes (fc3f5c31); visibilityGather.wasm is the only gather.** Hygiene keep.\n\n- **No scene took it any more.** RigidBody and Collider are always pooled since the code-reduction batches, so every scene with lighting.walls, a LightOccluder pool and a spatial worker lays the gather out in the engine block. A probe (a once-only warning on the JS path) over the 9 scenes with walls (burningBoxes, landing, planetPhysics, predator, zenithalParticleTest, compoundVisPolyStress, flashlightStress, dxCapture ?walls=1, the light bench) logged none.\n- **Without a gather layout no wall can stop a lamp anyway.** No LightOccluder: the light loop returned before; no spatial worker: no neighbour rows.\n- **What goes:** _buildVisibilityPolygonsSwept keeps the kernel's branch alone (-180 lines). A column outside the engine memory, or a placement the scene laid out that fails, is said once instead of falling back.\n- **The tests:** the old JS gather is now tests/reference/visibilityGatherJs.mjs, the kernel's JS twin with its binding's shape, so visibilityGatherWired, visibilityConeWired, lampWallsWired and wallRowCache still hold the kernel's rows to the JS's bit for bit. bootPreRender with walls is bootPreRenderGather's boot (what the engine lays out).\n- node 3586/3586, demos 143/143; the batch's Predator gate: NEUTRAL, every worker within 1.6 % (R-1905).",
+      "commits": [
+        "fc3f5c31"
+      ]
+    },
+    {
+      "id": "R-1901",
+      "date": "2026-11-23",
+      "time": "13:17",
+      "timeFrom": "recorded",
+      "title": "N-192 part four: a sun map texel a caster covers holds one height step at least (405125aa); box outlines under the sun 1.50-1.64 -> 0.64 px, cards to 0.63-0.79 px, both backends; the crate's columns and the lamps left",
+      "verdict": "kept-hygiene",
+      "text": "**N-192 part four: a sun map texel a caster covers holds one height step at least (405125aa); box outlines under the sun 1.50-1.64 -> 0.64 px, cards to 0.63-0.79 px, on both backends.**\n\n**What it was.** A profile across the box's shadow (sun from 0 deg) put the sun map's coverage on the check's projection to the pixel on three sides: the left edge at 199.29 read 0.21 px. The base edge, though, read 1.50 px, and those 28 of 312 outline px made the p99. The light pass shades a floor point under a texel whose height is above 0. A caster point lower than half of the map's 8-bit step (512/255 px), a box's or a card's base where its side's landing starts, rounded to the empty texel's 0, so the floor along every caster's base stayed lit.\n\n**The fix.** The sun map's writers (cards, columns, volumes; GLSL and WGSL) keep SUN_MAP_MIN_Z = 512/255 at least. The lamps' map is unchanged: its fragment drops the step with the sun's height line.\n\n| shadowOutlineCheck, sun, p99 measured px | before | after |\n| --- | --- | --- |\n| box, 8 directions | 1.50-1.64 | 0.64 |\n| card, 0 and 180 deg | 1.50 | 0.64 |\n| card, 45 and 135 deg | 1.43 | 0.79 |\n| card, 225-315 deg | 0.71-0.78 | 0.63-0.71 |\n| crate | 1.78-2.47 | the same |\n\nWebGL and WebGPU read alike. The lamp part reads the same before and after. dxCaptureScene hour 12: 0 of 921 600 px differ. node 3586/3586.\n\n**Left:**\n- The crate under the sun, 1.8-2.5 px: its height map's columns (24 x 24 cells, 3.75 px each). The boundary pixels lie on both sides of the projection (60 of 183 inside at 0 deg): the cells' steps, not a shift.\n- The box and the card under lamps, 1.5-2.2 px, mostly inside: the lamps' map's texels are up to 2 floor px, and its lookup is in the light pass.",
+      "commits": [
+        "405125aa"
+      ]
+    },
+    {
+      "id": "R-1902",
+      "date": "2026-11-23",
+      "time": "13:57",
+      "timeFrom": "recorded",
+      "title": "E-411: nothing links while a game runs (E-475 links the light pass ahead); the maps' keyed programs made at start (bd28ee51): blocked on LINK_STATUS 215 -> 22 ms (day cycle), 128 -> 25 ms (night)",
+      "verdict": "kept",
+      "text": "**E-411: the light pass's variants link ahead since E-475, and nothing links while a game runs. The maps' keyed programs are now made at start too (bd28ee51): time blocked on LINK_STATUS 215 -> 22 ms over a day cycle, 128 -> 25 ms by night.** Kept.\n\nprogramLinkProbe, Predator crowd 2.5 ?light3d=1, GTX 1650, a fresh profile each run:\n\n- **By night (hour 22, 20 s):** lighting-basic links at 3.02 s and is bound at 4.70 s, 0 ms blocked.\n- **A whole day cycle (Predator's day is 1 real minute; 75 s):** no link after the first second, so the hour changes link nothing.\n- **What blocked:** the sun's and the lamps' maps' programs over keyed caster rows (E-395). They were made on first use, right after the first frame: sun-map-keyed 93 ms, lamp-map-keyed 100 ms, two of the start's frames over 100 ms.\n- **The fix:** _makeFirstUsePrograms makes them too when the entity batch keeps keyed frames (shadowMaps.sunMapKeyedProgram, lampMap.keyedProgram), and _linkProgramsAhead links them with the others. GlProgram.from keeps one a source, so the meshes made on first use take the linked ones.\n\n| | blocked on LINK_STATUS | linked ahead | frames over 100 ms (start) |\n| --- | --- | --- | --- |\n| day cycle, before | 215 ms | 37 of 42 | 2 |\n| day cycle, after | 22 ms | 39 of 42 | 1 |\n| night, before | 128 ms | 37 of 41 | 2 |\n| night, after | 25 ms | 39 of 42 | 2 |\n\nThe start's longest frame (255-338 ms at the first frame) is not a link: what is left blocks 22-25 ms in all. node 3586/3586, demos 143/143.",
+      "commits": [
+        "bd28ee51"
+      ]
+    },
+    {
+      "id": "R-1903",
+      "date": "2026-11-23",
+      "time": "13:58",
+      "timeFrom": "recorded",
+      "title": "E-544 measured: the sun map costs 0.46 ms GPU in Predator by day and 0.44 (+0.3 columns) in the barrio at dusk (GTX 1650); a cache holds only with a still camera and a still sun, both demos run a day cycle: park until a game with a fixed sun asks (the owner's call at the end)",
+      "verdict": "answered",
+      "text": "**E-544 measured: the sun's map costs 0.46 ms of GPU a frame in Predator by day and 0.44 ms (+0.3 ms of columns) in the barrio at dusk (GTX 1650 at P0). A cache of still casters holds only while the camera and the sun stand still, and both demos run a day cycle, so it would save nothing there.**\n\nglFrameRecorder --gpu-passes:\n\n- **Predator** (crowd 2.5, hour 12, dayCycle=0): the sun map (496 x 302) draws 34 428 instances in 0.459 ms. They are mostly people, which move. GPU 37 % busy.\n- **The barrio** (hour 17.5, default): the sun map (1408 x 764 with long dusk margins) draws 375 instances, the houses, in 0.439 ms. A 3072 x 425 pass adds 0.28-0.38 ms.\n\nWhat a cache would need: the still casters' map (colour and depth) kept and copied under the movers each frame, as E-508 does for the lamps' tiles; pre-render to tell still casters from movers; and invalidation when the view, the sun or the static scenery changes.\n\nIt pays only in a game with a fixed sun and a camera that holds still (a strategy game's), up to about 0.4 ms of GPU on this card. My recommendation: park it until such a game asks; the owner's call at the end of the backlog."
+    },
+    {
+      "id": "R-1904",
+      "date": "2026-11-23",
+      "time": "14:00",
+      "timeFrom": "recorded",
+      "title": "N-299 read: the flat view's rim needs the entities to mark the stencil without ordering them, a Pixi stencil mode neither backend has (a patch on both) and discards in the sprite programs; about 4-6 h for a 1-2 px rim; resolution 1 has none (the owner's call at the end)",
+      "verdict": "note",
+      "text": "**N-299 read: the rim needs the entities to mark the canvas without ordering them, which neither backend's Pixi can do as it stands; about 4-6 h for a 1-2 px rim in flat views with walls at light resolution under 1.**\n\n- **Why the edges stay off in a flat view.** DX-LIGHTEDGES (lightEdges.js) tells floor pixels from entity pixels by the canvas's depth: pixel depth, which is on only with an oblique camera. Forcing it in a flat view orders sprites by their foot (the landing scene's letters changed).\n- **E-448's opaque pass is no stand-in.** It writes painter depth, but only on the frames where it pays and only on WebGL, so the rim would come and go.\n- **What a fix takes.** A stencil mark from the entities' own colour draw, \"always, replace with 1\", so overlapping sprites keep the painter's order. Pixi's stencil modes (mask add, mask active, inverse) have no such mode, and on WebGPU the stencil state is part of the pipeline: that means a marked Pixi patch on both backends. The sprite programs must also discard their transparent texels, or whole quads would mark. lightEdges.js then swaps its stencil tests in a flat view (no mark quad), and pixi/lighting.js turns the edges on there.\n- **Today's way out:** lighting.resolution 1 has no rim.\n\nRecommendation: the owner's call at the end of the backlog (park, or about 4-6 h)."
+    },
+    {
+      "id": "R-1905",
+      "date": "2026-11-23",
+      "time": "14:04",
+      "timeFrom": "recorded",
+      "title": "Predator gate over CR-38, N-192 part four and E-411 (main vs fix/e411-keyed-links), owner preRender, 4 pairs: NEUTRAL, every worker within 1.6 % (renderer -1.6 %, preRender +1.4 %)",
+      "verdict": "passed",
+      "text": "**The Predator gate over CR-38, N-192 part four and E-411 (main a7b18103 vs fix/e411-keyed-links bd28ee51, src/ of each in its own worktree), owner preRender, 4 pairs: NEUTRAL, every worker within 1.6 %.** Hygiene keeps for CR-38 and N-192; E-411 is start-only.\n\nrunPredatorAbab --vs main --hyp-rev fix/e411-keyed-links --owner preRender --query crowd=2.5&dayCycle=0&mix=1, GTX 1650, on AC power, the machine otherwise quiet (session 11 held its runs).\n\n| worker | main | branch | paired | worse |\n| --- | --- | --- | --- | --- |\n| logic | 17.960 | 17.789 | +0.4 % | 2/4 |\n| spatial | 8.045 | 8.122 | +0.2 % | 2/4 |\n| physics | 16.695 | 16.870 | +1.1 % | 3/4 |\n| renderer | 7.750 | 7.626 | -1.6 % | 2/4 |\n| preRender | 9.425 | 9.517 | +1.4 % | 2/4 |\n\npresented 60.0 on both sides. The load keys stay within 0.5 % (VISIBLE_ENTITIES 33 646 / 33 659, GPU_CASTERS 33 223 / 33 373). preRender's +1.4 % is under the session A/A's 3.2 %."
     }
   ],
   "leads": [
