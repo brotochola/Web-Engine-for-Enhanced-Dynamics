@@ -446,19 +446,10 @@ export class PixiShadowMaps {
    */
   _sunMapKeyedMeshFor(batch) {
     if (this.sunMapKeyedMesh !== null) return this.sunMapKeyedMesh;
-    const shaders = this.worker._engineShaders;
     const entities = this.worker.entitiesBatch;
     if (!entities || !entities.keyed) return null;
-    let program;
-    if (this.worker._useWebGpu) {
-      if (!shaders?.shadowWgsl) return null;
-      const source = sunMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true }));
-      program = { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragMap', 'sun-map-keyed', { statics: true }) };
-    } else {
-      if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
-      const vertex = sunMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true }));
-      program = { glProgram: glProgramFrom(PIXI.GlProgram, vertex, shaders.sunMapFrag, 'sun-map-keyed') };
-    }
+    const program = this.sunMapKeyedProgram();
+    if (program === null) return null;
     const r = batch.shadowShader.resources;
     const shader = entities.makeKeyedRowsShader(program, {
       uTexture: r.uTexture,
@@ -473,6 +464,24 @@ export class PixiShadowMaps {
     this.sunMapKeyedHost.addChild(mesh);
     this.sunMapKeyedMesh = mesh;
     return mesh;
+  }
+
+  /**
+   * E-395: the sun map's program over keyed caster rows (sunMapVertex over spriteIndexedVertex's keyed rows), or null
+   * when its sources did not load. E-411: the worker also makes it at start (_makeFirstUsePrograms), where it links ahead
+   * with the others (E-475); GlProgram.from keeps one a source, so the mesh made on first use takes that one. Made on
+   * first use only, it linked after the first frame: 93 ms of the start's frames in Predator light3d.
+   */
+  sunMapKeyedProgram() {
+    const shaders = this.worker._engineShaders;
+    if (this.worker._useWebGpu) {
+      if (!shaders?.shadowWgsl) return null;
+      const source = sunMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true }));
+      return { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragMap', 'sun-map-keyed', { statics: true }) };
+    }
+    if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
+    const vertex = sunMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true }));
+    return { glProgram: glProgramFrom(PIXI.GlProgram, vertex, shaders.sunMapFrag, 'sun-map-keyed') };
   }
 
   /** DX-SHADOW3D: a frame with no sun rows clears the sun's map (once). */

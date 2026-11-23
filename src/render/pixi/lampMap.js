@@ -317,6 +317,24 @@ export class PixiLampMap {
    * or a render's columns (lampMapColumnsVertex), GLSL on WebGL and WGSL on WebGPU.
    * @param {boolean} columns
    */
+  /**
+   * E-395: the lamps' map's program over keyed stamp rows (lampMapVertex over spriteIndexedVertex's keyed stamp rows), or
+   * null when its sources did not load. E-411: the worker also makes it at start (_makeFirstUsePrograms), where it links
+   * ahead with the others (E-475); GlProgram.from keeps one a source, so the meshes made on first use take that one. Made on
+   * first use only, it linked after the first frame: 100 ms of the start's frames in Predator light3d.
+   */
+  keyedProgram() {
+    const shaders = this.worker._engineShaders;
+    if (this.worker._useWebGpu) {
+      if (!shaders?.shadowWgsl) return null;
+      const source = lampMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true, light: true }));
+      return { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragLamp', 'lamp-map-keyed', { lampTiles: true, statics: true }) };
+    }
+    if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
+    const vertex = lampMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: true }));
+    return { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), 'lamp-map-keyed') };
+  }
+
   mapProgram(columns) {
     const shaders = this.worker._engineShaders;
     const name = columns ? 'lamp-map-columns' : 'lamp-map';
@@ -476,21 +494,12 @@ export class PixiLampMap {
    * @returns {boolean} whether it drew
    */
   _drawKeyed(gpu, stampN) {
-    const shaders = this.worker._engineShaders;
     const entities = this.worker.entitiesBatch;
     const casters = this.worker.gpuCasterBatch;
     if (!entities || !entities.keyed || !casters) return false;
     if (this.keyedMesh === null) {
-      let program;
-      if (this.worker._useWebGpu) {
-        if (!shaders?.shadowWgsl) return false;
-        const source = lampMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true, light: true }));
-        program = { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragLamp', 'lamp-map-keyed', { lampTiles: true, statics: true }) };
-      } else {
-        if (!shaders?.shadowVert || !shaders?.sunMapFrag) return false;
-        const vertex = lampMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: true }));
-        program = { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), 'lamp-map-keyed') };
-      }
+      const program = this.keyedProgram();
+      if (program === null) return false;
       const r = casters.shadowShader.resources;
       const keyedShader = (uniforms) => entities.makeKeyedRowsShader(program, {
         uTexture: r.uTexture,

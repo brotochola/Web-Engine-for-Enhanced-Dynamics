@@ -9,7 +9,8 @@ import assert from 'node:assert/strict';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { WALL_VERT0 } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
-import { bootPreRender, bootPreRenderGather, makeScene, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
+import { bootPreRenderGather, makeScene, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
+import { visibilityGatherJs } from '../reference/visibilityGatherJs.mjs';
 
 const SCENE = { lights: 24, boxes: 150, circles: 50, polygons: 30, rings: 5, blockHalf: 0.25 };
 
@@ -145,7 +146,14 @@ function randomSteps(seed, count) {
   return steps;
 }
 
-for (const [name, boot] of [['the JS gather', bootPreRender], ['visibilityGather.wasm', bootPreRenderGather]]) {
+/** CR-38: the gather's JS twin in the kernel's place (tests/reference/visibilityGatherJs.mjs). */
+async function bootPreRenderTwin(scene, opts) {
+  const boot = await bootPreRenderGather(scene, opts);
+  boot.pre._visGather = visibilityGatherJs(boot.pre);
+  return boot;
+}
+
+for (const [name, boot] of [['the gather\'s JS twin', bootPreRenderTwin], ['visibilityGather.wasm', bootPreRenderGather]]) {
   test(`OL-9: a kept row is the row the sweep would write, through every kind of change (${name})`, async () => {
     const off = await play(boot, 0x0919, story(), false);
     const on = await play(boot, 0x0919, story(), true);

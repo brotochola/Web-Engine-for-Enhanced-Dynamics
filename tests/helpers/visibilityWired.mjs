@@ -140,6 +140,9 @@ export async function bootPreRender(scene, {
   wasm = {}, maxVerts = 512, maxNeighbors = 256, walls = true, fixtureSlack = 16, fixtures: withPool = true,
   wallCache = true,
 } = {}) {
+  // CR-38: with walls the engine lays the gather out in its block, and pre-render has no other gather: the walls'
+  // boot is bootPreRenderGather's. Without walls nothing is gathered, and the columns stay in buffers of their own.
+  if (walls) return bootPreRenderGather(scene, { wasm, maxVerts, maxNeighbors, fixtureSlack, fixtures: withPool, wallCache });
   const N = scene.entities;
   const maxLights = Math.max(1, scene.lights);
   const fixturePool = Math.max(16, scene.fixtures + fixtureSlack);
@@ -218,8 +221,10 @@ function referenceBuffers(maxLights, maxVerts, maxNeighbors, entities) {
 /**
  * W2b: bootPreRender with what the gather kernel reads in one shared memory, as Phase 4 lays it in Box2D's block:
  * Transform (its block and its pose columns), Collider, LightOccluder, the neighbour rows, the visibility regions
- * and the gather's table, results and events (renderQueueLayout.collect.visibility). With `pre._visGather` set to null
- * after it, the worker gathers in JS on the same memory. `groundScaleY` is camera.floorScaleY.
+ * and the gather's table, results and events (renderQueueLayout.collect.visibility). With
+ * `pre._visGather = visibilityGatherJs(pre)` after it (tests/reference/visibilityGatherJs.mjs), the worker gathers
+ * through the kernel's JS twin on the same memory (CR-38: pre-render has no JS gather of its own). `groundScaleY` is
+ * camera.floorScaleY.
  */
 export async function bootPreRenderGather(scene, {
   wasm = {}, maxVerts = 512, maxNeighbors = 256, fixtureSlack = 16, fixtures: withPool = true,

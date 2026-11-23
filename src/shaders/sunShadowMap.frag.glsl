@@ -21,6 +21,9 @@ out vec4 finalColor;
 void main() {
   if (texture(uTexture, mix(vAtlasUV.xy, vAtlasUV.zw, vLocal)).a < 0.5) discard;
   float h = clamp(vSunZ / 512.0, 0.0, 1.0);
+  // N-192: one height step at least (sunShadowMap.js SUN_MAP_MIN_Z): the light pass shades a floor point under a texel
+  // above 0, and a caster's base (its height under half a step) rounded to an empty texel's 0, leaving the floor lit there.
+  h = max(h, 1.0 / 255.0);
   int id = int(vSunId + 0.5);
   // DX-CASTER: G, how much light the caster takes out (its opacity, which its row's vertex passes in vColor.g).
   finalColor = vec4(h, clamp(vColor.g, 0.0, 1.0), float(id >> 8) / 255.0, float(id & 255) / 255.0);

@@ -12,8 +12,9 @@ import { gbufEntityId } from '../../src/render/gbufWord.js';
 import { WALL_UMBRA, WALL_VERT0, wallRowLight } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import {
-  bootPreRender, bootPreRenderGather, makeScene, onPolarRay, runFrame, runFrameJs, writeFrame,
+  bootPreRenderGather, makeScene, onPolarRay, runFrame, runFrameJs, writeFrame,
 } from '../helpers/visibilityWired.mjs';
+import { visibilityGatherJs } from '../reference/visibilityGatherJs.mjs';
 
 const SCENE = { lights: 24, boxes: 150, circles: 50, polygons: 30, rings: 5, blockHalf: 0.25 };
 
@@ -191,8 +192,12 @@ function bounce(x0, v, t, lo, hi) {
 const boundX = (e, t) => Math.fround(bounce(e.x, e.vx, t, 20, 2400 - 20));
 const boundY = (e, t) => Math.fround(bounce(e.y, e.vy, t, 20, 1800 - 20));
 
-test('the rows say what the polygons say (the JS gather)', async (t) => {
-  await compare(t, (sc) => bootPreRender(sc, { maxNeighbors: 512 }));
+test('the rows say what the polygons say (the gather\'s JS twin)', async (t) => {
+  await compare(t, async (sc) => {
+    const worker = await bootPreRenderGather(sc, { maxNeighbors: 512 });
+    worker.pre._visGather = visibilityGatherJs(worker.pre);
+    return worker;
+  });
 });
 
 test('the rows say what the polygons say (the gather in visibilityGather.wasm)', async (t) => {

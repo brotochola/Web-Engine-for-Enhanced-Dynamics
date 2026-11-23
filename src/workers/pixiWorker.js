@@ -3563,15 +3563,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     const casters = this.gpuCasterBatch;
     if (casters && shaders.shadowVert && shaders.sunMapFrag) {
+      // E-411: with keyed frames, the maps' programs over keyed caster rows (E-395) too: made on first use, they linked
+      // after the first frame (93 and 100 ms of Predator light3d's start).
+      const keyed = batch !== null && batch.keyed;
       // DX-SHADOW3D: the sun's map's cards and columns (_drawSunMap).
       if (this._sunMapOn) {
         this.shadowMaps.sunShadowProgram('map');
         this.shadowMaps.sunShadowProgram('mapColumns');
+        if (keyed) this.shadowMaps.sunMapKeyedProgram();
       }
       // DX-SHADOW3D (F7): the lamps' map's cards and columns (lampMap.js draw).
       if (this._lampMapOn) {
         this.lampMap.mapProgram(false);
         this.lampMap.mapProgram(true);
+        if (keyed) this.lampMap.keyedProgram();
       }
     }
     // E-453: a MESH layer's UV meshes (_ensureMeshUvBatch: one program for every layer's batch, the first layer's name);

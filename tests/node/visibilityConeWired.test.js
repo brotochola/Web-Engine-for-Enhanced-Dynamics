@@ -12,6 +12,7 @@ import { Transform } from '../../src/components/transform.js';
 import { wallRowLight } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import { bootPreRenderGather, makeScene, rowBits, rowWalls, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
+import { visibilityGatherJs } from '../reference/visibilityGatherJs.mjs';
 
 const TIMES = [0, 0.6, 1.7, 3.1];
 
@@ -38,7 +39,8 @@ function wedge(i, g) {
 async function run(seed, g, check) {
   const scene = makeScene(seed, { cones: 0.5 });
   const jsBoot = await bootPreRenderGather(scene, { groundScaleY: g });
-  jsBoot.pre._visGather = null;
+  // CR-38: the kernel's JS twin, which (as pre-render's JS gather did) culls nothing by the wedge.
+  jsBoot.pre._visGather = visibilityGatherJs(jsBoot.pre);
   const jsFrames = [];
   for (const t of TIMES) {
     writeFrame(jsBoot, t, { scene });
