@@ -20049,19 +20049,20 @@
     {
       "id": "E-465",
       "title": "light3dCompare's sun map costs 0.460 ms a frame on WebGL against 0.074 on WebGPU for the same 21 900 instances at 960 x 540, both at 1785 MHz: something loses early depth (or adds work) on the GL path",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "status": "answered",
+      "statusText": "answered 2026-11-23 (R-1960): 0.09 ms with its clear on WebGL now",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
       "result": "Both sources use the vertex depth test. Per draw with webgpuFrameRecorder and glFrameRecorder in the same sitting.",
-      "next": "Compare the two programs and states: a discard or gl_FragDepth on GL, the depth attachment's format, depth func and write; --probe-scissor on GL to split fill from vertex work; the fix on GL, the image identical.",
+      "next": "",
       "refs": [],
       "aliases": [
         "sun map webgl slow"
       ],
       "records": [
-        "R-1215"
+        "R-1215",
+        "R-1960"
       ]
     },
     {
@@ -20079,14 +20080,15 @@
         "volume mesh webgl slow"
       ],
       "records": [
-        "R-1215"
+        "R-1215",
+        "R-1960"
       ]
     },
     {
       "id": "E-467",
       "title": "The entity draws are slower on WebGPU than on WebGL for the same instances: 3.06 against 2.52 ms (+21 %) in light3dCompare and 1.71 against 1.64 in Predator by night",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "status": "parked",
+      "statusText": "parked 2026-11-23 (R-1960): the colour pass within the clocks of both backends",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
@@ -20097,7 +20099,8 @@
         "webgpu entity draw slower"
       ],
       "records": [
-        "R-1215"
+        "R-1215",
+        "R-1960"
       ]
     },
     {
@@ -43672,6 +43675,15 @@
       "title": "DX-POSTFUSE kept: shader.pointwise, consecutive SCREEN passes that only map a colour in one draw; three passes 0.412 -> 0.155 ms of GPU (-63 %), Sun Street's two -48 % raw",
       "verdict": "kept",
       "text": "**DX-POSTFUSE kept: `shader.pointwise` draws consecutive SCREEN layers that only map a colour as one full-screen pass; the chain's GPU -63 % for three passes (0.412 -> 0.155 ms, 4/4) and -48 % for Sun Street's two (0.529 -> 0.273, 3/4; -28 % at equal clock), GTX 1650. Branch feat/post-fuse; the owner chose the opt-in mark.**\n\n**What it is.** A LAYER_KIND.SCREEN layer marked `pointwise` writes `vec4 weedPass(vec4 color, vec2 uv)` (GLSL) or `fn weedPass(color: vec4f, uv: vec2f) -> vec4f` (WGSL) and no entry point; it samples nothing. The renderer generates one fragment for each run of them (src/render/pointwisePass.js): each member's names and uniforms suffixed, its `visible` a uniform switch, the colour clamped to 0 to 1 between members, the engine's look uniforms shared. A whole-fragment layer between two, or another `resolution`, starts another draw. Refused at load with the layer's name: no weedPass, a `main` of its own, or a sampled texture. Not built: pointwise passes fused into the fragment of a pass that samples neighbours (the row's second half).\n\n**The picture.** dxCaptureScene ?postVignette=1 and 3, whole fragments against pointwise maps, WebGL and WebGPU: one pass exact (0 pixels), three at most 2 of 255 (the fused chain does not round to 8 bits between passes); the control, none against three, differs in all 921 600. Sun Street still (paused, no cars, 18:30 and 22:00): outside its moving panel the extra differing pixels against the A/A are all of 1 (190 000 to 220 000 of 648 000), those of 3 or more equal the A/A's. Both demos load without page errors on both backends.\n\n**Timed** (glFrameRecorder --gpu-draws, headed, 1920 x 1080, 4 ABBA pairs, every run's HEAD checked): the SCREEN chain's own draws (the one-draw-a-frame [uTexture] rows).\n- Three passes (dxCapture): 3 draws -> 1; 0.412 -> 0.155 ms (-63 %, ms x MHz -65 %, against the untouched draws -65 %, 4/4).\n- Sun Street: 2 draws -> 1; 0.529 -> 0.273 ms (-48 %, ms x MHz -28 %, against the untouched draws -40 %, 3/4; clocks 480 to 795 MHz).\nAbout 0.13 ms a fused pass at the clock the GPU held (about 0.08 at full clock). The frame's sum of draws moved with the clock, not the fusion (dx 3.465 -> 3.537): the saving is 0.26 ms of about 3.5. HD 620 not measured (estimated 0.5 to 0.8 ms a pass). node 3618/3618, demos 143/143 with main merged in."
+    },
+    {
+      "id": "R-1960",
+      "date": "2026-11-23",
+      "time": "17:23",
+      "timeFrom": "recorded",
+      "title": "Both backends pass by pass again: the sun map on WebGL 0.09 ms now (E-465 closed); the colour pass 2.31 against 2.41 ms in Predator (E-467 parked); the volumes' mesh draw still 5.2 ms on WebGL against 1.9 on WebGPU (E-466 open)",
+      "verdict": "note",
+      "text": "glFrameRecorder and webgpuFrameRecorder --gpu-draws, main b052a061 (and the guide and register commits made while it ran), headed\nChrome 158, GTX 1650, 1920 x 1080, 3 s after 12 s, one recording a cell, 17:21 to 17:23 by the result files. Chrome 158's\nWebGPU no longer gives timestamps inside passes, so the WebGPU side is a pass at a time. Clocks are the window's median.\n\n| | WebGL | WebGPU |\n| --- | --- | --- |\n| light3dCompare hour 12, all passes | 2.317 ms (900 MHz) | 2.085 (645) |\n| - colour | 0.796 | 0.907 |\n| - sun map (976 x 748, 3 400 instances) | 0.059 and a clear of 0.033 | 0.000 (not credible) |\n| Predator light3d hour 22, all passes | 5.384 (1620) | 5.064 (1785) |\n| - colour | 2.305 | 2.412 |\n| - light pass, lamps' map, unshaded, G-buffer | 1.113, 0.746, 0.543, 0.478 | 0.984, 0.691, 0.506, 0.433 |\n| volumeStress, all passes | 5.538 (1365) | 2.650 (855) |\n| - the mesh draw | 5.172 | 1.910 |\n\n- E-465: 0.460 ms on 2026-11-16 at 21 900 instances of 960 x 540; now 0.092 with its clear, at 3 400 instances of 976 x 748\n  (another load, so not a before and after). Nothing to win: closed.\n- E-467: the colour pass is 5 % slower on WebGPU in Predator at a 10 % higher clock, and at a 28 % lower one in\n  light3dCompare 14 % slower in time (faster in cycles). Not one sign; parked.\n- E-466: the gap is real, at a lower clock on WebGPU. Next: what ANGLE does with the batch's DYNAMIC buffers (25.8 MB of\n  vertices and 11 MB of indices, of which about 200 KB change a frame); the bench that draws it in 0.6 ms makes them STATIC."
     }
   ],
   "leads": [
