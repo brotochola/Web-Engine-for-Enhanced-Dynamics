@@ -24138,16 +24138,18 @@
     },
     {
       "records": [
-        "R-1442"
+        "R-1442",
+        "R-1914"
       ],
       "refs": [],
       "id": "DX-LAYERPASSES",
       "title": "Layer shaders in two passes (a pass-1 target the second pass samples), so a game's blur or bloom can be separable",
-      "status": "open",
+      "status": "kept",
       "kind": "dx",
       "area": "render",
       "date": "2026-11-18",
-      "statusText": "approved by the owner 2026-11-23; built on feat/layer-passes (design DX_LAYERPASSES_DESIGN.md); the platformer bloom to be measured and the picture compared"
+      "statusText": "kept 2026-11-23 (R-1914): shader.passes, built on feat/layer-passes, approved by the owner",
+      "result": "the platformer bloom draws 5.06 -> 1.62 ms raw (-68 %), about 0.6 to 0.9 ms at equal clock; copies chained are exact on both backends"
     },
     {
       "records": [
@@ -43621,6 +43623,15 @@
       "title": "E-553 dropped: the decal tiles' occupied cells cut the HD 620's decal draws 10 to 25 % (2-4 % of a frame, within its noise); 250 lines and a WASM kernel for it",
       "verdict": "dropped",
       "text": "Built on perf/decal-cells (b58e9ced, not merged): each tile's 4 x 4 occupied cells from its premultiplied texels (decal_tile_mask in\nwasm/decalPremultiply.c, 4.5 us a 128 px tile in Node, 0.3 us a full one; parity test against tests/reference/decalTileMask.mjs),\nits rectangles of cells as instances. Captures identical to main on decalCaptureScene at ?resolution=0.5 and 1, ?zoom=0.3 and 2,\nWebGL and WebGPU; at ?resolution=2, 47 of 921 600 pixels by 1. ASUS job 0917a (16:32 to 16:41 by its result files; glFrameRecorder --gpu-draws, Predator crowd 0.5, main\nf11365c9 against it, 2 pairs each): the decal draws' ms a frame by night 2.85, 2.69 -> 2.08, 2.94 and by day 3.27, 3.31 ->\n2.25, 2.82, of a 14.8 to 16.5 ms frame. The gain is 0.3 to 0.7 ms on the HD 620 (2 to 4 % of the frame, its pairs' spread the\nsize of it), nothing on the GTX 1650 (its decal draws 0.15 ms). Not worth the kernel: the branch is dropped. What else\nE-400 has for the colour pass on weak GPUs (the entity sprites 1.9 ms, the tilemap 1.35, the light composite 1.0) is where to look."
+    },
+    {
+      "id": "R-1914",
+      "date": "2026-11-23",
+      "time": "17:00",
+      "timeFrom": "recorded",
+      "title": "DX-LAYERPASSES kept: shader.passes, a layer's look in several passes; the platformer's bloom draws 5.06 -> 1.62 ms raw (-83 % at equal clock) on the GTX 1650",
+      "verdict": "kept",
+      "text": "**DX-LAYERPASSES kept: `shader.passes` gives a look several passes, each into a target the next samples; the platformer's bloom draws 5.06 -> 1.62 ms raw (-68 %) on the GTX 1650, -83 % at equal clock (about 0.9 ms) and -88 % against the draws it leaves alone (about 0.6). Branch feat/layer-passes; owner-approved API; design DX_LAYERPASSES_DESIGN.md.**\n\n**What it is.** `shader.passes: [{ fragment, resolution? }, ...]` in place of `shader.fragment`, for SPRITES, MESH, DENSITY, COMPUTE, GPU_PARTICLES and SCREEN layers (not worldRect nor the scenery kinds: errors at load). The last pass is the look as it was; the ones before it (src/render/pixi/lookPasses.js) draw full-screen into targets of their own. `uTexture` is the pass before, `uSource` what the first one read, `uTexelSize` (a reserved look uniform of every look now) one over `uTexture`'s size. A layer without earlier passes tests one null.\n\n**The picture.** Copies chained are exact: 0 of 921 600 pixels differ for a SPRITES look, a MESH look on the stage and composed (alpha 0.5), and a SCREEN layer, in 2 and 3 passes, with `uSource`, on WebGL and WebGPU (dxCaptureScene ?lookPasses=, ?passScale=, ?lookLast=, ?screen=; the controls differ: a quarter-size pass in 422 857 pixels, WebGL against WebGPU in 76). The platformer's bloom against the 289-fetch blur: the two passes at full size 7 446 pixels at most 2/255 (E-450's 81 fetches: 9 814, at most 1); with the rows at half size (the shipped demo) 31 756 at most 5, not visible. COMPUTE, DENSITY and GPU_PARTICLES looks in passes run the same code and were not captured.\n\n**Timed** (glFrameRecorder --gpu-draws, headed, 1920 x 1080, 4 ABBA pairs each, every run's HEAD checked, main f11365c9 against the branch): the bloom's draws, rows at full size 5.31 -> 3.12 ms (4/4), at half size 5.06 -> 1.62 (4/4). The GPU's clock follows the load (1400-1530 MHz -> 720-885), so the raw gain is a floor: ms x MHz -67 % and -83 %, the ratio to the untouched draws (about 2.5 times slower in B by the clock) -74 % and -88 %. node 3604/3604, demos 143/143."
     }
   ],
   "leads": [
