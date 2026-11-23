@@ -23968,11 +23968,11 @@
     {
       "id": "DX-BACKENDAUTO",
       "title": "renderer.backend 'auto': WebGPU where an adapter exists and every custom shader of the scene has a WGSL version, WebGL otherwise with one warning; today a page without WebGPU does not start",
-      "status": "open",
-      "statusText": "proposed 2026-11-18 from three.js's WebGPURenderer (WebGPU first, its WebGL2 backend as the fallback; featureLevel 'compatibility' since #32762) (R-1422); not built",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (09d44fa4, R-1888); the default is the owner's call",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Build 'auto' as REVIEW_PLAN.md#DX-BACKENDAUTO designs it (adapter in compatibility mode, WGSL for every look, fill and compute, else WebGL and a warning naming why, compute requires WebGPU, scene.gpu.backend reports the choice). The owner decides whether it becomes the default, and whether it prefers WebGL while E-467 stands.",
+      "result": "renderer.backend 'auto' (09d44fa4): WebGPU with an adapter and WGSL looks, else WebGL and one warning; images identical to the backend it picks",
+      "next": "The owner: whether 'auto' becomes the default.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -23985,7 +23985,8 @@
         "featureLevel compatibility"
       ],
       "records": [
-        "R-1422"
+        "R-1422",
+        "R-1888"
       ]
     },
     {
@@ -43179,6 +43180,15 @@
       "title": "DX-SUNTARGET superseded by E-531: the sun's shadows of sprites, volumes and baked layers all go into the sun's map",
       "verdict": "note",
       "text": "DX-SUNTARGET asked for one render target for every sun shadow (sprites, volumes, baked layers), so crossings count once.\nSince E-531 (merged 0ca040c1) the sun's shadows are its map alone: cards, columns and volumes are drawn into it, keeping the\nhighest caster at each texel, and the light pass reads it once; a crossing darkens once."
+    },
+    {
+      "id": "R-1888",
+      "date": "2026-11-23",
+      "time": "12:50",
+      "timeFrom": "recorded",
+      "title": "DX-BACKENDAUTO kept: renderer.backend 'auto' draws with WebGPU where it works and WebGL where it does not; the default stays 'webgpu'",
+      "verdict": "kept",
+      "text": "09d44fa4 (main): renderer.backend 'auto', as REVIEW_PLAN.md#DX-BACKENDAUTO designed it, decided in Scene.init before the\nworkers boot: WebGPU when navigator.gpu gives an adapter and every layer's look shader has a WGSL version (a map's webgpu\nentry, a .wgsl path, or a fetched source that reads as WGSL), else WebGL and one console warning naming why (no WebGPU,\nno adapter, or the layer); a compute layer without WebGPU fails naming the layer. 'auto' stays until init resolves it\n(normalizeRendererBackend and assertSceneRendererConfig take it). rendererBackendAuto.test.js covers each case.\nBrowser: the light gallery (99fee985's ?backend=auto) 'auto' against 'webgpu', 0 of 921 600 pixels differ; with Chrome's\n--disable-gpu (no adapter) 'auto' against 'webgl', 0 differ. test:node 3586/3586, test:demos 143/143. The default stays\n'webgpu': whether 'auto' becomes it, and whether it should prefer WebGL while E-467 stands, is the owner's call."
     }
   ],
   "leads": [
