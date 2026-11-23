@@ -24059,7 +24059,7 @@
       "id": "DX-POSTFUSE",
       "title": "SCREEN passes that only map their pixel's colour fused into one shader (an opt-in pointwise contract), as three.js's RenderPipeline fuses every effect that samples no neighbours: each fused pass saves a full-screen read and write",
       "status": "open",
-      "statusText": "owner 2026-11-23: asked whether it is automatic (the dev never notices, the picture the same, only faster), then yes; told it is opt-in, the dev marks a pass pointwise and writes weedPass (the engine cannot know a shader that reads neighbours from one that does not); waiting for the second answer",
+      "statusText": "approved by the owner 2026-11-23, option (a): the opt-in pointwise mark; after DX-LAYERPASSES (same files)",
       "date": "2026-11-18",
       "result": "",
       "next": "Contract and generation as REVIEW_PLAN.md#DX-POSTFUSE describes (shader.pointwise with a weedPass(color, uv) function, consecutive pointwise passes generated into one fragment, uniforms renamed by layer). Judged by GPU per pass (the recorders) on a three-pass grading stack, the picture identical on both backends; goes with DX-POST's phase 2.",
@@ -24147,7 +24147,7 @@
       "kind": "dx",
       "area": "render",
       "date": "2026-11-18",
-      "statusText": "approved by the owner 2026-11-23 (\"si, queremos esa nueva api!\"): a layer shader in two passes, the second sampling the first (a separable blur/bloom); design, then the platformer's bloom as its measure (4.3 ms to well under 1)"
+      "statusText": "approved by the owner 2026-11-23; built on feat/layer-passes (design DX_LAYERPASSES_DESIGN.md); the platformer bloom to be measured and the picture compared"
     },
     {
       "records": [
@@ -25529,17 +25529,18 @@
     {
       "records": [
         "R-1891",
-        "R-1908"
+        "R-1908",
+        "R-1913"
       ],
       "refs": [],
       "id": "E-551",
       "title": "The lamps' map costs the HD 620 4.5 ms of GPU a frame by night and 3.5 ms by day in Predator crowd 0.5 (4096 x 1536 and 4096 x 1024, about 8 000 instances): the unified path's largest pass there",
-      "status": "dropped",
+      "status": "kept",
       "kind": "gpu",
       "area": "renderer",
       "date": "2026-11-23",
-      "result": "",
-      "statusText": "dropped 2026-11-23 (R-1908): per-lamp sides -31 % by night on the HD 620 but a loss by day; capped flat; the widest lamps' tiles fill the map; the code is on perf/e551-lamp-tiles; the owner accepted the coarser small-lamp edges (2026-11-23), kept dropped because capped it measured flat",
+      "result": "lamps' map pass, night: GTX 1650 1.099 -> 0.822 ms (-25 %), HD 620 6.67 -> 3.13 (-53 %); day flat to -14 %",
+      "statusText": "kept 2026-11-23 (R-1913): per-lamp tiles capped at the uniform rule's side, on perf/e551-lamp-tiles; R-1908's drop was an A/A (its job's B never ran)",
       "next": "Where the fill goes on the HD 620 (--gpu-draws there: the floor half, the ceiling half, the clear); then a smaller auto tile where many lamps share the atlas (the rule rounds the wanted size up), the clear of the tiles in use only, and whether a lamp whose light the sun outshines by day needs its shadows.",
       "aliases": [
         "lamp map HD 620",
@@ -43602,6 +43603,15 @@
       "title": "E-406 parked: the light pass's register count did not move (23-24 temps) through E-408's and E-409's rewrites; the occupancy was not re-measured",
       "verdict": "note",
       "text": "E-408 cut Predator's light pass from 1069 to 752 HLSL slots when it wrote one body a light, with 24 -> 23 temps, and the\npass ran 4 to 12 % slower (dropped, R-1893); what paid was the order a light's rows are fetched in (kept: light3d -3.6 % on\nWebGL, -2.0 % on WebGPU). E-409 packed a lamp's reach and lampPanoUv's inner part: 24 -> 23 temps, light3d -1.1 % on WebGL,\n-3.6 % on WebGPU. ANGLE's D3D11 temps are not the GPU's registers; the Nsight Systems GPU metrics (warps in flight,\nunallocated warps) that would say whether register pressure caps occupancy now need an elevated tool run, which this session\ndid not do. Parked until the GPU Trace of the two versions (before E-408, after E-409) can be taken on this machine."
+    },
+    {
+      "id": "R-1913",
+      "date": "2026-11-23",
+      "time": "16:38",
+      "timeFrom": "recorded",
+      "title": "E-551 kept: per-lamp lamp-map tiles, capped, the pass -25 % by night on the GTX 1650 and -53 % on the HD 620, day flat to -14 %; R-1908's drop was an A/A",
+      "verdict": "kept",
+      "text": "**E-551 reopened and kept: per-lamp tiles with the cap take the lamps' map -25 % by night on the GTX 1650 and -53 % on the HD 620, flat to -14 % by day (perf/e551-lamp-tiles, merged main f11365c9). R-1908's drop was wrong.**\n\n**What was wrong in R-1908.** The capped run (0914a) was an A/A: its job fetched a ref the bundle did not hold (asus/e551s2 for asus/e551s3), the worktree for B was never made, the `cd` failed and B ran A's folder. The atlas sizes said so (B's equal to A's exactly, by night and by day) and went unexplained. \"The wide lamps' tiles fill the map\" was inferred: by count, night has 36 to 40 lamps of reach 400 and 8 of 1000. Its table was also per page frame, not per drawn frame (the map is drawn in about two frames of three there).\n\n**The tiles, counted** (probe in the Pixi worker, Predator crowd 0.5, 90 frames, the same lamps under both rules): texels of the tiles 4.35 M -> 2.09 M by night (-52 %), 4.08 M -> 2.40 M by day (-41 %).\n\n**Timed** (glFrameRecorder --gpu-passes, 4 ABBA pairs, 5 s each, ms per drawn frame, medians; each run printed its HEAD, A f11365c9 and B 3134a06e; the ASUS job 0916a stops on any failed step):\n\n| lamps' map | main | capped | pairs |\n| --- | --- | --- | --- |\n| GTX 1650, night | 1.099 | 0.822 (-25 %) | 4/4 |\n| GTX 1650, day | 1.750 | 1.649 (-6 %; -2 % at equal clock) | 3/4 |\n| HD 620, night | 6.667 | 3.132 (-53 %) | 3/4 |\n| HD 620, day | 6.757 | 5.821 (-14 %) | 3/4 |\n\nThe HD 620 night pair it lost: A's window had no wide lamp (atlas 4096 x 384, 1.66 ms), B's had. The light pass, with each tile's rect per lamp: GTX 0.605 -> 0.616 night, 0.265 -> 0.272 day; HD 620 3.14 -> 2.96, 1.21 -> 1.16. Not timed again: the CPU (the planning, an insertion sort of 48 sides a frame), the earlier Predator gate having moved with the drift. The small lamps' edges are coarser, accepted by the owner (2026-11-23). node 3596/3596."
     }
   ],
   "leads": [
