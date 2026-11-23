@@ -141,7 +141,7 @@ export async function buildScenery(p) {
   }
 
   // The light data texture (pixiWorker: row 0 x, floor y, I', range² or the tile's tag; row 1 colour and height; row 2 a cone;
-  // row 3 x a lamp's fade at the cut, N-212).
+  // row 3 x a lamp's fade at the cut, N-212, and y its shadows' reach, E-409).
   const maxLights = Math.max(p.maxLights, p.lights, 1);
   const lightData = new Float32Array(maxLights * LIGHT_ROWS * 4);
   // The first `lamps` lights are the lamps with a tile (their tag in row 0's w): today's light pass does not read it, the
@@ -155,8 +155,9 @@ export async function buildScenery(p) {
     const k = base / intensity;
     lightData.set([l.x, l.floorY, intensity, tiled ? -(i + 1) : l.reach * l.reach], i * 4);
     lightData.set([k, 0.85 * k, 0.6 * k, l.elevation], (maxLights + i) * 4);
-    // N-212: no lamp fades at the cut here.
-    lightData.set([1, 0, 0, 0], (maxLights * 3 + i) * 4);
+    // N-212: no lamp fades at the cut here. E-409: a lamp's shadows reach its radius, minus it in the y (the light pass
+    // from before E-409 takes 10 sqrt(I' - h²) for anything not positive there, the same radius).
+    lightData.set([1, tiled ? -l.reach : 0, 0, 0], (maxLights * 3 + i) * 4);
     // DX-SPOT: the first p.cones lights are cones: a direction on the floor, the cosine of a 30 to 60 degree half aperture
     // and 1 / the soft edge's width (0.25).
     if (i < p.cones) {

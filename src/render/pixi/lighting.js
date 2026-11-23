@@ -751,9 +751,11 @@ export class PixiLighting {
           if (ids) lightData[i3 + 3] = gbufEntityId(entityIndex);
           // N-212: its fade at the cut, times lighting.lampShadowAlpha: how much of its light its shadows take out.
           lightData[i3] = (entityIndex < fadeOf.length ? fadeOf[entityIndex] : 1) * shadowAlpha;
-          // E-510: how far its shadows reach, where its shadowRange is under its radius (its tile spans that).
+          // E-510: how far its shadows reach, the span of its tile: its shadowRange where that is under its radius
+          // (positive: its shadows fade out over the last fifth), minus its radius otherwise (E-409: the light pass reads
+          // it instead of taking 10 sqrt(I' - h²) at every pixel).
           const shadowRange = lightShadowRange[entityIndex];
-          if (shadowRange > 0 && shadowRange < rad) lightData[i3 + 1] = shadowRange;
+          lightData[i3 + 1] = shadowRange > 0 && shadowRange < rad ? shadowRange : -rad;
         }
       }
       const i1 = row1 + i0;
