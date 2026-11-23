@@ -4434,6 +4434,8 @@ non-shared memory Pixi owns; meshApiStressScene's Pixi STEP_MS, the other worker
 `texSubImage2D`, `premultiplyDecalTile` 100 % on `dst.set(b.scratch)`; decalBlitStressScene's upload 415 ms.
 **Plan:** upload from the premultiplied scratch, only the rows or rect a stamp touched; the decal scenes' Pixi STEP_MS.
 Owner: Pixi.
+**KEPT 2026-11-23 (R-1957), another way:** E-552 made the tiles layers of array textures, and dirty tiles whose layers
+follow one another go up in one call: decalBlitStressScene's Pixi 2.08 -> 0.81 ms, Chrome's GPU process -76 %.
 
 ### E-271 fillQueueIndices writes the same identity every frame
 
