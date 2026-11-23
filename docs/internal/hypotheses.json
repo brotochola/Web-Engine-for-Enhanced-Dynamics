@@ -11120,11 +11120,11 @@
     {
       "id": "DX-SUNTARGET",
       "title": "One render target for all the sun's shadows (a step 0 for DX-SUNMASK)",
-      "status": "open",
-      "statusText": "An idea from the volume review (B3), not measured",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-23 (R-1887)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Sprites, volumes and baked layers draw their sun shadows into one target, so crossings count once, with the light pass untouched.",
+      "result": "Superseded by E-531: every sun shadow is the sun's map",
+      "next": "",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -11136,7 +11136,8 @@
         "ShadowCaster and volume cross"
       ],
       "records": [
-        "R-0853"
+        "R-0853",
+        "R-1887"
       ]
     },
     {
@@ -19592,19 +19593,20 @@
     {
       "id": "E-454",
       "title": "Opaque untextured mesh layers (volumes, black sun-projected meshes) blend every pixel over about 7 layers of overdraw: their rows are alpha 255 with no texture, so they could draw without blending, or with a stencil early-out, for the same pixels",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-23 (R-1885)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "volumeStressScene after E-419: fill about 1.5 to 2.8 ms of the 8.2 to 9.5 ms a draw at P8; the town covers about 99 % of its 1920 x 1080 target with about 7 times overdraw, black, premultiplied, normal blending.",
-      "next": "When every row of a layer is opaque and untextured (a flag the packer can keep), draw it with blending off, or stencil first and color after; the image identical; per draw before and after.",
+      "result": "Superseded by E-531: the volumes' black layer is not drawn in map mode",
+      "next": "",
       "refs": [],
       "aliases": [
         "opaque mesh layers no blend"
       ],
       "records": [
-        "R-1200"
+        "R-1200",
+        "R-1885"
       ]
     },
     {
@@ -22340,11 +22342,11 @@
     {
       "id": "E-517",
       "title": "The lamps' map skips a lamp's tile that nothing changed (not cleared, not drawn) instead of copying a cache under the movers (E-460)",
-      "status": "open",
-      "statusText": "found 2026-11-17 reading PixiJS 3D's shadows: each map is redrawn by rate (shadow.update) or when stale (cascadeRenderSkip, needsRender) and otherwise kept, never composited; not measured",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-23 (R-1884)",
       "date": "2026-11-17",
-      "result": "",
-      "next": "Pre-render marks a lamp's tile dirty when the lamp, its picked casters or their poses changed (a hash a lamp); Pixi clears and draws only the dirty tiles (a scissored clear, E-446's whole-map clear otherwise); light3dCompare all=1 staticProps=1 and sunShadowMap lamps=48 against E-418's and E-460's numbers.",
+      "result": "Dropped: no still tile in Predator (0 of 48), 175 rows in Buenos Aires (its volumes cached by E-508)",
+      "next": "",
       "area": "render",
       "kind": "speed",
       "refs": [
@@ -22356,7 +22358,8 @@
         "dirty lamp tiles"
       ],
       "records": [
-        "R-1315"
+        "R-1315",
+        "R-1884"
       ]
     },
     {
@@ -24645,7 +24648,8 @@
         "R-1871",
         "R-1874",
         "R-1881",
-        "R-1883"
+        "R-1883",
+        "R-1886"
       ],
       "refs": [],
       "id": "E-531",
@@ -43139,6 +43143,42 @@
       "title": "E-531 on the ASUS after E-547: the HD 620 draws 18.9 % fewer frames by night and 13.7 % by day than main before the merge; renderer +17 to +20 %, pre-render +25 % by night",
       "verdict": "note",
       "text": "The ASUS (i7-7500U, Intel HD 620), job 0907c (2026-11-23, 11:10 to 11:57 by its log): exp/one-shadow-path at 4bbdf324 (E-547's\ncompact halos, lightGlow still 'add' there) against the main PC's main of 2026-11-22 (pcmain1122c), whole revisions,\nrunPredatorAbab, Predator crowd 0.5, 8 pairs, owner renderer.\n- By night: drawn 46.1 -> 37.3 fps (-18.9 %, 8/8 fewer); renderer 7.840 -> 9.387 ms (+19.7 %, 6/8, +1.2 % against the\n  others), pre-render 9.874 -> 12.906 ms (+25.3 %, +19.8 % against the others); logic and physics noisy (cv up to 233 %).\n  Load: GPU_SHADOW_LIGHTS 39.4 -> 45.4 (+15.1 %), GPU_CASTERS +9.7 %, so FAIL (load).\n- By day: drawn 49.5 -> 43.3 fps (-13.7 %, 8/8 fewer); renderer 7.384 -> 8.680 ms (+16.8 %, 8/8 worse).\nAgainst job 0906b (the branch before E-547, by night -19.1 %): E-547 did not move the HD 620's night. On this PC the same\nmerge was neutral by night and by day (R-1874): the unified path costs the 2-core laptop more, in its CPU workers too."
+    },
+    {
+      "id": "R-1884",
+      "date": "2026-11-23",
+      "time": "11:00",
+      "timeFrom": "recorded",
+      "title": "E-517 dropped: no lamp tile stays still in Predator by night (0 of 48 a frame), and Buenos Aires' map draws 175 rows",
+      "verdict": "dropped",
+      "text": "A probe in lampMap.js's keyed draw (2026-11-23, main of the unified branch, not committed) hashed each lamp tile's stamp\nrows and its lamp every frame: Predator crowd 2.5 light3d by night, 48 tiles, 0.000 of them unchanged from the frame\nbefore (every lamp has walkers in its reach, and N-413's fades move with them). Buenos Aires by night draws its lamps'\nmap from full rows, 175 stamp rows in 13 tiles, its houses through E-508's volume cache already. A tile skipped when\nnothing changed has nothing to skip in either: dropped."
+    },
+    {
+      "id": "R-1885",
+      "date": "2026-11-23",
+      "time": "12:30",
+      "timeFrom": "recorded",
+      "title": "E-454 superseded by E-531: with shadows on the volumes cast into the sun's map, and their black layer draws nothing",
+      "verdict": "note",
+      "text": "E-454 measured the volumeShadows layer's black sun-projected meshes blending over about 7 layers of overdraw. Since E-531\n(merged 0ca040c1) shadows are the maps, and customLayers.js hides a sunProjected layer's mesh while the sun's map is on\n(_sunMapOn): the volumes draw into the map, not onto a layer. A game's own sunProjected mesh layer still draws with\nshadows off, which is its own content. Nothing left to make opaque."
+    },
+    {
+      "id": "R-1886",
+      "date": "2026-11-23",
+      "time": "12:26",
+      "timeFrom": "recorded",
+      "title": "E-531's merge: the bundle against its sources, Boids, 8 pairs: no verdict (every worker under the floor)",
+      "verdict": "note",
+      "text": "runPredatorAbab --vs HEAD (d15e5cfe, dist built from 0ca040c1) --query-b weedBundle=weed.prod.bundle.esm.min.js, Boids at its default load, 8 pairs (2026-11-23 12:00 to 12:26): every worker under the 6 ms floor (logic 1.08/1.10, spatial 4.25/4.06, physics 3.75/3.75, renderer 1.40/1.67, pre-render 1.79/1.79 ms), presented and drawn 60 fps both; RENDER_QUEUE_SIZE 25 632 -> 32 794 (+27.9 %, cv 32/17 %: the flocks in and out of view), so FAIL (load) with nothing judged. Boids needs a load past the floor for this check; Predator by day and night were neutral on the sources against main before the merge (R-1874). The bundles passed their smokes and node tests (R-1881)."
+    },
+    {
+      "id": "R-1887",
+      "date": "2026-11-23",
+      "time": "12:30",
+      "timeFrom": "recorded",
+      "title": "DX-SUNTARGET superseded by E-531: the sun's shadows of sprites, volumes and baked layers all go into the sun's map",
+      "verdict": "note",
+      "text": "DX-SUNTARGET asked for one render target for every sun shadow (sprites, volumes, baked layers), so crossings count once.\nSince E-531 (merged 0ca040c1) the sun's shadows are its map alone: cards, columns and volumes are drawn into it, keeping the\nhighest caster at each texel, and the light pass reads it once; a crossing darkens once."
     }
   ],
   "leads": [
