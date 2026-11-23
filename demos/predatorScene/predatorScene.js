@@ -283,7 +283,9 @@ export class PredatorScene extends WEED.Scene {
       : { floorScaleY: predatorPositiveParam('groundScaleY', 0.7) },
 
     lighting: {
-      lightGlow: 'add',
+      // `?lightGlow=sorted`: the halos drawn with the entities, right after their own sprite (the default here: 'add', the
+      // lightGlows layer over everything), to weigh the two.
+      lightGlow: predatorSearchParam('lightGlow') === 'sorted' ? 'sorted' : 'add',
       enabled: true,
       baseAmbient: 0, // Minimum light at night (pitch black without lights)
       shadowsEnabled: true,
