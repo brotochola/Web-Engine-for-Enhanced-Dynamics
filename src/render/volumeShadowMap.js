@@ -20,7 +20,7 @@
  *   a car's headlights are not shaded by the car's volume.
  */
 
-import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX } from './sunShadowMap.js';
+import { MAP_TEXEL_WGSL, SUN_MAP_MIN_Z, SUN_MAP_ZMAX } from './sunShadowMap.js';
 import {
   LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, LAMP_PANO_GLSL, LAMP_PANO_INNER, LAMP_PANO_WGSL, lampClipZGlsl, lampClipZWgsl,
 } from './lampShadowMap.js';
@@ -51,7 +51,8 @@ ${MAP_TEXEL_WGSL}
 // with the volume's entity (sunShadowMap.js VOLUME_MAP_FRAGMENT).
 @fragment
 fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
-  return weedMapTexel(in.vSunZ, in.vSunId, 1.0);
+  // N-192: one height step at least (SUN_MAP_MIN_Z), so a covered texel never reads as an empty one.
+  return weedMapTexel(max(in.vSunZ, ${SUN_MAP_MIN_Z.toFixed(6)}), in.vSunId, 1.0);
 }
 `;
 

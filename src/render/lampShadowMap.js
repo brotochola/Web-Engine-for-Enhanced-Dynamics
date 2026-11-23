@@ -360,7 +360,11 @@ export function lampMapFragment(sunMapFrag) {
   const varying = 'in float vSunZ;\n';
   const main = 'void main() {\n';
   // N-211: the texel keeps the point's place along its lamp's ray (lampRayDepth), not its height.
-  const height = '  float h = clamp(vSunZ / 512.0, 0.0, 1.0);\n';
+  // N-192: the sun's least height step (its three lines) goes with it: a lamp's texel holds a place along its ray.
+  const height = '  float h = clamp(vSunZ / 512.0, 0.0, 1.0);\n'
+    + '  // N-192: one height step at least (sunShadowMap.js SUN_MAP_MIN_Z): the light pass shades a floor point under a texel\n'
+    + '  // above 0, and a caster\'s base (its height under half a step) rounded to an empty texel\'s 0, leaving the floor lit there.\n'
+    + '  h = max(h, 1.0 / 255.0);\n';
   requireMarks(sunMapFrag, [varying, main, height], `the lamps' shadow map needs the sun map's fragment`);
   return sunMapFrag
     .replace(varying, `${varying}in vec3 vTileUvW;\nflat in float vLampE;\n`)

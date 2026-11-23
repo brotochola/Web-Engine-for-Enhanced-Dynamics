@@ -22,6 +22,14 @@ import { hasOnce, requireMarks } from './shaderEdit.js';
 /** Height (px) that the map's 8 bits span: 2 px a step. */
 export const SUN_MAP_ZMAX = 512;
 /**
+ * N-192: the least height a texel a caster covers holds in the sun's map, one step of its 8 bits (SUN_MAP_ZMAX / 255 px).
+ * The light pass shades a floor point under a texel whose height is above 0, so a caster point lower than half a step
+ * (a box's or a card's base, where its side's landing starts) rounded to the empty texel's 0 and the floor at the base
+ * stayed lit: every shadow lost about a px along its caster's base.
+ */
+export const SUN_MAP_MIN_Z = SUN_MAP_ZMAX / 255;
+const SUN_MAP_MIN_Z_WGSL = SUN_MAP_MIN_Z.toFixed(6);
+/**
  * N-317: the most a margin of the sun map reaches past the screen, as a share of the screen's side (sunMapMargins): a low
  * sun throws a tall frame's ray far, and the map at most 2.25 times the screen's texels. Past it a ray reads lit.
  */
@@ -480,7 +488,8 @@ ${MAP_TEXEL_WGSL}
 fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
   if (t.a < 0.5) { discard; }
-  return weedMapTexel(in.vSunZ, in.vSunId, in.vColor.g);
+  // N-192: one height step at least (SUN_MAP_MIN_Z), so a covered texel never reads as an empty one.
+  return weedMapTexel(max(in.vSunZ, ${SUN_MAP_MIN_Z_WGSL}), in.vSunId, in.vColor.g);
 }
 `;
 
@@ -632,6 +641,8 @@ flat in float vSunId;
 out vec4 finalColor;
 void main() {
   float h = clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
+  // N-192: one height step at least (SUN_MAP_MIN_Z), so a covered texel never reads as an empty one.
+  h = max(h, 1.0 / 255.0);
   int id = int(vSunId + 0.5);
   finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
 }
