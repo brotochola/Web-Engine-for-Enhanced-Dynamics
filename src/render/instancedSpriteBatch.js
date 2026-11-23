@@ -690,8 +690,18 @@ export class InstancedSpriteBatch {
     // not send them). And it read the updates through their float views (above), which were set to empty arrays here after
     // them: every value it copied was NaN, so the renders' columns over keyed rows found no render (texture 0).
     this._staticsMirror = new Float32Array(0);
+    // E-549: the textures that can cast columns from a keyed row (keyedColumnTextures, set with the atlas's table: a flag a
+    // textureId) and how many (-1: not set, every update copied; 0: none, nothing copied, nothing reads the copy), and a
+    // flag a slot whose copy holds such a texture: the copy took every keyed update, 25 000 a frame in Predator light3d by
+    // night (0.5 ms of Pixi's), for the renders' columns, which found no render row there.
+    this._columnTex = new Uint8Array(0);
+    this._columnTexCount = -1;
+    this._columnSlot = new Uint8Array(0);
     this._indexedShader = this.indexed ? this._makeIndexedShader(labelName) : null;
-    if (this.keyed && this._staticsHeight > 0) this._staticsMirror = new Float32Array(this._staticsHeight * STATICS_TEX_ROW * 3);
+    if (this.keyed && this._staticsHeight > 0) {
+      this._staticsMirror = new Float32Array(this._staticsHeight * STATICS_TEX_ROW * 3);
+      this._columnSlot = new Uint8Array(this._staticsHeight * STATICS_TEX_ROW);
+    }
     this._rowShader = this.posesByRow ? this._makeRowShader(labelName) : null;
     this.shadowShader = null;
     if (this.shadowCast && (shaders?.shadowVert || shaders?.shadowWgsl)) {
@@ -2420,17 +2430,49 @@ export class InstancedSpriteBatch {
     return this._staticsMirror.length > 0 ? this._staticsMirror : null;
   }
 
+  /**
+   * E-549: the textures that can cast columns from a keyed row (keyedColumnTextures), after the atlas's table is built:
+   * the copy then keeps only the slots that hold one or held one (a slot's texture, scale and all), none in an atlas
+   * without one. Set before the keyed frames start, as the atlas loads.
+   * @param {Uint8Array} flags a flag a textureId
+   * @param {number} count how many are set
+   */
+  setColumnTextures(flags, count) {
+    this._columnTex = flags;
+    this._columnTexCount = count | 0;
+  }
+
+  /** E-549: how many textures can cast columns from a keyed row (-1 before setColumnTextures). */
+  get columnTextureCount() {
+    return this._columnTexCount;
+  }
+
   /** E-395: this frame's keyed updates into the statics' CPU copy: an update's scale (words 0, 1) and texture (word 6). */
   _mirrorKeyedStatics(n, nt) {
+    // E-549: nothing reads the copy in an atlas without a texture that casts columns.
+    const count = this._columnTexCount;
+    if (count === 0) return;
     const M = this._staticsMirror;
     const U = this._keyUpdates;
     const UF = this._keyUpdatesF;
     const max = (M.length / 3) | 0;
+    const C = this._columnTex;
+    const ids = C.length;
+    const S = this._columnSlot;
+    // Before the atlas's table: every update.
+    const all = count < 0 || S.length < max;
     for (let k = 0; k < n; k++) {
       const at = k * GPU_KEYED_ROW_WORDS;
       const s = U[at + GPU_KEYED_KEY_WORD];
       if (s >= max) continue;
-      M[s * 3] = UF[at + 6];
+      const tex = UF[at + 6];
+      if (!all) {
+        const t = tex | 0;
+        const c = t >= 0 && t < ids ? C[t] : 0;
+        if (c === 0 && S[s] === 0) continue;
+        S[s] = c;
+      }
+      M[s * 3] = tex;
       M[s * 3 + 1] = UF[at];
       M[s * 3 + 2] = UF[at + 1];
     }
@@ -2438,7 +2480,15 @@ export class InstancedSpriteBatch {
     const TF = this._keyTexUpdatesF;
     for (let k = 0; k < nt; k++) {
       const s = T[2 * k];
-      if (s < max) M[s * 3] = TF[2 * k + 1];
+      if (s >= max) continue;
+      const tex = TF[2 * k + 1];
+      if (!all) {
+        const t = tex | 0;
+        const c = t >= 0 && t < ids ? C[t] : 0;
+        if (c === 0 && S[s] === 0) continue;
+        S[s] = c;
+      }
+      M[s * 3] = tex;
     }
   }
 

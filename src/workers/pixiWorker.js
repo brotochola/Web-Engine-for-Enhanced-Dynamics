@@ -99,10 +99,12 @@ import {
   POSE_STATIC_FLOATS,
   BATCH_SPACE,
   BATCH_DEPTH,
+  TEX_LUT_FLOATS,
   textureLutSolid,
   textureLutTexels,
 } from '../render/instancedSpriteBatch.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../render/painterRadixClient.js';
+import { keyedColumnTextures } from '../render/sunShadowMap.js';
 import { resolveParticleLights } from '../render/particleLightSplat.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
@@ -1698,6 +1700,9 @@ class PixiRenderer extends AbstractWorker {
       this.entitiesBatch.setAtlasSource(src);
       // E-448: which frames the opaque pass may draw.
       this.entitiesBatch.setFrameTexels(textureLutTexels(this.assets.texLut), textureLutSolid(this.assets.texLut));
+      // E-549: which frames a keyed row's columns can come from (the keyed statics' copy keeps only those slots).
+      const columns = keyedColumnTextures(this.assets.texLut, TEX_LUT_FLOATS);
+      this.entitiesBatch.setColumnTextures(columns.flags, columns.count);
     }
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setAtlasSource(src);

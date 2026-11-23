@@ -681,9 +681,11 @@ export class PixiShadowMaps {
    */
   _keyedColumnsHost(rows, columns, light) {
     const lut = this.worker.assets.texLut;
-    const statics = this.worker.entitiesBatch ? this.worker.entitiesBatch.staticsMirror : null;
+    const b = this.worker.entitiesBatch;
+    const statics = b ? b.staticsMirror : null;
     const src = this.worker.gpuCasterBatch ? this.worker.gpuCasterBatch.data : null;
-    if (columns === null || !lut || !statics || !src || rows <= 0) return null;
+    // E-549: an atlas without a frame that casts columns from a keyed row: no row to find.
+    if (columns === null || !lut || !statics || !src || rows <= 0 || b.columnTextureCount === 0) return null;
     const F = columns.floats;
     let n = compactKeyedColumnRows(src, rows, F, statics, lut, TEX_LUT_FLOATS, light, columns.rows, columns.blocks);
     if (n > columns.blocks.length / 4) {

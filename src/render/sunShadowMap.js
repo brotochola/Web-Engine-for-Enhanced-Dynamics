@@ -134,6 +134,28 @@ const ROW_TEX = 10;
  * @returns {number}
  */
 /**
+ * E-549: which textures can cast columns from a keyed caster row (compactKeyedColumnRows' test for either light: a
+ * render, its frame's base a contact, that has a height map), as a flag a textureId, and how many: the keyed statics'
+ * copy keeps only the slots that show one, and nothing at all in an atlas without one.
+ * @param {Float32Array} lut the texture table (`lutFloats` an id: the base at 10)
+ * @param {number} lutFloats
+ * @returns {{ flags: Uint8Array, count: number }}
+ */
+export function keyedColumnTextures(lut, lutFloats) {
+  const ids = (lut.length / lutFloats) | 0;
+  const flags = new Uint8Array(ids);
+  let count = 0;
+  for (let id = 0; id < ids; id++) {
+    const base = lut[id * lutFloats + 10];
+    if (base < 0 && !baseIsMapless(base)) {
+      flags[id] = 1;
+      count++;
+    }
+  }
+  return { flags, count };
+}
+
+/**
  * E-395: compactColumnRows for keyed caster rows (gpuQueueLayout.js GPU_KEYED_CASTER_FLOATS, or GPU_KEYED_STAMP_FLOATS):
  * a row's frame is its fourth float when it carries one (±(textureId + 1), negative mirrored), else its slot's texture in
  * `statics` (the entity batch's CPU copy: textureId, scaleX, scaleY a slot), and its scale the slot's (its x mirrored with
