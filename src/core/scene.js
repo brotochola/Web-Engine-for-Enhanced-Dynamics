@@ -145,6 +145,7 @@ import { SoundManager } from './soundManager.js';
 import { SharedResource } from './sharedResource.js';
 import { Decoration } from './decoration.js';
 import {
+  RENDERER_BACKEND_AUTO,
   assertSceneRendererConfig,
   assertLoadedShadersCompatible,
   collectComputeAssetNames,
@@ -153,6 +154,7 @@ import {
   shaderFragmentKey,
   shaderSourceLf,
   resolveSpritePipeline,
+  resolveAutoRendererBackend,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import { warnMissingListenerTags } from '../util/listenerTags.js';
@@ -1173,6 +1175,10 @@ class Scene {
     // (GameEngine.loadScene, SST-2).
     // SST-1: the engine workers, each booted at once (sceneWorkerBootstrap.js bootSceneWorkers): their own start
     // (modules, game scripts, engine.wasm, the renderer's GPU) runs while this thread loads the assets.
+    // DX-BACKENDAUTO: renderer.backend 'auto' decided before the workers start, since the renderer's GPU is theirs.
+    if (this.config.renderer.backend === RENDERER_BACKEND_AUTO) {
+      this.config.renderer.backend = await resolveAutoRendererBackend(this.config, this.imageUrls?.shaders || {});
+    }
     const workersBooted = bootSceneWorkers(this);
     // Awaited before the init messages; a failure is reported there.
     workersBooted.catch(() => {});

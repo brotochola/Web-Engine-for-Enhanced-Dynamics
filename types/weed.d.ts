@@ -448,8 +448,11 @@ export interface SceneLightingConfig extends Record<string, unknown> {
 
 /** `config.renderer`: the keys this file types (the rest are in RENDERER_DEFAULTS, src/util/configDefaults.js). */
 export interface SceneRendererConfig extends Record<string, unknown> {
-  /** 'webgpu' (default) or 'webgl'. Compute layers need 'webgpu'. */
-  backend?: 'webgl' | 'webgpu';
+  /**
+   * 'webgpu' (default), 'webgl', or 'auto': WebGPU where the browser gives an adapter and every layer's look shader has a
+   * WGSL version, WebGL otherwise (one warning says why); scene.gpu.backend says which. Compute layers need WebGPU.
+   */
+  backend?: 'webgl' | 'webgpu' | 'auto';
   /** The entities layer drawn in the painter's order, by their feet (default false). */
   ySort?: boolean;
   /**

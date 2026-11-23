@@ -934,7 +934,7 @@ this.setFeedBits(1); // scene bit 0 (burning boxes ignite); engine ORs static on
 
 
 
-Renderer default is `config.renderer.backend: 'webgpu'`. Demo scenes other than burning boxes set `'webgl'`. Look shaders must match the backend (`.frag` / GLSL on WebGL, `.wgsl` on WebGPU). Compute layers require `'webgpu'`. Mismatches throw `WeedJS:` errors at scene load. Missing GPU device throws at Pixi init if the scene asked for WebGPU.
+Renderer default is `config.renderer.backend: 'webgpu'`. Demo scenes other than burning boxes set `'webgl'`. `'auto'` draws with WebGPU where the browser gives an adapter and every layer's look shader has a WGSL version, and with WebGL otherwise (one console warning says why); `scene.gpu.backend` says which. Look shaders must match the backend (`.frag` / GLSL on WebGL, `.wgsl` on WebGPU). Compute layers require `'webgpu'`. Mismatches throw `WeedJS:` errors at scene load. Missing GPU device throws at Pixi init if the scene asked for WebGPU.
 
 ### Buffer density example
 

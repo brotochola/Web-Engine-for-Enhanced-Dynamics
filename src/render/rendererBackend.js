@@ -7,6 +7,8 @@ import { GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW } from './gpuQueueLayout
 
 export const RENDERER_BACKEND_WEBGL = 'webgl';
 export const RENDERER_BACKEND_WEBGPU = 'webgpu';
+/** DX-BACKENDAUTO: WebGPU where it works, WebGL where it does not (resolveAutoRendererBackend, before the workers start). */
+export const RENDERER_BACKEND_AUTO = 'auto';
 
 export const Y_SORT_CPU = 'cpu';
 
@@ -128,18 +130,92 @@ export function detectShaderDialectFromSource(source) {
 
 /**
  * @param {unknown} value
- * @returns {'webgl'|'webgpu'}
+ * @returns {'webgl'|'webgpu'|'auto'} 'auto' until the scene's init resolves it (resolveAutoRendererBackend)
  */
 export function normalizeRendererBackend(value) {
   if (value === undefined || value === null || value === '') {
     return RENDERER_BACKEND_WEBGPU;
   }
-  if (value === RENDERER_BACKEND_WEBGL || value === RENDERER_BACKEND_WEBGPU) {
+  if (value === RENDERER_BACKEND_WEBGL || value === RENDERER_BACKEND_WEBGPU || value === RENDERER_BACKEND_AUTO) {
     return value;
   }
   throw new Error(
-    `WeedJS: config.renderer.backend must be "webgl" or "webgpu". Got "${value}". Set renderer.backend on the scene.`
+    `WeedJS: config.renderer.backend must be "webgl", "webgpu" or "auto". Got "${value}". Set renderer.backend on the scene.`
   );
+}
+
+/**
+ * DX-BACKENDAUTO: whether a layer's look shader (its shader.fragment: an asset name, a path, or { webgl, webgpu }) has a
+ * WGSL version: a map's webgpu entry, or a path that ends in .wgsl; a path that says neither is read and told by its
+ * source (null when it cannot be fetched: taken as WGSL-less).
+ * @returns {Promise<boolean>}
+ */
+async function lookHasWgsl(fragment, shaderAssets, fetchText) {
+  if (!fragment) return true;
+  let entry = fragment;
+  if (typeof fragment === 'string' && shaderAssets && Object.prototype.hasOwnProperty.call(shaderAssets, fragment)) {
+    entry = shaderAssets[fragment];
+  }
+  if (entry && typeof entry === 'object') return typeof entry.webgpu === 'string' && entry.webgpu !== '';
+  if (typeof entry !== 'string' || !entry) return false;
+  const byPath = detectShaderDialectFromPath(entry);
+  if (byPath) return byPath === 'wgsl';
+  try {
+    return detectShaderDialectFromSource(await fetchText(entry)) === 'wgsl';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * DX-BACKENDAUTO: renderer.backend 'auto' resolved before the workers start (the renderer's GPU is theirs): 'webgpu' when
+ * the browser gives a WebGPU adapter and every layer's look shader has a WGSL version, else 'webgl' with one console
+ * warning that says why. A compute layer requires WebGPU: without it the scene fails naming that layer.
+ * @param {object} config the scene's config (renderer.backend 'auto')
+ * @param {object} [shaderAssets] the scene's shader assets (static assets.shaders: a path or { webgl, webgpu } a name)
+ * @param {{ gpu?: object|null, fetchText?: (path: string) => Promise<string>, warn?: (message: string) => void }} [env]
+ *   navigator.gpu, a fetch of a shader's text and the warning's sink (tests pass their own)
+ * @returns {Promise<'webgl'|'webgpu'>}
+ */
+export async function resolveAutoRendererBackend(config, shaderAssets = {}, env = {}) {
+  const gpu = 'gpu' in env ? env.gpu : globalThis.navigator?.gpu;
+  const fetchText = env.fetchText ?? (async (path) => {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(String(res.status));
+    return res.text();
+  });
+  const warn = env.warn ?? ((message) => console.warn(message));
+  const layers = config?.layers || {};
+  const names = Object.keys(layers);
+  let why = null;
+  if (!gpu || typeof gpu.requestAdapter !== 'function') {
+    why = 'this browser has no WebGPU';
+  } else {
+    let adapter = null;
+    try {
+      adapter = await gpu.requestAdapter();
+    } catch {
+      adapter = null;
+    }
+    if (!adapter) why = 'the browser gave no WebGPU adapter';
+  }
+  if (why === null) {
+    for (const name of names) {
+      if (!(await lookHasWgsl(layers[name]?.shader?.fragment, shaderAssets, fetchText))) {
+        why = `layer "${name}"'s look shader has no WGSL version`;
+        break;
+      }
+    }
+  }
+  if (why === null) return RENDERER_BACKEND_WEBGPU;
+  const compute = names.find((name) => layers[name]?.shader?.compute);
+  if (compute !== undefined) {
+    throw new Error(
+      `WeedJS: Layer "${compute}" uses a compute shader, which requires WebGPU, and renderer.backend "auto" cannot draw with WebGPU here: ${why}.`
+    );
+  }
+  warn(`WeedJS: renderer.backend "auto" draws with WebGL: ${why}.`);
+  return RENDERER_BACKEND_WEBGL;
 }
 
 /** WebGPU's default maxStorageBufferBindingSize: every device binds this much. */

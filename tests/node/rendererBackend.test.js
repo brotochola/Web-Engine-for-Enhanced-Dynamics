@@ -30,7 +30,7 @@ test('normalizeRendererBackend defaults to webgpu', () => {
 test('invalid backend string throws a full-sentence WeedJS error', () => {
   assert.throws(
     () => normalizeRendererBackend('opengl'),
-    /WeedJS: config\.renderer\.backend must be "webgl" or "webgpu"\. Got "opengl"/
+    /WeedJS: config\.renderer\.backend must be "webgl", "webgpu" or "auto"\. Got "opengl"/
   );
 });
 
@@ -48,7 +48,7 @@ test('webgl plus compute throws before workers', () => {
 test('assertSceneRendererConfig rejects invalid backend and webgl+compute', () => {
   assert.throws(
     () => assertSceneRendererConfig({ renderer: { backend: 'metal' } }),
-    /must be "webgl" or "webgpu"/
+    /must be "webgl", "webgpu" or "auto"/
   );
   assert.throws(
     () =>
