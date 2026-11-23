@@ -34,6 +34,13 @@ out vec4 vAtlasUV;
 out vec2 vTileInv;
 out vec2 vTileOff;
 
+// A render drawn for another camera than the scene's (frameBase.js ART_FLOOR_CODES): how tall its floor is drawn against the
+// scene's, from its base's second float (1: the scene's own).
+float artFloorRatio(float y, float groundInvScaleY) {
+  float code = floor(fract(abs(y)) * 2048.0 + 0.5);
+  return code > 0.5 && code < 1023.5 ? code / 512.0 * groundInvScaleY : 1.0;
+}
+
 void main() {
   float height = aInstShadow.x;
   int tid = int(aInstTexId + 0.5);
@@ -176,15 +183,26 @@ void main() {
       // sun's, in the row's texture float's fraction (preRenderWorker.js sunFrameTurnCode: 128ths, 0 none, else 32 is no
       // turn and a step 0.75 degrees): the picture's floor stays where the object is, and only its heights fall along the
       // sun's ray.
+      // The picture's floor is its art's: a render drawn for another camera is worked out there (where the sun is on it, the
+      // frame's turn, its depth a row) and its floor then drawn as the picture draws it. Read on the scene's floor (drawn 0.5
+      // tall, a car drawn 0.736) the card stood half as far again towards the sun: a dark wedge on the lit side.
+      float art = artFloorRatio(aInstBase.y, uGroundInvScaleY);
+      if (art != 1.0 && kLen > 1e-6) {
+        toView = normalize(vec2(toSun.x, toSun.y / art));
+        sunPerp = vec2(toView.y, -toView.x);
+      }
       float turnCode = floor(fract(aInstTexId) * 128.0 + 0.5);
       if (turnCode > 0.5) {
         float turn = (turnCode - 32.0) * 0.01308996939;
         float tc = cos(turn);
         float ts = sin(turn);
-        toView = vec2(toSun.x * tc - toSun.y * ts, toSun.x * ts + toSun.y * tc);
+        toView = vec2(toView.x * tc - toView.y * ts, toView.x * ts + toView.y * tc);
         sunPerp = vec2(sunPerp.x * tc - sunPerp.y * ts, sunPerp.x * ts + sunPerp.y * tc);
       }
-      float reach = (contactRow - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uGroundInvScaleY;
+      toView.y *= art;
+      sunPerp.y *= art;
+      float artInvScaleY = uGroundInvScaleY / art;
+      float reach = (contactRow - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * artInvScaleY;
       foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY) + toView * reach;
       rows = (contactRow - content.y) * abs(aInstScale.y);
       // N-297: that frame is drawn from the camera's pitch, so a row above the contact is part depth on the floor and
@@ -193,7 +211,7 @@ void main() {
       // card leans back instead, by the frame's own measure: its top edge lands where the object's far top edge does.
       if (perRowCode > 0.5) {
         float heightShare = clamp((perRowCode - 1.0) / 256.0 * uSunK.w, 0.0, 1.0);
-        rowDepth = (1.0 - heightShare) * uGroundInvScaleY;
+        rowDepth = (1.0 - heightShare) * artInvScaleY;
         rowHeight = heightShare * height / uSunK.w;
       }
     }

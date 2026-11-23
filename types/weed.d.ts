@@ -1081,7 +1081,8 @@ export interface SceneSpritesheetAsset extends Record<string, unknown> {
   reliefMap?: string | { png: string; strength?: number };
   /**
    * DX-MAPCAMERA: the camera the sheet's pictures and maps were drawn for, both positive. Its heights are scaled at load
-   * by its heightScaleY over the scene's (config.camera), so a pixel rises on the scene's screen as on the art's.
+   * by its heightScaleY over the scene's (config.camera), so a pixel rises on the scene's screen as on the art's. The card a
+   * render casts is worked out on the floor it was drawn on (its floorScaleY).
    * Or `meta.artCamera` in its json; this one wins. Left out: the scene's own camera.
    */
   artCamera?: { floorScaleY: number; heightScaleY: number };

@@ -40,6 +40,13 @@ fn clipOff(out: ptr<function, VertexOut>, aQuad: vec2<f32>, aInstXY: vec2<f32>, 
 
 // #include weedUv.wgsl
 
+// A render drawn for another camera than the scene's (frameBase.js ART_FLOOR_CODES): how tall its floor is drawn against the
+// scene's, from its base's second float (1: the scene's own).
+fn artFloorRatio(y: f32, groundInvScaleY: f32) -> f32 {
+  let code = floor(fract(abs(y)) * 2048.0 + 0.5);
+  return select(1.0, code / 512.0 * groundInvScaleY, code > 0.5 && code < 1023.5);
+}
+
 @vertex
 fn mainVert(
   @location(0) aQuad: vec2<f32>,
@@ -162,20 +169,29 @@ fn mainVert(
       let packed = -aInstBase.x - 1.0;
       let contactRow = floor(packed) + 0.5;
       let perRowCode = floor(fract(packed) * 512.0 + 0.5);
+      // A render drawn for another camera: worked out on its art's floor (the GLSL says why).
+      let art = artFloorRatio(aInstBase.y, uniforms.uGroundInvScaleY);
+      if (art != 1.0 && kLen > 1e-6) {
+        toView = normalize(vec2<f32>(toSun.x, toSun.y / art));
+        sunPerp = vec2<f32>(toView.y, -toView.x);
+      }
       let turnCode = floor(fract(aInstTexId) * 128.0 + 0.5);
       if (turnCode > 0.5) {
         let turn = (turnCode - 32.0) * 0.01308996939;
         let tc = cos(turn);
         let ts = sin(turn);
-        toView = vec2<f32>(toSun.x * tc - toSun.y * ts, toSun.x * ts + toSun.y * tc);
+        toView = vec2<f32>(toView.x * tc - toView.y * ts, toView.x * ts + toView.y * tc);
         sunPerp = vec2<f32>(sunPerp.x * tc - sunPerp.y * ts, sunPerp.x * ts + sunPerp.y * tc);
       }
-      let reach = (contactRow - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
+      toView.y *= art;
+      sunPerp.y *= art;
+      let artInvScaleY = uniforms.uGroundInvScaleY / art;
+      let reach = (contactRow - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * artInvScaleY;
       foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY) + toView * reach;
       rows = (contactRow - content.y) * abs(aInstScale.y);
       if (perRowCode > 0.5) {
         let heightShare = clamp((perRowCode - 1.0) / 256.0 * uniforms.uSunK.w, 0.0, 1.0);
-        rowDepth = (1.0 - heightShare) * uniforms.uGroundInvScaleY;
+        rowDepth = (1.0 - heightShare) * artInvScaleY;
         rowHeight = heightShare * height / uniforms.uSunK.w;
       }
     }
