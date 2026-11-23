@@ -82,7 +82,7 @@ test('a source build\'s key holds its atlas code: a changed module misses', asyn
 
 /** packAtlas with the fakes: the scene's sources, a Cache Storage, a version. */
 function run(assets, storage, { version = '1.0.0', enabled = true, extra = {} } = {}) {
-  const builtins = drawBuiltinTextures({ unshadedGlows: false }).map((b) => ({ name: b.name, image: b.canvas, unshaded: b.unshaded, afterSort: b.afterSort }));
+  const builtins = drawBuiltinTextures({ unshadedGlows: false }).map((b) => ({ name: b.name, image: b.canvas, unshaded: b.unshaded }));
   return packAtlas({
     assets,
     options: packOptions(extra),
@@ -156,7 +156,7 @@ test('the cache off: packed, nothing read or written; a cache that fails: packed
     const r = await packAtlas({
       assets,
       options: packOptions(),
-      builtins: drawBuiltinTextures().map((b) => ({ name: b.name, image: b.canvas, unshaded: b.unshaded, afterSort: b.afterSort })),
+      builtins: drawBuiltinTextures().map((b) => ({ name: b.name, image: b.canvas, unshaded: b.unshaded })),
       cache: { enabled: true, bundle: true },
       makeCanvas: (w, h) => new MemCanvas(w, h),
       cacheEnv: { storage: broken, origin: 'http://game.test' },
@@ -215,7 +215,7 @@ test('the worker\'s pack job answers, then writes its entry', async () => {
         job: 'pack',
         assets,
         options: packOptions(),
-        builtins: builtins.map((b, i) => ({ name: b.name, image: bitmaps[i], unshaded: b.unshaded, afterSort: b.afterSort })),
+        builtins: builtins.map((b, i) => ({ name: b.name, image: bitmaps[i], unshaded: b.unshaded })),
         cache: { enabled: true, bundle: true },
       });
       assert.equal(out.message.ok, true, out.message.error?.message);

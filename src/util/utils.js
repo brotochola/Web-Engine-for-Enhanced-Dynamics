@@ -1110,18 +1110,6 @@ export function create2dCanvas(width = 1, height = 1) {
 }
 
 /**
- * DX-SPOT: the right half of createCircularGradientCanvas's disc (radius wide, 2·radius tall), its centre on the left
- * edge's middle: a cone light's cookie, turned along the cone (anchor 0, 0.5).
- */
-export function createHalfCircularGradientCanvas(radius = LIGHT_GRADIENT_TEXTURE_RADIUS, color = 0xffffff) {
-  radius = Math.round(radius);
-  const full = createCircularGradientCanvas(radius, color);
-  const canvas = create2dCanvas(radius, radius * 2);
-  canvas.getContext('2d').drawImage(full, radius, 0, radius, radius * 2, 0, 0, radius, radius * 2);
-  return canvas;
-}
-
-/**
  * E-498: how much of the light gradient's curve the compact glow (the halos with their own glowRadius) spreads over its
  * whole radius: its inner 16 %, where the gradient falls to under 1 % (2^-7), so the glow fills its quad.
  */

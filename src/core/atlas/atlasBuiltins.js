@@ -8,7 +8,6 @@ import {
   create2dCanvas,
   createBulletTrailCanvas,
   createCircularGradientCanvas,
-  createHalfCircularGradientCanvas,
   createMetaballCanvas,
   LIGHT_GLOW_COMPACT_SPAN,
   LIGHT_GRADIENT_TEXTURE_RADIUS,
@@ -17,9 +16,8 @@ import {
 
 /**
  * Every built-in, in the order createBigAtlas adds them (their animations follow the scene's assets in it, _empty
- * first). `afterSort`: packed after the size sort, last (DX-SPOT's cone cookie), so no earlier frame moved when it came.
- * `glow`: unshaded where the halos join the entities (DX-GLOWRADIUS's unshadedGlows).
- * @type {ReadonlyArray<{ name: string, glow?: boolean, afterSort?: boolean }>}
+ * first). `glow`: unshaded where the halos join the entities (DX-GLOWRADIUS's unshadedGlows).
+ * @type {ReadonlyArray<{ name: string, glow?: boolean }>}
  */
 export const BUILTIN_TEXTURES = Object.freeze([
   { name: '_empty' },
@@ -32,7 +30,6 @@ export const BUILTIN_TEXTURES = Object.freeze([
   { name: '_white' },
   { name: '_whiteCircle' },
   { name: '_whiteCircle_64x64' },
-  { name: '_lightGradientHalf', afterSort: true },
 ]);
 
 /** A built-in's canvas, drawn now. */
@@ -75,19 +72,16 @@ function drawBuiltin(name) {
       ctx.fill();
       return canvas;
     }
-    case '_lightGradientHalf':
-      // DX-SPOT: a cone light's cookie, the light gradient's half disc.
-      return createHalfCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff);
     default:
       throw new Error(`no built-in texture "${name}"`);
   }
 }
 
 /**
- * The built-ins, drawn: { name, canvas, unshaded?, afterSort? } in BUILTIN_TEXTURES's order.
+ * The built-ins, drawn: { name, canvas, unshaded? } in BUILTIN_TEXTURES's order.
  * @param {{ unshadedGlows?: boolean, only?: Iterable<string> }} [opts] unshadedGlows: the glows are unshaded (configDefaults.js
  *   unshadedGlowsOf); only: draw these alone
- * @returns {Array<{ name: string, canvas: HTMLCanvasElement | OffscreenCanvas, unshaded?: boolean, afterSort?: boolean }>}
+ * @returns {Array<{ name: string, canvas: HTMLCanvasElement | OffscreenCanvas, unshaded?: boolean }>}
  */
 export function drawBuiltinTextures({ unshadedGlows = false, only = null } = {}) {
   const wanted = only ? new Set(only) : null;
@@ -96,7 +90,6 @@ export function drawBuiltinTextures({ unshadedGlows = false, only = null } = {})
     if (wanted && !wanted.has(b.name)) continue;
     const entry = { name: b.name, canvas: drawBuiltin(b.name) };
     if (b.glow) entry.unshaded = unshadedGlows === true;
-    if (b.afterSort) entry.afterSort = true;
     out.push(entry);
   }
   return out;

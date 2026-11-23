@@ -1,5 +1,5 @@
-// A baked atlas from before a built-in texture (Predator's and littleCity's lack E-498's _lightGlow, DX-SPOT's
-// _lightGradientHalf and the metaball) gets the ones it lacks at load: drawn where its frames leave room (or on rows below
+// A baked atlas from before a built-in texture (Predator's and littleCity's lack E-498's _lightGlow and the metaball)
+// gets the ones it lacks at load: drawn where its frames leave room (or on rows below
 // it), a frame and a one-frame animation each after the atlas's own, in the renderer's bitmap and in the decal textures,
 // so pre-render finds them (demoWarnings: "animationNameToIndex missing _lightGlow") without baking the demos again.
 import test from 'node:test';
@@ -20,11 +20,10 @@ const overlaps = (a, b, pad = 0) =>
 test('the built-ins: createBigAtlas\'s order, and the ones a json lacks (never _empty)', () => {
   assert.deepEqual(BUILTIN_TEXTURES.map((b) => b.name), [
     '_empty', '_lightGradient', '_lightGlow', '_metaball', '_bulletTrail', '_white', '_whiteCircle', '_whiteCircle_64x64',
-    '_lightGradientHalf',
   ]);
   // Predator's bake (demos/img/baked/PredatorScene/bigAtlas.json) holds these five.
   const predator = { animations: Object.fromEntries(['_empty', '_lightGradient', '_bulletTrail', '_white', '_whiteCircle', '_whiteCircle_64x64'].map((n) => [n, [n]])) };
-  assert.deepEqual(missingBuiltins(predator), ['_lightGlow', '_metaball', '_lightGradientHalf']);
+  assert.deepEqual(missingBuiltins(predator), ['_lightGlow', '_metaball']);
   assert.deepEqual(missingBuiltins({ animations: {} }).includes('_empty'), false);
 });
 
@@ -76,7 +75,7 @@ function staleBake(seed, lacks) {
 
 test('a stale bake gets its missing built-ins at load: json, renderer bitmap and decals, through the worker or the page', async () => {
   await withMemCanvas(async () => {
-    const lacks = ['_lightGlow', '_metaball', '_lightGradientHalf'];
+    const lacks = ['_lightGlow', '_metaball'];
     const drawn = Object.fromEntries(drawBuiltinTextures({ only: lacks }).map((b) => [b.name, b.canvas]));
     const results = [];
     for (const kind of ['worker', 'page', 'broken']) {
@@ -119,7 +118,7 @@ test('a stale bake gets its missing built-ins at load: json, renderer bitmap and
       // The decal textures: what the page's old readback would have read from the completed atlas.
       const want = extractDecalTexturesReference(canvas, got);
       assert.deepEqual(decalHashes(atlas.decals), decalHashes(want), `${kind}: the decal textures of the completed atlas`);
-      assert.equal(atlas.decals.frameNameToId._lightGradientHalf, Object.keys(got.animations).length + Object.keys(got.frames).indexOf('_lightGradientHalf'));
+      assert.equal(atlas.decals.frameNameToId._metaball, Object.keys(got.animations).length + Object.keys(got.frames).indexOf('_metaball'));
       // The built-ins get texels (fillFrameTexels's, as every bake's built-ins do at load); the bake's frames keep theirs.
       assert.equal(typeof got.frames._metaball.base?.texels, 'number');
       assert.deepEqual(got.frames.f3.base, { texels: 1, solidTexels: 3 });

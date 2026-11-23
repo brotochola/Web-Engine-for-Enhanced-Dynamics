@@ -36,7 +36,7 @@ test('the worker\'s pack job: the page\'s json, pixels, twin page and decal text
           job: 'pack',
           assets,
           options: { ...OPTIONS, twinFormat, keepMapsTexels: true, mapsCanvas: false, sceneHeightScaleY: NaN, decals: true },
-          builtins: builtins.map((b, i) => ({ name: b.name, image: bitmaps[i], unshaded: b.unshaded, afterSort: b.afterSort })),
+          builtins: builtins.map((b, i) => ({ name: b.name, image: bitmaps[i], unshaded: b.unshaded })),
         });
         assert.equal(message.ok, true, message.error?.message);
         const got = message.result;

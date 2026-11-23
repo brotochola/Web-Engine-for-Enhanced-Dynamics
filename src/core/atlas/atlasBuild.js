@@ -82,7 +82,7 @@ function reorderKeys(obj, order) {
  *   resolveHeightScaleY of config.camera): a sheet drawn for another camera (its artCamera) has its heights scaled to it
  *   (spriteMaps.js artCameraHeightScale); NaN (no camera), none is
  * @param {Array<{ name: string, image: CanvasImageSource & { width: number, height: number }, unshaded?: boolean,
- *   afterSort?: boolean }>} options.builtins - the built-in textures (atlasBuiltins.js drawBuiltinTextures, as canvases
+ *   }>} options.builtins - the built-in textures (atlasBuiltins.js drawBuiltinTextures, as canvases
  *   or their ImageBitmaps), in their order; their unshaded marks are DX-GLOWRADIUS's unshadedGlows
  * @param {boolean} [options.decals] - also read every frame's pixels for the decal textures (atlasFrames.js
  *   decalTexturesFrom), from the atlas drawn here
@@ -413,23 +413,12 @@ export async function buildBigAtlas(
     isSpritesheetFrame: false,
   });
   for (const b of builtins) {
-    if (b.afterSort) continue;
     imagesToPack.push(builtinEntry(b));
     if (b.name !== '_empty') animations[b.name] = [b.name];
   }
 
   // Sort images by size (largest first) for better packing
   imagesToPack.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
-
-  // DX-SPOT: a cone light's cookie, the light gradient's half disc. Packed after the sort, last, so no earlier frame
-  // moves in the atlas, and its animation is the last built-in, so every earlier one keeps its index. The atlas
-  // with it still samples a few hundred pixels of a scene 1/255 differently (any frame added does: dxCaptureScene
-  // 389 to 519 of 921 600), the price of the frame.
-  for (const b of builtins) {
-    if (!b.afterSort) continue;
-    imagesToPack.push(builtinEntry(b));
-    animations[b.name] = [b.name];
-  }
 
   // No need to wait for intermediate images anymore!
   // We now store references to source images and draw directly to final atlas.
