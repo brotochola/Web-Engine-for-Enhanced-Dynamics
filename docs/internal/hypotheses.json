@@ -8430,12 +8430,13 @@
         "EXECUTION_PLAN.md#E-145"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-1890"
       ],
       "id": "E-145",
       "title": "Adobe Animate pieces expanded on the GPU",
       "status": "open",
-      "statusText": "open: design note written 2026-10-28 (ADOBE_GPU_PLAN.md), no prototype yet; the owner keeps Adobe out for now (2026-10-29)",
+      "statusText": "open: design note written 2026-10-28 (ADOBE_GPU_PLAN.md), no prototype yet; the owner keeps Adobe out for now (2026-10-29); left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
@@ -8839,7 +8840,9 @@
       "refs": [
         "EXECUTION_PLAN.md#Left open (design calls for the owner)"
       ],
-      "records": [],
+      "records": [
+        "R-1890"
+      ],
       "date": "2026-10-29",
       "area": "particle",
       "kind": "dx",
@@ -8848,14 +8851,16 @@
       "id": "DX-GPCLEAR",
       "title": "Clear a GPU particle layer (a level restart without a scene reload)",
       "status": "blocked",
-      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it"
+      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it; left for the end of the backlog (owner, 2026-11-23, R-1890)"
     },
     {
       "aliases": [],
       "refs": [
         "EXECUTION_PLAN.md#Left open (design calls for the owner)"
       ],
-      "records": [],
+      "records": [
+        "R-1890"
+      ],
       "date": "2026-10-29",
       "area": "particle",
       "kind": "dx",
@@ -8864,14 +8869,16 @@
       "id": "DX-GPWIND",
       "title": "Wind for GPU particles, drag for CPU particles",
       "status": "blocked",
-      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it"
+      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it; left for the end of the backlog (owner, 2026-11-23, R-1890)"
     },
     {
       "aliases": [],
       "refs": [
         "EXECUTION_PLAN.md#Left open (design calls for the owner)"
       ],
-      "records": [],
+      "records": [
+        "R-1890"
+      ],
       "date": "2026-10-29",
       "area": "particle",
       "kind": "dx",
@@ -8880,7 +8887,7 @@
       "id": "DX-GPFOLLOW",
       "title": "A GPU particle emitter that follows an entity without a call every frame",
       "status": "blocked",
-      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it"
+      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it; left for the end of the backlog (owner, 2026-11-23, R-1890)"
     },
     {
       "aliases": [],
@@ -11078,7 +11085,7 @@
       "id": "DX-ADDBOX",
       "title": "VolumeShadowCaster.addBox: a setBox that adds a box instead of replacing the volume",
       "status": "blocked",
-      "statusText": "nice to have (owner, 2026-11-10): a feature, not speed; waits until a game asks for it",
+      "statusText": "nice to have (owner, 2026-11-10): a feature, not speed; waits until a game asks for it; left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-10",
       "result": "",
       "next": "addBox(width, depth, bottom, top, { offsetX, offsetY, topScale }) as writeLevel with keep; types, guide and tests.",
@@ -11092,7 +11099,8 @@
         "addBox"
       ],
       "records": [
-        "R-0853"
+        "R-0853",
+        "R-1890"
       ]
     },
     {
@@ -11268,7 +11276,7 @@
       "id": "E-199",
       "title": "Neighbour aggregates published by the spatial kernel",
       "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured; approved 2026-11-23 (owner): build, measure and test the engine's K-nearest-of-a-type query, after the lights and shadows",
       "date": "2026-11-10",
       "result": "",
       "next": "Boid, soldier and civilian read Transform.x[j] per neighbour (3.9 ns a read, E-141). publish_batch already has d² per candidate: it also writes, opt-in by type, separation, centroid and the nearest of a type; average velocity needs vx/vy in the kernel (second step). Kernel, then the demos' ticks on it. Owner: logic in Predator and Boids.",
@@ -11286,7 +11294,8 @@
       ],
       "records": [
         "R-0854",
-        "R-0898"
+        "R-0898",
+        "R-1890"
       ]
     },
     {
@@ -11685,7 +11694,7 @@
       "id": "DX-ELASTIC",
       "title": "Elastic workers: park and wake workers at run time from the stages' times and the free CPU (nice to have)",
       "status": "open",
-      "statusText": "Nice to have (owner, 2026-11-17); a pseudo-plan in ELASTIC_WORKERS_PLAN.md",
+      "statusText": "Nice to have (owner, 2026-11-17); a pseudo-plan in ELASTIC_WORKERS_PLAN.md; left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-17",
       "result": "",
       "next": "If scheduled: a per-frame saturation signal, then park and wake Box2D's pool threads from it behind a switch (A/B with A/A on the ASUS and the main PC), then logic, then spatial.",
@@ -11715,7 +11724,8 @@
         "R-1626",
         "R-1627",
         "R-1628",
-        "R-1629"
+        "R-1629",
+        "R-1890"
       ]
     },
     {
@@ -12924,7 +12934,7 @@
       "id": "N-164",
       "title": "The bundles live in git: every merge to main commits dist/ (105 versions, about 90 MB of history); build them at release and at deploy instead",
       "status": "open",
-      "statusText": "owner 2026-11-13: bundles only at release, none in the repo; backlog, not started",
+      "statusText": "owner 2026-11-13: bundles only at release, none in the repo; backlog, not started; not yet (owner, 2026-11-23, R-1890)",
       "date": "2026-11-13",
       "area": "build",
       "kind": "dx",
@@ -12941,13 +12951,15 @@
         "Vercel build",
         "merge ships bundles"
       ],
-      "records": []
+      "records": [
+        "R-1890"
+      ]
     },
     {
       "id": "N-165",
       "title": "A fresh clone is 606 MB: unused files, node_modules and old bundles in the history, and no lockfile (lockfile done)",
       "status": "open",
-      "statusText": "found 2026-11-13 cloning GitHub main to check a friend's report that demos failed; owner: put the repo in order; backlog",
+      "statusText": "found 2026-11-13 cloning GitHub main to check a friend's report that demos failed; owner: put the repo in order; backlog; not yet (owner, 2026-11-23, R-1890)",
       "date": "2026-11-13",
       "area": "build",
       "kind": "dx",
@@ -12967,7 +12979,8 @@
         "_extra"
       ],
       "records": [
-        "R-0993"
+        "R-0993",
+        "R-1890"
       ]
     },
     {
@@ -15851,7 +15864,7 @@
       "id": "N-187",
       "title": "A frame whose GPU queue count differs from the rows pre-render collected sends no G-buffer words: Pixi zeroes them, so every sprite is lit without its id and flags that frame (its own map shadow, its glow, its self-shadow); with Adobe animations every frame differs",
       "status": "open",
-      "statusText": "Read again 2026-11-21: deferred while Adobe Animate stays out (the owner, 2026-10-29; E-145). Only scenes with Adobe characters and light3d's G-buffer lose the words, and today that is the Adobe demo alone. The queue's key column cannot carry a piece's root entity: Pixi's keyed pack takes a key as the row's slot identity (gpuPack.c), and pieces must stay unkeyed (adobe_root writes KEY_NONE).",
+      "statusText": "Read again 2026-11-21: deferred while Adobe Animate stays out (the owner, 2026-10-29; E-145). Only scenes with Adobe characters and light3d's G-buffer lose the words, and today that is the Adobe demo alone. The queue's key column cannot carry a piece's root entity: Pixi's keyed pack takes a key as the row's slot identity (gpuPack.c), and pieces must stay unkeyed (adobe_root writes KEY_NONE).; left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
@@ -15863,7 +15876,9 @@
       "aliases": [
         "stale gbuf words"
       ],
-      "records": []
+      "records": [
+        "R-1890"
+      ]
     },
     {
       "id": "N-188",
@@ -16126,7 +16141,7 @@
       "id": "DX-BARRIOS",
       "title": "Editor de barrios: the buenos-aires repo becomes the barrio editor, exporting a package (a format-1 scene file with prefabs, palettes and parent, its atlas and binaries) that demos/buenosAiresScene shows (Parque Chas) with light3d and the standard people, cars and objects; the engine pieces it needs",
       "status": "open",
-      "statusText": "approved by the owner 2026-11-15 (\"cuando terminemos esto y dx/light3d este mergeado a main, ahi vamos a editar esa escena, el otro repo, y las partes del codigo q tienen q ver con eso\"); rewritten 2026-11-16 with the owner: houses stay faces (height or normal maps for 8 721 houses would need gigabytes of atlas), the floor stays the shader; dx/light3d merged 2026-11-15, so it starts; merged into main 2026-11-17 (Parque Chas on light3d, the editor apart); left: the final pass of traces and optimization, E-497's tournament, N-258 on the light bench, DX-BARRIOSTREETS",
+      "statusText": "approved by the owner 2026-11-15 (\"cuando terminemos esto y dx/light3d este mergeado a main, ahi vamos a editar esa escena, el otro repo, y las partes del codigo q tienen q ver con eso\"); rewritten 2026-11-16 with the owner: houses stay faces (height or normal maps for 8 721 houses would need gigabytes of atlas), the floor stays the shader; dx/light3d merged 2026-11-15, so it starts; merged into main 2026-11-17 (Parque Chas on light3d, the editor apart); left: the final pass of traces and optimization, E-497's tournament, N-258 on the light bench, DX-BARRIOSTREETS; left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-15",
       "area": "demos",
       "kind": "feature",
@@ -16157,7 +16172,8 @@
         "R-1495",
         "R-1496",
         "R-1497",
-        "R-1582"
+        "R-1582",
+        "R-1890"
       ]
     },
     {
@@ -17704,7 +17720,7 @@
       "id": "N-172",
       "title": "The dev toolchain pulls 496 packages, most of them for webpack, babel and an obfuscator: build the bundles with esbuild alone and keep five tools (128 packages)",
       "status": "open",
-      "statusText": "owner 2026-11-15: asked whether node_modules holds links and what vendoring every dependency would give; vendoring the tooling advised against, trimming it filed; backlog, not started",
+      "statusText": "owner 2026-11-15: asked whether node_modules holds links and what vendoring every dependency would give; vendoring the tooling advised against, trimming it filed; backlog, not started; not yet (owner, 2026-11-23, R-1890)",
       "date": "2026-11-15",
       "area": "build",
       "kind": "dx",
@@ -17726,7 +17742,9 @@
         "rimraf",
         "cross-env"
       ],
-      "records": []
+      "records": [
+        "R-1890"
+      ]
     },
     {
       "id": "E-347",
@@ -17875,7 +17893,7 @@
       "id": "E-353",
       "title": "The particle worker computes RigidBody speed from Box2D's velocities a core away, per opted-in body (updateDerivedProperties 14.1 % of the particle worker)",
       "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested; approved 2026-11-23 (owner): RigidBody speed computed in Box2D's finalize (C; SIMD and no-SIMD builds, the LiquidFun gates)",
       "date": "2026-11-15",
       "area": "particle",
       "kind": "speed",
@@ -17890,7 +17908,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1103"
+        "R-1103",
+        "R-1890"
       ]
     },
     {
@@ -18088,7 +18107,7 @@
       "id": "E-362",
       "title": "The pose rotation as one u32 (2 x snorm16, scaled so the skew value 1.5 fits): E-201's per-frame pose copy and upload drop from 16 to 12 bytes a row",
       "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested; approved 2026-11-23 (owner): the ~6e-5 rad rotation error is accepted; after E-392, kept only if it measures (3 % bar)",
       "date": "2026-11-15",
       "area": "pixi",
       "kind": "speed",
@@ -18103,7 +18122,8 @@
       ],
       "records": [
         "R-1102",
-        "R-1100"
+        "R-1100",
+        "R-1890"
       ]
     },
     {
@@ -21230,7 +21250,7 @@
       "id": "DX-CURBS",
       "title": "Buenos Aires demo: the curb's shadow strip and the cobbles' relief by the sun, drawn in the floor shader with the sun through Layer.setUniform (no engine change)",
       "status": "open",
-      "statusText": "backlog (owner 2026-11-16: \"si es muy caro no\"; not in the first version)",
+      "statusText": "backlog (owner 2026-11-16: \"si es muy caro no\"; not in the first version); left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-16",
       "area": "demos",
       "kind": "feature",
@@ -21241,7 +21261,9 @@
         "cobble relief"
       ],
       "next": "",
-      "records": []
+      "records": [
+        "R-1890"
+      ]
     },
     {
       "id": "DX-KINEMATIC",
@@ -21537,7 +21559,7 @@
       "id": "SST-9",
       "title": "Workers kept across scene changes: a pool reset between scenes instead of terminating every worker (code, wasm, GPU context, programs and the canvas kept)",
       "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
+      "statusText": "Planned 2026-11-17 (DX-STARTUP), not started; approved 2026-11-23 (owner): faster scene changes; the engine resets its own state (A, B, A equals a fresh A); a game's own globals and statics are the game's business, and the guide says so",
       "date": "2026-11-17",
       "result": "",
       "next": "Tests load A, B, then A, which must match a fresh load; measured on menu to scene and level to level. What a game may rely on at teardown is settled with the owner first.",
@@ -21551,7 +21573,8 @@
         "keep workers across scenes"
       ],
       "records": [
-        "R-1251"
+        "R-1251",
+        "R-1890"
       ]
     },
     {
@@ -21699,7 +21722,9 @@
     {
       "refs": [],
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-1890"
+      ],
       "result": "",
       "next": "",
       "id": "DX-BARRIOSTREETS",
@@ -21708,7 +21733,7 @@
       "status": "open",
       "date": "2026-11-17",
       "title": "The Editor de Barrios lays streets only in the directions the standard cars are drawn in (their frames' screen angles at 30 deg, no shear), so a car always lines up with its street",
-      "statusText": "the owner's rule 2026-11-17 (not an engine change: the assets are as they are, the editor adapts); Parque Chas' real streets are in real_*.js (snapped to the old K=0.16 headings)"
+      "statusText": "the owner's rule 2026-11-17 (not an engine change: the assets are as they are, the editor adapts); Parque Chas' real streets are in real_*.js (snapped to the old K=0.16 headings); left for the end of the backlog (owner, 2026-11-23, R-1890)"
     },
     {
       "refs": [],
@@ -21731,7 +21756,9 @@
         "scene graph",
         "nested children"
       ],
-      "records": [],
+      "records": [
+        "R-1890"
+      ],
       "result": "",
       "next": "Design first: who writes a body-less parent's pose (logic, before physics publishes) and a deep child's (one pass in depth order after the step, or pre-render's composition); the link lists by depth; despawn of a subtree; save remap; the cost of an entity with no link stays one read. Then DX-PARENTBENCH decides.",
       "id": "DX-PARENTTREE",
@@ -21740,7 +21767,7 @@
       "status": "open",
       "date": "2026-11-17",
       "title": "Entity hierarchies as a game engine has them: an entity with N children, children with children to any depth, parents with or without a body; each pose composed down the tree once a frame (parents before children)",
-      "statusText": "approved by the owner 2026-11-17 for the backlog, not now: \"the best version of this feature\", tested and measured to the end (DX-PARENTBENCH). v1 (DX-PARENT) has one level: the parent needs a body, the child has none, so a child is never a parent"
+      "statusText": "approved by the owner 2026-11-17 for the backlog, not now: \"the best version of this feature\", tested and measured to the end (DX-PARENTBENCH). v1 (DX-PARENT) has one level: the parent needs a body, the child has none, so a child is never a parent; designed 2026-11-23 (owner left it to e8): the tree composed in physics after the step and before the pose is published (writeChildPoses), a depth-ordered walk with body-less parents; a child with a body uses DX-KINEMATIC; to WASM or the pool threads if DX-PARENTBENCH shows big trees costing the step"
     },
     {
       "refs": [],
@@ -22366,7 +22393,7 @@
       "id": "DX-PIXIUPSTREAM",
       "title": "Send upstream the Pixi patches the build still carries (E-475's parallel links, the pass-garbage patches, the WebGL sync stub), so an upgrade stops porting them (nice to have)",
       "status": "open",
-      "statusText": "Nice to have, no rush (owner, 2026-11-17); Pixi took the same class of fix in 8.22 and 8.23 (E-152's and N-95's patches now upstream)",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); Pixi took the same class of fix in 8.22 and 8.23 (E-152's and N-95's patches now upstream); left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-17",
       "result": "",
       "next": "If scheduled: one pull request per patch to pixijs/pixijs, each with Pixi's own test and the engine's numbers (E-475: the first frames' link waits; the pass garbage: heap samples per render call; E-148: garbage per WebGL draw).",
@@ -22381,7 +22408,9 @@
         "pixi pull requests",
         "buildPixi patches upstream"
       ],
-      "records": []
+      "records": [
+        "R-1890"
+      ]
     },
     {
       "id": "DX-BACKENDDEFAULT",
@@ -22407,7 +22436,7 @@
       "id": "DX-AGENTEVAL",
       "title": "An eval of agents building WeedJS games: fixed tasks done with and without the WeedJS skill, scored on steps, cost and a game that runs (nice to have)",
       "status": "open",
-      "statusText": "Nice to have, no rush (owner, 2026-11-17); from PixiJS 3D's creation-evals (its docs/skills.md: a recipe-style skill cut the cost per working result from $0.23 to $0.14 and the steps from 11.6 to 6.5)",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); from PixiJS 3D's creation-evals (its docs/skills.md: a recipe-style skill cut the cost per working result from $0.23 to $0.14 and the steps from 11.6 to 6.5); left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-17",
       "result": "",
       "next": "If scheduled: five to ten tasks (a top-down scene with lamps, particles, a physics toy, a tilemap level), three trials each, with and without the skill; the guide's and the skill's code blocks checked to run; then decide whether the guide and the skill move to complete recipes with the silent pitfalls in their first 150 lines.",
@@ -22422,7 +22451,9 @@
         "skill eval",
         "agent usability"
       ],
-      "records": []
+      "records": [
+        "R-1890"
+      ]
     },
     {
       "id": "DX-STATICSGEN",
@@ -23668,11 +23699,11 @@
     {
       "id": "DX-GBUFSHADER",
       "title": "A game's own shader can read the G-buffer: custom shader layers (LAYER_KIND.SCREEN passes and the others) get each pixel's normal, height, entity and depth, so a game writes effects that know the scene (an outline, corner shading, a cartoon look)",
-      "status": "open",
-      "statusText": "the owner, 2026-11-18: \"lo que sí vale la pena agregar al backlog es la siguiente idea: poder usar el gbuffer en un shader propio. solo eso\". It came from looking at the Editor de Barrios' screen-space outline (editor/js/gfx.js: lines where the box id or the depth changes, corner shading from depth). Only the access: no built-in outline or effect",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (e0676b22, R-1889); the pixel depth not yet",
       "date": "2026-11-18",
-      "result": "",
-      "next": "Hand custom shader layers the face map (normal, height), the ids map and the pixel depth as named textures, in GLSL and WGSL, with their size: they are drawn at the light's resolution (0.25 by default, 0.5 in the barrio), so a texel covers several canvas pixels, and a shader must know that. Document their encoding (faceMap.js FACE_*, the ids words) in the guide with a small example (an outline). Decide whether a layer that asks for them turns the G-buffer on, and what it reads in a scene without one.",
+      "result": "A SCREEN pass reads uGbufFace, uGbufIds and uGbufSize (e0676b22); the guide's outline runs on both backends",
+      "next": "",
       "area": "render",
       "kind": "feature",
       "refs": [],
@@ -23680,7 +23711,9 @@
         "g-buffer in custom shaders",
         "gbuffer access"
       ],
-      "records": []
+      "records": [
+        "R-1889"
+      ]
     },
     {
       "refs": [],
@@ -23745,7 +23778,7 @@
       "id": "E-524",
       "title": "No sitting in the register on a tile-based phone GPU: Chrome on Android (Mali, Adreno), where Phaser's history shows the upload patterns WeedJS uses collapsing (the Mac sitting comes later; Safari is not supported)",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from reading Phaser 4.2.1's and three.js's histories (R-1422, R-1428); the owner the same day: Safari is not supported, the Mac sitting comes later",
+      "statusText": "proposed 2026-11-18 from reading Phaser 4.2.1's and three.js's histories (R-1422, R-1428); the owner the same day: Safari is not supported, the Mac sitting comes later; left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-18",
       "result": "",
       "next": "One sitting on a mid-range Android phone (Chrome, WebGL and WebGPU), bunnyMark and Predator: presented frames and GPU time per pass (glFrameRecorder --gpu-passes, webgpuFrameRecorder). What to read, each from Phaser's or three.js's history: (1) the instance buffers' upload: each sized to the batch's capacity (maxVisibleRenderables), a ring of two, a prefix bufferSubData every frame (Phaser 3.50 -> 3.60: a bufferSubData per flush took the iPhone SE from 5 248 to 192 texture binds at 60 fps and an M1 iMac from 15 872 to 2 560, f0d3588f; v4 RC4 dropped a 16 MB shared vertex buffer, 'large buffers update very badly on mobile', 40f2f706, up to 16x in filter scenes on phones); (2) Pixi's batcher and its sixteen declared samplers (Phaser compiles a variant per texture count in use and forces one unit on iOS and Android, autoMobileTextures); (3) E-502's 'auto' for tiled GPUs, vendor guidance not measured; (4) E-523's store ops; (5) the console for 'Attribute 0 is disabled' (three.js binds position to location 0 against that penalty, #33841). Each finding becomes its own row.",
@@ -23762,7 +23795,8 @@
       ],
       "records": [
         "R-1422",
-        "R-1428"
+        "R-1428",
+        "R-1890"
       ]
     },
     {
@@ -24988,7 +25022,8 @@
     },
     {
       "records": [
-        "R-1839"
+        "R-1839",
+        "R-1890"
       ],
       "refs": [],
       "id": "N-331",
@@ -24997,7 +25032,7 @@
       "kind": "bug",
       "area": "demo",
       "date": "2026-11-22",
-      "statusText": "Filed 2026-11-22 from the demo sweep with the debug checks on (R-1839)",
+      "statusText": "Filed 2026-11-22 from the demo sweep with the debug checks on (R-1839); approved 2026-11-23 (owner, via e8): change the demo scenes' caps freely (\"the demo scenes are for that\")",
       "next": "The scenes' configs, by their owners: Predator's start, 735 entries a frame past maxEntitiesPerCell 64 (N-325 measured none at crowd 2.5 mid-battle), the Flash pool (32) full, particle.maxParticles exhausted; Buenos Aires, 22 and 4 lists a frame at maxNeighbors 48 (two spatial workers); Boids, one list at 128 and one cell entry at maxEntitiesPerCell 20; zenithalParticleTest, one cell entry at 64. Predator and Boids are the gates' scenes: a cap raised moves their load, so it goes with a gate of its own. `node tests/bench/demoWarnings.mjs --dev-checks` shows them."
     },
     {
@@ -25193,7 +25228,7 @@
       "id": "DX-PARTICLEOPTIONS",
       "title": "Particles, four options (CPU or GPU, with or without y-sort): GPU particles sorted per particle by the depth buffer instead of the proxies, and GPU parity with CPU particles (floor, bounces, decals, fades, lights, zenithal) (nice to have)",
       "status": "blocked",
-      "statusText": "Nice to have, low priority (owner, 2026-11-22): to talk over and define with the owner before any work; nothing is built until then. A draft plan in PARTICLE_OPTIONS_PLAN.md",
+      "statusText": "Nice to have, low priority (owner, 2026-11-22): to talk over and define with the owner before any work; nothing is built until then. A draft plan in PARTICLE_OPTIONS_PLAN.md; left for the end of the backlog (owner, 2026-11-23, R-1890)",
       "date": "2026-11-22",
       "result": "",
       "next": "Talk it over with the owner first (the plan's \"To define in the talk\"); nothing is built until then.",
@@ -25209,7 +25244,9 @@
         "particle parity",
         "particles by depth"
       ],
-      "records": []
+      "records": [
+        "R-1890"
+      ]
     },
     {
       "records": [
@@ -43189,6 +43226,24 @@
       "title": "DX-BACKENDAUTO kept: renderer.backend 'auto' draws with WebGPU where it works and WebGL where it does not; the default stays 'webgpu'",
       "verdict": "kept",
       "text": "09d44fa4 (main): renderer.backend 'auto', as REVIEW_PLAN.md#DX-BACKENDAUTO designed it, decided in Scene.init before the\nworkers boot: WebGPU when navigator.gpu gives an adapter and every layer's look shader has a WGSL version (a map's webgpu\nentry, a .wgsl path, or a fetched source that reads as WGSL), else WebGL and one console warning naming why (no WebGPU,\nno adapter, or the layer); a compute layer without WebGPU fails naming the layer. 'auto' stays until init resolves it\n(normalizeRendererBackend and assertSceneRendererConfig take it). rendererBackendAuto.test.js covers each case.\nBrowser: the light gallery (99fee985's ?backend=auto) 'auto' against 'webgpu', 0 of 921 600 pixels differ; with Chrome's\n--disable-gpu (no adapter) 'auto' against 'webgl', 0 differ. test:node 3586/3586, test:demos 143/143. The default stays\n'webgpu': whether 'auto' becomes it, and whether it should prefer WebGL while E-467 stands, is the owner's call."
+    },
+    {
+      "id": "R-1889",
+      "date": "2026-11-23",
+      "time": "13:05",
+      "timeFrom": "recorded",
+      "title": "DX-GBUFSHADER kept: a SCREEN pass reads the G-buffer (uGbufFace, uGbufIds, uGbufSize); the light gallery's ?outline=1 draws an outline from the ids map on both backends",
+      "verdict": "kept",
+      "text": "e0676b22 (main): a LAYER_KIND.SCREEN pass whose look names uGbufFace or uGbufIds gets this frame's face map and entity\nids map (bound each frame after the light pass), and uGbufSize, a new engine look uniform (their texels; 0 0 and 1 x 1\nempty textures in a scene that draws none: a pass does not turn the G-buffer on). WGSL: the look prelude declares them\nafter uScene and gives gbufTexel(uv). GLSL: the shader declares them and the engine gives gbufUv(uv): WebGL's render\ntargets hold the G-buffer upside down against vTextureCoord (the first capture of the outline came out mirrored on WebGL,\nright on WebGPU). The guide documents the encodings and the outline. Captures (the light gallery, outline=1 against\nwithout): 2 556 of 921 600 pixels darkened on WebGL and on WebGPU alike, round every lamp's sprite; gbufShader.test.js.\nPixel depth is not handed over (the item's third texture): a later step if a game needs it."
+    },
+    {
+      "id": "R-1890",
+      "date": "2026-11-23",
+      "time": "12:40",
+      "timeFrom": "recorded",
+      "title": "The owner's decisions of 2026-11-23 (relayed by session e8): lights and shadows first, then the CPU and physics lane; N-331, E-199, E-353, E-362, SST-9 approved; DX-PARENTTREE designed; the low items and N-164, N-165, N-172 wait",
+      "verdict": "note",
+      "text": "The owner, 2026-11-23, in session e8 (relayed here, the register's writer):\n- Order: every light and shadow item first; the CPU and physics lane (E-323, E-433, E-439, E-287, E-487, E-440, E-437,\n  E-438, E-442, E-342, E-346, E-341, E-546 and N-185) only after.\n- Approved: N-331 (the demo scenes' caps), E-199 (K nearest of a type, after the lights), E-353 (RigidBody speed in\n  Box2D's finalize), E-362 (after E-392, kept only if it measures), SST-9 (the engine resets its own state; a game's\n  globals are the game's), CR-37 (the untiled light path deleted, before the light pass's rewrite E-408..E-410) and CR-38\n  (pre-render's JS visibility gather deleted, the gather regions laid out in every case, a pre-render sitting):\n  CODE_REDUCTION_PLAN.md.\n- DX-PARENTTREE: the tree composed in physics after the step (writeChildPoses), a depth-ordered walk, body-less parents;\n  every reader sees one world pose with no lag.\n- Left for the end of the backlog: E-145 and N-187, E-524, DX-GPCLEAR, DX-GPWIND, DX-GPFOLLOW, DX-ADDBOX,\n  DX-PARTICLEOPTIONS, DX-ELASTIC, DX-AGENTEVAL, DX-PIXIUPSTREAM, DX-BARRIOS, DX-BARRIOSTREETS, DX-CURBS.\n- Not yet: N-164, N-165, N-172 (dist out of git, the history cleanup, esbuild only).\nSplit of the lights (2026-11-23): this session takes DX-GBUFSHADER, CR-37 and E-408..E-410; e8 takes CR-38, N-192, N-299,\nE-544 and E-411 (its measurement now, its code after the light pass's rewrite), with R-1900..R-1949, N-430..N-439 and\nE-560..E-569 on its branches."
     }
   ],
   "leads": [

@@ -229,7 +229,7 @@ phase A; a row the owner refuses is marked here and in the register. On 2026-11-
 - CR-33 and CR-34 go: no backwards compatibility.
 - Nothing of the public API is deleted: CR-35 and CR-36 stay.
 
-CR-37 and CR-38 touch no public API; they are still open.
+CR-37 and CR-38 touch no public API. The owner approved both on 2026-11-23 (R-1890). CR-37 goes before the light pass's rewrite (E-408..E-410), so that the rewrite has one path; gpuPass's untiled baseline goes with it. CR-38 lays out the gather regions in every case and deletes pre-render's JS gather; it is with session e8.
 
 | item | what | lines | the owner decides |
 | --- | --- | --- | --- |
