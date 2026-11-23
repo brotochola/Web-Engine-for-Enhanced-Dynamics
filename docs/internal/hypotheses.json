@@ -24644,7 +24644,8 @@
         "R-1870",
         "R-1871",
         "R-1874",
-        "R-1881"
+        "R-1881",
+        "R-1883"
       ],
       "refs": [],
       "id": "E-531",
@@ -43129,6 +43130,15 @@
       "title": "E-458 dropped: PR #12's early-stopping ring walk ties in Chrome on Predator's own stamp frames (night -2.1 %, zoom 0.216 +0.5 %); a looser rule loses 12 % by night",
       "verdict": "dropped",
       "text": "E-458 tried on main d9f4f2cf (not committed): PR #12's ring_gather_select (feabe3a7) ported into stamp_light_range for the\nlights with a per-entity cap past KNN_MAX_LIM, lim + 1 held (N-413's nearest left out) and a tie at the cut taking the\ngather; the replay of the scene's own inputs matched its capture (exact). Captures (captureStampInputs, 48 calls every\n4th): Predator crowd 2.5 light3d by night (2.380 ms a call in the scene, 39 450 casters, 48 lights) and crowd 2.5 zoom\n0.216 (1.099 ms a call). shadowStampReplayMicrobench, Node, 5 alternating rounds against the base engine.wasm:\n- the walk wherever the cell rectangle holds more than lim + 1: night -12.1 % (slower).\n- more than 4 (lim + 1): night +3.1 %, zoom 0.216 +4.7 %; more than 8 (lim + 1): +2.5 % (tie), +6.4 %.\n- KNN_MAX_LIM 128 instead (main's own walk at 73): night -3.9 %.\nchromeKernel shadowStampReplay, Chrome, 9 alternating rounds, ms a frame base -> walk: 4x night 0.921 -> 0.901 (-2.1 %),\nzoom 0.216 0.511 -> 0.513 (+0.5 %); 8x 0.927 -> 0.922, 0.515 -> 0.516. Chrome decides WASM kernels: a tie, under the\nbar; dropped, the stamp unchanged."
+    },
+    {
+      "id": "R-1883",
+      "date": "2026-11-23",
+      "time": "11:57",
+      "timeFrom": "recorded",
+      "title": "E-531 on the ASUS after E-547: the HD 620 draws 18.9 % fewer frames by night and 13.7 % by day than main before the merge; renderer +17 to +20 %, pre-render +25 % by night",
+      "verdict": "note",
+      "text": "The ASUS (i7-7500U, Intel HD 620), job 0907c (2026-11-23, 11:10 to 11:57 by its log): exp/one-shadow-path at 4bbdf324 (E-547's\ncompact halos, lightGlow still 'add' there) against the main PC's main of 2026-11-22 (pcmain1122c), whole revisions,\nrunPredatorAbab, Predator crowd 0.5, 8 pairs, owner renderer.\n- By night: drawn 46.1 -> 37.3 fps (-18.9 %, 8/8 fewer); renderer 7.840 -> 9.387 ms (+19.7 %, 6/8, +1.2 % against the\n  others), pre-render 9.874 -> 12.906 ms (+25.3 %, +19.8 % against the others); logic and physics noisy (cv up to 233 %).\n  Load: GPU_SHADOW_LIGHTS 39.4 -> 45.4 (+15.1 %), GPU_CASTERS +9.7 %, so FAIL (load).\n- By day: drawn 49.5 -> 43.3 fps (-13.7 %, 8/8 fewer); renderer 7.384 -> 8.680 ms (+16.8 %, 8/8 worse).\nAgainst job 0906b (the branch before E-547, by night -19.1 %): E-547 did not move the HD 620's night. On this PC the same\nmerge was neutral by night and by day (R-1874): the unified path costs the 2-core laptop more, in its CPU workers too."
     }
   ],
   "leads": [
