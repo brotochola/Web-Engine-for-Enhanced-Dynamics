@@ -64,6 +64,12 @@ the next one samples, at a resolution of its own. A blur that reads 289 texels a
 columns. The platformer's bloom went from 5.06 to 1.62 ms raw on the GTX 1650, and the raw figure is the floor: the GPU
 slows its clock when it has less to do, and at the same clock the gain is 83 % (DX-LAYERPASSES).
 
+**Passes that only change a colour become one.** A SCREEN layer whose look maps each pixel's colour to another (a grading, a
+vignette) can say so, `pointwise`, and write one function from colour to colour. The renderer writes one fragment for a run
+of them, so a chain of three reads and writes the screen once: 0.412 to 0.155 ms on the GTX 1650, Sun Street's two 0.529 to
+0.273 (-28 % at an equal clock). The fused chain skips the rounding to 8 bits between passes, so its pixels move by at
+most 2 of 255 (DX-POSTFUSE).
+
 **Drawing only the part of a tile that has blood on it** does not pay. The decal tiles' empty cells were found by a small
 WASM kernel and skipped; the HD 620's decal draws lost 0.3 to 0.7 ms of a 15 ms frame, about what its runs differ by, and
 the GTX 1650's are 0.15 ms to begin with. Dropped, with its kernel (E-553).
