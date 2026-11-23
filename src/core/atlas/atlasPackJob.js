@@ -50,7 +50,7 @@ function dropDecoded(decoded) {
  * @param {{
  *   assets: object,
  *   options: object,
- *   builtins: Array<{ name: string, image: CanvasImageSource & { width: number, height: number }, unshaded?: boolean, afterSort?: boolean }>,
+ *   builtins: Array<{ name: string, image: CanvasImageSource & { width: number, height: number }, unshaded?: boolean }>,
  *   cache: { enabled: boolean, bundle: boolean } | null,
  *   makeCanvas: (w: number, h: number) => HTMLCanvasElement | OffscreenCanvas,
  *   cacheEnv?: { storage: CacheStorage, origin: string } | null,

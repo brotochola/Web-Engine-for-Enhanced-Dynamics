@@ -98,9 +98,9 @@ test('N-151: the nearest are measured from where the light is, its offset includ
 });
 
 test('N-150: a light whose entity is off screen still has its glow collected when the glow reaches the view', async () => {
-  // Light 0 is 300 px left of a 0..800 view with a radius of 1000: its glow (850 px) covers the view. Light 1 is as far
-  // with a radius of 100 (85 px): its glow does not reach.
-  bind([-300, -300, 0, 0, 0, 0], [300, 300, 0, 0, 0, 0]);
+  // Light 0 is 100 px left of a 0..800 view with a radius of 1000: its halo (E-547's compact glow, 0.16 of 850 px: 136 px)
+  // reaches the view. Light 1 is as far with a radius of 100 (13.6 px): its halo does not reach.
+  bind([-100, -100, 0, 0, 0, 0], [300, 300, 0, 0, 0, 0]);
   LightEmitter.radius.set([1000, 100]);
   LightEmitter.glow.set([0.5, 0.5]);
   LightEmitter.active.set([1, 1, 0, 0, 0, 0]);

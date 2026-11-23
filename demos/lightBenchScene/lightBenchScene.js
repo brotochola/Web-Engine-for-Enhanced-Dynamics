@@ -11,7 +11,6 @@
 // nothing is). The keys, listed in the panel, switch a part on and off to compare.
 //
 //   ?maps=0       no height or normal maps (lit as the floor, as before)
-//   ?sun=layer    the sun's shadows painted on the shadows' layer (lighting.sunShadows 'layer'), instead of its shadow map
 //   ?self=0       no self-shadow
 //   ?pixel=0      smooth light and shadows (lighting.pixelArt off): each world pixel is lit whole by default
 //   ?hour=        the sun's hour (default 16)
@@ -20,7 +19,6 @@
 //   ?only=hatch_rojo,arboles,civil7  only those things (none: the grass alone); ?lamps=0 no lamps (captures, checks)
 //   ?backend=webgpu
 //   ?fullRows=1   the shadows from pre-render's full caster rows (lighting.keyedCasters false: the keyed paths off), to compare
-//   ?lampMap=0    the lamps' shadows as stamps, instead of the lamps' shadow map (one tile a lamp)
 //   ?sweep=0      the heightmap casters' solids as columns down to the floor, not swept north to their footprints
 //   ?pitch= ?floor= ?height=  camera.pitch, floorScaleY, heightScaleY (default 47, 0.736, 0.752, the art's; floor=auto
 //                 and height=auto leave them to the pitch: sin and cos)
@@ -80,7 +78,6 @@ const NORMAL_SHADING = (() => {
   return { sun: given(SUN_NORMAL_STRENGTH, SUN_NORMAL_SUBTRACT), lamps: given(LAMP_NORMAL_STRENGTH, LAMP_NORMAL_SUBTRACT) };
 })();
 const MAPS = param('maps') !== '0';
-const SUN_MAP = param('sun') !== 'layer';
 const SELF = param('self') !== '0';
 const PIXEL_ART = param('pixel') !== '0';
 const STILL = param('still') === '1';
@@ -94,8 +91,6 @@ const BACKEND = param('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 const FULL_ROWS = param('fullRows') === '1';
 // ?sweep=0: lighting.footprintSolids off, the heightmap casters' solids as columns down to the floor.
 const SWEEP = param('sweep') !== '0';
-// ?lampMap=0: the lamps' shadows as stamps on the shadows' layer, instead of the lamps' shadow map (lighting.lampShadows).
-const LAMP_MAP = param('lampMap') !== '0';
 // ?walls=1: lighting.walls, so an element whose lamps' kind is 'wall' stops the lamps (without it setWall only warns).
 const WALLS = param('walls') === '1';
 const wanted = (sheet) => ONLY === null || ONLY.has(sheet);
@@ -353,7 +348,7 @@ export class LightBenchScene extends Scene {
       ...(FLOOR !== null ? { floorScaleY: FLOOR } : {}),
       ...(HEIGHT !== null ? { heightScaleY: HEIGHT } : {}),
     },
-    // The grass under the shadows' layer (zIndex 2), so both kinds of sun shadow show on it.
+    // The grass, under the entities (zIndex 0): the floor the shadows fall on.
     layers: { ground: { kind: LAYER_KIND.TILING, texture: 'pasto', tileScale: 1, parallax: 1, zIndex: 0 } },
     lighting: {
       enabled: true,
@@ -362,14 +357,12 @@ export class LightBenchScene extends Scene {
       // Room for the box or hull looks the panel offers (every prop and car at once; a hull up to 24 points).
       maxVolumes: 64,
       maxVolumeVerts: 24,
-      // The light pass, the shadows' layer and the sun's map at the canvas's own size: sharp shadow edges (the owner's
-      // ask; their cost is measured later).
+      // The light pass and the shadow maps at the canvas's own size: sharp shadow edges (the owner's ask; their cost is
+      // measured later).
       resolution: RES,
       shadowResolution: RES,
       shadowsEnabled: true,
-      sunShadows: SUN_MAP ? 'map' : 'layer',
       footprintSolids: SWEEP,
-      lampShadows: LAMP_MAP ? 'map' : 'layer',
       // ?walls=1: the 'wall' kind's walls stop the lamps (the walls' sweep, whatever the pitch).
       walls: WALLS,
       normalShading: NORMAL_SHADING,
@@ -454,9 +447,7 @@ export class LightBenchScene extends Scene {
 
   update(dtRatio, dt) {
     if (Keyboard.isPressed('m')) this._reload('maps', MAPS ? '0' : '1');
-    if (Keyboard.isPressed('u')) this._reload('sun', SUN_MAP ? 'layer' : 'map');
     if (Keyboard.isPressed('o')) this._reload('self', SELF ? '0' : '1');
-    if (Keyboard.isPressed('l')) this._reload('lampMap', LAMP_MAP ? '0' : '1');
     if (Keyboard.isPressed('p')) this._reload('depth', DEPTH === false ? '1' : '0');
     if (Keyboard.isPressed('r')) this._reload('res', RESOLUTIONS[(RESOLUTIONS.indexOf(RES) + 1) % RESOLUTIONS.length]);
     if (Keyboard.isPressed('g')) this._reload('pitch', PITCH === 90 ? '47' : '90');
@@ -808,8 +799,6 @@ export class LightBenchScene extends Scene {
       depth: DEPTH,
       ambient: AMBIENT,
       resolution: RES,
-      sunMap: SUN_MAP,
-      lampMap: LAMP_MAP,
       walls: WALLS,
       // The engine's defaults where the page asked nothing: the sun's strength 1 with 0.5 subtracted, the lamps' 1 with
       // nothing subtracted.
@@ -874,20 +863,6 @@ export class LightBenchScene extends Scene {
       note: 'lighting.resolution and shadowResolution: the light pass and the shadow maps against the canvas. Lower is ' +
         'cheaper and softer. [R]',
       onChange: (v) => this._reload('res', v),
-    });
-    scene.select({
-      label: "Sun's shadows", value: SUN_MAP ? 'map' : 'layer',
-      options: [['map', 'shadow map'], ['layer', 'cards on the layer']],
-      note: "lighting.sunShadows: 'map' takes out the sun alone and falls on what has height; 'layer' paints cards on the " +
-        "shadows' layer, darkening every light. [U]",
-      onChange: (v) => this._reload('sun', v),
-    });
-    scene.select({
-      label: "Lamps' shadows", value: LAMP_MAP ? 'map' : 'layer',
-      options: [['map', 'shadow map a lamp'], ['layer', 'stamps on the layer']],
-      note: "lighting.lampShadows: 'map' gives each lamp that casts a tile of its own: two lamps light each other's " +
-        "shadows, and the height of the lamp (elevation) is in the shadow's length. [L]",
-      onChange: (v) => this._reload('lampMap', v === 'map' ? '1' : '0'),
     });
     scene.toggle({
       label: 'Walls', value: WALLS,
@@ -1174,8 +1149,8 @@ export class LightBenchScene extends Scene {
     });
     s.toggle({
       label: 'Casts shadows', value: l.castShadows,
-      note: "lightEmitter.castShadows: its own shadow map with lampShadows: 'map' (or stamps); off, it lights and casts " +
-        'nothing, which costs less.',
+      note: 'lightEmitter.castShadows: its own shadow map (a tile of the lamps\' map); off, it lights and casts nothing, ' +
+        'which costs less.',
       onChange: (v) => this._setLamp(l, { castShadows: v }),
     });
     s.range({

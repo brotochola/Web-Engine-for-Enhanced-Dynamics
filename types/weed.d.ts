@@ -300,15 +300,22 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   baseAmbient?: number;
   /** At most this many lights drawn a frame (default 10). */
   maxLights?: number;
-  /** ShadowCasters cast shadows (default false). */
+  /**
+   * ShadowCasters cast shadows (default false), from shadow maps in the floor's terms: the sun's takes out the sun's light
+   * alone (Sun.shadowAlpha of it) and falls on what has height (faces, sprites with maps) where it is, leaving the lamps
+   * lit; a lamp that casts gets a map of its own (a tile in an atlas) that takes out its light alone, the caster's height
+   * and the lamp's LightEmitter.elevation making the shadow's length (a lamp at elevation 0 casts none). A ShadowCaster's
+   * volume (setBox, setHull) casts into both. A picture of one view casts its card, a render with a height map its solid
+   * (the sheet and the entity can say otherwise: ShadowCaster). WebGL and WebGPU.
+   */
   shadowsEnabled?: boolean;
-  /** The lights with castShadows nearest the camera that cast shadows (default 20); with `lampShadows: 'map'`, one tile each. */
+  /** The lights with castShadows nearest the camera that cast shadows, one tile each in the lamps' map (default 20). */
   maxShadowCastingLights?: number;
   /** At most this many casters in range for each of those lights (default 15). */
   maxShadowsPerLight?: number;
   /** The light pass's size against the canvas (default 0.25); 1 for sharp shadow edges on pixel art. */
   resolution?: number;
-  /** The size of the shadows' layer and of the sun's map against the canvas (default 0.5). */
+  /** The size of the sun's shadow map against the canvas, and how sharp the lamps' tiles are (default 0.5). */
   shadowResolution?: number;
   /**
    * DX-CASTER: the ShadowCasters that hold a volume at once (shadowCaster.setBox, addLevel, setHull). Default 0: no volumes,
@@ -325,25 +332,10 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   maxPolygonVertices?: number;
   /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
   keyedCasters?: boolean;
-  /**
-   * DX-SHADOW3D: where the sun's shadows are drawn. 'layer' (default): each caster's shadow painted on the shadows' layer,
-   * darkening every light by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light
-   * alone (Sun.shadowAlpha of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps
-   * lit; a ShadowCaster's volume (setBox, setHull) casts into it. Either mode: a picture of one view casts its card, a
-   * render with a height map its solid (the sheet and the entity can say otherwise: ShadowCaster).
-   */
-  sunShadows?: 'layer' | 'map';
-  /**
-   * DX-SHADOW3D (F7): where the lamps' shadows are drawn. 'layer' (default): each caster stamped on the shadows' layer,
-   * stretched away from its lamp. 'map': a shadow map a lamp (a square tile each in an atlas, for the
-   * maxShadowCastingLights lamps nearest the camera) that takes out that lamp's light alone; the caster's height and the
-   * lamp's LightEmitter.elevation make the shadow's length, and a lamp at elevation 0 casts none. WebGL and WebGPU.
-   */
-  lampShadows?: 'layer' | 'map';
   /** Texels a side of a lamp's tile in the lamps' map, 32 to 1024 (default 256). The tile spans the lamp's radius. */
   lampShadowTile?: number | 'auto';
   /**
-   * With `lampShadows: 'map'`: a lamp that stays still draws the volumes' shadows (VolumeShadowCaster) into its tile once,
+   * A lamp that stays still draws the volumes' shadows (VolumeShadowCaster) into its tile once,
    * into a cache, and copies them each frame until it or a volume moves (default true). false draws them every frame.
    */
   lampMapCache?: boolean;
@@ -359,6 +351,8 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * row or a diagonal than across it. Each one is a texture read a map a pixel. pixelArt takes 1. Read when the scene starts.
    */
   shadowSamples?: number;
+  /** How much of a lamp's light its shadows take out, 0 to 1 (default 1), as sun.shadowAlpha does for the sun. */
+  lampShadowAlpha?: number;
   /**
    * Tiled light culling: the side, in px of the light's target, of the screen tiles whose lists of lights each light pixel
    * loops over, 4 to 256 (default 16). Not a resolution: the picture is the same at any size, only the work moves. Smaller
@@ -379,7 +373,7 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   footprintSolids?: boolean;
   /**
    * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun (steps towards it over
-   * the heights in the light pass); with `lampShadows: 'map'`, from each lamp with a tile too. Default false.
+   * the heights in the light pass), and from each lamp with a tile when shadows are on. Default false.
    */
   selfShadow?: boolean;
   /**
@@ -436,10 +430,10 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   unshaded?: boolean;
   /**
-   * How the lights' halos (LightEmitter.glow) are drawn. 'add' (default): on the lightGlows layer, added over the lighting
-   * and over everything (nothing in front covers them). 'sorted': each right after its entity's sprite, on its sort line,
-   * so what stands in front covers it, and unshaded (the night does not darken it); it turns the G-buffer and the
-   * unshaded pass on.
+   * How the lights' halos (LightEmitter.glow) are drawn. 'sorted' (default): each right after its entity's sprite, on its
+   * sort line, so what stands in front covers it, and unshaded (the night does not darken it); it turns the G-buffer and
+   * the unshaded pass on. 'add': on the lightGlows layer, added over the lighting and over everything (nothing in front
+   * covers them).
    */
   lightGlow?: 'add' | 'sorted';
   /**
@@ -1320,10 +1314,15 @@ export interface FlashCreateConfig {
   brightness?: number;
   /** Initial halo alpha, 0 = none. Default 0.2. */
   glow?: number;
-  /** The halo's radius in px, as it shows (a compact glow); 0 draws the wide gradient at 0.85 of the radius. Default 0. */
+  /** The halo's radius in px, as it shows (a compact glow); 0 sizes it from the light, about 0.14 of its radius. Default 0. */
   glowRadius?: number;
   /** Point shadows. Default true. */
   castShadows?: boolean;
+  /**
+   * Its source's height above the floor in px, as LightEmitter.elevation: with the casters' heights it makes its shadows'
+   * length (at 0 it casts none), and it widens and flattens the pool. Default 0.
+   */
+  elevation?: number;
   /** A cone's whole aperture in radians, as LightEmitter.coneAngle. Default 2π (round). */
   coneAngle?: number;
   /** 0..1, how much of the cone's edge fades. Default 0. */
@@ -4726,9 +4725,8 @@ export declare class LightEmitter extends Component {
   static brightness: Float32Array;
   /**
    * The source's height above the floor, in px. Widens and flattens the pool without moving it or changing its
-   * reach: falloff I / (I + h² + d²). 0 = a light on the floor. With `lighting.lampShadows: 'map'` it is also the height
-   * the lamp casts from (a car under a lamp at 150 px casts a short shadow, under one at 40 px a long one), and a lamp at
-   * 0 casts none there.
+   * reach: falloff I / (I + h² + d²). 0 = a light on the floor. With shadows on it is also the height the lamp casts from
+   * (a car under a lamp at 150 px casts a short shadow, under one at 40 px a long one), and a lamp at 0 casts none.
    */
   static elevation: Float32Array;
   /**
@@ -4751,11 +4749,10 @@ export declare class LightEmitter extends Component {
    */
   static castShadows: Uint8Array;
   /**
-   * How far its shadows reach, in px; 0 (the default) is its radius. Layer shadows, the walls that stop it with
-   * lighting.walls (the light finds them itself: no Collider.visualRange to set, unless its entity has a visualRange (it
-   * reads its neighbours), whose list stays what that visualRange gives; the light's walls are then within it), and with lighting.lampShadows
-   * 'map' the span of its tile: past it the lamp lights without shadows, which fade out over the last fifth. A shorter
-   * reach costs less.
+   * How far its shadows reach, in px; 0 (the default) is its radius: the walls that stop it with lighting.walls (the light
+   * finds them itself: no Collider.visualRange to set, unless its entity has a visualRange (it reads its neighbours),
+   * whose list stays what that visualRange gives; the light's walls are then within it), and the span of its tile in the
+   * lamps' map: past it the lamp lights without shadows, which fade out over the last fifth. A shorter reach costs less.
    */
   static shadowRange: Float32Array;
   /** The cone's direction as cosine and sine, relative to the entity (1, 0 by default). Set it with `direction`. */
@@ -4776,7 +4773,7 @@ export declare class LightEmitter extends Component {
   set glow(value: number);
   /**
    * The halo's radius in px as it shows (a compact glow that falls to under 1 % there), at least 0; 0 (the default)
-   * draws the light's wide gradient at 0.85 of its radius (a spark's big soft flash), so give a lamp that lights a whole
+   * sizes it from the light, about 0.14 of its radius (a spark's big soft flash), so give a lamp that lights a whole
    * street a small one here.
    */
   get glowRadius(): number;
@@ -4938,7 +4935,7 @@ export interface ShadowCasterLightSide {
  * Casts the entity's shadow from the sun and from the lamps that cast (LightEmitter.castShadows), each light its own way
  * (DX-CASTER): by default its sheet's (CAST_KIND.AUTO), else what the setters say for every light, or for the sun or the
  * lamps alone (`sun`, `lamps`); the last setter wins. A DirectionalSprite casts the frame each light sees, and a lamp is
- * not shaded by its own entity. How the shadows are drawn is the scene's: `lighting.sunShadows`, `lighting.lampShadows`.
+ * not shaded by its own entity, into the sun's and the lamps' shadow maps (lighting.shadowsEnabled).
  */
 export declare class ShadowCaster extends Component {
   // E-533: everything the instance's methods do, by index (they call these), for code that holds an index.

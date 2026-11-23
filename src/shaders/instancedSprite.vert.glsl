@@ -65,7 +65,19 @@ void main() {
   vec3 clip = mvp * vec3(world, 1.0);
   gl_Position = vec4(clip.xy, aInstDepth, 1.0);
   vLocal = aQuad;
-  vColor = vec4(rgb, instA * uColor.a);
+  // N-418: a frame the texture table marks additive (its second flags texel, where the table has one: the sorted halos'
+  // _lightHalo) sends its alpha negative: the fragment shaders add its colour (alpha 0 out) and read its size as coverage.
+  float weedAddSign = 1.0;
+  if (tid >= 0 && tid < lutPerRow * lutSize.y && lutSize.x > 3 * lutPerRow + 1) {
+    int weedAs = tid % lutPerRow;
+    if (weedAs < 96) {
+      vec4 weedAf = texelFetch(uTexLut, ivec2(3 * lutPerRow + 1, tid / lutPerRow), 0);
+      int weedAc = weedAs / 24;
+      float weedAv = weedAc == 0 ? weedAf.x : (weedAc == 1 ? weedAf.y : (weedAc == 2 ? weedAf.z : weedAf.w));
+      if (((uint(weedAv) >> uint(weedAs - 24 * weedAc)) & 1u) != 0u) weedAddSign = -1.0;
+    }
+  }
+  vColor = vec4(rgb, instA * uColor.a * weedAddSign);
   vWorld = uTileWorld.w > 0.5 ? world * uTileWorld.z + uTileWorld.xy : world;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;

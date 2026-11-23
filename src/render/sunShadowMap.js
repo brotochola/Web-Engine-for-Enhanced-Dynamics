@@ -134,6 +134,28 @@ const ROW_TEX = 10;
  * @returns {number}
  */
 /**
+ * E-549: which textures can cast columns from a keyed caster row (compactKeyedColumnRows' test for either light: a
+ * render, its frame's base a contact, that has a height map), as a flag a textureId, and how many: the keyed statics'
+ * copy keeps only the slots that show one, and nothing at all in an atlas without one.
+ * @param {Float32Array} lut the texture table (`lutFloats` an id: the base at 10)
+ * @param {number} lutFloats
+ * @returns {{ flags: Uint8Array, count: number }}
+ */
+export function keyedColumnTextures(lut, lutFloats) {
+  const ids = (lut.length / lutFloats) | 0;
+  const flags = new Uint8Array(ids);
+  let count = 0;
+  for (let id = 0; id < ids; id++) {
+    const base = lut[id * lutFloats + 10];
+    if (base < 0 && !baseIsMapless(base)) {
+      flags[id] = 1;
+      count++;
+    }
+  }
+  return { flags, count };
+}
+
+/**
  * E-395: compactColumnRows for keyed caster rows (gpuQueueLayout.js GPU_KEYED_CASTER_FLOATS, or GPU_KEYED_STAMP_FLOATS):
  * a row's frame is its fourth float when it carries one (±(textureId + 1), negative mirrored), else its slot's texture in
  * `statics` (the entity batch's CPU copy: textureId, scaleX, scaleY a slot), and its scale the slot's (its x mirrored with
@@ -317,15 +339,12 @@ export function sunMapColumnIndex(cells = SUN_MAP_COLUMNS) {
  * its height: floor y = (screen y + heightScaleY · z) / groundScaleY) and casts the column under it: a strip from that
  * floor point (height 0) to where the cell's sun ray lands (height z). The union of the columns is the object's solid
  * shadow, whatever way it is turned. Only a render's frames cast them (its base has a contact); transparent cells and
- * cells without a map draw nothing.
- * With `heights` (the sun's map) each column carries its height; without (the shadows' layer, drawn with max
- * blending) it is the shadow's colour and opacity.
+ * cells without a map draw nothing. Each column carries its height into the map.
  * @param {string} source instancedSpriteShadow.vert.glsl
  * @param {number} [cells]
- * @param {{ heights?: boolean }} [opts]
  */
-export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights = true } = {}) {
-  const card = sunMapVertex(source, { heights });
+export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS) {
+  const card = sunMapVertex(source);
   const quad = 'in vec2 aQuad;\n';
   const main = 'void main() {\n';
   const after = '  // weed:afterAnchor\n';
@@ -344,7 +363,8 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   float z = twinHeights(win) ? twinZ(m) * height * abs(aInstScale.y) : 0.0;
   bool solid = sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0);
   if (!solid || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5) {
-    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '\n    vSunZ = 0.0;' : '\n    vColor = vec4(0.0);'}
+    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+    vSunZ = 0.0;
     return;
   }
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
@@ -387,11 +407,13 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   // Never true (a cosine): keeps the rows' attributes in the program, which Pixi otherwise warns about (aInstLight).
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits + aInstLight.x;
   vLocal = aQuad;
-  vColor = ${heights ? 'vec4(1.0, castOpacity, 1.0, 1.0)' : 'vec4(0.0, 0.0, 0.0, uSun.w * castOpacity)'};
+  vColor = vec4(1.0, castOpacity, 1.0, 1.0);
   vWorld = world;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;
-  vTileOff = aInstTileOff;${heights ? `\n  vSunZ = mix(zA, z, aCell.z);\n  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);` : ''}
+  vTileOff = aInstTileOff;
+  vSunZ = mix(zA, z, aCell.z);
+  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
 }
 `;
 }
@@ -399,12 +421,10 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
 /**
  * The map's vertex shader: instancedSpriteShadow.vert.glsl with its sun card kept (the same landing points the sprite
  * shadows draw) and its height passed on (vSunZ), so the map holds the highest caster point landing at each texel. Frames
- * with a height map skip the card: they cast columns (sunMapColumnsVertex). Same inputs, same early outs. Without
- * `heights` it is the layer shadows' own program that only skips those frames (their columns draw them).
+ * with a height map skip the card: they cast columns (sunMapColumnsVertex). Same inputs, same early outs.
  * @param {string} source instancedSpriteShadow.vert.glsl
- * @param {{ heights?: boolean }} [opts]
  */
-export function sunMapVertex(source, { heights = true } = {}) {
+export function sunMapVertex(source) {
   const decl = 'uniform vec4 uSunPerp;\n';
   const main = 'void main() {\n';
   const card = '    // weed:sunCard\n';
@@ -421,12 +441,11 @@ export function sunMapVertex(source, { heights = true } = {}) {
     // whatever the object's shape (a crate's shadow turned with the sun). Unless its sheet casts its card for the sun
     // (frameBase.js lutBaseFloats: a negative second float), as the light bench's cow and cars did.
     if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {
-      gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '' : '\n      vColor = vec4(0.0);'}
+      gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
       return;
     }
 `,
   );
-  if (!heights) return skipped.replace(decl, `${decl}${MAPPED_GLSL}`);
   return skipped
     .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n${MAPPED_GLSL}${CASTER_ID_GLSL}`)
     .replace(main, `${main}  vSunZ = 0.0;\n`)
@@ -467,12 +486,10 @@ fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
 
 /**
  * sunMapVertex's WGSL form (WebGPU): instancedSpriteShadow.wgsl with its card skipping a render's frames (its columns
- * cast it) and, with `heights`, its height passed on (vSunZ) and the map's fragment entry `mainFragMap`. Without, the
- * layer shadows' own program that only skips those frames.
+ * cast it) and its height passed on (vSunZ), with the map's fragment entry `mainFragMap`.
  * @param {string} source instancedSpriteShadow.wgsl
- * @param {{ heights?: boolean }} [opts]
  */
-export function sunMapWgsl(source, { heights = true } = {}) {
+export function sunMapWgsl(source) {
   const struct = '  @location(5) vTileOff: vec2<f32>,\n';
   const card = '    // weed:sunCard\n';
   const out = '    // weed:sunOut\n';
@@ -487,7 +504,6 @@ export function sunMapWgsl(source, { heights = true } = {}) {
     }
 `,
   );
-  if (!heights) return skipped;
   // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
   const body = '  var out: VertexOut;\n';
   if (!hasOnce(skipped, body)) throw new Error('WeedJS: the sun shadow map needs the sprite shadow WGSL (mainVert)');
@@ -502,14 +518,12 @@ export function sunMapWgsl(source, { heights = true } = {}) {
 
 /**
  * sunMapColumnsVertex's WGSL form: a render's frame cast as columns, one a cell of the SUN_MAP_COLUMNS² grid (aCell
- * instead of aQuad), each where its cell is in 3D, down to the floor. With `heights` for the map (vSunZ, `mainFragMap`),
- * without for the shadows' layer (the shadow's colour and opacity, the shadow program's `mainFrag`).
+ * instead of aQuad), each where its cell is in 3D, down to the floor, its height into the map (vSunZ, `mainFragMap`).
  * @param {string} source instancedSpriteShadow.wgsl
  * @param {number} [cells]
- * @param {{ heights?: boolean }} [opts]
  */
-export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = true } = {}) {
-  const card = sunMapWgsl(source, { heights });
+export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS) {
+  const card = sunMapWgsl(source);
   const quad = '  @location(0) aQuad: vec2<f32>,\n';
   // E-395: mainVert's first statement (a keyed source, spriteIndexedWgsl, puts its lets before it).
   const body = '  var out: VertexOut;\n';
@@ -572,11 +586,13 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
     out.position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   }
   out.vLocal = aQuad;
-  out.vColor = ${heights ? 'vec4<f32>(1.0, castOpacity, 1.0, 1.0)' : 'vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w * castOpacity)'};
+  out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);
   out.vWorld = world;
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;
-  out.vTileOff = aInstTileOff;${heights ? `\n  out.vSunZ = mix(zA, z, aCell.z);\n  out.position.z = 1.0 - clamp(out.vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);` : ''}
+  out.vTileOff = aInstTileOff;
+  out.vSunZ = mix(zA, z, aCell.z);
+  out.position.z = 1.0 - clamp(out.vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
   return out;
 }
 `;

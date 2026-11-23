@@ -59,8 +59,7 @@ function withSunFrameRegions(map, emit) {
  *   adobe?: null | { animBytes: number, tableBytes: number }, directionalBytes?: number }} [emit]
  *   the emit's regions too (renderQueueMemoryRegions; DirectionalSprite's and the sun frames', withSunFrameRegions); a
  *   component with 0 bytes gets no block (byte -1)
- * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number, cookies?: number, cookieBytes?: number }} [stamp]
- *   the stamp's regions too, with the light cookies' queue
+ * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
  * @param {boolean | number} [pixiPack] Pixi's sprite rows and pack scratch too (W9d), one row per queue row: true or 15
  *   floats a row, 17 for a pose batch's two streams (W9e, renderer.interpolation), false or 0 for none
@@ -134,7 +133,6 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         pixiKeyUpdatesByte: keyed ? r.pixiKeyUpdates.byte : -1,
         pixiKeyHeaderByte: keyed ? r.emitKeyHeader.byte : -1,
         // E-191: the keyed frames' shadow stream, -1 without keyed frames.
-        pixiKeyShadowByte: keyed && r.pixiKeyShadow && r.pixiKeyShadow.bytes > 0 ? r.pixiKeyShadow.byte : -1,
         // E-189: the keyed frames' texture updates, -1 without keyed frames.
         pixiKeyTexUpdatesByte: keyed && r.pixiKeyTexUpdates && r.pixiKeyTexUpdates.bytes > 0 ? r.pixiKeyTexUpdates.byte : -1,
         // E-372: pre-render's sun frames' region (gpuPackClient.js keyedSunViews), -1 without DirectionalSprite.
@@ -324,9 +322,6 @@ function stampLayout(r, stamp) {
     scanBoundsByte: r.stampScanBounds.byte,
     lightsByte: r.stampLights.byte,
     tableByte: r.stampTable.byte,
-    // The cookies' queue (createRenderQueueViews at cookieQueueByte, cookies rows), -1 without one.
-    cookies: stamp.cookies | 0,
-    cookieQueueByte: r.cookieQueue.bytes > 0 ? r.cookieQueue.byte : -1,
   };
 }
 

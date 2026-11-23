@@ -54,7 +54,7 @@ export const BLOCK = (() => {
  * `?arm=` (OL-3, the race): what stops the lamps, in one build.
  * - `walls` (the default): lighting.walls, the light pass reading the walls' rows (OL-4's final B).
  * - `maps`: no walls. Each occluder is a volume taller than the lamps (shadowCaster.setBox), the lamps stand
- *   LAMP_HEIGHT px high, and the lamps' shadows are lighting.lampShadows 'map' (OL-4's final A, as far as it exists).
+ *   LAMP_HEIGHT px high, and the lamps' shadows come from their map (OL-4's final A, as far as it exists).
  *   NOT READY (2026-11-18): the lamps draw, but the volumes cast no shadow. The lamps get their tiles in the map only
  *   in a frame with a sprite caster's stamp row, and this scene has volumes alone (OL-5, an engine bug: to fix before
  *   the race runs this arm).
@@ -134,7 +134,6 @@ export class VisPolyStressScene extends Scene {
       wallCache: WALL_CACHE === 1,
       ...(ARM === 'maps'
         ? {
-            lampShadows: 'map',
             maxVolumes: OCCLUDERS + 16,
             maxShadowCastingLights: CAST_LIGHTS,
             lampMapCache: LAMP_CACHE === 1,

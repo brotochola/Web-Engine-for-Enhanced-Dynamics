@@ -25,6 +25,7 @@ import { Query } from '../../core/query.js';
 import { Sun } from '../../core/sun.js';
 import {
   PARTICLE_DEFAULTS,
+  lampShadowAlphaOf,
   lightBehindWallsOf,
   normalShadingOf,
   resolveZenithalMaxHeight,
@@ -142,6 +143,9 @@ export class PixiLighting {
     this.lampTileOf = new Int16Array(0);
     /** N-212: each lamp's map shadow fade at the cut, by entity (1 inside it), read with its tile (_readLampTiles). */
     this.lampFadeOf = new Float32Array(0);
+    // lighting.lampShadowAlpha: how much of a lamp's light its shadows take out (a double from the start: it holds a
+    // fraction; set when the light pass is made).
+    this.lampShadowAlpha = NaN;
     // The light pass's uLampAtlas: tiles a row, a tile's texels, the atlas's width and height.
     this.lampAtlas = new Float32Array([1, 256, 256, 256]);
     this.sunMapK = new Float32Array(4);
@@ -249,6 +253,7 @@ export class PixiLighting {
   }
 
   createLightingSystem() {
+    this.lampShadowAlpha = lampShadowAlphaOf(this.worker.config.lighting);
     const geometry = new PIXI.Geometry({
       attributes: {
         aPosition: [-1, -1, 1, -1, 1, 1, -1, 1],
@@ -294,7 +299,6 @@ export class PixiLighting {
         uSunG: { value: 1.0, type: 'f32' },
         uSunB: { value: 1.0, type: 'f32' },
         uFlipY: { value: 0, type: 'f32' },
-        uShadowComposite: { value: 0, type: 'f32' },
         uGroundInvScaleY: { value: this.worker._groundInvScaleY || 1, type: 'f32' },
         uNightR: { value: 0, type: 'f32' },
         uNightG: { value: 0, type: 'f32' },
@@ -303,7 +307,6 @@ export class PixiLighting {
         // WebGPU Pixi writes an i32 uniform with a float's bits (uLightCount survives that only by its loop's texW guard).
         uConeCount: { value: 0, type: 'f32' },
       },
-      ...this._lightingShadowResources(),
     };
 
     const facesOn = this.worker._facesOn;
@@ -636,7 +639,7 @@ export class PixiLighting {
       if (!(lightRadius[i] > 0)) continue;
 
       // World-space light position from Transform SAB, same source as
-      // updateLighting/updateShadowSprites use.
+      // updateLighting and the shadow maps use.
       const ox = offsetX[i];
       const oy = offsetY[i];
       const x = worldX[i] + ox * rotC[i] - oy * rotS[i];
@@ -684,6 +687,8 @@ export class PixiLighting {
     const tileOf = this.lampTileOf;
     // N-212: and its fourth row's x its map shadow's fade at the cut (1 for any other light).
     const fadeOf = this.lampFadeOf;
+    // lighting.lampShadowAlpha (1 before the light pass is made).
+    const shadowAlpha = this.lampShadowAlpha >= 0 ? this.lampShadowAlpha : 1;
     const row3 = row2 + row2 - row1;
     const ids = this.faceIdsOn;
     // OL-4: each lamp's row of the walls' texture, + 1 (0: nothing stops it), in its fourth row's z.
@@ -748,7 +753,8 @@ export class PixiLighting {
           // DX-GBUF: with the ids map, its entity's id in the fourth row's w, so a pixel of its own entity does not shade
           // from it (lightingBasic lampOwner). N-189: it rode in the tag, -(tile + 1 + 256 · id), which held 256 tiles.
           if (ids) lightData[i3 + 3] = gbufEntityId(entityIndex);
-          if (entityIndex < fadeOf.length) lightData[i3] = fadeOf[entityIndex];
+          // N-212: its fade at the cut, times lighting.lampShadowAlpha: how much of its light its shadows take out.
+          lightData[i3] = (entityIndex < fadeOf.length ? fadeOf[entityIndex] : 1) * shadowAlpha;
           // E-510: how far its shadows reach, where its shadowRange is under its radius (its tile spans that).
           const shadowRange = lightShadowRange[entityIndex];
           if (shadowRange > 0 && shadowRange < rad) lightData[i3 + 1] = shadowRange;
@@ -956,35 +962,11 @@ export class PixiLighting {
     u.uFlipY = !rt && !this.worker._useWebGpu ? 1 : 0;
   }
 
+  /** The shadow maps' texels per canvas px: the canvas at lighting.shadowResolution, rounded to whole texels. */
   shadowPixelScale() {
-    const rt = this.worker.shadowRT;
-    return rtPixelScale(this.worker.canvasWidth, rt ? rt.width : rtPixelSize(this.worker.canvasWidth, this.worker.shadowResolution));
+    return rtPixelScale(this.worker.canvasWidth, rtPixelSize(this.worker.canvasWidth, this.worker.shadowResolution));
   }
 
-  _lightingShadowSource() {
-    return this.worker.shadowRT?.source || PIXI.Texture.EMPTY.source;
-  }
-
-  _lightingShadowResources() {
-    const src = this._lightingShadowSource();
-    return { uShadowMap: src, uShadowSampler: src.style };
-  }
-
-  bindLightingShadowMap() {
-    const res = this.lightingShader?.resources;
-    if (!res) return;
-    const src = this._lightingShadowSource();
-    res.uShadowMap = src;
-    res.uShadowSampler = src.style;
-  }
-
-  unbindLightingShadowMap() {
-    const res = this.lightingShader?.resources;
-    if (!res) return;
-    const empty = PIXI.Texture.EMPTY.source;
-    res.uShadowMap = empty;
-    res.uShadowSampler = empty.style;
-  }
 
   /**
    * An additive light splat (LiquidFun lit groups, particle lights), or null

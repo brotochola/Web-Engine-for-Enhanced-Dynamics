@@ -58,8 +58,7 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
     layout: pixiGroupsLayout({
       uLightData: 0,
       uniforms: 1,
-      uShadowMap: 2,
-      uShadowSampler: 3,
+      // 2 and 3 free (the shadows' layer's map and sampler until E-531).
       ...(faces ? { uFaceMap: 4 } : {}),
       ...(sunMap ? { uSunMap: 5 } : {}),
       // DX-SHADOW3D (F7): the lamps' shadow map.
@@ -78,8 +77,6 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
           texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false },
         },
         { binding: 1, visibility: vf, buffer: { type: 'uniform' } },
-        { binding: 2, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
-        { binding: 3, visibility: f, sampler: { type: 'filtering' } },
         ...(faces
           ? [{ binding: 4, visibility: f, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
           : []),

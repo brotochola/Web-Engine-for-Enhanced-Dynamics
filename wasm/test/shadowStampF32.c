@@ -205,7 +205,7 @@ INLINE int32_t stamp_light_range_with(uint32_t table, const int simd) {
     lightVec[0] = lxf;
     lightVec[1] = lyf;
     lightVec[2] = (float)intensity;
-    lightVec[3] = rangeSqF;
+    lightVec[3] = 1.0f; /* N-413: the row's fade, 1 here (this variant keeps no cut fades) */
     const int32_t written = append_stamped(stamp, df, cursor, sun, sf, keep, m, lightVec, cap, lightAt);
     if (stampLightIdx) for (int32_t k = cursor; k < written; k++) stampLightIdx[k] = (uint16_t)i;
     cursor = written;
@@ -220,7 +220,7 @@ INLINE int32_t stamp_light_range_with(uint32_t table, const int simd) {
       lightVec[0] = (float)L[0];
       lightVec[1] = (float)L[1];
       lightVec[2] = (float)L[2];
-      lightVec[3] = (float)L[3];
+      lightVec[3] = 1.0f;
       keep[0] = c;
       const int32_t written = append_stamped(stamp, df, cursor, sun, sf, keep, 1, lightVec, cap, lightAt);
       if (stampLightIdx && written > cursor) stampLightIdx[cursor] = (uint16_t)li;

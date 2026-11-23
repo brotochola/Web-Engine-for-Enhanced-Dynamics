@@ -15,7 +15,6 @@ struct LightingUniforms {
   uSunG: f32,
   uSunB: f32,
   uFlipY: f32,
-  uShadowComposite: f32,
   // 1 / config.lighting.groundScaleY: the lights' y arrive in floor units, the fragment's is scaled here once.
   uGroundInvScaleY: f32,
   // The night light, color already multiplied by its strength and Sun.nightFactor.
@@ -50,8 +49,6 @@ struct LightingUniforms {
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
-@group(2) @binding(2) var uShadowMap: texture_2d<f32>;
-@group(2) @binding(3) var uShadowSampler: sampler;
 // #if FACES
 // DX-FACES: this pixel's face, in the face map, drawn at this pass's size.
 @group(2) @binding(4) var uFaceMap: texture_2d<f32>;
@@ -744,11 +741,6 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #if TILES
     }
 // #endif TILES
-  }
-  if (uniforms.uShadowComposite > 0.5) {
-    // Level, not textureSample: with faces this line is past a branch on a pixel's value (WGSL's uniform control flow).
-    let sh = textureSampleLevel(uShadowMap, uShadowSampler, normCoord, 0.0);
-    totalLight *= (1.0 - sh.a);
   }
   totalLight = weedDither(min(totalLight, vec3<f32>(1.0)), ditherAt);
 // #if EDGES

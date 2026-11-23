@@ -6,11 +6,10 @@ const { Scene, Camera, LAYER_KIND } = WEED;
 
 /**
  * The lamps' shadows at night (DX-SHADOW3D F7): raised lamps that cast shadows over a crowd of walkers, seen by an
- * oblique camera. The owner scene of lighting.lampShadows: `?lampShadows=map` (the lamps' shadow map, a tile a lamp) or
- * `layer` (the stamps on the shadows' layer, the default) is the arm to measure; the load knobs are `?lamps=` and
+ * oblique camera. The owner scene of the lamps' shadow maps (a tile a lamp); the load knobs are `?lamps=` and
  * `?walkers=`.
  *
- * `?lamps=` (default 48), `?walkers=` (default 2000), `?lampShadows=map|layer`, `?tile=` (lighting.lampShadowTile,
+ * `?lamps=` (default 48), `?walkers=` (default 2000), `?tile=` (lighting.lampShadowTile,
  * default 256), `?sway=0` (the lamps still), `?elevation=` (px, default 70), `?backend=webgpu`. `?still=1`: nothing moves
  * (the walkers stand where their loops start, the lamps do not sway), for byte-for-byte captures (compareCaptures.mjs).
  * `?volumes=` (default 0): still blocks that cast box volumes, as the barrio's houses (the lamps' map draws every volume
@@ -37,7 +36,6 @@ function queryNumber(key, fallback) {
 
 export const LAMPS = Math.max(1, Math.floor(queryNumber('lamps', 48)));
 export const WALKERS = Math.max(0, Math.floor(queryNumber('walkers', 2000)));
-export const LAMP_SHADOWS = query('lampShadows') === 'map' ? 'map' : 'layer';
 export const TILE = Math.max(32, Math.floor(queryNumber('tile', 256)));
 export const STILL = queryNumber('still', 0) === 1;
 export const SWAY = queryNumber('sway', 1) !== 0 && !STILL;
@@ -49,7 +47,7 @@ export const PER_ENTITY = Math.max(0, Math.floor(queryNumber('perEntity', 0)));
 
 export const stressSceneConfig = {
   requested: {
-    lamps: LAMPS, walkers: WALKERS, lampShadows: LAMP_SHADOWS, tile: TILE, sway: SWAY ? 1 : 0, elevation: ELEVATION, backend: BACKEND,
+    lamps: LAMPS, walkers: WALKERS, tile: TILE, sway: SWAY ? 1 : 0, elevation: ELEVATION, backend: BACKEND,
     still: STILL ? 1 : 0, volumes: VOLUMES, lampCache: LAMP_CACHE ? 1 : 0, perEntity: PER_ENTITY,
   },
 };
@@ -74,7 +72,6 @@ export class LampShadowStressScene extends Scene {
       shadowsEnabled: true,
       maxLights: Math.max(64, LAMPS),
       maxShadowCastingLights: LAMPS,
-      lampShadows: LAMP_SHADOWS,
       lampShadowTile: TILE,
       // A key an older engine does not know is never written: only when it is off.
       ...(LAMP_CACHE ? {} : { lampMapCache: false }),

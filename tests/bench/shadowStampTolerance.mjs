@@ -9,8 +9,9 @@
  * keeps where two of their distances do. So the comparison is of (light, caster) pairs:
  *
  *   - every row of the variant is a valid copy: its caster bytes are a sun row's, its light vec4 is the light's
- *     (Math.fround of x, y, intensity, rangeSq; the intensity may be a fade of the light's, 0 to it: N-330's
- *     per-entity cut fades a caster's last shown light), its light index one the call walks;
+ *     (Math.fround of x, y and intensity; the intensity may be a fade of the light's, 0 to it: N-330's
+ *     per-entity cut fades a caster's last shown light; then the row's fade, 0 to 1: N-413), its light index one the
+ *     call walks;
  *   - the pairs are the reference's, in the reference's order, except
  *       order swaps: at a position where the two differ, the two casters' (or lights') distances are within
  *       tolerance of each other (a sort of tied values);
@@ -113,13 +114,15 @@ export function compareStamps(spec, lightAt, ref, out) {
         continue;
       }
       const L = w.L;
-      const vec = [L.x, L.y, L.intensity, L.rangeSq];
+      const vec = [L.x, L.y, L.intensity, 1];
       for (let q = 0; q < 4; q++) {
         const want = bitsOf(vec[q]);
         const got = words[k * df + lightAt + q];
         const v = o.stamp[k * df + lightAt + q];
         // N-330: the last shown light of a caster past maxShadowsPerEntity takes a fade on its intensity.
         if (q === 2 && v >= 0 && v <= Math.fround(vec[q])) continue;
+        // N-413: the row's fade at maxShadowsPerLight's and maxShadowsPerEntity's cuts, 0 to 1.
+        if (q === 3 && v >= 0 && v <= 1) continue;
         if (got !== want && !(Number.isNaN(v) && Number.isNaN(vec[q]))) {
           problems.push(`${side} row ${k}: light vec4 float ${q} is not light ${li}'s`);
         }

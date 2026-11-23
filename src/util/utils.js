@@ -297,11 +297,6 @@ export function clearUnusedLightDataTexels(data, maxLights, liveCount, upTo = ma
   for (let row = 0; row < LIGHT_DATA_TEX_HEIGHT; row++) data.fill(0, row * n * 4 + live * 4, row * n * 4 + end * 4);
 }
 
-/** Instanced sprite scale so cookie world radius == lightInfluenceRadius. */
-export function lightCookieScale(sqrtIntensity) {
-  return lightInfluenceRadius(sqrtIntensity) / LIGHT_GRADIENT_TEXTURE_RADIUS;
-}
-
 /** Soft glow world radius = √I * this. Calibrated: I=20000 matches old (visualRange*4) at VR=300. */
 export const LIGHT_GLOW_RADIUS_SCALE = (300 * 4) / Math.sqrt(20000); // ~8.485
 
@@ -1112,18 +1107,6 @@ export function create2dCanvas(width = 1, height = 1) {
     return new OffscreenCanvas(w, h);
   }
   throw new Error('No canvas API available');
-}
-
-/**
- * DX-SPOT: the right half of createCircularGradientCanvas's disc (radius wide, 2·radius tall), its centre on the left
- * edge's middle: a cone light's cookie, turned along the cone (anchor 0, 0.5).
- */
-export function createHalfCircularGradientCanvas(radius = LIGHT_GRADIENT_TEXTURE_RADIUS, color = 0xffffff) {
-  radius = Math.round(radius);
-  const full = createCircularGradientCanvas(radius, color);
-  const canvas = create2dCanvas(radius, radius * 2);
-  canvas.getContext('2d').drawImage(full, radius, 0, radius, radius * 2, 0, 0, radius, radius * 2);
-  return canvas;
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * DBG-5: render views. The debug UI's Render tab asks the Pixi worker (setRenderView) to draw one of the buffers the
  * frame is made of over the picture, decoded: the G-buffer's normals, heights, entity ids and flags, the light buffer,
- * the unshaded colours, the casted shadows and the sun's and the lamps' shadow maps. The worker keeps one integer for it
+ * the unshaded colours and the sun's and the lamps' shadow maps. The worker keeps one integer for it
  * (Final, 0, the default); only while it is not 0 does it bind the buffer to one full-screen quad on top of the stage, made
  * on first use and released when the view goes back to Final. One decode shader serves every view (a branch on the view).
  *
@@ -10,7 +10,7 @@
  *   (1, 0) an unshaded pixel, (254, 254) a pixel lit as drawn); B·256 + A the height, 15 bits in eighths of a px, the top
  *   bit (FACE_K_BIT) a sprite's own normal.
  * - faceIdsRT (DX-GBUF): R·256 + G the entity id (0 none), B bit 0 the pixel shades itself (FACE_IDS_SELF).
- * - lightingRT, unshadedRT, shadowRT: colours, shown as drawn (the shadows on white, as the layer multiplies them).
+ * - lightingRT, unshadedRT: colours, shown as drawn.
  * - sunMapRT, lampMapRT: heights in R (the sun's map spans SUN_MAP_ZMAX px), shown as a ramp.
  *
  * Not views: the lamps' volume cache (E-508's targets hold colour and depth per lamp tile, which needs its own layout
@@ -28,10 +28,9 @@ export const RENDER_VIEW = Object.freeze({
   FLAGS: 4,
   LIGHT: 5,
   UNSHADED: 6,
-  SHADOWS: 7,
-  SUN_MAP: 8,
-  LAMP_MAP: 9,
-  LIGHT_TILES: 10,
+  SUN_MAP: 7,
+  LAMP_MAP: 8,
+  LIGHT_TILES: 9,
 });
 
 /** The views in the Render tab's order: label, and the config that makes the buffer when a scene has none. */
@@ -39,13 +38,12 @@ export const RENDER_VIEWS = Object.freeze([
   { id: RENDER_VIEW.FINAL, label: 'Final', needs: '' },
   { id: RENDER_VIEW.NORMALS, label: 'G-buffer normals', needs: 'a decoration with a normal, or sprites with normal or height maps' },
   { id: RENDER_VIEW.HEIGHT, label: 'G-buffer height', needs: 'a decoration with a normal, or sprites with height maps' },
-  { id: RENDER_VIEW.IDS, label: 'Entity ids', needs: "the G-buffer, with lighting.selfShadow, a shadow map ('map') or lighting.walls" },
+  { id: RENDER_VIEW.IDS, label: 'Entity ids', needs: 'the G-buffer, with lighting.selfShadow, lighting.shadowsEnabled or lighting.walls' },
   { id: RENDER_VIEW.FLAGS, label: 'G-buffer flags', needs: 'the G-buffer (as the normals view)' },
   { id: RENDER_VIEW.LIGHT, label: 'Light buffer', needs: 'lighting.enabled' },
   { id: RENDER_VIEW.UNSHADED, label: 'Unshaded', needs: 'lighting.unshaded (or an unshaded sprite)' },
-  { id: RENDER_VIEW.SHADOWS, label: 'Casted shadows', needs: "lighting.shadowsEnabled with a shadows layer (sunShadows or lampShadows 'layer')" },
-  { id: RENDER_VIEW.SUN_MAP, label: 'Sun shadow map', needs: "lighting.sunShadows: 'map'" },
-  { id: RENDER_VIEW.LAMP_MAP, label: 'Lamp shadow atlas', needs: "lighting.lampShadows: 'map'" },
+  { id: RENDER_VIEW.SUN_MAP, label: 'Sun shadow map', needs: 'lighting.shadowsEnabled and a sun' },
+  { id: RENDER_VIEW.LAMP_MAP, label: 'Lamp shadow atlas', needs: 'lighting.shadowsEnabled and a lamp with castShadows' },
   { id: RENDER_VIEW.LIGHT_TILES, label: 'Light tiles', needs: 'the light pass by tiles (lighting.enabled; E-205)' },
 ]);
 
@@ -60,9 +58,9 @@ const NO_LIGHTING = Object.freeze({});
 /**
  * The textures a view samples, from the worker's targets (null where the scene has none), into `out` ([main, second]);
  * out[0] null: the view has nothing to show now. N-256 PW-6: the light pass's targets are the worker's lighting's
- * (src/render/pixi/lighting.js); the shadows' and the sun map's stay the worker's.
+ * (src/render/pixi/lighting.js); the sun map's stays the worker's.
  * @param {{ lighting?: { faceRT?: object|null, faceIdsRT?: object|null, lightingRT?: object|null, unshadedRT?: object|null,
- *   lampMapRT?: object|null }, shadowRT?: object|null, sunMapRT?: object|null }} w
+ *   lampMapRT?: object|null }, sunMapRT?: object|null }} w
  * @param {number} view
  * @param {Array<object|null>} out
  */
@@ -87,9 +85,6 @@ export function renderViewTextures(w, view, out) {
       break;
     case RENDER_VIEW.UNSHADED:
       out[0] = l.unshadedRT ?? null;
-      break;
-    case RENDER_VIEW.SHADOWS:
-      out[0] = w.shadowRT ?? null;
       break;
     case RENDER_VIEW.SUN_MAP:
       out[0] = w.sunMapRT ?? null;
@@ -189,9 +184,7 @@ void main() {
     else if (r >= 254.0 && g >= 254.0) c = vec3(0.2, 0.5, 1.0);
     else if (q >= 32768.0) c = vec3(1.0, 0.85, 0.2);
     if (uView.w > 0.5 && mod(weedByte(textureLod(uTex2, vUV, 0.0).b), 2.0) > 0.5) c.g = max(c.g, 0.85);
-  } else if (view == 7) {
-    c = t.rgb + vec3(1.0 - t.a);
-  } else if (view == 8 || view == 9) {
+  } else if (view == 7 || view == 8) {
     c = t.r <= 0.0 ? vec3(0.0) : weedRamp(t.r);
   }
   finalColor = vec4(c * uView.y, uView.y);
@@ -273,9 +266,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     else if (r >= 254.0 && g >= 254.0) { c = vec3<f32>(0.2, 0.5, 1.0); }
     else if (q >= 32768.0) { c = vec3<f32>(1.0, 0.85, 0.2); }
     if (u.w > 0.5 && weedByte(t2.b) % 2.0 > 0.5) { c.g = max(c.g, 0.85); }
-  } else if (view == 7) {
-    c = t.rgb + vec3<f32>(1.0 - t.a);
-  } else if (view == 8 || view == 9) {
+  } else if (view == 7 || view == 8) {
     c = select(weedRamp(t.r), vec3<f32>(0.0), t.r <= 0.0);
   }
   return vec4<f32>(c * u.y, u.y);

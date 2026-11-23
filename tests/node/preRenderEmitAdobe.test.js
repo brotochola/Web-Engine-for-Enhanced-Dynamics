@@ -78,7 +78,7 @@ function textureMetadata() {
     });
   }
   const animationNameToIndex = {};
-  for (const name of ['_lightGradient', '_whiteCircle', '_bulletTrail']) {
+  for (const name of ['_lightHalo', '_whiteCircle', '_bulletTrail']) {
     animationNameToIndex[name] = animationFrameStart.length;
     animationFrameStart.push(offset);
     animationFrameCount.push(1);

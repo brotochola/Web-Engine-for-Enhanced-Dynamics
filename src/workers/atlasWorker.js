@@ -43,7 +43,7 @@ const JOBS = {
    * drawn (SST-5 steps 1-2, atlasBuild.js), the decal textures read from it, the renderer's bitmaps made; a miss writes
    * its cache entry after answering.
    * msg: { assets (URLs absolute), options (buildBigAtlas's, sceneHeightScaleY a number),
-   *   builtins: Array<{ name, image: ImageBitmap, unshaded, afterSort }>, cache: { enabled, bundle } | null,
+   *   builtins: Array<{ name, image: ImageBitmap, unshaded }>, cache: { enabled, bundle } | null,
    *   withMapsTexels: boolean (the twin page's texels too: the bake) }
    */
   async pack(msg) {

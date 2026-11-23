@@ -2,10 +2,9 @@
  * Shared GPU-format queues: pre-render writes interleaved instance rows,
  * pixi copies those bytes into the Mesh buffer and draws.
  *
- * Regions (after an 8-int header): sprites, glows, sun casters, point-light
- * stamped casters, cookies. Caster rows are the 15 sprite floats plus
- * shadowH/off and a light vec4 (22 floats). Cookies are 15-float rows already
- * in shadow-RT pixels.
+ * Regions (after the header): sprites, glows, sun casters, point-light
+ * stamped casters. Caster rows are the 15 sprite floats plus shadowH/off and a
+ * light vec4 (22 floats).
  */
 
 export const GPU_SPRITE_FLOATS = 15;
@@ -35,13 +34,13 @@ export const GPU_INDEXED_SLOT_FLOATS = 1;
 /** E-162. Statics rows a texture row holds: three RGBA32UI texels each, a texture 3 072 texels wide. */
 export const GPU_INDEXED_TEX_ROW = 1024;
 export const GPU_HEADER_INTS = 18;
-export const GPU_QUEUE_VERSION = 7;
+export const GPU_QUEUE_VERSION = 8;
 
 export const GPU_HDR_SPRITE = 0;
 export const GPU_HDR_GLOW = 1;
 export const GPU_HDR_SUN = 2;
 export const GPU_HDR_STAMP = 3;
-export const GPU_HDR_COOKIE = 4;
+// 4: free (the light cookies' count until E-531).
 export const GPU_HDR_PARTICLE = 5;
 export const GPU_HDR_FLAGS = 6;
 export const GPU_HDR_VERSION = 7;
@@ -157,7 +156,6 @@ export function gpuQueueCaps(maxSprites, lighting, indexedSprites = false) {
     maxGlow: lightsOn ? sprites : 0,
     maxSun: shadowOn ? sprites : 0,
     maxStamp: stamp,
-    maxCookie: shadowOn ? Math.max(1, Math.min(maxLights, castLights || maxLights)) : 0,
     // DX-SHADOW3D (F7): the lights a frame's stamps can go to (stampLightIds).
     maxStampLights: shadowOn ? castLights : 0,
     // DX-GBUF: each sprite instance's G-buffer words (GPU_FLAG_GBUF), in a lit scene (the G-buffer, the glow and the
@@ -176,7 +174,6 @@ export function computeGpuQueueBufferSize(caps) {
   offset += (c.maxGlow | 0) * GPU_SPRITE_FLOATS * 4;
   offset += (c.maxSun | 0) * GPU_CASTER_FLOATS * 4;
   offset += (c.maxStamp | 0) * GPU_CASTER_FLOATS * 4;
-  offset += (c.maxCookie | 0) * GPU_SPRITE_FLOATS * 4;
   offset = align4(offset);
   offset += (c.maxStamp | 0) * 2;
   offset = align4(offset);
@@ -225,8 +222,7 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   offset = sun.next;
   const stamp = regionF32(sab, offset, (c.maxStamp | 0) * GPU_CASTER_FLOATS);
   offset = stamp.next;
-  const cookie = regionF32(sab, offset, (c.maxCookie | 0) * GPU_SPRITE_FLOATS);
-  offset = align4(cookie.next);
+  offset = align4(stamp.next);
   const stampN = c.maxStamp | 0;
   const stampLightIdx = stampN > 0 ? new Uint16Array(sab, offset, stampN) : new Uint16Array(0);
   // A spriteKeys region (maxSprites floats) used to follow; nothing read or
@@ -265,8 +261,6 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     sunU32: sun.u32,
     stamp: stamp.view,
     stampU32: stamp.u32,
-    cookie: cookie.view,
-    cookieU32: cookie.u32,
     stampLightIdx,
     stampLightIds,
     spriteGbuf,
@@ -284,7 +278,6 @@ export function clearGpuQueueHeader(header) {
   header[GPU_HDR_GLOW] = 0;
   header[GPU_HDR_SUN] = 0;
   header[GPU_HDR_STAMP] = 0;
-  header[GPU_HDR_COOKIE] = 0;
   header[GPU_HDR_PARTICLE] = 0;
   header[GPU_HDR_FLAGS] = 0;
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
@@ -306,7 +299,6 @@ export function writeGpuQueueHeader(header, counts, flags) {
   header[GPU_HDR_GLOW] = counts.glow | 0;
   header[GPU_HDR_SUN] = counts.sun | 0;
   header[GPU_HDR_STAMP] = counts.stamp | 0;
-  header[GPU_HDR_COOKIE] = counts.cookie | 0;
   header[GPU_HDR_PARTICLE] = counts.particle | 0;
   header[GPU_HDR_FLAGS] = flags | 0;
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;

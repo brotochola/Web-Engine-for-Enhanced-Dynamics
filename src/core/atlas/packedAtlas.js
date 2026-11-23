@@ -67,7 +67,7 @@ export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = nul
       args: {
         assets: forWorker.assets,
         options: packOptions,
-        builtins: builtins.map((b, i) => ({ name: b.name, image: bitmaps[i], unshaded: b.unshaded, afterSort: b.afterSort })),
+        builtins: builtins.map((b, i) => ({ name: b.name, image: bitmaps[i], unshaded: b.unshaded })),
         cache,
         withMapsTexels,
       },
@@ -79,7 +79,7 @@ export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = nul
     const { result } = await packAtlas({
       assets: assetsToLoad,
       options: packOptions,
-      builtins: builtins.map((b) => ({ name: b.name, image: b.canvas, unshaded: b.unshaded, afterSort: b.afterSort })),
+      builtins: builtins.map((b) => ({ name: b.name, image: b.canvas, unshaded: b.unshaded })),
       cache,
       makeCanvas: makeCanvas2d,
     });

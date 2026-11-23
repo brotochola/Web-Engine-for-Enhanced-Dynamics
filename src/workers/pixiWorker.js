@@ -99,10 +99,12 @@ import {
   POSE_STATIC_FLOATS,
   BATCH_SPACE,
   BATCH_DEPTH,
+  TEX_LUT_FLOATS,
   textureLutSolid,
   textureLutTexels,
 } from '../render/instancedSpriteBatch.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../render/painterRadixClient.js';
+import { keyedColumnTextures } from '../render/sunShadowMap.js';
 import { resolveParticleLights } from '../render/particleLightSplat.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
@@ -332,7 +334,6 @@ class PixiRenderer extends AbstractWorker {
     this.shadowMaps = new PixiShadowMaps(this);
     // N-256: the lamps' shadow map, its tiles, passes and volumes' cache (src/render/pixi/lampMap.js).
     this.lampMap = new PixiLampMap(this);
-    this._keyedRowsRefusedWarned = false;
     // The statics scatter's GL objects (_scatterStaticsGl), made on its first call.
     this._staticsScatterGl = null;
     // E-187: the keyed statics scatter's pipelines and buffers on WebGPU (staticsScatterGpu.js), made on first use.
@@ -390,8 +391,6 @@ class PixiRenderer extends AbstractWorker {
     this.entitiesBatch = null;
     /** @type {InstancedSpriteBatch|null} light-glow (type=3) ADD batch */
     this.entitiesGlowBatch = null;
-    /** @type {InstancedSpriteBatch|null} */
-    this.shadowBatch = null;
     this.spriteMesh = null; // entitiesBatch.mesh alias for layer refs
     this.spriteGlowMesh = null; // entitiesGlowBatch.mesh
     /** @type {GpuParticleLayerBatch[]} */
@@ -614,9 +613,9 @@ class PixiRenderer extends AbstractWorker {
     this._renderTilesQuadBuffer = null;
     // N-256 PW-9: the light glows' layer in a target of its own (src/render/pixi/glowLayer.js).
     this.glowLayer = new PixiGlowLayer(this);
-    // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
+    // DX-SHADOW3D, E-531: with shadows on, the sun's shadow map (src/render/sunShadowMap.js), its pass and terms.
     this._sunMapOn = false;
-    // DX-SHADOW3D (F7): lighting.lampShadows 'map': a shadow map a lamp (lampShadowMap.js), tiles in an atlas.
+    // DX-SHADOW3D (F7), E-531: with shadows on, a shadow map a lamp (lampShadowMap.js), tiles in an atlas.
     this._lampMapOn = false;
     // E-508: the lamps' volumes' cache (lampVolumeCache.js): lighting.lampMapCache; the volumes' program into its two
     // colours; its plan; its target (two colour textures, a slot a still lamp's floor half, and a depth buffer), its
@@ -667,11 +666,8 @@ class PixiRenderer extends AbstractWorker {
     // Reads from SharedArrayBuffer via static Sun class (initialized by AbstractWorker)
     this.sunEnabled = false;
 
-    this.shadowSpritesEnabled = false;
-
-    // RenderTexture-based shadow compositing
-    this.shadowRT = null; // RenderTexture for shadow compositing
-    this.shadowDisplaySprite = null; // Sprite to display shadowRT with multiply blend
+    // Shadows on (lighting.shadowsEnabled): the sun's and the lamps' maps (shadowMaps.js), at lighting.shadowResolution.
+    this.shadowsEnabled = false;
     this.shadowResolution = LIGHTING_DEFAULTS.shadowResolution;
 
     // Reusable camera render-state
@@ -1000,7 +996,6 @@ class PixiRenderer extends AbstractWorker {
         const instancedBatchCount =
           (this.entitiesBatch ? 1 : 0) +
           (this.entitiesGlowBatch ? 1 : 0) +
-          (this.shadowBatch ? 1 : 0) +
           this.customLayers.list.length;
         this.stats[RENDERER_STATS.SPRITES_CREATED] = instancedBatchCount;
         this.stats[RENDERER_STATS.VISIBLE_SPRITES] = totalVisibleSprites;
@@ -1176,8 +1171,6 @@ class PixiRenderer extends AbstractWorker {
       this.decalTiles.cull(zoom, cameraX, cameraY, rot);
     }
 
-    // Shadow sprites render in screen space directly to shadowRT (no camera transform needed here)
-
     // Apply camera to custom layer meshes (non-shader layers only).
     // Look-shader MESH keeps world verts; camera is the reused RT Container.
     for (let i = 0; i < this.customLayers.list.length; i++) {
@@ -1351,7 +1344,7 @@ class PixiRenderer extends AbstractWorker {
    * Upload main render queue SoA into ENTITIES (one blend, CPU Y-order when
    * ySorting) + glow (add). Particles, decorations, bullets, adobe pieces, and
    * liquid share the entity list — same painter as a custom sprite layer.
-   * Type 3 = light glow (_lightGradient) — separate ADD batch avoids gray halos.
+   * Type 3 = light glow (_lightGlow) — separate ADD batch avoids gray halos.
    */
   updateSpritesFromRenderQueue() {
     if (!this.renderQueueEnabled || !this.entitiesBatch) return;
@@ -1690,7 +1683,6 @@ class PixiRenderer extends AbstractWorker {
     if (!lut) return;
     if (this.entitiesBatch) this.entitiesBatch.setLutSource(lut);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setLutSource(lut);
-    if (this.shadowBatch) this.shadowBatch.setLutSource(lut);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setLutSource(lut);
     for (let i = 0; i < this.customLayers.list.length; i++) {
       const cl = this.customLayers.list[i];
@@ -1708,9 +1700,11 @@ class PixiRenderer extends AbstractWorker {
       this.entitiesBatch.setAtlasSource(src);
       // E-448: which frames the opaque pass may draw.
       this.entitiesBatch.setFrameTexels(textureLutTexels(this.assets.texLut), textureLutSolid(this.assets.texLut));
+      // E-549: which frames a keyed row's columns can come from (the keyed statics' copy keeps only those slots).
+      const columns = keyedColumnTextures(this.assets.texLut, TEX_LUT_FLOATS);
+      this.entitiesBatch.setColumnTextures(columns.flags, columns.count);
     }
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
-    if (this.shadowBatch) this.shadowBatch.setAtlasSource(src);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setAtlasSource(src);
     for (let i = 0; i < this.customLayers.list.length; i++) {
       const cl = this.customLayers.list[i];
@@ -2076,7 +2070,6 @@ class PixiRenderer extends AbstractWorker {
           keyRows: layout.pixiKeyRows | 0,
           updatesByte: layout.pixiKeyUpdatesByte,
           headerByte: layout.pixiKeyHeaderByte,
-          shadowByte: layout.pixiKeyShadowByte ?? -1,
           texUpdatesByte: layout.pixiKeyTexUpdatesByte ?? -1,
         }
       : null;
@@ -2467,7 +2460,7 @@ class PixiRenderer extends AbstractWorker {
 
   drawFrameShadows() {
     const started = this.collectDetailedStats ? performance.now() : 0;
-    this.shadowMaps.updateShadowSprites();
+    this.shadowMaps.update();
     if (started) this.shadowsTimeThisFrame = performance.now() - started;
   }
 
@@ -3019,28 +3012,6 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
 UPDATE LIGHTING (NO ZOOM SCALING)
 ===================== */
 
-  _syncUniformGroup(group) {
-    if (group && typeof group.update === 'function') group.update();
-  }
-
-  /**
-   * E-191 step 2: `mesh` over this frame's `count` keyed caster rows of `floats` floats from `src` (committed to the caster
-   * batch), or null: none, or no such pass (a frame of keyed rows Pixi cannot draw is left out, and that said once).
-   */
-  _keyedRowsMesh(mesh, src, count, floats) {
-    if (mesh === null) {
-      if (!this._keyedRowsRefusedWarned) {
-        this._keyedRowsRefusedWarned = true;
-        console.error('PIXI WORKER: keyed caster rows without their shadow passes: those shadows are not drawn');
-      }
-      return null;
-    }
-    const geometry = this.gpuCasterBatch.commitKeyedCasterRows(src, count, floats);
-    if (geometry === null) return null;
-    mesh.geometry = geometry;
-    return mesh;
-  }
-
   /**
    * DX-SHADOW3D (F6): each sun-projected volumes' layer drawn into the sun's map: the same mesh rows, each vertex landing
    * by the map's shift (sunMapTerms, per px of height; the volumes' heights are screen px, so over heightScaleY), its
@@ -3224,11 +3195,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const on = Layer._visible[i] === 1;
       const name = Layer.getName(i);
       const displayObj = name ? this._layerRuntime[name] : null;
-      // Cookie RT is empty while shadowSpritesEnabled is false; multiply would crush the frame.
-      const show =
-        on &&
-        (name !== 'lightGlows' || this._lightGlowAdd) &&
-        (name !== 'castedShadows' || this.shadowSpritesEnabled);
+      const show = on && (name !== 'lightGlows' || this._lightGlowAdd);
       if (displayObj) setDisplayVisible(displayObj, show);
       // DBG-1: on the stage a MESH layer's textured rows are a mesh of their own beside the fill mesh (through an RT the
       // layer's sprite holds both). Its geometry's instanceCount says whether it has triangles (setDisplayVisible).
@@ -3327,24 +3294,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Sync lighting shader uniforms immediately
     if (this.lighting.lightingShader) this.lighting.applyLightingViewport(width, height);
 
-    if (this.shadowRT) {
-      const sw = rtPixelSize(width, this.shadowResolution);
-      const sh = rtPixelSize(height, this.shadowResolution);
-      this.lighting.unbindLightingShadowMap();
-      this.shadowRT = this._replaceRT(
-        this.shadowRT,
-        sw,
-        sh,
-        this.shadowDisplaySprite,
-        null
-      );
-      if (this.shadowDisplaySprite) this.shadowDisplaySprite.scale.set(width / sw, height / sh);
-      this.lighting.bindLightingShadowMap();
-      // N-317: made again, its margins too, on the next sun map pass (_fitSunMap).
-      if (this.sunMapRT) {
-        this._sunMapMargins.fill(0);
-        this.shadowMaps.createSunMap(sw, sh);
-      }
+    // N-317: the sun's map made again at the new size, its margins too, on the next sun map pass (_fitSunMap).
+    if (this.sunMapRT) {
+      this._sunMapMargins.fill(0);
+      this.shadowMaps.createSunMap(rtPixelSize(width, this.shadowResolution), rtPixelSize(height, this.shadowResolution));
     }
 
     // E-404: the lightGlows target follows the canvas.
@@ -3611,25 +3564,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     const casters = this.gpuCasterBatch;
     if (casters && shaders.shadowVert && shaders.sunMapFrag) {
-      // DX-SHADOW3D: the sun's map (_drawSunMap), else a scene with height maps casts its solids (_drawSunSolids).
+      // DX-SHADOW3D: the sun's map's cards and columns (_drawSunMap).
       if (this._sunMapOn) {
         this.shadowMaps.sunShadowProgram('map');
         this.shadowMaps.sunShadowProgram('mapColumns');
-      } else if (this.shadowMaps.sunSolidsOn()) {
-        this.shadowMaps.sunShadowProgram('cards');
-        this.shadowMaps.sunShadowProgram('columns');
       }
       // DX-SHADOW3D (F7): the lamps' map's cards and columns (lampMap.js draw).
       if (this._lampMapOn) {
         this.lampMap.mapProgram(false);
         this.lampMap.mapProgram(true);
-      }
-      // E-191: the sun pass over the entities' keyed instances (_keyedSunFor) and over pre-render's keyed caster rows
-      // (_ensureKeyedCasters), where those can run.
-      if (batch !== null && batch.keyed) {
-        const keyedSun = this.config?.lighting?.keyedCasters !== false && this.config?.lighting?.directionalCasters !== true;
-        const keyedRows = !(this._sunMapOn || this._lampMapOn || this.shadowMaps.sunSolidsOn());
-        batch.makeKeyedShadowPrograms(keyedSun, keyedRows);
       }
     }
     // E-453: a MESH layer's UV meshes (_ensureMeshUvBatch: one program for every layer's batch, the first layer's name);
@@ -3945,7 +3888,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
     this._packGpuSpritesOn = spritePipe.packGpuSprites;
     this._sortSpritesOn = spritePipe.sortSprites;
-    // The halos added over everything ('add', the default) or sorted among the entities ('sorted'). OL-1: any other value
+    // The halos sorted among the entities ('sorted', the default) or added over everything ('add'). OL-1: any other value
     // (the old 'sprite' among them) warns and draws as 'add'.
     const lightGlow = this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow;
     if (lightGlow !== 'add' && lightGlow !== 'sorted') {
@@ -4221,13 +4164,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._heightScaleY = cameraHeightScaleY(this.config);
       this._facesWatch = true;
       this._facesOn = DecorationPool.facesInUse();
-      // DX-SHADOW3D: the sun's shadows on the shadows' layer ('layer', the default) or from a shadow map, the sun's term
-      // alone (WebGL and WebGPU). OL-1: any other value (the old 'sprite' among them) warns and draws on the layer.
-      const sunShadows = lightingConfig.sunShadows ?? LIGHTING_DEFAULTS.sunShadows;
-      if (sunShadows !== 'layer' && sunShadows !== 'map') {
-        console.warn(`WeedJS: lighting.sunShadows is 'layer' or 'map', not ${JSON.stringify(sunShadows)}: the sun's shadows are drawn on the layer`);
-      }
-      if (sunShadows === 'map') this._sunMapOn = true;
+      // E-531: with shadows on, the sun's and the lamps' shadows come from their shadow maps, each light's term alone
+      // (WebGL and WebGPU): the one way (the classic shadows' layer is gone).
+      const shadowsOn = !!(data.shadows && data.shadows.enabled);
+      if (shadowsOn) this._sunMapOn = true;
       // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
       // DX-PIXELSHADOW: each world pixel lit whole, the maps read with one tap (lighting.pixelArt).
@@ -4251,13 +4191,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         console.warn(`WeedJS: lighting.gbuffer is 'pass' or 'mrt', not ${JSON.stringify(gbufMode)}: the G-buffer draws a pass a target`);
       }
       this._gbufMrt = gbufMode === 'mrt';
-      // DX-SHADOW3D (F7): the lamps' shadows stamped on the shadows' layer ('layer', the default) or from a map a lamp, each
-      // lamp's own light alone (WebGL and WebGPU). OL-1: any other value warns and stamps on the layer.
-      const lampShadows = lightingConfig.lampShadows ?? LIGHTING_DEFAULTS.lampShadows;
-      if (lampShadows !== 'layer' && lampShadows !== 'map') {
-        console.warn(`WeedJS: lighting.lampShadows is 'layer' or 'map', not ${JSON.stringify(lampShadows)}: the lamps' shadows are stamped on the layer`);
-      }
-      if (lampShadows === 'map') {
+      // DX-SHADOW3D (F7), E-531: a map a lamp, each lamp's own light alone.
+      if (shadowsOn) {
         this._lampMapOn = true;
         // N-196: 'auto' (the default) sizes the tile by the casting lamps' reach and lighting.shadowResolution.
         const tile = lightingConfig.lampShadowTile;
@@ -4378,7 +4313,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (s?.displayObject && name) this._registerLayerDisplayObject(name, s.displayObject);
     }
     if (this.decalTileContainer) this._registerLayerDisplayObject('decals', this.decalTileContainer);
-    if (this.shadowDisplaySprite) this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     if (this._entitiesRoot) {
       this._registerLayerDisplayObject('entities', this._entitiesRoot);
     } else if (this.spriteMesh) {
@@ -4411,8 +4345,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   createCastedShadowsSystem(data) {
     if (data.shadows && data.shadows.enabled) {
-      this.shadowSpritesEnabled = true;
-      this.shadowMaps.createShadowSpriteSystem();
+      this.shadowsEnabled = true;
+      this.shadowMaps.create();
     }
   }
 }

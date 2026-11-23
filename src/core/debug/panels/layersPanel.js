@@ -2,7 +2,7 @@
 
 import { createPanel, elem } from '../ui/debugDom.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
-import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE, LAYER_SCALE_MODE } from '../../../util/configDefaults.js';
+import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE, LAYER_SCALE_MODE, LIGHTING_DEFAULTS } from '../../../util/configDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../layer.js';
 import { DebugPanel } from '../ui/debugPanel.js';
 
@@ -147,7 +147,7 @@ export class LayersPanel extends DebugPanel {
    */
   _rowNames() {
     if (Layer.initialized) return Layer.getAll().map((l) => l.name);
-    const glowSprite = this.debugUI.scene?.config?.lighting?.lightGlow === 'sorted';
+    const glowSprite = (this.debugUI.scene?.config?.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
     return Object.keys(DEFAULT_LAYERS).filter((name) => !(name === 'lightGlows' && glowSprite));
   }
 
@@ -238,9 +238,8 @@ export class LayersPanel extends DebugPanel {
     label.style.cssText = 'font-weight:bold;color:rgba(255,255,255,0.85);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     label.textContent = layerName;
     label.title = layerName;
-    // DBG-1: in shadow-map mode the castedShadows layer's own picture is empty; its row stands for the maps' shadows.
-    const lighting = this.debugUI.scene?.config?.lighting;
-    if (layerName === 'castedShadows' && (lighting?.sunShadows === 'map' || lighting?.lampShadows === 'map')) {
+    // DBG-1: the castedShadows layer has no picture of its own; its row stands for the shadow maps' shadows.
+    if (layerName === 'castedShadows') {
       label.title = 'castedShadows: the shadows in the light pass (the sun\'s and the lamps\' shadow maps)';
     }
     row.appendChild(label);

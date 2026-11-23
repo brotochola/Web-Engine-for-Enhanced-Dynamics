@@ -171,6 +171,8 @@ function buildStampGrid(sun, nSun, sf, counts, starts, items) {
 let _nearDist = new Float32Array(0);
 let _nearSlot = new Int32Array(0);
 let _nearCount = new Uint8Array(0);
+/** N-413: each light's nearest candidate left out at maxShadowsPerLight's cut, squared (Infinity: none left out). */
+let _lightNext2 = new Float64Array(0);
 let _sortIdxRef = null;
 
 function ensureNearest(nSun, maxPE) {
@@ -287,12 +289,14 @@ export function stampLightRange({
   if (!sun || !stamp || nSun <= 0 || !lights || !tmpIdx || !dist || !keepIdx || !lightVec) return cursor;
   // N-330: a caster's record, its maxPE slots and the nearest distance left out.
   if (maxPE > 0) ensureNearest(nSun, maxPE + 1);
+  if (_lightNext2.length < capL) _lightNext2 = new Float64Array(capL);
   const tmpCap = tmpIdx.length | 0;
   const grid = gridCounts && gridStarts && gridItems
     ? buildStampGrid(sun, nSun, sf, gridCounts, gridStarts, gridItems)
     : null;
   for (let i = begin; i < capL && (maxPE > 0 || cursor < cap); i += stride) {
     const L = lights[i];
+    _lightNext2[i] = Infinity;
     if (!L || !(L.rangeSq > 0) || !(L.intensity > 0)) continue;
     const lim = (L.maxShadows > 0)
       ? (maxPL > 0 ? Math.min(maxPL, L.maxShadows | 0) : (L.maxShadows | 0))
@@ -351,7 +355,13 @@ export function stampLightRange({
       sortPairsByIndex(tmpIdx, dist, m, order, keepIdx);
     }
     if (m <= 0) continue;
+    const gathered = m;
     m = takeClosest(tmpIdx, dist, order, m, lim, keepIdx, maxPE <= 0);
+    // N-413: past the cut, the nearest candidate left out (takeClosest leaves them after the kept): its distance fades
+    // the kept near the cut (cutFade), so one crossing it as people walk fades instead of popping.
+    let next2 = Infinity;
+    for (let k = m; k < gathered; k++) if (dist[order[k]] < next2) next2 = dist[order[k]];
+    _lightNext2[i] = next2;
     if (maxPE > 0) {
       for (let k = 0; k < m; k++) {
         const c = keepIdx[k];
@@ -365,10 +375,16 @@ export function stampLightRange({
     lightVec[0] = lx;
     lightVec[1] = ly;
     lightVec[2] = L.intensity;
-    lightVec[3] = rangeSq;
+    lightVec[3] = 1;
     const written = appendStampedCasters(
       stamp, stampFloats, cursor, sun, sf, keepIdx, m, lightVec, cap, 0
     );
+    // N-413: the kept near the cut take its fade in their light's w (1 elsewhere), from their float distances.
+    if (next2 !== Infinity) {
+      for (let k = cursor; k < written; k++) {
+        stamp[k * stampFloats + CASTER_LIGHT_FLOAT + 3] = cutFade(dist[order[k - cursor]], next2);
+      }
+    }
     if (cone || shadeOf(L) < 1) {
       for (let k = cursor; k < written; k++) {
         const b = keepIdx[k - cursor] * sf;
@@ -390,7 +406,7 @@ export function stampLightRange({
       lightVec[0] = L.x;
       lightVec[1] = L.y;
       lightVec[2] = L.intensity;
-      lightVec[3] = L.rangeSq;
+      lightVec[3] = 1;
       keepIdx[0] = c;
       const written = appendStampedCasters(
         stamp, stampFloats, cursor, sun, sf, keepIdx, 1, lightVec, cap, 0
@@ -404,6 +420,9 @@ export function stampLightRange({
         const b = c * sf;
         stamp[cursor * stampFloats + CASTER_LIGHT_FLOAT + 2] = coneIntensity(sun[b] - L.x, sun[b + 1] - L.y, L.intensity, L);
       }
+      // N-413: the row's fade in its light's w: that light's cut (maxShadowsPerLight) times N-330's.
+      const w = cutFade(_nearDist[base + k], _lightNext2[li]) * fade;
+      if (written > cursor && w < 1) stamp[cursor * stampFloats + CASTER_LIGHT_FLOAT + 3] = w;
       if (stampLightIdx && written > cursor) stampLightIdx[cursor] = li;
       cursor = written;
     }

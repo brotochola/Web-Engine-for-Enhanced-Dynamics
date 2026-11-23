@@ -33,6 +33,8 @@ export class Fire extends GameObject {
     // spawn radius for the fade.
     Collider.radius[i] = FireComponent.baseRadius[i] = 40 * scale;
     LightEmitter.shadowRange[i] = 400;
+    // The flames' light from 30 px up: what stands around casts its shadow from it.
+    LightEmitter.elevation[i] = 30;
 
     LightEmitter.color[i] = randomColor({
       min: 0xffff00,

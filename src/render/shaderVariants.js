@@ -47,9 +47,9 @@ export function spritePoseWgsl(wgsl) {
 }
 
 /** The premultiplied outputs the additive variant replaces: the sprite's (its alpha in `a`) and the GPU particles'. */
-const SPRITE_PMA_OUT = '  float a = t.a * vColor.a;\n  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, a);\n';
+const SPRITE_PMA_OUT = '  float ia = abs(vColor.a);\n  float a = vColor.a < 0.0 ? 0.0 : t.a * ia;\n  finalColor = vec4(t.rgb * vColor.rgb * ia, a);\n';
 const PARTICLE_PMA_OUT = '  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, t.a * vColor.a);\n';
-const ADDITIVE_OUT = '  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, 0.0);\n';
+const ADDITIVE_OUT = '  finalColor = vec4(t.rgb * vColor.rgb * abs(vColor.a), 0.0);\n';
 
 /**
  * The additive (glow) fragment: the same premultiplied colour with alpha 0, so an ADD blend adds the colour and leaves

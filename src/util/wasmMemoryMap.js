@@ -267,8 +267,6 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampScanBounds', owner: 'pre-render', bytes: STAMP_SCAN_BOUNDS_DOUBLES * 8 },
       { name: 'stampLights', owner: 'pre-render', bytes: (stamp.maxLights | 0) * STAMP_LIGHT_DOUBLES * 8 },
       { name: 'stampTable', owner: 'pre-render', bytes: STAMP_TABLE_SLOTS * 4 },
-      // The light cookies' queue, the render queue's layout at maxCookie rows (renderQueueLayout.js).
-      { name: 'cookieQueue', owner: 'pre-render', bytes: stamp.cookieBytes | 0 },
     );
   }
   if (sway) {
@@ -304,8 +302,6 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
       // E-177: the entity batch's keyed frames' updates (gpuPack.c KEYED_ROW_WORDS each), as many as its rows.
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
-      // E-191: their shadow stream (shadowH, offX, offY a draw slot), for the sun's pass over the entity batch.
-      { name: 'pixiKeyShadow', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_SHADOW_BYTES },
       // E-189: their texture updates (gpuPack.c KEYED_TEX_WORDS each), as many as its rows.
       { name: 'pixiKeyTexUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_TEX_BYTES },
     );
@@ -436,9 +432,10 @@ export const SWAY_TABLE_SLOTS = 32;
 export const STAMP_GRID_CELLS = 128 * 128;
 /**
  * A light in the stamp's light table (doubles): x, y, intensity, rangeSq, maxShadows, then DX-SPOT's cone (dir x, dir y
- * over groundScaleY, cos, 1/span, 1/g²), then its shade (min(brightness, 1)).
+ * over groundScaleY, cos, 1/span, 1/g²), then its shade (min(brightness, 1)); then (N-413) the distance² of its nearest
+ * candidate left out at its maxShadowsPerLight cut, which the kernel writes and its rows' fades read.
  */
-export const STAMP_LIGHT_DOUBLES = 11;
+export const STAMP_LIGHT_DOUBLES = 12;
 /**
  * N-330: the pairs in a caster's record of nearest lights (wasm/shadowStamp.c note_nearest): maxShadowsPerEntity, and one
  * more, the nearest light past the cut, which fades the last one shown; none without the cap.
@@ -473,8 +470,6 @@ export const PIXI_KEYED_ROW_BYTES = 64;
 /** E-188: the bytes of a keyed decoration's record (preRenderEmit.c DECO_KEYED_WORDS u32). */
 export const EMIT_DECO_KEYED_BYTES = 32;
 
-/** E-191: the bytes of a keyed frame's shadow terms a draw slot (shadowH, offX, offY). */
-export const PIXI_KEYED_SHADOW_BYTES = 12;
 /** E-189: a keyed frame's texture update (gpuPack.c KEYED_TEX_WORDS u32: the statics row, the texture's float bits). */
 export const PIXI_KEYED_TEX_BYTES = 8;
 

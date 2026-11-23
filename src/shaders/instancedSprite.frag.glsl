@@ -13,6 +13,8 @@ out vec4 finalColor;
 
 void main() {
   vec4 t = texture(uTexture, weedUv());
-  float a = t.a * vColor.a;
-  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, a);
+  // N-418: a negative alpha is an additive frame's: its colour added, alpha 0.
+  float ia = abs(vColor.a);
+  float a = vColor.a < 0.0 ? 0.0 : t.a * ia;
+  finalColor = vec4(t.rgb * vColor.rgb * ia, a);
 }

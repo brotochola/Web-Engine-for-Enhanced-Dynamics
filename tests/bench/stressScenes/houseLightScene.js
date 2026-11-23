@@ -154,8 +154,6 @@ export class HouseLightScene extends Scene {
       maxLights: BENCH ? BENCH_LAMPS + 8 : 8,
       maxVolumes: BENCH ? BENCH_HOUSES + 8 : 16,
       shadowsEnabled: true,
-      sunShadows: 'map',
-      lampShadows: 'map',
       selfShadow: true,
       maxShadowCastingLights: BENCH ? 16 : 4,
       maxShadowsPerLight: 64,

@@ -246,7 +246,7 @@ export const PRE_RENDER_STATS = Object.freeze({
   SORT_MS: 10,
   EMIT_MS: 11,
   CUSTOM_LAYER_MS: 12,
-  /** Shadow instance rows only (sun, stamp, cookies). Sprite rows are SPRITE_PACK_MS. */
+  /** Shadow instance rows only (sun, stamp). Sprite rows are SPRITE_PACK_MS. */
   SHADOW_Q_MS: 13,
   VISIBILITY_MS: 14,
   ADOBE_MS: 15,

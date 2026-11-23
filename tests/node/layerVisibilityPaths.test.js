@@ -1,9 +1,9 @@
 /**
  * DBG-1: the Layers panel's Vis box hides everything a layer draws, on every render path. The real Pixi worker in Node
  * (workerHarness), its GPU passes stubbed:
- *   - castedShadows hidden in shadow-map mode clears the sun's and the lamps' maps once (the light pass samples them),
- *     and the first frame shown again draws them whatever shadowUpdateInterval is;
- *   - a hidden entities layer casts nothing: its sun, stamp and cookie rows are left out;
+ *   - castedShadows hidden clears the sun's and the lamps' maps once (the light pass samples them), and the first frame
+ *     shown again draws them whatever shadowUpdateInterval is;
+ *   - a hidden entities layer casts nothing: its sun and stamp rows are left out;
  *   - a hidden lighting layer hides the unshaded composite;
  *   - a MESH layer's textured rows (the uvFill mesh on the stage) follow the layer's visibility.
  */
@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import { loadWorker, cloneWorker } from '../bench/workerHarness.mjs';
 import { Layer } from '../../src/core/layer.js';
-import { GPU_HDR_COOKIE, GPU_HDR_STAMP, GPU_HDR_SUN, GPU_HEADER_INTS } from '../../src/render/gpuQueueLayout.js';
+import { GPU_HDR_STAMP, GPU_HDR_SUN, GPU_HEADER_INTS } from '../../src/render/gpuQueueLayout.js';
 
 const IDS = { entities: 0, castedShadows: 1, lighting: 2, floor: 3 };
 
@@ -52,19 +52,17 @@ async function pixi() {
   return px;
 }
 
-test('castedShadows hidden in map mode: the sun and lamp maps cleared once, drawn again the first frame shown', async () => {
+test('castedShadows hidden: the sun and lamp maps cleared once, drawn again the first frame shown', async () => {
   const px = await pixi();
   const draws = [];
-  px.shadowSpritesEnabled = true;
-  px.shadowBatch = {};
-  px.shadowRT = { name: 'shadowRT' };
+  px.shadowsEnabled = true;
   px.sunMapRT = { name: 'sunMap' };
   px.lighting.lampMapRT = { name: 'lampMap' };
   px._sunMapOn = true;
   px._lampMapOn = true;
   px.shadowMaps.shadowUpdateInterval = 3;
   px.shadowMaps.shadowUpdateTick = 2;
-  px.shadowMaps._drawGpuCasterShadows = function draw() {
+  px.shadowMaps._drawMaps = function draw() {
     draws.push(this.shadowUpdateTick - 1);
     // What a drawn frame leaves: the maps hold shadows again.
     this.sunMapDrew = true;
@@ -73,38 +71,35 @@ test('castedShadows hidden in map mode: the sun and lamp maps cleared once, draw
   };
   const layers = withLayers(['castedShadows']);
   try {
-    px.shadowMaps.updateShadowSprites();
-    px.shadowMaps.updateShadowSprites();
+    px.shadowMaps.update();
+    px.shadowMaps.update();
     assert.deepEqual(px.submits.map((t) => t.name), ['sunMap', 'lampMap'], 'cleared once, not every frame');
     assert.deepEqual(draws, []);
     layers.show('castedShadows');
-    px.shadowMaps.updateShadowSprites();
+    px.shadowMaps.update();
     assert.deepEqual(draws, [0], 'the first frame shown draws, though the interval is 3');
   } finally {
     layers.restore();
   }
 });
 
-/** A Pixi worker whose shadow pass runs with lamp maps on and sun off, with these sun, stamp and cookie counts. */
+/** A Pixi worker whose shadow pass runs with lamp maps on and sun off, with these sun and stamp rows and lamp tiles. */
 async function shadowPass(counts) {
   const px = await pixi();
   const lampDraws = [];
   const header = new Int32Array(GPU_HEADER_INTS);
   header[GPU_HDR_SUN] = counts.sun;
   header[GPU_HDR_STAMP] = counts.stamp;
-  header[GPU_HDR_COOKIE] = counts.cookie;
-  px._gpuQueueRead = { header, sun: null, stamp: null, cookie: null };
-  const uniforms = { uCam: [0, 0, 0], uSun: [0, 0, 0, 0], uLight: [0, 0, 0, 0], uSunK: [0, 0, 0, 0], uSunPerp: [0, 0] };
+  px._gpuQueueRead = { header, sun: null, stamp: null };
   px.gpuCasterBatch = {
-    mesh: { shader: null, position: { set() {} }, scale: { set() {} }, geometry: {} },
-    shadowShader: { resources: { uniforms: { uniforms } } },
+    mesh: { shader: null, geometry: {} },
+    shadowShader: { resources: {} },
     setTargetSpace() {},
   };
-  px.shadowRT = { name: 'shadowRT' };
   px.lighting.lampMapRT = { name: 'lampMap' };
   px._lampMapOn = true;
   px._sunMapOn = false;
-  px.lampMap.tileCount = 0;
+  px.lampMap.tileCount = counts.tiles;
   px.shadowMaps._ensureKeyedCasters = () => {};
   px.lighting.shadowPixelScale = () => 1;
   px.lampMap.draw = (batch, gpu, n) => { lampDraws.push(n); return true; };
@@ -114,8 +109,8 @@ async function shadowPass(counts) {
 test('entities shown: their stamp rows go to the lamps\' map, and their counts are reported', async () => {
   const layers = withLayers([]);
   try {
-    const { px, lampDraws } = await shadowPass({ sun: 40, stamp: 12, cookie: 3 });
-    px.shadowMaps._drawGpuCasterShadows();
+    const { px, lampDraws } = await shadowPass({ sun: 40, stamp: 12, tiles: 3 });
+    px.shadowMaps._drawMaps();
     assert.deepEqual(lampDraws, [12]);
     assert.equal(px._gpuCastersThisFrame, 40);
     assert.equal(px._gpuShadowLightsThisFrame, 3);
@@ -127,8 +122,8 @@ test('entities shown: their stamp rows go to the lamps\' map, and their counts a
 test('entities hidden: no caster row is drawn, and the lamps\' map is cleared instead', async () => {
   const layers = withLayers(['entities']);
   try {
-    const { px, lampDraws } = await shadowPass({ sun: 40, stamp: 12, cookie: 3 });
-    px.shadowMaps._drawGpuCasterShadows();
+    const { px, lampDraws } = await shadowPass({ sun: 40, stamp: 12, tiles: 0 });
+    px.shadowMaps._drawMaps();
     assert.deepEqual(lampDraws, []);
     assert.equal(px._gpuCastersThisFrame, 0);
     assert.equal(px._gpuShadowLightsThisFrame, 0);

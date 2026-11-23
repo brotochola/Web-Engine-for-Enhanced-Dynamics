@@ -28,7 +28,6 @@ import {
   instancedSpriteGpuProgram,
   instancedSpriteIndexedGpuProgram,
   instancedSpriteShadowGpuProgram,
-  instancedSpriteShadowIndexedGpuProgram,
 } from './webgpu/instancedSpriteWgsl.js';
 import { glProgramFrom } from './webgl/glProgram.js';
 import { pickInstancedSpriteFragmentGlsl } from './webgl/instancedSpriteGlsl.js';
@@ -117,8 +116,6 @@ const OPAQUE_RECHECK_FRAMES = 15;
 export const KEYED_SAVED_BYTES = (GPU_STATIC_FLOATS - GPU_INDEXED_SLOT_FLOATS) * 4;
 export const KEYED_LOSS_FRAMES = 10;
 export const KEYED_PAUSE_FRAMES = 1800;
-/** E-395: the frames enableStaticsMirror asks every slot's statics for, so the CPU copy holds them all. */
-const STATICS_MIRROR_FILL_FRAMES = 4;
 
 const EMPTY_UPLOAD_OPTS = Object.freeze({
   space: BATCH_SPACE.WORLD,
@@ -161,16 +158,18 @@ export const TEX_LUT_MAX_ROWS = 2048;
 
 /**
  * N-111. The LUT texture for `count` textureIds: `perRow` of them a row (1 until count passes `maxRows`), `width` texels
- * (TEX_LUT_RGBA_WIDTH each, then H-EDGE's flags texel: frameBase.js TEX_LUT_SOFT_OR_GLOW) and `height` rows. textureId t
- * is at texel (TEX_LUT_RGBA_WIDTH * (t % perRow), t / perRow), its row's flags at (TEX_LUT_RGBA_WIDTH * perRow, t / perRow).
+ * (TEX_LUT_RGBA_WIDTH each, then H-EDGE's flags texel: frameBase.js TEX_LUT_SOFT_OR_GLOW, and N-418's additive one where a
+ * frame is: lutFlagTexels) and `height` rows. textureId t is at texel (TEX_LUT_RGBA_WIDTH * (t % perRow), t / perRow), its
+ * row's flags at (TEX_LUT_RGBA_WIDTH * perRow, t / perRow), its additive flags one texel on.
  * @param {number} count
  * @param {number} [maxRows]
+ * @param {number} [flags] the flags texels a row (1, or 2 with the additive one)
  * @returns {{ perRow: number, width: number, height: number }}
  */
-export function textureLutLayout(count, maxRows = TEX_LUT_MAX_ROWS) {
+export function textureLutLayout(count, maxRows = TEX_LUT_MAX_ROWS, flags = 1) {
   const n = Math.max(1, count | 0);
   const perRow = Math.ceil(n / maxRows);
-  const width = perRow * TEX_LUT_RGBA_WIDTH + 1;
+  const width = perRow * TEX_LUT_RGBA_WIDTH + flags;
   if (width > maxRows) {
     throw new Error(
       `WeedJS: the atlas has ${n} frames; its texture table holds at most ${Math.floor((maxRows - 1) / TEX_LUT_RGBA_WIDTH) * maxRows} (${maxRows} x ${maxRows} texels)`
@@ -294,14 +293,27 @@ export function buildTextureLut(flatTextures, fallbackTexture) {
 }
 
 /**
- * Pack CPU LUT (12 floats/id) into the RGBA32F texture of textureLutLayout(count, maxRows) for vertex texelFetch.
- * The slots past `count` in the last row stay 0 (a zero size). H-EDGE: each row's flags texel holds its frames' soft-or-glow
- * bits (frameBase.js TEX_LUT_SOFT_OR_GLOW, TEX_LUT_FLAG_BITS a channel), set for every frame of a LUT that has no texels
- * (textureLutTexels).
+ * N-418: the flags texels a row of the texture table holds: 1, or 2 when a frame is additive (`additive`: a flag a
+ * textureId), the second holding those frames' bits as the first holds the soft-or-glow ones. The sprite vertex shader reads
+ * it where the table is that wide, and sends such a frame's alpha negative: its colour is added (alpha 0 out).
+ * @param {Uint8Array|null} additive
+ * @returns {number}
  */
-export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS) {
+export function lutFlagTexels(additive) {
+  return additive !== null && additive !== undefined && additive.includes(1) ? 2 : 1;
+}
+
+/**
+ * Pack CPU LUT (12 floats/id) into the RGBA32F texture of textureLutLayout(count, maxRows, lutFlagTexels(additive)) for
+ * vertex texelFetch. The slots past `count` in the last row stay 0 (a zero size). H-EDGE: each row's flags texel holds its
+ * frames' soft-or-glow bits (frameBase.js TEX_LUT_SOFT_OR_GLOW, TEX_LUT_FLAG_BITS a channel), set for every frame of a LUT
+ * that has no texels (textureLutTexels); N-418: the next one, where there is one, the additive frames' bits.
+ * @param {Uint8Array|null} [additive] a flag a textureId: the frames whose colour is added
+ */
+export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS, additive = null) {
   const n = Math.max(1, count | 0);
-  const { perRow, width, height } = textureLutLayout(n, maxRows);
+  const flags = lutFlagTexels(additive);
+  const { perRow, width, height } = textureLutLayout(n, maxRows, flags);
   const out = new Float32Array(width * height * 4);
   const srcN = lut ? (lut.length / TEX_LUT_FLOATS) | 0 : 0;
   const texels = textureLutTexels(lut);
@@ -311,6 +323,9 @@ export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS) {
     const dst = (row * width + slot * TEX_LUT_RGBA_WIDTH) * 4;
     if (slot < TEX_LUT_FLAGS_PER_ROW && (texels === null || i >= texels.length || (texels[i] & TEX_LUT_SOFT_OR_GLOW) !== 0)) {
       out[(row * width + perRow * TEX_LUT_RGBA_WIDTH) * 4 + ((slot / TEX_LUT_FLAG_BITS) | 0)] += 2 ** (slot % TEX_LUT_FLAG_BITS);
+    }
+    if (flags > 1 && slot < TEX_LUT_FLAGS_PER_ROW && i < additive.length && additive[i] === 1) {
+      out[(row * width + perRow * TEX_LUT_RGBA_WIDTH + 1) * 4 + ((slot / TEX_LUT_FLAG_BITS) | 0)] += 2 ** (slot % TEX_LUT_FLAG_BITS);
     }
     if (i < srcN) {
       const s = i * TEX_LUT_FLOATS;
@@ -553,9 +568,6 @@ export class InstancedSpriteBatch {
       keyBase: k ? k.keyBase | 0 : 0,
       updatesByte: k ? k.updatesByte | 0 : 0,
       updates: 0,
-      // E-191: the shadow stream's byte (0 until enableKeyedShadows) and whether the last pack wrote it.
-      shadowByte: 0,
-      shadowed: false,
       // E-189: the texture updates' byte (0: none, the texture-only rows go up whole) and the last pack's count.
       texUpdatesByte: k && k.texUpdatesByte > 0 ? k.texUpdatesByte | 0 : 0,
       texUpdates: 0,
@@ -592,25 +604,10 @@ export class InstancedSpriteBatch {
     this._keyPause = 0;
     // E-312 step 2: whether the header's FULL asks pre-render for every row's statics (a pause, a frame not packed keyed).
     this._keyFull = false;
-    // E-191: the sun's shadow pass over these instances (enableKeyedShadows): each draw slot's shadow terms in the
-    // render-queue memory and their copy, a buffer and a geometry (pose, slot and shadow streams) per ring slot, the
-    // program (makeKeyedSunShader), and this frame's geometry once a keyed upload carried them (keyedShadowReady).
-    const shadowFloats = k && k.shadowByte >= 0 ? this.capacity * 3 : 0;
-    this._sharedShadow = shadowFloats > 0 ? new Float32Array(buf, k.shadowByte, shadowFloats) : new Float32Array(0);
-    this._shadowData = (shadowFloats > 0 && arena && arena.f32(shadowFloats)) || new Float32Array(shadowFloats);
-    this._shadowBuffers = null;
-    this._keyedShadowGeometries = null;
-    this._keyedShadowRowGeometries = null;
-    this._keyedSunShader = null;
-    this.keyedShadows = false;
-    this.keyedShadowReady = false;
-    this.keyedShadowGeometry = null;
-    // E-191 step 2: once the caller draws keyed caster rows (enableKeyedCasters), each keyed upload stores its queue
-    // frame in the header's LIVE word, and pre-render writes such rows while it is recent. The programs that draw them
-    // (makeKeyedCasterShader: the sun's rows, then the stamps' with their light) on an entity batch; on a caster batch,
-    // its geometries over each ring slot for those rows (commitKeyedCasterRows: the sun's, then the stamps').
+    // E-191 step 2: once the caller draws keyed caster rows (the shadow maps, E-531), each keyed upload stores its queue
+    // frame in the header's LIVE word, and pre-render writes such rows while it is recent. On a caster batch, its
+    // geometries over each ring slot for those rows (commitKeyedCasterRows: the sun's, then the stamps').
     this.keyedCasters = false;
-    this._keyedCasterShaders = [null, null];
     // DX-FACES, DX-GBUF: the batch's passes over its own instances for the light (AUX_FACE: the face map; AUX_IDS: the
     // entity ids map; AUX_GBUF: both in one pass, MRT; AUX_UNSHADED: the unshaded colour; AUX_UNSHADED_MASK: where it is,
     // E-457): each kind's programs (plain, indexed, by row), its state and a mesh per geometry this batch draws (_auxMesh).
@@ -704,13 +701,25 @@ export class InstancedSpriteBatch {
     this._statics = this.indexed ? statics : null;
     this._staticsSource = null;
     this._staticsHeight = 0;
-    // E-395: the keyed slots' texture and scale (three floats a slot), copied from the keyed updates once something asks
-    // (enableStaticsMirror: the renders' columns over keyed rows pick their rows by them); empty until then. The updates'
-    // float views read them.
+    // E-395: the keyed slots' texture and scale (three floats a slot), copied from the keyed updates (the renders' columns
+    // over keyed rows pick their rows by them). N-417: a keyed WebGL batch keeps it from its first frame (made below with
+    // the statics texture), so it sees every update the statics took: begun when something asked, it waited for updates
+    // that never came for a slot that did not change again (FULL has pre-render write every row's statics into the queue,
+    // not send them). And it read the updates through their float views (above), which were set to empty arrays here after
+    // them: every value it copied was NaN, so the renders' columns over keyed rows found no render (texture 0).
     this._staticsMirror = new Float32Array(0);
-    this._keyUpdatesF = new Float32Array(0);
-    this._keyTexUpdatesF = new Float32Array(0);
+    // E-549: the textures that can cast columns from a keyed row (keyedColumnTextures, set with the atlas's table: a flag a
+    // textureId) and how many (-1: not set, every update copied; 0: none, nothing copied, nothing reads the copy), and a
+    // flag a slot whose copy holds such a texture: the copy took every keyed update, 25 000 a frame in Predator light3d by
+    // night (0.5 ms of Pixi's), for the renders' columns, which found no render row there.
+    this._columnTex = new Uint8Array(0);
+    this._columnTexCount = -1;
+    this._columnSlot = new Uint8Array(0);
     this._indexedShader = this.indexed ? this._makeIndexedShader(labelName) : null;
+    if (this.keyed && this._staticsHeight > 0) {
+      this._staticsMirror = new Float32Array(this._staticsHeight * STATICS_TEX_ROW * 3);
+      this._columnSlot = new Uint8Array(this._staticsHeight * STATICS_TEX_ROW);
+    }
     this._rowShader = this.posesByRow ? this._makeRowShader(labelName) : null;
     this.shadowShader = null;
     if (this.shadowCast && (shaders?.shadowVert || shaders?.shadowWgsl)) {
@@ -989,23 +998,6 @@ export class InstancedSpriteBatch {
     return this._sharedGbuf;
   }
 
-  /** E-191: the sun's pass over a ring slot's keyed instances: the shadow program's attributes and no other. */
-  _keyedShadowGeometryFor(buf, slotBuf, shadowBuf) {
-    const ds = this._floats * 4;
-    const geometry = new Geometry({
-      attributes: {
-        aQuad: { buffer: this._quad, format: 'float32x2' },
-        aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
-        aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-        aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
-        aInstShadow: { buffer: shadowBuf, format: 'float32x3', stride: 12, offset: 0, instance: true },
-      },
-      indexBuffer: this._index,
-    });
-    geometry.instanceCount = 0;
-    return geometry;
-  }
-
   _geometryFor(buf, staticBuf) {
     if (this._twoStreams) {
       // E-82: the pose stream (24-byte stride) and the static stream (44). E-82b, a split batch: a 16-byte
@@ -1075,21 +1067,6 @@ export class InstancedSpriteBatch {
         aQuad: { buffer: this._quad, format: 'float32x2' },
         aInstRow: { buffer: buf, format: 'float32', stride: 4, offset: 0, instance: true },
         aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
-      },
-      indexBuffer: this._index,
-    });
-    geometry.instanceCount = 0;
-    return geometry;
-  }
-
-  /** E-201: the sun's pass over a by-row keyed frame: its rows, slots and shadow terms. */
-  _keyedShadowRowGeometryFor(buf, slotBuf, shadowBuf) {
-    const geometry = new Geometry({
-      attributes: {
-        aQuad: { buffer: this._quad, format: 'float32x2' },
-        aInstRow: { buffer: buf, format: 'float32', stride: 4, offset: 0, instance: true },
-        aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
-        aInstShadow: { buffer: shadowBuf, format: 'float32x3', stride: 12, offset: 0, instance: true },
       },
       indexBuffer: this._index,
     });
@@ -1868,11 +1845,6 @@ export class InstancedSpriteBatch {
       aux[i].resources.uTexture = source;
       aux[i].resources.uSampler = source.style;
     }
-    const ks = this._keyedSunShader;
-    if (ks) {
-      ks.resources.uTexture = source;
-      ks.resources.uSampler = source.style;
-    }
   }
 
   setLutSource(source) {
@@ -1880,7 +1852,6 @@ export class InstancedSpriteBatch {
     this.shader.resources.uTexLut = source;
     if (this.shadowShader) this.shadowShader.resources.uTexLut = source;
     if (this._indexedShader) this._indexedShader.resources.uTexLut = source;
-    if (this._keyedSunShader) this._keyedSunShader.resources.uTexLut = source;
     const aux = this._auxShaders();
     for (let i = 0; i < aux.length; i++) aux[i].resources.uTexLut = source;
     if (this._rowShader !== null) this._rowShader.resources.uTexLut = source;
@@ -2034,7 +2005,6 @@ export class InstancedSpriteBatch {
    * @param {number} [opts.indexCount]
    */
   upload(q, opts) {
-    this.keyedShadowReady = false;
     this.gbufPacked = false;
     this.gbufInStatics = false;
     if (this.poseInterp) return this._uploadPose(q, opts);
@@ -2170,8 +2140,6 @@ export class InstancedSpriteBatch {
       this._keyDrawn = frame;
       Atomics.store(H, PIXI_KEYED_HEADER.DRAWN, frame);
     }
-    const shadowed = this.keyedShadows && k.shadowed;
-    if (shadowed && out > 0) this.copyIn(this._shadowData, this._sharedShadow, out * 3);
     const n = k.updates;
     const nt = k.texUpdates;
     if (this._keyPause > 0) {
@@ -2211,15 +2179,6 @@ export class InstancedSpriteBatch {
     // E-448: a frame drawn by queue row takes the opaque pass; a keyed frame drawn by its pose stream does not.
     if (byRow && this.opaqueOn) this._commitOpaqueRows(drawn, q, ctx);
     else this.dropOpaquePass();
-    if (shadowed && out > 0) {
-      // The ring slot _finishUpload just took.
-      const ring = this._ring ^ 1;
-      this._shadowBuffers[ring].update(out * 12);
-      const g = (byRow ? this._keyedShadowRowGeometries : this._keyedShadowGeometries)[ring];
-      g.instanceCount = out;
-      this.keyedShadowGeometry = g;
-      this.keyedShadowReady = true;
-    }
     return drawn;
   }
 
@@ -2451,99 +2410,8 @@ export class InstancedSpriteBatch {
   }
 
   /**
-   * E-191: the sun's shadow pass draws this batch's keyed instances. From now on a keyed frame also packs each draw
-   * slot's shadow terms and uploads them, and keyedShadowGeometry is that frame's geometry over its pose, slot and
-   * shadow buffers (keyedShadowReady). False when the batch is not keyed or the render-queue memory has no shadow
-   * region for it.
-   * @returns {boolean}
-   */
-  enableKeyedShadows() {
-    if (!this.keyed || this._sharedShadow.length === 0) return false;
-    if (this._shadowBuffers === null) {
-      this._shadowBuffers = this._ringBuffers(this._shadowData, this._label + '-shadow');
-      this._keyedShadowGeometries = this._buffers.map((b, r) =>
-        this._keyedShadowGeometryFor(b, this._slotBuffers[r], this._shadowBuffers[r]));
-      this._keyedShadowRowGeometries = this.posesByRow
-        ? this._buffers.map((b, r) => this._keyedShadowRowGeometryFor(b, this._slotBuffers[r], this._shadowBuffers[r]))
-        : null;
-      this.keyedShadowGeometry = this._keyedShadowGeometries[0];
-    }
-    this._keyedPack.shadowByte = this._sharedShadow.byteOffset;
-    this.keyedShadows = true;
-    return true;
-  }
-
-  /**
-   * E-211: whether the next keyed packs write the slots' shadow terms (after enableKeyedShadows, which turns them on).
-   * Off, a keyed frame reads and writes none and leaves keyedShadowReady false, for a sun pass that draws other rows.
-   * @param {boolean} on
-   */
-  setKeyedShadowStream(on) {
-    if (!this.keyedShadows) return;
-    this._keyedPack.shadowByte = on ? this._sharedShadow.byteOffset : 0;
-  }
-
-  /**
-   * E-191: the program of the sun's shadow pass over these instances: instancedSpriteShadow.vert.glsl reading its
-   * statics by key from this batch's statics texture (spriteIndexedVertex's shadow form), with the fragment program
-   * and the resources of `sun` (the caster batch's shadow shader: its atlas, its LUT and the uniform group that pass
-   * fills). Null without keyed shadows, on WebGPU, or without the shadow vertex source.
-   * @param {Shader|null} sun
-   * @returns {Shader|null}
-   */
-  makeKeyedSunShader(sun) {
-    if (!this.keyedShadows || !sun) return null;
-    const program = this._keyedSunProgram();
-    if (program === null) return null;
-    if (this._keyedSunShader === null) {
-      const r = sun.resources;
-      const resources = {
-        uTexture: r.uTexture,
-        uSampler: r.uSampler,
-        uTexLut: r.uTexLut,
-        uniforms: r.uniforms,
-        uStatics: this._staticsSource,
-      };
-      if (this.posesByRow) resources.uPoses = this._poseSource;
-      this._keyedSunShader = new Shader({ ...program, resources });
-    }
-    return this._keyedSunShader;
-  }
-
-  /**
-   * E-191 step 2: the program of a shadow pass over keyed caster rows (pre-render's sun rows, GPU_KEYED_CASTER_FLOATS;
-   * with `light`, its stamp rows, GPU_KEYED_STAMP_FLOATS): instancedSpriteShadow.vert.glsl reading the statics by key
-   * from this batch's statics texture, with no rotation (a shadow's angle is the sun's or the light's) and, for a stamp,
-   * the row's own light; the fragment program and the resources of `sun`, as makeKeyedSunShader's. Null where the keyed
-   * frames are off, on WebGPU, or without the shadow vertex source.
-   * @param {Shader|null} sun
-   * @param {boolean} light
-   * @returns {Shader|null}
-   */
-  makeKeyedCasterShader(sun, light) {
-    if (!this.keyed || !sun) return null;
-    const i = light ? 1 : 0;
-    if (this._keyedCasterShaders[i] === null) {
-      const program = this._keyedCasterProgram(light);
-      if (program === null) return null;
-      const r = sun.resources;
-      this._keyedCasterShaders[i] = new Shader({
-        ...program,
-        resources: {
-          uTexture: r.uTexture,
-          uSampler: r.uSampler,
-          uTexLut: r.uTexLut,
-          uniforms: r.uniforms,
-          uStatics: this._staticsSource,
-        },
-      });
-    }
-    return this._keyedCasterShaders[i];
-  }
-
-  /**
    * E-191 step 2: `count` keyed caster rows of `floats` floats (GPU_KEYED_CASTER_FLOATS, or GPU_KEYED_STAMP_FLOATS with
-   * the light) from `src` into this batch's next ring slot, and their geometry (makeKeyedCasterShader's attributes over
+   * the light) from `src` into this batch's next ring slot, and their geometry (the maps' keyed programs' attributes over
    * them), or null for none or more than the batch holds. The batch's own mesh and geometry stay as they were.
    * @returns {Geometry|null}
    */
@@ -2567,38 +2435,62 @@ export class InstancedSpriteBatch {
   }
 
   /**
-   * E-395: keep a CPU copy of each keyed slot's texture and scale (staticsMirror), for the renders' columns over keyed
-   * caster rows. The keyed updates carry only what changed, so this asks pre-render for every slot's statics again (the
-   * keyed pause, as after a loss) and the copy fills from them. False without keyed frames or a statics texture yet.
+   * E-395: whether the batch keeps a CPU copy of each keyed slot's texture and scale (staticsMirror), for the renders'
+   * columns over keyed caster rows: a keyed batch with a statics texture (WebGL) does, from its first frame (N-417).
    * @returns {boolean}
    */
   enableStaticsMirror() {
-    if (!this.keyed || this._staticsHeight <= 0) return false;
-    const slots = this._staticsHeight * STATICS_TEX_ROW;
-    if (this._staticsMirror.length < slots * 3) this._staticsMirror = new Float32Array(slots * 3);
-    // A few frames of every slot's statics (KEYED_PAUSE_FRAMES is the loss's long pause): the copy fills from them.
-    this._keyPause = Math.max(this._keyPause, STATICS_MIRROR_FILL_FRAMES);
-    this._keyFull = true;
-    Atomics.store(this._keyHeader, PIXI_KEYED_HEADER.FULL, 1);
-    return true;
+    return this.keyed && this._staticsHeight > 0 && this._staticsMirror.length > 0;
   }
 
-  /** E-395: the keyed slots' texture and scale (textureId, scaleX, scaleY a slot), or null before enableStaticsMirror. */
+  /** E-395: the keyed slots' texture and scale (textureId, scaleX, scaleY a slot), or null without the copy. */
   get staticsMirror() {
     return this._staticsMirror.length > 0 ? this._staticsMirror : null;
   }
 
+  /**
+   * E-549: the textures that can cast columns from a keyed row (keyedColumnTextures), after the atlas's table is built:
+   * the copy then keeps only the slots that hold one or held one (a slot's texture, scale and all), none in an atlas
+   * without one. Set before the keyed frames start, as the atlas loads.
+   * @param {Uint8Array} flags a flag a textureId
+   * @param {number} count how many are set
+   */
+  setColumnTextures(flags, count) {
+    this._columnTex = flags;
+    this._columnTexCount = count | 0;
+  }
+
+  /** E-549: how many textures can cast columns from a keyed row (-1 before setColumnTextures). */
+  get columnTextureCount() {
+    return this._columnTexCount;
+  }
+
   /** E-395: this frame's keyed updates into the statics' CPU copy: an update's scale (words 0, 1) and texture (word 6). */
   _mirrorKeyedStatics(n, nt) {
+    // E-549: nothing reads the copy in an atlas without a texture that casts columns.
+    const count = this._columnTexCount;
+    if (count === 0) return;
     const M = this._staticsMirror;
     const U = this._keyUpdates;
     const UF = this._keyUpdatesF;
     const max = (M.length / 3) | 0;
+    const C = this._columnTex;
+    const ids = C.length;
+    const S = this._columnSlot;
+    // Before the atlas's table: every update.
+    const all = count < 0 || S.length < max;
     for (let k = 0; k < n; k++) {
       const at = k * GPU_KEYED_ROW_WORDS;
       const s = U[at + GPU_KEYED_KEY_WORD];
       if (s >= max) continue;
-      M[s * 3] = UF[at + 6];
+      const tex = UF[at + 6];
+      if (!all) {
+        const t = tex | 0;
+        const c = t >= 0 && t < ids ? C[t] : 0;
+        if (c === 0 && S[s] === 0) continue;
+        S[s] = c;
+      }
+      M[s * 3] = tex;
       M[s * 3 + 1] = UF[at];
       M[s * 3 + 2] = UF[at + 1];
     }
@@ -2606,7 +2498,15 @@ export class InstancedSpriteBatch {
     const TF = this._keyTexUpdatesF;
     for (let k = 0; k < nt; k++) {
       const s = T[2 * k];
-      if (s < max) M[s * 3] = TF[2 * k + 1];
+      if (s >= max) continue;
+      const tex = TF[2 * k + 1];
+      if (!all) {
+        const t = tex | 0;
+        const c = t >= 0 && t < ids ? C[t] : 0;
+        if (c === 0 && S[s] === 0) continue;
+        S[s] = c;
+      }
+      M[s * 3] = tex;
     }
   }
 
@@ -2635,13 +2535,6 @@ export class InstancedSpriteBatch {
 
   /** E-191 step 2: a ring slot's keyed caster rows of `floats` floats: x and y, the key's slot pair, the shadow terms. */
   /**
-   * E-191/E-220: a keyed shadow program, the shadow vertex shader reading the statics by key (spriteIndexed.js), as a
-   * Shader's options: `{ glProgram }` on WebGL, `{ gpuProgram }` on WebGPU (the statics a storage buffer); null without
-   * the shadow source.
-   * @param {{ shadow: boolean, casterRows?: boolean, light?: boolean }} opts
-   * @param {string} name
-   */
-  /**
    * SST-7 step 3: what the batch's mesh draws with, a frame's kind each (plain, indexed, by row): its program and a geometry
    * of that layout (both ring slots share it), for building the render pipelines ahead.
    * @returns {{ shader: Shader, geometry: Geometry }[]}
@@ -2651,54 +2544,6 @@ export class InstancedSpriteBatch {
     if (this._indexedShader !== null) out.push({ shader: this._indexedShader, geometry: this._indexedGeometries[0] });
     if (this._rowShader !== null) out.push({ shader: this._rowShader, geometry: this._rowGeometries[0] });
     return out;
-  }
-
-  /** E-191: the keyed sun pass's program (E-201: a by-row batch's keyed frames are drawn by queue row, and so is it). */
-  _keyedSunProgram() {
-    return this._keyedShadowProgram(
-      this.posesByRow ? { shadow: true, poseBlock: this._poseBlock } : { shadow: true },
-      `${this._label}-keyed-sun`
-    );
-  }
-
-  /** E-191 step 2: the keyed caster rows' program, the sun's or (`light`) the stamps'. */
-  _keyedCasterProgram(light) {
-    return this._keyedShadowProgram(
-      { shadow: true, casterRows: true, light },
-      `${this._label}-keyed-${light ? 'stamp' : 'sun'}-rows`
-    );
-  }
-
-  /**
-   * E-494: the programs the sun pass makes on its first use over this batch's keyed instances, made now with the same
-   * sources and names (GlProgram.from on WebGL), so the caller links them before the first frame: `sun`, the keyed sun
-   * pass's (where enableKeyedShadows can turn it on); `casters`, the keyed caster rows' two (makeKeyedCasterShader).
-   * @param {boolean} sun
-   * @param {boolean} casters
-   */
-  makeKeyedShadowPrograms(sun, casters) {
-    if (sun && this.keyed && this._sharedShadow.length > 0) this._keyedSunProgram();
-    if (casters && this.keyed) {
-      this._keyedCasterProgram(false);
-      this._keyedCasterProgram(true);
-    }
-  }
-
-  _keyedShadowProgram(opts, name) {
-    const shaders = this._engineShaders;
-    if (this._useWebGpu) {
-      if (!shaders?.shadowWgsl) return null;
-      return { gpuProgram: instancedSpriteShadowIndexedGpuProgram(GpuProgram, spriteIndexedWgsl(shaders.shadowWgsl, opts), name) };
-    }
-    if (!shaders?.shadowVert) return null;
-    return {
-      glProgram: glProgramFrom(
-        GlProgram,
-        spriteIndexedVertex(shaders.shadowVert, opts),
-        pickInstancedSpriteFragmentGlsl(true, shaders),
-        name
-      ),
-    };
   }
 
   _keyedCasterGeometryFor(buf, floats, light) {

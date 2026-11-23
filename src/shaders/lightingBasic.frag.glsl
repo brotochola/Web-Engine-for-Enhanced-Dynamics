@@ -25,8 +25,6 @@ uniform float uSunR;
 uniform float uSunG;
 uniform float uSunB;
 uniform float uFlipY;
-uniform sampler2D uShadowMap;
-uniform float uShadowComposite;
 // 1 / config.lighting.groundScaleY: the lights' y arrive in floor units, the fragment's is scaled here once.
 uniform float uGroundInvScaleY;
 // The night light, color already multiplied by its strength and Sun.nightFactor.
@@ -750,10 +748,6 @@ void main() {
 // #endif TILES
   }
 
-  if (uShadowComposite > 0.5) {
-    vec4 sh = textureLod(uShadowMap, normCoord, 0.0);
-    totalLight *= (1.0 - sh.a);
-  }
   totalLight = weedDither(min(totalLight, vec3(1.0)), ditherAt);
 // #if EDGES
   // DX-LIGHTEDGES: alpha says the floor lit this texel (0); a G-buffer entry's texels keep 1 (lightEdges.js).

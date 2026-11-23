@@ -124,7 +124,7 @@ export function setupStamp(fx, opts = {}) {
  * lampShadowStressScene's frame as the stamp sees it, the shape setupStamp returns: its lamps on a jittered grid over
  * 2400 x 1400 px (radius 300 to 380 px, their shadows' range; point lights at full shade) and its walkers where they
  * stand after their first step, from the scene's own seed and draws. maxShadowsPerLight 15 and maxShadowsPerEntity 0 by
- * default (the scene's: lighting's defaults, and no adaptive budget under lampShadows 'map'), so each lamp keeps 15
+ * default (the scene's: lighting's defaults), so each lamp keeps 15
  * of the ~570 walkers in its range: the selection with m >> lim.
  * @param {{ lamps?: number, walkers?: number, maxPerLight?: number, maxPerEntity?: number, stampCap?: number }} [opts]
  */

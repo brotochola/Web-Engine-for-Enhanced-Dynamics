@@ -163,7 +163,7 @@ export function lampCode(lamp) {
   out.push(line(6, `radius: ${num(lamp.radius, 0)},`, 'px it reaches, on the floor'));
   out.push(line(6, `elevation: ${num(lamp.elevation, 0)},`));
   out.push(line(6, `brightness: ${num(lamp.brightness)},`));
-  out.push(line(6, `castShadows: ${lamp.castShadows},`, lamp.castShadows ? 'its own shadow map (lampShadows: \'map\')' : 'light only: cheaper'));
+  out.push(line(6, `castShadows: ${lamp.castShadows},`, lamp.castShadows ? 'its own shadow map' : 'light only: cheaper'));
   out.push(line(4, '});'));
   out.push('  }');
   if (lamp.r > 0) {
@@ -179,7 +179,7 @@ export function lampCode(lamp) {
 /**
  * The scene's code: its config and the sun.
  * @param {object} s the bench's settings: pitch, floorScaleY and heightScaleY (null: from the pitch), backend, depth
- *   (null|true|false), ambient, resolution, sunMap, lampMap, walls, sunNormalStrength, sunNormalSubtract,
+ *   (null|true|false), ambient, resolution, walls, sunNormalStrength, sunNormalSubtract,
  *   lampNormalStrength, lampNormalSubtract, self, sweep, maps, hour, sunHeight, sunTurn, intensity, cycle
  */
 export function sceneCode(s) {
@@ -195,10 +195,8 @@ export function sceneCode(s) {
   out.push(line(2, `renderer: { backend: '${s.backend}', ySort: true${depth} },`,
     s.depth === null ? 'pixel depth: on by itself (oblique, maps)' : s.depth ? 'depth corrects the painter' : 'the painter alone'));
   out.push('  lighting: {');
-  out.push(line(4, `enabled: true, shadowsEnabled: true, baseAmbient: ${num(s.ambient)},`));
+  out.push(line(4, `enabled: true, shadowsEnabled: true, baseAmbient: ${num(s.ambient)},`, 'shadow maps: each takes out its own light'));
   out.push(line(4, `resolution: ${num(s.resolution)}, shadowResolution: ${num(s.resolution)},`, 'the light pass and the shadows, × canvas'));
-  out.push(line(4, `sunShadows: '${s.sunMap ? 'map' : 'layer'}',`, s.sunMap ? 'the sun\'s shadow map: it takes out the sun alone' : 'cards on the shadows\' layer'));
-  out.push(line(4, `lampShadows: '${s.lampMap ? 'map' : 'layer'}',`, s.lampMap ? 'a shadow map a lamp' : 'stamps on the shadows\' layer'));
   if (s.walls) out.push(line(4, 'walls: true,', 'shadowCaster.setWall: walls stop the lamps'));
   // Written only where it is not the engine's default (the sun's strength 1 with 0.5 subtracted, the lamps' 1 with
   // nothing subtracted).

@@ -190,7 +190,7 @@ const SITES = {
           alpha: rng() * 0.5 + 0.5, anchorX: 0, anchorY: 0.5, z: muzzleHeightPx, gravity: 0, lifespan: 50, speed: 0,
         });
       }
-      Flash.spawnIndex({ x: muzzleX, y: muzzleY, z: -muzzleHeightPx, lifespan: 18, color: 0xffaa00, radius: 1000, glow: 0 });
+      Flash.spawnIndex({ x: muzzleX, y: muzzleY, z: -muzzleHeightPx, lifespan: 18, color: 0xffaa00, radius: 1000, glow: 0, elevation: 30 });
     },
     // person.js's three lines (Person.shoot itself needs a weapon, a target and the bullet pool).
     now: (i, k) => {
@@ -314,7 +314,7 @@ const SITES = {
         alpha: { min: 0.8, max: 1 }, stayOnTheFloor: false, despawnOnGroundContact: true,
       });
       const strength = rng() * 1000 + 1000;
-      Flash.spawnIndex({ x: hitX, y: hitY, lifespan: 18, color: 0xffee00, radius: 10 * Math.sqrt(strength), glow: strength / 50000 });
+      Flash.spawnIndex({ x: hitX, y: hitY, lifespan: 18, color: 0xffee00, radius: 10 * Math.sqrt(strength), glow: strength / 50000, elevation: 20 });
     },
     now: (i, k) => Barrel.onGotShot(i, 1, Transform.x[i] + k, Transform.y[i] - k, 0, 0),
   },
@@ -363,7 +363,7 @@ const SITES = {
       const self = { x: Transform.x[i], y: Transform.y[i], vx: k % 2 ? 1 : -1 };
       if (rng() > 0.5) return;
       Flash.spawn({
-        x: self.x + (self.vx > 0 ? 35 : -35), y: self.y - 35, z: 0, lifespan: 17, color: 0xffbb11, radius: 1581, glow: 0.5,
+        x: self.x + (self.vx > 0 ? 35 : -35), y: self.y - 35, z: 0, lifespan: 17, color: 0xffbb11, radius: 1581, glow: 0.5, elevation: 35,
       });
     },
     now: (i, k) => Player.prototype.shoot.call({ x: Transform.x[i], y: Transform.y[i], vx: k % 2 ? 1 : -1 }, 0, 0),
@@ -383,7 +383,7 @@ function wallHitReference(i, k, clang) {
     alpha: { min: 0.7, max: 1 }, tint: { min: 0xffff00, max: 0xffffff }, rotation: { min: 0, max: 360 },
     stayOnTheFloor: false, despawnOnGroundContact: true,
   });
-  Flash.spawnIndex({ x: hitX, y: hitY, lifespan: 18, color: 0xffee00, radius: 707, glow: 0.1 });
+  Flash.spawnIndex({ x: hitX, y: hitY, lifespan: 18, color: 0xffee00, radius: 707, glow: 0.1, elevation: 20 });
 }
 
 for (const [name, site] of Object.entries(SITES)) {

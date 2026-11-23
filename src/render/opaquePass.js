@@ -122,7 +122,7 @@ export function opaquePoseTextureRows(rows, poseWords) {
  * @returns {string}
  */
 export function opaqueFragment(source) {
-  const mark = 'float a = t.a * vColor.a;\n';
+  const mark = 'float a = vColor.a < 0.0 ? 0.0 : t.a * ia;\n';
   const at = source.indexOf(mark);
   if (at < 0 || source.indexOf(mark, at + 1) >= 0) throw new Error('WeedJS: the opaque pass needs the sprite blend fragment shader');
   return `${source.slice(0, at + mark.length)}  if (a < 1.0) discard;\n${source.slice(at + mark.length)}`;

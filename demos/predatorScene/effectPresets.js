@@ -32,8 +32,8 @@ const BULLET_LOOK = { texture: 'bullet', scale: 1, anchorX: 1, anchorY: 0.5, tra
 export const PISTOL_BULLET = BulletPool.define({ ...BULLET_LOOK, damage: 0.66 });
 export const MACHINE_GUN_BULLET = BulletPool.define({ ...BULLET_LOOK, damage: 0.2 });
 
-/** The muzzle's flash: orange, 18 ms, no halo. */
-export const MUZZLE_FLASH = Flash.define({ lifespan: 18, color: 0xffaa00, radius: 1000, glow: 0 });
+/** The muzzle's flash: orange, 18 ms, no halo; 30 px up, the gun's height (person.js muzzleHeightPx), for its shadows. */
+export const MUZZLE_FLASH = Flash.define({ lifespan: 18, color: 0xffaa00, radius: 1000, glow: 0, elevation: 30 });
 
 /** A shot's sparks, thrown along it (its direction per emit) within 10 degrees either side; gone when they land. */
 export const SHOT_SPARKS = ParticleEmitter.define({
@@ -78,8 +78,8 @@ export const DEATH_BLOOD = ParticleEmitter.define({
   stayOnTheFloor: true,
 });
 
-/** The player's muzzle flash (player.js). */
-export const PLAYER_MUZZLE_FLASH = Flash.define({ lifespan: 17, color: 0xffbb11, radius: 1581, glow: 0.5 });
+/** The player's muzzle flash (player.js), 35 px up as it is drawn. */
+export const PLAYER_MUZZLE_FLASH = Flash.define({ lifespan: 17, color: 0xffbb11, radius: 1581, glow: 0.5, elevation: 35 });
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Fire and explosions (fire.js, explosion.js)
@@ -149,8 +149,8 @@ export const BARREL_SPARKS = ParticleEmitter.define({
   despawnOnGroundContact: true,
 });
 
-/** A barrel's spark of light: its strength drawn per hit gives its reach and halo (withRadius, withGlow). */
-export const BARREL_FLASH = Flash.define({ lifespan: 18, color: 0xffee00 });
+/** A barrel's spark of light: its strength drawn per hit gives its reach and halo (withRadius, withGlow); 20 px up. */
+export const BARREL_FLASH = Flash.define({ lifespan: 18, color: 0xffee00, elevation: 20 });
 
 /** Sparks off a rock (a hit's vz per emit). */
 export const ROCK_SPARKS = ParticleEmitter.define({
@@ -183,8 +183,8 @@ export const WALL_CHIPS = ParticleEmitter.define({
   despawnOnGroundContact: true,
 });
 
-/** The short flash of a hit on a wall or a lamp post. */
-export const WALL_HIT_FLASH = Flash.define({ lifespan: 18, color: 0xffee00, radius: 707, glow: 0.1 });
+/** The short flash of a hit on a wall or a lamp post, 20 px up. */
+export const WALL_HIT_FLASH = Flash.define({ lifespan: 18, color: 0xffee00, radius: 707, glow: 0.1, elevation: 20 });
 
 /** Bark and wood chips off a tree (a hit's vz per emit), left on the floor. */
 export const TREE_CHIPS = ParticleEmitter.define({

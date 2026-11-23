@@ -73,7 +73,19 @@ fn mainVert(
   let clip = mvp * vec3<f32>(world, 1.0);
   out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);
   out.vLocal = aQuad;
-  out.vColor = vec4<f32>(rgb, instA * localUniforms.uColor.a); // the layer's alpha
+  // N-418: a frame the texture table marks additive (its second flags texel, where the table has one: the sorted halos'
+  // _lightHalo) sends its alpha negative: the fragment shaders add its colour (alpha 0 out) and read its size as coverage.
+  var weedAddSign = 1.0;
+  if (tid >= 0 && tid < lutPerRow * i32(lutSize.y) && i32(lutSize.x) > 3 * lutPerRow + 1) {
+    let weedAs = tid % lutPerRow;
+    if (weedAs < 96) {
+      let weedAf = textureLoad(uTexLut, vec2<i32>(3 * lutPerRow + 1, tid / lutPerRow), 0);
+      let weedAc = weedAs / 24;
+      let weedAv = select(select(select(weedAf.w, weedAf.z, weedAc == 2), weedAf.y, weedAc == 1), weedAf.x, weedAc == 0);
+      if (((u32(weedAv) >> u32(weedAs - 24 * weedAc)) & 1u) != 0u) { weedAddSign = -1.0; }
+    }
+  }
+  out.vColor = vec4<f32>(rgb, instA * localUniforms.uColor.a * weedAddSign); // the layer's alpha
   out.vWorld = select(world, world * uniforms.uTileWorld.z + uniforms.uTileWorld.xy, uniforms.uTileWorld.w > 0.5);
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;
@@ -84,12 +96,14 @@ fn mainVert(
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
-  let a = t.a * in.vColor.a;
-  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a, a);
+  // N-418: a negative alpha is an additive frame's: its colour added, alpha 0.
+  let ia = abs(in.vColor.a);
+  let a = select(t.a * ia, 0.0, in.vColor.a < 0.0);
+  return vec4<f32>(t.rgb * in.vColor.rgb * ia, a);
 }
 
 @fragment
 fn mainFragAdd(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
-  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a, 0.0);
+  return vec4<f32>(t.rgb * in.vColor.rgb * abs(in.vColor.a), 0.0);
 }

@@ -15,7 +15,7 @@ const { Scene, GameObject, SpriteRenderer, ShadowCaster, LightEmitter, Camera, S
  * The barrio's camera (floor drawn 0.5 as tall as wide, a px of height 0.866 px up the screen) and lighting (shadow maps for
  * the sun and the lamps, self-shadow). Nothing moves: for side-by-side pictures and compareCaptures.mjs.
  *
- * `?hour=` (default 22); `?lampShadows=` and `?sunShadows=` (lighting's: 'map', the default, or 'layer'); `?lampX=`, `?lampY=` (the lamp's
+ * `?hour=` (default 22); `?lampX=`, `?lampY=` (the lamp's
  * floor place, default 410, 460: 60 floor px in front of the wall); `?elevation=` (the bulb's height, default 50);
  * `?range=` (its radius and shadow range, default the barrio's); `?gap=` (the people's floor px in front of the wall,
  * default 25); `?zoom=` (default 3); `?house=0` (the walls alone, no volume, no owner); `?people=0` (the walls lit
@@ -32,8 +32,6 @@ const ZOOM = num('zoom', 3);
 const PEOPLE = P?.get('people') !== '0';
 const FACES = P?.get('faces') !== '0';
 const HOUSE = P?.get('house') !== '0';
-const LAMP_SHADOWS = P?.get('lampShadows') || 'map';
-const SUN_SHADOWS = P?.get('sunShadows') || 'map';
 const BACKEND = P?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 const GROUND = 0.5;
 const HEIGHT = 0.866025403784;
@@ -57,8 +55,8 @@ const TEXTURE_PX = 8; // _white
 
 export const stressSceneConfig = {
   requested: {
-    hour: HOUR, zoom: ZOOM, people: PEOPLE ? 1 : 0, faces: FACES ? 1 : 0, house: HOUSE ? 1 : 0, lampShadows: LAMP_SHADOWS,
-    sunShadows: SUN_SHADOWS, lampX: LAMP_X, lampY: LAMP_FLOOR_Y, elevation: ELEVATION, range: RANGE, backend: BACKEND,
+    hour: HOUR, zoom: ZOOM, people: PEOPLE ? 1 : 0, faces: FACES ? 1 : 0, house: HOUSE ? 1 : 0,
+    lampX: LAMP_X, lampY: LAMP_FLOOR_Y, elevation: ELEVATION, range: RANGE, backend: BACKEND,
   },
 };
 
@@ -122,8 +120,6 @@ export class WallShadowScene extends Scene {
       maxLights: 8,
       resolution: 1,
       shadowsEnabled: true,
-      sunShadows: SUN_SHADOWS,
-      lampShadows: LAMP_SHADOWS,
       selfShadow: true,
       maxShadowCastingLights: 16,
       maxShadowsPerLight: 64,

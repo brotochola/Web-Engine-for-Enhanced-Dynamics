@@ -774,7 +774,7 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   baseAmbient: 0.05,
   maxLights: 10,
   shadowsEnabled: false,
-  /** Cookie+shadow pairs for the N lights closest to the camera. Distinct from maxLights. */
+  /** The N lights nearest the view's centre that cast shadows, a tile each in the lamps' shadow map. Distinct from maxLights. */
   maxShadowCastingLights: 20,
   /** Each of those lights draws at most N in-range casters (compact order). */
   maxShadowsPerLight: 15,
@@ -795,10 +795,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxVolumeVerts: 16,
   resolution: 0.25,
   shadowResolution: 0.5,
-  /** 1 = update shadowRT every frame; N > 1 reuses last shadowRT for N-1 frames. */
+  /** 1 = the shadow maps drawn every frame; N > 1 keeps them for N-1 frames. */
   shadowUpdateInterval: 1,
-  /** Scale shadow caster budget per light dynamically based on on-screen light radius when zoomed out. */
-  adaptiveShadowBudget: true,
   /** With lighting.walls: the most vertices of a light's visibility polygon (what its sweep of the walls leaves). */
   maxPolygonVertices: 128,
   /**
@@ -807,20 +805,6 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * a diagnostic to compare the two (the same picture, more work).
    */
   keyedCasters: true,
-  /**
-   * DX-SHADOW3D: where the sun's ShadowCaster shadows are drawn. 'layer' (default): each caster's card painted on the
-   * shadows' layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes
-   * out the sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit. Any other
-   * value warns (Pixi's lighting set-up) and draws on the layer.
-   */
-  sunShadows: 'layer',
-  /**
-   * DX-SHADOW3D (F7): where the lamps' shadows are drawn. 'layer' (default): each caster stamped on the shadows' layer,
-   * stretched away from its lamp. 'map': a shadow map a lamp in the floor's terms (src/render/lampShadowMap.js, one tile
-   * each in an atlas, the lights maxShadowCastingLights picks) that takes out that lamp's light alone, with the caster's
-   * height and the lamp's (LightEmitter.elevation) in the shadow's length. Any other value warns and stamps on the layer.
-   */
-  lampShadows: 'layer',
   /**
    * DX-SHADOW3D: a render with a footprint in its sheet's json (meta.footprints) casts its solid swept north to it at
    * each cell's own height, as the light bench's heightmap did (light under a table), instead of columns down to the
@@ -834,7 +818,7 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   lampShadowTile: 'auto',
   /**
-   * E-508: with lampShadows 'map', a lamp that stays still (a street lamp) draws its volumes (VolumeShadowCaster) into its
+   * E-508: a lamp that stays still (a street lamp) draws its volumes (VolumeShadowCaster) into its
    * tile once, into a cache, and copies them each frame, until it or a volume moves; a moving one (a car's headlights)
    * draws them every frame. The volumes' draw ran every vertex of every volume once a lamp each frame.
    */
@@ -854,6 +838,11 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * (shadowSamplesOf).
    */
   shadowSamples: 5,
+  /**
+   * How much of a lamp's light its shadows take out, 0 to 1 (1, the default: all of it), as lighting.sun.shadowAlpha does
+   * for the sun. Under 1 a crowd around a lamp lets some of its light through, as the shadows' layer's stamps did.
+   */
+  lampShadowAlpha: 1,
   /**
    * E-205, tiled light culling: the side, in px of the light pass's target, of the screen tiles whose lists of lights each
    * pixel loops over, 4 to 256 (lightCullingTileSizeOf). Not a resolution: every tile lists every light that reaches it, so
@@ -939,13 +928,15 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   unshaded: false,
   /**
-   * 'add' — type 3 glows go to the lightGlows ADD mesh: over everything, after the light (nothing in front covers them).
-   * 'sorted' — the same quads join the entity list, each right after its entity's sprite (on its sort line), so it is
-   *   drawn over its own entity and whatever stands in front covers it; unshaded (DX-GLOWRADIUS: the light gradient's
-   *   frame carries DX-UNSHADED's mark), so the night does not darken a light's halo. That turns the G-buffer and the
-   *   unshaded pass on. Any other value warns (Pixi's set-up) and draws as 'add'.
+   * 'sorted' (the default since 2026-11-23) — the halos (type 3 quads) join the entity list, each right after its entity's
+   *   sprite (on its sort line), so it is drawn over its own entity and whatever stands in front covers it; unshaded
+   *   (DX-GLOWRADIUS: the compact glow's frame carries DX-UNSHADED's mark), so the night does not darken a light's halo.
+   *   That turns the G-buffer and the unshaded pass on: about 0.7 ms of GPU a frame against 'add' in Predator by night,
+   *   with and without light3d, on a GTX 1650 (E-547's compact halos; R-1876).
+   * 'add' — they go to the lightGlows ADD mesh: over everything, after the light (nothing in front covers them).
+   * Any other value warns (Pixi's set-up) and draws as 'add'.
    */
-  lightGlow: 'add',
+  lightGlow: 'sorted',
   /**
    * E-404: the lightGlows layer's resolution against the canvas, in (0, 1]: with 'add', the glows are drawn into a target
    * this share of the canvas and added to the frame once, filtered up. A halo is pure fill (flashlightStressScene: 119
@@ -992,6 +983,13 @@ export function lightGlowResolutionOf(lighting) {
 export function lightBehindWallsOf(lighting) {
   const v = lighting?.lightBehindWalls;
   if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightBehindWalls;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** lighting.lampShadowAlpha within 0..1; anything that is not a number takes the default (1). */
+export function lampShadowAlphaOf(lighting) {
+  const v = lighting?.lampShadowAlpha;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lampShadowAlpha;
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 

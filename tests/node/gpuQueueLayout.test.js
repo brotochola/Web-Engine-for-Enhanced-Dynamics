@@ -24,7 +24,7 @@ test('gpuQueue SAB views round-trip header and packed rows', () => {
   assert.ok(caps.maxStamp >= 2);
   const sab = new ArrayBuffer(computeGpuQueueBufferSize(caps));
   const views = createGpuQueueViews(sab, caps);
-  writeGpuQueueHeader(views.header, { sprite: 2, glow: 1, sun: 1, stamp: 0, cookie: 0, particle: 1 }, 0);
+  writeGpuQueueHeader(views.header, { sprite: 2, glow: 1, sun: 1, stamp: 0, particle: 1 }, 0);
   assert.equal(views.header[GPU_HDR_SPRITE], 2);
   assert.equal(GPU_SPRITE_FLOATS, 15);
   assert.equal(GPU_CASTER_LIGHT_FLOAT, 18);

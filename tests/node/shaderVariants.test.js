@@ -34,12 +34,12 @@ test('the pose variants read the previous position and draw at the pose mix, the
 });
 
 test('the additive variants write the premultiplied colour with alpha 0, the rest the base', () => {
-  const additive = '  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, 0.0);\n';
+  const additive = '  finalColor = vec4(t.rgb * vColor.rgb * abs(vColor.a), 0.0);\n';
   const sprite = readEngineShader('instancedSprite.frag.glsl');
   const spriteAdd = additiveFragGlsl(sprite);
   assert.ok(spriteAdd.includes(additive));
   assert.doesNotMatch(spriteAdd, /float a = /);
-  assert.equal(spriteAdd.replace(additive, '  float a = t.a * vColor.a;\n  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, a);\n'), sprite);
+  assert.equal(spriteAdd.replace(additive, '  float ia = abs(vColor.a);\n  float a = vColor.a < 0.0 ? 0.0 : t.a * ia;\n  finalColor = vec4(t.rgb * vColor.rgb * ia, a);\n'), sprite);
 
   const particle = readEngineShader('gpuParticle.frag.glsl');
   const particleAdd = additiveFragGlsl(particle);

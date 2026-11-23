@@ -18,7 +18,8 @@ import { ImageSource, Rectangle, Texture, TextureSource } from '../../vendor/pix
 import { proxyTexturesByPrefix } from '../atlasProxyTextures.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../frameBase.js';
 import { packAnimStartLookup } from '../gpuParticleBatch.js';
-import { TEX_LUT_RGBA_WIDTH, buildTextureLut, packTextureLutRgba, textureLutLayout } from '../instancedSpriteBatch.js';
+import { TEX_LUT_RGBA_WIDTH, buildTextureLut, lutFlagTexels, packTextureLutRgba, textureLutLayout } from '../instancedSpriteBatch.js';
+import { LIGHTING_DEFAULTS } from '../../util/configDefaults.js';
 import { packMapsTable } from '../mapsTable.js';
 import { setTwinFormat } from '../twinTexel.js';
 import { writeRgba32Float } from '../webgpu/pinGpuTexture.js';
@@ -463,10 +464,12 @@ export class PixiAssets {
     this.worker.shadowMaps.sunMapTallestPx = tallest;
     // N-111: one textureId a row would pass MAX_TEXTURE_SIZE with a big atlas (9 020 frames drew nothing on
     // SwiftShader's 8 192): past TEX_LUT_MAX_ROWS the rows hold several.
-    const layout = textureLutLayout(this.texLutCount);
+    // N-418: the sorted halos' frame adds its light (the table's additive flags texel).
+    const additive = this._additiveFrames();
+    const layout = textureLutLayout(this.texLutCount, undefined, lutFlagTexels(additive));
     this.texLutWidth = layout.width;
     this.texLutHeight = layout.height;
-    const rgba = packTextureLutRgba(this.texLut, Math.max(1, this.texLutCount));
+    const rgba = packTextureLutRgba(this.texLut, Math.max(1, this.texLutCount), undefined, additive);
     this.texLutRgba = rgba;
     this.texLutSource = PIXI.TextureSource.from({
       resource: rgba,
@@ -570,6 +573,23 @@ export class PixiAssets {
       this.texLutNeedsGpuUpload = true;
     }
     return this.mapsTableSource;
+  }
+
+  /**
+   * N-418: the frames whose colour is added, a flag a textureId, or null: the lights' halos' own frame (_lightHalo) where
+   * they join the entities (lighting.lightGlow 'sorted'), so they add their light over what is under them as the 'add'
+   * layer does, and whatever stands in front still covers them.
+   * @returns {Uint8Array|null}
+   */
+  _additiveFrames() {
+    const sorted = (this.worker.config?.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
+    const halo = sorted ? this.textures?._lightHalo : null;
+    const flat = this.flatTextures || [];
+    const id = halo ? flat.indexOf(halo) : -1;
+    if (id < 0) return null;
+    const out = new Uint8Array(flat.length);
+    out[id] = 1;
+    return out;
   }
 
   /**

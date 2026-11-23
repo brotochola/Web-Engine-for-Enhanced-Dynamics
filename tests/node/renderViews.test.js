@@ -17,7 +17,6 @@ test('each view samples its buffer; the flags read the face map and the ids map'
   // N-256 PW-6: the light pass's targets are the worker's lighting's.
   const w = {
     lighting: { faceRT: t('face'), faceIdsRT: t('ids'), lightingRT: t('light'), unshadedRT: null, lampMapRT: t('lamps') },
-    shadowRT: t('shadows'),
     sunMapRT: null,
   };
   const out = [null, null];
@@ -30,7 +29,7 @@ test('each view samples its buffer; the flags read the face map and the ids map'
   assert.deepEqual(names(RENDER_VIEW.UNSHADED), [null, null]);
   assert.deepEqual(names(RENDER_VIEW.LAMP_MAP), ['lamps', null]);
   assert.deepEqual(names(RENDER_VIEW.FINAL), [null, null]);
-  assert.deepEqual(availableRenderViews(w), [0, 1, 2, 3, 4, 5, 7, 9]);
+  assert.deepEqual(availableRenderViews(w), [0, 1, 2, 3, 4, 5, 8]);
   assert.deepEqual(availableRenderViews({}), [0]);
   // DBG-7: the tiles view reads the tiles' texture once the light pass by tiles has made it.
   const tiles = t('tiles');
@@ -44,7 +43,7 @@ test('each view samples its buffer; the flags read the face map and the ids map'
   assert.deepEqual(renderViewTextures(gpu, RENDER_VIEW.LIGHT_TILES, out).map((x) => (x ? x.name : null)), [null, null], 'WebGPU: no grid yet');
   gpu.lighting.lightTiles.texWidth = 64;
   assert.deepEqual(renderViewTextures(gpu, RENDER_VIEW.LIGHT_TILES, out).map((x) => (x ? x.name : null)), ['tiles', null], 'WebGPU: laid out');
-  assert.deepEqual(availableRenderViews(w), [0, 1, 2, 3, 4, 5, 7, 9, 10]);
+  assert.deepEqual(availableRenderViews(w), [0, 1, 2, 3, 4, 5, 8, 9]);
 });
 
 test('the production stub exports what renderViews.js does, and draws no view', () => {
@@ -63,7 +62,6 @@ test('the worker: setRenderView takes a view only where its buffer exists, and m
   px.lighting.faceRT = null;
   px.lighting.faceIdsRT = null;
   px.lighting.unshadedRT = null;
-  px.shadowRT = null;
   px.sunMapRT = null;
   px.lighting.lampMapRT = null;
 

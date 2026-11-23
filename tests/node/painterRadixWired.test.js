@@ -178,7 +178,8 @@ async function initPreRender(pre, withPainter) {
       worldHeight: 4000,
       renderer: { ySort: true },
       preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' },
-      lighting: { enabled: false },
+      // The halos on the lightGlows layer, as Pixi's half below has them (_lightGlowAdd).
+      lighting: { enabled: false, lightGlow: 'add' },
       wasm: { ...WASM_DEFAULTS },
     },
     globalEntityCount: 64,
@@ -267,7 +268,8 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
       worldHeight: 4000,
       renderer: { ySort: true },
       preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' },
-      lighting: { enabled: false },
+      // The halos on the lightGlows layer, as Pixi's half below has them (_lightGlowAdd).
+      lighting: { enabled: false, lightGlow: 'add' },
       wasm: { ...WASM_DEFAULTS },
     },
     globalEntityCount: 64,
@@ -468,7 +470,7 @@ function pixiScene() {
       bullet: { maxBullets: 0 },
       physics: { maxJoints: 0 },
       spatial: { cellSize: 100, maxNeighbors: 8, maxEntitiesPerCell: 64, rowsPerBlock: 2, numberOfSpatialWorkers: 1 },
-      lighting: { enabled: false, maxLights: 10, shadowsEnabled: false, maxFlashes: 0 },
+      lighting: { enabled: false, lightGlow: 'add', maxLights: 10, shadowsEnabled: false, maxFlashes: 0 },
       logic: { staggeredUpdates: false },
       debug: { maxDebugDrawEntries: 1 },
       navigation: { enabled: false },

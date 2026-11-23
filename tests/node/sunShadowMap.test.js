@@ -147,10 +147,10 @@ test('a sun ray that lands past the map\'s edge reads nothing there: lit, in bot
   }
 });
 
-test('lighting.sunShadows and lampShadows are keys, the layer by default', () => {
-  assert.equal(LIGHTING_DEFAULTS.sunShadows, 'layer');
-  assert.equal(LIGHTING_DEFAULTS.lampShadows, 'layer');
-  assert.deepEqual(unknownConfigKeys({ lighting: { sunShadows: 'map' } }), []);
+test('E-531: the shadow maps are the one way: lighting.sunShadows and lampShadows are no keys', () => {
+  assert.equal('sunShadows' in LIGHTING_DEFAULTS, false);
+  assert.equal('lampShadows' in LIGHTING_DEFAULTS, false);
+  assert.deepEqual(unknownConfigKeys({ lighting: { sunShadows: 'map', lampShadows: 'map' } }).map((k) => k.path), ['lighting.sunShadows', 'lighting.lampShadows']);
 });
 
 test('lighting.selfShadow: the light pass steps towards the sun over the face map, only with faces', async () => {
@@ -199,13 +199,9 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
       'if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {',
     ),
   );
-  // Drawn on the shadows' layer: the shadow's colour and opacity, no height.
-  const flat = sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl'), SUN_MAP_COLUMNS, { heights: false });
-  assert.match(flat, /vColor = vec4\(0\.0, 0\.0, 0\.0, uSun\.w \* castOpacity\);/);
-  assert.doesNotMatch(flat, /vSunZ/);
 });
 
-test('WebGPU: the map\'s and the solids\' WGSL come from the layer shadows\' WGSL as the GLSL ones do', async () => {
+test('WebGPU: the map\'s cards\' and columns\' WGSL come from the shadow WGSL as the GLSL ones do', async () => {
   const { SUN_MAP_COLUMNS, sunMapWgsl, sunMapColumnsWgsl } = await import('../../src/render/sunShadowMap.js');
   const { sunShadowGpuProgram } = await import('../../src/render/webgpu/instancedSpriteWgsl.js');
   const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');
@@ -218,8 +214,6 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the layer shadows\' WGS
     map.includes('    if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {'),
     'a render\'s frame skips its card unless it casts one',
   );
-  const cards = sunMapWgsl(wgsl, { heights: false });
-  assert.doesNotMatch(cards, /vSunZ|mainFragMap/, 'the solids\' cards keep the shadow program\'s colour and fragment');
   const columns = sunMapColumnsWgsl(wgsl);
   assert.match(columns, /@location\(0\) aCell: vec4<f32>,/);
   assert.match(columns, /@location\(12\) aBlock: vec4<f32>,/);
@@ -229,9 +223,6 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the layer shadows\' WGS
   assert.match(columns, /@group\(2\) @binding\(7\) var uFoot: texture_2d<f32>;/);
   assert.ok(columns.includes('fn footprintNorth(slot: i32, x: f32) -> f32 {'));
   assert.equal(columns.match(/fn mainVert\(/g).length, 1);
-  const flat = sunMapColumnsWgsl(wgsl, SUN_MAP_COLUMNS, { heights: false });
-  assert.ok(flat.includes('out.vColor = vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w * castOpacity);'));
-  assert.doesNotMatch(flat, /vSunZ/);
   // The columns read the atlas and the twin page in the vertex stage: their layout says so.
   const GpuProgram = { from: (o) => o };
   const p = sunShadowGpuProgram(GpuProgram, columns, 'mainFragMap', 'c', { maps: true });

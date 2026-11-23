@@ -27,8 +27,6 @@ export const RES = queryNumber('res', 0.5);
 /** `?hour=`: the sun's hour (default 22, night: the lamps show the normals). */
 export const HOUR = queryNumber('hour', 22);
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
-/** `?sunShadows=map`: the sun's shadows from its shadow map (DX-SHADOW3D); default 'layer'. */
-export const SUN_SHADOWS = WEED.params?.get('sunShadows') === 'map' ? 'map' : 'layer';
 /** `?selfShadow=1`: lighting.selfShadow (DX-SELFSHADOW). */
 export const SELF_SHADOW = WEED.params?.get('selfShadow') === '1';
 /** `?gbuffer=pass|mrt`: lighting.gbuffer (the face map and the entity ids map a pass each, or both in one); left out, the default. */
@@ -38,7 +36,7 @@ const H = 1000;
 const SHAPES = ['sphere', 'pillar', 'crate'];
 
 export const stressSceneConfig = {
-  requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND, sunShadows: SUN_SHADOWS, selfShadow: SELF_SHADOW ? 1 : 0, gbuffer: GBUFFER ?? 'default' },
+  requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND, selfShadow: SELF_SHADOW ? 1 : 0, gbuffer: GBUFFER ?? 'default' },
 };
 
 /** A shape of tests/bench/stressScenes/maps (ray-traced at pitch 45 from 8 directions: makeShapes.mjs), turned as it faces. */
@@ -107,7 +105,6 @@ export class SpriteMapsStressScene extends Scene {
       maxLights: Math.max(16, LIGHTS + 4),
       resolution: RES,
       shadowsEnabled: true,
-      sunShadows: SUN_SHADOWS,
       selfShadow: SELF_SHADOW,
       ...(GBUFFER ? { gbuffer: GBUFFER } : {}),
       sun: { enabled: true, angle: 135, elevation: 40, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },

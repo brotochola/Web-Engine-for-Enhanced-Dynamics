@@ -1,9 +1,8 @@
-// OL-5: with lighting.lampShadows 'map', a lamp's tile in the lamps' map came from the ids pre-render publishes, and
-// it published them only in a frame with a stamp row (a sprite caster stamped for some lamp). A scene whose only casters
-// in the lamps' reach are volumes (a street of houses with nobody near) gave no lamp a tile, and the houses cast no lamp
-// shadow at all. On real workers: pre-render names and orders the casting lamps without a stamp row when the lamps cast
-// into their map, and only then; Pixi gives them tiles when a stamp row or a casting volume is there, and no tile with
-// neither (an empty tile is read by every pixel of its lamp).
+// OL-5: a lamp's tile in the lamps' map came from the ids pre-render publishes, and it published them only in a frame with
+// a stamp row (a sprite caster stamped for some lamp). A scene whose only casters in the lamps' reach are volumes (a
+// street of houses with nobody near) gave no lamp a tile, and the houses cast no lamp shadow at all. On real workers:
+// pre-render names and orders the casting lamps without a stamp row; Pixi gives them tiles when a stamp row or a casting
+// volume is there, and no tile with neither (an empty tile is read by every pixel of its lamp).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -44,10 +43,9 @@ function queue() {
 }
 
 /** A pre-render worker ready to choose its casting lamps: the fields its init gives it from a scene with shadows. */
-async function preRender(lampShadows) {
+async function preRender() {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-  pre.config = { ...(pre.config || {}), lighting: { lampShadows } };
-  pre._lampMapCasts = lampShadows === 'map';
+  pre.config = { ...(pre.config || {}), lighting: {} };
   pre._queryLightEmitter = 1;
   pre._stampLights = Array.from({ length: N }, () => ({
     id: 0, x: NaN, y: NaN, intensity: NaN, rangeSq: NaN, sqrtI: NaN, distSq: NaN, maxShadows: 0,
@@ -75,10 +73,10 @@ async function withLights(run) {
   }
 }
 
-test('OL-5: with the lamps\' map, pre-render names the casting lamps in a frame with no stamp row, the nearest first', async () => {
+test('OL-5: pre-render names the casting lamps in a frame with no stamp row, the nearest first', async () => {
   world();
   await withLights(async () => {
-    const pre = await preRender('map');
+    const pre = await preRender();
     const { caps, views } = queue();
     pre.gpuQueueCaps = caps;
     // No sun caster: nothing to stamp.
@@ -98,7 +96,7 @@ test('OL-5: a lamp near the cut fades in a frame with no stamp row too', async (
   // The second nearest at 280 px, the first left out at 300: inside the band of 60 px before the cut.
   Transform.x[2] = 120;
   await withLights(async () => {
-    const pre = await preRender('map');
+    const pre = await preRender();
     const { caps, views } = queue();
     pre.gpuQueueCaps = caps;
     const named = pre._writeStampLightIds(views, pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1));
@@ -106,19 +104,6 @@ test('OL-5: a lamp near the cut fades in a frame with no stamp row too', async (
     assert.deepEqual(Array.from(views.stampLightIds.subarray(0, named)), [1, 2]);
     assert.equal(views.stampLightFade[0], 1);
     assert.ok(Math.abs(views.stampLightFade[1] - 20 / 60) < 1e-5, `fade ${views.stampLightFade[1]}`);
-  });
-});
-
-test('OL-5: with the shadows\' layer, a frame with no stamp row names no lamp, as before', async () => {
-  world();
-  await withLights(async () => {
-    const pre = await preRender('layer');
-    const { caps, views } = queue();
-    pre.gpuQueueCaps = caps;
-    const stamped = pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
-    assert.equal(pre._writeStampLightIds(views, stamped), 0);
-    // And with a stamp row it names them, in either mode.
-    assert.equal(pre._writeStampLightIds(views, 1), CAST_LIGHTS);
   });
 });
 
@@ -161,4 +146,30 @@ test('OL-5: Pixi gives the named lamps tiles for a stamp row or a casting volume
   px.lampMap.readTiles();
   assert.equal(px.lampMap.tileCount, 2);
   assert.equal(px.lighting.lampTileOf[2], 1);
+});
+
+test('N-413: zoomed out each casting lamp keeps fewer casters, 5 % of its pool in shadow texels (the kernel fades the cut)', async () => {
+  world();
+  await withLights(async () => {
+    const pre = await preRender();
+    const { caps, views } = queue();
+    pre.gpuQueueCaps = caps;
+    pre.maxShadowsPerLight = 512;
+    pre.config.lighting.shadowResolution = 0.5;
+    // At zoom 1 (0.5 texels a px) the lamps keep maxShadowsPerLight.
+    pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
+    assert.deepEqual(pre._stampLights.slice(0, CAST_LIGHTS).map((L) => L.maxShadows), [0, 0]);
+    // At zoom 0.25 (0.125 texels a px): a pool of 200 px keeps round(pi 200² 0.125² 0.05) = 98.
+    pre._frameCameraZoom = 0.25;
+    pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
+    assert.deepEqual(pre._stampLights.slice(0, CAST_LIGHTS).map((L) => L.maxShadows), [98, 98]);
+    // Never under 16, never over maxShadowsPerLight.
+    pre._frameCameraZoom = 0.05;
+    pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
+    assert.deepEqual(pre._stampLights.slice(0, CAST_LIGHTS).map((L) => L.maxShadows), [16, 16]);
+    pre.maxShadowsPerLight = 40;
+    pre._frameCameraZoom = 0.25;
+    pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
+    assert.deepEqual(pre._stampLights.slice(0, CAST_LIGHTS).map((L) => L.maxShadows), [40, 40]);
+  });
 });

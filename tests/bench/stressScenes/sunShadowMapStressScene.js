@@ -11,7 +11,7 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
 /**
  * The sun's shadow map and its cache (DX-SHADOW3D F6, plan §6.6 and §10): a farm town by day, seen by the light bench's
  * oblique camera. Blocks of still renders (tables, beds, shelves, tanks, coops, cows: static scenery) between roads where
- * cars drive east and west, every one of them casting into lighting.sunShadows 'map'. The still part is what a cache of the
+ * cars drive east and west, every one of them casting into the sun's map. The still part is what a cache of the
  * map draws once; the cars are what it adds each frame. The whole world is in view (zoom 0.5 on the bench's 1920 × 1080
  * canvas), so the load is the knob and does not drift.
  *
@@ -37,8 +37,7 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
  *   cycle the run starts at 13 h: keep the day long enough for the warm-up and the window to end before the evening
  *   (24 / D game hours a real minute: D ≥ 2 for 10 s + 10 s, D ≥ 4 for a headed 25 s + 18 s).
  * - `?hour=` (default 16, as the light bench; 13 with a day cycle), `?backend=webgl|webgpu` (default webgl).
- * - `?lamps=` (E-386 c; default 0): that many raised lamps on a grid, casting into the lamps' map (lighting.lampShadows
- *   'map') over the same renders, each through its columns or card as `?kind=` says; with `?hour=22` the night, the
+ * - `?lamps=` (E-386 c; default 0): that many raised lamps on a grid, casting into the lamps' map over the same renders, each through its columns or card as `?kind=` says; with `?hour=22` the night, the
  *   lamps alone. `?lampElevation=` their height (default 110 px). Left at 0, the scene is as its sittings ran it.
  */
 const W = 3840;
@@ -90,7 +89,6 @@ const lighting = {
   resolution: 0.5,
   shadowResolution: MAP_RES,
   shadowsEnabled: true,
-  sunShadows: 'map',
   // Shadows as dark as the light bench's (the owner approved them): a strong alpha, long shadows not lightened.
   sun: {
     enabled: true,
@@ -102,7 +100,6 @@ const lighting = {
   },
 };
 if (LAMPS > 0) {
-  lighting.lampShadows = 'map';
   lighting.maxLights = Math.max(64, LAMPS + 8);
   lighting.maxShadowCastingLights = LAMPS;
 }

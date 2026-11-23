@@ -54,7 +54,7 @@ test('Sun.shadowOpacity is 0 with no sun, the sun off, and at or under the thres
 test('the pass reads the one function', () => {
   // N-256 PW-8: the casters' pass is the shadow maps' (src/render/pixi/shadowMaps.js).
   const shadowMaps = fs.readFileSync(new URL('../../src/render/pixi/shadowMaps.js', import.meta.url), 'utf8');
-  assert.match(shadowMaps, /u\.uSun\[3\] = Sun\.shadowOpacity;/);
+  assert.match(shadowMaps, /Sun\.shadowOpacity > 0/);
 });
 
 test('alphaFactor: shadow, night and the ramp, both ways', () => {
@@ -93,7 +93,8 @@ test('every instanced sprite and mesh fill shader, both dialects, takes the laye
   for (const name of ['instancedSprite', 'instancedSpritePose', 'colliderFill', 'meshUvFill']) {
     const glsl = read(`${name}.vert.glsl`);
     assert.match(glsl, /uniform vec4 uColor;/, name);
-    assert.match(glsl, /vColor = vec4\(rgb, instA \* uColor\.a\);/, name);
-    assert.match(read(`${name}.wgsl`), /vec4<f32>\(rgb, instA \* localUniforms\.uColor\.a\)/, name);
+    // N-418: the sprites' times the additive frame's sign.
+    assert.match(glsl, /vColor = vec4\(rgb, instA \* uColor\.a( \* weedAddSign)?\);/, name);
+    assert.match(read(`${name}.wgsl`), /vec4<f32>\(rgb, instA \* localUniforms\.uColor\.a( \* weedAddSign)?\)/, name);
   }
 });

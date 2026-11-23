@@ -49,7 +49,8 @@ async function initPreRender(pre) {
       worldHeight: 4000,
       renderer: { ySort: true },
       preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' },
-      lighting: { enabled: false },
+      // The glow rows apart from the sprites' (the lightGlows layer), as the counts below have them.
+      lighting: { enabled: false, lightGlow: 'add' },
       wasm: { ...WASM_DEFAULTS },
     },
     globalEntityCount: ENTITIES,

@@ -283,7 +283,9 @@ export class PredatorScene extends WEED.Scene {
       : { floorScaleY: predatorPositiveParam('groundScaleY', 0.7) },
 
     lighting: {
-      lightGlow: 'add',
+      // The halos drawn with the entities, right after their own sprite (the engine's default); `?lightGlow=add`: on the
+      // lightGlows layer over everything, to weigh the two.
+      lightGlow: predatorSearchParam('lightGlow') === 'add' ? 'add' : 'sorted',
       enabled: true,
       baseAmbient: 0, // Minimum light at night (pitch black without lights)
       shadowsEnabled: true,
@@ -301,17 +303,14 @@ export class PredatorScene extends WEED.Scene {
       // `?shadowSamples=<1..9>` (how soft the shadow maps' edges are) and `?lightCullingTileSize=<px>` (the light pass's
       // culling tiles), to compare their cost; without them the engine's defaults.
       ...(predatorSearchParam('shadowSamples') != null ? { shadowSamples: predatorNumberParam('shadowSamples', 5) } : {}),
+      // `?lampShadowAlpha=<0..1>`: how much of a lamp's light its shadows take out (1, the engine's, without it).
+      ...(predatorSearchParam('lampShadowAlpha') != null ? { lampShadowAlpha: predatorNumberParam('lampShadowAlpha', 1) } : {}),
       ...(predatorSearchParam('lightCullingTileSize') != null
         ? { lightCullingTileSize: predatorNumberParam('lightCullingTileSize', 16) }
         : {}),
-      // ?light3d=1: the sun's shadow map (it takes out the sun alone and falls on what has height), a shadow map a lamp
-      // (the lamps light each other's shadows, the bulbs' heights in the shadows' lengths), and self-shadow.
-      // maxVolumes: the houses' boxes (shadowCaster.setBox) need their room, one a house of the pool.
-      ...(LIGHT3D ? { sunShadows: 'map', lampShadows: 'map', selfShadow: true, maxVolumes: 2000 } : {}),
-      // The 3D light's pieces one by one, to weigh them (light3d's cost, and its shadow maps on art without maps):
-      // `?sunShadows=map|layer`, `?lampShadows=map|layer` in either mode, `?selfShadow=0`.
-      ...(predatorSearchParam('sunShadows') ? { sunShadows: predatorSearchParam('sunShadows') } : {}),
-      ...(predatorSearchParam('lampShadows') ? { lampShadows: predatorSearchParam('lampShadows') } : {}),
+      // ?light3d=1: self-shadow. maxVolumes: the houses' boxes (shadowCaster.setBox) need their room, one a house of the
+      // pool. `?selfShadow=0` takes self-shadow out, to weigh it.
+      ...(LIGHT3D ? { selfShadow: true, maxVolumes: 2000 } : {}),
       ...(predatorSearchParam('selfShadow') === '0' ? { selfShadow: false } : {}),
       // No walls here (nothing calls shadowCaster.setWall). With walls: true, any camera, the walls' sweep and its budget.
       // E-529: `?walls=1` turns them on, so each light that casts gets a neighbour list over its shadows' reach.
@@ -324,9 +323,8 @@ export class PredatorScene extends WEED.Scene {
         elevation: 45, // Degrees above horizon (0=horizon, 90=overhead)
         intensity: 1, // Light intensity (0-1), affects ambient brightness
         color: 0xffffff, // Sun color (warm white default)
-        // Base darkness of sun-cast shadows (0-1), as dark as the light bench's and long shadows not lightened, in both
-        // modes: the classic one (the shadows' layer) at 0.25 with long shadows lightened read 0.09 to 0.17 of darkness,
-        // against light3d's 0.6 (the owner, 2026-11-19: "muy tenues").
+        // How much of the sun a shadow takes out (0-1), as dark as the light bench's: the old 0.25, long shadows lightened,
+        // read 0.09 to 0.17 of darkness (the owner, 2026-11-19: "muy tenues").
         shadowAlpha: 0.6,
         shadowStretchAlphaFactor: 0,
         startHour: 12, // Starting hour for day cycle (0-24)

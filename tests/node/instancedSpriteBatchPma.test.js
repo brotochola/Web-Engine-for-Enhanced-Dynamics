@@ -13,23 +13,25 @@ const wgsl = readEngineShader('instancedSprite.wgsl');
 const packContext = readFileSync(join(dir, '../../src/render/gpuQueueLayout.js'), 'utf8');
 
 test('normal fragment scales PMA rgb by instance alpha without re-multiplying tex.a', () => {
-  assert.match(wgsl, /let a = t\.a \* in\.vColor\.a;/);
+  // N-418: |alpha| scales the colour; a negative one (an additive frame) writes alpha 0.
+  assert.match(wgsl, /let ia = abs\(in\.vColor\.a\);/);
+  assert.match(wgsl, /let a = select\(t\.a \* ia, 0\.0, in\.vColor\.a < 0\.0\);/);
   assert.match(
     wgsl,
-    /return vec4<f32>\(t\.rgb \* in\.vColor\.rgb \* in\.vColor\.a, a\);/
+    /return vec4<f32>\(t\.rgb \* in\.vColor\.rgb \* ia, a\);/
   );
   assert.doesNotMatch(wgsl, /finalColor = c;/);
 });
 
 test('sprite fragment blends; it does not discard', () => {
   assert.match(src, /fragEntry = 'mainFrag'/);
-  assert.match(wgsl, /fn mainFrag\(in: VertexOut\)[\s\S]*?return vec4<f32>\(t\.rgb \* in\.vColor\.rgb \* in\.vColor\.a, a\);/);
+  assert.match(wgsl, /fn mainFrag\(in: VertexOut\)[\s\S]*?return vec4<f32>\(t\.rgb \* in\.vColor\.rgb \* ia, a\);/);
   assert.doesNotMatch(wgsl, /fn mainFrag\(in: VertexOut\)[\s\S]*?discard/);
   assert.doesNotMatch(wgsl, /aInstAlphaCut/);
 });
 
 test('additive fragment scales PMA rgb by instance alpha, alpha forced 0', () => {
-  assert.match(wgsl, /return vec4<f32>\(t\.rgb \* in\.vColor\.rgb \* in\.vColor\.a, 0\.0\);/);
+  assert.match(wgsl, /return vec4<f32>\(t\.rgb \* in\.vColor\.rgb \* abs\(in\.vColor\.a\), 0\.0\);/);
 });
 
 test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
@@ -146,8 +148,8 @@ test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
     readEngineShader('instancedSprite.frag.glsl'),
     readEngineShader('instancedSpriteAdditive.frag.glsl'),
   ].join('\n');
-  assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
-  assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, 0\.0\);/);
+  assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* ia, a\);/);
+  assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* abs\(vColor\.a\), 0\.0\);/);
   assert.match(src, /glProgramFrom/);
   assert.match(src, /useWebGpu = true/);
 });

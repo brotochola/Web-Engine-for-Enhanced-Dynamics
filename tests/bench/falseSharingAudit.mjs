@@ -181,7 +181,6 @@ export const WRITERS = {
   'block.emitLastTexture': { what: 'texture each entity last drew', w: [c('preRender', 'entity', 'wasm/preRenderEmit.c:680', 'every emitted sprite, also unchanged')], r: [c('pixi', 'none', 'src/workers/pixiWorker.js:9319', 'bound, no read found')] },
   'block.emit*': { w: [c('preRender', 'entity', 'src/util/wasmMemoryMap.js:149', 'pre-render\'s emit state')], r: [] },
   'block.stamp*': { w: [c('preRender', 'entity', 'src/util/wasmMemoryMap.js:220')], r: [] },
-  'block.cookieQueue': { w: [c('preRender', 'frame', 'src/util/wasmMemoryMap.js:238')], r: [c('pixi', 'frame')] },
   'block.sway*': { w: [c('particle', 'entity', 'src/util/wasmMemoryMap.js:246')], r: [] },
   'block.pixi*': { w: [c('pixi', 'entity', 'src/util/wasmMemoryMap.js:265')], r: [] },
   'block.custom*': { w: [c('preRender', 'entity', 'src/util/wasmMemoryMap.js:195')], r: [c('pixi', 'entity')] },

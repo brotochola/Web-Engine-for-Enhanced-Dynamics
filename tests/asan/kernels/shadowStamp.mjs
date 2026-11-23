@@ -117,7 +117,7 @@ async function stampCall(ctx, S, f) {
   }
   const stamp = session.alloc(Float32Array, cap * df, 'stamp rows', f.productStamp ? f.productStamp * SF : 0);
   const lightIdx = f.noLightIdx ? null : session.alloc(Uint16Array, cap, 'stamp light index', f.productStamp ?? 0);
-  const scratch = placedViews(session, placed, ['stampLights', 'stampTable', 'cookieQueue']);
+  const scratch = placedViews(session, placed, ['stampLights', 'stampTable']);
   const run = (fn, fill) => {
     for (const v of scratch) v.fill(fill);
     bytesOf(stamp).fill(0xa5);

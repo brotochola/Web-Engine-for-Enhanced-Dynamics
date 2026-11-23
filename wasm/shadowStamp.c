@@ -30,7 +30,11 @@
    build skips its pass over the rows (grid_from_xy), and a grid that clamps nothing bins four casters at a time.
    N-330: after a caster's maxShadowsPerEntity pairs its record keeps the nearest distance left out (a light that kept
    the caster but is past its cut), which fades the row of the last light shown (cut_fade): a caster crossing the cut
-   loses or gains that shadow gradually. */
+   loses or gains that shadow gradually.
+   N-413: so does a caster crossing a light's maxShadowsPerLight cut. Each light keeps the distance of its nearest
+   candidate left out (the light table's twelfth double, written here), and every row carries its fade in its light vec4's
+   w (1 for none; the lamps' map multiplies the caster's opacity by it): that light's cut fade times N-330's. The intensity
+   lane keeps its folded value (the shadows' layer read it; the lamps' map puts the row's tile there). */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -51,7 +55,9 @@ enum {
   SLOT_COUNT
 };
 
-#define LIGHT_DOUBLES 11
+#define LIGHT_DOUBLES 12
+/* N-413: a light's nearest candidate left out at its maxShadowsPerLight cut, squared, as a float (infinity: none). */
+#define L_NEXT2 11
 
 /* ECMAScript ToInt32 (V8's DoubleToInt32): in range a truncation, else the low 32 bits. */
 INLINE int32_t js_to_int32(double x) {
@@ -535,9 +541,9 @@ INLINE int row_kind(uint32_t sf, uint32_t df, uint32_t lightAt) {
   return ROW_ANY;
 }
 
-/* A light's vec4 as the stamp rows hold it: x, y, intensity and rangeSq as float. */
+/* A light's vec4 as the stamp rows hold it: x, y and intensity as float, then the row's fade (N-413: 1 for none). */
 INLINE v128_t light_vec(const double *L) {
-  return wasm_f32x4_make((float)L[0], (float)L[1], (float)L[2], (float)L[3]);
+  return wasm_f32x4_make((float)L[0], (float)L[1], (float)L[2], 1.0f);
 }
 
 /* One stamp row: caster row s with light vec4 lv (kind: row_kind's). A keyed row in fixed stores (the caster's floats
@@ -606,14 +612,44 @@ INLINE double cone_intensity(double dx, double dy, double intensity, const doubl
    slot `next`, squared distances as floats): min(1, (dNext - dLast) / (0.2 dNext)) on the distances, so 0 where the two
    are as near, the moment they swap places, and 1 from 20 % nearer. That is 1 whenever dLast² <= 0.64 dNext², tested
    first without the roots (most casters; none left out is an infinite next); 1 on a NaN. */
-INLINE double cut_fade(uint64_t last, uint64_t next) {
-  const double dl2 = pair_dist(last);
-  const double dn2 = pair_dist(next);
+INLINE double dist_cut_fade(double dl2, double dn2) {
   if (!(dl2 > 0.64 * dn2)) return 1.0;
   const double dl = __builtin_sqrt(dl2);
   const double dn = __builtin_sqrt(dn2);
   const double f = (dn - dl) / (0.2 * dn);
   return f < 1.0 ? f : 1.0;
+}
+
+INLINE double cut_fade(uint64_t last, uint64_t next) {
+  return dist_cut_fade(pair_dist(last), pair_dist(next));
+}
+
+/* N-413: a light's nearest candidate left out once its kept are order[0..lim) of the m gathered: the smallest float
+   distance of the ones not kept, as the reference takes it (a NaN distance is never the smallest, and a selection over
+   NaNs keeps what it keeps). The kept are marked in d64 (their double distances, read before this), NaN. */
+INLINE double next_left_out(const float *dist, double *d64, const uint32_t *order, uint32_t m, uint32_t lim) {
+  for (uint32_t k = 0; k < lim; k++) d64[order[k]] = __builtin_nan("");
+  float next = __builtin_inff();
+  for (uint32_t p = 0; p < m; p++) {
+    if (d64[p] == d64[p] && dist[p] < next) next = dist[p];
+  }
+  return (double)next;
+}
+
+/* N-413: whether any of the n held float distances is NaN (the ring walk's: such a light takes the gather). */
+INLINE int any_nan(const float *dist, uint32_t n) {
+  for (uint32_t k = 0; k < n; k++) {
+    if (dist[k] != dist[k]) return 1;
+  }
+  return 0;
+}
+
+/* N-413: the light cut's fade into the w of rows [from, to) whose kept distances are kd[0..): 1 needs no store. */
+INLINE void fade_rows(float *stamp, uint32_t df, uint32_t lightAt, int32_t from, int32_t to, const float *kd, double next2) {
+  for (int32_t r = from; r < to; r++) {
+    const double f = dist_cut_fade((double)kd[r - from], next2);
+    if (f < 1.0) stamp[(uint32_t)r * df + lightAt + 3] = (float)f;
+  }
 }
 
 /* appendStampedCasters for one light vec4 lv (made once for the light). */
@@ -654,12 +690,14 @@ INLINE int32_t append_rows_cone(float *dst, uint32_t df, int32_t out, const floa
    intensity row by row), and their light index. Returns the new cursor. */
 INLINE int32_t stamp_light_rows(float *stamp, uint32_t df, int32_t cursor, const float *sun, uint32_t sf,
                                 const uint32_t *keep, uint32_t n, int32_t cap, uint32_t lightAt, int folded, double lx,
-                                double ly, double intensity, double rangeSq, const double *L, uint16_t *stampLightIdx,
-                                int32_t i) {
-  const v128_t lv = wasm_f32x4_make((float)lx, (float)ly, (float)intensity, (float)rangeSq);
+                                double ly, double intensity, const double *L, uint16_t *stampLightIdx, int32_t i,
+                                const float *kd, double next2) {
+  const v128_t lv = wasm_f32x4_make((float)lx, (float)ly, (float)intensity, 1.0f);
   const int32_t written = folded
     ? append_rows_cone(stamp, df, cursor, sun, sf, keep, n, lv, cap, lightAt, lx, ly, intensity, L)
     : append_rows(stamp, df, cursor, sun, sf, keep, n, lv, cap, lightAt);
+  /* N-413: past the light's cut, its kept (kd their float distances, in keep's order) near it fade. */
+  if (kd) fade_rows(stamp, df, lightAt, cursor, written, kd, next2);
   if (stampLightIdx) for (int32_t k = cursor; k < written; k++) stampLightIdx[k] = (uint16_t)i;
   return written;
 }
@@ -674,6 +712,9 @@ INLINE int32_t caster_row(float *stamp, uint32_t df, int32_t cursor, const float
   const int32_t li = pair_light(p);
   const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
   v128_t lv = table ? wasm_v128_load(lvt + 4 * (uint32_t)li) : light_vec(L);
+  /* N-413: the row's w, that light's cut fade times N-330's. */
+  const double w = dist_cut_fade(pair_dist(p), L[L_NEXT2]) * fade;
+  if (w < 1.0) lv = wasm_f32x4_replace_lane(lv, 3, (float)w);
   if (fade < 1.0) {
     lv = wasm_f32x4_replace_lane(lv, 2, (float)faded_intensity((double)s[0] - L[0], (double)s[1] - L[1], L[2], L, fade));
   } else if (folded && (L[7] > -1.0 || L[10] < 1.0)) {
@@ -943,6 +984,8 @@ int32_t stamp_light_range(uint32_t table) {
   int anyFolded = 0;
   for (int32_t i = begin; i < capL && (maxPE > 0 || cursor < cap); i += stride) {
     const double *L = lights + (uint32_t)i * LIGHT_DOUBLES;
+    /* N-413: none left out until its selection says otherwise (its rows read it, through the records too). */
+    ((double *)L)[L_NEXT2] = __builtin_inf();
     const double lx = L[0];
     const double ly = L[1];
     const double intensity = L[2];
@@ -965,14 +1008,19 @@ int32_t stamp_light_range(uint32_t table) {
     /* E-315: a small budget walks its cells nearest first (ring_select); a tie at its cut takes the gather below. */
     if (knn && lim > 0 && lim <= KNN_MAX_LIM && lx >= -KNN_LIGHT_MAX && lx <= KNN_LIGHT_MAX && ly >= -KNN_LIGHT_MAX &&
         ly <= KNN_LIGHT_MAX) {
+      /* N-413: lim + 1 held, so a light past its cut knows its nearest candidate left out (the last held); one that ties
+         the last kept takes the gather, which decides that tie as it always did. */
       const int32_t got = cone
-        ? ring_select(gridStarts, px, py, g.minX, g.minY, g.gw, g.gh, lx, ly, rangeSq, L, 1, lim, dist, order)
-        : ring_select(gridStarts, px, py, g.minX, g.minY, g.gw, g.gh, lx, ly, rangeSq, L, 0, lim, dist, order);
-      if (got >= 0) {
-        const uint32_t n = (uint32_t)got >> 1;
-        const int over = got & 1;
+        ? ring_select(gridStarts, px, py, g.minX, g.minY, g.gw, g.gh, lx, ly, rangeSq, L, 1, lim + 1, dist, order)
+        : ring_select(gridStarts, px, py, g.minX, g.minY, g.gw, g.gh, lx, ly, rangeSq, L, 0, lim + 1, dist, order);
+      const uint32_t held = got >= 0 ? (uint32_t)got >> 1 : 0u;
+      const int over = held > (uint32_t)lim;
+      if (got >= 0 && !(over && (dist[lim - 1] == dist[lim] || any_nan(dist, held)))) {
+        const uint32_t n = over ? (uint32_t)lim : held;
         if (n == 0) continue;
+        const double next2 = over ? (double)dist[lim] : __builtin_inf();
         if (maxPE > 0) {
+          ((double *)L)[L_NEXT2] = next2;
           /* Each kept caster into its own slots, in any order (E-133), with the gather's double distance. */
           for (uint32_t k = 0; k < n; k++) {
             const uint32_t p = order[k];
@@ -999,8 +1047,8 @@ int32_t stamp_light_range(uint32_t table) {
               keep[j] = v;
             }
           }
-          cursor = stamp_light_rows(stamp, df, cursor, sun, sf, keep, n, cap, lightAt, folded, lx, ly, intensity, rangeSq,
-                                    L, stampLightIdx, i);
+          cursor = stamp_light_rows(stamp, df, cursor, sun, sf, keep, n, cap, lightAt, folded, lx, ly, intensity, L,
+                                    stampLightIdx, i, over ? dist : (const float *)0, next2);
           continue;
         }
       }
@@ -1099,6 +1147,7 @@ int32_t stamp_light_range(uint32_t table) {
           const uint32_t at = order[k];
           note_nearest(near, nearCount, tmpIdx[at], i, d64[at], maxPE);
         }
+        ((double *)L)[L_NEXT2] = next_left_out(dist, d64, order, m, (uint32_t)lim);
       } else {
         for (uint32_t k = 0; k < m; k++) note_nearest(near, nearCount, tmpIdx[k], i, d64[k], maxPE);
       }
@@ -1119,12 +1168,17 @@ int32_t stamp_light_range(uint32_t table) {
         quicksort_order(order, dist, 0, lim - 1);
       }
       for (int32_t k = 0; k < lim; k++) keep[k] = tmpIdx[order[k]];
-      m = (uint32_t)lim;
-    } else {
-      for (uint32_t k = 0; k < m; k++) keep[k] = tmpIdx[k];
+      /* N-413: the nearest left out, and the kept's float distances in keep's order (in tmpIdx's room, free now). */
+      const double next2 = next_left_out(dist, d64, order, m, (uint32_t)lim);
+      float *kd = (float *)tmpIdx;
+      for (int32_t k = 0; k < lim; k++) kd[k] = dist[order[k]];
+      cursor = stamp_light_rows(stamp, df, cursor, sun, sf, keep, (uint32_t)lim, cap, lightAt, folded, lx, ly, intensity, L,
+                                stampLightIdx, i, kd, next2);
+      continue;
     }
-    cursor = stamp_light_rows(stamp, df, cursor, sun, sf, keep, m, cap, lightAt, folded, lx, ly, intensity, rangeSq, L,
-                              stampLightIdx, i);
+    for (uint32_t k = 0; k < m; k++) keep[k] = tmpIdx[k];
+    cursor = stamp_light_rows(stamp, df, cursor, sun, sf, keep, m, cap, lightAt, folded, lx, ly, intensity, L,
+                              stampLightIdx, i, (const float *)0, 0.0);
   }
   if (maxPE == 0) return cursor;
   /* E-359: the lights' vec4s, once a light, into dist (the candidates' distances, free once the lights are done) when it

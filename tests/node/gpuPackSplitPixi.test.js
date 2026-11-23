@@ -135,7 +135,7 @@ function writeGpuFrame(px, b, n, split, gen, frame) {
   } else {
     g.sprites.set(rows);
   }
-  writeGpuQueueHeader(g.header, { sprite: n, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0, staticGen: split ? gen : 0 },
+  writeGpuQueueHeader(g.header, { sprite: n, glow: 0, sun: 0, stamp: 0, particle: 0, staticGen: split ? gen : 0 },
     split ? GPU_FLAG_SPLIT : 0);
   px.renderQueueBuffers[b].count[0] = n;
   return rows;
@@ -182,7 +182,7 @@ test('Pixi commits a split GPU queue in two streams, its statics when their gene
   const error = console.error;
   console.error = (msg) => errors.push(String(msg));
   try {
-    writeGpuQueueHeader(px.gpuQueueBuffers[0].header, { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0, staticGen: 0 }, 0);
+    writeGpuQueueHeader(px.gpuQueueBuffers[0].header, { sprite: 0, glow: 0, sun: 0, stamp: 0, particle: 0, staticGen: 0 }, 0);
     px.renderQueueBuffers[0].count[0] = 0;
     px._setReadBuffer(0);
     px.updateSpritesFromRenderQueue();
@@ -233,7 +233,7 @@ test('a frame outside the handshake, half written or complete, keeps the last co
   await quietly(() => bindPixi(px, s));
   const batch = px.entitiesBatch;
   const halfWritten = (b, rows) => {
-    writeGpuQueueHeader(px.gpuQueueBuffers[b].header, { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0, staticGen: 0 }, 0);
+    writeGpuQueueHeader(px.gpuQueueBuffers[b].header, { sprite: 0, glow: 0, sun: 0, stamp: 0, particle: 0, staticGen: 0 }, 0);
     px.renderQueueBuffers[b].count[0] = rows;
   };
   const errors = [];
@@ -298,7 +298,7 @@ test('a frame of glow rows only and zIndex sprites under Y-sort off commit pre-r
 
   // Glow rows only: no sprite packed, the glows packed as glows.
   const g = px.gpuQueueBuffers[1];
-  writeGpuQueueHeader(g.header, { sprite: 0, glow: 25, sun: 0, stamp: 0, cookie: 0, particle: 0, staticGen: 0 }, GPU_FLAG_SPLIT);
+  writeGpuQueueHeader(g.header, { sprite: 0, glow: 25, sun: 0, stamp: 0, particle: 0, staticGen: 0 }, GPU_FLAG_SPLIT);
   px.renderQueueBuffers[1].count[0] = 25;
   px._setReadBuffer(1);
   px.updateSpritesFromRenderQueue();

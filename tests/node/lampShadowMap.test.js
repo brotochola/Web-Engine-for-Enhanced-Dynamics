@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   LAMP_MAP_MAX_STRETCH, LAMP_MAP_MAX_TEXELS, LAMP_PANO_INNER, autoLampTileSize, lampColumnGrid, lampColumnIndex,
-  lampTileLayout, writeLampTile, writeLampTileOwner,
+  lampMapColumnsVertex, lampMapColumnsWgsl, lampMapVertex, lampMapWgsl, lampTileLayout, writeLampTile, writeLampTileOwner,
 } from '../../src/render/lampShadowMap.js';
 import {
   VOLUME_LAMP_CACHE_FRAGMENT, VOLUME_LAMP_FRAGMENT, volumeLampVertex, volumeLampWgsl, writeVolumeLampTerms,
@@ -188,4 +188,15 @@ test('E-389, E-453: the volumes go into every lamp tile in one draw, an instance
   assert.deepEqual(Array.from(sun), [0, 0, 1, 0.5]);
   assert.deepEqual(Array.from(lamp), [47, 8, 256, 2]);
   assert.equal(writeVolumeLampTerms(sun, lamp, 47, 8, 256, scales), false, 'unchanged: the group is not updated');
+});
+
+test('N-413: the lamps\' map takes each stamp row\'s fade (its light\'s w) out of the caster\'s opacity, cards and columns', () => {
+  const glsl = readEngineShader('instancedSpriteShadow.vert.glsl');
+  const wgsl = readEngineShader('instancedSpriteShadow.wgsl');
+  for (const [name, src] of [
+    ['cards GLSL', lampMapVertex(glsl)], ['columns GLSL', lampMapColumnsVertex(glsl)],
+    ['cards WGSL', lampMapWgsl(wgsl)], ['columns WGSL', lampMapColumnsWgsl(wgsl)],
+  ]) {
+    assert.match(src, /castOpacity \* clamp\(aInstLight\.w, 0\.0, 1\.0\)/, name);
+  }
 });

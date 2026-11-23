@@ -66,6 +66,13 @@ const PIXI = Object.freeze({ Container, Geometry, GlProgram, Mesh, RenderTexture
 /** DX-LAMPPANO: how many of the stamp batch's geometries keep a lamp card strip of their own (its ring's slots, then some). */
 const LAMP_STRIP_SOURCES = 8;
 
+/**
+ * The frames a smaller or differently sized lamps' map must be asked for, in a row, before the atlas is made again: a
+ * light that lives a few frames (a muzzle flash) moved the auto tile's count and size, and a 4096 px atlas was made again
+ * every few frames (Predator by night with gunfire). A map too small for this frame's lamps is made at once.
+ */
+export const LAMP_MAP_SETTLE_FRAMES = 120;
+
 /** DX-SHADOW3D (F7): the volumes' lamp terms' scales, 1 / heightScaleY and 1 / groundScaleY (writeVolumeLampTerms). */
 const VOLUME_LAMP_SCALES = new Float64Array(2);
 
@@ -98,6 +105,8 @@ export class PixiLampMap {
     this.maxReach = 0.5;
     this.tilesPerRow = 1;
     this.lights = 0;
+    // The frames in a row another layout than the map's has been asked for (LAMP_MAP_SETTLE_FRAMES).
+    this.settleFrames = 0;
     this.mesh = null;
     // E-395: the lamps' map over keyed stamp rows (WebGL): its two halves' meshes and host, and a strip a ring geometry.
     this.keyedMesh = null;
@@ -273,7 +282,15 @@ export class PixiLampMap {
       // art's pixels rather than on pairs of them, as far as the map's room allows.
       size = autoLampTileSize(this.maxReach, this.worker.shadowResolution * (this.worker._pixelArtLight ? 2 : 1), lights);
     }
-    if (this.worker.lighting.lampMapRT !== null && this.lights === lights && this.worker._lampTileSize === size) return true;
+    if (this.worker.lighting.lampMapRT !== null) {
+      if (this.lights === lights && this.worker._lampTileSize === size) {
+        this.settleFrames = 0;
+        return true;
+      }
+      // A map with room for this frame's lamps keeps its layout until another one has been asked for a while.
+      if (lights <= this.lights && ++this.settleFrames < LAMP_MAP_SETTLE_FRAMES) return true;
+    }
+    this.settleFrames = 0;
     this.worker._lampTileSize = size;
     const layout = lampTileLayout(lights, size, 4096);
     // The light pass lets go of the old map before it goes (Pixi warns of a source destroyed while bound).
@@ -447,7 +464,6 @@ export class PixiLampMap {
       this.worker._gpuPassesThisFrame++;
     }
     this._drawVolumes(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.mapClear = false;
     return true;
   }
@@ -529,7 +545,6 @@ export class PixiLampMap {
       this.worker._gpuPassesThisFrame++;
     }
     this._drawVolumes(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.mapClear = false;
     return true;
   }
@@ -566,7 +581,6 @@ export class PixiLampMap {
     this.worker._submitRender(rtOpts);
     this.worker._gpuPassesThisFrame++;
     this._drawVolumes(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.mapClear = false;
     return true;
   }
@@ -940,7 +954,6 @@ export class PixiLampMap {
     rtOpts.clear = true;
     rtOpts.clearColor = this.worker._clearTransparent;
     this.worker._submitRender(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.mapClear = true;
   }
 }

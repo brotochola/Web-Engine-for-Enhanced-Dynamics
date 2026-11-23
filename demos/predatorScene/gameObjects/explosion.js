@@ -57,6 +57,8 @@ export class Explosion extends GameObject {
 
     Collider.visualRange[i] = 250; // its neighbours (the blast reads them)
     LightEmitter.shadowRange[i] = 250;
+    // The blast's light from its middle, half its height up: the people around cast their shadows from it.
+    LightEmitter.elevation[i] = ExplosionComponent.maxRadius[i];
 
     LightEmitter.color[i] = randomColor({
       min: 0xffff00,

@@ -65,16 +65,6 @@ test('pixi: WebGPU injects a device with timestamp-query', () => {
   assert.doesNotMatch(pixi, /onSubmittedWorkDone/);
 });
 
-test('pixi: lighting binds uShadowSampler to the live shadow RT, not Texture.WHITE', () => {
-  // N-256 PW-6: the light pass binds it (src/render/pixi/lighting.js); the worker's resize unbinds and binds it again.
-  const lighting = readFileSync(join(root, 'src/render/pixi/lighting.js'), 'utf8');
-  assert.match(lighting, /_lightingShadowResources\(\)/);
-  assert.match(lighting, /res\.uShadowSampler = src\.style/);
-  assert.match(pixi, /this\.lighting\.unbindLightingShadowMap\(\)/);
-  assert.match(pixi, /this\.lighting\.bindLightingShadowMap\(\)/);
-  assert.doesNotMatch(lighting, /uShadowMap: PIXI\.Texture\.WHITE\.source/);
-});
-
 test('pixi: entities share one root so layer zIndex cannot invert the mesh', () => {
   assert.match(pixi, /this\._entitiesRoot = new Container\(\)/);
   assert.match(pixi, /this\._entitiesRoot\.addChild\(this\.spriteMesh\)/);
@@ -102,7 +92,7 @@ test('instancedSprites config flag removed (always instanced)', () => {
   assert.doesNotMatch(defaults, /instancedSprites/);
 });
 
-test('visible lights SAB fills even when cookie shadows are off', () => {
+test('visible lights SAB fills even when shadows are off', () => {
   assert.match(preRender, /_collectVisibleLights\(\)/);
   const updateCall = preRender.indexOf('this._collectVisibleLights();');
   const packCall = preRender.indexOf('this._packGpuQueues(');
@@ -111,13 +101,3 @@ test('visible lights SAB fills even when cookie shadows are off', () => {
   assert.doesNotMatch(preRender, /shadowRenderQueueCount/);
 });
 
-test('shadow RT clears transparent each frame (not opaque black)', () => {
-  // N-256 PW-8: the shadows' layer's pass is the shadow maps' _drawGpuCasterShadows (src/render/pixi/shadowMaps.js).
-  const shadowMaps = readFileSync(join(root, 'src/render/pixi/shadowMaps.js'), 'utf8');
-  const fn = shadowMaps.indexOf('  _drawGpuCasterShadows() {');
-  assert.ok(fn >= 0, 'the pass');
-  const body = shadowMaps.slice(fn, shadowMaps.indexOf('\n  }\n', fn));
-  assert.match(body, /rtOpts\.clear = true/);
-  assert.match(body, /rtOpts\.clearColor = this\.worker\._clearTransparent/);
-  assert.doesNotMatch(body, /_clearBlack|\[0,\s*0,\s*0,\s*1\]/);
-});

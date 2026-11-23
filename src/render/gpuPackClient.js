@@ -513,15 +513,13 @@ function splitGbufByte(b, gbuf, n, rows) {
  * its statics changed since the emit before; a row without one, or with one at or past `keyed.keyBase`, takes keyBase
  * plus its slot. The changed rows and the rows without a key list their statics as updates at `keyed.updatesByte` (room
  * for capacity updates of GPU_KEYED_ROW_WORDS: the statics, then the key at GPU_KEYED_KEY_WORD); the update count goes
- * to `keyed.updates`. The queue's `key` column must be in the memory too. E-191: with `keyed.shadowByte` (0 for none) and
- * the queue's shadow columns in the memory, each slot's shadow terms (shadowH, offX, offY; zeros for a glow row) go there
- * too, and `keyed.shadowed` says whether they did. E-189: with `keyed.texUpdatesByte` (0 for none), a row whose key also
+ * to `keyed.updates`. The queue's `key` column must be in the memory too. E-189: with `keyed.texUpdatesByte` (0 for none), a row whose key also
  * carries GPU_KEYED_TEX_ONLY goes there as a texture update (GPU_KEYED_TEX_WORDS) instead, counted in `keyed.texUpdates`.
  * E-387: with `keyed.gbufOut` and `keyed.gbufFlags` (keyedGbufByte's columns), each slot's G-buffer words go there too,
  * the words gbufWord.js writeGbufWords writes from the key column, and `keyed.gbufWritten` says whether they did. E-455:
  * `keyed.gbufChanged` says whether any slot's words differ from what its place held (always true without the words).
- * E-337: the type column (ctx.typeArr) goes to the kernel only with the shadow terms, whose glow test reads it; the
- * count of type-1 rows it also gives (ctx.particleCount) is read by no caller of a keyed pack, so it is 0 without them.
+ * A keyed pack counts no particles (ctx.particleCount 0): no caller of one reads it (N-414: the shadow terms that read the
+ * type column went with E-191's sun pass over the entity batch).
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
@@ -550,8 +548,6 @@ function keyedPack(b, q, ctx, at, slots, keyed, capacity, pack, packGbuf, packGb
   if (ctx.useScreen || ctx.filterTypes) return -1;
   const key = q.key;
   if (!key || key.buffer !== b.buffer || at.buffer !== b.buffer || slots.buffer !== b.buffer) return -1;
-  const typeArr = ctx.typeArr;
-  if (typeArr && typeArr.buffer !== b.buffer) return -1;
   const table = tableFor(b, q);
   if (table < 0) return -1;
   const count = ctx.scanCount | 0;
@@ -559,22 +555,17 @@ function keyedPack(b, q, ctx, at, slots, keyed, capacity, pack, packGbuf, packGb
   if (indexByte < 0) return -1;
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  // E-191: the slots' shadow terms too where the caller asks for them (a byte, 0 for none) and the queue has them.
-  const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
   // E-387: the slots' G-buffer words too where the caller hands their columns (the kernel packs min(count, capacity)).
   const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
   const texByte = keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0;
-  // E-337: the type column only for the shadow terms' glow test; without them it fed only an unread particle count.
-  const typeByte = shadowByte > 0 && typeArr ? typeArr.byteOffset : 0;
   // E-455 step 3: with keyed.gbufStatics and no bands, the words ride in the slots' statics (every gbuf form writes them
   // there), none a drawn instance: keyed.gbufInStatics says so.
   const inStatics = gbufByte > 0 && keyed.gbufStatics === true && !(keyed.gbufZ && keyed.gbufZ.length > 0) && !!packGbufStatics;
   const out = gbufByte > 0
     ? (inStatics ? packGbufStatics : packGbuf)(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte, gbufByte)
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, b.particlesByte, texByte, gbufByte)
     : pack(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte);
-  keyed.shadowed = shadowByte > 0;
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, b.particlesByte, texByte);
   keyed.gbufWritten = gbufByte > 0 && !inStatics;
   keyed.gbufInStatics = inStatics;
   const r = b.particlesByte >> 2;
