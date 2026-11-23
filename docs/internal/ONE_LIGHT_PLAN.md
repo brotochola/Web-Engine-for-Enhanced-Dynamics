@@ -225,7 +225,8 @@ from. Nothing says how much they count for the sun or for the lamps.
   than 256 (N-189, open).
 - The lamps that cast are the `lighting.maxShadowCastingLights` nearest the camera (20 by default);
   the others light without shadows.
-- `lighting.lampShadowTile` (`'auto'`: at most 2 floor px a texel at resolution 1, up to 1024 a side).
+- `lighting.lampShadowTile` (`'auto'`: at most 2 floor px a texel at resolution 1, up to 1024 a side, each lamp's
+  tile at its own reach's side: E-551).
   A shadow's edge is made of the map's texels read with five taps, not of a polygon.
 - A lamp at `elevation` 0 casts nothing in this mode (N-265).
 - A volume higher than its lamp stays on the floor half, its vertices drawn stretched at most 64 times

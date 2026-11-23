@@ -74,10 +74,65 @@ export const LAMP_TEXEL_FLOOR_PX = 2;
 export const LAMP_MAP_MAX_TEXELS = 4096 * 2048;
 
 /**
- * N-196, lampShadowTile 'auto': a half tile's side, a power of two from 64 to 1024, at which the widest casting lamp's reach
- * (its diameter on LAMP_PANO_INNER of the half: DX-LAMPPANO) spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a
- * texel, as far as `tiles` such tiles (two halves each) fit LAMP_MAP_MAX_TEXELS and `maxSide`. A fixed 256 drew a lamp of reach 900 at 7 floor px a texel whatever the
- * shadows' resolution.
+ * E-551: the texels a lamp tile's rect is laid out in steps of: its floor half's corner (x0, y0) and its side are multiples
+ * of it, so lampRectCode packs the three into one float exactly (x0 and y0 under 4096: 8 bits each; the side up to 1024: 7).
+ */
+export const LAMP_RECT_UNIT = 16;
+
+/**
+ * E-551: a lamp tile's rect as one integer (exact in a float32: under 2^23): x0 / unit + 256 · y0 / unit + 65536 · side /
+ * unit. The light pass reads it from the lamp's tag, -(code + 1) (lightingBasic lampRect), so each tile may sit anywhere in
+ * the atlas at its own size.
+ * @param {number} x0 the floor half's left edge, texels (a multiple of LAMP_RECT_UNIT, under 4096)
+ * @param {number} y0 its top edge
+ * @param {number} side a half's side, texels (a multiple of LAMP_RECT_UNIT, 16 to 1024)
+ */
+export function lampRectCode(x0, y0, side) {
+  const u = LAMP_RECT_UNIT;
+  return ((x0 / u) | 0) + 256 * ((y0 / u) | 0) + 65536 * ((side / u) | 0);
+}
+
+/**
+ * E-551: the rects of `n` tiles of `size` laid out as lampTileLayout's grid (`perRow` a row), three floats a tile in `out`:
+ * the floor half's corner x0, y0 and the side.
+ * @param {Float32Array} out
+ * @param {number} n
+ * @param {number} perRow
+ * @param {number} size
+ */
+export function lampGridRects(out, n, perRow, size) {
+  const per = Math.max(1, perRow | 0);
+  for (let t = 0; t < n; t++) {
+    out[t * 3] = (t % per) * 2 * size;
+    out[t * 3 + 1] = ((t / per) | 0) * size;
+    out[t * 3 + 2] = size;
+  }
+}
+
+/**
+ * N-196, E-551, lampShadowTile 'auto': one lamp's half tile's side, the texels at which its reach (its diameter on
+ * LAMP_PANO_INNER of the half: DX-LAMPPANO) spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a texel, in steps of
+ * LAMP_RECT_UNIT, from 64 to 1024; `scale` (1, or less when the atlas's budget asks) shrinks it. Each lamp takes its own
+ * (E-551): the widest one's for every tile gave Predator's street lamps (shadowRange 400) the 1000 px fire's texels, and the
+ * map's fill and clear go with its texels (the HD 620: 4.5 ms by night at 4096 x 1536, 1.0 at a quarter of the texels).
+ * A tile that casts nothing (no reach) takes LAMP_RECT_UNIT.
+ * @param {number} reach the lamp's shadows' reach (floor px; 0: it casts none)
+ * @param {number} resolution lighting.shadowResolution (twice it with pixel-art lighting)
+ * @param {number} scale
+ */
+export function lampTileSide(reach, resolution, scale) {
+  if (!(reach > 0)) return LAMP_RECT_UNIT;
+  const want = (2 * reach * Math.max(0.05, resolution) * scale) / (LAMP_TEXEL_FLOOR_PX * LAMP_PANO_INNER);
+  const side = Math.ceil(want / LAMP_RECT_UNIT) * LAMP_RECT_UNIT;
+  if (!(side >= 64)) return 64;
+  return side > 1024 ? 1024 : side;
+}
+
+/**
+ * N-196, lampShadowTile 'auto': the half tile's side every lamp had before E-551, a power of two from 64 to 1024 at which the
+ * widest casting lamp's reach spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a texel, as far as `tiles` such tiles
+ * (two halves each) fit LAMP_MAP_MAX_TEXELS and `maxSide`: with E-551 a lamp's own side is at most this one, so no lamp costs
+ * more than it did (a wide one, a fire, would ask more texels than the budget gave them).
  * @param {number} maxReach the widest casting lamp's reach (floor px)
  * @param {number} resolution lighting.shadowResolution
  * @param {number} tiles the tiles the map holds
@@ -92,6 +147,53 @@ export function autoLampTileSize(maxReach, resolution, tiles, maxSide = 4096) {
     if (l.height <= maxSide && l.width * l.height <= LAMP_MAP_MAX_TEXELS) return size;
     size /= 2;
   }
+}
+
+/** E-551: packLampTiles' result: the atlas's width and height the tiles take, texels. */
+export const LAMP_PACK_SIZE = new Int32Array(2);
+
+/**
+ * E-551: `n` tiles of 2 side x side (their sides in `rects`, three floats a tile: x0, y0, side) laid in shelves, the
+ * largest first, each shelf as wide as `maxWidth` allows; writes each tile's x0 and y0 (multiples of LAMP_RECT_UNIT, as
+ * the sides are) and the width and height they take in LAMP_PACK_SIZE. `order` is scratch, at least `n` long.
+ * @param {Float32Array} rects
+ * @param {number} n
+ * @param {Int32Array} order
+ * @param {number} maxWidth
+ */
+export function packLampTiles(rects, n, order, maxWidth) {
+  for (let t = 0; t < n; t++) order[t] = t;
+  // By side, the largest first (ties in tile order): an insertion sort, n is the stamp lights (64 at most).
+  for (let i = 1; i < n; i++) {
+    const v = order[i];
+    const side = rects[v * 3 + 2];
+    let j = i - 1;
+    while (j >= 0 && rects[order[j] * 3 + 2] < side) {
+      order[j + 1] = order[j];
+      j--;
+    }
+    order[j + 1] = v;
+  }
+  let x = 0;
+  let y = 0;
+  let shelf = 0;
+  let width = 0;
+  for (let k = 0; k < n; k++) {
+    const t = order[k];
+    const side = rects[t * 3 + 2];
+    if (x > 0 && x + 2 * side > maxWidth) {
+      y += shelf;
+      x = 0;
+      shelf = 0;
+    }
+    rects[t * 3] = x;
+    rects[t * 3 + 1] = y;
+    x += 2 * side;
+    if (x > width) width = x;
+    if (side > shelf) shelf = side;
+  }
+  LAMP_PACK_SIZE[0] = width;
+  LAMP_PACK_SIZE[1] = y + shelf;
 }
 
 /** Cells across (and down) a render's frame when it casts columns towards a lamp: the sun's grid. */
@@ -131,12 +233,13 @@ export function writeLampTile(out, t, x, floorY, elevation, reach) {
  * @param {number} t
  * @param {number} entity
  */
-export function writeLampTileOwner(out, width, t, entity) {
+export function writeLampTileOwner(out, width, t, entity, x0 = 0, y0 = 0, side = 0) {
   const at = (width + t) * 4;
   out[at] = entity;
-  out[at + 1] = 0;
-  out[at + 2] = 0;
-  out[at + 3] = 0;
+  // E-551: the tile's rect in the atlas (its floor half's corner and side, texels), which the map's programs read.
+  out[at + 1] = x0;
+  out[at + 2] = y0;
+  out[at + 3] = side;
 }
 
 /** DX-LAMPPANO: lampPanoUv in GLSL (the light pass's lightingBasic.frag.glsl has its twin). */
@@ -221,8 +324,9 @@ const lampTileGlsl = (extra) => `  // DX-SHADOW3D (F7): this row's lamp (lampSha
 // stretch: the lamp's rays make a projective map, and with w the picture (and the height between its rows) spreads over
 // its shadow as they carry it. vTileUvW keeps the half's own coordinates for the fragment's clip, read as screen-linear.
 const LAMP_OUT_GLSL = `  vec2 tuv = lampPanoUv(land - lamp.xy, lamp.w);
-  int perRow = int(uTileWorld.x);
-  vec2 px = (vec2(float(tile % perRow) * 2.0 + uTileWorld.z, float(tile / perRow)) + tuv) * uTileWorld.y;
+  // E-551: the tile's rect (the tiles' texture's row 1: x0, y0, the half's side), in this pass's half (uTileWorld.z).
+  vec4 lampRect = texelFetch(uLampTiles, ivec2(tile, 1), 0);
+  vec2 px = (vec2(lampRect.y / lampRect.w + uTileWorld.z, lampRect.z / lampRect.w) + tuv) * lampRect.w;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(px, 1.0);
   gl_Position = vec4(clip.xy * w, ${lampClipZGlsl('w')}, w);
@@ -403,8 +507,9 @@ const lampTileWgsl = (extra) => `  // DX-SHADOW3D (F7): this row's lamp (lampMap
 `;
 
 const LAMP_OUT_WGSL = `  let tuv = lampPanoUv(land - lamp.xy, lamp.w);
-  let perRow = i32(uniforms.uTileWorld.x);
-  let px = (vec2<f32>(f32(tile % perRow) * 2.0 + uniforms.uTileWorld.z, f32(tile / perRow)) + tuv) * uniforms.uTileWorld.y;
+  // E-551: the tile's rect (the tiles' texture's row 1: x0, y0, the half's side), in this pass's half (uTileWorld.z).
+  let lampRect = textureLoad(uLampTiles, vec2<i32>(tile, 1), 0);
+  let px = (vec2<f32>(lampRect.y / lampRect.w + uniforms.uTileWorld.z, lampRect.z / lampRect.w) + tuv) * lampRect.w;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(px, 1.0);
   out.position = vec4<f32>(clip.xy * w, ${lampClipZWgsl('w')}, w);

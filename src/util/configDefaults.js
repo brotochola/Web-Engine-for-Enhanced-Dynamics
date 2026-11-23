@@ -812,9 +812,10 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   footprintSolids: true,
   /**
-   * DX-SHADOW3D (F7): a lamp's tile in the lamps' shadow map, texels a side (32 to 1024), or 'auto' (N-196): a power of two
-   * from 64 to 1024 by the widest casting lamp's reach and shadowResolution, at most 2 floor px a texel at resolution 1
-   * while the map stays within 4096 x 2048 texels. A tile spans twice its lamp's reach.
+   * DX-SHADOW3D (F7): a lamp's tile in the lamps' shadow map, texels a side (32 to 1024, every lamp's), or 'auto' (N-196,
+   * E-551): each lamp's own by its reach and shadowResolution, at most 2 floor px a texel at resolution 1, from 64 to the side
+   * the widest casting lamp would take (a power of two, to 1024), while the map stays within 4096 x 2048 texels. A tile spans
+   * twice its lamp's reach.
    */
   lampShadowTile: 'auto',
   /**

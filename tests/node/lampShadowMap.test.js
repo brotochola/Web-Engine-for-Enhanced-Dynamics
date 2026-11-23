@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  LAMP_MAP_MAX_STRETCH, LAMP_MAP_MAX_TEXELS, LAMP_PANO_INNER, autoLampTileSize, lampColumnGrid, lampColumnIndex,
+  LAMP_MAP_MAX_STRETCH, LAMP_PACK_SIZE, LAMP_PANO_INNER, LAMP_RECT_UNIT, lampColumnGrid, lampColumnIndex, lampRectCode,
+  lampTileSide, packLampTiles,
   lampMapColumnsVertex, lampMapColumnsWgsl, lampMapVertex, lampMapWgsl, lampTileLayout, writeLampTile, writeLampTileOwner,
 } from '../../src/render/lampShadowMap.js';
 import {
@@ -127,18 +128,49 @@ test('DX-LAMPPANO: the columns\' grid has three rows a cell side, each band two 
   assert.ok(Math.max(...index) === 2 * 2 * 6 - 1);
 });
 
-test('N-196: lampShadowTile auto makes a tile as fine as the widest lamp and the shadow resolution ask, within the budget', () => {
-  // The reach's diameter on 0.8 of a half at most 2 floor px a texel at resolution 1: 660 px want 412 texels, 512;
-  // 1800 want 1125, 1024.
-  assert.equal(autoLampTileSize(330, 1, 1), 512);
-  assert.equal(autoLampTileSize(900, 1, 1), 1024);
-  assert.equal(autoLampTileSize(330, 0.5, 1), 256, 'half the resolution, half the texels');
-  assert.equal(autoLampTileSize(0, 1, 1), 64, 'no casting lamp: the smallest tile');
-  // 32 tiles of 2 x 1024 would be 4096 x 16384: the tile halves until the map fits its budget.
-  const size = autoLampTileSize(900, 1, 32);
-  const layout = lampTileLayout(32, size);
-  assert.equal(size, 256);
-  assert.ok(layout.height <= 4096 && layout.width * layout.height <= LAMP_MAP_MAX_TEXELS);
+test('N-196, E-551: lampShadowTile auto gives each lamp the side its own reach and the shadow resolution ask', () => {
+  // The reach's diameter on 0.8 of a half at most 2 floor px a texel at resolution 1, in steps of 16 texels: 660 px want
+  // 412.5 texels, 416; 1800 want 1125, the most, 1024.
+  assert.equal(lampTileSide(330, 1, 1), 416);
+  assert.equal(lampTileSide(900, 1, 1), 1024);
+  assert.equal(lampTileSide(330, 0.5, 1), 208, 'half the resolution, half the texels');
+  assert.equal(lampTileSide(330, 1, 0.5), 208, 'a budget\'s scale of a half, the same');
+  assert.equal(lampTileSide(30, 0.25, 1), 64, 'the least for a lamp that casts');
+  assert.equal(lampTileSide(0, 1, 1), LAMP_RECT_UNIT, 'a tile that casts nothing takes a step');
+  // Predator's: a street lamp's shadows (400 px), a house's lamp (632), a fire (1000), at shadowResolution 0.25.
+  assert.deepEqual([400, 632, 1000].map((r) => lampTileSide(r, 0.25, 1)), [128, 208, 320]);
+});
+
+test('E-551: the tiles go into shelves, the largest first, side by side, none over another', () => {
+  const sides = [128, 256, 128, 64, 208];
+  const rects = new Float32Array(sides.length * 3);
+  sides.forEach((s, t) => { rects[t * 3 + 2] = s; });
+  packLampTiles(rects, sides.length, new Int32Array(sides.length), 1024);
+  // 256 (512 wide) then 208 (416) on the first shelf; 128, 128, 64 on the second, under it.
+  assert.deepEqual(Array.from(rects), [0, 256, 128, 0, 0, 256, 256, 256, 128, 512, 256, 64, 512, 0, 208]);
+  assert.deepEqual(Array.from(LAMP_PACK_SIZE), [928, 384]);
+  for (let a = 0; a < sides.length; a++) {
+    const [ax, ay, as] = rects.subarray(a * 3, a * 3 + 3);
+    assert.ok(ax % LAMP_RECT_UNIT === 0 && ay % LAMP_RECT_UNIT === 0 && ax + 2 * as <= 1024 && ay + as <= LAMP_PACK_SIZE[1]);
+    for (let b = a + 1; b < sides.length; b++) {
+      const [bx, by, bs] = rects.subarray(b * 3, b * 3 + 3);
+      assert.ok(ax + 2 * as <= bx || bx + 2 * bs <= ax || ay + as <= by || by + bs <= ay, `tiles ${a} and ${b} overlap`);
+    }
+  }
+});
+
+test('E-551: a tile\'s rect rides in one float exactly, and the light pass\'s decode gives it back', () => {
+  const decode = (code) => {
+    const side = Math.floor(code / 65536);
+    const rest = code - side * 65536;
+    const y = Math.floor(rest / 256);
+    return [(rest - y * 256) * 16, y * 16, side * 16];
+  };
+  for (const [x0, y0, side] of [[0, 0, 64], [4080, 4080, 1024], [1536, 272, 208], [48, 3968, 16]]) {
+    const code = lampRectCode(x0, y0, side);
+    assert.ok(code < 2 ** 24 && Math.fround(-(code + 1)) === -(code + 1), 'exact as the tag, a float32');
+    assert.deepEqual(decode(code), [x0, y0, side]);
+  }
 });
 
 test('N-211: a texel keeps the place along the ray, finest around the lamp\'s height, nearer the lamp more', async () => {
@@ -159,7 +191,8 @@ test('E-389, E-453: the volumes go into every lamp tile in one draw, an instance
   // The tile from the instance's entry in its draw's list (E-508: the tiles' texture's row 2, from uLampVolume.x), the
   // half tile it draws into beside it; no vertex number, no corner.
   assert.ok(glsl.includes('ivec2(int(uLampVolume.x + 0.5) + gl_InstanceID, 2)') && glsl.includes('int lampTile = int(lampEntry.x + 0.5);'));
-  assert.ok(glsl.includes('vec2 lampPx = (lampEntry.yz + lampUv) * uLampVolume.z;'));
+  // E-551: the entry's half in units of its own side.
+  assert.ok(glsl.includes('vec2 lampPx = (lampEntry.yz + lampUv) * lampEntry.w;'));
   assert.ok(!/aLampVertex|lampCorner|gl_VertexID|aTri\b/.test(glsl));
   assert.ok(wgsl.includes('@builtin(instance_index) lampInstance: u32,') && wgsl.includes('i32(lampInstance), 2)'));
   assert.ok(wgsl.includes('let lampTile = i32(lampEntry.x + 0.5);') && wgsl.includes('let lampPx = (lampEntry.yz + lampUv)'));

@@ -113,7 +113,8 @@ ${VOLUME_ID_GLSL}
   // DX-LAMPPANO: into the floor's half of the lamp's 2S x S tile, compressed out to the horizon (lampPanoUv); a volume
   // higher than its lamp stays on the floor's half (the ceiling's takes the cards and the columns).
   vec2 lampUv = lampPanoUv(lampLand - lamp.xy, lamp.w);
-  vec2 lampPx = (lampEntry.yz + lampUv) * uLampVolume.z;
+  // E-551: the entry's half in units of its own side (its w).
+  vec2 lampPx = (lampEntry.yz + lampUv) * lampEntry.w;
   vec3 lampClip = mvp * vec3(lampPx, 1.0);
   gl_Position = vec4(lampClip.xy * lampW, ${lampClipZGlsl('lampW')}, lampW);
   vTileUvW = vec3(lampUv * lampW, lampW);
@@ -241,7 +242,8 @@ ${VOLUME_ID_WGSL}  out.vTileUvW = vec3<f32>(-1.0, -1.0, 1.0);
   let lampLand = lamp.xy + (vec2<f32>(world.x, world.y * lampInvG) - lamp.xy) / lampW;
   // DX-LAMPPANO: into the floor's half of the lamp's tile, compressed (LAMP_GLSL says how).
   let lampUv = lampPanoUv(lampLand - lamp.xy, lamp.w);
-  let lampPx = (lampEntry.yz + lampUv) * sunShadow.uLampVolume.z;
+  // E-551: the entry's half in units of its own side (its w).
+  let lampPx = (lampEntry.yz + lampUv) * lampEntry.w;
   let lampClip = mvp * vec3<f32>(lampPx, 1.0);
   out.position = vec4<f32>(lampClip.xy * lampW, ${lampClipZWgsl('lampW')}, lampW);
   out.vTileUvW = vec3<f32>(lampUv * lampW, lampW);
@@ -437,9 +439,11 @@ out vec2 vSrc;
 void main() {
   vec4 e = texelFetch(uLampTiles, ivec2(int(uLampVolume.x + 0.5) + gl_InstanceID, 2), 0);
   int tile = int(e.x + 0.5);
-  int perRow = max(int(uLampVolume.y + 0.5), 1);
-  vec2 dst = (vec2(float(tile % perRow) * 2.0, float(tile / perRow)) + aPosition) * uLampVolume.z;
-  vSrc = (e.yz + aPosition) * uLampVolume.z;
+  // E-551: into the tile's floor half (its rect: the tiles' texture's row 1), from the cache's half (the entry, in units
+  // of its side).
+  vec4 r = texelFetch(uLampTiles, ivec2(tile, 1), 0);
+  vec2 dst = (vec2(r.y / r.w, r.z / r.w) + aPosition) * r.w;
+  vSrc = (e.yz + aPosition) * e.w;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   gl_Position = vec4((mvp * vec3(dst, 1.0)).xy, 0.0, 1.0);
 }
@@ -488,12 +492,13 @@ fn mainVert(@location(0) aPosition: vec2<f32>, @builtin(instance_index) instance
   let v = lampCopy.uLampVolume;
   let e = textureLoad(uLampTiles, vec2<i32>(i32(v.x + 0.5) + i32(instance), 2), 0);
   let tile = i32(e.x + 0.5);
-  let perRow = max(i32(v.y + 0.5), 1);
-  let dst = (vec2<f32>(f32(tile % perRow) * 2.0, f32(tile / perRow)) + aPosition) * v.z;
+  // E-551: into the tile's floor half (its rect: the tiles' texture's row 1), from the cache's half (the entry).
+  let r = textureLoad(uLampTiles, vec2<i32>(tile, 1), 0);
+  let dst = (vec2<f32>(r.y / r.w, r.z / r.w) + aPosition) * r.w;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   var out: CopyVertexOut;
   out.position = vec4<f32>((mvp * vec3<f32>(dst, 1.0)).xy, 0.0, 1.0);
-  out.vSrc = (e.yz + aPosition) * v.z;
+  out.vSrc = (e.yz + aPosition) * e.w;
   return out;
 }
 
