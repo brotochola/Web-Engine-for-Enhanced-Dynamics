@@ -16012,13 +16012,13 @@
     {
       "id": "E-373",
       "title": "The 3D light pass costs 11 % more on WebGL than on WebGPU (1.26 against 1.13 ms, 32 lights, resolution 0.5, GTX 1650)",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-23 (R-1896): texelFetch, E-409 and E-408 took the gap and more",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "texelFetch at integer texels for the light data (a0f12347): gpuPassBench WebGL light3d 1.300 -> 1.242 ms (-4.5 %, the bench fixed in a43899ed: R-1170's runs drew no lamp shadow), light equal, same images; WebGPU light3d 1.208 ms. E-380 and E-381's attempt made it slower (their record).",
-      "next": "Read ANGLE's HLSL against Tint's; texelFetch for the light data; the reach per light; time terms in gpuPassBench.",
+      "result": "WebGL now the cheaper backend: light3d 0.404 against 0.462 ms on the GTX 1650 (R-1896)",
+      "next": "",
       "refs": [
         "EXECUTION_PLAN.md#E-373"
       ],
@@ -16027,7 +16027,8 @@
       ],
       "records": [
         "R-1170",
-        "R-1171"
+        "R-1171",
+        "R-1896"
       ]
     },
     {
@@ -43315,6 +43316,15 @@
       "title": "E-410 dropped on the record: shadowSamples 1 against 5 bounds what fewer tap fetches can buy, 8-10 % of the light pass on the GTX 1650 and nothing on the HD 620; a gather would also change the shadows' look",
       "verdict": "dropped",
       "text": "No sitting: R-1547 (GTX 1650, Predator ?light3d=1): the light pass 0.95 / 1.03 / 1.10 ms with 1 / 5 / 9 taps; R-1499\n(the ASUS's HD 620): 11-12.5 ms whatever the taps. A textureGather reads four texels of one channel: the lamps' map's\ncross of five taps needs the depth, the opacity and the entity id (three channels for a face's pixel), so it would take\ntwo to four gathers for four texels and a new footprint (2 x 2, not the cross: a different softness to show the owner).\nAt most part of the GTX 1650's 8-10 % and none on the HD 620. E-408's sitting found the lever there was the fetch order\n(R-1893)."
+    },
+    {
+      "id": "R-1896",
+      "date": "2026-11-23",
+      "time": "13:45",
+      "timeFrom": "recorded",
+      "title": "E-373 superseded: the 3D light pass now costs less on WebGL than on WebGPU (gpuPassBench light3d 0.404 against 0.462 ms on the GTX 1650, main after E-408 and E-409)",
+      "verdict": "note",
+      "text": "No sitting of its own: E-408/E-409's last sitting (R-1893, 13:45; gpuPassBench light3d, half of 1080p, 32 lamps with\ntiles, 4 pairs) read main after both changes at 0.404 ms on WebGL and 0.462 ms on WebGPU (before them 0.422 and 0.473):\nWebGL is 13 % cheaper, where E-373 found it 11 % dearer (1.26 against 1.13 ms, an older bench and pass). Its levers went in\nalong the way: texelFetch for the light data (a0f12347), the reach per light (E-409), and the fetch order (E-408), which\nwas ANGLE's D3D compiler keeping a light's second fetch behind the first's test. The WGSL side keeps the same shape."
     }
   ],
   "leads": [
