@@ -8,6 +8,7 @@ import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Query } from '../core/query.js';
 import { Flash } from '../core/flash.js';
 import { Layer } from '../core/layer.js';
+import { lookPassesOf } from '../render/lookPassConfig.js';
 import { shaderFragmentKey } from '../render/rendererBackend.js';
 import { TileMap } from '../core/tileMap.js';
 import { NavGrid } from '../core/navGrid.js';
@@ -211,21 +212,25 @@ function injectLoadedShaderSources(scene) {
   if (!scene._loadedShaderSources || !scene.config.layers) return;
 
   for (const [layerName, layerConfig] of Object.entries(scene.config.layers)) {
-    const fragRef = shaderFragmentKey(
-      layerConfig.shader?.fragment,
-      scene.config.renderer?.backend,
-    );
-    if (!fragRef) continue;
-
-    const source = scene._loadedShaderSources[fragRef];
-    if (!source) continue;
-
+    const passes = lookPassesOf(layerConfig.shader);
+    if (passes.length === 0) continue;
     const layer = Layer.get(layerName);
     const layerMeta = layer ? Layer._metadata?.layers?.[layer.id] : null;
     if (!layerMeta) continue;
 
-    layerMeta.shaderFragment = source;
-    layerMeta.shaderName = fragRef;
+    // DX-LAYERPASSES: the last pass is the layer's look; the passes before it are its earlier list, in order.
+    for (let p = 0; p < passes.length; p++) {
+      const fragRef = shaderFragmentKey(passes[p].fragment, scene.config.renderer?.backend);
+      const source = fragRef ? scene._loadedShaderSources[fragRef] : null;
+      if (!source) continue;
+      if (p === passes.length - 1) {
+        layerMeta.shaderFragment = source;
+        layerMeta.shaderName = fragRef;
+      } else {
+        layerMeta.shaderEarlier[p].fragment = source;
+        layerMeta.shaderEarlier[p].name = fragRef;
+      }
+    }
   }
 
   for (const [layerName, layerConfig] of Object.entries(scene.config.layers)) {

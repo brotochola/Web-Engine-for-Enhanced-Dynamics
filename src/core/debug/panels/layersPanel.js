@@ -704,6 +704,9 @@ export class LayersPanel extends DebugPanel {
         if (document.activeElement !== shaderSelect) {
           shaderSelect.value = meta?.shaderName || '';
         }
+        // DX-LAYERPASSES: a look in several passes has no one fragment to swap.
+        const inPasses = !!meta?.shaderEarlier;
+        if (shaderSelect.disabled !== inPasses) shaderSelect.disabled = inPasses;
         controls.uniformsBtn.style.display = (isAvailable && hasSceneUniforms(layer, meta)) ? '' : 'none';
         controls.computeBtn.style.display = (isAvailable && !!layer.compute) ? '' : 'none';
         if (controls.computeVal && layer.compute) {

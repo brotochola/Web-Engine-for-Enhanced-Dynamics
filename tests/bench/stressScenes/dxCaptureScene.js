@@ -14,7 +14,9 @@ const { Scene, Camera, Sun, Decoration, LAYER_KIND, BLEND_MODES } = WEED;
  * `?colors=1` (lighting.sun.colors), `?propSprite=`, `?propAlpha=` and `?propShadow=` (a frame of its own: setSprite({ frame })). `?shade=1`: overlapping black squares on a MESH layer, `?shadeLook=1` with a look
  * shader that passes its RT through, `?shadeAlpha=` (default 1) the layer's alpha, `?shadeMeshAlpha=` (default 1) each
  * mesh's, `?shadeSun=` its alphaBySun (shadow, night, or ramp for { from: 0.1, to: 0.4 }). `?deco=1`: decorations on a
- * sprite layer, `?shadeHeight=` the squares' far corners at that height on a sunProjected layer, `?decoAlpha=` (default 1) the layer's alpha, `?decoLook=1` through a look, `?decoSun=` its alphaBySun.
+ * sprite layer, `?screen=1` a SCREEN layer that copies the frame. `?lookPasses=<n>` (default 1) runs every look of the
+ * scene as n copies (DX-LAYERPASSES), `?passScale=` (default 1) the earlier ones' resolution, `?lookLast=source` the last
+ * one returning uSource. `?shadeHeight=` the squares' far corners at that height on a sunProjected layer, `?decoAlpha=` (default 1) the layer's alpha, `?decoLook=1` through a look, `?decoSun=` its alphaBySun.
  */
 const SEED = 0xd7ca;
 const WORLD_W = 1280;
@@ -50,6 +52,17 @@ export const SHADE_MESH_ALPHA = queryNumber('shadeMeshAlpha', 1);
 export const DECO = queryNumber('deco', 0) === 1;
 export const DECO_ALPHA = queryNumber('decoAlpha', 1);
 export const DECO_LOOK = queryNumber('decoLook', 0) === 1;
+/** The scene's looks as ?lookPasses= copies (DX-LAYERPASSES): the layer's picture must come out the same. */
+const LOOK_PASSES = Math.max(1, Math.min(8, Math.floor(queryNumber('lookPasses', 1))));
+const PASS_SCALE = queryNumber('passScale', 1);
+const SCREEN = queryNumber('screen', 0) === 1;
+function copyLook() {
+  if (LOOK_PASSES === 1) return { fragment: 'dxPass' };
+  const passes = [];
+  for (let i = 0; i < LOOK_PASSES - 1; i++) passes.push({ fragment: 'dxPass', resolution: PASS_SCALE });
+  passes.push({ fragment: query('lookLast') === 'source' ? 'dxSource' : 'dxPass' });
+  return { passes };
+}
 const sunSpec = (key) => {
   const raw = query(key);
   return raw === 'ramp' ? { from: 0.1, to: 0.4 } : raw;
@@ -119,7 +132,7 @@ export class DxCaptureScene extends Scene {
         zIndex: 1.6,
         ySorting: false,
         alpha: DECO_ALPHA,
-        ...(DECO_LOOK ? { shader: { fragment: 'dxPass', containerBlend: BLEND_MODES.NORMAL } } : {}),
+        ...(DECO_LOOK ? { shader: { ...copyLook(), containerBlend: BLEND_MODES.NORMAL } } : {}),
         ...(sunSpec('decoSun') ? { alphaBySun: sunSpec('decoSun') } : {}),
       },
       shade: {
@@ -128,8 +141,9 @@ export class DxCaptureScene extends Scene {
         alpha: SHADE_ALPHA,
         ...(sunSpec('shadeSun') ? { alphaBySun: sunSpec('shadeSun') } : {}),
         ...(query('shadeHeight') !== null ? { sunProjected: true } : {}),
-        ...(SHADE_LOOK ? { shader: { fragment: 'dxPass', containerBlend: BLEND_MODES.NORMAL } } : {}),
+        ...(SHADE_LOOK ? { shader: { ...copyLook(), containerBlend: BLEND_MODES.NORMAL } } : {}),
       },
+      ...(SCREEN ? { post: { kind: LAYER_KIND.SCREEN, zIndex: 100, shader: copyLook() } } : {}),
     },
     lighting: {
       enabled: true,
@@ -161,6 +175,7 @@ export class DxCaptureScene extends Scene {
     },
     shaders: {
       dxPass: { webgl: '/tests/bench/stressScenes/shaders/dxPass.frag', webgpu: '/tests/bench/stressScenes/shaders/dxPass.wgsl' },
+      dxSource: { webgl: '/tests/bench/stressScenes/shaders/dxSource.frag', webgpu: '/tests/bench/stressScenes/shaders/dxSource.wgsl' },
     },
   };
   static entities = [

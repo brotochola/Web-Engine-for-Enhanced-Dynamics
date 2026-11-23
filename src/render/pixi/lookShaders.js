@@ -13,6 +13,7 @@ import { GlProgram, GpuProgram, Mesh, Shader, Sprite, State, Texture, TextureSou
 import { assertLookShaderCompatible, errorCompileFailed } from '../rendererBackend.js';
 import { isWgslSource, lookGpuProgram } from '../webgpu/pixiMeshWgsl.js';
 import { findWgslUseBeforeDeclare, prependLookPrelude } from '../webgpu/wgslPrelude.js';
+import { lookReads } from './lookPasses.js';
 
 /**
  * DX-GBUFSHADER: a GLSL look that reads the G-buffer takes gbufUv(uv), the G-buffer's uv for a screen uv: WebGL's render
@@ -60,10 +61,17 @@ export class PixiLookShaders {
   }
 
   /**
-   * @param {TextureSource|null} [sceneSource] DX-POST: a SCREEN pass that reads uScene (the frame before the first pass)
-   * @param {boolean} [gbuf] DX-GBUFSHADER: it reads the G-buffer (uGbufFace, uGbufIds), bound empty until a frame binds them
+   * @param {{ scene?: TextureSource|null, source?: TextureSource|null, gbuf?: boolean }} [textures] what it reads besides
+   *   uTexture: uScene (DX-POST: a SCREEN pass's, the frame before the first pass), uSource (DX-LAYERPASSES: what the look's
+   *   first pass read), the G-buffer (DX-GBUFSHADER: uGbufFace, uGbufIds, bound empty until a frame binds them)
    */
-  create(fragmentSource, textureSource, uniformDefs, name, layerName, sceneSource = null, gbuf = false) {
+  create(fragmentSource, textureSource, uniformDefs, name, layerName, textures = {}) {
+    const reads = { scene: !!textures.scene, source: !!textures.source, gbuf: textures.gbuf === true };
+    const extra = {
+      ...(reads.scene ? { uScene: textures.scene } : {}),
+      ...(reads.source ? { uSource: textures.source } : {}),
+      ...(reads.gbuf ? { uGbufFace: Texture.EMPTY.source, uGbufIds: Texture.EMPTY.source } : {}),
+    };
     const asset = name || 'look';
     const layer = layerName || name || 'look';
     const backend = this.worker._useWebGpu ? 'webgpu' : 'webgl';
@@ -87,7 +95,7 @@ export class PixiLookShaders {
             wgslSource,
             Layer._uniformMaps[lid] || null,
             Layer._metadata?.layers?.[lid]?.uniformTypes || null,
-            { scene: sceneSource !== null, gbuf }
+            reads
           );
         }
         const earlyLook = findWgslUseBeforeDeclare(wgslSource);
@@ -101,16 +109,11 @@ export class PixiLookShaders {
           wgslSource,
           asset,
           this.worker._engineShaders.lookVert,
-          sceneSource !== null,
-          gbuf
+          reads
         );
         return new Shader({
           gpuProgram,
-          resources: {
-            customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style,
-            ...(sceneSource !== null ? { uScene: sceneSource } : {}),
-            ...(gbuf ? { uGbufFace: Texture.EMPTY.source, uGbufIds: Texture.EMPTY.source } : {}),
-          },
+          resources: { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style, ...extra },
         });
       }
       const lookVert = this.worker._engineShaders.lookVert;
@@ -121,16 +124,12 @@ export class PixiLookShaders {
       }
       const glProgram = GlProgram.from({
         vertex: lookVert,
-        fragment: gbuf ? withGbufUvGlsl(fragmentSource) : fragmentSource,
+        fragment: reads.gbuf ? withGbufUvGlsl(fragmentSource) : fragmentSource,
         name: asset,
       });
       return new Shader({
         glProgram,
-        resources: {
-          customUniforms: uniformDefs, uTexture: textureSource,
-          ...(sceneSource !== null ? { uScene: sceneSource } : {}),
-          ...(gbuf ? { uGbufFace: Texture.EMPTY.source, uGbufIds: Texture.EMPTY.source } : {}),
-        },
+        resources: { customUniforms: uniformDefs, uTexture: textureSource, ...extra },
       });
     } catch (err) {
       throw errorCompileFailed('look', asset, layer, backendLabel, err);
@@ -179,6 +178,10 @@ export class PixiLookShaders {
     }
 
     const resolution = cl.resolution || 1.0;
+    // DX-LAYERPASSES: a swap sets one fragment; the passes before the old look's last go.
+    this.worker.lookPasses.destroy(cl);
+    cl.reads = lookReads(null, false, false);
+    if (meta) meta.shaderEarlier = null;
 
     // (none): keep density RT, skip fullscreen frag, show raw cl.rt
     if (!fragmentSource) {

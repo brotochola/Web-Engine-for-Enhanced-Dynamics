@@ -25,7 +25,7 @@ test('the WGSL look prelude declares the G-buffer after uScene, with gbufTexel',
 
 test('the look program binds the G-buffer at the prelude\'s bindings', () => {
   const GpuProgram = { from: (o) => o };
-  const layout = (scene, gbuf) => lookGpuProgram(GpuProgram, 'fn mainFrag() {}', 'look', 'fn mainVert() {}', scene, gbuf);
+  const layout = (scene, gbuf) => lookGpuProgram(GpuProgram, 'fn mainFrag() {}', 'look', 'fn mainVert() {}', { scene, gbuf });
   const at = (p, name) => p.layout[2][name];
   const g = layout(false, true);
   assert.equal(at(g, 'uGbufFace'), 3);

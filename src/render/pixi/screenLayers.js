@@ -12,7 +12,8 @@ import { Layer } from '../../core/layer.js';
 import { debugWorkerLog } from '../../util/debugLog.js';
 import { RenderTexture, Texture } from '../../vendor/pixi.min.js';
 import { rtPixelSize } from '../gpuShadowCasters.js';
-import { applyEngineLookUniforms, finiteOrZero, layerIsVisible } from '../pixi/layerHelpers.js';
+import { applyEngineLookUniforms, applyTexelSizeUniform, copyLookUniforms, finiteOrZero, layerIsVisible } from '../pixi/layerHelpers.js';
+import { emptyLookTextures, lookReads } from '../pixi/lookPasses.js';
 import { errorCompileFailed } from '../rendererBackend.js';
 
 // The Pixi classes the moved bodies name as PIXI.X, as pixiWorker.js's namespace does.
@@ -45,15 +46,14 @@ export class PixiScreenLayers {
     const layerName = config.name;
     const name = config.shaderName || layerName;
     const uniformDefs = this.worker.lookShaders.buildUniformDefs(layerId, config.uniformMap, config.uniformTypes);
-    // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it).
-    const usesScene = typeof config.shaderFragment === 'string' && /\buScene\b/.test(config.shaderFragment);
-    // DX-GBUFSHADER: one that names uGbufFace or uGbufIds reads this frame's G-buffer (gbufSources).
-    const usesGbuf = typeof config.shaderFragment === 'string' && /\buGbuf(Face|Ids)\b/.test(config.shaderFragment);
+    // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it); DX-GBUFSHADER:
+    // one that names uGbufFace or uGbufIds, this frame's G-buffer (gbufSources); DX-LAYERPASSES: one in several passes that
+    // names uSource, the frame under the layer.
+    const reads = lookReads(config.shaderFragment, true, config.shaderEarlier !== null);
     let shader;
     try {
-      const empty = PIXI.Texture.EMPTY.source;
-      shader = this.worker.lookShaders.create(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null,
-        usesGbuf);
+      shader = this.worker.lookShaders.create(config.shaderFragment, PIXI.Texture.EMPTY.source, uniformDefs, name, layerName,
+        emptyLookTextures(reads));
     } catch (err) {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', name, layerName, this.worker._useWebGpu ? 'WebGPU' : 'WebGL', err);
@@ -70,8 +70,10 @@ export class PixiScreenLayers {
       uniformStore: shader.resources?.customUniforms?.uniforms || null,
       uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
       mesh: this.worker.lookShaders.makeMesh(shader, false),
-      usesScene,
-      usesGbuf,
+      reads,
+      // DX-LAYERPASSES: the passes of its look before the last one, or null.
+      earlierPasses: this.worker.lookPasses.make(config, true),
+      compute: null,
       // Its output when it is not the last visible pass: the canvas's size times its resolution.
       target: null,
     });
@@ -84,6 +86,7 @@ export class PixiScreenLayers {
     for (let i = 0; i < layers.length; i++) {
       const cl = layers[i];
       this._unbindTextures(cl);
+      this.worker.lookPasses.destroy(cl);
       if (cl.target) {
         this.worker._releaseTextureBindGroups(cl.target);
         cl.target.destroy(true);
@@ -174,15 +177,14 @@ export class PixiScreenLayers {
       applyEngineLookUniforms(cl, frame);
       const input = source.source;
       if (input.scaleMode !== cl.scaleMode) input.scaleMode = cl.scaleMode;
-      const res = cl.shader.resources;
-      if (res.uTexture !== input) res.uTexture = input;
-      if (res.uSampler !== undefined && res.uSampler !== input.style) res.uSampler = input.style;
-      if (cl.usesScene && res.uScene !== this.sceneRT.source) res.uScene = this.sceneRT.source;
-      if (cl.usesGbuf) {
-        const g = this.gbufSources();
-        if (res.uGbufFace !== g.face) res.uGbufFace = g.face;
-        if (res.uGbufIds !== g.ids) res.uGbufIds = g.ids;
+      this._bindFrame(cl.shader, cl.reads);
+      if (cl.earlierPasses !== null) {
+        for (let p = 0; p < cl.earlierPasses.length; p++) this._bindFrame(cl.earlierPasses[p].shader, cl.earlierPasses[p].reads);
+        this.worker.lookPasses.draw(cl, input, rtPixelSize(width, cl.resolution), rtPixelSize(height, cl.resolution));
+      } else {
+        this.worker.lookPasses.bind(cl.shader, input, null);
       }
+      applyTexelSizeUniform(cl, cl.shader.resources.uTexture);
       if (i === last) {
         // The canvas, cleared to its background first: a pass that copies gives the frame the stage would have.
         this.worker._submitRender(cl.mesh);
@@ -219,10 +221,29 @@ export class PixiScreenLayers {
 
   _unbindTextures(cl) {
     this.worker.lookShaders.unbindTexture(cl.shader);
-    if (cl.usesScene) cl.shader.resources.uScene = PIXI.Texture.EMPTY.source;
-    if (cl.usesGbuf) {
-      cl.shader.resources.uGbufFace = PIXI.Texture.EMPTY.source;
-      cl.shader.resources.uGbufIds = PIXI.Texture.EMPTY.source;
+    this.worker.lookPasses.unbind(cl);
+    this._unbindFrame(cl.shader, cl.reads);
+    if (cl.earlierPasses === null) return;
+    for (let p = 0; p < cl.earlierPasses.length; p++) this._unbindFrame(cl.earlierPasses[p].shader, cl.earlierPasses[p].reads);
+  }
+
+  /** What a pass reads of the frame besides its input: the frame before the first pass, the G-buffer. */
+  _bindFrame(shader, reads) {
+    const res = shader.resources;
+    if (reads.scene && res.uScene !== this.sceneRT.source) res.uScene = this.sceneRT.source;
+    if (reads.gbuf) {
+      const g = this.gbufSources();
+      if (res.uGbufFace !== g.face) res.uGbufFace = g.face;
+      if (res.uGbufIds !== g.ids) res.uGbufIds = g.ids;
+    }
+  }
+
+  _unbindFrame(shader, reads) {
+    const empty = PIXI.Texture.EMPTY.source;
+    if (reads.scene) shader.resources.uScene = empty;
+    if (reads.gbuf) {
+      shader.resources.uGbufFace = empty;
+      shader.resources.uGbufIds = empty;
     }
   }
 
@@ -247,19 +268,7 @@ export class PixiScreenLayers {
     if (!dirtyRef || Atomics.load(dirtyRef, 0) !== 1) return;
     Atomics.store(dirtyRef, 0, 0);
     const floats = Layer._uniformFloats[cl.layerId];
-    const entries = cl.uniformEntries;
-    const u = cl.uniformStore;
-    if (!floats || !entries || !u) return;
-    for (let ei = 0; ei < entries.length; ei++) {
-      const [uName, entry] = entries[ei];
-      if (entry.size === 1) {
-        u[uName] = floats[entry.offset];
-      } else {
-        const target = u[uName];
-        if (target && typeof target === 'object' && target.length) {
-          for (let k = 0; k < entry.size; k++) target[k] = floats[entry.offset + k];
-        }
-      }
-    }
+    copyLookUniforms(cl.uniformEntries, floats, cl.uniformStore);
+    this.worker.lookPasses.syncUniforms(cl, cl.uniformEntries, floats);
   }
 }

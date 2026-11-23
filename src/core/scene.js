@@ -156,6 +156,7 @@ import {
   resolveSpritePipeline,
   resolveAutoRendererBackend,
 } from '../render/rendererBackend.js';
+import { lookPassesOf } from '../render/lookPassConfig.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import { warnMissingListenerTags } from '../util/listenerTags.js';
 import { definesHook } from './entityHooks.js';
@@ -1932,21 +1933,21 @@ class Scene {
     if (this.config.layers) {
       const inlinePromises = [];
       for (const layerConfig of Object.values(this.config.layers)) {
-        const frag = layerConfig.shader?.fragment;
-        if (!frag) continue;
-        const fragRef = shaderFragmentKey(frag, backend);
-        if (!fragRef || this._loadedShaderSources[fragRef]) continue;
-        if (fragRef.includes('/') || fragRef.includes('.')) {
-          inlinePromises.push(
-            fetch(fragRef)
-              .then((res) => {
-                if (!res.ok) throw errorShaderFetchFailed(fragRef, fragRef, res.status);
-                return res.text();
-              })
-              .then((source) => {
-                this._loadedShaderSources[fragRef] = shaderSourceLf(source);
-              })
-          );
+        for (const pass of lookPassesOf(layerConfig.shader)) {
+          const fragRef = shaderFragmentKey(pass.fragment, backend);
+          if (!fragRef || this._loadedShaderSources[fragRef]) continue;
+          if (fragRef.includes('/') || fragRef.includes('.')) {
+            inlinePromises.push(
+              fetch(fragRef)
+                .then((res) => {
+                  if (!res.ok) throw errorShaderFetchFailed(fragRef, fragRef, res.status);
+                  return res.text();
+                })
+                .then((source) => {
+                  this._loadedShaderSources[fragRef] = shaderSourceLf(source);
+                })
+            );
+          }
         }
       }
       if (inlinePromises.length > 0) {

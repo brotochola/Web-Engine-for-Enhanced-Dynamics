@@ -15,6 +15,7 @@
 import { Layer } from './layer.js';
 import { Time } from './timeScale.js';
 import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { lookPassesOf } from '../render/lookPassConfig.js';
 import { LAYER_KIND, PARTICLE_EASE } from '../util/configDefaults.js';
 import { rngFill } from '../util/utils.js';
 import { PARTICLE_EASE_SHIFT, isFromToObject, resolveEaseId } from '../util/particleTween.js';
@@ -314,7 +315,7 @@ export class GpuParticles {
         layout,
         sortWithEntities: config.sortWithEntities === true,
         // A look shader: among the entities its finished target is drawn in regions (gpuParticleProxies.js).
-        look: !!config.shader?.fragment,
+        look: lookPassesOf(config.shader).length > 0,
         pixelSnap: config.pixelSnap === true,
         maxParticles: caps.reduce((a, b) => a + b, 0),
         // What the config asked for, for the warnings that say how much of it a thread's ring got.

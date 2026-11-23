@@ -90,7 +90,8 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
 /**
  * @param {object|null} uniformMap
  * @param {object|null} uniformTypes
- * @param {{ scene?: boolean }} [options] scene: bind uScene (DX-POST: the frame before the first SCREEN pass)
+ * @param {{ scene?: boolean, source?: boolean, gbuf?: boolean }} [options] scene: bind uScene (DX-POST: the frame before
+ *   the first SCREEN pass); source: uSource (DX-LAYERPASSES: what the look's first pass read); gbuf: the G-buffer's maps
  */
 export function buildLookPrelude(uniformMap, uniformTypes, options = {}) {
   let s = `${PIXI_GROUPS_WGSL}\n\n`;
@@ -101,10 +102,12 @@ export function buildLookPrelude(uniformMap, uniformTypes, options = {}) {
   s += '@group(2) @binding(0) var<uniform> customUniforms: CustomUniforms;\n';
   s += '@group(2) @binding(1) var uTexture: texture_2d<f32>;\n';
   s += '@group(2) @binding(2) var uSampler: sampler;\n';
-  if (options.scene === true) s += '@group(2) @binding(3) var uScene: texture_2d<f32>;\n';
+  // The textures the look reads besides uTexture, in lookGpuProgram's order.
+  let at = 3;
+  if (options.scene === true) s += `@group(2) @binding(${at++}) var uScene: texture_2d<f32>;\n`;
+  if (options.source === true) s += `@group(2) @binding(${at++}) var uSource: texture_2d<f32>;\n`;
   // DX-GBUFSHADER: a SCREEN pass that names them reads the frame's G-buffer (textureLoad: the face map, the ids map).
   if (options.gbuf === true) {
-    const at = options.scene === true ? 4 : 3;
     s += `@group(2) @binding(${at}) var uGbufFace: texture_2d<f32>;\n`;
     s += `@group(2) @binding(${at + 1}) var uGbufIds: texture_2d<f32>;\n`;
     s += 'fn gbufTexel(uv: vec2<f32>) -> vec2<i32> {\n';

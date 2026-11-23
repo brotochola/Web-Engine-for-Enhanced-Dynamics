@@ -232,6 +232,7 @@ Auto-declared on every custom shader layer — do **not** add them to `shader.un
 - `uWorldSize` vec2
 - `uViewSize` vec2 — `canvas / zoom`
 - `uTexSize` vec2 — allocated compute storage pixels (`numX`, `numY`). `0` on layers without compute.
+- `uTexelSize` vec2 — one over the size in texels of what the look's `uTexture` holds.
 - `uGbufSize` vec2 — the G-buffer's texels, for a `LAYER_KIND.SCREEN` pass that reads it (`uGbufFace`, `uGbufIds`: bible_of_weed_js.md, "Reading the G-buffer in a pass"). `0` elsewhere.
 
 Look fragments that sample a compute pack as a world field (not stretched mesh UV) reconstruct UV from engine camera/view/`uTexSize` plus the scene’s own cell-size uniform. For a world-fixed lattice (origin always `(0,0)`, see above) this is a direct world-position-over-extent divide, no origin subtraction:

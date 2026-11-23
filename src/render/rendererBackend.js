@@ -4,6 +4,7 @@
  */
 
 import { GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW } from './gpuQueueLayout.js';
+import { lookPassesOf } from './lookPassConfig.js';
 
 export const RENDERER_BACKEND_WEBGL = 'webgl';
 export const RENDERER_BACKEND_WEBGPU = 'webgpu';
@@ -201,10 +202,12 @@ export async function resolveAutoRendererBackend(config, shaderAssets = {}, env 
   }
   if (why === null) {
     for (const name of names) {
-      if (!(await lookHasWgsl(layers[name]?.shader?.fragment, shaderAssets, fetchText))) {
+      for (const pass of lookPassesOf(layers[name]?.shader)) {
+        if (await lookHasWgsl(pass.fragment, shaderAssets, fetchText)) continue;
         why = `layer "${name}"'s look shader has no WGSL version`;
         break;
       }
+      if (why !== null) break;
     }
   }
   if (why === null) return RENDERER_BACKEND_WEBGPU;
@@ -523,9 +526,8 @@ export function assertLoadedShadersCompatible({ backend, layers, shaderAssets, l
   for (const layerName of Object.keys(layers)) {
     const shader = layers[layerName]?.shader;
     if (!shader) continue;
-    const look = shader.fragment;
-    if (look) {
-      const asset = shaderFragmentKey(look, backend);
+    for (const pass of lookPassesOf(shader)) {
+      const asset = shaderFragmentKey(pass.fragment, backend);
       const path = resolveShaderPath(asset, assets, backend);
       const source = loaded[asset];
       if (!source) throw errorLookMissing(layerName, asset);

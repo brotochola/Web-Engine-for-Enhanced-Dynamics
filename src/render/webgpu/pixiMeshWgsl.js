@@ -101,7 +101,12 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
  * @param {boolean} [scene] DX-POST: a SCREEN pass that reads uScene too, at binding 3 of group 2 (wgslPrelude)
  * @param {boolean} [gbuf] DX-GBUFSHADER: one that reads the G-buffer too (uGbufFace, uGbufIds) at the next two bindings
  */
-export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, scene = false, gbuf = false) {
+/**
+ * A look's program: its uniforms (binding 0), uTexture (1) and uSampler (2), then the textures it reads besides, in the
+ * prelude's order (buildLookPrelude): uScene, uSource (DX-LAYERPASSES), the G-buffer's maps.
+ * @param {{ scene?: boolean, source?: boolean, gbuf?: boolean }} [reads]
+ */
+export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, reads = {}) {
   if (!vertexSource) {
     throw new Error(
       'WeedJS: Fullscreen look vertex WGSL was not loaded before look program creation.'
@@ -109,14 +114,17 @@ export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, s
   }
   const vf = gpuStageVF();
   const f = gpuStageF();
+  const extra = [];
+  if (reads.scene) extra.push('uScene');
+  if (reads.source) extra.push('uSource');
+  if (reads.gbuf) extra.push('uGbufFace', 'uGbufIds');
   return GpuProgram.from({
     name,
     vertex: { source: vertexSource, entryPoint: 'mainVert' },
     fragment: { source: fragmentSource, entryPoint: 'mainFrag' },
     layout: pixiGroupsLayout({
       customUniforms: 0, uTexture: 1, uSampler: 2,
-      ...(scene ? { uScene: 3 } : {}),
-      ...(gbuf ? { uGbufFace: scene ? 4 : 3, uGbufIds: scene ? 5 : 4 } : {}),
+      ...Object.fromEntries(extra.map((resource, i) => [resource, 3 + i])),
     }),
     gpuLayout: [
       ...pixiGroupsGpuLayout(),
@@ -124,10 +132,9 @@ export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, s
         { binding: 0, visibility: vf, buffer: { type: 'uniform' } },
         { binding: 1, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 2, visibility: f, sampler: { type: 'filtering' } },
-        ...(scene ? [{ binding: 3, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } }] : []),
-        ...(gbuf ? [scene ? 4 : 3, scene ? 5 : 4].map((binding) => (
-          { binding, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } }
-        )) : []),
+        ...extra.map((_, i) => (
+          { binding: 3 + i, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } }
+        )),
       ],
     ],
   });

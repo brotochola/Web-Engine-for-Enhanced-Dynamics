@@ -3337,6 +3337,13 @@ export interface LayerSceneConfigEntry {
   dynamicResolution?: Record<string, unknown> | null;
   shader?: {
     fragment?: string;
+    /**
+     * The look in several passes, in place of `fragment`: each draws into a target the next one samples. `uTexture` is what
+     * the pass before drew (the first one's is the layer's own picture, or the frame under a SCREEN layer), `uSource` what
+     * the first one read, `uTexelSize` one over `uTexture`'s size in texels. The last pass draws the layer. For SPRITES,
+     * MESH, DENSITY, COMPUTE, GPU_PARTICLES and SCREEN layers, without `worldRect`.
+     */
+    passes?: LayerLookPass[];
     containerBlend?: number;
     /** Omit or {@link LAYER_DENSITY_SOURCE}.SPRITES = InstancedSpriteBatch. {@link LAYER_DENSITY_SOURCE}.LIQUID_FUN = HEAP splat. */
     densitySource?: LayerDensitySource;
@@ -3361,6 +3368,14 @@ export interface LayerSceneConfigEntry {
      */
     cache?: boolean;
   };
+}
+
+/** One pass of a layer's look (`shader.passes`). */
+export interface LayerLookPass {
+  /** A shader asset's name, a path, or a path a backend. */
+  fragment: string | { webgl?: string; webgpu?: string };
+  /** Its target's size over the layer's, over 0 and up to 1 (default 1): a blur at half size. Not on the last pass. */
+  resolution?: number;
 }
 
 /** Built-in layer config shape (same keys as `DEFAULT_LAYERS` entries). */
