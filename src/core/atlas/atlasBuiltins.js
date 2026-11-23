@@ -25,6 +25,9 @@ export const BUILTIN_TEXTURES = Object.freeze([
   // E-498: the compact glow, the halos with their own size (glowRadius): the same curve, its visible part over the whole
   // texture.
   { name: '_lightGlow', glow: true },
+  // N-418: the lights' halos' own frame, the compact glow's pixels: in a 'sorted' scene the texture table marks it additive
+  // (it adds its light, as the 'add' layer does), which a sprite drawing _lightGlow is not.
+  { name: '_lightHalo', glow: true },
   { name: '_metaball' },
   { name: '_bulletTrail' },
   { name: '_white' },
@@ -45,6 +48,7 @@ function drawBuiltin(name) {
       // Light glow gradient (a white radial gradient 200 px across).
       return createCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff);
     case '_lightGlow':
+    case '_lightHalo':
       return createCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff, LIGHT_GLOW_COMPACT_SPAN);
     case '_metaball':
       // Fluid / metaball density splat (64 px, alpha = 1 - d²).

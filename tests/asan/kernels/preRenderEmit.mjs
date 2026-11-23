@@ -75,7 +75,7 @@ function textureMetadata() {
   }
   proxyToGlobalAnim[4] = { 0: animationFrameStart.length + 5 };
   const animationNameToIndex = {};
-  for (const name of ['_lightGlow', '_whiteCircle', '_bulletTrail']) {
+  for (const name of ['_lightHalo', '_whiteCircle', '_bulletTrail']) {
     animationNameToIndex[name] = animationFrameStart.length;
     animationFrameStart.push(offset);
     animationFrameCount.push(1);
@@ -458,7 +458,7 @@ function emitCase(S, opts, frames) {
         return { calls: K.counter.n, rows, mismatch: `frame ${f}: a column is not in the memory` };
       }
       C.writeEmitBulletColumns(b, S.BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail'));
-      C.writeEmitGlowColumns(b, S.LightEmitter, S.Transform, worker._resolveBuiltinTextureId('_lightGlow'));
+      C.writeEmitGlowColumns(b, S.LightEmitter, S.Transform, worker._resolveBuiltinTextureId('_lightHalo'));
       C.writeEmitParticleColumns(b, S.ParticleComponent, worker._resolveBuiltinTextureId('_whiteCircle'),
         worker.zenithalMaxHeight, worker.zenithalScaleFactor, worker.zenithalAlphaFade);
       const lfPrev = worker.interpolatePhysicsPose && worker._prevLfX ? worker._prevLfCount : 0;

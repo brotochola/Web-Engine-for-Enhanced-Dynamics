@@ -158,7 +158,7 @@ export function faceUnshadedFragment({ depth = false, edge = false } = {}) {
   const cut = !depth
     ? ''
     : edge
-      ? '  float ad = t.a * vColor.a;\n  if (ad <= 0.0 || (ad >= 0.5 && unshadedOf(vGbuf) <= 0.0)) discard;\n  // weed:depth\n'
+      ? '  float ad = t.a * abs(vColor.a);\n  if (ad <= 0.0 || (ad >= 0.5 && unshadedOf(vGbuf) <= 0.0)) discard;\n  // weed:depth\n'
       : '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n  if (unshadedOf(vGbuf) > 0.0) discard;\n';
   return `#version 300 es
 precision highp float;
@@ -183,7 +183,8 @@ void main() {
   vec2 uv = weedUv();
   vec4 t = texture(uTexture, uv);
 ${cut}  float s = unshadedOf(vGbuf);
-  finalColor = vec4(t.rgb * vColor.rgb * vColor.a * s, t.a * vColor.a);
+  // N-418: an additive frame's (a negative alpha) colour added, alpha 0.
+  finalColor = vec4(t.rgb * vColor.rgb * abs(vColor.a) * s, max(t.a * vColor.a, 0.0));
 }
 `;
 }
@@ -402,7 +403,7 @@ fn mainFragUnshaded(in: VertexOut) -> @location(0) vec4<f32> {
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let t = textureSample(uTexture, uSampler, uv);
   let s = unshadedOf(in.vGbuf, in.vMapsWin);
-  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
+  return vec4<f32>(t.rgb * in.vColor.rgb * abs(in.vColor.a) * s, max(t.a * in.vColor.a, 0.0));
 }
 // E-457 (faceUnshadedMaskFragment): the quad of an instance that can be unshaded, marked in the stencil, no colour.
 @fragment

@@ -554,7 +554,7 @@ export function writeEmitBulletColumns(b, BulletComponent, trailTexture) {
  * The glow rows' columns and the halo's texture, after writeEmitColumns: LightEmitter's (in the emit's blocks)
  * and Transform's x and y (in the collect's), all in the memory, or lColor 0 and emit_rows lists the glow rows for
  * the JS.
- * @param {number} glowTexture E-498, E-547: the compact glow's (_resolveBuiltinTextureId('_lightGlow')), every halo's
+ * @param {number} glowTexture E-498, E-547: the halos' frame (_resolveBuiltinTextureId('_lightHalo'): the compact glow's pixels, N-418), every halo's
  * @returns {boolean} whether the kernel writes the glow rows this frame
  */
 export function writeEmitGlowColumns(b, LightEmitter, Transform, glowTexture) {

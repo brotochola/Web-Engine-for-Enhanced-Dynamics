@@ -104,7 +104,7 @@ function textureMetadata() {
   // Sheet 4: state 0 maps past the last animation (no first frame), state 1 to nothing at all.
   proxyToGlobalAnim[4] = { 0: animationFrameStart.length + 5 };
   const animationNameToIndex = {};
-  for (const name of ['_lightGlow', '_whiteCircle', '_bulletTrail']) {
+  for (const name of ['_lightHalo', '_whiteCircle', '_bulletTrail']) {
     animationNameToIndex[name] = animationFrameStart.length;
     animationFrameStart.push(offset);
     animationFrameCount.push(1);
@@ -664,7 +664,7 @@ async function runCase(t, opts) {
   for (let f = 0; f < FRAMES; f++) {
     assert.ok(writeEmitColumnsNext(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
-    assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightGlow')), k.lights, 'the glow columns');
+    assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightHalo')), k.lights, 'the glow columns');
     assert.equal(writeEmitParticleColumns(b, ParticleComponent, worker._resolveBuiltinTextureId('_whiteCircle'),
       worker.zenithalMaxHeight, worker.zenithalScaleFactor, worker.zenithalAlphaFade), k.particles, 'the particle columns');
     const lfPrev = worker.interpolatePhysicsPose && worker._prevLfX ? worker._prevLfCount : 0;
@@ -1141,7 +1141,7 @@ test('E-320, E-330: the emit with the poses already in the queue writes what it 
           else assert.ok(missing.length > 0 || !opts.ySort, 'the frame takes another copy');
         }
         writeEmitBulletColumns(b, BulletComponent, w._resolveBuiltinTextureId('_bulletTrail'));
-        writeEmitGlowColumns(b, LightEmitter, Transform, w._resolveBuiltinTextureId('_lightGlow'));
+        writeEmitGlowColumns(b, LightEmitter, Transform, w._resolveBuiltinTextureId('_lightHalo'));
         writeEmitParticleColumns(b, ParticleComponent, w._resolveBuiltinTextureId('_whiteCircle'),
           w.zenithalMaxHeight, w.zenithalScaleFactor, w.zenithalAlphaFade);
         const tilesDirty = w.renderQueueTileMode !== null && (w._faces || w._tiledTileColumns.has(w.renderQueueTileMode));

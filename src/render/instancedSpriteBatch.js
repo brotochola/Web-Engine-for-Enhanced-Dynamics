@@ -158,16 +158,18 @@ export const TEX_LUT_MAX_ROWS = 2048;
 
 /**
  * N-111. The LUT texture for `count` textureIds: `perRow` of them a row (1 until count passes `maxRows`), `width` texels
- * (TEX_LUT_RGBA_WIDTH each, then H-EDGE's flags texel: frameBase.js TEX_LUT_SOFT_OR_GLOW) and `height` rows. textureId t
- * is at texel (TEX_LUT_RGBA_WIDTH * (t % perRow), t / perRow), its row's flags at (TEX_LUT_RGBA_WIDTH * perRow, t / perRow).
+ * (TEX_LUT_RGBA_WIDTH each, then H-EDGE's flags texel: frameBase.js TEX_LUT_SOFT_OR_GLOW, and N-418's additive one where a
+ * frame is: lutFlagTexels) and `height` rows. textureId t is at texel (TEX_LUT_RGBA_WIDTH * (t % perRow), t / perRow), its
+ * row's flags at (TEX_LUT_RGBA_WIDTH * perRow, t / perRow), its additive flags one texel on.
  * @param {number} count
  * @param {number} [maxRows]
+ * @param {number} [flags] the flags texels a row (1, or 2 with the additive one)
  * @returns {{ perRow: number, width: number, height: number }}
  */
-export function textureLutLayout(count, maxRows = TEX_LUT_MAX_ROWS) {
+export function textureLutLayout(count, maxRows = TEX_LUT_MAX_ROWS, flags = 1) {
   const n = Math.max(1, count | 0);
   const perRow = Math.ceil(n / maxRows);
-  const width = perRow * TEX_LUT_RGBA_WIDTH + 1;
+  const width = perRow * TEX_LUT_RGBA_WIDTH + flags;
   if (width > maxRows) {
     throw new Error(
       `WeedJS: the atlas has ${n} frames; its texture table holds at most ${Math.floor((maxRows - 1) / TEX_LUT_RGBA_WIDTH) * maxRows} (${maxRows} x ${maxRows} texels)`
@@ -291,14 +293,27 @@ export function buildTextureLut(flatTextures, fallbackTexture) {
 }
 
 /**
- * Pack CPU LUT (12 floats/id) into the RGBA32F texture of textureLutLayout(count, maxRows) for vertex texelFetch.
- * The slots past `count` in the last row stay 0 (a zero size). H-EDGE: each row's flags texel holds its frames' soft-or-glow
- * bits (frameBase.js TEX_LUT_SOFT_OR_GLOW, TEX_LUT_FLAG_BITS a channel), set for every frame of a LUT that has no texels
- * (textureLutTexels).
+ * N-418: the flags texels a row of the texture table holds: 1, or 2 when a frame is additive (`additive`: a flag a
+ * textureId), the second holding those frames' bits as the first holds the soft-or-glow ones. The sprite vertex shader reads
+ * it where the table is that wide, and sends such a frame's alpha negative: its colour is added (alpha 0 out).
+ * @param {Uint8Array|null} additive
+ * @returns {number}
  */
-export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS) {
+export function lutFlagTexels(additive) {
+  return additive !== null && additive !== undefined && additive.includes(1) ? 2 : 1;
+}
+
+/**
+ * Pack CPU LUT (12 floats/id) into the RGBA32F texture of textureLutLayout(count, maxRows, lutFlagTexels(additive)) for
+ * vertex texelFetch. The slots past `count` in the last row stay 0 (a zero size). H-EDGE: each row's flags texel holds its
+ * frames' soft-or-glow bits (frameBase.js TEX_LUT_SOFT_OR_GLOW, TEX_LUT_FLAG_BITS a channel), set for every frame of a LUT
+ * that has no texels (textureLutTexels); N-418: the next one, where there is one, the additive frames' bits.
+ * @param {Uint8Array|null} [additive] a flag a textureId: the frames whose colour is added
+ */
+export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS, additive = null) {
   const n = Math.max(1, count | 0);
-  const { perRow, width, height } = textureLutLayout(n, maxRows);
+  const flags = lutFlagTexels(additive);
+  const { perRow, width, height } = textureLutLayout(n, maxRows, flags);
   const out = new Float32Array(width * height * 4);
   const srcN = lut ? (lut.length / TEX_LUT_FLOATS) | 0 : 0;
   const texels = textureLutTexels(lut);
@@ -308,6 +323,9 @@ export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS) {
     const dst = (row * width + slot * TEX_LUT_RGBA_WIDTH) * 4;
     if (slot < TEX_LUT_FLAGS_PER_ROW && (texels === null || i >= texels.length || (texels[i] & TEX_LUT_SOFT_OR_GLOW) !== 0)) {
       out[(row * width + perRow * TEX_LUT_RGBA_WIDTH) * 4 + ((slot / TEX_LUT_FLAG_BITS) | 0)] += 2 ** (slot % TEX_LUT_FLAG_BITS);
+    }
+    if (flags > 1 && slot < TEX_LUT_FLAGS_PER_ROW && i < additive.length && additive[i] === 1) {
+      out[(row * width + perRow * TEX_LUT_RGBA_WIDTH + 1) * 4 + ((slot / TEX_LUT_FLAG_BITS) | 0)] += 2 ** (slot % TEX_LUT_FLAG_BITS);
     }
     if (i < srcN) {
       const s = i * TEX_LUT_FLOATS;

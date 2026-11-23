@@ -262,7 +262,7 @@ function depthBodyGlsl({ edge, gbuf, faces }) {
     // DX-DEPTH: this pixel's place on the floor: at its own height when its frame has a height map, its own when the
     // sprite lies flat, else its sprite's foot; the zIndex band first and the painter's order last (pixelDepth.js).
     vec2 uvd = weedUv();
-    float ad = texture(uTexture, uvd).a * vColor.a;
+    float ad = texture(uTexture, uvd).a * abs(vColor.a);
     if (${EARLY_DISCARD(edge)}) discard;
     vec4 md = twinTexel(uvd, vMapsWin);
     float zd = twinZ(md) * vPainter.y;
@@ -298,7 +298,7 @@ ${surface}`
  */
 function vertexDepthBodyGlsl(gbuf) {
   return `  {
-    float ad = texture(uTexture, weedUv()).a * vColor.a;
+    float ad = texture(uTexture, weedUv()).a * abs(vColor.a);
     bool glow = twinUnshaded(vMapsWin)${gbuf ? ' || ((uint(vDepthWord.x + 0.5) >> 21u) & 1u) != 0u' : ''};
     if (ad < 0.5 || glow) discard;
   }
@@ -348,7 +348,7 @@ struct WeedDepthOut {
 // (EARLY_DISCARD; edge: the pass) leaves before the twin page and the depth.
 fn weedPixelDepth(in: VertexOut, edge: bool) -> vec2<f32> {
   let uvd = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
-  let ad = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;
+  let ad = textureSample(uTexture, uSampler, uvd).a * abs(in.vColor.a);
   if (select(${EARLY_DISCARD(false)}, ${EARLY_DISCARD(true, 'in.vPlain')}, edge)) { discard; }
   let md = twinTexel(uvd, in.vMapsWin);
   let zd = twinZ(md) * in.vDepthFoot.z;
@@ -374,7 +374,7 @@ ${faces ? '' : '  if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) { floorY 
 // DX-FACEDEPTH (E-378): whether a pixel of an instance whose depth the vertex wrote is the opaque pass's: opaque, and not
 // unshaded (vertexDepthBodyGlsl's WGSL).
 fn weedVertexDepthKeep(in: VertexOut) -> bool {
-  let ad = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff)).a * in.vColor.a;
+  let ad = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff)).a * abs(in.vColor.a);
   var glow = twinUnshaded(in.vMapsWin);
 ${gbuf ? '  glow = glow || ((u32(in.vDepthWord.x + 0.5) >> 21u) & 1u) != 0u;\n' : ''}  return ad >= 0.5 && !glow;
 }
@@ -614,7 +614,7 @@ const UNSHADED_ENTRY_WGSL = `fn mainFragUnshaded(in: VertexOut) -> @location(0) 
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let t = textureSample(uTexture, uSampler, uv);
   let s = unshadedOf(in.vGbuf, in.vMapsWin);
-  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
+  return vec4<f32>(t.rgb * in.vColor.rgb * abs(in.vColor.a) * s, max(t.a * in.vColor.a, 0.0));
 }
 `;
 
@@ -639,10 +639,10 @@ fn mainFragUnshadedEdge(in: VertexOut) -> WeedUnshadedOut {
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let t = textureSample(uTexture, uSampler, uv);
   let s = unshadedOf(in.vGbuf, in.vMapsWin);
-  let ad = t.a * in.vColor.a;
+  let ad = t.a * abs(in.vColor.a);
   if (ad <= 0.0 || (ad >= 0.5 && s <= 0.0)) { discard; }
   var o: WeedUnshadedOut;
-  o.color = vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, ad);
+  o.color = vec4<f32>(t.rgb * in.vColor.rgb * abs(in.vColor.a) * s, select(ad, 0.0, in.vColor.a < 0.0));
   o.depth = weedGbufDepth(in);
   return o;
 }

@@ -28,7 +28,7 @@ const shaders = spriteGlslShaders();
 
 test('the opaque fragment shader is the blend one discarding every alpha but 1', () => {
   const out = opaqueFragment(shaders.spriteFrag);
-  assert.match(out, /float a = t\.a \* vColor\.a;\n {2}if \(a < 1\.0\) discard;\n {2}finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
+  assert.match(out, /float a = vColor\.a < 0\.0 \? 0\.0 : t\.a \* ia;\n {2}if \(a < 1\.0\) discard;\n {2}finalColor = vec4\(t\.rgb \* vColor\.rgb \* ia, a\);/);
   assert.equal(out.replace('  if (a < 1.0) discard;\n', ''), shaders.spriteFrag);
   assert.throws(() => opaqueFragment(shaders.spriteFragAdd), /blend fragment shader/);
 });

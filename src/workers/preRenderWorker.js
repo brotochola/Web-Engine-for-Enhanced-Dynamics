@@ -4278,7 +4278,7 @@ class PreRenderWorker extends AbstractWorker {
         const b = this._emitWasm;
         if (!b.texturesReady || !writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return false;
         writeEmitBulletColumns(b, BulletComponent, trailTexture);
-        writeEmitGlowColumns(b, LightEmitter, Transform, this._resolveBuiltinTextureId('_lightGlow'));
+        writeEmitGlowColumns(b, LightEmitter, Transform, this._resolveBuiltinTextureId('_lightHalo'));
         const white = this._resolveBuiltinTextureId('_whiteCircle');
         writeEmitParticleColumns(b, ParticleComponent, white, this.zenithalMaxHeight, this.zenithalScaleFactor, this.zenithalAlphaFade);
         // A LiquidFun row interpolates when emitSpriteQueue would: interpolatePhysicsPose, _prevLfX, _prevLfCount > idx.

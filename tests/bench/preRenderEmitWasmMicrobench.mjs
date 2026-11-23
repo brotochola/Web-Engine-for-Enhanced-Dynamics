@@ -148,7 +148,7 @@ function textureMetadata() {
   const grass = [];
   for (let k = 0; k < GRASS; k++) grass.push(add(1, 16, 24));
   const animationNameToIndex = {};
-  for (const name of ['_lightGlow', '_whiteCircle', '_bulletTrail']) animationNameToIndex[name] = add(1, 64, 64);
+  for (const name of ['_lightHalo', '_whiteCircle', '_bulletTrail']) animationNameToIndex[name] = add(1, 64, 64);
   return {
     meta: {
       animationFrameStart,

@@ -56,7 +56,7 @@ enum {
   B_ACTIVE, B_X, B_Y, B_START_X, B_START_Y, B_OFFSET_Y, B_SCALE, B_ALPHA, B_TINT, B_TEXTURE,
   B_SPRITE_ROT_C, B_SPRITE_ROT_S, B_ROT_C, B_ROT_S, B_TRAIL_W, B_ANCHOR_X, B_ANCHOR_Y, B_TRAIL_TEX,
   /* The glow rows (type 3): LightEmitter's columns (L_COLOR 0: not in the memory, so they are listed for the JS),
-     the light entity's Transform x and y, and the halo's texture (a value: _resolveBuiltinTextureId('_lightGlow'),
+     the light entity's Transform x and y, and the halo's texture (a value: _resolveBuiltinTextureId('_lightHalo'),
      E-498's compact glow, every halo's since E-547).
      DX-LIGHTAPI: brightness, radius, glowOffsetY and glow, in the slots intensity, its root, the glow's height and
      hasGlowSprite had (append, don't move). */

@@ -162,7 +162,7 @@ function emitSpriteQueue(deltaTime, source) {
     const entityRotS = Transform.rotS;
     const glowSprite = LightEmitter.glow;
     const glowRadius = LightEmitter.glowRadius;
-    const lightGlowTextureId = this._resolveBuiltinTextureId('_lightGlow');
+    const lightGlowTextureId = this._resolveBuiltinTextureId('_lightHalo');
     const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
 
     const decoX = DecorationComponent.x;

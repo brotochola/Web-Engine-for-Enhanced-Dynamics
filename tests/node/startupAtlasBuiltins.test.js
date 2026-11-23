@@ -19,11 +19,11 @@ const overlaps = (a, b, pad = 0) =>
 
 test('the built-ins: createBigAtlas\'s order, and the ones a json lacks (never _empty)', () => {
   assert.deepEqual(BUILTIN_TEXTURES.map((b) => b.name), [
-    '_empty', '_lightGradient', '_lightGlow', '_metaball', '_bulletTrail', '_white', '_whiteCircle', '_whiteCircle_64x64',
+    '_empty', '_lightGradient', '_lightGlow', '_lightHalo', '_metaball', '_bulletTrail', '_white', '_whiteCircle', '_whiteCircle_64x64',
   ]);
   // Predator's bake (demos/img/baked/PredatorScene/bigAtlas.json) holds these five.
   const predator = { animations: Object.fromEntries(['_empty', '_lightGradient', '_bulletTrail', '_white', '_whiteCircle', '_whiteCircle_64x64'].map((n) => [n, [n]])) };
-  assert.deepEqual(missingBuiltins(predator), ['_lightGlow', '_metaball']);
+  assert.deepEqual(missingBuiltins(predator), ['_lightGlow', '_lightHalo', '_metaball']);
   assert.deepEqual(missingBuiltins({ animations: {} }).includes('_empty'), false);
 });
 
@@ -75,7 +75,7 @@ function staleBake(seed, lacks) {
 
 test('a stale bake gets its missing built-ins at load: json, renderer bitmap and decals, through the worker or the page', async () => {
   await withMemCanvas(async () => {
-    const lacks = ['_lightGlow', '_metaball'];
+    const lacks = ['_lightGlow', '_lightHalo', '_metaball'];
     const drawn = Object.fromEntries(drawBuiltinTextures({ only: lacks }).map((b) => [b.name, b.canvas]));
     const results = [];
     for (const kind of ['worker', 'page', 'broken']) {
