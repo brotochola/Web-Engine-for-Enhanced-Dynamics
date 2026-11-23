@@ -17,12 +17,16 @@ import {
   planLampVolumeCache,
   writeDirectLampList,
 } from '../../src/render/lampVolumeCache.js';
-import { writeLampTile, writeLampTileOwner } from '../../src/render/lampShadowMap.js';
+import { lampGridRects, writeLampTile, writeLampTileOwner } from '../../src/render/lampShadowMap.js';
 
 const WIDTH = 16;
 const PER_ROW = 4;
 const SLOTS = 8;
 const SLOTS_PER_ROW = 4;
+/** E-551: the tiles' side and their rects, the grid of PER_ROW a row (lampGridRects). */
+const SIDE = 256;
+const RECTS = new Float32Array(WIDTH * 3);
+lampGridRects(RECTS, WIDTH, PER_ROW, SIDE);
 
 /** The tiles' texture for lamps [{ id, x, y, e, r }], one a tile in order. */
 function tilesFor(lamps) {
@@ -48,7 +52,7 @@ function entries(data, from, count) {
 
 function plan(c, lamps, epoch = 1, slots = SLOTS) {
   const { data, ids, n } = tilesFor(lamps);
-  planLampVolumeCache(c, ids, data, WIDTH, n, PER_ROW, slots, SLOTS_PER_ROW, epoch);
+  planLampVolumeCache(c, ids, data, WIDTH, n, RECTS, slots, SLOTS_PER_ROW, SIDE, epoch);
   return { data, direct: c.direct, cached: c.cached, paint: c.paint };
 }
 
@@ -60,7 +64,7 @@ const STILL = [
 
 test('the direct list is every tile into its own floor half, as the draw read the instance before the lists', () => {
   const data = new Float32Array(WIDTH * 4 * LAMP_TILE_ROWS);
-  writeDirectLampList(data, WIDTH, 6, PER_ROW);
+  writeDirectLampList(data, WIDTH, 6, RECTS);
   assert.deepEqual(entries(data, 0, 6), [[0, 0, 0], [1, 2, 0], [2, 4, 0], [3, 6, 0], [4, 0, 1], [5, 2, 1]]);
   assert.deepEqual(lampCacheLayout(8, 512, 4096), { perRow: 8, width: 4096, height: 512 });
   assert.deepEqual(lampCacheLayout(16, 1024, 4096), { perRow: 4, width: 4096, height: 4096 });

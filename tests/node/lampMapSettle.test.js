@@ -24,6 +24,8 @@ async function lampMap() {
     map.tileCount = tiles;
     map.maxReach = reach;
     const before = px.lighting.lampMapRT;
+    // E-551: the layout is planned with the tiles (readTiles), then made.
+    map._planLayout(gpu, tiles);
     assert.equal(map._ensureMap(gpu), true);
     if (px.lighting.lampMapRT !== before) made.push(`${map.lights}x${px._lampTileSize}`);
   };

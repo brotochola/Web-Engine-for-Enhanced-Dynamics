@@ -4198,7 +4198,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // N-196: 'auto' (the default) sizes the tile by the casting lamps' reach and lighting.shadowResolution.
         const tile = lightingConfig.lampShadowTile;
         this._lampTileAuto = tile === undefined || tile === null || tile === 'auto';
-        this._lampTileSize = this._lampTileAuto ? 256 : Math.max(32, Math.min(1024, (tile | 0) || 256));
+        // E-551: a fixed tile in whole steps of LAMP_RECT_UNIT (16 texels), as a tile's rect is carried (lampRectCode).
+        this._lampTileSize = this._lampTileAuto ? 256 : Math.ceil(Math.max(32, Math.min(1024, (tile | 0) || 256)) / 16) * 16;
         // E-508: a still lamp's volumes drawn once into a cache and copied each frame (default on).
         this._lampCacheOn = lightingConfig.lampMapCache !== false;
       }

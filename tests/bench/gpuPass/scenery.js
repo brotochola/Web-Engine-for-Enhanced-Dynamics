@@ -9,7 +9,7 @@
 import { mulberry32 } from '../benchMath.js';
 import { frameTwinTexels } from '../../../src/render/spriteMaps.js';
 import { FOOTPRINT_TEXELS, lutBaseFloats, measureLowestContact, measureStandingBase } from '../../../src/render/frameBase.js';
-import { lampTileLayout } from '../../../src/render/lampShadowMap.js';
+import { lampGridRects, lampRectCode, lampTileLayout } from '../../../src/render/lampShadowMap.js';
 import { sunMapTerms } from '../../../src/render/sunShadowMap.js';
 
 const SHAPES = '/tests/bench/stressScenes/maps/';
@@ -128,8 +128,14 @@ export async function buildScenery(p) {
   const lampCount = Math.max(1, p.lamps);
   const tileLayout = lampTileLayout(lampCount, p.tile);
   const lamps = Array.from({ length: lampCount }, () => ({ x: rng() * p.width, floorY: (rng() * p.height) / g, elevation: 60 + rng() * 40, reach: 260 + rng() * 120 }));
-  const lampTiles = new Float32Array(lampCount * 4);
-  lamps.forEach((l, t) => lampTiles.set([l.x, l.floorY, l.elevation, l.reach], t * 4));
+  // The tiles' texture: row 0 each lamp, row 1 its owner (none) and its rect in the map (E-551: x0, y0, a half's side).
+  const lampTiles = new Float32Array(lampCount * 4 * 2);
+  const lampRects = new Float32Array(lampCount * 3);
+  lampGridRects(lampRects, lampCount, tileLayout.perRow, tileLayout.size);
+  lamps.forEach((l, t) => {
+    lampTiles.set([l.x, l.floorY, l.elevation, l.reach], t * 4);
+    lampTiles.set([-1, lampRects[t * 3], lampRects[t * 3 + 1], lampRects[t * 3 + 2]], (lampCount + t) * 4);
+  });
   const lampFeet = [];
   for (let t = 0; t < lampCount; t++) {
     const l = lamps[t];
@@ -153,7 +159,9 @@ export async function buildScenery(p) {
     const base = (l.reach / 10) ** 2;
     const intensity = base + l.elevation ** 2;
     const k = base / intensity;
-    lightData.set([l.x, l.floorY, intensity, tiled ? -(i + 1) : l.reach * l.reach], i * 4);
+    // E-551: a tiled lamp's tag carries its tile's rect (lampRectCode).
+    const tag = tiled ? -(lampRectCode(lampRects[i * 3], lampRects[i * 3 + 1], lampRects[i * 3 + 2]) + 1) : l.reach * l.reach;
+    lightData.set([l.x, l.floorY, intensity, tag], i * 4);
     lightData.set([k, 0.85 * k, 0.6 * k, l.elevation], (maxLights + i) * 4);
     // N-212: no lamp fades at the cut here. E-409: a lamp's shadows reach its radius, minus it in the y (the light pass
     // from before E-409 takes 10 sqrt(I' - h²) for anything not positive there, the same radius).

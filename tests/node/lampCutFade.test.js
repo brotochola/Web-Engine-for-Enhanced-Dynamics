@@ -12,6 +12,7 @@ import {
   computeGpuQueueBufferSize, createGpuQueueViews, gpuQueueCaps, GPU_HDR_STAMP, GPU_HDR_STAMP_LIGHTS,
 } from '../../src/render/gpuQueueLayout.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { lampRectCode } from '../../src/render/lampShadowMap.js';
 
 const N = 4;
 const MAX_LIGHTS = 4;
@@ -80,7 +81,8 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   const slotOf = (x) => (d[0] === x ? 0 : 1);
   const lamp = slotOf(300);
   const plain = 1 - lamp;
-  assert.equal(d[lamp * 4 + 3], -1, 'the lamp\'s tag: -(tile + 1)');
+  // E-551: the tag carries the tile's rect (lampRectCode): tile 0 at the atlas's corner, 256 texels a half.
+  assert.equal(d[lamp * 4 + 3], -(lampRectCode(0, 0, 256) + 1), 'the lamp\'s tag: -(its rect\'s code + 1)');
   assert.equal(d[MAX_LIGHTS * 12 + lamp * 4], 0.25, 'its fade in the fourth row');
   assert.equal(d[MAX_LIGHTS * 12 + plain * 4], 1, 'a light without a tile: 1');
   // E-409: its shadows' reach in the fourth row's y, minus its radius (no shadowRange under it); 0 for a light without a

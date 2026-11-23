@@ -148,6 +148,8 @@ export class PixiLighting {
     this.lampShadowAlpha = NaN;
     // The light pass's uLampAtlas: tiles a row, a tile's texels, the atlas's width and height.
     this.lampAtlas = new Float32Array([1, 256, 256, 256]);
+    // E-551: each lamp tile's rect as one number (lampShadowMap.js lampRectCode), by tile: the tag the light pass reads.
+    this.lampRectCodes = new Float64Array(0);
     this.sunMapK = new Float32Array(4);
     this.sunMapRect = new Float32Array([1, 1, 0, 0]);
     this.noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
@@ -681,6 +683,8 @@ export class PixiLighting {
   packLightData(countToRender, visibleLights, coneCosSeen, coneCount, lightData, row1, row2, groundInvY, vr) {
     // DX-SHADOW3D (F7): a lamp with a tile in the lamps' map: its first row's w carries -(tile + 1).
     const tileOf = this.lampTileOf;
+    // E-551: the tag carries the tile's rect in the atlas (lampRectCode), not its index.
+    const rectCodes = this.lampRectCodes;
     // N-212: and its fourth row's x its map shadow's fade at the cut (1 for any other light).
     const fadeOf = this.lampFadeOf;
     // lighting.lampShadowAlpha (1 before the light pass is made).
@@ -744,8 +748,8 @@ export class PixiLighting {
       lightData[i3 + 3] = 0;
       if (entityIndex < tileOf.length) {
         const tile = tileOf[entityIndex];
-        if (tile >= 0 && h > 0) {
-          lightData[i0 + 3] = -(tile + 1);
+        if (tile >= 0 && h > 0 && tile < rectCodes.length) {
+          lightData[i0 + 3] = -(rectCodes[tile] + 1);
           // DX-GBUF: with the ids map, its entity's id in the fourth row's w, so a pixel of its own entity does not shade
           // from it (lightingBasic lampOwner). N-189: it rode in the tag, -(tile + 1 + 256 · id), which held 256 tiles.
           if (ids) lightData[i3 + 3] = gbufEntityId(entityIndex);

@@ -228,9 +228,14 @@ float sunVisibility(vec3 p, float selfId) {
 uniform sampler2D uLampMap;
 uniform vec4 uLampAtlas; // tiles a row, a tile's texels, the atlas's width and height in texels
 
-// A lamp's tile from its tag.
-float lampTile(float tag) {
-  return -tag - 1.0;
+// E-551: a lamp's tile from its tag, -(code + 1) (lampShadowMap.js lampRectCode): its floor half's corner (x, y) and its
+// side (z) in the atlas, texels.
+vec3 lampRect(float tag) {
+  float code = -tag - 1.0;
+  float side = floor(code / 65536.0);
+  float rest = code - side * 65536.0;
+  float y = floor(rest / 256.0);
+  return vec3(rest - y * 256.0, y, side) * 16.0;
 }
 
 // Light li's entity id in the G-buffer (0 none, and always 0 without the ids map): its fourth row's w.
@@ -276,10 +281,10 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float selfId, int li) {
   bool upper = p.z > e;
   float room = max(abs(e - p.z), e / 64.0);
   vec2 uv = lampPanoUv(fromLamp * (e / room), reach);
-  float tile = lampTile(tag);
-  vec2 cell = vec2(mod(tile, uLampAtlas.x) * 2.0 + (upper ? 1.0 : 0.0), floor(tile / uLampAtlas.x));
-  vec2 toAtlas = vec2(uLampAtlas.y) / uLampAtlas.zw;
-  float h = 0.5 / uLampAtlas.y;
+  vec3 rect = lampRect(tag);
+  vec2 cell = vec2(rect.x / rect.z + (upper ? 1.0 : 0.0), rect.y / rect.z);
+  vec2 toAtlas = vec2(rect.z) / uLampAtlas.zw;
+  float h = 0.5 / rect.z;
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps
   // one towards lit (on the floor's half over its height, on the ceiling's under it): 1 px and 4 floor px along its ray
@@ -327,10 +332,10 @@ float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, int li) {
   if (fade <= 0.0) return 1.0;
   // Within the reach: lampPanoUv's linear part.
   vec2 uv = vec2(0.5) + fromLamp * (0.40 / reach);
-  float tile = lampTile(tag);
-  vec2 cell = vec2(mod(tile, uLampAtlas.x) * 2.0, floor(tile / uLampAtlas.x));
-  vec2 toAtlas = vec2(uLampAtlas.y) / uLampAtlas.zw;
-  float h = 0.5 / uLampAtlas.y;
+  vec3 rect = lampRect(tag);
+  vec2 cell = vec2(rect.x / rect.z, rect.y / rect.z);
+  vec2 toAtlas = vec2(rect.z) / uLampAtlas.zw;
+  float h = 0.5 / rect.z;
   // lighting.shadowSamples' taps of the 3 x 3 texels around the point, laid out as the sun's map takes them.
   float lit = 0.0;
 // #if SHADOW_TAP_CENTER

@@ -159,7 +159,8 @@ test('E-389, E-453: the volumes go into every lamp tile in one draw, an instance
   // The tile from the instance's entry in its draw's list (E-508: the tiles' texture's row 2, from uLampVolume.x), the
   // half tile it draws into beside it; no vertex number, no corner.
   assert.ok(glsl.includes('ivec2(int(uLampVolume.x + 0.5) + gl_InstanceID, 2)') && glsl.includes('int lampTile = int(lampEntry.x + 0.5);'));
-  assert.ok(glsl.includes('vec2 lampPx = (lampEntry.yz + lampUv) * uLampVolume.z;'));
+  // E-551: the entry's half in units of its own side.
+  assert.ok(glsl.includes('vec2 lampPx = (lampEntry.yz + lampUv) * lampEntry.w;'));
   assert.ok(!/aLampVertex|lampCorner|gl_VertexID|aTri\b/.test(glsl));
   assert.ok(wgsl.includes('@builtin(instance_index) lampInstance: u32,') && wgsl.includes('i32(lampInstance), 2)'));
   assert.ok(wgsl.includes('let lampTile = i32(lampEntry.x + 0.5);') && wgsl.includes('let lampPx = (lampEntry.yz + lampUv)'));
