@@ -116,7 +116,6 @@ async function setup(seed) {
   const slots = alloc(Float32Array, N * GPU_INDEXED_SLOT_FLOATS);
   const updates = alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS);
   const texUpdates = alloc(Uint32Array, N * GPU_KEYED_TEX_WORDS);
-  const shadow = alloc(Float32Array, N * 3);
   const gbufOut = alloc(Float32Array, N * GPU_GBUF_FLOATS);
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
@@ -126,7 +125,7 @@ async function setup(seed) {
   top += 16 + 16 * 8;
   if (top > buf.byteLength) throw new Error('the test memory is too small');
   const b = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
-  return { rng, q, b, order, zOrder, flags, selfShadow, zIndex, pose, rows, slots, updates, texUpdates, shadow, gbufOut };
+  return { rng, q, b, order, zOrder, flags, selfShadow, zIndex, pose, rows, slots, updates, texUpdates, gbufOut };
 }
 
 const u32 = (a, n) => new Uint32Array(a.buffer, a.byteOffset, n);
@@ -138,8 +137,7 @@ function packOutput(s, n, byRow, keyed) {
     slots: Uint32Array.from(u32(s.slots, n * GPU_INDEXED_SLOT_FLOATS)),
     updates: Uint32Array.from(s.updates.subarray(0, keyed.updates * GPU_KEYED_ROW_WORDS)),
     texUpdates: Uint32Array.from(s.texUpdates.subarray(0, (keyed.texUpdates | 0) * GPU_KEYED_TEX_WORDS)),
-    shadow: keyed.shadowed ? Uint32Array.from(u32(s.shadow, n * 3)) : null,
-    counts: [keyed.updates, keyed.texUpdates | 0, keyed.shadowed],
+    counts: [keyed.updates, keyed.texUpdates | 0],
   };
 }
 
@@ -148,9 +146,9 @@ function packOutput(s, n, byRow, keyed) {
  * frame's rows. `cols`: the selfShadow column and the zIndex column (null for none) the pack and writeGbufWords take;
  * `kernelZ`, what the pack is handed for no bands (null or an empty column), or the zIndex column.
  */
-function checkWords(s, label, { opts, cap = N, byRow = false, shadow = false, texUpdates = false, self, z, kernelZ = z }) {
+function checkWords(s, label, { opts, cap = N, byRow = false, texUpdates = false, self, z, kernelZ = z }) {
   const keyed = {
-    keyBase: KEY_BASE, updatesByte: s.updates.byteOffset, updates: 0, shadowByte: shadow ? s.shadow.byteOffset : 0,
+    keyBase: KEY_BASE, updatesByte: s.updates.byteOffset, updates: 0,
     texUpdatesByte: texUpdates ? s.texUpdates.byteOffset : 0, texUpdates: 0,
   };
   const pack = byRow ? packKeyedRowsByRowWasm : packKeyedRowsWasm;
@@ -245,10 +243,10 @@ test('the keyed pack writes writeGbufWords\' words and bands, bit for bit, on bo
       c('selfShadow shorter than the flags', { opts: painter, self: selfShort(s), z: s.zIndex });
       c('no selfShadow', { opts: painter, self: null, z: s.zIndex });
       c('an empty selfShadow', { opts: painter, self: new Uint8Array(0), z: null });
-      c('shadow terms and texture updates', { opts: painter, self: s.selfShadow, z: s.zIndex, shadow: true, texUpdates: true });
-      c('shadow terms, no bands', { opts: zFirst, self: selfShort(s), z: null, shadow: true });
+      c('texture updates', { opts: painter, self: s.selfShadow, z: s.zIndex, texUpdates: true });
+      c('no bands, a short selfShadow column', { opts: zFirst, self: selfShort(s), z: null });
       c('capacity under count', { opts: painter, cap: 3210, self: s.selfShadow, z: s.zIndex });
-      c('capacity under count, no bands', { opts: zFirst, cap: 1777, self: s.selfShadow, z: null, shadow: true });
+      c('capacity under count, no bands', { opts: zFirst, cap: 1777, self: s.selfShadow, z: null });
       c('no list', { opts: { space: GPU_SPACE_WORLD, type: s.q.type }, self: s.selfShadow, z: s.zIndex });
       c('no type column', { opts: { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N }, self: s.selfShadow, z: s.zIndex });
       c('indices copied', {

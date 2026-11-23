@@ -397,10 +397,8 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
    nothing per key. A row without one (KEY_NONE, or a key at or past keyBase) takes keyBase + its draw slot and always
    sends its statics.
    What goes up is the indexed frame's statics (INDEXED_STATIC_FLOATS: sprite_static's, the depth term 0, a zero), as an
-   update of KEYED_ROW_WORDS u32 (the statics, then the key). results[0] is the particle count (type 1 rows), results[1]
-   the update count. E-191: withShadow (a constant, so each form is a copy of its own) also writes each slot's shadow
-   terms at shadow (shadowH, offX, offY; zeros for a glow row, which casts none), for the sun's pass over these
-   instances. E-189: a key with KEY_TEX_ONLY too changed its texture alone (an animation's frame): with texUpdates it
+   update of KEYED_ROW_WORDS u32 (the statics, then the key). results[0] is 0 (the split packs' particle count; N-414:
+   the keyed pack's went with E-191's shadow terms), results[1] the update count. E-189: a key with KEY_TEX_ONLY too changed its texture alone (an animation's frame): with texUpdates it
    goes up as a texture update of KEYED_TEX_WORDS (its row, then the texture as the float bits the statics hold), the
    count at results[2]; without, as an update like any other. */
 #define KEYED_ROW_WORDS 16
@@ -419,8 +417,7 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
    of its pose: the shader fetches the pose from the queue's own pose columns by that row. */
 INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count, uint32_t cap,
                            double invDepthDenom, float *pose, float *slots, uint32_t keyBase, uint32_t *updates,
-                           uint32_t typeByte, uint32_t *results, float *shadow, const int withShadow,
-                           uint32_t *texUpdates, float *rows, const int byRow, const uint32_t *G, const int withGbuf,
+                           uint32_t *results, uint32_t *texUpdates, float *rows, const int byRow, const uint32_t *G, const int withGbuf,
                            const int withBands, const int gbufStatics) {
   float *GW = withGbuf ? (float *)(uintptr_t)G[GB_DST] : 0;
   const uint8_t *GF = withGbuf ? (const uint8_t *)(uintptr_t)G[GB_FLAGS] : 0;
@@ -431,10 +428,6 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
   uint32_t band = 0;
   int32_t lastZ = -32769;
   uint32_t gbufChanged = 0;
-  const float *SH = withShadow ? F32(t, COL_SHADOW_H) : 0;
-  const float *SOX = withShadow ? F32(t, COL_SHADOW_OFF_X) : 0;
-  const float *SOY = withShadow ? F32(t, COL_SHADOW_OFF_Y) : 0;
-  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
   const float *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y), *AX = F32(t, COL_ANCHOR_X), *AY = F32(t, COL_ANCHOR_Y);
   const float *A = F32(t, COL_ALPHA), *TMX = F32(t, COL_TILE_MUL_X), *TMY = F32(t, COL_TILE_MUL_Y);
@@ -442,12 +435,10 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
   const uint16_t *TEX = U16(t, COL_TEXTURE);
   const uint32_t *TOU = U32(t, COL_TILE_OFF_U), *TOV = U32(t, COL_TILE_OFF_V);
   const uint32_t n = count < cap ? count : cap;
-  uint32_t p = 0;
   uint32_t u = 0;
   uint32_t tu = 0;
   for (uint32_t k = 0; k < n; k++) {
     const uint32_t i = indices ? idx[k] : k;
-    if (type) p += type[i] == 1;
     if (byRow) rows[k] = (float)i;
     else sprite_pose(t, i, pose + k * POSE_FLOATS);
     const uint32_t raw = key[i];
@@ -484,13 +475,6 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
       u++;
     }
     slots[k * SLOT_FLOATS] = (float)s;
-    if (withShadow) {
-      float *sh = shadow + k * 3;
-      const int glow = type && type[i] == 3;
-      sh[0] = glow ? 0.0f : SH[i];
-      sh[1] = glow ? 0.0f : SOX[i];
-      sh[2] = glow ? 0.0f : SOY[i];
-    }
     if (withGbuf && !gbufStatics) {
       const uint32_t e = raw & ~KEY_FLAGS;
       uint32_t word = 0;
@@ -514,50 +498,35 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
       gw[2] = GBUF_FOOT_NONE;
     }
   }
-  results[0] = p;
+  results[0] = 0;
   results[1] = u;
   results[2] = tu;
   if (withGbuf) results[3] = gbufChanged;
   return n;
 }
 
-/* The keyed pack's forms without the G-buffer words, each a copy of its own: with the shadow terms (shadow) or without.
-   E-387's forms with the words are other exports (pack_keyed_gbuf_forms): this one's code stays the two copies it was
-   (with the words' four in the same export, the plain pack ran 7.8 % slower). */
+/* The keyed pack without the G-buffer words. E-387's forms with the words are other exports (pack_keyed_gbuf_forms), so
+   this one's code stays its own copy (with the words' forms in the same export, the plain pack ran 7.8 % slower). */
 INLINE uint32_t pack_keyed_forms(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count, uint32_t cap,
                                  double invDepthDenom, float *pose, float *slots, uint32_t keyBase, uint32_t *updates,
-                                 uint32_t typeByte, uint32_t *results, float *shadow, uint32_t *texUpdates, float *rows,
-                                 const int byRow) {
-  if (shadow) {
-    return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results,
-                      shadow, 1, texUpdates, rows, byRow, 0, 0, 0, 0);
-  }
-  return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0,
-                    texUpdates, rows, byRow, 0, 0, 0, 0);
+                                 uint32_t *results, uint32_t *texUpdates, float *rows, const int byRow) {
+  return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, results, texUpdates, rows,
+                    byRow, 0, 0, 0, 0);
 }
 
-/* E-387: the keyed pack's forms with the G-buffer words (the block at G), each a copy of its own: with the shadow terms
-   or without, with the words' bands (a zIndex column in the block) or without. E-455 step 3: gbufStatics (without bands)
-   writes a slot's word into its statics update instead of each drawn instance's words; with bands it is ignored. */
+/* E-387: the keyed pack's forms with the G-buffer words (the block at G), each a copy of its own: with the words' bands
+   (a zIndex column in the block) or without. E-455 step 3: gbufStatics (without bands) writes a slot's word into its
+   statics update instead of each drawn instance's words; with bands it is ignored. */
 INLINE uint32_t pack_keyed_gbuf_forms(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count,
                                       uint32_t cap, double invDepthDenom, float *pose, float *slots, uint32_t keyBase,
-                                      uint32_t *updates, uint32_t typeByte, uint32_t *results, float *shadow,
-                                      uint32_t *texUpdates, float *rows, const int byRow, const uint32_t *G,
-                                      const int gbufStatics) {
-  if (shadow) {
-    if (G[GB_ZINDEX]) {
-      return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results,
-                        shadow, 1, texUpdates, rows, byRow, G, 1, 1, 0);
-    }
-    return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results,
-                      shadow, 1, texUpdates, rows, byRow, G, 1, 0, gbufStatics);
-  }
+                                      uint32_t *updates, uint32_t *results, uint32_t *texUpdates, float *rows,
+                                      const int byRow, const uint32_t *G, const int gbufStatics) {
   if (G[GB_ZINDEX]) {
-    return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0,
-                      texUpdates, rows, byRow, G, 1, 1, 0);
+    return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, results, texUpdates,
+                      rows, byRow, G, 1, 1, 0);
   }
-  return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0,
-                    texUpdates, rows, byRow, G, 1, 0, gbufStatics);
+  return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, results, texUpdates, rows,
+                    byRow, G, 1, 0, gbufStatics);
 }
 
 __attribute__((export_name("pack_sprites")))
@@ -777,24 +746,23 @@ uint32_t diff_indexed_statics(uint32_t table, uint32_t rowCount, uint32_t dstSta
 __attribute__((export_name("pack_sprites_keyed")))
 uint32_t pack_sprites_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                             double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
-                            uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow,
-                            uint32_t texUpdatesByte) {
+                            uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte) {
   return pack_keyed_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count, cap,
                           invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots, keyBase,
-                          (uint32_t *)(uintptr_t)updatesByte, typeByte, (uint32_t *)(uintptr_t)resultsByte,
-                          (float *)(uintptr_t)dstShadow, (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0);
+                          (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
+                          (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0);
 }
 
 /* E-387: pack_sprites_keyed with each drawn instance's G-buffer words too, the block at gbufByte (GB_WORDS u32). */
 __attribute__((export_name("pack_sprites_keyed_gbuf")))
 uint32_t pack_sprites_keyed_gbuf(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                                  double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
-                                 uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow,
-                                 uint32_t texUpdatesByte, uint32_t gbufByte) {
+                                 uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte,
+                                 uint32_t gbufByte) {
   return pack_keyed_gbuf_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count,
                                cap, invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots, keyBase,
-                               (uint32_t *)(uintptr_t)updatesByte, typeByte, (uint32_t *)(uintptr_t)resultsByte,
-                               (float *)(uintptr_t)dstShadow, (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0,
+                               (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
+                               (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0,
                                (const uint32_t *)(uintptr_t)gbufByte, 0);
 }
 
@@ -802,25 +770,23 @@ uint32_t pack_sprites_keyed_gbuf(uint32_t table, uint32_t keyByte, uint32_t indi
 __attribute__((export_name("pack_sprites_keyed_rows")))
 uint32_t pack_sprites_keyed_rows(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                                  double invDepthDenom, uint32_t dstRows, uint32_t dstSlots, uint32_t keyBase,
-                                 uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow,
-                                 uint32_t texUpdatesByte) {
+                                 uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte) {
   return pack_keyed_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count, cap,
                           invDepthDenom, 0, (float *)(uintptr_t)dstSlots, keyBase, (uint32_t *)(uintptr_t)updatesByte,
-                          typeByte, (uint32_t *)(uintptr_t)resultsByte, (float *)(uintptr_t)dstShadow,
-                          (uint32_t *)(uintptr_t)texUpdatesByte, (float *)(uintptr_t)dstRows, 1);
+                          (uint32_t *)(uintptr_t)resultsByte, (uint32_t *)(uintptr_t)texUpdatesByte,
+                          (float *)(uintptr_t)dstRows, 1);
 }
 
 /* E-387: pack_sprites_keyed_rows with each drawn instance's G-buffer words too, the block at gbufByte. */
 __attribute__((export_name("pack_sprites_keyed_rows_gbuf")))
 uint32_t pack_sprites_keyed_rows_gbuf(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                                       double invDepthDenom, uint32_t dstRows, uint32_t dstSlots, uint32_t keyBase,
-                                      uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow,
-                                      uint32_t texUpdatesByte, uint32_t gbufByte) {
+                                      uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte,
+                                      uint32_t gbufByte) {
   return pack_keyed_gbuf_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count,
                                cap, invDepthDenom, 0, (float *)(uintptr_t)dstSlots, keyBase,
-                               (uint32_t *)(uintptr_t)updatesByte, typeByte, (uint32_t *)(uintptr_t)resultsByte,
-                               (float *)(uintptr_t)dstShadow, (uint32_t *)(uintptr_t)texUpdatesByte,
-                               (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 0);
+                               (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
+                               (uint32_t *)(uintptr_t)texUpdatesByte, (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 0);
 }
 
 /* E-455 step 3: pack_sprites_keyed_gbuf with each slot's word in its statics update (the third texel's last lane) and
@@ -828,12 +794,12 @@ uint32_t pack_sprites_keyed_rows_gbuf(uint32_t table, uint32_t keyByte, uint32_t
 __attribute__((export_name("pack_sprites_keyed_gbuf_statics")))
 uint32_t pack_sprites_keyed_gbuf_statics(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                                          double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
-                                         uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow,
-                                         uint32_t texUpdatesByte, uint32_t gbufByte) {
+                                         uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte,
+                                         uint32_t gbufByte) {
   return pack_keyed_gbuf_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count,
                                cap, invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots, keyBase,
-                               (uint32_t *)(uintptr_t)updatesByte, typeByte, (uint32_t *)(uintptr_t)resultsByte,
-                               (float *)(uintptr_t)dstShadow, (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0,
+                               (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
+                               (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0,
                                (const uint32_t *)(uintptr_t)gbufByte, 1);
 }
 
@@ -842,14 +808,12 @@ uint32_t pack_sprites_keyed_gbuf_statics(uint32_t table, uint32_t keyByte, uint3
 __attribute__((export_name("pack_sprites_keyed_rows_gbuf_statics")))
 uint32_t pack_sprites_keyed_rows_gbuf_statics(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count,
                                               uint32_t cap, double invDepthDenom, uint32_t dstRows, uint32_t dstSlots,
-                                              uint32_t keyBase, uint32_t updatesByte, uint32_t typeByte,
-                                              uint32_t resultsByte, uint32_t dstShadow, uint32_t texUpdatesByte,
-                                              uint32_t gbufByte) {
+                                              uint32_t keyBase, uint32_t updatesByte, uint32_t resultsByte,
+                                              uint32_t texUpdatesByte, uint32_t gbufByte) {
   return pack_keyed_gbuf_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count,
                                cap, invDepthDenom, 0, (float *)(uintptr_t)dstSlots, keyBase,
-                               (uint32_t *)(uintptr_t)updatesByte, typeByte, (uint32_t *)(uintptr_t)resultsByte,
-                               (float *)(uintptr_t)dstShadow, (uint32_t *)(uintptr_t)texUpdatesByte,
-                               (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 1);
+                               (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
+                               (uint32_t *)(uintptr_t)texUpdatesByte, (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 1);
 }
 
 /* E-191: a keyed caster row (KEYED_CASTER_FLOATS) for each queue row listed at indices: its x and y, its key as a float

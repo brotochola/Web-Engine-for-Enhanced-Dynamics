@@ -552,9 +552,6 @@ export class InstancedSpriteBatch {
       keyBase: k ? k.keyBase | 0 : 0,
       updatesByte: k ? k.updatesByte | 0 : 0,
       updates: 0,
-      // E-191: the pack's shadow stream's byte (0: none; nothing draws it since E-531, N-414) and whether it wrote it.
-      shadowByte: 0,
-      shadowed: false,
       // E-189: the texture updates' byte (0: none, the texture-only rows go up whole) and the last pack's count.
       texUpdatesByte: k && k.texUpdatesByte > 0 ? k.texUpdatesByte | 0 : 0,
       texUpdates: 0,
