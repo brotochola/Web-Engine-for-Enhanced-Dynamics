@@ -33,7 +33,8 @@ function queryNumber(key, fallback) {
 
 export const WALLS = queryNumber('walls', 0) === 1;
 export const GROUND_SCALE_Y = queryNumber('groundScaleY', 1);
-export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+// `?backend=auto` (DX-BACKENDAUTO): WebGPU where the browser gives an adapter, WebGL otherwise.
+export const BACKEND = ['webgpu', 'auto'].includes(query('backend')) ? query('backend') : 'webgl';
 export const GLOW_MODE = query('glowMode') === 'add' ? 'add' : 'sorted';
 export const AMBIENT = queryNumber('ambient', 0.05);
 export const CONES = queryNumber('cones', 0) === 1;
