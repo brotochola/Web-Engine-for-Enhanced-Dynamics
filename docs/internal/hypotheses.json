@@ -24641,7 +24641,8 @@
         "R-1868",
         "R-1869",
         "R-1870",
-        "R-1871"
+        "R-1871",
+        "R-1874"
       ],
       "refs": [],
       "id": "E-531",
@@ -24650,7 +24651,7 @@
       "kind": "hypothesis",
       "area": "render speed",
       "date": "2026-11-20",
-      "statusText": "the owner approved unifying (2026-11-22 23:27): on exp/one-shadow-path the shadow maps are the one way (76608b6f; Flash.elevation, the demos' heights, no cookies, N-413, N-415 part 1), shown to the owner before merging. Predator's default: by day neutral; by night pre-render +5.5 % and renderer +3.0 % against main after N-413 (R-1869, R-1871); on the ASUS, for the same shadows, the maps cost 22 to 30 % less (R-1870).",
+      "statusText": "the owner approved unifying (2026-11-22 23:27): on exp/one-shadow-path the shadow maps are the one way (76608b6f; Flash.elevation, the demos' heights, no cookies, N-413, N-415 part 1), shown to the owner before merging. Predator's default: by day neutral; by night neutral against main after N-413, N-414 and N-416 (R-1869, R-1871, R-1874); on the ASUS, for the same shadows, the maps cost 22 to 30 % less (R-1870).",
       "result": "",
       "next": "The owner's word on merging exp/one-shadow-path. Then: N-414 and N-415's rest; the night's residual on pre-render (the stamp kernel's fade costs 8 % of the stamp, 0.026 ms a frame on Predator's fixture; the rest spread).",
       "rank": 12,
@@ -25280,21 +25281,25 @@
       "aliases": []
     },
     {
-      "records": [],
+      "records": [
+        "R-1873"
+      ],
       "refs": [],
       "id": "N-414",
       "title": "Dead since E-531: the entity batch's keyed sun pass and its shadow stream (E-191's instances, E-211), and gpuPack's shadow terms for it",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "refactor",
       "area": "render",
       "date": "2026-11-23",
       "result": "",
-      "statusText": "filed 2026-11-23: nothing turns them on any more (the shadows' layer drew them)",
-      "next": "instancedSpriteBatch.js: enableKeyedShadows, setKeyedShadowStream, makeKeyedSunShader, makeKeyedCasterShader, makeKeyedShadowPrograms, _keyedSunProgram, _keyedCasterProgram, _keyedShadowGeometryFor, _keyedShadowRowGeometryFor and their fields; gpuPackClient.js keyed.shadowByte / shadowed and pack_keyed's shadow terms in wasm/gpuPack.c, the render-queue memory's shadow stream region; their tests (gpuPackKeyed, instancedSpriteKeyed, instancedSpriteKeyedRowPoses, opaquePass, startupPixiFirstUse). Costs nothing at runtime (the stream stays off), so hygiene: the suites, a kernel run of pack_keyed.",
+      "statusText": "kept 2026-11-23 on exp/one-shadow-path (327d523e, fece057f; R-1873), merges with E-531",
+      "next": "",
       "aliases": []
     },
     {
-      "records": [],
+      "records": [
+        "R-1875"
+      ],
       "refs": [],
       "id": "N-415",
       "title": "Dead since E-531: the light pass's old shadows' layer input (uShadowComposite, uShadowMap), the sun map programs' heights:false variants, and the cone cookie's built-in frame",
@@ -25303,8 +25308,8 @@
       "area": "render",
       "date": "2026-11-23",
       "result": "",
-      "statusText": "part 1 done 2026-11-23 on exp/one-shadow-path (de4123af): uShadowComposite and uShadowMap gone from the light pass; parts 2 and 3 open",
-      "next": "sunShadowMap.js: sunMapVertex / sunMapColumnsVertex / sunMapWgsl / sunMapColumnsWgsl's { heights: false } (the layer's cards and solids) and their tests (sunShadowMap.test.js, wgslLayoutDeclares.test.js). atlasBuiltins.js: '_lightGradientHalf' (DX-SPOT's cone cookie) and atlasBuild's afterSort for it, createHalfCircularGradientCanvas; demos/littleCity/baked/bigAtlas.json carries the frame, so bake it again.",
+      "statusText": "parts 1 and 2 done 2026-11-23 on exp/one-shadow-path (de4123af, 649b0c79; R-1875); part 3 open",
+      "next": "atlasBuiltins.js: '_lightGradientHalf' (DX-SPOT's cone cookie) and atlasBuild's afterSort for it, createHalfCircularGradientCanvas; demos/littleCity/baked/bigAtlas.json carries the frame, so bake it again.",
       "aliases": []
     },
     {
@@ -25322,6 +25327,25 @@
       "rank": 20,
       "aliases": [
         "sorted glow unshaded pass cost"
+      ]
+    },
+    {
+      "records": [
+        "R-1874"
+      ],
+      "refs": [],
+      "id": "N-416",
+      "title": "The lamps' map's atlas was made again every few frames: a short-lived light that casts (a muzzle flash) moved the auto tile's count and size",
+      "status": "kept",
+      "kind": "bug",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "kept 2026-11-23 on exp/one-shadow-path (699b7584, R-1874), merges with E-531",
+      "next": "",
+      "aliases": [
+        "lamp map atlas churn",
+        "lamps map remade every frame"
       ]
     }
   ],
@@ -42917,6 +42941,33 @@
       "title": "lightGlow 'sorted' against 'add' today: Predator plain by night neutral; with light3d drawn 59.8 -> 50.0 fps from the unshaded pass (E-547)",
       "verdict": "note",
       "text": "The owner's step 1 (2026-11-22): lightGlow 'add' (A) against 'sorted' (B) on today's code (exp/one-shadow-path b5e9a447,\nPredator's new ?lightGlow=sorted knob), 4 pairs each, this PC (GTX 1650), renderer owner:\n- Predator by night (crowd 2.5, mix 1, fresh), plain: renderer 9.18 -> 9.02 ms (+2.2 % paired, -1.7 % against the other\n  workers; cv up to 20 % on logic): neutral. Drawn 59.9 / 59.9 fps.\n- Predator by night with light3d: renderer 10.20 -> 10.41 ms (+0.3 %, -4.1 % against the others), but drawn 59.8 ->\n  50.0 fps (-16.4 %, 4/4 fewer): the GPU. glFrameRecorder --gpu-passes: the unshaded pass at the canvas's size (its\n  stencil mask, colour and edge draws over the entity batch's 148 000 instances) 0.70 -> 4.85 ms a frame, the GPU 60 ->\n  93 % busy; every other pass alike (16.7 ms a frame both). The halos, unshaded in 'sorted', are big quads drawn three\n  times at full size there (E-547).\n- glowStressScene (2000 halos): below the floor (renderer 1.18 / 1.17 ms), drawn 60 / 60 fps: the GTX 1650 is not\n  filled by them."
+    },
+    {
+      "id": "R-1873",
+      "date": "2026-11-23",
+      "time": "09:40",
+      "timeFrom": "recorded",
+      "title": "N-414 kept: the entity batch's keyed sun pass and the keyed pack's shadow terms gone; the keyed pack 8 to 10 % faster in Node",
+      "verdict": "kept-hygiene",
+      "text": "exp/one-shadow-path: step 1 (327d523e) takes E-191's sun pass over the entity batch's keyed instances out of\ninstancedSpriteBatch.js (its fields, geometries, programs, the stream's copy), the render-queue memory's pixiKeyShadow\nregion and the WebGPU program for it; step 2 (fece057f) takes the shadow terms and the type column out of gpuPack.c's\nkeyed pack (withShadow, typeByte and dstShadow off its six exports; its forms halve). The light bench draws the same\npixels on WebGL and WebGPU; ASan passes every gpuPack group (after its harness's tile-offset columns were made u32,\n54ad9e7d: they were u16 and every sprite group read past them, on main too).\ngpuPackKeyedMicrobench (Node, 14 000 rows, --gbuf, two runs a side, the same checksums): keyed 0.067/0.069 -> 0.060/0.062\nms, keyedGbufStatics (Predator's form) 0.068/0.067 -> 0.062/0.063 ms, keyedGbuf 0.146/0.142 -> 0.137/0.147 ms."
+    },
+    {
+      "id": "R-1874",
+      "date": "2026-11-23",
+      "time": "09:35",
+      "timeFrom": "recorded",
+      "title": "N-416 kept: the lamps' map remade only to grow or once a new layout settles; Predator by night against main now neutral on this PC",
+      "verdict": "kept",
+      "text": "glFrameRecorder --gpu-passes on the unified branch (Predator by night, crowd 2.5): some thirty lamps' map framebuffers\nin 3 s (4096 x 1536 and 4096 x 384): the auto tile follows the casting lamps' count and widest reach, and a muzzle flash\n(1000 to 1581 px, casting since E-531) moved both. 699b7584: a map with room for this frame's lamps keeps its layout until\nanother one has been asked LAMP_MAP_SETTLE_FRAMES (120) frames in a row; one too small is made at once\n(lampMapSettle.test.js). The same recording after it: one framebuffer.\nPredator's default by night against main (3a8907a7, whole revisions, 4 pairs, fresh): NEUTRAL. pre-render 10.07 -> 10.08 ms\n(+0.5 %, +3.2 % against the other workers), renderer 8.90 -> 9.11 ms (+2.3 %, +5.6 % against the others); the workers it\ncannot reach went down 4 to 5 % (drift). Before it (R-1871): pre-render +8.3 %, renderer +4.8 %.\nThe ASUS (job 0906a, the branch at 64444388, without it): the HD 620 by night drew 47.4 -> 34.7 fps against main (-27 %,\n8/8 pairs fewer; CPU numbers too noisy to read, cv up to 189 %). Job 0906b re-runs that night with 699b7584."
+    },
+    {
+      "id": "R-1875",
+      "date": "2026-11-23",
+      "time": "09:45",
+      "timeFrom": "recorded",
+      "title": "N-415 parts 1 and 2: the light pass's old layer input and the sun map programs' heights:false forms gone",
+      "verdict": "kept-hygiene",
+      "text": "exp/one-shadow-path: de4123af takes uShadowComposite (always 0) and uShadowMap out of lightingBasic's GLSL and WGSL,\nthe WebGPU layout's bindings 2 and 3, the uniform group and the GPU pass bench; 649b0c79 leaves sunMapVertex,\nsunMapColumnsVertex and their WGSL forms one form (heights). The light bench draws the same pixels on WebGL and WebGPU by\nday and by night. Part 3 (the cone cookie's built-in frame, which littleCity's baked atlas carries) stays open."
     }
   ],
   "leads": [
