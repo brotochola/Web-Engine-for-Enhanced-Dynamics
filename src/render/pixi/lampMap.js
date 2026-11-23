@@ -24,6 +24,7 @@ import {
   LAMP_MAP_COLUMNS,
   LAMP_MAP_MAX_TEXELS,
   LAMP_PACK_SIZE,
+  autoLampTileSize,
   LAMP_RECT_UNIT,
   lampCardStrip,
   lampColumnGrid,
@@ -123,6 +124,7 @@ export class PixiLampMap {
     // size as made.
     this.packOrder = new Int32Array(0);
     this.planScale = NaN;
+    this.planCap = 64;
     this.mapWidth = 0;
     this.mapHeight = 0;
     this.lights = 0;
@@ -348,6 +350,8 @@ export class PixiLampMap {
     while (lights < count && lights < most) lights *= 2;
     if (lights > most) lights = most;
     const res = this.worker.shadowResolution * (this.worker._pixelArtLight ? 2 : 1);
+    // E-551: no tile above the uniform rule's side (a wide lamp keeps what it had, a narrow one takes less).
+    this.planCap = autoLampTileSize(this.maxReach, res, lights);
     let scale = 1;
     let largest = this._packAt(count, res, scale, 4096);
     while (largest > 64 && !(LAMP_PACK_SIZE[1] <= 4096 && LAMP_PACK_SIZE[0] * LAMP_PACK_SIZE[1] <= LAMP_MAP_MAX_TEXELS)) {
@@ -419,9 +423,11 @@ export class PixiLampMap {
   _packAt(count, res, scale, maxWidth) {
     const rects = this.tileRects;
     const data = this.tileData;
+    const cap = this.planCap;
     let largest = LAMP_RECT_UNIT;
     for (let t = 0; t < count; t++) {
-      const side = lampTileSide(data[t * 4 + 3], res, scale);
+      const own = lampTileSide(data[t * 4 + 3], res, scale);
+      const side = own < cap ? own : cap;
       rects[t * 3 + 2] = side;
       if (side > largest) largest = side;
     }

@@ -31,6 +31,7 @@ async function lampMap() {
     map.tileData.fill(0, 0, 64 * 4);
     for (let t = 0; t < tiles; t++) map.tileData.set([0, 0, 50, reach], t * 4);
     map.tileCount = tiles;
+    map.maxReach = reach;
     const before = px.lighting.lampMapRT;
     map._planLayout(gpu, tiles);
     assert.equal(map._ensureMap(gpu), true);
@@ -68,6 +69,7 @@ test('a map with room is kept; one too small is made again at once; a much too l
 test('E-551: lamps of different reaches take tiles of their own sides', async () => {
   const { map } = await lampMap();
   // A street lamp's reach and a fire's, before any map is made (a map already made would take the wider one in for a while).
+  map.maxReach = 1000;
   map.tileData.set([0, 0, 50, 400, 0, 0, 50, 1000], 0);
   map._planLayout({ caps: { maxStampLights: 64 } }, 2);
   // At shadowResolution 0.5: 400 px want 250 texels (256), 1000 want 625 (640).

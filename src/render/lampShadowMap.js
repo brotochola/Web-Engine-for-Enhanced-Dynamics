@@ -128,6 +128,27 @@ export function lampTileSide(reach, resolution, scale) {
   return side > 1024 ? 1024 : side;
 }
 
+/**
+ * N-196, lampShadowTile 'auto': the half tile's side every lamp had before E-551, a power of two from 64 to 1024 at which the
+ * widest casting lamp's reach spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a texel, as far as `tiles` such tiles
+ * (two halves each) fit LAMP_MAP_MAX_TEXELS and `maxSide`: with E-551 a lamp's own side is at most this one, so no lamp costs
+ * more than it did (a wide one, a fire, would ask more texels than the budget gave them).
+ * @param {number} maxReach the widest casting lamp's reach (floor px)
+ * @param {number} resolution lighting.shadowResolution
+ * @param {number} tiles the tiles the map holds
+ */
+export function autoLampTileSize(maxReach, resolution, tiles, maxSide = 4096) {
+  const want = (2 * Math.max(0, maxReach) * Math.max(0.05, resolution)) / (LAMP_TEXEL_FLOOR_PX * LAMP_PANO_INNER);
+  let size = 64;
+  while (size < 1024 && size < want) size *= 2;
+  for (;;) {
+    if (size <= 64) return 64;
+    const l = lampTileLayout(tiles, size, maxSide);
+    if (l.height <= maxSide && l.width * l.height <= LAMP_MAP_MAX_TEXELS) return size;
+    size /= 2;
+  }
+}
+
 /** E-551: packLampTiles' result: the atlas's width and height the tiles take, texels. */
 export const LAMP_PACK_SIZE = new Int32Array(2);
 
