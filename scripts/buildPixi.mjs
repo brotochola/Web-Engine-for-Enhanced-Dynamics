@@ -289,6 +289,39 @@ function patchPixiDrawGarbage() {
           file,
         );
       });
+      // E-464: each render call's uniforms go to two buffers, the second shifted by 128 bytes. Pixi copied them in an
+      // encoder of its own and submitted it, a second submit a render call (12.7 submits a frame at Predator crowd 2.5,
+      // each a flush in Chrome's GPU process: 40 % more of it than WebGL's). Upstream writes the shifted one with
+      // queue.writeBuffer since 8.23 (#12345): the same bytes, no submit. Both run before the render call's own submit
+      // (postrender), which reads them.
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gpu[\\/]GpuUniformBatchPipe\.mjs$/, (src, file) =>
+        replaceOnce(
+          src,
+          '    const commandEncoder = this._renderer.gpu.device.createCommandEncoder();\n' +
+            '    for (let i = 1; i < this._buffers.length; i++) {\n' +
+            '      const buffer = this._buffers[i];\n' +
+            '      commandEncoder.copyBufferToBuffer(\n' +
+            '        bufferSystem.getGPUBuffer(firstBuffer),\n' +
+            '        minUniformOffsetAlignment,\n' +
+            '        bufferSystem.getGPUBuffer(buffer),\n' +
+            '        0,\n' +
+            '        this._batchBuffer.byteIndex\n' +
+            '      );\n' +
+            '    }\n' +
+            '    this._renderer.gpu.device.queue.submit([commandEncoder.finish()]);\n',
+          '    const byteIndex = this._batchBuffer.byteIndex;\n' +
+            '    const data = this._batchBuffer.data;\n' +
+            '    const queue = this._renderer.gpu.device.queue;\n' +
+            '    for (let i = 1; i < this._buffers.length; i++) {\n' +
+            '      const size = byteIndex - minUniformOffsetAlignment * i;\n' +
+            '      if (size > 0) {\n' +
+            '        queue.writeBuffer(bufferSystem.getGPUBuffer(this._buffers[i]), 0, data.buffer,\n' +
+            '          data.byteOffset + minUniformOffsetAlignment * i, size);\n' +
+            '      }\n' +
+            '    }\n',
+          file,
+        ),
+      );
       patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gpu[\\/]GpuEncoderSystem\.mjs$/, (src, file) => {
         // The cached name map's keys run from 0 to at most the geometry's buffer count - 1 (one layout per buffer).
         src = replaceOnce(
