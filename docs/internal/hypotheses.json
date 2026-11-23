@@ -24684,7 +24684,8 @@
         "R-1874",
         "R-1881",
         "R-1883",
-        "R-1886"
+        "R-1886",
+        "R-1891"
       ],
       "refs": [],
       "id": "E-531",
@@ -25487,6 +25488,26 @@
       "aliases": [
         "halos as decorations",
         "glow decorations"
+      ]
+    },
+    {
+      "records": [
+        "R-1891"
+      ],
+      "refs": [],
+      "id": "E-551",
+      "title": "The lamps' map costs the HD 620 4.5 ms of GPU a frame by night and 3.5 ms by day in Predator crowd 0.5 (4096 x 1536 and 4096 x 1024, about 8 000 instances): the unified path's largest pass there",
+      "status": "open",
+      "kind": "gpu",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "filed 2026-11-23 from the ASUS job 0908a (R-1891)",
+      "next": "Where the fill goes on the HD 620 (--gpu-draws there: the floor half, the ceiling half, the clear); then a smaller auto tile where many lamps share the atlas (the rule rounds the wanted size up), the clear of the tiles in use only, and whether a lamp whose light the sun outshines by day needs its shadows.",
+      "rank": 16,
+      "aliases": [
+        "lamp map HD 620",
+        "lamps map weak GPU"
       ]
     }
   ],
@@ -43244,6 +43265,15 @@
       "title": "The owner's decisions of 2026-11-23 (relayed by session e8): lights and shadows first, then the CPU and physics lane; N-331, E-199, E-353, E-362, SST-9 approved; DX-PARENTTREE designed; the low items and N-164, N-165, N-172 wait",
       "verdict": "note",
       "text": "The owner, 2026-11-23, in session e8 (relayed here, the register's writer):\n- Order: every light and shadow item first; the CPU and physics lane (E-323, E-433, E-439, E-287, E-487, E-440, E-437,\n  E-438, E-442, E-342, E-346, E-341, E-546 and N-185) only after.\n- Approved: N-331 (the demo scenes' caps), E-199 (K nearest of a type, after the lights), E-353 (RigidBody speed in\n  Box2D's finalize), E-362 (after E-392, kept only if it measures), SST-9 (the engine resets its own state; a game's\n  globals are the game's), CR-37 (the untiled light path deleted, before the light pass's rewrite E-408..E-410) and CR-38\n  (pre-render's JS visibility gather deleted, the gather regions laid out in every case, a pre-render sitting):\n  CODE_REDUCTION_PLAN.md.\n- DX-PARENTTREE: the tree composed in physics after the step (writeChildPoses), a depth-ordered walk, body-less parents;\n  every reader sees one world pose with no lag.\n- Left for the end of the backlog: E-145 and N-187, E-524, DX-GPCLEAR, DX-GPWIND, DX-GPFOLLOW, DX-ADDBOX,\n  DX-PARTICLEOPTIONS, DX-ELASTIC, DX-AGENTEVAL, DX-PIXIUPSTREAM, DX-BARRIOS, DX-BARRIOSTREETS, DX-CURBS.\n- Not yet: N-164, N-165, N-172 (dist out of git, the history cleanup, esbuild only).\nSplit of the lights (2026-11-23): this session takes DX-GBUFSHADER, CR-37 and E-408..E-410; e8 takes CR-38, N-192, N-299,\nE-544 and E-411 (its measurement now, its code after the light pass's rewrite), with R-1900..R-1949, N-430..N-439 and\nE-560..E-569 on its branches."
+    },
+    {
+      "id": "R-1891",
+      "date": "2026-11-23",
+      "time": "12:22",
+      "timeFrom": "recorded",
+      "title": "The HD 620 by pass, main against the unified branch: the lamps' map 4.5 ms by night and 3.5 ms by day, the light pass 0.36 -> 2.00 ms by night",
+      "verdict": "note",
+      "text": "The ASUS's HD 620, job 0908a (2026-11-23, 12:18 to 12:22 by its log): glFrameRecorder --gpu-passes, Predator crowd 0.5,\nmain before the merge (pcmain1122c) and the unified branch (pcone1123c, at 4bbdf324), one recording each, ms a frame:\n- By night: the frame's passes 16.1 -> 19.2. Unified: the lamps' map (4096 x 1536, 7 647 instances) 4.51; the light pass\n  (480 x 270, sun map, lamps' map, faces, ids, tiles) 2.00 against main's 0.36; the G-buffer (478 x 268, 9 827) 0.92;\n  the 'add' halos 0.93 -> 0.08 (E-547). Main's classic shadow layer (480 x 270, 3 512 stamps) 0.40.\n- By day: 12.5 -> 15.9. Unified: the lamps' map (4096 x 1024, 8 771) 3.47; the G-buffer 0.79; the light pass 0.75\n  against 0.10; main's sun stamps (480 x 270, 8 574) 0.52.\nThe lamps' map is the merge's cost on that GPU, by day too; the light pass with the maps next (E-405..E-410)."
     }
   ],
   "leads": [
