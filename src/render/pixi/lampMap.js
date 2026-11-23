@@ -313,11 +313,6 @@ export class PixiLampMap {
   }
 
   /**
-   * DX-SHADOW3D (F7): a lamps' map program as a Shader's options: the cards (lampMapVertex: the casters facing their lamp)
-   * or a render's columns (lampMapColumnsVertex), GLSL on WebGL and WGSL on WebGPU.
-   * @param {boolean} columns
-   */
-  /**
    * E-395: the lamps' map's program over keyed stamp rows (lampMapVertex over spriteIndexedVertex's keyed stamp rows), or
    * null when its sources did not load. E-411: the worker also makes it at start (_makeFirstUsePrograms), where it links
    * ahead with the others (E-475); GlProgram.from keeps one a source, so the meshes made on first use take that one. Made on
@@ -335,6 +330,11 @@ export class PixiLampMap {
     return { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), 'lamp-map-keyed') };
   }
 
+  /**
+   * DX-SHADOW3D (F7): a lamps' map program as a Shader's options: the cards (lampMapVertex: the casters facing their lamp)
+   * or a render's columns (lampMapColumnsVertex), GLSL on WebGL and WGSL on WebGPU.
+   * @param {boolean} columns
+   */
   mapProgram(columns) {
     const shaders = this.worker._engineShaders;
     const name = columns ? 'lamp-map-columns' : 'lamp-map';
