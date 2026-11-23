@@ -20016,13 +20016,13 @@
     {
       "id": "E-464",
       "title": "Pixi on WebGPU submits twice per render call: its uniform-batch upload (_uploadBindGroups) makes an encoder and a submit of its own, 17 submits a frame in Predator light3d by night and 13 at crowd 2.5 and in light3dCompare, and the frame's GPU span is 7.7 to 10.1 ms for 3.3 to 5.9 ms of passes",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (R-1952); DX-PIXI823 keeps it (the patch goes when 8.23 is taken)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Predator light3d night: 5.88 ms of passes in a 7.74 ms span; light3dCompare 5.93 in 10.09; Predator crowd 2.5 3.34 in 9.56 (its clock lower). WebGPU makes 302 calls a frame there against WebGL's 706.",
-      "next": "Fold the uniform copy into the render call's own encoder (one submit per render call, or one a frame); Pixi's STEP_MS, the GPU process's CPU (gpuProcessTrace) and the frame span before and after. Pixi 8.23 does this upstream (#12345: the shifted buffer written with queue.writeBuffer, no submit of its own), so DX-PIXI823 closes it; a backport patch if the upgrade waits. R-1426: three.js makes one encoder and one submit a render call and reuses the submit array (#33513).",
+      "result": "Pixi's uniform copy writes instead of submitting: submits 12.7 -> 7 a frame, Chrome's GPU process -11 % at crowd 2.5 (751caa27)",
+      "next": "One encoder and one submit a frame across the render calls (the engine makes one per pass).",
       "refs": [],
       "aliases": [
         "webgpu double submit",
@@ -20031,7 +20031,8 @@
       "records": [
         "R-1215",
         "R-1315",
-        "R-1426"
+        "R-1426",
+        "R-1952"
       ]
     },
     {
@@ -22316,7 +22317,7 @@
       "id": "DX-PIXI823",
       "title": "Pixi 8.20.1 to 8.23: four build patches become upstream code, the WebGL sync stub moves to fixed uniform-block slots, WebGPU loses a submit per render call (nice to have)",
       "status": "open",
-      "statusText": "Nice to have, no rush (owner, 2026-11-17); a pseudo-plan in PIXI_823_PLAN.md",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); a pseudo-plan in PIXI_823_PLAN.md; E-464's patch (R-1952) goes with the upgrade to 8.23",
       "date": "2026-11-17",
       "result": "buildPixi.mjs's plugins against 8.23.0's lib: 12 of 16 patches apply; E-152's BindGroup, GpuEncoderSystem and BindGroupSystem and N-95's mapFormatToGlFormat lose their anchors (upstream #12229, #12278, #12288, #12230). The engine's Pixi bundle without patches: 446 335 -> 482 366 bytes minified, 129 684 -> 140 146 gzip.",
       "next": "If scheduled: pixi.js 8.23.0, drop the four patches and check the garbage again (E-152's scene on WebGPU); port the WebGL sync stub (E-148) to fixed block slots and _resourceKeys; drop gpuParticleBatch's hand flush; captures on both backends (N-270), webgpuFrameRecorder submits (E-464), Pixi STEP_MS ABAB on WebGL and WebGPU.",
@@ -22335,7 +22336,8 @@
         "pixijs 3d"
       ],
       "records": [
-        "R-1315"
+        "R-1315",
+        "R-1952"
       ]
     },
     {
@@ -43470,6 +43472,15 @@
       "title": "Chrome's GPU process re-measured: light3d costs its main thread about 0.35 ms a frame more than plain now (2.7 in 2026-11-16); WebGPU costs it 40 % more than WebGL at crowd 2.5, its 14 flushes a frame (E-464)",
       "verdict": "note",
       "text": "gpuProcessTrace (GTX 1650, 1920 x 1080, 4 s after 12 s; main 4906f6a3 and c029468b, untraced but where said):\n- CrGpuMain ms/s (PutChanged self): Predator ?light3d=1&zoom=0.3 by day 207 (167), plain zoom 0.3 186 (149), crowd 2.5 by\n  day 256 to 276 (178 to 202), its SwapBuffers 48. 2026-11-16: light3d 364 in slices (PutChanged 295 self), plain 171 (135),\n  crowd 2.5 405. light3d's extra over plain is 21 ms/s, about 0.35 ms a frame, where E-412 read 2.7 ms a frame.\n- With --decoder (traced): glDrawElementsInstancedANGLE 600/s at 33 us each (E-414: 79 us then, 30 us plain); glBindTexture\n  5 509/s (8 522), glActiveTexture 3 553/s, glUniform1i 1 963/s (3 578; E-417 then cut it), glFlush 60/s, glBufferSubData\n  361/s. glObjectLabelKHR's 10 437/s is Chrome labelling under --enable-gpu-service-tracing, not the game (R-1692).\n- PutChanged wakes: 174 a second at crowd 2.5, about three a frame (E-428: 478 a second, eight a frame).\n- WebGPU at crowd 2.5 by day: CrGpuMain 367 ms/s, PutChanged 290 self at 830 a second: 14 flushes a frame against WebGL's 3,\n  about 40 % more of the process than WebGL (276). webgpuFrameRecorder: 12.7 command encoders and submits a frame (E-464),\n  22.5 writeBuffer, 16.3 writeTexture.\nE-407, E-412, E-414 and E-428 are superseded: the costs they found went with E-395, E-392, E-391, E-531 and E-389. E-340 is\nanswered: WebGPU is the dearer one there, through its submits; E-464 is the lever."
+    },
+    {
+      "id": "R-1952",
+      "date": "2026-11-23",
+      "time": "15:17",
+      "timeFrom": "recorded",
+      "title": "E-464 kept: Pixi on WebGPU writes its shifted uniform buffer, no submit of its own: submits 12.7 -> 7 a frame, Chrome's GPU process -11 % at Predator crowd 2.5 (3/3)",
+      "verdict": "kept",
+      "text": "751caa27 (merged 557309fd): buildPixi.mjs patches GpuUniformBatchPipe._uploadBindGroups, which copied each render call's\nuniforms into the second, shifted buffer in an encoder and a submit of its own; it now writes the shifted bytes with\nqueue.writeBuffer (upstream's change in 8.23, #12345), before the render call's own submit. webgpuFrameRecorder, Predator\ncrowd 2.5 by day: submits and command encoders 12.7 -> 7 a frame, writeBuffer 22.5 -> 28.8, 222 -> 195 calls. Chrome's GPU\nprocess main thread (gpuProcessTrace, untraced, 15:17, 4 pairs ABAB, main ec10d93d against it; the first pair dropped: a\nheaded probe of another session ran into it): CrGpuMain 296 -> 264 ms/s (-11 %, 3/3; B 285, 220, 264), PutChanged 231 -> 205\nms/s (-13 %, 3/3). Captures on WebGPU against main, dxCaptureScene hour 22, the light gallery (?outline=1), houseLightScene:\n0 of 921 600 pixels. The worker's side drops an encoder, a finish and a submit a render call and adds a writeBuffer, so\nno Predator gate was run (its cost can only fall). One submit a frame is the next step (one encoder across the frame's\nrender calls; the engine's passes are separate renderer.render calls)."
     }
   ],
   "leads": [
