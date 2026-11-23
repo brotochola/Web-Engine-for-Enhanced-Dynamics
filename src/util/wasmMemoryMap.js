@@ -302,8 +302,6 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
       // E-177: the entity batch's keyed frames' updates (gpuPack.c KEYED_ROW_WORDS each), as many as its rows.
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
-      // E-191: their shadow stream (shadowH, offX, offY a draw slot), for the sun's pass over the entity batch.
-      { name: 'pixiKeyShadow', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_SHADOW_BYTES },
       // E-189: their texture updates (gpuPack.c KEYED_TEX_WORDS each), as many as its rows.
       { name: 'pixiKeyTexUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_TEX_BYTES },
     );
@@ -472,8 +470,6 @@ export const PIXI_KEYED_ROW_BYTES = 64;
 /** E-188: the bytes of a keyed decoration's record (preRenderEmit.c DECO_KEYED_WORDS u32). */
 export const EMIT_DECO_KEYED_BYTES = 32;
 
-/** E-191: the bytes of a keyed frame's shadow terms a draw slot (shadowH, offX, offY). */
-export const PIXI_KEYED_SHADOW_BYTES = 12;
 /** E-189: a keyed frame's texture update (gpuPack.c KEYED_TEX_WORDS u32: the statics row, the texture's float bits). */
 export const PIXI_KEYED_TEX_BYTES = 8;
 

@@ -497,86 +497,6 @@ test('E-312 step 2: a pause draws keyed from a buffer that skipped statics, spli
 
 // E-191: with keyed shadows on, a keyed frame also carries each draw slot's shadow terms (its queue row's, in draw order),
 // and its geometry for the sun's pass (the pose, slot and shadow streams) is ready; a frame drawn split is not.
-test('keyed shadows: a keyed frame carries each slot\'s shadow terms and the sun pass\'s geometry', async () => {
-  const s = await setup(191);
-  const k = s.keyed;
-  assert.equal(k.makeKeyedSunShader(k.shader), null, 'no program before keyed shadows are on');
-  assert.equal(k.enableKeyedShadows(), true);
-  assert.equal(s.split.enableKeyedShadows(), false, 'a batch that is not keyed has none');
-  assignKeys(s);
-  // A frame drawn split (no key column) carries none.
-  emit(s);
-  const keyCol = s.q.key;
-  s.q.key = null;
-  assert.equal(draw(s, 'no key column', sortedOpts(s)), -1);
-  s.q.key = keyCol;
-  assert.equal(k.keyedShadowReady, false, 'a frame drawn split carries none');
-  emit(s);
-  const opts = sortedOpts(s);
-  assert.equal(draw(s, 'keyed', opts), N);
-  assert.equal(k.keyedShadowReady, true);
-  const g = k.keyedShadowGeometry;
-  assert.equal(g.instanceCount, N);
-  assert.deepEqual(Object.keys(g.attributes).sort(), ['aInstRotCS', 'aInstShadow', 'aInstSlot', 'aInstXY', 'aQuad']);
-  for (let slot = 0; slot < N; slot++) {
-    const i = opts.indices[slot];
-    for (const [j, col] of [[0, 'shadowH'], [1, 'shadowOffX'], [2, 'shadowOffY']]) {
-      if (k._shadowData[slot * 3 + j] !== s.q[col][i]) assert.fail(`slot ${slot}'s ${col}`);
-    }
-  }
-  assert.ok(!(k._shadowData.buffer instanceof SharedArrayBuffer), 'uploaded from a private copy (E-123)');
-  const sun = k.makeKeyedSunShader(k.shader);
-  assert.ok(sun && sun.resources.uStatics === k._staticsSource && sun.resources.uniforms === k.shader.resources.uniforms,
-    'the program reads the statics texture and shares the given uniforms');
-  assert.equal(k.makeKeyedSunShader(k.shader), sun, 'made once');
-  // The next keyed frame takes the other ring slot's geometry; one drawn split leaves none ready.
-  emit(s);
-  draw(s, 'next', sortedOpts(s));
-  assert.equal(k.keyedShadowReady, true);
-  assert.notEqual(k.keyedShadowGeometry, g, 'the other ring slot');
-  emit(s);
-  const key = s.q.key;
-  s.q.key = null;
-  k.upload(s.q, sortedOpts(s));
-  s.q.key = key;
-  assert.equal(k.keyedShadowReady, false, 'a frame drawn split leaves none ready');
-});
-
-// E-211: the caller turns the shadow stream off while the sun pass draws pre-render's keyed rows: a keyed frame then
-// writes no shadow terms and leaves none ready, and turned on again the next one carries them.
-test('keyed shadows: the stream turned off, a keyed frame writes no shadow terms; on again, it does', async () => {
-  const s = await setup(211);
-  const k = s.keyed;
-  k.setKeyedShadowStream(true);
-  assert.equal(k._keyedPack.shadowByte, 0, 'nothing to turn on before enableKeyedShadows');
-  assert.equal(k.enableKeyedShadows(), true);
-  assignKeys(s);
-  emit(s);
-  assert.equal(draw(s, 'first frame', sortedOpts(s)), N);
-  assert.equal(k.keyedShadowReady, true);
-  k.setKeyedShadowStream(false);
-  // The test's shadow region holds N slots; the batch's view spans its capacity.
-  const shared = k._sharedShadow.subarray(0, N * 3);
-  const copy = k._shadowData.subarray(0, N * 3);
-  shared.fill(-7);
-  copy.fill(-7);
-  emit(s);
-  assert.notEqual(draw(s, 'off', sortedOpts(s)), -1, 'still a keyed frame');
-  assert.equal(k.keyedShadowReady, false, 'no shadow terms ready');
-  assert.ok(shared.every((v) => v === -7) && copy.every((v) => v === -7), 'none written or copied');
-  k.setKeyedShadowStream(true);
-  emit(s);
-  const opts = sortedOpts(s);
-  assert.notEqual(draw(s, 'on again', opts), -1);
-  assert.equal(k.keyedShadowReady, true);
-  for (let slot = 0; slot < N; slot++) {
-    const i = opts.indices[slot];
-    if (k._shadowData[slot * 3] !== s.q.shadowH[i]) assert.fail(`slot ${slot}'s shadowH`);
-  }
-});
-
-// E-189: a sprite whose texture alone changed (an animation's step) goes up as a texture update, its row and texture,
-// and the texture then holds its new texture beside its other statics; a sprite changed otherwise goes up whole.
 test('keyed frames send a texture-only change as a texture update, and draw the new texture', async () => {
   const s = await setup(189);
   const k = s.keyed;
@@ -619,13 +539,6 @@ test('keyed casters: a keyed frame stores its queue frame in LIVE, and the caste
   k.upload(s.q, sortedOpts(s));
   s.q.key = key;
   assert.equal(Atomics.load(h, H.LIVE), s.frame - 1, 'a frame drawn split stores nothing');
-
-  assert.equal(s.split.makeKeyedCasterShader(k.shader, false), null, 'a batch that is not keyed has no such program');
-  const sun = k.makeKeyedCasterShader(k.shader, false);
-  const stamp = k.makeKeyedCasterShader(k.shader, true);
-  assert.ok(sun && stamp && sun !== stamp);
-  assert.ok(sun.resources.uStatics === k._staticsSource && stamp.resources.uniforms === k.shader.resources.uniforms);
-  assert.equal(k.makeKeyedCasterShader(k.shader, true), stamp, 'made once');
 
   const rows = new Float32Array(5 * GPU_KEYED_STAMP_FLOATS).map((_, i) => i + 0.25);
   const g = s.split.commitKeyedCasterRows(rows, 5, GPU_KEYED_STAMP_FLOATS);

@@ -28,7 +28,6 @@ import {
   instancedSpriteGpuProgram,
   instancedSpriteIndexedGpuProgram,
   instancedSpriteShadowGpuProgram,
-  instancedSpriteShadowIndexedGpuProgram,
 } from './webgpu/instancedSpriteWgsl.js';
 import { glProgramFrom } from './webgl/glProgram.js';
 import { pickInstancedSpriteFragmentGlsl } from './webgl/instancedSpriteGlsl.js';
@@ -553,7 +552,7 @@ export class InstancedSpriteBatch {
       keyBase: k ? k.keyBase | 0 : 0,
       updatesByte: k ? k.updatesByte | 0 : 0,
       updates: 0,
-      // E-191: the shadow stream's byte (0 until enableKeyedShadows) and whether the last pack wrote it.
+      // E-191: the pack's shadow stream's byte (0: none; nothing draws it since E-531, N-414) and whether it wrote it.
       shadowByte: 0,
       shadowed: false,
       // E-189: the texture updates' byte (0: none, the texture-only rows go up whole) and the last pack's count.
@@ -592,25 +591,10 @@ export class InstancedSpriteBatch {
     this._keyPause = 0;
     // E-312 step 2: whether the header's FULL asks pre-render for every row's statics (a pause, a frame not packed keyed).
     this._keyFull = false;
-    // E-191: the sun's shadow pass over these instances (enableKeyedShadows): each draw slot's shadow terms in the
-    // render-queue memory and their copy, a buffer and a geometry (pose, slot and shadow streams) per ring slot, the
-    // program (makeKeyedSunShader), and this frame's geometry once a keyed upload carried them (keyedShadowReady).
-    const shadowFloats = k && k.shadowByte >= 0 ? this.capacity * 3 : 0;
-    this._sharedShadow = shadowFloats > 0 ? new Float32Array(buf, k.shadowByte, shadowFloats) : new Float32Array(0);
-    this._shadowData = (shadowFloats > 0 && arena && arena.f32(shadowFloats)) || new Float32Array(shadowFloats);
-    this._shadowBuffers = null;
-    this._keyedShadowGeometries = null;
-    this._keyedShadowRowGeometries = null;
-    this._keyedSunShader = null;
-    this.keyedShadows = false;
-    this.keyedShadowReady = false;
-    this.keyedShadowGeometry = null;
-    // E-191 step 2: once the caller draws keyed caster rows (enableKeyedCasters), each keyed upload stores its queue
-    // frame in the header's LIVE word, and pre-render writes such rows while it is recent. The programs that draw them
-    // (makeKeyedCasterShader: the sun's rows, then the stamps' with their light) on an entity batch; on a caster batch,
-    // its geometries over each ring slot for those rows (commitKeyedCasterRows: the sun's, then the stamps').
+    // E-191 step 2: once the caller draws keyed caster rows (the shadow maps, E-531), each keyed upload stores its queue
+    // frame in the header's LIVE word, and pre-render writes such rows while it is recent. On a caster batch, its
+    // geometries over each ring slot for those rows (commitKeyedCasterRows: the sun's, then the stamps').
     this.keyedCasters = false;
-    this._keyedCasterShaders = [null, null];
     // DX-FACES, DX-GBUF: the batch's passes over its own instances for the light (AUX_FACE: the face map; AUX_IDS: the
     // entity ids map; AUX_GBUF: both in one pass, MRT; AUX_UNSHADED: the unshaded colour; AUX_UNSHADED_MASK: where it is,
     // E-457): each kind's programs (plain, indexed, by row), its state and a mesh per geometry this batch draws (_auxMesh).
@@ -989,23 +973,6 @@ export class InstancedSpriteBatch {
     return this._sharedGbuf;
   }
 
-  /** E-191: the sun's pass over a ring slot's keyed instances: the shadow program's attributes and no other. */
-  _keyedShadowGeometryFor(buf, slotBuf, shadowBuf) {
-    const ds = this._floats * 4;
-    const geometry = new Geometry({
-      attributes: {
-        aQuad: { buffer: this._quad, format: 'float32x2' },
-        aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
-        aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-        aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
-        aInstShadow: { buffer: shadowBuf, format: 'float32x3', stride: 12, offset: 0, instance: true },
-      },
-      indexBuffer: this._index,
-    });
-    geometry.instanceCount = 0;
-    return geometry;
-  }
-
   _geometryFor(buf, staticBuf) {
     if (this._twoStreams) {
       // E-82: the pose stream (24-byte stride) and the static stream (44). E-82b, a split batch: a 16-byte
@@ -1075,21 +1042,6 @@ export class InstancedSpriteBatch {
         aQuad: { buffer: this._quad, format: 'float32x2' },
         aInstRow: { buffer: buf, format: 'float32', stride: 4, offset: 0, instance: true },
         aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
-      },
-      indexBuffer: this._index,
-    });
-    geometry.instanceCount = 0;
-    return geometry;
-  }
-
-  /** E-201: the sun's pass over a by-row keyed frame: its rows, slots and shadow terms. */
-  _keyedShadowRowGeometryFor(buf, slotBuf, shadowBuf) {
-    const geometry = new Geometry({
-      attributes: {
-        aQuad: { buffer: this._quad, format: 'float32x2' },
-        aInstRow: { buffer: buf, format: 'float32', stride: 4, offset: 0, instance: true },
-        aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
-        aInstShadow: { buffer: shadowBuf, format: 'float32x3', stride: 12, offset: 0, instance: true },
       },
       indexBuffer: this._index,
     });
@@ -1868,11 +1820,6 @@ export class InstancedSpriteBatch {
       aux[i].resources.uTexture = source;
       aux[i].resources.uSampler = source.style;
     }
-    const ks = this._keyedSunShader;
-    if (ks) {
-      ks.resources.uTexture = source;
-      ks.resources.uSampler = source.style;
-    }
   }
 
   setLutSource(source) {
@@ -1880,7 +1827,6 @@ export class InstancedSpriteBatch {
     this.shader.resources.uTexLut = source;
     if (this.shadowShader) this.shadowShader.resources.uTexLut = source;
     if (this._indexedShader) this._indexedShader.resources.uTexLut = source;
-    if (this._keyedSunShader) this._keyedSunShader.resources.uTexLut = source;
     const aux = this._auxShaders();
     for (let i = 0; i < aux.length; i++) aux[i].resources.uTexLut = source;
     if (this._rowShader !== null) this._rowShader.resources.uTexLut = source;
@@ -2034,7 +1980,6 @@ export class InstancedSpriteBatch {
    * @param {number} [opts.indexCount]
    */
   upload(q, opts) {
-    this.keyedShadowReady = false;
     this.gbufPacked = false;
     this.gbufInStatics = false;
     if (this.poseInterp) return this._uploadPose(q, opts);
@@ -2170,8 +2115,6 @@ export class InstancedSpriteBatch {
       this._keyDrawn = frame;
       Atomics.store(H, PIXI_KEYED_HEADER.DRAWN, frame);
     }
-    const shadowed = this.keyedShadows && k.shadowed;
-    if (shadowed && out > 0) this.copyIn(this._shadowData, this._sharedShadow, out * 3);
     const n = k.updates;
     const nt = k.texUpdates;
     if (this._keyPause > 0) {
@@ -2211,15 +2154,6 @@ export class InstancedSpriteBatch {
     // E-448: a frame drawn by queue row takes the opaque pass; a keyed frame drawn by its pose stream does not.
     if (byRow && this.opaqueOn) this._commitOpaqueRows(drawn, q, ctx);
     else this.dropOpaquePass();
-    if (shadowed && out > 0) {
-      // The ring slot _finishUpload just took.
-      const ring = this._ring ^ 1;
-      this._shadowBuffers[ring].update(out * 12);
-      const g = (byRow ? this._keyedShadowRowGeometries : this._keyedShadowGeometries)[ring];
-      g.instanceCount = out;
-      this.keyedShadowGeometry = g;
-      this.keyedShadowReady = true;
-    }
     return drawn;
   }
 
@@ -2451,99 +2385,8 @@ export class InstancedSpriteBatch {
   }
 
   /**
-   * E-191: the sun's shadow pass draws this batch's keyed instances. From now on a keyed frame also packs each draw
-   * slot's shadow terms and uploads them, and keyedShadowGeometry is that frame's geometry over its pose, slot and
-   * shadow buffers (keyedShadowReady). False when the batch is not keyed or the render-queue memory has no shadow
-   * region for it.
-   * @returns {boolean}
-   */
-  enableKeyedShadows() {
-    if (!this.keyed || this._sharedShadow.length === 0) return false;
-    if (this._shadowBuffers === null) {
-      this._shadowBuffers = this._ringBuffers(this._shadowData, this._label + '-shadow');
-      this._keyedShadowGeometries = this._buffers.map((b, r) =>
-        this._keyedShadowGeometryFor(b, this._slotBuffers[r], this._shadowBuffers[r]));
-      this._keyedShadowRowGeometries = this.posesByRow
-        ? this._buffers.map((b, r) => this._keyedShadowRowGeometryFor(b, this._slotBuffers[r], this._shadowBuffers[r]))
-        : null;
-      this.keyedShadowGeometry = this._keyedShadowGeometries[0];
-    }
-    this._keyedPack.shadowByte = this._sharedShadow.byteOffset;
-    this.keyedShadows = true;
-    return true;
-  }
-
-  /**
-   * E-211: whether the next keyed packs write the slots' shadow terms (after enableKeyedShadows, which turns them on).
-   * Off, a keyed frame reads and writes none and leaves keyedShadowReady false, for a sun pass that draws other rows.
-   * @param {boolean} on
-   */
-  setKeyedShadowStream(on) {
-    if (!this.keyedShadows) return;
-    this._keyedPack.shadowByte = on ? this._sharedShadow.byteOffset : 0;
-  }
-
-  /**
-   * E-191: the program of the sun's shadow pass over these instances: instancedSpriteShadow.vert.glsl reading its
-   * statics by key from this batch's statics texture (spriteIndexedVertex's shadow form), with the fragment program
-   * and the resources of `sun` (the caster batch's shadow shader: its atlas, its LUT and the uniform group that pass
-   * fills). Null without keyed shadows, on WebGPU, or without the shadow vertex source.
-   * @param {Shader|null} sun
-   * @returns {Shader|null}
-   */
-  makeKeyedSunShader(sun) {
-    if (!this.keyedShadows || !sun) return null;
-    const program = this._keyedSunProgram();
-    if (program === null) return null;
-    if (this._keyedSunShader === null) {
-      const r = sun.resources;
-      const resources = {
-        uTexture: r.uTexture,
-        uSampler: r.uSampler,
-        uTexLut: r.uTexLut,
-        uniforms: r.uniforms,
-        uStatics: this._staticsSource,
-      };
-      if (this.posesByRow) resources.uPoses = this._poseSource;
-      this._keyedSunShader = new Shader({ ...program, resources });
-    }
-    return this._keyedSunShader;
-  }
-
-  /**
-   * E-191 step 2: the program of a shadow pass over keyed caster rows (pre-render's sun rows, GPU_KEYED_CASTER_FLOATS;
-   * with `light`, its stamp rows, GPU_KEYED_STAMP_FLOATS): instancedSpriteShadow.vert.glsl reading the statics by key
-   * from this batch's statics texture, with no rotation (a shadow's angle is the sun's or the light's) and, for a stamp,
-   * the row's own light; the fragment program and the resources of `sun`, as makeKeyedSunShader's. Null where the keyed
-   * frames are off, on WebGPU, or without the shadow vertex source.
-   * @param {Shader|null} sun
-   * @param {boolean} light
-   * @returns {Shader|null}
-   */
-  makeKeyedCasterShader(sun, light) {
-    if (!this.keyed || !sun) return null;
-    const i = light ? 1 : 0;
-    if (this._keyedCasterShaders[i] === null) {
-      const program = this._keyedCasterProgram(light);
-      if (program === null) return null;
-      const r = sun.resources;
-      this._keyedCasterShaders[i] = new Shader({
-        ...program,
-        resources: {
-          uTexture: r.uTexture,
-          uSampler: r.uSampler,
-          uTexLut: r.uTexLut,
-          uniforms: r.uniforms,
-          uStatics: this._staticsSource,
-        },
-      });
-    }
-    return this._keyedCasterShaders[i];
-  }
-
-  /**
    * E-191 step 2: `count` keyed caster rows of `floats` floats (GPU_KEYED_CASTER_FLOATS, or GPU_KEYED_STAMP_FLOATS with
-   * the light) from `src` into this batch's next ring slot, and their geometry (makeKeyedCasterShader's attributes over
+   * the light) from `src` into this batch's next ring slot, and their geometry (the maps' keyed programs' attributes over
    * them), or null for none or more than the batch holds. The batch's own mesh and geometry stay as they were.
    * @returns {Geometry|null}
    */
@@ -2635,13 +2478,6 @@ export class InstancedSpriteBatch {
 
   /** E-191 step 2: a ring slot's keyed caster rows of `floats` floats: x and y, the key's slot pair, the shadow terms. */
   /**
-   * E-191/E-220: a keyed shadow program, the shadow vertex shader reading the statics by key (spriteIndexed.js), as a
-   * Shader's options: `{ glProgram }` on WebGL, `{ gpuProgram }` on WebGPU (the statics a storage buffer); null without
-   * the shadow source.
-   * @param {{ shadow: boolean, casterRows?: boolean, light?: boolean }} opts
-   * @param {string} name
-   */
-  /**
    * SST-7 step 3: what the batch's mesh draws with, a frame's kind each (plain, indexed, by row): its program and a geometry
    * of that layout (both ring slots share it), for building the render pipelines ahead.
    * @returns {{ shader: Shader, geometry: Geometry }[]}
@@ -2651,54 +2487,6 @@ export class InstancedSpriteBatch {
     if (this._indexedShader !== null) out.push({ shader: this._indexedShader, geometry: this._indexedGeometries[0] });
     if (this._rowShader !== null) out.push({ shader: this._rowShader, geometry: this._rowGeometries[0] });
     return out;
-  }
-
-  /** E-191: the keyed sun pass's program (E-201: a by-row batch's keyed frames are drawn by queue row, and so is it). */
-  _keyedSunProgram() {
-    return this._keyedShadowProgram(
-      this.posesByRow ? { shadow: true, poseBlock: this._poseBlock } : { shadow: true },
-      `${this._label}-keyed-sun`
-    );
-  }
-
-  /** E-191 step 2: the keyed caster rows' program, the sun's or (`light`) the stamps'. */
-  _keyedCasterProgram(light) {
-    return this._keyedShadowProgram(
-      { shadow: true, casterRows: true, light },
-      `${this._label}-keyed-${light ? 'stamp' : 'sun'}-rows`
-    );
-  }
-
-  /**
-   * E-494: the programs the sun pass makes on its first use over this batch's keyed instances, made now with the same
-   * sources and names (GlProgram.from on WebGL), so the caller links them before the first frame: `sun`, the keyed sun
-   * pass's (where enableKeyedShadows can turn it on); `casters`, the keyed caster rows' two (makeKeyedCasterShader).
-   * @param {boolean} sun
-   * @param {boolean} casters
-   */
-  makeKeyedShadowPrograms(sun, casters) {
-    if (sun && this.keyed && this._sharedShadow.length > 0) this._keyedSunProgram();
-    if (casters && this.keyed) {
-      this._keyedCasterProgram(false);
-      this._keyedCasterProgram(true);
-    }
-  }
-
-  _keyedShadowProgram(opts, name) {
-    const shaders = this._engineShaders;
-    if (this._useWebGpu) {
-      if (!shaders?.shadowWgsl) return null;
-      return { gpuProgram: instancedSpriteShadowIndexedGpuProgram(GpuProgram, spriteIndexedWgsl(shaders.shadowWgsl, opts), name) };
-    }
-    if (!shaders?.shadowVert) return null;
-    return {
-      glProgram: glProgramFrom(
-        GlProgram,
-        spriteIndexedVertex(shaders.shadowVert, opts),
-        pickInstancedSpriteFragmentGlsl(true, shaders),
-        name
-      ),
-    };
   }
 
   _keyedCasterGeometryFor(buf, floats, light) {

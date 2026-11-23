@@ -137,8 +137,8 @@ const WGSL_TYPES = { float: 'f32', vec2: 'vec2<f32>' };
  * parameters for `let`s of the same names at the top of its body, from the three vec4<u32> of the statics row (the
  * words spriteIndexedVertex reads) and the slot's row, `aInstSlot` taking a free location; the tint's bits are read as
  * the u32 they are. `uStatics` is group 2's binding 4 (instancedSpriteIndexedGpuProgram). E-220: `shadow`,
- * `casterRows` and `light` as spriteIndexedVertex takes them, for instancedSpriteShadow.wgsl (E-191's keyed sun pass and
- * keyed caster rows on WebGPU; instancedSpriteShadowIndexedGpuProgram).
+ * `casterRows` and `light` as spriteIndexedVertex takes them, for instancedSpriteShadow.wgsl (the shadow maps' keyed
+ * caster rows on WebGPU: sunShadowGpuProgram with `statics`).
  * @param {string} source instancedSprite.wgsl (instancedSpriteShadow.wgsl with `shadow`)
  * @param {{ shadow?: boolean, casterRows?: boolean, light?: boolean }} [opts]
  * @returns {string}

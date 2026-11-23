@@ -1,5 +1,5 @@
 // E-494: the programs the renderer made the first time a pass drew (the lamps' map, the sun's map, their volumes, the UV
-// meshes, the G-buffer and unshaded passes over the entities, the keyed shadow passes) are made at init when the config
+// meshes, the G-buffer and unshaded passes over the entities) are made at init when the config
 // says the pass runs, and so linked ahead with the rest (E-475); the pass's own first call then gets the very program made
 // at init (GlProgram.from), already linked, instead of a new one to link while the frame waits. A program no mesh draws
 // with is left out of the links.
@@ -98,35 +98,6 @@ test('without the maps or a UV mesh, no program is made for them', async () => {
   px.atlasMapsSource = null;
   const made = programsMadeBy(() => px._makeFirstUsePrograms());
   assert.deepEqual(made.map(nameOf), []);
-});
-
-test("the entities' keyed shadow passes: their programs made at init, the passes' first calls get them", () => {
-  const capacity = 64;
-  const shared = new Float32Array(capacity * 32);
-  const statics = { maxSize: 4096, scatter() {}, make: () => Texture.EMPTY.source, upload() {} };
-  const keyed = { keyRows: 128, keyBase: 0, updatesByte: 0, headerByte: 0, shadowByte: 0 };
-  const batch = new InstancedSpriteBatch({
-    capacity,
-    label: 'entities-instanced',
-    useWebGpu: false,
-    shaders: GL_SHADERS,
-    split: true,
-    data: shared,
-    gpuPack: { spritesKeyedRows: null },
-    statics,
-    keyed,
-  });
-  assert.equal(batch.keyed, true, 'a keyed batch');
-  const made = programsMadeBy(() => batch.makeKeyedShadowPrograms(true, true));
-  assert.deepEqual(made.map(nameOf).sort(), ['entities-instanced-keyed-stamp-rows', 'entities-instanced-keyed-sun', 'entities-instanced-keyed-sun-rows']);
-
-  // makeKeyedSunShader and makeKeyedCasterShader make their programs by these calls.
-  const later = programsMadeBy(() => {
-    assert.ok(made.includes(batch._keyedSunProgram().glProgram), 'the keyed sun pass');
-    assert.ok(made.includes(batch._keyedCasterProgram(false).glProgram), "the sun's keyed rows");
-    assert.ok(made.includes(batch._keyedCasterProgram(true).glProgram), "the stamps' keyed rows");
-  });
-  assert.equal(later.length, 0, 'no program made after init');
 });
 
 test("the casters' batch's own sprite program, which no mesh draws, is left out of the links ahead", async () => {

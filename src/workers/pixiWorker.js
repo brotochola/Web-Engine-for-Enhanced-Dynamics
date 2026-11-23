@@ -2065,7 +2065,6 @@ class PixiRenderer extends AbstractWorker {
           keyRows: layout.pixiKeyRows | 0,
           updatesByte: layout.pixiKeyUpdatesByte,
           headerByte: layout.pixiKeyHeaderByte,
-          shadowByte: layout.pixiKeyShadowByte ?? -1,
           texUpdatesByte: layout.pixiKeyTexUpdatesByte ?? -1,
         }
       : null;
