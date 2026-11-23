@@ -96,6 +96,34 @@ export function writeRgba8(renderer, source, data, width, height, label) {
   );
 }
 
+/**
+ * E-552: the array texture behind a '2d-array' source: `layers` of `px` x `px` rgba8unorm texels (src/render/pixi/decalTiles.js).
+ */
+export function createDecalArrayTexture(renderer, source, px, layers) {
+  const device = renderer?.gpu?.device;
+  if (!device || !source || px < 1 || layers < 1) return;
+  const gpuTex = device.createTexture({
+    label: 'weed-decal-tiles',
+    size: { width: px, height: px, depthOrArrayLayers: layers },
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  pinGpuTexture(renderer, source, gpuTex);
+}
+
+/** E-552: `data` (px x px rgba8unorm) into layer `layer` of the source's array texture. */
+export function writeRgba8Layer(renderer, source, data, px, layer) {
+  const device = renderer?.gpu?.device;
+  const gpuTex = source?._gpuData?.[renderer?.uid]?.gpuTexture;
+  if (!device || !gpuTex || !data || px < 1) return;
+  device.queue.writeTexture(
+    { texture: gpuTex, origin: { x: 0, y: 0, z: layer } },
+    data,
+    { bytesPerRow: px * RGBA8_BYTES, rowsPerImage: px },
+    { width: px, height: px, depthOrArrayLayers: 1 }
+  );
+}
+
 function attachGpuData(source, uid, gpuTexture, textureView) {
   source._gpuData[uid] = {
     gpuTexture,
@@ -120,14 +148,14 @@ export function pinGpuTexture(renderer, source, gpuTexture) {
   const sizeMismatch =
     source.pixelWidth !== gpuTexture.width || source.pixelHeight !== gpuTexture.height;
   if (already && !sizeMismatch) return;
-  const textureView = already ? prev.textureView : gpuTexture.createView();
+  const textureView = already ? prev.textureView : gpuTexture.createView({ dimension: source.viewDimension || '2d' });
   if (!already) attachGpuData(source, uid, gpuTexture, textureView);
   // Pixi 8.20 GpuTextureSystem.onSourceResize destroys gpuTexture when
   // source.pixelWidth/Height !== gpuTexture size, then initSource() a 1x1.
   if (sizeMismatch) source.resize(gpuTexture.width, gpuTexture.height, 1);
   const cur = source._gpuData[uid];
   if (!cur || cur.gpuTexture !== gpuTexture) {
-    attachGpuData(source, uid, gpuTexture, gpuTexture.createView());
+    attachGpuData(source, uid, gpuTexture, gpuTexture.createView({ dimension: source.viewDimension || '2d' }));
   }
   const texSys = renderer.texture;
   if (texSys && texSys._bindGroupHash) {
