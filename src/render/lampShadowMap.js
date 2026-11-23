@@ -229,7 +229,9 @@ const LAMP_OUT_GLSL = `  vec2 tuv = lampPanoUv(land - lamp.xy, lamp.w);
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   vTileUvW = vec3(tuv * w, w);
   vLampE = lamp.z;
-  vColor = vec4(1.0, castOpacity, 1.0, 1.0);
+  // N-413: the stamp row's fade (its light's w: maxShadowsPerLight's and maxShadowsPerEntity's cuts) takes the caster's
+  // opacity down near a cut.
+  vColor = vec4(1.0, castOpacity * clamp(aInstLight.w, 0.0, 1.0), 1.0, 1.0);
   vLocal = lampQuad;
   vWorld = aInstXY;
   vAtlasUV = aInstUV;
@@ -407,7 +409,8 @@ const LAMP_OUT_WGSL = `  let tuv = lampPanoUv(land - lamp.xy, lamp.w);
   }
   out.vTileUvW = vec3<f32>(tuv * w, w);
   out.vLampE = lamp.z;
-  out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);
+  // N-413: the stamp row's fade (its light's w) takes the caster's opacity down near a cut.
+  out.vColor = vec4<f32>(1.0, castOpacity * clamp(aInstLight.w, 0.0, 1.0), 1.0, 1.0);
   out.vLocal = lampQuad;
   out.vWorld = aInstXY;
   out.vAtlasUV = aInstUV;

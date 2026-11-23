@@ -147,3 +147,29 @@ test('OL-5: Pixi gives the named lamps tiles for a stamp row or a casting volume
   assert.equal(px.lampMap.tileCount, 2);
   assert.equal(px.lighting.lampTileOf[2], 1);
 });
+
+test('N-413: zoomed out each casting lamp keeps fewer casters, 5 % of its pool in shadow texels (the kernel fades the cut)', async () => {
+  world();
+  await withLights(async () => {
+    const pre = await preRender();
+    const { caps, views } = queue();
+    pre.gpuQueueCaps = caps;
+    pre.maxShadowsPerLight = 512;
+    pre.config.lighting.shadowResolution = 0.5;
+    // At zoom 1 (0.5 texels a px) the lamps keep maxShadowsPerLight.
+    pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
+    assert.deepEqual(pre._stampLights.slice(0, CAST_LIGHTS).map((L) => L.maxShadows), [0, 0]);
+    // At zoom 0.25 (0.125 texels a px): a pool of 200 px keeps round(pi 200² 0.125² 0.05) = 98.
+    pre._frameCameraZoom = 0.25;
+    pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
+    assert.deepEqual(pre._stampLights.slice(0, CAST_LIGHTS).map((L) => L.maxShadows), [98, 98]);
+    // Never under 16, never over maxShadowsPerLight.
+    pre._frameCameraZoom = 0.05;
+    pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
+    assert.deepEqual(pre._stampLights.slice(0, CAST_LIGHTS).map((L) => L.maxShadows), [16, 16]);
+    pre.maxShadowsPerLight = 40;
+    pre._frameCameraZoom = 0.25;
+    pre._stampAgainstSun(views, views.sun, 0, 0, 0, 1);
+    assert.deepEqual(pre._stampLights.slice(0, CAST_LIGHTS).map((L) => L.maxShadows), [40, 40]);
+  });
+});

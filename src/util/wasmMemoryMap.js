@@ -434,9 +434,10 @@ export const SWAY_TABLE_SLOTS = 32;
 export const STAMP_GRID_CELLS = 128 * 128;
 /**
  * A light in the stamp's light table (doubles): x, y, intensity, rangeSq, maxShadows, then DX-SPOT's cone (dir x, dir y
- * over groundScaleY, cos, 1/span, 1/g²), then its shade (min(brightness, 1)).
+ * over groundScaleY, cos, 1/span, 1/g²), then its shade (min(brightness, 1)); then (N-413) the distance² of its nearest
+ * candidate left out at its maxShadowsPerLight cut, which the kernel writes and its rows' fades read.
  */
-export const STAMP_LIGHT_DOUBLES = 11;
+export const STAMP_LIGHT_DOUBLES = 12;
 /**
  * N-330: the pairs in a caster's record of nearest lights (wasm/shadowStamp.c note_nearest): maxShadowsPerEntity, and one
  * more, the nearest light past the cut, which fades the last one shown; none without the cap.

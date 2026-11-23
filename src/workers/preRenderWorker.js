@@ -5035,6 +5035,24 @@ class PreRenderWorker extends AbstractWorker {
         const capL = Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0);
         const caps = this.gpuQueueCaps;
         const stampCap = caps ? (caps.maxStamp | 0) : 0;
+        // N-413: zoomed out, each lamp keeps fewer of its nearest casters (5 % of its pool's area in shadow-map texels, 16 at
+        // least, maxShadowsPerLight at most): what the screen shows of its shadows. The kernel fades the kept near that cut
+        // by the nearest left out, so the set changing as people walk, or as the camera zooms, does not pop (N-212).
+        const maxPL = this.maxShadowsPerLight | 0;
+        if (maxPL > 0 && capL > 0) {
+            const zoom = this._frameCameraZoom > 0 ? this._frameCameraZoom : 1;
+            const shadowRes = this.config.lighting?.shadowResolution || 0.25;
+            const texScale = zoom * shadowRes;
+            if (texScale < 0.25) {
+                const scaleSq = texScale * texScale;
+                for (let i = 0; i < capL; i++) {
+                    const L = lights[i];
+                    if (!L || !(L.rangeSq > 0)) continue;
+                    const budget = Math.max(16, (3.14159 * L.rangeSq * scaleSq * 0.05 + 0.5) | 0);
+                    L.maxShadows = budget < maxPL ? budget : maxPL;
+                }
+            }
+        }
         this._ensureStampScratch(sunN);
         if (!this._gpuLightVec) this._gpuLightVec = new Float32Array(4);
 
