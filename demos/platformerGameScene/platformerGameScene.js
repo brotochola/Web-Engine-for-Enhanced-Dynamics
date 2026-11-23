@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 import { BluePlatformerPlayer } from './gameObjects/bluePlatformerPlayer.js';
 import { Platform } from './gameObjects/platform.js';
 
-const { Scene, Camera, Transform, Layer, BLEND_MODES } = WEED;
+const { Scene, Camera, Transform, BLEND_MODES } = WEED;
 
 const BLOOM_LAYER = 'bloom';
 const BLOOM_RESOLUTION = 1;
@@ -59,13 +59,13 @@ export class PlatformerGameScene extends Scene {
         maxItems: 2048,
         ySorting: false,
         shader: {
-          fragment: 'bloom',
+          // Two passes: the bright parts blurred along x, then along y and added to the layer's picture.
+          passes: [{ fragment: 'bloomRows' }, { fragment: 'bloomColumns' }],
           containerBlend: BLEND_MODES.NORMAL,
           uniforms: {
             uThreshold: { value: 0.05, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Threshold', tip: 'Luma below this does not bloom.' },
             uIntensity: { value: 0.4, type: 'f32', min: 0, max: 4, step: 0.05, label: 'Intensity', tip: 'How strong the glow add is.' },
             uBlurSize: { value: 12, type: 'f32', min: 1, max: 30, step: 1, label: 'Blur', tip: 'StackBlur radius in pixels (1–8).' },
-            uTexelSize: { value: [0.002, 0.002], type: 'vec2<f32>' },
           },
         },
       },
@@ -81,7 +81,8 @@ export class PlatformerGameScene extends Scene {
       },
     },
     shaders: {
-      bloom: '/demos/shaders/bloom.frag',
+      bloomRows: { webgl: '/demos/shaders/bloomRows.frag', webgpu: '/demos/shaders/bloomRows.wgsl' },
+      bloomColumns: { webgl: '/demos/shaders/bloomColumns.frag', webgpu: '/demos/shaders/bloomColumns.wgsl' },
     },
   };
 
@@ -98,7 +99,6 @@ export class PlatformerGameScene extends Scene {
   create() {
     this.spawnLevelPlatforms();
     Camera.setZoom(1.25);
-    this._syncBloomTexels();
   }
 
   createNewGame() {
@@ -143,18 +143,7 @@ export class PlatformerGameScene extends Scene {
     }
   }
 
-  _syncBloomTexels() {
-    const w = Camera.canvasWidth * BLOOM_RESOLUTION;
-    const h = Camera.canvasHeight * BLOOM_RESOLUTION;
-    if (w <= 0 || h <= 0) return;
-    if (w === this._bloomRtW && h === this._bloomRtH) return;
-    this._bloomRtW = w;
-    this._bloomRtH = h;
-    Layer.get(BLOOM_LAYER).setUniform('uTexelSize', [1 / w, 1 / h]);
-  }
-
   update() {
-    this._syncBloomTexels();
     this._playerX = Transform.x[this.playerIndex];
     this._playerY = Transform.y[this.playerIndex];
     Camera.follow(this._playerX, this._playerY, 0.15);
