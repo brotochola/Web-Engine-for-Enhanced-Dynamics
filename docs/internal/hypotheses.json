@@ -15828,7 +15828,7 @@
     {
       "id": "N-185",
       "title": "The G-buffer entity ids repeat every 65 535 entities: two such entities skip each other's shadow in the maps and count each other's heights in the self-shadow",
-      "status": "open",
+      "status": "parked",
       "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
       "date": "2026-11-15",
       "area": "render",
@@ -15842,7 +15842,8 @@
         "entity id wraps at 65535"
       ],
       "records": [
-        "R-1315"
+        "R-1315",
+        "R-1959"
       ]
     },
     {
@@ -43652,6 +43653,15 @@
       "title": "E-202 parked: after E-552 and E-270 decalBlit's Pixi is 0.81 ms at 1 024 tiles uploaded a frame, so stamping on the GPU has little left to win there",
       "verdict": "note",
       "text": "Its owner scene's Pixi was 228 ms/s of uploads when it was filed; R-1957 left 0.81 ms a frame at 1 024 tiles of 16 px (48 ms/s) and Chrome's GPU process at 225 ms/s. What stays on the CPU is the blending itself (the particle worker, about 1.9 ms in that scene). Stamping on the GPU would still cost a readback for saves and the context-loss path. Parked until a scene shows the blending or the uploads as a cost."
+    },
+    {
+      "id": "R-1959",
+      "date": "2026-11-23",
+      "time": "17:21",
+      "timeFrom": "recorded",
+      "title": "N-185 parked: the 16-bit G-buffer ids repeat past 65 535 entities; documented, the wider id not built",
+      "verdict": "note",
+      "text": "The word is full (id 16 bits, gbufFlags 6, selfShadow 2, an exact integer under 2^24), and so is the shadow maps' texel (height 8 bits, opacity 8, id 16). A wider id takes 4 bits from the opacity and puts the rest in the word's second float (its bits 8 up are free), through the two gbuf word writers, gpuPack.c's packs, the casters' id in three map vertex shaders, the ids map and the light pass, on both backends. What it buys: two entities 65 535 apart that overlap on screen, or one in the other's shadow. The guide says it now (bible, uGbufIds). Built when a game has lit crowds past 65 535 entities on screen; Predator's pools are 57 633."
     }
   ],
   "leads": [
