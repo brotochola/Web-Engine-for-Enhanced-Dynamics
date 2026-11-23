@@ -3344,6 +3344,12 @@ export interface LayerSceneConfigEntry {
      * MESH, DENSITY, COMPUTE, GPU_PARTICLES and SCREEN layers, without `worldRect`.
      */
     passes?: LayerLookPass[];
+    /**
+     * A LAYER_KIND.SCREEN layer whose fragment only maps a pixel's colour: it defines `vec4 weedPass(vec4 color, vec2 uv)`
+     * (GLSL) or `fn weedPass(color: vec4f, uv: vec2f) -> vec4f` (WGSL) and no entry point, samples nothing, and the engine
+     * draws it with the consecutive pointwise layers in one full-screen pass that reads the frame once.
+     */
+    pointwise?: boolean;
     containerBlend?: number;
     /** Omit or {@link LAYER_DENSITY_SOURCE}.SPRITES = InstancedSpriteBatch. {@link LAYER_DENSITY_SOURCE}.LIQUID_FUN = HEAP splat. */
     densitySource?: LayerDensitySource;

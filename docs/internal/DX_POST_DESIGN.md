@@ -66,6 +66,12 @@ have the same poses (their transform hash is compared too), headed, WebGL and We
    load errors, the passes kept off the stage in order, the present unchanged without a visible pass;
    `wgslPrelude.test.js`: `uScene`'s binding), the identity test, the demo (Sun Street: a grading by the hour and a
    vignette, `P`).
+   Then (DX-POSTFUSE, 2026-11-23) `shader.pointwise`: a SCREEN layer whose fragment only maps a colour defines
+   `weedPass(color, uv)`, and a run of them is generated into one fragment (`src/render/pointwisePass.js`): each member's
+   names and uniforms suffixed, `visible` a uniform switch inside, the colour clamped to 0 to 1 between members, one draw
+   (`PixiScreenLayers.finish`, `steps`). The engine's look uniforms are shared. A whole-fragment layer between two, or
+   another `resolution`, starts another draw. Not in it: pointwise passes after a pass that samples neighbours fused into
+   that pass's fragment.
 2. Later, if wanted: a pass reads another layer's picture (`textures: { uMask: 'heat' }`): heat haze from the fire's
    particles, shock waves drawn as sprites on a hidden layer.
 3. Later: layers over the post.

@@ -911,6 +911,43 @@ Layer.crt.visible = false;            // turns that pass off
 
 The Sun Street demo grades its frame by the hour and adds a vignette (`P` turns them off).
 
+#### A pass that only maps a colour (`shader.pointwise`)
+
+A grading, a vignette or a tint reads its own pixel and writes one colour, yet each such pass costs a full-screen read
+and write. Mark it `pointwise`, write the map alone (no `main`), and the engine draws consecutive pointwise layers in
+one full-screen pass that reads the frame once:
+
+```javascript
+grade: {
+  kind: LAYER_KIND.SCREEN, zIndex: 100,
+  shader: { fragment: 'grade', pointwise: true, uniforms: { uWarm: { value: 0, type: 'f32' } } },
+},
+vignette: {
+  kind: LAYER_KIND.SCREEN, zIndex: 101,
+  shader: { fragment: 'vignette', pointwise: true, uniforms: { uAmount: { value: 0.4, type: 'f32' } } },
+},
+```
+
+```glsl
+precision mediump float;
+uniform float uAmount;
+uniform vec2 uCanvasSize;
+vec4 weedPass(vec4 color, vec2 uv) { // color is what the pass before drew; return the new one
+  return vec4(color.rgb * (1.0 - uAmount * length(uv - 0.5)), color.a);
+}
+```
+
+- The function is `vec4 weedPass(vec4 color, vec2 uv)` in GLSL, `fn weedPass(color: vec4f, uv: vec2f) -> vec4f` in WGSL.
+  It samples nothing (no `uTexture`, `uScene` or `uSource`): a blur, a distortion or a bloom is a whole fragment instead.
+  A source without it, with a `main` of its own, or that samples, is an error at load that names the layer.
+- Two layers may use the same names (uniforms, helper functions, constants): the engine tells them apart. Each layer's
+  uniforms stay its own, from any thread (`Layer.grade.setUniform`), and `visible` switches one off inside the same draw.
+- A whole-fragment layer between them, or another `resolution`, starts another draw.
+- The colour stays in 0 to 1 between passes, as an 8-bit target would hold it, without its rounding: a fused chain may
+  differ from the same passes unfused by one or two levels of 255.
+
+Sun Street's two passes are pointwise.
+
 #### A look in several passes (`shader.passes`)
 
 A look is one full-screen draw. A wide blur in one draw reads every texel around the pixel (17 x 17 is 289 fetches);
