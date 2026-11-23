@@ -15775,12 +15775,12 @@
     {
       "id": "E-371",
       "title": "The sun's and the lamps' frames of directional casters picked in the shadow programs (a texture by texture id and the tables' frames), not by pre-render: about 1 ms a frame of Predator's pre-render",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-23 (R-1906): the frames cost pre-render 3.5-3.7 % in Predator light3d, about 0.3-0.4 ms; reopen if a scene shows lamp_frames far larger",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "",
+      "result": "Dropped (R-1906): after E-368 to E-370 and E-372 the frames cost pre-render 3.5-3.7 % in Predator light3d (lamp_frames ~0.3-0.4 ms), the sun's frames in the keyed scan; a GPU pick in every shadow program on both backends is not worth it.",
       "next": "Texture-id and frame tables to the GPU; every shadow program picks the frame; pre-render writes none. Predator crowd 2.5 against main, captures unchanged.",
       "refs": [
         "EXECUTION_PLAN.md#E-371"
@@ -15791,7 +15791,8 @@
       ],
       "records": [
         "R-1155",
-        "R-1164"
+        "R-1164",
+        "R-1906"
       ]
     },
     {
@@ -18857,12 +18858,12 @@
     {
       "id": "E-420",
       "title": "Column casters cost the shadow maps 1 to 2 us an instance: selfShadowStressScene's sun map 2.1 ms for 1 006 instances, sunShadowMapStressScene's lamps' map 2.84 ms for 2 864",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-23 (R-1907): the premise (overdraw) was wrong (R-1194: vertex work, the 24 x 24 grid); the lever is E-461's",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "selfShadow: fbo#3 960 x 540 [uTexLut,uTexture] 2 draws 1 006 instances 2.115 ms; sunShadowMap lamps=48 hour=22: lamps' map 4 draws 2 864 instances 2.841 ms (Predator's: 30 700 instances in 1.2 ms).",
+      "result": "Dropped (R-1907): the columns' cost is vertex work (R-1194), not overdraw; E-461 is the lever.",
       "next": "The columns' quads stretched along the light cover far more texels than the column casts on (overdraw in the map): clip each to the map region its shadow can reach (as E-375 did for the lamps' tile edges), or a coarser grid for columns far from the camera.",
       "refs": [],
       "aliases": [
@@ -18871,7 +18872,8 @@
       "records": [
         "R-1181",
         "R-1190",
-        "R-1194"
+        "R-1194",
+        "R-1907"
       ]
     },
     {
@@ -43417,6 +43419,24 @@
       "title": "E-424 kept: the self-shadow walks the face map by a step's delta: gpuPassBench selfShadow -3.8 % WebGL, -4.9 % WebGPU, 4/4, the same pixels",
       "verdict": "kept",
       "text": "b27b38f4 (merged f3cf3e08): selfShadowToward projected every step from scratch (p + l t, the oblique y s - z heightScaleY,\nweedWorldToNorm's zoom and turn, the flip); a step's place is affine in t, so the walk now projects the pixel's own place\nonce and adds a step's delta, in GLSL and WGSL. ANGLE's HLSL reads slightly bigger (?light3d=1's variant 1213 -> 1230\nslots, 28 -> 29 temps: FXC had hoisted part of it already), yet gpuPassAbab (GTX 1650, half of 1080p, 32 lamps with\ntiles, 6 steps, 4 pairs, 14:27): selfShadow -3.8 % on WebGL (0.666 -> 0.641 ms), -4.9 % on WebGPU (0.854 -> 0.818 ms),\n4/4 each; light3d without self-shadow +0.2 % and +0.3 % (the control). Captures against main: houseLightScene\n(lighting.selfShadow on) and selfShadowStressScene, 0 of 921 600 pixels apart on both backends. Node 3590/3590.\nE-423's DDA (a texel-by-texel walk, a different picture) stays open, now against this stepping."
+    },
+    {
+      "id": "R-1906",
+      "date": "2026-11-23",
+      "time": "14:14",
+      "timeFrom": "recorded",
+      "title": "E-371 dropped: the frames cost pre-render 3.5-3.7 % in Predator light3d (lamp_frames; ~0.3-0.4 ms), the sun's now in the keyed scan; not worth rewriting every shadow program (GLSL and WGSL) for that",
+      "verdict": "dropped",
+      "text": "**E-371 dropped: after E-368 to E-370 and E-372, what the frames still cost pre-render is lamp_frames, 3.5-3.7 % of it in Predator light3d (about 0.3-0.4 ms a frame). The sun's frames now ride in the keyed pack's scan. Moving the pick into every shadow program (cards, columns, stamps; the sun's and the lamps' maps; GLSL and WGSL), with a flag per row for sheets without DirectionalSprite, is not worth that.**\n\nprofileSceneSweep --pass cpu, Predator crowd 2.5 ?light3d=1&dayCycle=0, main aa5765ac, 15 s warm-up, 8 s window, GTX 1650. Shares of pre-render's busy time:\n\n| | night (hour 22) | day (hour 12) |\n| --- | --- | --- |\n| pre-render busy | 632 ms/s | 516 ms/s |\n| emit_rows | 29.0 % | 29.2 % |\n| stamp_light_range | 27.0 % | 26.7 % |\n| collect_sprites | 13.4 % | 15.1 % |\n| pack_casters_keyed_scan_xy | 8.3 % | 9.0 % |\n| radix_select | 5.5 % | 4.7 % |\n| lamp_frames | 3.7 % | 3.5 % |\n\nNo sun-frame function is listed by day: E-370/E-372 write the frame in the keyed scan. The 2026-11-15 premise was about 1 ms (11 % of pre-render, R-1155); about a third of it is left.\n\nReopen if a scene with many directional casters and lamps shows lamp_frames far larger."
+    },
+    {
+      "id": "R-1907",
+      "date": "2026-11-23",
+      "time": "14:20",
+      "timeFrom": "recorded",
+      "title": "E-420 dropped: its premise (overdraw) was measured wrong by R-1194 (the columns are vertex-bound); the lever is E-461's",
+      "verdict": "dropped",
+      "text": "**E-420 dropped: its premise (the column quads stretched over far more texels than their shadow: overdraw) was measured wrong by R-1194. Under a 1 px scissor the sun map's columns keep 1.28 of their 2.09 ms, and the lamps' map's keep all of theirs: the cost is the 24 x 24 grid's vertex work, 2 304 invocations an instance.** That lever is E-461's: leave out the instances that cast nothing, or draw only a frame's solid cells. E-447, a grid per frame size, was reverted, because the frames there span about 35 map texels."
     }
   ],
   "leads": [
