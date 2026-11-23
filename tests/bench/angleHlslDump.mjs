@@ -29,6 +29,10 @@ const VARIANTS = {
   light3d: { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true },
   light3dPixelArt: { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true, pixelArt: true },
   light3dNoLamps: { faces: true, sunMap: true, selfShadow: true, ids: true },
+  // What scenes with shadows ship (E-531): Predator's (the maps, the G-buffer's ids) and ?light3d=1's (self-shadow, the
+  // floor's edges at half resolution with pixel depth).
+  predator: { faces: true, sunMap: true, lampMap: true, ids: true },
+  predatorLight3d: { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true, edges: true },
 };
 const VERT = '#version 300 es\nin vec2 aPosition;\nout vec2 vTextureCoord;\nvoid main() { vTextureCoord = aPosition; gl_Position = vec4(aPosition, 0.0, 1.0); }\n';
 fs.mkdirSync(out, { recursive: true });
