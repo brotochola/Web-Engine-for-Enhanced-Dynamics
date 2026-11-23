@@ -928,13 +928,15 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   unshaded: false,
   /**
-   * 'add' — type 3 glows go to the lightGlows ADD mesh: over everything, after the light (nothing in front covers them).
-   * 'sorted' — the same quads join the entity list, each right after its entity's sprite (on its sort line), so it is
-   *   drawn over its own entity and whatever stands in front covers it; unshaded (DX-GLOWRADIUS: the light gradient's
-   *   frame carries DX-UNSHADED's mark), so the night does not darken a light's halo. That turns the G-buffer and the
-   *   unshaded pass on. Any other value warns (Pixi's set-up) and draws as 'add'.
+   * 'sorted' (the default since 2026-11-23) — the halos (type 3 quads) join the entity list, each right after its entity's
+   *   sprite (on its sort line), so it is drawn over its own entity and whatever stands in front covers it; unshaded
+   *   (DX-GLOWRADIUS: the compact glow's frame carries DX-UNSHADED's mark), so the night does not darken a light's halo.
+   *   That turns the G-buffer and the unshaded pass on: about 0.7 ms of GPU a frame against 'add' in Predator by night,
+   *   with and without light3d, on a GTX 1650 (E-547's compact halos; R-1876).
+   * 'add' — they go to the lightGlows ADD mesh: over everything, after the light (nothing in front covers them).
+   * Any other value warns (Pixi's set-up) and draws as 'add'.
    */
-  lightGlow: 'add',
+  lightGlow: 'sorted',
   /**
    * E-404: the lightGlows layer's resolution against the canvas, in (0, 1]: with 'add', the glows are drawn into a target
    * this share of the canvas and added to the frame once, filtered up. A halo is pure fill (flashlightStressScene: 119

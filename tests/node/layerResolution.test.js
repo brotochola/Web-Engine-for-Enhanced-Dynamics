@@ -99,10 +99,11 @@ test('E-404: lighting.lightGlowResolution is the lightGlows layer\'s resolution,
   for (const bad of [0, -1, NaN, 'x', null]) assert.equal(lightGlowResolutionOf({ lightGlowResolution: bad }), 0.5);
   try {
     Layer.reset();
-    initializeSceneLayers({ config: { lighting: { lightGlowResolution: 0.25 }, layers: {} }, numberOfLogicWorkers: 1 });
+    // The lightGlows layer is 'add''s ('sorted', the default, makes none).
+    initializeSceneLayers({ config: { lighting: { lightGlow: 'add', lightGlowResolution: 0.25 }, layers: {} }, numberOfLogicWorkers: 1 });
     assert.equal(Layer.get('lightGlows').resolution, 0.25);
     Layer.reset();
-    initializeSceneLayers({ config: { layers: {} }, numberOfLogicWorkers: 1 });
+    initializeSceneLayers({ config: { lighting: { lightGlow: 'add' }, layers: {} }, numberOfLogicWorkers: 1 });
     assert.equal(Layer.get('lightGlows').resolution, 0.5);
     assert.equal(Layer.get('entities').resolution, 1, 'the other built-in layers keep theirs');
   } finally {

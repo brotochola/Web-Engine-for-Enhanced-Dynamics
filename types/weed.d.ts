@@ -430,10 +430,10 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   unshaded?: boolean;
   /**
-   * How the lights' halos (LightEmitter.glow) are drawn. 'add' (default): on the lightGlows layer, added over the lighting
-   * and over everything (nothing in front covers them). 'sorted': each right after its entity's sprite, on its sort line,
-   * so what stands in front covers it, and unshaded (the night does not darken it); it turns the G-buffer and the
-   * unshaded pass on.
+   * How the lights' halos (LightEmitter.glow) are drawn. 'sorted' (default): each right after its entity's sprite, on its
+   * sort line, so what stands in front covers it, and unshaded (the night does not darken it); it turns the G-buffer and
+   * the unshaded pass on. 'add': on the lightGlows layer, added over the lighting and over everything (nothing in front
+   * covers them).
    */
   lightGlow?: 'add' | 'sorted';
   /**

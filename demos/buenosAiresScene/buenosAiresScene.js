@@ -239,7 +239,6 @@ export class BuenosAiresScene extends Scene {
       enabled: true,
       // ?lightEdges=0 stretches the light as a plain texture (DX-LIGHTEDGES off), to compare.
       lightEdges: WEED.params?.get('lightEdges') !== '0',
-      lightGlow: 'sorted',
       baseAmbient: 0.04,
       maxLights: 1024,
       // Every house holds a volume (its hull) for the shadow maps.

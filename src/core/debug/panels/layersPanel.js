@@ -2,7 +2,7 @@
 
 import { createPanel, elem } from '../ui/debugDom.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
-import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE, LAYER_SCALE_MODE } from '../../../util/configDefaults.js';
+import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE, LAYER_SCALE_MODE, LIGHTING_DEFAULTS } from '../../../util/configDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../layer.js';
 import { DebugPanel } from '../ui/debugPanel.js';
 
@@ -147,7 +147,7 @@ export class LayersPanel extends DebugPanel {
    */
   _rowNames() {
     if (Layer.initialized) return Layer.getAll().map((l) => l.name);
-    const glowSprite = this.debugUI.scene?.config?.lighting?.lightGlow === 'sorted';
+    const glowSprite = (this.debugUI.scene?.config?.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
     return Object.keys(DEFAULT_LAYERS).filter((name) => !(name === 'lightGlows' && glowSprite));
   }
 

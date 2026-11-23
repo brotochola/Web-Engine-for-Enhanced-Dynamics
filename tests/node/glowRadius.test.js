@@ -31,11 +31,11 @@ test('glowRadius is appended to LightEmitter (the columns before it keep their p
 });
 
 test("halos are unshaded in a lit scene whose halos join the entities (lightGlow 'sorted'), and nowhere else", () => {
-  assert.equal(LIGHTING_DEFAULTS.lightGlow, 'add', 'the default keeps its additive layer');
+  assert.equal(LIGHTING_DEFAULTS.lightGlow, 'sorted', "the default joins the halos to their entities (owner, 2026-11-23)");
   assert.equal(unshadedGlowsOf({ enabled: true, lightGlow: 'sorted' }), true);
   assert.equal(unshadedGlowsOf({ enabled: true, lightGlow: 'sprite' }), false, "the old 'sprite' is no value: it draws as 'add'");
   assert.equal(unshadedGlowsOf({ enabled: true, lightGlow: 'add' }), false);
-  assert.equal(unshadedGlowsOf({ enabled: true }), false, 'the default');
+  assert.equal(unshadedGlowsOf({ enabled: true }), true, 'the default');
   assert.equal(unshadedGlowsOf({ enabled: false, lightGlow: 'sorted' }), false, 'no light, nothing to be unshaded from');
   assert.equal(unshadedGlowsOf(undefined), false);
 });

@@ -3888,7 +3888,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
     this._packGpuSpritesOn = spritePipe.packGpuSprites;
     this._sortSpritesOn = spritePipe.sortSprites;
-    // The halos added over everything ('add', the default) or sorted among the entities ('sorted'). OL-1: any other value
+    // The halos sorted among the entities ('sorted', the default) or added over everything ('add'). OL-1: any other value
     // (the old 'sprite' among them) warns and draws as 'add'.
     const lightGlow = this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow;
     if (lightGlow !== 'add' && lightGlow !== 'sorted') {
