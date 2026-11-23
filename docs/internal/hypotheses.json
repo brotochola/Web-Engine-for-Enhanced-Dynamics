@@ -19767,22 +19767,22 @@
     {
       "id": "E-458",
       "title": "E-315 combined: PR #12's early-stopping square-ring walk for the lights with a per-entity cap whose cell rectangle holds more than lim casters (falling back to the gather on a tie at the cut, to stay exact), main's ring walk and radix select everywhere else",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 by the PR #12 integration agent (integrate/pr12), from the twice-built pairs' kernels",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-23 (R-1882)",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
-      "result": "In the merged tree, same checksums: PR #12's walk is 10 to 20 % faster on Predator crowd 2.5's own stamp frames (Node replay -12.0 and -20.1 %, Chrome -10.1 %, 9/9: 34 of its 48 lights keep 73 casters, past main's limit of 64, so main gathers every candidate and radix-selects) and 11 to 28 % slower on the default Predator fixture (512 a light, about 142 candidates, nothing to select); it has no walk for lights without a per-entity cap (main's lamps' frames 5 times faster there). Main's limit raised to 128: +10.5 % Node, +11.9 % Chrome.",
-      "next": "Count the candidates in a light's cell rectangle (the grid's cell counts) and take the walk only above lim with a cap; the stamp replay of crowd 2.5 and the fixture, both, alternated in Node and Chrome; then Predator crowd 2.5 pre-render.",
+      "result": "Dropped: ported and exact, but a tie in Chrome (night 0.921 -> 0.901 ms a frame, zoom 0.216 0.511 -> 0.513) and -12 % by night without a stricter rule",
+      "next": "",
       "refs": [],
       "aliases": [
         "stamp walk by candidate count"
       ],
       "records": [
         "R-1208",
-        "R-1236"
-      ],
-      "rank": 15
+        "R-1236",
+        "R-1882"
+      ]
     },
     {
       "id": "E-459",
@@ -43120,6 +43120,15 @@
       "title": "E-531 merged into main (0ca040c1, the owner's go): one shadow path, the maps; N-415 done",
       "verdict": "kept",
       "text": "The owner approved the merge (2026-11-23, relayed by session e8 and confirmed here). exp/one-shadow-path merged with\n--no-ff as 0ca040c1: the classic layer gone (about 2 000 lines), N-413, N-414, N-415 (parts 1 to 3: 977b0753 took the\ncone cookie's built-in and afterSort), N-416, E-547, N-417, E-549, N-418 and the 'sorted' default with it. Before it:\nPredator by night neutral against main on this PC (R-1874), by day neutral, the light bench byte-identical; the ASUS's\nHD 620 by night drew 43.1 -> 35.5 fps against main (-19.1 %, 8/8; job 0906b, with N-416, before E-547; 17 % more lamps\ncast, the flashes with a height), the owner's standing call that the HD 620 does not veto. Job 0907c measures the merged\nbranch there. Bundles built and tested on main after the merge."
+    },
+    {
+      "id": "R-1882",
+      "date": "2026-11-23",
+      "time": "12:14",
+      "timeFrom": "recorded",
+      "title": "E-458 dropped: PR #12's early-stopping ring walk ties in Chrome on Predator's own stamp frames (night -2.1 %, zoom 0.216 +0.5 %); a looser rule loses 12 % by night",
+      "verdict": "dropped",
+      "text": "E-458 tried on main d9f4f2cf (not committed): PR #12's ring_gather_select (feabe3a7) ported into stamp_light_range for the\nlights with a per-entity cap past KNN_MAX_LIM, lim + 1 held (N-413's nearest left out) and a tie at the cut taking the\ngather; the replay of the scene's own inputs matched its capture (exact). Captures (captureStampInputs, 48 calls every\n4th): Predator crowd 2.5 light3d by night (2.380 ms a call in the scene, 39 450 casters, 48 lights) and crowd 2.5 zoom\n0.216 (1.099 ms a call). shadowStampReplayMicrobench, Node, 5 alternating rounds against the base engine.wasm:\n- the walk wherever the cell rectangle holds more than lim + 1: night -12.1 % (slower).\n- more than 4 (lim + 1): night +3.1 %, zoom 0.216 +4.7 %; more than 8 (lim + 1): +2.5 % (tie), +6.4 %.\n- KNN_MAX_LIM 128 instead (main's own walk at 73): night -3.9 %.\nchromeKernel shadowStampReplay, Chrome, 9 alternating rounds, ms a frame base -> walk: 4x night 0.921 -> 0.901 (-2.1 %),\nzoom 0.216 0.511 -> 0.513 (+0.5 %); 8x 0.927 -> 0.922, 0.515 -> 0.516. Chrome decides WASM kernels: a tie, under the\nbar; dropped, the stamp unchanged."
     }
   ],
   "leads": [
