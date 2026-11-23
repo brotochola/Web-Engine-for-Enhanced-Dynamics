@@ -18543,8 +18543,8 @@
     {
       "id": "E-406",
       "title": "Warps the SMs could hold sit unallocated (16 % in active SMs) while the light3d pixel work waits on fetches: the light pass's register use may cap how many warps hide that latency",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from Nsight Systems 2026.6.1 on Predator ?light3d=1&hour=12&zoom=0.3 (GPU metrics, scheduling)",
+      "status": "parked",
+      "statusText": "parked 2026-11-23 (R-1955): registers did not move, occupancy not re-measured",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
@@ -18557,7 +18557,8 @@
       ],
       "records": [
         "R-1175",
-        "R-1177"
+        "R-1177",
+        "R-1955"
       ]
     },
     {
@@ -43592,6 +43593,15 @@
       "title": "N-192 closed by the owner: the sun's box and card pass on both backends; the crate's columns' cells (3.75 px) and the lamps' map's texels (up to 2 floor px) are resolution limits",
       "verdict": "kept-hygiene",
       "text": "**N-192 closed by the owner (2026-11-23): the sun's box and card pass on both backends since part four (R-1901); what is left is resolution, not errors.**\n\n- **The crate (a render with a height map) under the sun at 1.8-2.5 px:** its shadow's edge steps in its columns' cells, 24 x 24 of 3.75 px (E-379's grid), over the exact outline drawn on the captures (a picture for the owner). Finer cells cost vertices (R-1194: 2 304 vertex invocations an instance whatever its frame's size).\n- **The box and the card under lamps at 1.5-2.2 px:** the lamps' map's texels are up to 2 floor px (lampShadowTile auto, shadowResolution 1), and the lookup is in the light pass.\n\nshadowOutlineCheck keeps failing its 1.5 px on those (a bench, not a CI gate): the numbers above are the expected state, and a later change that beats them should move its tolerance there."
+    },
+    {
+      "id": "R-1955",
+      "date": "2026-11-23",
+      "time": "16:35",
+      "timeFrom": "recorded",
+      "title": "E-406 parked: the light pass's register count did not move (23-24 temps) through E-408's and E-409's rewrites; the occupancy was not re-measured",
+      "verdict": "note",
+      "text": "E-408 cut Predator's light pass from 1069 to 752 HLSL slots when it wrote one body a light, with 24 -> 23 temps, and the\npass ran 4 to 12 % slower (dropped, R-1893); what paid was the order a light's rows are fetched in (kept: light3d -3.6 % on\nWebGL, -2.0 % on WebGPU). E-409 packed a lamp's reach and lampPanoUv's inner part: 24 -> 23 temps, light3d -1.1 % on WebGL,\n-3.6 % on WebGPU. ANGLE's D3D11 temps are not the GPU's registers; the Nsight Systems GPU metrics (warps in flight,\nunallocated warps) that would say whether register pressure caps occupancy now need an elevated tool run, which this session\ndid not do. Parked until the GPU Trace of the two versions (before E-408, after E-409) can be taken on this machine."
     }
   ],
   "leads": [
