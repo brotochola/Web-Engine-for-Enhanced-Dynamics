@@ -25569,19 +25569,19 @@
     },
     {
       "records": [
-        "R-1954"
+        "R-1954",
+        "R-1956"
       ],
       "refs": [],
       "id": "E-553",
       "title": "Decal tiles draw their whole 128 x 128 texels where a stamp covers only a few: on the HD 620 the chunks' draws are about 2.2 ms of a Predator night frame (0.15 ms on the GTX 1650)",
-      "status": "open",
+      "status": "dropped",
       "kind": "gpu",
       "area": "renderer",
       "date": "2026-11-23",
-      "result": "",
-      "statusText": "filed 2026-11-23 from E-552 (R-1954)",
-      "next": "Occupancy of each tile in 4 x 4 cells from its texels at upload (a 16 384-texel scan a tile), an instance a non-empty cell (its uv rect in the layer), so transparent cells draw nothing; the captures of decalCaptureScene must stay identical. Measure on the HD 620 (glFrameRecorder --gpu-draws).",
-      "rank": 30,
+      "result": "Occupied cells cut the HD 620 decal draws 10 to 25 % (0.3-0.7 ms, 2-4 % of a frame within the noise); nothing on the GTX 1650: not worth a kernel",
+      "statusText": "dropped 2026-11-23 (R-1956)",
+      "next": "",
       "aliases": [
         "decal transparent fill",
         "decal tile cells"
@@ -43612,6 +43612,15 @@
       "title": "E-551 kept: per-lamp lamp-map tiles, capped, the pass -25 % by night on the GTX 1650 and -53 % on the HD 620, day flat to -14 %; R-1908's drop was an A/A",
       "verdict": "kept",
       "text": "**E-551 reopened and kept: per-lamp tiles with the cap take the lamps' map -25 % by night on the GTX 1650 and -53 % on the HD 620, flat to -14 % by day (perf/e551-lamp-tiles, merged main f11365c9). R-1908's drop was wrong.**\n\n**What was wrong in R-1908.** The capped run (0914a) was an A/A: its job fetched a ref the bundle did not hold (asus/e551s2 for asus/e551s3), the worktree for B was never made, the `cd` failed and B ran A's folder. The atlas sizes said so (B's equal to A's exactly, by night and by day) and went unexplained. \"The wide lamps' tiles fill the map\" was inferred: by count, night has 36 to 40 lamps of reach 400 and 8 of 1000. Its table was also per page frame, not per drawn frame (the map is drawn in about two frames of three there).\n\n**The tiles, counted** (probe in the Pixi worker, Predator crowd 0.5, 90 frames, the same lamps under both rules): texels of the tiles 4.35 M -> 2.09 M by night (-52 %), 4.08 M -> 2.40 M by day (-41 %).\n\n**Timed** (glFrameRecorder --gpu-passes, 4 ABBA pairs, 5 s each, ms per drawn frame, medians; each run printed its HEAD, A f11365c9 and B 3134a06e; the ASUS job 0916a stops on any failed step):\n\n| lamps' map | main | capped | pairs |\n| --- | --- | --- | --- |\n| GTX 1650, night | 1.099 | 0.822 (-25 %) | 4/4 |\n| GTX 1650, day | 1.750 | 1.649 (-6 %; -2 % at equal clock) | 3/4 |\n| HD 620, night | 6.667 | 3.132 (-53 %) | 3/4 |\n| HD 620, day | 6.757 | 5.821 (-14 %) | 3/4 |\n\nThe HD 620 night pair it lost: A's window had no wide lamp (atlas 4096 x 384, 1.66 ms), B's had. The light pass, with each tile's rect per lamp: GTX 0.605 -> 0.616 night, 0.265 -> 0.272 day; HD 620 3.14 -> 2.96, 1.21 -> 1.16. Not timed again: the CPU (the planning, an insertion sort of 48 sides a frame), the earlier Predator gate having moved with the drift. The small lamps' edges are coarser, accepted by the owner (2026-11-23). node 3596/3596."
+    },
+    {
+      "id": "R-1956",
+      "date": "2026-11-23",
+      "time": "16:41",
+      "timeFrom": "recorded",
+      "title": "E-553 dropped: the decal tiles' occupied cells cut the HD 620's decal draws 10 to 25 % (2-4 % of a frame, within its noise); 250 lines and a WASM kernel for it",
+      "verdict": "dropped",
+      "text": "Built on perf/decal-cells (b58e9ced, not merged): each tile's 4 x 4 occupied cells from its premultiplied texels (decal_tile_mask in\nwasm/decalPremultiply.c, 4.5 us a 128 px tile in Node, 0.3 us a full one; parity test against tests/reference/decalTileMask.mjs),\nits rectangles of cells as instances. Captures identical to main on decalCaptureScene at ?resolution=0.5 and 1, ?zoom=0.3 and 2,\nWebGL and WebGPU; at ?resolution=2, 47 of 921 600 pixels by 1. ASUS job 0917a (16:32 to 16:41 by its result files; glFrameRecorder --gpu-draws, Predator crowd 0.5, main\nf11365c9 against it, 2 pairs each): the decal draws' ms a frame by night 2.85, 2.69 -> 2.08, 2.94 and by day 3.27, 3.31 ->\n2.25, 2.82, of a 14.8 to 16.5 ms frame. The gain is 0.3 to 0.7 ms on the HD 620 (2 to 4 % of the frame, its pairs' spread the\nsize of it), nothing on the GTX 1650 (its decal draws 0.15 ms). Not worth the kernel: the branch is dropped. What else\nE-400 has for the colour pass on weak GPUs (the entity sprites 1.9 ms, the tilemap 1.35, the light composite 1.0) is where to look."
     }
   ],
   "leads": [
