@@ -51,21 +51,24 @@ export function lampCachePays(indices, size) {
  * @param {number} column the half tile it draws into: its column in the target, in tiles
  * @param {number} row its row
  */
-export function writeLampListEntry(data, width, at, tile, column, row) {
+export function writeLampListEntry(data, width, at, tile, column, row, side) {
   const i = (LAMP_TILE_LIST_ROW * width + at) * 4;
   data[i] = tile;
   data[i + 1] = column;
   data[i + 2] = row;
-  data[i + 3] = 0;
+  // E-551: the half's side, texels: column and row count in it.
+  data[i + 3] = side;
 }
 
 /**
  * The direct draw's list for every tile of `n`, each into its own floor half (column (t % perRow) * 2, row t / perRow):
  * the volumes' draw as before the cache, which a frame without it keeps.
  */
-export function writeDirectLampList(data, width, n, perRow) {
-  const per = Math.max(1, perRow | 0);
-  for (let t = 0; t < n; t++) writeLampListEntry(data, width, t, t, (t % per) * 2, (t / per) | 0);
+export function writeDirectLampList(data, width, n, rects) {
+  for (let t = 0; t < n; t++) {
+    const side = rects[t * 3 + 2];
+    writeLampListEntry(data, width, t, t, rects[t * 3] / side, rects[t * 3 + 1] / side, side);
+  }
 }
 
 /**
@@ -122,12 +125,13 @@ function sameKey(a, ai, b, bi) {
  * @param {Float32Array} data the tiles' texture's data (row 0: the tiles' keys; written: the lists' row)
  * @param {number} width the texture's width (texels a row)
  * @param {number} n the tiles in use
- * @param {number} perRow tiles a row of the lamps' map
+ * @param {Float32Array} rects the tiles' rects in the lamps' map (E-551: x0, y0 and a half's side a tile, texels)
  * @param {number} slots the cache's half tiles (0: no cache, every casting tile drawn directly)
  * @param {number} slotsPerRow the cache's half tiles a row
+ * @param {number} slotSide a cache slot's side, texels (a tile's half is drawn at its own side in its slot's corner)
  * @param {number} epoch the volumes' epoch
  */
-export function planLampVolumeCache(c, ids, data, width, n, perRow, slots, slotsPerRow, epoch) {
+export function planLampVolumeCache(c, ids, data, width, n, rects, slots, slotsPerRow, slotSide, epoch) {
   const HOLD = LAMP_CACHE_HOLD_FRAMES;
   if (c.slots !== slots) {
     c.slots = slots;
@@ -197,17 +201,20 @@ export function planLampVolumeCache(c, ids, data, width, n, perRow, slots, slots
     paint = s > 0;
     c.sincePaint = 0;
   }
-  const per = Math.max(1, perRow | 0);
   const slotsPer = Math.max(1, slotsPerRow | 0);
   let at = 0;
   for (let t = 0; t < n; t++) {
     if (slotOf[t] >= 0 || !(data[t * 4 + 2] > 0 && data[t * 4 + 3] > 0)) continue;
-    writeLampListEntry(data, width, at++, t, (t % per) * 2, (t / per) | 0);
+    const side = rects[t * 3 + 2];
+    writeLampListEntry(data, width, at++, t, rects[t * 3] / side, rects[t * 3 + 1] / side, side);
   }
   const direct = at;
   for (let t = 0; t < n; t++) {
     const s = slotOf[t];
-    if (s >= 0) writeLampListEntry(data, width, at++, t, s % slotsPer, (s / slotsPer) | 0);
+    if (s < 0) continue;
+    // E-551: the tile's half drawn at its own side in its slot's corner (a slot is slotSide texels a side).
+    const side = rects[t * 3 + 2];
+    writeLampListEntry(data, width, at++, t, ((s % slotsPer) * slotSide) / side, (((s / slotsPer) | 0) * slotSide) / side, side);
   }
   c.direct = direct;
   c.cached = at - direct;

@@ -249,8 +249,11 @@ fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
 // DX-SHADOW3D (F7): the lamps' shadow map (lightingBasic.frag.glsl's lampVisibility, the atlas read texel by texel).
 // A tag is -(tile + 1). DX-GBUF: the lamp's entity id is in its light's fourth row's w (lampOwner; N-189: it rode in the
 // tag, which held 256 tiles only).
-fn lampTile(tag: f32) -> i32 {
-  return i32(-tag - 1.0 + 0.5);
+// E-551: a lamp's tile from its tag, -(code + 1) (lampShadowMap.js lampRectCode): its floor half's corner (x, y) and its
+// side (z) in the atlas, texels.
+fn lampRect(tag: f32) -> vec3<i32> {
+  let code = u32(-tag - 1.0 + 0.5);
+  return vec3<i32>(i32(code & 255u), i32((code >> 8u) & 255u), i32(code >> 16u)) * 16;
 }
 
 fn lampOwner(li: i32) -> f32 {
@@ -288,13 +291,11 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, selfId: f32, li:
   let upper = p.z > e;
   let room = max(abs(e - p.z), e / 64.0);
   let uv = lampPanoUv(fromLamp * (e / room), reach);
-  let tile = lampTile(tag);
-  let a = uniforms.uLampAtlas;
-  let perRow = i32(a.x);
-  let size = i32(a.y);
-  let lo = vec2<i32>((tile % perRow) * 2 + select(0, 1, upper), tile / perRow) * size;
+  let rect = lampRect(tag);
+  let size = rect.z;
+  let lo = vec2<i32>(rect.x + select(0, size, upper), rect.y);
   let hi = lo + vec2<i32>(size - 1);
-  let c = lo + vec2<i32>(floor(uv * a.y));
+  let c = lo + vec2<i32>(floor(uv * f32(size)));
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
   // On the ceiling's half the bias goes under the point (towards lit there); 1 px and 4 floor px along the ray in height
@@ -339,13 +340,11 @@ fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, li: i32) ->
   if (fade <= 0.0) { return 1.0; }
   // Within the reach: lampPanoUv's linear part.
   let uv = vec2<f32>(0.5) + fromLamp * (0.40 / reach);
-  let tile = lampTile(tag);
-  let a = uniforms.uLampAtlas;
-  let perRow = i32(a.x);
-  let size = i32(a.y);
-  let lo = vec2<i32>((tile % perRow) * 2, tile / perRow) * size;
+  let rect = lampRect(tag);
+  let size = rect.z;
+  let lo = vec2<i32>(rect.x, rect.y);
   let hi = lo + vec2<i32>(size - 1);
-  let c = lo + vec2<i32>(floor(uv * a.y));
+  let c = lo + vec2<i32>(floor(uv * f32(size)));
   // lighting.shadowSamples' taps of the 3 x 3 texels around the point, laid out as the sun's map takes them.
   var lit = 0.0;
 // #if SHADOW_TAP_CENTER

@@ -18543,8 +18543,8 @@
     {
       "id": "E-406",
       "title": "Warps the SMs could hold sit unallocated (16 % in active SMs) while the light3d pixel work waits on fetches: the light pass's register use may cap how many warps hide that latency",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from Nsight Systems 2026.6.1 on Predator ?light3d=1&hour=12&zoom=0.3 (GPU metrics, scheduling)",
+      "status": "parked",
+      "statusText": "parked 2026-11-23 (R-1955): registers did not move, occupancy not re-measured",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
@@ -18557,7 +18557,8 @@
       ],
       "records": [
         "R-1175",
-        "R-1177"
+        "R-1177",
+        "R-1955"
       ]
     },
     {
@@ -24058,7 +24059,7 @@
       "id": "DX-POSTFUSE",
       "title": "SCREEN passes that only map their pixel's colour fused into one shader (an opt-in pointwise contract), as three.js's RenderPipeline fuses every effect that samples no neighbours: each fused pass saves a full-screen read and write",
       "status": "open",
-      "statusText": "owner 2026-11-23: asked whether it is automatic (the dev never notices, the picture the same, only faster), then yes; told it is opt-in, the dev marks a pass pointwise and writes weedPass (the engine cannot know a shader that reads neighbours from one that does not); waiting for the second answer",
+      "statusText": "approved by the owner 2026-11-23, option (a): the opt-in pointwise mark; after DX-LAYERPASSES (same files)",
       "date": "2026-11-18",
       "result": "",
       "next": "Contract and generation as REVIEW_PLAN.md#DX-POSTFUSE describes (shader.pointwise with a weedPass(color, uv) function, consecutive pointwise passes generated into one fragment, uniforms renamed by layer). Judged by GPU per pass (the recorders) on a three-pass grading stack, the picture identical on both backends; goes with DX-POST's phase 2.",
@@ -24137,16 +24138,18 @@
     },
     {
       "records": [
-        "R-1442"
+        "R-1442",
+        "R-1914"
       ],
       "refs": [],
       "id": "DX-LAYERPASSES",
       "title": "Layer shaders in two passes (a pass-1 target the second pass samples), so a game's blur or bloom can be separable",
-      "status": "open",
+      "status": "kept",
       "kind": "dx",
       "area": "render",
       "date": "2026-11-18",
-      "statusText": "approved by the owner 2026-11-23 (\"si, queremos esa nueva api!\"): a layer shader in two passes, the second sampling the first (a separable blur/bloom); design, then the platformer's bloom as its measure (4.3 ms to well under 1)"
+      "statusText": "kept 2026-11-23 (R-1914): shader.passes, built on feat/layer-passes, approved by the owner",
+      "result": "the platformer bloom draws 5.06 -> 1.62 ms raw (-68 %), about 0.6 to 0.9 ms at equal clock; copies chained are exact on both backends"
     },
     {
       "records": [
@@ -25528,17 +25531,18 @@
     {
       "records": [
         "R-1891",
-        "R-1908"
+        "R-1908",
+        "R-1913"
       ],
       "refs": [],
       "id": "E-551",
       "title": "The lamps' map costs the HD 620 4.5 ms of GPU a frame by night and 3.5 ms by day in Predator crowd 0.5 (4096 x 1536 and 4096 x 1024, about 8 000 instances): the unified path's largest pass there",
-      "status": "dropped",
+      "status": "kept",
       "kind": "gpu",
       "area": "renderer",
       "date": "2026-11-23",
-      "result": "",
-      "statusText": "dropped 2026-11-23 (R-1908): per-lamp sides -31 % by night on the HD 620 but a loss by day; capped flat; the widest lamps' tiles fill the map; the code is on perf/e551-lamp-tiles; the owner accepted the coarser small-lamp edges (2026-11-23), kept dropped because capped it measured flat",
+      "result": "lamps' map pass, night: GTX 1650 1.099 -> 0.822 ms (-25 %), HD 620 6.67 -> 3.13 (-53 %); day flat to -14 %",
+      "statusText": "kept 2026-11-23 (R-1913): per-lamp tiles capped at the uniform rule's side, on perf/e551-lamp-tiles; R-1908's drop was an A/A (its job's B never ran)",
       "next": "Where the fill goes on the HD 620 (--gpu-draws there: the floor half, the ceiling half, the clear); then a smaller auto tile where many lamps share the atlas (the rule rounds the wanted size up), the clear of the tiles in use only, and whether a lamp whose light the sun outshines by day needs its shadows.",
       "aliases": [
         "lamp map HD 620",
@@ -25567,19 +25571,19 @@
     },
     {
       "records": [
-        "R-1954"
+        "R-1954",
+        "R-1956"
       ],
       "refs": [],
       "id": "E-553",
       "title": "Decal tiles draw their whole 128 x 128 texels where a stamp covers only a few: on the HD 620 the chunks' draws are about 2.2 ms of a Predator night frame (0.15 ms on the GTX 1650)",
-      "status": "open",
+      "status": "dropped",
       "kind": "gpu",
       "area": "renderer",
       "date": "2026-11-23",
-      "result": "",
-      "statusText": "filed 2026-11-23 from E-552 (R-1954)",
-      "next": "Occupancy of each tile in 4 x 4 cells from its texels at upload (a 16 384-texel scan a tile), an instance a non-empty cell (its uv rect in the layer), so transparent cells draw nothing; the captures of decalCaptureScene must stay identical. Measure on the HD 620 (glFrameRecorder --gpu-draws).",
-      "rank": 30,
+      "result": "Occupied cells cut the HD 620 decal draws 10 to 25 % (0.3-0.7 ms, 2-4 % of a frame within the noise); nothing on the GTX 1650: not worth a kernel",
+      "statusText": "dropped 2026-11-23 (R-1956)",
+      "next": "",
       "aliases": [
         "decal transparent fill",
         "decal tile cells"
@@ -43582,7 +43586,7 @@
       "timeFrom": "recorded",
       "title": "The HD 620 per draw after E-552 (Predator crowd 0.5, 1080p): the screen's pass 8.7 ms by night and 9.6 by day, of it entity sprites 1.94 ms, tilemap 1.35, light composite 1.0, decal tiles 2.2",
       "verdict": "note",
-      "text": "ASUS job 0915a (16:02 to 16:04 by its result files; main e5823a55, glFrameRecorder --gpu-draws, 4 s after 20 s; a recorded frame each, the pass x 0.5 to 1.1 a\nframe), ms a frame:\n- Night (hour 22), 16.0 ms: the screen's pass 8.68 (36.2 draws before E-552, 7.3 now; 10.24 ms then, R-1891's recorder), the\n  lamps' map 2.72, the light pass 1.58, the unshaded screen pass 1.49, the G-buffer 0.77, the sun map 0.19. In the screen's\n  pass: the entity sprites (prog uTexLut, uStatics, uPoses, uTexture) 1.94 at 7 223 instances, the tilemap 1.35, the light\n  layer's composite 1.00 (x 0.7), the decal chunks 2.20 (seven, 57 to 61 tiles each), the unshaded layer 0.51 (x 0.7).\n- Day (hour 12), 15.8 ms: the screen's pass 9.60, the lamps' map 3.11, the unshaded 1.01, the G-buffer 0.70, the light pass\n  0.64.\nThe GTX 1650 of this PC, same scene: 5.36 ms of draws a frame; the decal chunks 0.15 ms, the entity sprites 1.24, the tilemap\n0.92, so only the HD 620 feels the decals' fill (E-553)."
+      "text": "ASUS job 0915a (16:02 to 16:04 by its result files; main e5823a55, glFrameRecorder --gpu-draws, 4 s after 20 s; a recorded frame each, the pass x 0.5 to 1.1 a\nframe), ms a frame:\n- Night (hour 22), 16.0 ms: the screen's pass 8.68 (7.3 draws), the\n  lamps' map 2.72, the light pass 1.58, the unshaded screen pass 1.49, the G-buffer 0.77, the sun map 0.19. In the screen's\n  pass: the entity sprites (prog uTexLut, uStatics, uPoses, uTexture) 1.94 at 7 223 instances, the tilemap 1.35, the light\n  layer's composite 1.00 (x 0.7), the decal chunks 2.20 (seven, 57 to 61 tiles each), the unshaded layer 0.51 (x 0.7).\n- Day (hour 12), 15.8 ms: the screen's pass 9.60, the lamps' map 3.11, the unshaded 1.01, the G-buffer 0.70, the light pass\n  0.64.\nThe GTX 1650 of this PC, same scene: 5.36 ms of draws a frame; the decal chunks 0.15 ms, the entity sprites 1.24, the tilemap\n0.92, so only the HD 620 feels the decals' fill (E-553).\n\nCorrected the same day (17:05): the first text set 10.24 ms and 36.2 draws \"before E-552\" beside the night's 8.68. That line was\na day run's (0909a, E-408's B side, second pair) from --gpu-passes, so it was not a before and after. What 0909a has of the\nscreen's pass before E-552, with one query a pass where this job has one a draw: night 9.60, 10.36, 11.64, 12.35 ms a page\nframe, day 8.72, 9.81, 9.83, 10.24. The pass ran in 0.7 to 0.85 of the page frames there (12.4 to 14.5 ms each) and nobody\ncounted drawn frames the same way here, so the HD 620's gain from E-552 is not measured: the draws fell (34-41 -> 7-9 a\nframe), the time is within what the two recorders can differ by."
     },
     {
       "id": "R-1912",
@@ -43592,6 +43596,42 @@
       "title": "N-192 closed by the owner: the sun's box and card pass on both backends; the crate's columns' cells (3.75 px) and the lamps' map's texels (up to 2 floor px) are resolution limits",
       "verdict": "kept-hygiene",
       "text": "**N-192 closed by the owner (2026-11-23): the sun's box and card pass on both backends since part four (R-1901); what is left is resolution, not errors.**\n\n- **The crate (a render with a height map) under the sun at 1.8-2.5 px:** its shadow's edge steps in its columns' cells, 24 x 24 of 3.75 px (E-379's grid), over the exact outline drawn on the captures (a picture for the owner). Finer cells cost vertices (R-1194: 2 304 vertex invocations an instance whatever its frame's size).\n- **The box and the card under lamps at 1.5-2.2 px:** the lamps' map's texels are up to 2 floor px (lampShadowTile auto, shadowResolution 1), and the lookup is in the light pass.\n\nshadowOutlineCheck keeps failing its 1.5 px on those (a bench, not a CI gate): the numbers above are the expected state, and a later change that beats them should move its tolerance there."
+    },
+    {
+      "id": "R-1955",
+      "date": "2026-11-23",
+      "time": "16:35",
+      "timeFrom": "recorded",
+      "title": "E-406 parked: the light pass's register count did not move (23-24 temps) through E-408's and E-409's rewrites; the occupancy was not re-measured",
+      "verdict": "note",
+      "text": "E-408 cut Predator's light pass from 1069 to 752 HLSL slots when it wrote one body a light, with 24 -> 23 temps, and the\npass ran 4 to 12 % slower (dropped, R-1893); what paid was the order a light's rows are fetched in (kept: light3d -3.6 % on\nWebGL, -2.0 % on WebGPU). E-409 packed a lamp's reach and lampPanoUv's inner part: 24 -> 23 temps, light3d -1.1 % on WebGL,\n-3.6 % on WebGPU. ANGLE's D3D11 temps are not the GPU's registers; the Nsight Systems GPU metrics (warps in flight,\nunallocated warps) that would say whether register pressure caps occupancy now need an elevated tool run, which this session\ndid not do. Parked until the GPU Trace of the two versions (before E-408, after E-409) can be taken on this machine."
+    },
+    {
+      "id": "R-1913",
+      "date": "2026-11-23",
+      "time": "16:38",
+      "timeFrom": "recorded",
+      "title": "E-551 kept: per-lamp lamp-map tiles, capped, the pass -25 % by night on the GTX 1650 and -53 % on the HD 620, day flat to -14 %; R-1908's drop was an A/A",
+      "verdict": "kept",
+      "text": "**E-551 reopened and kept: per-lamp tiles with the cap take the lamps' map -25 % by night on the GTX 1650 and -53 % on the HD 620, flat to -14 % by day (perf/e551-lamp-tiles, merged main f11365c9). R-1908's drop was wrong.**\n\n**What was wrong in R-1908.** The capped run (0914a) was an A/A: its job fetched a ref the bundle did not hold (asus/e551s2 for asus/e551s3), the worktree for B was never made, the `cd` failed and B ran A's folder. The atlas sizes said so (B's equal to A's exactly, by night and by day) and went unexplained. \"The wide lamps' tiles fill the map\" was inferred: by count, night has 36 to 40 lamps of reach 400 and 8 of 1000. Its table was also per page frame, not per drawn frame (the map is drawn in about two frames of three there).\n\n**The tiles, counted** (probe in the Pixi worker, Predator crowd 0.5, 90 frames, the same lamps under both rules): texels of the tiles 4.35 M -> 2.09 M by night (-52 %), 4.08 M -> 2.40 M by day (-41 %).\n\n**Timed** (glFrameRecorder --gpu-passes, 4 ABBA pairs, 5 s each, ms per drawn frame, medians; each run printed its HEAD, A f11365c9 and B 3134a06e; the ASUS job 0916a stops on any failed step):\n\n| lamps' map | main | capped | pairs |\n| --- | --- | --- | --- |\n| GTX 1650, night | 1.099 | 0.822 (-25 %) | 4/4 |\n| GTX 1650, day | 1.750 | 1.649 (-6 %; -2 % at equal clock) | 3/4 |\n| HD 620, night | 6.667 | 3.132 (-53 %) | 3/4 |\n| HD 620, day | 6.757 | 5.821 (-14 %) | 3/4 |\n\nThe HD 620 night pair it lost: A's window had no wide lamp (atlas 4096 x 384, 1.66 ms), B's had. The light pass, with each tile's rect per lamp: GTX 0.605 -> 0.616 night, 0.265 -> 0.272 day; HD 620 3.14 -> 2.96, 1.21 -> 1.16. Not timed again: the CPU (the planning, an insertion sort of 48 sides a frame), the earlier Predator gate having moved with the drift. The small lamps' edges are coarser, accepted by the owner (2026-11-23). node 3596/3596."
+    },
+    {
+      "id": "R-1956",
+      "date": "2026-11-23",
+      "time": "16:41",
+      "timeFrom": "recorded",
+      "title": "E-553 dropped: the decal tiles' occupied cells cut the HD 620's decal draws 10 to 25 % (2-4 % of a frame, within its noise); 250 lines and a WASM kernel for it",
+      "verdict": "dropped",
+      "text": "Built on perf/decal-cells (b58e9ced, not merged): each tile's 4 x 4 occupied cells from its premultiplied texels (decal_tile_mask in\nwasm/decalPremultiply.c, 4.5 us a 128 px tile in Node, 0.3 us a full one; parity test against tests/reference/decalTileMask.mjs),\nits rectangles of cells as instances. Captures identical to main on decalCaptureScene at its default resolution (0.5) and with\n?zoom=2, WebGL and WebGPU; ?zoom=0.3 only with the first, JavaScript mask; at ?resolution=2, 47 of 921 600 pixels by 1 (resolution 1 was not run). ASUS job 0917a (16:32 to 16:41 by its result files; glFrameRecorder --gpu-draws, Predator crowd 0.5, main\nf11365c9 against addbf864, the branch with the JavaScript mask, 2 pairs each): the decal draws' ms a frame by night 2.85, 2.69 -> 2.08, 2.94 and by day 3.27, 3.31 ->\n2.25, 2.82, of a 14.8 to 16.5 ms frame. The gain is 0.3 to 0.7 ms on the HD 620 (2 to 4 % of the frame, its pairs' spread the\nsize of it), nothing on the GTX 1650 (its decal draws 0.15 ms). Not worth the kernel: the branch is dropped. What else\nE-400 has for the colour pass on weak GPUs (the entity sprites 1.9 ms, the tilemap 1.35, the light composite 1.0) is where to look."
+    },
+    {
+      "id": "R-1914",
+      "date": "2026-11-23",
+      "time": "17:00",
+      "timeFrom": "recorded",
+      "title": "DX-LAYERPASSES kept: shader.passes, a layer's look in several passes; the platformer's bloom draws 5.06 -> 1.62 ms raw (-83 % at equal clock) on the GTX 1650",
+      "verdict": "kept",
+      "text": "**DX-LAYERPASSES kept: `shader.passes` gives a look several passes, each into a target the next samples; the platformer's bloom draws 5.06 -> 1.62 ms raw (-68 %) on the GTX 1650, -83 % at equal clock (about 0.9 ms) and -88 % against the draws it leaves alone (about 0.6). Branch feat/layer-passes; owner-approved API; design DX_LAYERPASSES_DESIGN.md.**\n\n**What it is.** `shader.passes: [{ fragment, resolution? }, ...]` in place of `shader.fragment`, for SPRITES, MESH, DENSITY, COMPUTE, GPU_PARTICLES and SCREEN layers (not worldRect nor the scenery kinds: errors at load). The last pass is the look as it was; the ones before it (src/render/pixi/lookPasses.js) draw full-screen into targets of their own. `uTexture` is the pass before, `uSource` what the first one read, `uTexelSize` (a reserved look uniform of every look now) one over `uTexture`'s size. A layer without earlier passes tests one null.\n\n**The picture.** Copies chained are exact: 0 of 921 600 pixels differ for a SPRITES look, a MESH look on the stage and composed (alpha 0.5), and a SCREEN layer, in 2 and 3 passes, with `uSource`, on WebGL and WebGPU (dxCaptureScene ?lookPasses=, ?passScale=, ?lookLast=, ?screen=; the controls differ: a quarter-size pass in 422 857 pixels, WebGL against WebGPU in 76). The platformer's bloom against the 289-fetch blur: the two passes at full size 7 446 pixels at most 2/255 (E-450's 81 fetches: 9 814, at most 1); with the rows at half size (the shipped demo) 31 756 at most 5, not visible. COMPUTE, DENSITY and GPU_PARTICLES looks in passes run the same code and were not captured.\n\n**Timed** (glFrameRecorder --gpu-draws, headed, 1920 x 1080, 4 ABBA pairs each, every run's HEAD checked, main f11365c9 against the branch): the bloom's draws, rows at full size 5.31 -> 3.12 ms (4/4), at half size 5.06 -> 1.62 (4/4). The GPU's clock follows the load (1400-1530 MHz -> 720-885), so the raw gain is a floor: ms x MHz -67 % and -83 %, the ratio to the untouched draws (about 2.5 times slower in B by the clock) -74 % and -88 %. node 3604/3604, demos 143/143."
     }
   ],
   "leads": [

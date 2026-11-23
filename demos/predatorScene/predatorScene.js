@@ -303,6 +303,9 @@ export class PredatorScene extends WEED.Scene {
       // `?shadowSamples=<1..9>` (how soft the shadow maps' edges are) and `?lightCullingTileSize=<px>` (the light pass's
       // culling tiles), to compare their cost; without them the engine's defaults.
       ...(predatorSearchParam('shadowSamples') != null ? { shadowSamples: predatorNumberParam('shadowSamples', 5) } : {}),
+      // `?lampTile=<px>`: the lamps' map's half tile fixed at that many texels (lighting.lampShadowTile), against the engine's
+      // 'auto' without it (E-551: what the map costs by its texels).
+      ...(predatorSearchParam('lampTile') != null ? { lampShadowTile: predatorNumberParam('lampTile', 256) } : {}),
       // `?lampShadowAlpha=<0..1>`: how much of a lamp's light its shadows take out (1, the engine's, without it).
       ...(predatorSearchParam('lampShadowAlpha') != null ? { lampShadowAlpha: predatorNumberParam('lampShadowAlpha', 1) } : {}),
       ...(predatorSearchParam('lightCullingTileSize') != null
