@@ -596,7 +596,7 @@ the deletion (section 8): OL-14 and OL-15, on 2026-11-18, once the owner accepte
 ## 6. Not in this plan
 
 Seen while planning and not agreed, so not to be done under these items: the light pass's loop without
-tiles, which never runs (`_lightTilesOn` is always true); the measuring knobs that are public keys of
+tiles, which never ran (deleted 2026-11-23 as CR-37); the measuring knobs that are public keys of
 `config.lighting` (`gbuffer`, `keyedCasters`, `lampMapCache`); the light pass written twice (GLSL and
 WGSL) with its light loop four times.
 

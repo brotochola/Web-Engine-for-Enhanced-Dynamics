@@ -29,11 +29,6 @@ const VARIANTS = {
   light3d: { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true },
   light3dPixelArt: { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true, pixelArt: true },
   light3dNoLamps: { faces: true, sunMap: true, selfShadow: true, ids: true },
-  // E-399's tiles (the variants the engine ships with lighting.tiles on: pixiWorker.js _lightTilesOn).
-  flatTiles: { faces: false, sunMap: true, lampMap: true, tiles: true },
-  light3dTiles: { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true, tiles: true },
-  light3dPixelArtTiles: { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true, pixelArt: true, tiles: true },
-  light3dNoLampsTiles: { faces: true, sunMap: true, selfShadow: true, ids: true, tiles: true },
 };
 const VERT = '#version 300 es\nin vec2 aPosition;\nout vec2 vTextureCoord;\nvoid main() { vTextureCoord = aPosition; gl_Position = vec4(aPosition, 0.0, 1.0); }\n';
 fs.mkdirSync(out, { recursive: true });

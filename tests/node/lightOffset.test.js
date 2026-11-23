@@ -58,7 +58,7 @@ async function uploaded(lights) {
   px.lighting.visibleLightsAllCount = lights.length;
   px.lighting._stampLightCamera = () => {};
   px.lighting.applyLightingViewport = () => {};
-  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0 }, update() {} } } };
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: {}, update() {} } } };
   px.lighting.updateLighting();
   return px.lighting.lightDataFloats;
 }

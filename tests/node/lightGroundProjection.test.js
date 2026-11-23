@@ -61,7 +61,7 @@ async function lightingWorker(groundScaleY, lights) {
   px.lighting.visibleLightsAllCount = lights.length;
   px.lighting._stampLightCamera = () => {};
   px.lighting.applyLightingViewport = () => {};
-  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0 }, update() {} } } };
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: {}, update() {} } } };
   return px;
 }
 
@@ -104,7 +104,6 @@ test('a floor light uploads I = (radius / 10)² and its colour untouched; offset
   const d = px.lighting.lightDataFloats;
   assert.deepEqual(Array.from(d.subarray(0, 3)), [100, 170, 19600]);
   assert.deepEqual(Array.from(d.subarray(MAX_LIGHTS * 4, MAX_LIGHTS * 4 + 3)), [1, Math.fround(0x80 / 255), Math.fround(0x40 / 255)]);
-  assert.equal(px.lighting.lightingShader.resources.uniforms.uniforms.uLightCount, 1);
 });
 
 test('the uploaded light shades I / (I + h² + dx² + (dy / groundScaleY)²) through the lighting shader', async () => {

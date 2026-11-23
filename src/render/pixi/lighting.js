@@ -291,8 +291,6 @@ export class PixiLighting {
         },
         uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
         uInvResolution: { value: 1.0 / this.worker.lightingResolution, type: 'f32' },
-        uLightTexWidth: { value: maxLights, type: 'f32' },
-        uLightCount: { value: 0, type: 'i32' },
         uBaseAmbient: { value: this.worker.baseAmbient, type: 'f32' },
         uSunIntensity: { value: 0, type: 'f32' },
         uSunR: { value: 1.0, type: 'f32' },
@@ -304,8 +302,11 @@ export class PixiLighting {
         uNightG: { value: 0, type: 'f32' },
         uNightB: { value: 0, type: 'f32' },
         // DX-SPOT: the first uConeCount lights are cones (their third row); the shader loops them apart. A float: on
-        // WebGPU Pixi writes an i32 uniform with a float's bits (uLightCount survives that only by its loop's texW guard).
+        // WebGPU Pixi writes an i32 uniform with a float's bits.
         uConeCount: { value: 0, type: 'f32' },
+        // E-205: the lights by tile (lightTiles.js); updateLighting lays the grid out at the pass's size.
+        uTileGrid: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uTileWords: { value: new Float32Array(4), type: 'vec4<f32>' },
       },
     };
 
@@ -358,9 +359,9 @@ export class PixiLighting {
       this.wallRowsWarned = true;
       console.warn('WeedJS: lighting.walls is on but the entities carry no G-buffer words, so the walls stop no light');
     }
-    if (this.worker._lightTilesOn) {
-      // E-205: the lights by tile (lightTiles.js), after every other uniform (the WGSL struct's order); updateLighting lays
-      // the grid out at the pass's size and fills the texture before the pass draws.
+    {
+      // E-205: the lights by tile (lightTiles.js): updateLighting lays the grid out at the pass's size and fills the
+      // texture before the pass draws.
       this.lightTiles.cam[TILE_CAM_SNAP] = this.worker._pixelArtLight ? 0.5 : 0;
       this.lightTilesSource = PIXI.TextureSource.from({
         resource: new Uint32Array(1),
@@ -376,8 +377,6 @@ export class PixiLighting {
       const gl = this.worker._useWebGpu ? null : this.worker.pixiApp?.renderer?.gl;
       this.lightTilesUnit = gl ? gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS) - 1 : 0;
       lightingResources.uLightTiles = this.lightTilesSource;
-      lightingResources.uniforms.uTileGrid = { value: new Float32Array(4), type: 'vec4<f32>' };
-      lightingResources.uniforms.uTileWords = { value: new Float32Array(4), type: 'vec4<f32>' };
     }
     if (wallsOn) {
       // OL-4: after every other uniform (the WGSL struct's order): how deep the light enters a wall (lighting.wallDepth)
@@ -398,7 +397,6 @@ export class PixiLighting {
       lampMap: this.worker._lampMapOn,
       ids: this.faceIdsOn,
       pixelArt: this.worker._pixelArtLight,
-      tiles: this.worker._lightTilesOn,
       edges: this.lightEdgesOn,
       // N-277: half a step of noise on the light, against the 8-bit target's rings (off by default: on an Intel iGPU it
       // cost 4 % of the drawn frames).
@@ -416,8 +414,8 @@ export class PixiLighting {
       const makeProgram = (Gp) => lightingGpuProgram(
         Gp, lightingSrc, 'lighting-basic', facesOn, this.worker._sunMapOn, this.worker._lampMapOn, this.faceIdsOn, wallsOn,
       );
-      // E-205: with the tiles, their texture at binding 8 of the pass's group.
-      const gpuProgram = this.worker._lightTilesOn ? lightTilesGpuProgram(GpuProgram, makeProgram) : makeProgram(GpuProgram);
+      // E-205: the tiles' texture at binding 8 of the pass's group.
+      const gpuProgram = lightTilesGpuProgram(GpuProgram, makeProgram);
       this.lightingShader = new PIXI.Shader({ gpuProgram, resources: lightingResources });
     } else {
       if (!lightingSrc) {
@@ -533,8 +531,6 @@ export class PixiLighting {
       this.lightDataLive = countToRender;
     }
 
-    // Update light count uniform
-    uniformGroup.uniforms.uLightCount = countToRender;
     uniformGroup.uniforms.uConeCount = coneCount;
 
     // E-205: the frame's lights by tile, for the camera stamped above.

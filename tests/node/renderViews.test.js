@@ -34,12 +34,11 @@ test('each view samples its buffer; the flags read the face map and the ids map'
   // DBG-7: the tiles view reads the tiles' texture once the light pass by tiles has made it.
   const tiles = t('tiles');
   assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), [null, null]);
-  w._lightTilesOn = true;
   Object.assign(w.lighting, { lightTilesMade: false, lightTilesSource: tiles });
   assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), [null, null], 'not made yet');
   w.lighting.lightTilesMade = true;
   assert.deepEqual(names(RENDER_VIEW.LIGHT_TILES), ['tiles', null]);
-  const gpu = { _useWebGpu: true, _lightTilesOn: true, lighting: { lightTilesMade: false, lightTilesSource: tiles, lightTiles: { texWidth: 0 } } };
+  const gpu = { _useWebGpu: true, lighting: { lightTilesMade: false, lightTilesSource: tiles, lightTiles: { texWidth: 0 } } };
   assert.deepEqual(renderViewTextures(gpu, RENDER_VIEW.LIGHT_TILES, out).map((x) => (x ? x.name : null)), [null, null], 'WebGPU: no grid yet');
   gpu.lighting.lightTiles.texWidth = 64;
   assert.deepEqual(renderViewTextures(gpu, RENDER_VIEW.LIGHT_TILES, out).map((x) => (x ? x.name : null)), ['tiles', null], 'WebGPU: laid out');
@@ -92,7 +91,6 @@ test('the worker: setRenderView takes a view only where its buffer exists, and m
   assert.equal(destroyed, 2, 'the mesh and its geometry');
 
   // DBG-7: the tiles view has its own quad; Final releases it too.
-  px._lightTilesOn = true;
   px.lighting.lightTilesMade = true;
   px.lighting.lightTilesSource = {};
   px.handleCustomMessage({ msg: 'setRenderView', view: RENDER_VIEW.LIGHT_TILES, opacity: 1 });
@@ -120,7 +118,6 @@ test('the worker: lightTileAt names the tile under a canvas point and the lights
   word(2, 1, 0, (1 << 0) | (1 << 5) | (1 << 31));
   word(2, 1, 1, 1 << 2);
   px.lighting.lightTiles = t;
-  px._lightTilesOn = true;
   px.lightingResolution = 0.5;
   // Canvas (40, 10) at half resolution is light-pass (20, 5): tile 1, 0 plus the border, 2, 1.
   const got = px._lightTileAt(40, 10);
@@ -130,6 +127,6 @@ test('the worker: lightTileAt names the tile under a canvas point and the lights
   assert.deepEqual([got.cols, got.rows, got.tilePx, got.wordsUsed], [4, 3, 16, 2]);
   const outside = px._lightTileAt(1000, 10);
   assert.deepEqual([outside.x, outside.y, outside.lights.length], [-1, -1, 0]);
-  px._lightTilesOn = false;
-  assert.equal(px._lightTileAt(40, 10).x, -1, 'no light pass by tiles: no tile');
+  t.texWidth = 0;
+  assert.equal(px._lightTileAt(40, 10).x, -1, 'no grid laid out yet: no tile');
 });

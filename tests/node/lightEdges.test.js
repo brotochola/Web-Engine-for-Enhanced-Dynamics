@@ -62,7 +62,7 @@ test('each variant bakes its kind and the mark its depth, in both languages, wit
 });
 
 test("the light pass's EDGES: the floor's texels leave alpha 0 with it, 1 without, in both languages", () => {
-  const flags = { faces: true, sunMap: true, ids: true, tiles: true };
+  const flags = { faces: true, sunMap: true, ids: true };
   const glsl = shader('lightingBasic.frag.glsl');
   const wgsl = shader('lightingBasic.wgsl');
   assert.match(lightingSource(glsl, { ...flags, edges: true }), /finalColor = vec4\(totalLight, 0\.0\);/);

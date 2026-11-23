@@ -74,7 +74,7 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   px.lighting.visibleLightsAllCount = 2;
   px.lighting._stampLightCamera = () => {};
   px.lighting.applyLightingViewport = () => {};
-  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0, uConeCount: 0 }, update() {} } } };
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uConeCount: 0 }, update() {} } } };
   px.lighting.updateLighting();
   const d = px.lighting.lightDataFloats;
   const slotOf = (x) => (d[0] === x ? 0 : 1);

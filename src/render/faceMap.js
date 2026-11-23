@@ -664,8 +664,7 @@ export function shaderWithFlag(source, name, on) {
  * sun map), SELFSHADOW (DX-SELFSHADOW, inside FACES), LAMPMAP (DX-SHADOW3D's lamps' map) and IDS (DX-GBUF's entity ids
  * map, with FACES: a pixel's self-shadow counts its own heights, and its own entity's shadow in the maps is skipped), in
  * the GLSL and the WGSL alike. DX-PIXELSHADOW: PIXELART / !PIXELART (lighting.pixelArt: each world pixel shaded whole at
- * its centre, the maps read with one tap). E-205: TILES / !TILES (a pixel loops over its tile's lights, src/render/
- * lightTiles.js, instead of every light). DX-LIGHTEDGES: EDGES / !EDGES (the floor's texels leave alpha 0, the rest 1,
+ * its centre, the maps read with one tap). DX-LIGHTEDGES: EDGES / !EDGES (the floor's texels leave alpha 0, the rest 1,
  * for lightEdges.js; without it every texel's alpha is 1). N-277: DITHER / !DITHER (lighting.dither: half an 8-bit step of
  * noise on the light's output; without it, the light as it is). OL-4: WALLS (lighting.walls: each lamp's light times what
  * its row of the walls' texture lets through, src/render/visibility/lampWallRow.js; with FACES and IDS, since a wall's own
@@ -675,17 +674,16 @@ export function shaderWithFlag(source, name, on) {
  * as 1 over their count (shadowTapsOf says which taps each count takes).
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
  * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean, ids?: boolean, pixelArt?: boolean,
- *   tiles?: boolean, edges?: boolean, dither?: boolean, walls?: boolean, shadowSamples?: number }} flags
+ *   edges?: boolean, dither?: boolean, walls?: boolean, shadowSamples?: number }} flags
  */
 export function lightingSource(source, {
-  faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false, tiles = false, edges = false, dither = false,
+  faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false, edges = false, dither = false,
   walls = false, shadowSamples = 5,
 }) {
   const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
   const withLamps = shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
   const withIds = shaderWithFlag(shaderWithFlag(withLamps, 'IDS', faces && ids), '!IDS', !(faces && ids));
-  const withTiles = shaderWithFlag(shaderWithFlag(withIds, 'TILES', tiles), '!TILES', !tiles);
-  const withEdges = shaderWithFlag(shaderWithFlag(withTiles, 'EDGES', edges), '!EDGES', !edges);
+  const withEdges = shaderWithFlag(shaderWithFlag(withIds, 'EDGES', edges), '!EDGES', !edges);
   const withWalls = shaderWithFlag(withEdges, 'WALLS', walls && faces && ids);
   const withDither = shaderWithFlag(shaderWithFlag(withWalls, 'DITHER', dither), '!DITHER', !dither);
   const withPixelArt = shaderWithFlag(shaderWithFlag(withDither, 'PIXELART', pixelArt), '!PIXELART', !pixelArt);

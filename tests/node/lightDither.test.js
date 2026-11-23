@@ -30,7 +30,7 @@ test('N-277: the noise stays within half a step and spreads evenly over a tile o
 });
 
 test('N-277: with lighting.dither both outputs of the light pass are dithered, in GLSL and WGSL, by the art pixel with pixelArt', () => {
-  const flags = { faces: true, sunMap: true, ids: true, tiles: true, dither: true };
+  const flags = { faces: true, sunMap: true, ids: true, dither: true };
   for (const [name, faceOut, floorOut] of [
     ['lightingBasic.frag.glsl', 'finalColor = vec4(weedDither(min(faceLight(', 'totalLight = weedDither(min(totalLight, vec3(1.0)), ditherAt);'],
     ['lightingBasic.wgsl', 'return vec4<f32>(weedDither(min(faceLight(', 'totalLight = weedDither(min(totalLight, vec3<f32>(1.0)), ditherAt);'],
