@@ -99,16 +99,17 @@ export class SunStreetScene extends Scene {
       flags: { kind: LAYER_KIND.MESH, zIndex: 3 },
       clouds: { zIndex: 4, ySorting: false, alpha: CLOUD_ALPHA, alphaBySun: { from: 0.15, to: 0.5 } },
       nightGlows: { zIndex: 5.6, ySorting: false, blendMode: BLEND_MODES.ADD, alphaBySun: 'night' },
-      // Over everything: each reads the whole frame drawn under it.
+      // Over everything, each on the frame drawn under it. Both only map a pixel's colour (pointwise), so the engine draws
+      // them in one full-screen pass.
       grade: {
         kind: LAYER_KIND.SCREEN,
         zIndex: 100,
-        shader: { fragment: 'streetGrade', uniforms: { uWarm: { value: 0, type: 'f32' }, uNight: { value: 0, type: 'f32' } } },
+        shader: { fragment: 'streetGrade', pointwise: true, uniforms: { uWarm: { value: 0, type: 'f32' }, uNight: { value: 0, type: 'f32' } } },
       },
       vignette: {
         kind: LAYER_KIND.SCREEN,
         zIndex: 101,
-        shader: { fragment: 'streetVignette', uniforms: { uAmount: { value: VIGNETTE, type: 'f32' } } },
+        shader: { fragment: 'streetVignette', pointwise: true, uniforms: { uAmount: { value: VIGNETTE, type: 'f32' } } },
       },
     },
     lighting: {
