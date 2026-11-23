@@ -63,7 +63,8 @@ export class PixiLookShaders {
   /**
    * @param {{ scene?: TextureSource|null, source?: TextureSource|null, gbuf?: boolean }} [textures] what it reads besides
    *   uTexture: uScene (DX-POST: a SCREEN pass's, the frame before the first pass), uSource (DX-LAYERPASSES: what the look's
-   *   first pass read), the G-buffer (DX-GBUFSHADER: uGbufFace, uGbufIds, bound empty until a frame binds them)
+   *   first pass read), the G-buffer (DX-GBUFSHADER: uGbufFace, uGbufIds, bound empty until a frame binds them); uniformMap and
+   *   uniformTypes: the uniforms of a shader that is not one layer's (DX-POSTFUSE: the WGSL prelude's struct)
    */
   create(fragmentSource, textureSource, uniformDefs, name, layerName, textures = {}) {
     const reads = { scene: !!textures.scene, source: !!textures.source, gbuf: textures.gbuf === true };
@@ -93,8 +94,8 @@ export class PixiLookShaders {
           const lid = layerObj ? layerObj.id : -1;
           wgslSource = prependLookPrelude(
             wgslSource,
-            Layer._uniformMaps[lid] || null,
-            Layer._metadata?.layers?.[lid]?.uniformTypes || null,
+            textures.uniformMap || Layer._uniformMaps[lid] || null,
+            textures.uniformTypes || Layer._metadata?.layers?.[lid]?.uniformTypes || null,
             reads
           );
         }

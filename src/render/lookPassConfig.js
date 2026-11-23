@@ -37,7 +37,15 @@ export function earlierPassesOf(shader) {
  * @param {object|null|undefined} shader
  */
 export function assertLookPasses(layerName, builtIn, kind, shader) {
-  if (!shader || shader.passes === undefined) return;
+  if (!shader) return;
+  if (shader.pointwise !== undefined && typeof shader.pointwise !== 'boolean') {
+    throw new Error(`WeedJS: layer "${layerName}": shader.pointwise is ${JSON.stringify(shader.pointwise)}: true or false.`);
+  }
+  if (shader.pointwise === true && (kind !== LAYER_KIND.SCREEN || shader.passes !== undefined)) {
+    throw new Error(`WeedJS: layer "${layerName}": shader.pointwise is for a LAYER_KIND.SCREEN layer of one fragment (weedPass): ` +
+      'it has no passes of its own, and what is under it is the layer before it.');
+  }
+  if (shader.passes === undefined) return;
   const bad = (why) => new Error(`WeedJS: layer "${layerName}": ${why}`);
   const passes = shader.passes;
   if (!Array.isArray(passes) || passes.length === 0) {

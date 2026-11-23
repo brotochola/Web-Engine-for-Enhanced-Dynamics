@@ -5,6 +5,7 @@
 
 import { GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW } from './gpuQueueLayout.js';
 import { lookPassesOf } from './lookPassConfig.js';
+import { pointwiseProblem } from './pointwisePass.js';
 
 export const RENDERER_BACKEND_WEBGL = 'webgl';
 export const RENDERER_BACKEND_WEBGPU = 'webgpu';
@@ -532,6 +533,10 @@ export function assertLoadedShadersCompatible({ backend, layers, shaderAssets, l
       const source = loaded[asset];
       if (!source) throw errorLookMissing(layerName, asset);
       assertLookShaderCompatible({ backend, layerName, asset, path, source });
+      if (shader.pointwise === true) {
+        const problem = pointwiseProblem(source, backend === RENDERER_BACKEND_WEBGPU);
+        if (problem !== null) throw new Error(`WeedJS: layer "${layerName}" is pointwise and ${problem} (shader "${asset}").`);
+      }
     }
     if (shader.compute) {
       const names = collectComputeAssetNames(shader);

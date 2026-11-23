@@ -8,24 +8,35 @@
  * other subsystems move (N-256), what this class reads of the worker goes through `this.worker`.
  */
 
-import { Layer } from '../../core/layer.js';
+import { Layer, RESERVED_LOOK_UNIFORMS } from '../../core/layer.js';
 import { debugWorkerLog } from '../../util/debugLog.js';
 import { RenderTexture, Texture } from '../../vendor/pixi.min.js';
 import { rtPixelSize } from '../gpuShadowCasters.js';
 import { applyEngineLookUniforms, applyTexelSizeUniform, copyLookUniforms, finiteOrZero, layerIsVisible } from '../pixi/layerHelpers.js';
 import { emptyLookTextures, lookReads } from '../pixi/lookPasses.js';
+import { fusePointwise } from '../pointwisePass.js';
 import { errorCompileFailed } from '../rendererBackend.js';
 
 // The Pixi classes the moved bodies name as PIXI.X, as pixiWorker.js's namespace does.
 const PIXI = Object.freeze({ RenderTexture, Texture });
+
+/** Whether a draw of the chain shows: its layer, or any of the pointwise layers fused in it (DX-POSTFUSE). */
+function stepIsVisible(step) {
+  if (step.members === null) return layerIsVisible(step.layerId);
+  for (let i = 0; i < step.members.length; i++) if (layerIsVisible(step.members[i].layerId)) return true;
+  return false;
+}
 
 /** The SCREEN layers' passes and the frame they read, for one renderer worker. */
 export class PixiScreenLayers {
   /** @param {object} worker the PixiRenderer that owns this (its renderer, camera, canvas and custom layers) */
   constructor(worker) {
     this.worker = worker;
-    // DX-POST: the LAYER_KIND.SCREEN passes in zIndex order, and the frame they read (the stage drawn into a target).
+    // DX-POST: the LAYER_KIND.SCREEN layers in zIndex order, and the frame they read (the stage drawn into a target).
     this.passes = [];
+    // DX-POSTFUSE: the full-screen draws those layers make, in order: a layer's own pass, or a run of pointwise layers fused
+    // into one (finish).
+    this.steps = [];
     this.sceneRT = null;
     // DX-DEPTH: the frame target given a depth attachment for the entities' pixel depth (WebGPU), so it is asked once.
     this.sceneDepth = null;
@@ -45,6 +56,39 @@ export class PixiScreenLayers {
     const layerId = config.id;
     const layerName = config.name;
     const name = config.shaderName || layerName;
+    const resolution = Layer._resolution?.[layerId];
+    const record = {
+      layerId,
+      layerName,
+      zIndex: Layer._zIndex?.[layerId] ?? 0,
+      resolution: resolution > 0 ? resolution : 1,
+      // How it samples the frame it reads ('linear', or 'nearest' for pixel art).
+      scaleMode: Layer.scaleModeString(Layer._normalizeScaleMode(config.scaleMode)),
+      shader: null,
+      uniformStore: null,
+      uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
+      mesh: null,
+      reads: null,
+      // DX-LAYERPASSES: the passes of its look before the last one, or null.
+      earlierPasses: null,
+      compute: null,
+      // Its output when it is not the last visible pass: the canvas's size times its resolution.
+      target: null,
+      // DX-POSTFUSE: its map's source when it is pointwise (the fused draw has the shader), what the fusing needs, and where
+      // each of its uniforms went in the fused one's.
+      pointwise: config.shaderPointwise === true ? config.shaderFragment : null,
+      uniformMap: config.uniformMap || null,
+      uniformTypes: config.uniformTypes || null,
+      fusedUniforms: null,
+      members: null,
+      on: null,
+    };
+    this.passes.push(record);
+    this.passes.sort((a, b) => a.zIndex - b.zIndex);
+    if (record.pointwise !== null) {
+      debugWorkerLog(`PIXI WORKER: SCREEN layer "${layerName}" initialized (pointwise)`);
+      return;
+    }
     const uniformDefs = this.worker.lookShaders.buildUniformDefs(layerId, config.uniformMap, config.uniformTypes);
     // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it); DX-GBUFSHADER:
     // one that names uGbufFace or uGbufIds, this frame's G-buffer (gbufSources); DX-LAYERPASSES: one in several passes that
@@ -58,42 +102,113 @@ export class PixiScreenLayers {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', name, layerName, this.worker._useWebGpu ? 'WebGPU' : 'WebGL', err);
     }
-    const resolution = Layer._resolution?.[layerId];
-    this.passes.push({
-      layerId,
-      layerName,
-      zIndex: Layer._zIndex?.[layerId] ?? 0,
-      resolution: resolution > 0 ? resolution : 1,
-      // How it samples the frame it reads ('linear', or 'nearest' for pixel art).
-      scaleMode: Layer.scaleModeString(Layer._normalizeScaleMode(config.scaleMode)),
-      shader,
-      uniformStore: shader.resources?.customUniforms?.uniforms || null,
-      uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
-      mesh: this.worker.lookShaders.makeMesh(shader, false),
-      reads,
-      // DX-LAYERPASSES: the passes of its look before the last one, or null.
-      earlierPasses: this.worker.lookPasses.make(config, true),
-      compute: null,
-      // Its output when it is not the last visible pass: the canvas's size times its resolution.
-      target: null,
-    });
-    this.passes.sort((a, b) => a.zIndex - b.zIndex);
+    record.shader = shader;
+    record.uniformStore = shader.resources?.customUniforms?.uniforms || null;
+    record.mesh = this.worker.lookShaders.makeMesh(shader, false);
+    record.reads = reads;
+    record.earlierPasses = this.worker.lookPasses.make(config, true);
     debugWorkerLog(`PIXI WORKER: SCREEN layer "${layerName}" initialized`);
   }
 
-  destroyAll() {
+  /**
+   * DX-POSTFUSE: the draws the SCREEN layers make, once every layer is in: each one's own pass, and a run of consecutive
+   * pointwise layers of one resolution as one draw that reads the frame once (pointwisePass.js).
+   */
+  finish() {
+    this.steps = [];
     const layers = this.passes;
-    for (let i = 0; i < layers.length; i++) {
-      const cl = layers[i];
-      this._unbindTextures(cl);
-      this.worker.lookPasses.destroy(cl);
-      if (cl.target) {
-        this.worker._releaseTextureBindGroups(cl.target);
-        cl.target.destroy(true);
+    for (let i = 0; i < layers.length;) {
+      if (layers[i].pointwise === null) {
+        this.steps.push(layers[i++]);
+        continue;
       }
-      cl.mesh.destroy();
+      let end = i + 1;
+      while (end < layers.length && layers[end].pointwise !== null && layers[end].resolution === layers[i].resolution) end++;
+      this.steps.push(this._fuse(layers.slice(i, end)));
+      i = end;
+    }
+  }
+
+  /** One fused draw of consecutive pointwise layers: their maps in order, each behind a uniform that says it is shown. */
+  _fuse(members) {
+    const wgsl = this.worker._useWebGpu;
+    const own = members.map((m) => Object.keys(m.uniformMap || {}).filter((n) => !(n in RESERVED_LOOK_UNIFORMS)));
+    const engine = Object.entries(RESERVED_LOOK_UNIFORMS).map(([name, def]) => ({ name, type: def.type }));
+    const label = members.map((m) => m.layerName).join('+');
+    const fused = fusePointwise(
+      members.map((m, i) => ({ source: m.pointwise, layerName: m.layerName, uniforms: own[i], uniformTypes: m.uniformTypes || {} })),
+      wgsl,
+      engine,
+    );
+    // The fused shader's uniforms: the engine's, each member's switch, each member's own with its suffix.
+    const defs = {};
+    const map = {};
+    const types = {};
+    const add = (name, size, type, value) => {
+      map[name] = { offset: -1, size };
+      types[name] = type;
+      defs[name] = { value: size === 1 ? value[0] : new Float32Array(value), type };
+    };
+    for (const [name, def] of Object.entries(RESERVED_LOOK_UNIFORMS)) {
+      const size = Layer._getUniformSize(def.type);
+      add(name, size, def.type, new Array(size).fill(0));
+    }
+    for (const name of fused.on) add(name, 1, 'f32', [0]);
+    for (const u of fused.uniforms) {
+      const m = members[u.member];
+      const entry = m.uniformMap[u.uniform];
+      const floats = Layer._uniformFloats[m.layerId];
+      const value = [];
+      for (let k = 0; k < entry.size; k++) value.push(floats ? floats[entry.offset + k] : 0);
+      add(u.name, entry.size, m.uniformTypes?.[u.uniform] || 'f32', value);
+      if (m.fusedUniforms === null) m.fusedUniforms = [];
+      m.fusedUniforms.push([u.name, entry]);
+    }
+    let shader;
+    try {
+      shader = this.worker.lookShaders.create(fused.source, PIXI.Texture.EMPTY.source, defs, label, members[0].layerName,
+        { uniformMap: map, uniformTypes: types });
+    } catch (err) {
+      if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
+      throw errorCompileFailed('look', label, label, wgsl ? 'WebGPU' : 'WebGL', err);
+    }
+    return {
+      layerId: members[0].layerId,
+      layerName: label,
+      zIndex: members[0].zIndex,
+      resolution: members[0].resolution,
+      scaleMode: members[0].scaleMode,
+      shader,
+      uniformStore: shader.resources?.customUniforms?.uniforms || null,
+      uniformEntries: null,
+      mesh: this.worker.lookShaders.makeMesh(shader, false),
+      reads: lookReads(null, true, false),
+      earlierPasses: null,
+      compute: null,
+      target: null,
+      pointwise: null,
+      uniformMap: map,
+      uniformTypes: types,
+      fusedUniforms: null,
+      members,
+      on: fused.on,
+    };
+  }
+
+  destroyAll() {
+    const steps = this.steps;
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      this._unbindTextures(step);
+      this.worker.lookPasses.destroy(step);
+      if (step.target) {
+        this.worker._releaseTextureBindGroups(step.target);
+        step.target.destroy(true);
+      }
+      step.mesh.destroy();
     }
     this.passes = [];
+    this.steps = [];
     if (this.sceneRT) {
       this.worker._releaseTextureBindGroups(this.sceneRT);
       this.sceneRT.destroy(true);
@@ -112,12 +227,13 @@ export class PixiScreenLayers {
   /**
    * DX-POST: with a visible SCREEN layer, the stage goes into a target the canvas's size, cleared to the canvas's
    * background. Each visible SCREEN layer then, in zIndex order, reads what came before it and draws into its own
-   * target, and the last onto the canvas. Without a visible one: false, and the present is the stage's as before.
+   * target, and the last onto the canvas (DX-POSTFUSE: a run of pointwise layers is one such draw). Without a visible
+   * one: false, and the present is the stage's as before.
    */
   present() {
-    const layers = this.passes;
+    const layers = this.steps;
     let last = -1;
-    for (let i = 0; i < layers.length; i++) if (layerIsVisible(layers[i].layerId)) last = i;
+    for (let i = 0; i < layers.length; i++) if (stepIsVisible(layers[i])) last = i;
     if (last < 0) return false;
     const app = this.worker.pixiApp;
     if (!app?.renderer || !app.stage) return false;
@@ -172,8 +288,9 @@ export class PixiScreenLayers {
     let source = this.sceneRT;
     for (let i = 0; i <= last; i++) {
       const cl = layers[i];
-      if (!layerIsVisible(cl.layerId)) continue;
-      this._syncUniforms(cl);
+      if (!stepIsVisible(cl)) continue;
+      if (cl.members !== null) this._syncFused(cl);
+      else this._syncUniforms(cl);
       applyEngineLookUniforms(cl, frame);
       const input = source.source;
       if (input.scaleMode !== cl.scaleMode) input.scaleMode = cl.scaleMode;
@@ -211,7 +328,7 @@ export class PixiScreenLayers {
   _target(rt, width, height) {
     if (rt && rt.width === width && rt.height === height) return rt;
     if (rt) {
-      const layers = this.passes;
+      const layers = this.steps;
       for (let i = 0; i < layers.length; i++) this._unbindTextures(layers[i]);
       this.worker._releaseTextureBindGroups(rt);
       rt.destroy(true);
@@ -260,6 +377,20 @@ export class PixiScreenLayers {
     out.face = lighting && lighting.faceRT ? lighting.faceRT.source : empty;
     out.ids = lighting && lighting.faceIdsRT ? lighting.faceIdsRT.source : empty;
     return out;
+  }
+
+  /** DX-POSTFUSE: a fused draw's uniforms: each member's written from any thread, and whether it is shown. */
+  _syncFused(step) {
+    const store = step.uniformStore;
+    if (!store) return;
+    for (let k = 0; k < step.members.length; k++) {
+      const m = step.members[k];
+      store[step.on[k]] = layerIsVisible(m.layerId) ? 1 : 0;
+      const dirtyRef = Layer._uniformDirty?.[m.layerId];
+      if (!dirtyRef || Atomics.load(dirtyRef, 0) !== 1) continue;
+      Atomics.store(dirtyRef, 0, 0);
+      copyLookUniforms(m.fusedUniforms, Layer._uniformFloats[m.layerId], store);
+    }
   }
 
   /** A SCREEN layer's uniforms written from any thread (Layer.x.setUniform), as updateCustomLayers does for looks. */

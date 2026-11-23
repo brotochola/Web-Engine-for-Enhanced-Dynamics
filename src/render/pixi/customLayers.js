@@ -525,6 +525,7 @@ export class PixiCustomLayers {
       this.byId[layerId] = cl;
     }
 
+    this.worker.screenLayers.finish();
     this.list = Object.values(this.byId);
     this.worker._bindLutToBatches();
     this.worker._initProxies();

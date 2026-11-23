@@ -1727,6 +1727,8 @@ export class Layer {
                 // DX-LAYERPASSES: the last pass's (the one that draws the layer), with the passes before it or null.
                 shaderFragment: lookPassesOf(config.shader).at(-1)?.fragment || null,
                 shaderEarlier: earlierPassesOf(config.shader),
+                // DX-POSTFUSE: the fragment is a pointwise map (weedPass), which the renderer fuses with its neighbours'.
+                shaderPointwise: config.shader?.pointwise === true,
                 alphaBySun: normalizeAlphaBySun(name, config.alphaBySun ?? (config.sunProjected ? 'shadow' : null)),
                 sunProjected: config.sunProjected === true,
                 volumeFloor: config.volumeFloor === true,
