@@ -24,7 +24,9 @@ fn pairTap(k: f32, rad: f32) -> vec2<f32> {
 
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
-  let rad = clamp(floor(customUniforms.uBlurSize + 0.5), 1.0, f32(STACKBLUR_MAX_R));
+  // The rows may be drawn at less than the layer's size (shader.passes' resolution): the radius in their texels.
+  let texelPx = max(customUniforms.uTexelSize.y * customUniforms.uCanvasSize.y, 1.0);
+  let rad = max(clamp(floor(customUniforms.uBlurSize + 0.5), 1.0, f32(STACKBLUR_MAX_R)) / texelPx, 1.0);
   var acc = vec3<f32>(0.0);
   var wsum = 0.0;
   for (var j = -PAIR_TAPS; j <= PAIR_TAPS; j++) {

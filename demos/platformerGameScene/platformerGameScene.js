@@ -59,8 +59,8 @@ export class PlatformerGameScene extends Scene {
         maxItems: 2048,
         ySorting: false,
         shader: {
-          // Two passes: the bright parts blurred along x, then along y and added to the layer's picture.
-          passes: [{ fragment: 'bloomRows' }, { fragment: 'bloomColumns' }],
+          // Two passes: the bright parts blurred along x at half size, then along y and added to the layer's picture.
+          passes: [{ fragment: 'bloomRows', resolution: 0.5 }, { fragment: 'bloomColumns' }],
           containerBlend: BLEND_MODES.NORMAL,
           uniforms: {
             uThreshold: { value: 0.05, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Threshold', tip: 'Luma below this does not bloom.' },

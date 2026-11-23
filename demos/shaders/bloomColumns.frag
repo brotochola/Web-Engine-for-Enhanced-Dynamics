@@ -9,6 +9,7 @@ uniform sampler2D uSource;   // the layer's picture, which bloomRows read
 uniform float uIntensity;
 uniform float uBlurSize;     // StackBlur radius in pixels (1 to 8)
 uniform vec2 uTexelSize;     // the engine's: one over uTexture's size in texels
+uniform vec2 uCanvasSize;    // the engine's: the layer's picture is the canvas's size
 
 const int STACKBLUR_MAX_R = 8;
 const int PAIR_TAPS = 4; // STACKBLUR_MAX_R / 2: texel pairs each side of the centre
@@ -31,7 +32,9 @@ vec2 pairTap(float k, float rad) {
 }
 
 void main() {
-    float rad = clamp(floor(uBlurSize + 0.5), 1.0, float(STACKBLUR_MAX_R));
+    // The rows may be drawn at less than the layer's size (shader.passes' resolution): the radius in their texels.
+    float texelPx = max(uTexelSize.y * uCanvasSize.y, 1.0);
+    float rad = max(clamp(floor(uBlurSize + 0.5), 1.0, float(STACKBLUR_MAX_R)) / texelPx, 1.0);
     vec3 acc = vec3(0.0);
     float wsum = 0.0;
     for (int j = -PAIR_TAPS; j <= PAIR_TAPS; j++) {
