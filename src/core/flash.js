@@ -7,8 +7,9 @@
 // allocates nothing: one core for both forms, a config compiled into a row of numbers that onSpawned writes from.
 //
 // NOT in the spatial grid: Flash has no Collider, so it is never inserted into grid cells and never receives
-// neighbor data. Its point shadows come from the shadow stamp, which grids the casters itself; castShadows: false
-// (LightEmitter.castShadows 0) keeps it out of the stamp.
+// neighbor data. Its shadows, a tile of the lamps' shadow map, take the casters the shadow stamp picks, which grids them
+// itself; they need its elevation (its source's height: at 0 it casts none), and castShadows: false (LightEmitter.castShadows
+// 0) keeps it out of the stamp.
 
 import { GameObject } from './gameObject.js';
 import { LightEmitter } from '../components/lightEmitter.js';
@@ -20,7 +21,7 @@ import { debugWorkerLog } from '../util/debugLog.js';
 /** A flash's config compiled: one row of doubles, every key with its default applied. */
 const ROW_NAMES = [
   'X', 'Y', 'Z', 'LIFESPAN', 'COLOR', 'RADIUS', 'BRIGHTNESS', 'GLOW', 'GLOW_RADIUS', 'CAST_SHADOWS', 'DIRECTION',
-  'CONE_ANGLE', 'CONE_SOFTNESS',
+  'CONE_ANGLE', 'CONE_SOFTNESS', 'ELEVATION',
 ];
 const F = Object.freeze(Object.fromEntries(ROW_NAMES.map((name, i) => [name, i])));
 const ROW_SLOTS = ROW_NAMES.length;
@@ -28,7 +29,7 @@ const ROW_SLOTS = ROW_NAMES.length;
 /** The keys a flash's config can have; Flash.define refuses any other. */
 export const FLASH_KEYS = Object.freeze([
   'x', 'y', 'z', 'lifespan', 'color', 'radius', 'brightness', 'glow', 'glowRadius', 'castShadows', 'coneAngle',
-  'coneSoftness', 'direction',
+  'coneSoftness', 'direction', 'elevation',
 ]);
 const FLASH_KEY_SET = new Set(FLASH_KEYS);
 
@@ -77,6 +78,7 @@ function compileFlash(T, o, cfg) {
   T[o + F.DIRECTION] = cfg.direction ?? 0;
   T[o + F.CONE_ANGLE] = cfg.coneAngle ?? Math.PI * 2;
   T[o + F.CONE_SOFTNESS] = cfg.coneSoftness ?? 0;
+  T[o + F.ELEVATION] = cfg.elevation ?? 0;
 }
 
 /** Flash i's light and life from SPAWN_ROW. */
@@ -93,6 +95,7 @@ function writeFlash(i) {
   LightEmitter.setGlowRadius(i, T[F.GLOW_RADIUS]);
   LightEmitter.active[i] = 1;
   LightEmitter.castShadows[i] = T[F.CAST_SHADOWS];
+  LightEmitter.elevation[i] = T[F.ELEVATION];
   // DX-SPOT: its cone (2π, the default, is round); a flash never turns, so the direction is the world's.
   LightEmitter.setConeAngle(i, T[F.CONE_ANGLE]);
   LightEmitter.setConeSoftness(i, T[F.CONE_SOFTNESS]);
@@ -170,6 +173,8 @@ export class Flash extends GameObject {
    * @param {number} [config.glowRadius=0] - The halo's radius in px, as it shows (LightEmitter.glowRadius: a compact
    *   glow); 0 draws the wide gradient at 0.85 of the radius
    * @param {boolean|number} [config.castShadows=true] - Point shadows (false/0 = lighting only)
+   * @param {number} [config.elevation=0] - Its source's height above the floor in px, as LightEmitter.elevation: its
+   *   shadows' length with the casters' heights (at 0 it casts none), and a wider, flatter pool
    * @param {number} [config.coneAngle=2π] - A cone's whole aperture in radians (2π: round), as LightEmitter's
    * @param {number} [config.coneSoftness=0] - 0..1, how much of the cone's edge fades
    * @param {number} [config.direction=0] - Radians, where the cone points (a flash never turns: in the world's frame)
@@ -350,6 +355,7 @@ export class Flash extends GameObject {
         direction: T[F.DIRECTION],
         coneAngle: T[F.CONE_ANGLE],
         coneSoftness: T[F.CONE_SOFTNESS],
+        elevation: T[F.ELEVATION],
       });
     }
     return super.spawnIndex(FROM_ROW);

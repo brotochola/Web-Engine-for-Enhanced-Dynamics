@@ -1316,6 +1316,11 @@ export interface FlashCreateConfig {
   glowRadius?: number;
   /** Point shadows. Default true. */
   castShadows?: boolean;
+  /**
+   * Its source's height above the floor in px, as LightEmitter.elevation: with the casters' heights it makes its shadows'
+   * length (at 0 it casts none), and it widens and flattens the pool. Default 0.
+   */
+  elevation?: number;
   /** A cone's whole aperture in radians, as LightEmitter.coneAngle. Default 2π (round). */
   coneAngle?: number;
   /** 0..1, how much of the cone's edge fades. Default 0. */

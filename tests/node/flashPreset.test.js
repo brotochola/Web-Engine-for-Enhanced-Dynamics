@@ -26,6 +26,8 @@ function referenceOnSpawned(i, spawnConfig) {
   LightEmitter.setGlowRadius(i, spawnConfig.glowRadius ?? 0);
   LightEmitter.active[i] = 1;
   LightEmitter.castShadows[i] = spawnConfig.castShadows !== 0 && spawnConfig.castShadows !== false ? 1 : 0;
+  // E-531: its source's height, for its shadows in the lamps' map.
+  LightEmitter.elevation[i] = spawnConfig.elevation ?? 0;
   LightEmitter.setConeAngle(i, spawnConfig.coneAngle ?? Math.PI * 2);
   LightEmitter.setConeSoftness(i, spawnConfig.coneSoftness ?? 0);
   LightEmitter.setDirection(i, spawnConfig.direction ?? 0);
@@ -93,6 +95,7 @@ const CONFIGS = [
   { x: 1, y: 2, glowRadius: 24, brightness: 2.5, castShadows: 0 },
   { x: 1, y: 2, coneAngle: Math.PI / 2, coneSoftness: 0.6, direction: Math.PI / 3 },
   { x: 1, y: 2, coneAngle: 7, coneSoftness: 2, direction: -1, glow: -1 },
+  { x: 1, y: 2, z: 30, radius: 1000, elevation: 30 },
 ];
 
 test('spawnIndex(config) writes what it wrote before E-538', () => {

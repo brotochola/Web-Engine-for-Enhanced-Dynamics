@@ -1582,7 +1582,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A flashlight that turns with the hero's flip | `followFlip = 1` (mirrors `offsetX` and `direction` with `flipX`) |
 | A light that casts no shadow (cheaper) | `castShadows = false` |
 | Shadows that stop short (cheaper) | `shadowRange = 400` (px; default 0: the radius) |
-| A short burst (a shot, a spark) | `Flash.spawn({ x, y, radius, color, glow, lifespan, castShadows })` (needs `lighting.maxFlashes`); one fired on every shot: `Flash.define(config)` once, `Flash.spawnPreset(preset, x, y)` per shot |
+| A short burst (a shot, a spark) | `Flash.spawn({ x, y, radius, color, glow, lifespan, castShadows, elevation })` (needs `lighting.maxFlashes`; its shadows need an `elevation`, its source's height); one fired on every shot: `Flash.define(config)` once, `Flash.spawnPreset(preset, x, y)` per shot |
 | A sprite that casts a shadow | `ShadowCaster` in its components: its silhouette, from the sun and the lamps (`setSprite()` says it again) |
 | A longer or a shorter shadow | `this.shadowCaster.setSprite({ heightScale: 1.5 })` |
 | Another silhouette than the sprite (a tree whose branches are decorations) | `this.shadowCaster.setSprite({ frame: 'treeSilhouette' })` |
