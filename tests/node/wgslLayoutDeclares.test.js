@@ -47,10 +47,8 @@ function assertLayoutDeclared(label, program) {
 test('the sun and lamps\' shadow programs declare every binding their layouts name', () => {
   const wgsl = shader('instancedSpriteShadow.wgsl');
   const cases = [
-    ['sun-map', sunMapWgsl(wgsl, { heights: true }), 'mainFragMap', {}],
-    ['sun-cards', sunMapWgsl(wgsl, { heights: false }), 'mainFrag', {}],
-    ['sun-map-columns', sunMapColumnsWgsl(wgsl, SUN_MAP_COLUMNS, { heights: true }), 'mainFragMap', { maps: true }],
-    ['sun-columns', sunMapColumnsWgsl(wgsl, SUN_MAP_COLUMNS, { heights: false }), 'mainFrag', { maps: true }],
+    ['sun-map', sunMapWgsl(wgsl), 'mainFragMap', {}],
+    ['sun-map-columns', sunMapColumnsWgsl(wgsl, SUN_MAP_COLUMNS), 'mainFragMap', { maps: true }],
     ['lamp-map', lampMapWgsl(wgsl), 'mainFragLamp', { lampTiles: true }],
     ['lamp-map-columns', lampMapColumnsWgsl(wgsl), 'mainFragLamp', { maps: true, lampTiles: true }],
   ];

@@ -452,11 +452,11 @@ export class PixiShadowMaps {
     let program;
     if (this.worker._useWebGpu) {
       if (!shaders?.shadowWgsl) return null;
-      const source = sunMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true }), { heights: true });
+      const source = sunMapWgsl(spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true }));
       program = { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragMap', 'sun-map-keyed', { statics: true }) };
     } else {
       if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
-      const vertex = sunMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true }), { heights: true });
+      const vertex = sunMapVertex(spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true }));
       program = { glProgram: glProgramFrom(PIXI.GlProgram, vertex, shaders.sunMapFrag, 'sun-map-keyed') };
     }
     const r = batch.shadowShader.resources;
@@ -634,12 +634,12 @@ export class PixiShadowMaps {
     if (this.worker._useWebGpu) {
       if (!shaders?.shadowWgsl) return null;
       const keyed = spriteIndexedWgsl(shaders.shadowWgsl, { shadow: true, casterRows: true, light: lamp });
-      const source = lamp ? lampMapColumnsWgsl(keyed) : sunMapColumnsWgsl(keyed, SUN_MAP_COLUMNS, { heights: true });
+      const source = lamp ? lampMapColumnsWgsl(keyed) : sunMapColumnsWgsl(keyed, SUN_MAP_COLUMNS);
       program = { gpuProgram: sunShadowGpuProgram(GpuProgram, source, lamp ? 'mainFragLamp' : 'mainFragMap', name, { maps: true, lampTiles: lamp, statics: true }) };
     } else {
       if (!shaders?.shadowVert || !shaders?.sunMapFrag) return null;
       const keyed = spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light: lamp });
-      const vertex = lamp ? lampMapColumnsVertex(keyed) : sunMapColumnsVertex(keyed, SUN_MAP_COLUMNS, { heights: true });
+      const vertex = lamp ? lampMapColumnsVertex(keyed) : sunMapColumnsVertex(keyed, SUN_MAP_COLUMNS);
       program = { glProgram: glProgramFrom(PIXI.GlProgram, vertex, lamp ? lampMapFragment(shaders.sunMapFrag) : shaders.sunMapFrag, name) };
     }
     const r = batch.shadowShader.resources;
