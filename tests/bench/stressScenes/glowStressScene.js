@@ -11,6 +11,9 @@ const { Scene, Camera, GameObject, SpriteRenderer, LightEmitter } = WEED;
  *
  * `?lamps=` (default 2000), `?glowRadius=` px (default 35, the glow one sees: E-498's compact glow; 0 sizes it from the light, about 0.14 of its radius),
  * `?radius=` the lights' reach (default 90), `?resolution=` (lighting.resolution, default 0.5), `?backend=webgpu`.
+ * `?drift=` px a second the lamps drift (default 20; 0 for captures). `?halo=decoration`: each lamp's halo is a
+ * decoration attached to it (the compact glow's texture at the halo's size, alpha and tint, lifted as glowOffsetY lifts it)
+ * and the light draws none: halos as decorations against the light's halo rows.
  * Owner workers: pre-render (the halo rows and their keys) and Pixi (the unshaded pass with 'sprite').
  */
 function query(key) {
@@ -29,14 +32,21 @@ const GLOW_RADIUS = Math.max(0, queryNumber('glowRadius', 35));
 const RADIUS = queryNumber('radius', 90);
 const RESOLUTION = queryNumber('resolution', 0.5);
 const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+const HALO_DECORATION = query('halo') === 'decoration';
+/** The halo: its alpha, lift (px) and radius (px; the compact glow's texture is 200 px across). */
+const HALO_ALPHA = 0.6;
+const HALO_LIFT = -24;
 const WORLD_W = 2560;
 const WORLD_H = 1440;
 const SEED = 0x6105;
-/** px a second the lamps drift. */
-const DRIFT = 20;
+/** px a second the lamps drift (`?drift=0`: still, for captures). */
+const DRIFT = queryNumber('drift', 20);
 
 export const stressSceneConfig = {
-  requested: { lamps: LAMPS, glowMode: GLOW_MODE, glowRadius: GLOW_RADIUS, radius: RADIUS, resolution: RESOLUTION, backend: BACKEND },
+  requested: {
+    lamps: LAMPS, glowMode: GLOW_MODE, glowRadius: GLOW_RADIUS, radius: RADIUS, resolution: RESOLUTION, backend: BACKEND,
+    halo: HALO_DECORATION ? 'decoration' : 'light',
+  },
 };
 
 class GlowLamp extends GameObject {
@@ -52,13 +62,20 @@ class GlowLamp extends GameObject {
     // A lamp post's anchor sits above its foot, as the barrio's do (the case DX-GLOWRADIUS's sort fixed).
     this.spriteRenderer.anchorY = 0.85;
     const light = this.lightEmitter;
-    light.color = config.color ?? 0xffd59a;
+    const color = config.color ?? 0xffd59a;
+    light.color = color;
     light.radius = RADIUS;
     light.elevation = 20;
     light.castShadows = 0;
-    light.glow = 0.6;
-    light.glowRadius = GLOW_RADIUS;
-    light.glowOffsetY = -24;
+    if (HALO_DECORATION) {
+      // In front of the lamp's own sprite (zIndex 1), as a sorted halo row sorts right after it.
+      const size = GLOW_RADIUS / 100;
+      this.addDecoration('_lightGlow', 0, HALO_LIFT, size, size, 1, { alpha: HALO_ALPHA, tint: color, anchorX: 0.5, anchorY: 0.5 });
+    } else {
+      light.glow = HALO_ALPHA;
+      light.glowRadius = GLOW_RADIUS;
+      light.glowOffsetY = HALO_LIFT;
+    }
     this.driftX = config.driftX ?? 0;
     this.driftY = config.driftY ?? 0;
   }
@@ -82,6 +99,7 @@ export class GlowStressScene extends Scene {
     seed: SEED,
     logic: { noLimitFPS: false, numberOfLogicWorkers: 1, staggeredUpdates: false },
     physics: { enabled: false },
+    decoration: { maxDecorations: HALO_DECORATION ? LAMPS : 0 },
     particle: { maxParticles: 0, decals: false },
     renderer: { backend: BACKEND, ySort: true },
     lighting: {
