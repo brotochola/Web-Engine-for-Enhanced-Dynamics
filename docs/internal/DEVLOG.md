@@ -6,6 +6,53 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Monday 23 November 2026: One Way to Draw Shadows, and Halos That Belong to Their Lamp
+
+**Shadows have one way now.** WeedJS drew them two ways: a classic layer that stamped a darkening card for each caster
+and each light over every light, and shadow maps that take out one light at a time and fall on whatever has height. With
+`lighting.shadowsEnabled` the maps are the only way. The keys `sunShadows`, `lampShadows` and `adaptiveShadowBudget` are
+gone, and so are the layer's target, its composite, its stamps, its sun cards and solids, and the light cookies that
+lightened them. About 2 000 lines left the engine and its tests (E-531).
+
+The same shadows cost the same both ways on a GTX 1650, and 22 to 30 % less with maps on the ASUS laptop's two GPUs. The
+light bench, which already used maps, draws exactly the same pixels as before.
+
+**Things the merge had to fix:**
+- A lamp's map dropped casters at its budget all at once. Each lamp keeps its nearest casters, and the K-th nearest
+  popped in and out as people walked. The stamp kernel now fades the ones near the cut by how near the first one left
+  out is, so the zoom budget could come back without popping (N-413).
+- In a map, a light at the floor's height casts nothing. Gunfire, fires, explosions and headlights in the demos were at
+  height 0, so they got one, and `Flash` takes an `elevation` now.
+- Each muzzle flash changed the lamps' atlas layout, so a 4096 px texture was made again every few frames. It now grows
+  at once but changes only after a new layout has been asked for two seconds (N-416).
+- Code that only the layer used went too: the entity batch's keyed sun pass and the pack's shadow terms (the keyed pack
+  got 8 to 10 % faster), the light pass's old input and the cone light's cookie (N-414, N-415).
+
+After all that, Predator by night costs the same as before on this PC, and by day it is neutral. The ASUS's Intel GPU
+still draws fewer frames by night, partly because more lights cast now.
+
+**A dark crowd.** With maps, a person between a lamp and the floor takes out all of that lamp's light, and a crowd around
+a lamp leaves little of its pool; the layer's stamps were translucent. `lighting.lampShadowAlpha` says how much of a
+lamp's light its shadows take out, as the sun's `shadowAlpha` does.
+
+**Halos a sixth the size.** A light's halo without its own `glowRadius` drew the wide gradient on a quad 0.85 of the
+light's radius, though past 0.16 of it the gradient is under 1/128: most of its fill drew nothing. Every halo now draws
+the compact glow on the part that shows (about 0.14 of the radius), and looks the same. With `lightGlow: 'sorted'`,
+Predator's 3D light by night spent 4.3 ms of GPU a frame in the unshaded pass and now 1.3 ms; the `'add'` layer went
+from 0.24 to 0.03 ms (E-547).
+
+**Halos belong to their lamp.** `lighting.lightGlow` is `'sorted'` by default now: each halo is drawn right after its
+own sprite, so a house in front of a lamp covers its glow, and the night does not darken it. Sorted halos used to cover
+the lit floor under them and read as flat discs; they now add their light as the old layer did, from a built-in frame of
+their own (`_lightHalo`) that the sprite shaders add instead of blending (N-418). Against `'add'` it costs about 0.7 ms
+of GPU a frame. Halos as decorations attached to their lamp drew the same pixels at the same cost, so `light.glow` stays
+the way to give a light a halo (E-550).
+
+**A copy that read nothing.** Pixi keeps a copy of each keyed sprite's texture and scale for the renders' columns. It
+read its updates through two views the constructor emptied right after making them, so every value it held was NaN
+(N-417). Fixed, it now keeps only the sprites whose frame can cast columns, which saved the renderer about 2 % by night
+in Predator (E-549).
+
 ## Sunday 22 November 2026 (morning to afternoon): The Engine Says What It Drops, Shadows Come Back, and the Renderer Comes Apart
 
 **The engine now says when it drops something.** Several of its rings and caps fill up silently, and a game that hit

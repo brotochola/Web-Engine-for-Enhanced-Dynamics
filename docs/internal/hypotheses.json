@@ -21804,7 +21804,8 @@
       ],
       "records": [
         "R-1261",
-        "R-1872"
+        "R-1872",
+        "R-1879"
       ],
       "result": "2000 halos: 'sprite' 16.4 ms of GPU against 'add' 5.6 (fill of transparent texels) -> E-498: 4.6 and 3.5",
       "next": "",
@@ -24642,19 +24643,19 @@
         "R-1869",
         "R-1870",
         "R-1871",
-        "R-1874"
+        "R-1874",
+        "R-1881"
       ],
       "refs": [],
       "id": "E-531",
       "title": "Map shadows (sunShadows and lampShadows 'map') on art without maps cost Predator +57 % GPU by day against the classic layer (5.75 against 3.67 ms): bring them near it, then make them the default and drop the layer mode",
-      "status": "running",
+      "status": "kept",
       "kind": "hypothesis",
       "area": "render speed",
       "date": "2026-11-20",
-      "statusText": "the owner approved unifying (2026-11-22 23:27): on exp/one-shadow-path the shadow maps are the one way (76608b6f; Flash.elevation, the demos' heights, no cookies, N-413, N-415 part 1), shown to the owner before merging. Predator's default: by day neutral; by night neutral against main after N-413, N-414 and N-416 (R-1869, R-1871, R-1874); on the ASUS, for the same shadows, the maps cost 22 to 30 % less (R-1870).",
+      "statusText": "kept and merged into main 2026-11-23 (0ca040c1, R-1881)",
       "result": "",
-      "next": "The owner's word on merging exp/one-shadow-path. Then: N-414 and N-415's rest; the night's residual on pre-render (the stamp kernel's fade costs 8 % of the stamp, 0.026 ms a frame on Predator's fixture; the rest spread).",
-      "rank": 12,
+      "next": "",
       "aliases": [
         "cheap map shadows",
         "one shadow mode",
@@ -25298,18 +25299,19 @@
     },
     {
       "records": [
-        "R-1875"
+        "R-1875",
+        "R-1881"
       ],
       "refs": [],
       "id": "N-415",
       "title": "Dead since E-531: the light pass's old shadows' layer input (uShadowComposite, uShadowMap), the sun map programs' heights:false variants, and the cone cookie's built-in frame",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "refactor",
       "area": "render",
       "date": "2026-11-23",
       "result": "",
-      "statusText": "parts 1 and 2 done 2026-11-23 on exp/one-shadow-path (de4123af, 649b0c79; R-1875); part 3 open",
-      "next": "atlasBuiltins.js: '_lightGradientHalf' (DX-SPOT's cone cookie) and atlasBuild's afterSort for it, createHalfCircularGradientCanvas; demos/littleCity/baked/bigAtlas.json carries the frame, so bake it again.",
+      "statusText": "done 2026-11-23: parts 1 to 3 (de4123af, 649b0c79, 977b0753), merged 0ca040c1 (R-1881)",
+      "next": "",
       "aliases": []
     },
     {
@@ -25404,6 +25406,44 @@
       "aliases": [
         "statics mirror cost",
         "mirrorKeyedStatics"
+      ]
+    },
+    {
+      "records": [
+        "R-1879"
+      ],
+      "refs": [],
+      "id": "N-418",
+      "title": "With lightGlow 'sorted' a halo was blended over what was under it (halo * a + floor * (1 - a) * light): it covered the lit floor and read as a flat disc, dimmer than the 'add' layer's",
+      "status": "kept",
+      "kind": "bug",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "The halos draw their own frame (_lightHalo), additive in a 'sorted' scene: the light gallery against 'add' mean 1.4 of 255 (luminance 122.0 -> 121.6), the unshaded pass's GPU time alike",
+      "statusText": "kept 2026-11-23 (25b30538, merged 0ca040c1; R-1879)",
+      "next": "",
+      "aliases": [
+        "sorted halos flat",
+        "sorted halo additive"
+      ]
+    },
+    {
+      "records": [
+        "R-1880"
+      ],
+      "refs": [],
+      "id": "E-550",
+      "title": "The lights' halos as decorations attached to their entity (the owner's idea) instead of pre-render's halo rows (type 3)",
+      "status": "dropped",
+      "kind": "speed",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "Dropped: the same pixels (0 of 921 600 differ) and no CPU gain (pre-render +1.5 % with 20 000 drifting halos, +0.7 % still)",
+      "statusText": "dropped 2026-11-23 (R-1880); a sprite or decoration with _lightGlow still draws a halo of its own",
+      "next": "",
+      "aliases": [
+        "halos as decorations",
+        "glow decorations"
       ]
     }
   ],
@@ -43053,6 +43093,33 @@
       "title": "E-549 kept-hygiene: the keyed statics' copy keeps only the slots that can cast columns; Pixi's copy keeps only the slots that can cast columns: Predator light3d by night renderer 10.26 -> 10.04 ms (-1.9 %, 7/8 pairs), under the bar",
       "verdict": "kept-hygiene",
       "text": "exp/one-shadow-path 5bc5e1d3. A CPU trace of Predator light3d by night (crowd 2.5, 4bbdf324) put _mirrorKeyedStatics at\n882 ms and compactKeyedColumnRows at 296 ms of Pixi's 18 s busy (about 0.5 and 0.16 ms a frame; 1 011 ms before N-417,\nso not new): the keyed statics' copy took 16 000 full updates and 9 300 texture ones a frame, for the renders' columns\nover keyed caster rows, which found none (32 of the atlas's 1 986 frames are renders; the scan returned 0 every frame by\nday and by night). The atlas's table now flags the textures that can cast columns from a keyed row\n(keyedColumnTextures); the copy keeps the slots that show one or showed one, and with none in the atlas copies nothing and\nthe scan is skipped (keyedStaticsMirror.test.js, the real methods).\nrunPredatorAbab, Predator light3d by night, whole revisions, fresh, 4 + 4 pairs (appended): renderer 10.261 -> 10.041 ms\n(-1.9 % paired, 7/8 pairs lower, -2.5 % against the other workers); logic +3.2 %, spatial +1.3 %, physics +0.7 %,\npre-render +0.7 % (unreachable, drift). NEUTRAL as speed (under 3 %); kept for hygiene: no worker worse, and N-417 made\nthe copy run in every keyed WebGL scene, which it now leaves alone where no frame casts columns."
+    },
+    {
+      "id": "R-1879",
+      "date": "2026-11-23",
+      "time": "11:53",
+      "timeFrom": "recorded",
+      "title": "N-418 kept: sorted halos add their light as 'add' does; lighting.lightGlow 'sorted' by default (the owner's call)",
+      "verdict": "kept",
+      "text": "The owner, 2026-11-23 (\"si sorted como default!\"), after E-547's numbers: 'sorted' costs about 0.7 ms of GPU a frame\nagainst 'add' in Predator by night, with and without light3d (R-1876 and this morning's plain recordings: the unshaded pass\n0.78 / 0.83 ms against the glows layer's 0.10 / 0.13, the GPU 38 % busy either way). Before flipping it, captures showed\n'sorted' halos flat and dim: blended over what was under them (final = halo * a + floor * (1 - a) * light), the light\ngallery's halos 123.2 -> 114.3 of luminance where they fall (N-418).\n25b30538: the halos draw their own built-in frame (_lightHalo, the compact glow's pixels), which a 'sorted' scene marks\nadditive in the texture table's second flags texel (a table without such a frame keeps one); the sprite vertex shader\nsends its alpha negative, and the colour, unshaded and depth fragments add its colour (alpha 0 out) and read |alpha| as\ncoverage, so the unshaded composite gives floor * light + halo * a, while what stands in front still covers it. A sprite\ndrawing _lightGlow (waterAndBoxes' drops) is unchanged. Captures against 'add' (5bc5e1d3): the light gallery 223 459\npixels differ, mean 1.4 of 255, luminance 122.0 -> 121.6, the same on WebGPU; light3dCompare ?all=1 by night 2 018 pixels,\nmax 23. glFrameRecorder --gpu-passes, Predator light3d by night with 'sorted', two recordings a side: the unshaded pass\n1.306 / 1.294 -> 1.300 / 1.322 ms, the GPU 60 / 60 -> 61 / 60 % busy.\n4b779f04 sets lighting.lightGlow's default to 'sorted' (types, guide, Predator's ?lightGlow=add arm, the light gallery's\n?glowMode=add, the tests that model 'add' name it)."
+    },
+    {
+      "id": "R-1880",
+      "date": "2026-11-23",
+      "time": "11:26",
+      "timeFrom": "recorded",
+      "title": "E-550 dropped: halos as decorations draw the same pixels at the same cost",
+      "verdict": "dropped",
+      "text": "glowStressScene ?halo=decoration (710aa0c2): each lamp's halo a decoration attached to it (_lightGlow at the halo's\nsize, alpha and tint, zIndex 1, lifted as glowOffsetY lifts it), the light's own glow off. compareCaptures against the\nlight's halo rows (lightGlow 'sorted', drift 0, 300 lamps): 0 of 921 600 pixels differ. runPredatorAbab, one build, 4\npairs, 20 000 lamps: drifting, pre-render 8.507 -> 8.632 ms (+1.5 %, 3/4 worse); still (drift 0), 7.882 -> 7.969 ms\n(+0.7 %); the renderer 3.76 / 3.74 ms both (under the floor). The halo rows stay: the decorations' keyed records save\nnothing where a light's own columns would need copying into them every frame, and light.glow / glowRadius stay the API."
+    },
+    {
+      "id": "R-1881",
+      "date": "2026-11-23",
+      "time": "11:57",
+      "timeFrom": "recorded",
+      "title": "E-531 merged into main (0ca040c1, the owner's go): one shadow path, the maps; N-415 done",
+      "verdict": "kept",
+      "text": "The owner approved the merge (2026-11-23, relayed by session e8 and confirmed here). exp/one-shadow-path merged with\n--no-ff as 0ca040c1: the classic layer gone (about 2 000 lines), N-413, N-414, N-415 (parts 1 to 3: 977b0753 took the\ncone cookie's built-in and afterSort), N-416, E-547, N-417, E-549, N-418 and the 'sorted' default with it. Before it:\nPredator by night neutral against main on this PC (R-1874), by day neutral, the light bench byte-identical; the ASUS's\nHD 620 by night drew 43.1 -> 35.5 fps against main (-19.1 %, 8/8; job 0906b, with N-416, before E-547; 17 % more lamps\ncast, the flashes with a height), the owner's standing call that the HD 620 does not veto. Job 0907c measures the merged\nbranch there. Bundles built and tested on main after the merge."
     }
   ],
   "leads": [
