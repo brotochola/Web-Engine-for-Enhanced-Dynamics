@@ -21803,7 +21803,8 @@
         "halo bench"
       ],
       "records": [
-        "R-1261"
+        "R-1261",
+        "R-1872"
       ],
       "result": "2000 halos: 'sprite' 16.4 ms of GPU against 'add' 5.6 (fill of transparent texels) -> E-498: 4.6 and 3.5",
       "next": "",
@@ -25305,6 +25306,23 @@
       "statusText": "part 1 done 2026-11-23 on exp/one-shadow-path (de4123af): uShadowComposite and uShadowMap gone from the light pass; parts 2 and 3 open",
       "next": "sunShadowMap.js: sunMapVertex / sunMapColumnsVertex / sunMapWgsl / sunMapColumnsWgsl's { heights: false } (the layer's cards and solids) and their tests (sunShadowMap.test.js, wgslLayoutDeclares.test.js). atlasBuiltins.js: '_lightGradientHalf' (DX-SPOT's cone cookie) and atlasBuild's afterSort for it, createHalfCircularGradientCanvas; demos/littleCity/baked/bigAtlas.json carries the frame, so bake it again.",
       "aliases": []
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-547",
+      "title": "With lightGlow 'sorted' the unshaded pass draws the halos' big quads three times at the canvas's size: 0.70 -> 4.85 ms of GPU a frame in Predator light3d by night (drawn 59.8 -> 50.0 fps)",
+      "status": "open",
+      "kind": "gpu",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "filed 2026-11-23 from the lightGlows measure (R-1872); blocks making sorted the default",
+      "next": "instancedSpriteBatch.unshadedPass: the stencil mask, the colour and (pixel depth) the edge draws each run every instance at the unshaded target's size, and a sorted halo is unshaded and big (glowRadius or 0.85 of its light's radius). Ideas: the halos (type 3 rows) out of the mask and edge draws, their own draw into the unshaded target at the light pass's size, or kept to their glow's visible disc (E-498's compact glow) so the quad is small; check with glFrameRecorder --gpu-passes on Predator ?light3d=1&lightGlow=sorted and pixel parity on the light bench.",
+      "rank": 20,
+      "aliases": [
+        "sorted glow unshaded pass cost"
+      ]
     }
   ],
   "records": [
@@ -42890,6 +42908,15 @@
       "title": "N-413 kept: each stamp row's fade at a light's cut and the zoom budget back; Predator by night pre-render -7.4 % against the unification, still +5.5 % against main",
       "verdict": "kept",
       "text": "Kept on exp/one-shadow-path (64444388): the stamp kernel keeps each light's nearest candidate left out and writes every\nrow's fade in its light vec4's w (that light's maxShadowsPerLight cut fade times N-330's); the lamps' map multiplies the\ncaster's opacity by it; pre-render's zoom budget comes back for the map (5 % of a lamp's pool in shadow texels, 16 at\nleast). The kernel writes the reference's rows bit for bit (the stamp suites, shadowStampLightCut.test.js new).\n\nPredator's default by night (crowd 2.5, mix 1, hour 22, fresh), 4 pairs, this PC (GTX 1650):\n- against the unification without it (01a739d0): KEPT. pre-render 10.62 -> 9.83 ms (-7.4 %, 0/4 worse; -4.3 % against\n  the other workers), renderer 9.06 -> 8.59 ms (-6.2 %; -1.3 % against the others). Every worker went down (physics\n  -6.5 %): drift, read against it.\n- against main (3a8907a7, the classic layer; whole revisions): still REGRESSION. pre-render 9.58 -> 10.29 ms (+8.3 %,\n  4/4; +5.5 % against the others), renderer 8.56 -> 8.96 ms (+4.8 %; +3.0 %). The night cost of the one shadow path\n  went from +10.6 % to +5.5 % on pre-render and from +1.9 % to +3.0 % on the renderer (two sittings, drift read apart)."
+    },
+    {
+      "id": "R-1872",
+      "date": "2026-11-23",
+      "time": "09:12",
+      "timeFrom": "recorded",
+      "title": "lightGlow 'sorted' against 'add' today: Predator plain by night neutral; with light3d drawn 59.8 -> 50.0 fps from the unshaded pass (E-547)",
+      "verdict": "note",
+      "text": "The owner's step 1 (2026-11-22): lightGlow 'add' (A) against 'sorted' (B) on today's code (exp/one-shadow-path b5e9a447,\nPredator's new ?lightGlow=sorted knob), 4 pairs each, this PC (GTX 1650), renderer owner:\n- Predator by night (crowd 2.5, mix 1, fresh), plain: renderer 9.18 -> 9.02 ms (+2.2 % paired, -1.7 % against the other\n  workers; cv up to 20 % on logic): neutral. Drawn 59.9 / 59.9 fps.\n- Predator by night with light3d: renderer 10.20 -> 10.41 ms (+0.3 %, -4.1 % against the others), but drawn 59.8 ->\n  50.0 fps (-16.4 %, 4/4 fewer): the GPU. glFrameRecorder --gpu-passes: the unshaded pass at the canvas's size (its\n  stencil mask, colour and edge draws over the entity batch's 148 000 instances) 0.70 -> 4.85 ms a frame, the GPU 60 ->\n  93 % busy; every other pass alike (16.7 ms a frame both). The halos, unshaded in 'sorted', are big quads drawn three\n  times at full size there (E-547).\n- glowStressScene (2000 halos): below the floor (renderer 1.18 / 1.17 ms), drawn 60 / 60 fps: the GTX 1650 is not\n  filled by them."
     }
   ],
   "leads": [
