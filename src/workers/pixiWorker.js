@@ -565,7 +565,7 @@ class PixiRenderer extends AbstractWorker {
     this.decalsTilesY = 0;
     this.decalsTotalTiles = 0;
     this.maxDecalTileUploadsPerFrame = RENDERER_DEFAULTS.maxDecalTileUploadsPerFrame;
-    // N-256 PW-10: the decal grid's tile sprites, cull and uploads (src/render/pixi/decalTiles.js).
+    // N-256 PW-10: the decal grid's tiles: their draws, cull and uploads (src/render/pixi/decalTiles.js).
     this.decalTiles = new PixiDecalTiles(this);
     this._decalTilesDirtyThisFrame = 0;
     this._decalTilesUploadedThisFrame = 0;
@@ -576,7 +576,7 @@ class PixiRenderer extends AbstractWorker {
     this._decalDirtyWords = new Uint32Array(0);
 
     // PIXI rendering
-    this.decalTileContainer = null; // Container for decal tile sprites
+    this.decalTileContainer = null; // Container for the decal tiles' meshes
 
     // ========================================
     // LIGHTING SYSTEM
@@ -3696,6 +3696,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/tilemapGid.wgsl').then((s) => {
           sh.tilemapGid = s;
+        }),
+        fetchEngineShader('/src/shaders/decalTile.wgsl').then((s) => {
+          sh.decalTile = s;
         })
       );
     } else {
@@ -3752,6 +3755,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/tilemapGid.frag.glsl').then((s) => {
           sh.tilemapGidFrag = s;
+        }),
+        fetchEngineShader('/src/shaders/decalTile.vert.glsl').then((s) => {
+          sh.decalTileVert = s;
+        }),
+        fetchEngineShader('/src/shaders/decalTile.frag.glsl').then((s) => {
+          sh.decalTileFrag = s;
         })
       );
     }
@@ -4013,8 +4022,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.decalTileContainer = new PIXI.Container({ isRenderGroup: true });
       this._registerLayerDisplayObject('decals', this.decalTileContainer);
 
-      // Create sprites for each tile
-      this.decalTiles.createSprites();
+      // E-552: the tiles' program and their slots (the chunks come with the first stamped tiles)
+      this.decalTiles.create();
 
       // Add decal tile container to stage
       this.pixiApp.stage.addChild(this.decalTileContainer);

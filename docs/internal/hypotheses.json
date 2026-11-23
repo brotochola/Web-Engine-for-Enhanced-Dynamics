@@ -14281,7 +14281,7 @@
       "id": "E-270",
       "title": "Decal tiles are premultiplied into a scratch, copied into the tile's array, and uploaded whole (texSubImage2D of the full tile) for any stamp",
       "status": "open",
-      "statusText": "re-read 2026-11-22 (R-1835): the lever is the upload count, not the rows",
+      "statusText": "re-read 2026-11-22 (R-1835): the lever is the upload count, not the rows; E-552 (R-1953) keeps the per-tile whole-tile uploads, now into an array layer",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
@@ -14298,7 +14298,8 @@
       ],
       "records": [
         "R-1427",
-        "R-1835"
+        "R-1835",
+        "R-1953"
       ]
     },
     {
@@ -17543,13 +17544,13 @@
     {
       "id": "E-340",
       "title": "Chrome's GPU process main thread runs 405 ms/s at Predator crowd 2.5 on WebGL (ANGLE to D3D11), never measured against WebGPU or by GL call count",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-23 (R-1951)",
       "date": "2026-11-15",
       "area": "renderer",
       "kind": "gpu",
-      "result": "Scheduling (R-1100): the GPU process's thread 405 ms/s on CPU, 61 % of it on CPU 15, never preempted; at crowd 2.5 the machine holds about 6.8 busy cores of 8. Nothing in the register on the GPU process's CPU (N-77 is its memory).",
-      "next": "Count GL calls, state changes and buffer uploads a frame (Spector.js or chrome://tracing's gpu categories, E-230); the same scene on WebGPU (Dawn on D3D12) with the GPU process's CPU from WPR; then the largest call sources.",
+      "result": "WebGPU costs the process 40 % more than WebGL at crowd 2.5 (367 against 276 ms/s), through 14 submits a frame (R-1951, E-464)",
+      "next": "",
       "refs": [
         "EXECUTION_PLAN.md#E-340"
       ],
@@ -17559,7 +17560,8 @@
         "WebGL call count"
       ],
       "records": [
-        "R-1100"
+        "R-1100",
+        "R-1951"
       ]
     },
     {
@@ -18153,7 +18155,8 @@
         "R-1193",
         "R-1205",
         "R-1206",
-        "R-1425"
+        "R-1425",
+        "R-1950"
       ]
     },
     {
@@ -18558,13 +18561,13 @@
     {
       "id": "E-407",
       "title": "Chrome's GPU process main thread (CrGpuMain) spends 155 ms a second, 2.6 ms a frame, on Predator ?light3d=1's command stream (1066 GL calls a frame): CPU time no V8 profile shows",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from Nsight Systems 2026.6.1 on Predator ?light3d=1&hour=12&zoom=0.3 (GPU metrics, scheduling)",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-23 (R-1951)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Scheduling (SCHED_EVENTS) over 9.95 s: the profiled Chrome's CrGpuMain 154.8 ms/s, an unnamed thread of its GPU process 41.4, its VizCompositorThread 37.0; the Pixi worker's GL calls a frame: 1066 with light3d against 557 without (R-1173).",
-      "next": "Fewer GL calls and uploads a frame (E-389's redundant sampler uniforms, E-391's draws, E-390's buffers) and CrGpuMain's time per frame with and without light3d (nsys, the same window).",
+      "result": "Light3d's extra in Chrome's GPU process is about 0.35 ms a frame over plain (207 against 186 ms/s), 2.7 ms then (R-1951)",
+      "next": "",
       "refs": [],
       "aliases": [
         "chrome gpu process cpu",
@@ -18575,9 +18578,9 @@
         "R-1177",
         "R-1181",
         "R-1214",
-        "R-1236"
-      ],
-      "rank": 13
+        "R-1236",
+        "R-1951"
+      ]
     },
     {
       "id": "N-218",
@@ -18626,7 +18629,8 @@
       "records": [
         "R-1177",
         "R-1230",
-        "R-1893"
+        "R-1893",
+        "R-1899"
       ]
     },
     {
@@ -18646,7 +18650,8 @@
       "records": [
         "R-1177",
         "R-1230",
-        "R-1894"
+        "R-1894",
+        "R-1899"
       ]
     },
     {
@@ -18696,13 +18701,13 @@
     {
       "id": "E-412",
       "title": "Chrome's GPU process main thread spends 295 ms a second in CommandBufferService:PutChanged on Predator ?light3d=1 (4.9 ms a frame) against 135 ms without light3d: light3d's GL command stream costs the GPU process 2.7 ms a frame more",
-      "status": "open",
-      "statusText": "2026-11-21 (R-1692): PutChanged broken down: its own 87 ms/s (command count), instanced draws 34, glFlush 16, buffer uploads 14, texture uploads 12, plain draws 12, texture binds 10; the levers are fewer uploads (E-395, E-392) and fewer draws.",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-23 (R-1951)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "CrGpuMain: light3d day 364.1 ms/s in slices, PutChanged 295.2 self (251 a second), CommandBufferStub::PerformWork 16.2, SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass 9.0, DXGISwapChainImageBacking::Present 8.3; plain 171.4 ms/s, PutChanged 135.2 (153 a second). VizCompositorThread about 55 ms/s in both.",
-      "next": "After E-395 lands, the same traced pair: PutChanged and the uploads against today's 185 ms/s untraced.",
+      "result": "PutChanged 167 ms/s with light3d against 149 plain (295 and 135 then) (R-1951)",
+      "next": "",
       "refs": [],
       "aliases": [
         "gpu process putchanged",
@@ -18711,7 +18716,8 @@
       "records": [
         "R-1177",
         "R-1181",
-        "R-1692"
+        "R-1692",
+        "R-1951"
       ]
     },
     {
@@ -18736,13 +18742,13 @@
     {
       "id": "E-414",
       "title": "With light3d each instanced draw costs Chrome's GPU process about 79 us (30 us without): about 9 a frame, 0.7 ms of the GPU process's main thread a frame",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-23 (R-1951)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "light3d day: glDrawElementsInstancedANGLE 41.55 ms/s self, 529 a second; glDrawArraysInstancedANGLE 25.65 ms/s, 2 997 a second (8.6 us each, 50 a frame); plain: glDrawElementsInstancedANGLE 8.98 ms/s, 301 a second.",
-      "next": "Find what a light3d draw makes ANGLE redo (uniform blocks re-uploaded into D3D11 constant buffers when a uniform changed, MRT state, texture rebinds): draw sorted by program, uniforms set once, the columns' 50 draws merged (E-391); the decoder trace before and after.",
+      "result": "An instanced draw costs the process about 33 us with light3d now (79 us then) (R-1951)",
+      "next": "",
       "refs": [],
       "aliases": [
         "angle draw cost",
@@ -18751,7 +18757,8 @@
       "records": [
         "R-1181",
         "R-1193",
-        "R-1205"
+        "R-1205",
+        "R-1951"
       ]
     },
     {
@@ -18796,13 +18803,13 @@
     {
       "id": "E-417",
       "title": "With light3d the frame binds a texture 144 times and switches the active unit 64 times (8 522 and 3 763 a second in the GPU process): textures rebound for every draw",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "status": "kept-hygiene",
+      "statusText": "kept as hygiene 2026-11-23 (R-1950)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "light3d day glBindTexture 8.92 ms/s, 8 522 a second; glActiveTexture 3.87 ms/s; glUniform1i 3 578 a second (E-389: 132 of 133 a frame redundant on the page side); plain glBindTexture 5 543 a second.",
-      "next": "Pin each program's samplers to fixed units and skip binding a texture already on its unit (Pixi's texture system patched, or our raw passes); the recorder's redundant binds and the decoder trace before and after. From Phaser 4 and three.js (R-1425): one shadow of the units for Pixi and the raw passes, samplers pinned to fixed units, outside GL code between a rebind and a yield that resync the state.",
+      "result": "Pixi's WebGL sync keeps each texture on its unit and writes uniform1i once: GL calls 690 -> 609 a frame in Predator light3d; Chrome's GPU process unchanged within noise (97ace34c)",
+      "next": "The batcher's decal tiles rebound every frame (E-552).",
       "refs": [],
       "aliases": [
         "texture rebinding"
@@ -18810,7 +18817,8 @@
       "records": [
         "R-1181",
         "R-1425",
-        "R-1692"
+        "R-1692",
+        "R-1950"
       ]
     },
     {
@@ -19063,20 +19071,21 @@
     {
       "id": "E-428",
       "title": "Chrome's GPU process main thread (native, no V8 code) wakes 478 times a second, 8 a frame, and runs 305 ms a second in Predator crowd 2.5: a wake a command-buffer flush",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from a WPR capture with CSwitch and ReadyThread (cswitchStats.mjs, wprPmc.mjs) on Predator crowd 2.5",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-23 (R-1951)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Thread 8476 (chrome.exe, no V8 samples): 305 ms/s on CPU, 478 switches a second (UserRequest 460 a second), ready to run p50/p90 5/10 us. The decoder trace (R-1181): 232 to 251 PutChanged a second in Predator ?light3d=1.",
-      "next": "Count the Pixi worker's flush points (an upload larger than the transfer buffer, a sync query, a texImage) and bring a frame to one or two flushes; the GPU process's wakes and CPU after.",
+      "result": "About three wakes a frame at crowd 2.5 (eight then) (R-1951)",
+      "next": "",
       "refs": [],
       "aliases": [
         "gpu process wakes",
         "command buffer flushes"
       ],
       "records": [
-        "R-1184"
+        "R-1184",
+        "R-1951"
       ]
     },
     {
@@ -20010,13 +20019,13 @@
     {
       "id": "E-464",
       "title": "Pixi on WebGPU submits twice per render call: its uniform-batch upload (_uploadBindGroups) makes an encoder and a submit of its own, 17 submits a frame in Predator light3d by night and 13 at crowd 2.5 and in light3dCompare, and the frame's GPU span is 7.7 to 10.1 ms for 3.3 to 5.9 ms of passes",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "status": "kept",
+      "statusText": "kept 2026-11-23 (R-1952); DX-PIXI823 keeps it (the patch goes when 8.23 is taken)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Predator light3d night: 5.88 ms of passes in a 7.74 ms span; light3dCompare 5.93 in 10.09; Predator crowd 2.5 3.34 in 9.56 (its clock lower). WebGPU makes 302 calls a frame there against WebGL's 706.",
-      "next": "Fold the uniform copy into the render call's own encoder (one submit per render call, or one a frame); Pixi's STEP_MS, the GPU process's CPU (gpuProcessTrace) and the frame span before and after. Pixi 8.23 does this upstream (#12345: the shifted buffer written with queue.writeBuffer, no submit of its own), so DX-PIXI823 closes it; a backport patch if the upgrade waits. R-1426: three.js makes one encoder and one submit a render call and reuses the submit array (#33513).",
+      "result": "Pixi's uniform copy writes instead of submitting: submits 12.7 -> 7 a frame, Chrome's GPU process -11 % at crowd 2.5 (751caa27)",
+      "next": "One encoder and one submit a frame across the render calls (the engine makes one per pass).",
       "refs": [],
       "aliases": [
         "webgpu double submit",
@@ -20025,7 +20034,8 @@
       "records": [
         "R-1215",
         "R-1315",
-        "R-1426"
+        "R-1426",
+        "R-1952"
       ]
     },
     {
@@ -22310,7 +22320,7 @@
       "id": "DX-PIXI823",
       "title": "Pixi 8.20.1 to 8.23: four build patches become upstream code, the WebGL sync stub moves to fixed uniform-block slots, WebGPU loses a submit per render call (nice to have)",
       "status": "open",
-      "statusText": "Nice to have, no rush (owner, 2026-11-17); a pseudo-plan in PIXI_823_PLAN.md",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); a pseudo-plan in PIXI_823_PLAN.md; E-464's patch (R-1952) goes with the upgrade to 8.23",
       "date": "2026-11-17",
       "result": "buildPixi.mjs's plugins against 8.23.0's lib: 12 of 16 patches apply; E-152's BindGroup, GpuEncoderSystem and BindGroupSystem and N-95's mapFormatToGlFormat lose their anchors (upstream #12229, #12278, #12288, #12230). The engine's Pixi bundle without patches: 446 335 -> 482 366 bytes minified, 129 684 -> 140 146 gzip.",
       "next": "If scheduled: pixi.js 8.23.0, drop the four patches and check the garbage again (E-152's scene on WebGPU); port the WebGL sync stub (E-148) to fixed block slots and _resourceKeys; drop gpuParticleBatch's hand flush; captures on both backends (N-270), webgpuFrameRecorder submits (E-464), Pixi STEP_MS ABAB on WebGL and WebGPU.",
@@ -22329,7 +22339,8 @@
         "pixijs 3d"
       ],
       "records": [
-        "R-1315"
+        "R-1315",
+        "R-1952"
       ]
     },
     {
@@ -25527,6 +25538,25 @@
       "aliases": [
         "lamp map HD 620",
         "lamps map weak GPU"
+      ]
+    },
+    {
+      "records": [
+        "R-1953"
+      ],
+      "refs": [],
+      "id": "E-552",
+      "title": "Pixi's batcher rebinds the decal tiles every frame: each is its own 128 x 128 texture and a batch holds sixteen, so Predator's tiles (more than sixteen in view) are bound again every frame (about 100 binds and unit switches)",
+      "status": "kept",
+      "kind": "speed",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "Decal tiles as array-texture layers drawn by instanced meshes: Chrome's GPU process -73 % (Predator light3d night), -32 % (crowd 2.5 day); GL calls 1746 -> 330 and 625 -> 245 a frame (e55682b9)",
+      "statusText": "kept 2026-11-23 (R-1953)",
+      "next": "",
+      "aliases": [
+        "decal tiles atlas",
+        "decal batcher binds"
       ]
     }
   ],
@@ -43437,6 +43467,51 @@
       "title": "E-420 dropped: its premise (overdraw) was measured wrong by R-1194 (the columns are vertex-bound); the lever is E-461's",
       "verdict": "dropped",
       "text": "**E-420 dropped: its premise (the column quads stretched over far more texels than their shadow: overdraw) was measured wrong by R-1194. Under a 1 px scissor the sun map's columns keep 1.28 of their 2.09 ms, and the lamps' map's keep all of theirs: the cost is the 24 x 24 grid's vertex work, 2 304 invocations an instance.** That lever is E-461's: leave out the instances that cast nothing, or draw only a frame's solid cells. E-447, a grid per frame size, was reverted, because the frames there span about 35 map texels."
+    },
+    {
+      "id": "R-1899",
+      "date": "2026-11-23",
+      "time": "14:36",
+      "timeFrom": "recorded",
+      "title": "E-408 and E-409 in Predator's light pass: the GTX 1650 by day -5.1 % (4/4); the HD 620 by night -3.8 % (3/4) and by day flat (4/6, medians +0.9 %)",
+      "verdict": "note",
+      "text": "Predator crowd 0.5 (mix=1, dayCycle=0), the light pass's GPU time a run (glFrameRecorder --gpu-passes, its pass labelled\nby uLightData), main before (d9332d64) and after (4906f6a3) both changes, each in a worktree, ABAB:\n- GTX 1650 (this PC, 14:23), hour 12, 4 pairs: 0.254 -> 0.241 ms, -5.1 %, 4/4. (By night at this crowd the pass is\n  0.2 ms and its runs spread 12 %: no verdict, R-1893.)\n- HD 620 (the ASUS, jobs 0909a 14:05-14:18 and 0911a 14:24-14:36 by its result files), at 480 x 270:\n  - hour 22, 4 pairs: before 3.060, 3.112, 2.758, 3.009 ms, after 2.866, 2.979, 2.973, 2.786: medians 3.035 -> 2.920,\n    -3.8 %, 3/4;\n  - hour 12, 6 pairs: before 1.098, 1.060, 1.072, 1.226, 1.120, 1.270, after 1.151, 1.188, 1.053, 1.201, 1.087, 1.061:\n    medians 1.109 -> 1.119, faster in 4/6; the first two pairs read +5 % and +12 %, the next four -2 to -16 %: flat\n    within the ASUS's spread;\n  - ?light3d=1 at hour 22 (960 x 540), 2 pairs: 13.02 -> 12.66 ms median, one pair each way.\nSo the night gain holds on the Intel GPU too, and by day nothing moved there."
+    },
+    {
+      "id": "R-1950",
+      "date": "2026-11-23",
+      "time": "15:06",
+      "timeFrom": "recorded",
+      "title": "E-417 kept as hygiene: Pixi's WebGL sync keeps each texture on its unit and writes uniform1i once: GL calls a frame 690 -> 609 in Predator ?light3d=1, Chrome's GPU process unchanged within noise",
+      "verdict": "kept-hygiene",
+      "text": "97ace34c (merged ec10d93d), in our shader sync (scripts/pixi-stubs/shaderSyncPolyfill.mjs, vendored Pixi rebuilt): a float\ntexture takes the unit it already sits on, or the least recently used one past the batcher's sixteen that the program has\nnot taken; integer textures do the same among the top four (N-109); uniform1i written when a sampler's unit changes (E-389:\nthe cached value was compared and never stored, so every sampler was written every draw).\nPage GL calls a frame (glFrameRecorder, 3 s): Predator ?light3d=1&zoom=0.3 by day 690 -> 609 (bindTexture 195 -> 171,\nactiveTexture 175 -> 149, uniform1i 47 -> 12), crowd 2.5 676 -> 625 (uniform1i 27 -> 3). What is left is Pixi's batcher (the\ndecal tiles: 128 x 128 textures, more than the batcher's sixteen units, rebound every frame: E-552) and the render targets\nPixi unbinds when it draws into them.\nChrome's GPU process main thread (gpuProcessTrace, untraced, 4 pairs ABAB, 15:06): light3d 210 -> 211 ms/s (the first pair\ndropped: another session's node suite ran over its A), crowd 2.5 276 -> 263 ms/s (pairs -13 %, -7 %, -10 %, +5 %), PutChanged\nwithin 4 %: within the process's noise. The scan costs about 10 us a frame of JS (its worst case 28 units a texture), under\nany bar. Captures on WebGL against main: dxCaptureScene hour 22, the light gallery (and with ?outline=1), houseLightScene,\n0 pixels apart. Node 3593/3593."
+    },
+    {
+      "id": "R-1951",
+      "date": "2026-11-23",
+      "time": "15:07",
+      "timeFrom": "recorded",
+      "title": "Chrome's GPU process re-measured: light3d costs its main thread about 0.35 ms a frame more than plain now (2.7 in 2026-11-16); WebGPU costs it 40 % more than WebGL at crowd 2.5, its 14 flushes a frame (E-464)",
+      "verdict": "note",
+      "text": "gpuProcessTrace (GTX 1650, 1920 x 1080, 4 s after 12 s; main 4906f6a3 and c029468b, untraced but where said):\n- CrGpuMain ms/s (PutChanged self): Predator ?light3d=1&zoom=0.3 by day 207 (167), plain zoom 0.3 186 (149), crowd 2.5 by\n  day 256 to 276 (178 to 202), its SwapBuffers 48. 2026-11-16: light3d 364 in slices (PutChanged 295 self), plain 171 (135),\n  crowd 2.5 405. light3d's extra over plain is 21 ms/s, about 0.35 ms a frame, where E-412 read 2.7 ms a frame.\n- With --decoder (traced): glDrawElementsInstancedANGLE 600/s at 33 us each (E-414: 79 us then, 30 us plain); glBindTexture\n  5 509/s (8 522), glActiveTexture 3 553/s, glUniform1i 1 963/s (3 578; E-417 then cut it), glFlush 60/s, glBufferSubData\n  361/s. glObjectLabelKHR's 10 437/s is Chrome labelling under --enable-gpu-service-tracing, not the game (R-1692).\n- PutChanged wakes: 174 a second at crowd 2.5, about three a frame (E-428: 478 a second, eight a frame).\n- WebGPU at crowd 2.5 by day: CrGpuMain 367 ms/s, PutChanged 290 self at 830 a second: 14 flushes a frame against WebGL's 3,\n  about 40 % more of the process than WebGL (276). webgpuFrameRecorder: 12.7 command encoders and submits a frame (E-464),\n  22.5 writeBuffer, 16.3 writeTexture.\nE-407, E-412, E-414 and E-428 are superseded: the costs they found went with E-395, E-392, E-391, E-531 and E-389. E-340 is\nanswered: WebGPU is the dearer one there, through its submits; E-464 is the lever."
+    },
+    {
+      "id": "R-1952",
+      "date": "2026-11-23",
+      "time": "15:17",
+      "timeFrom": "recorded",
+      "title": "E-464 kept: Pixi on WebGPU writes its shifted uniform buffer, no submit of its own: submits 12.7 -> 7 a frame, Chrome's GPU process -11 % at Predator crowd 2.5 (3/3)",
+      "verdict": "kept",
+      "text": "751caa27 (merged 557309fd): buildPixi.mjs patches GpuUniformBatchPipe._uploadBindGroups, which copied each render call's\nuniforms into the second, shifted buffer in an encoder and a submit of its own; it now writes the shifted bytes with\nqueue.writeBuffer (upstream's change in 8.23, #12345), before the render call's own submit. webgpuFrameRecorder, Predator\ncrowd 2.5 by day: submits and command encoders 12.7 -> 7 a frame, writeBuffer 22.5 -> 28.8, 222 -> 195 calls. Chrome's GPU\nprocess main thread (gpuProcessTrace, untraced, 15:17, 4 pairs ABAB, main ec10d93d against it; the first pair dropped: a\nheaded probe of another session ran into it): CrGpuMain 296 -> 264 ms/s (-11 %, 3/3; B 285, 220, 264), PutChanged 231 -> 205\nms/s (-13 %, 3/3). Captures on WebGPU against main, dxCaptureScene hour 22, the light gallery (?outline=1), houseLightScene:\n0 of 921 600 pixels. The worker's side drops an encoder, a finish and a submit a render call and adds a writeBuffer, so\nno Predator gate was run (its cost can only fall). One submit a frame is the next step (one encoder across the frame's\nrender calls; the engine's passes are separate renderer.render calls)."
+    },
+    {
+      "id": "R-1953",
+      "date": "2026-11-23",
+      "time": "15:46",
+      "timeFrom": "recorded",
+      "title": "E-552 kept: decal tiles from array textures, one instanced mesh a chunk: Chrome's GPU process main thread -73 % by night and -32 % by day, GL calls 1746 -> 330 a frame in Predator light3d",
+      "verdict": "kept",
+      "text": "e55682b9 (merged cdc6c556): src/render/pixi/decalTiles.js. The stamped decal tiles' texels are layers of 2D array textures (a\nchunk of at most 8 MB), each chunk draws the tiles in view as an instanced mesh (decalTile.vert.glsl, .frag.glsl, .wgsl);\ninstances rebuilt when the view's tile range moves or a tile is stamped. A sprite a tile, each with its own texture, had\nPixi's sixteen-unit batcher rebind them every frame.\n- GL calls a frame (glFrameRecorder, 3 s): Predator ?light3d=1&hour=22&crowd=0.5 1746 -> 330 (bindTexture 732 -> 38,\n  activeTexture 714 -> 19); crowd 2.5 by day 625 -> 245.\n- Chrome's GPU process main thread (gpuProcessTrace, untraced, GTX 1650, main e85c2304 against it, ABAB), 15:46 by the result file: light3d night\n  crowd 0.5 539 -> 145 ms/s (-73 %, 4/4), PutChanged 482 -> 93 ms/s; crowd 2.5 day 287 -> 194 ms/s (-32 %, 3/3),\n  PutChanged 229 -> 139 ms/s.\n- Predator gate (light3d night crowd 0.5 from the restored save, 4 pairs, 15:38 by the result files): NEUTRAL, every worker below the 6 ms\n  floor (a quiet save: physics 0.5 ms); the renderer 1.115 -> 0.962 ms (-14 %), presented 60.0 both, so the gate judges\n  nothing but shows no regression.\n- Captures against main: decalCaptureScene (new: seeded decals over the whole world, a still floor) at ?resolution=2 (512 px\n  tiles, several chunks) and ?zoom=2, and with no query, WebGL and WebGPU: 0 of 921 600 pixels apart in all six. An A/A of\n  the scene reads 0 too. Node 3593/3593, demos 143/143.\nE-270 (tiles copied whole per stamp) is untouched: the upload is still the whole tile."
     }
   ],
   "leads": [

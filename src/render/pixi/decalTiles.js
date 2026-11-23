@@ -1,7 +1,11 @@
 /**
- * N-256 PW-10: the blood decal grid's tiles, moved out of pixiWorker.js as they were. A sprite a tile over the decal
- * memory's RGBA tiles (W26), the ones in view shown (the cull, on a camera move), and each frame the dirty tiles
- * premultiplied (decalPremultiply.wasm, W21c) and uploaded, a few at a time (renderer.maxDecalTileUploadsPerFrame).
+ * N-256 PW-10: the blood decal grid's tiles, moved out of pixiWorker.js as they were. The decal memory's RGBA tiles (W26)
+ * drawn, the stamped ones in view (the cull, on a camera move), and each frame the dirty tiles premultiplied
+ * (decalPremultiply.wasm, W21c) and uploaded, a few at a time (renderer.maxDecalTileUploadsPerFrame).
+ *
+ * E-552: the stamped tiles' texels are layers of array textures (a chunk holds decalChunkLayers of them), and each chunk
+ * draws the tiles in view as one instanced mesh (decalTile.*): a sprite a tile made a texture of its own for each and
+ * Pixi's batcher bound them sixteen at a time, about 700 binds and as many unit switches a frame in a Predator night.
  *
  * The grid's settings and shared views stay the worker's (initialize's _initDecals step binds them: the tile sizes and
  * counts, the dirty flags, the premultiply kernel, the container); until the renderer's other subsystems move
@@ -9,71 +13,160 @@
  */
 
 import { debugWorkerLog } from '../../util/debugLog.js';
-import { ImageSource, Sprite, Texture } from '../../vendor/pixi.min.js';
+import { Buffer, BufferUsage, Geometry, GlProgram, GpuProgram, Mesh, Shader, TextureSource } from '../../vendor/pixi.min.js';
 import { premultiplyDecalTile } from '../decalPremultiplyClient.js';
-import { writeRgba8 } from '../webgpu/pinGpuTexture.js';
+import { gpuProgramFromWgsl } from '../webgpu/pixiMeshWgsl.js';
+import { createDecalArrayTexture, writeRgba8Layer } from '../webgpu/pinGpuTexture.js';
 
-// The Pixi classes the moved bodies name as PIXI.X, as pixiWorker.js's namespace does.
-const PIXI = Object.freeze({ ImageSource, Sprite, Texture });
+/** E-552: a chunk's array texture holds at most this many bytes of texels, so big tiles make chunks of fewer layers. */
+export const DECAL_CHUNK_BYTES = 8 << 20;
+/** E-552: a chunk has at least this many layers (WebGPU's default view of a 1-layer texture is not an array). */
+export const DECAL_CHUNK_MIN_LAYERS = 2;
 
-/** The decal grid's tile sprites, their cull and their uploads, for one renderer worker. */
+/**
+ * E-552: the layers of a chunk of tiles of `tilePx` texels a side: DECAL_CHUNK_BYTES' worth, at least two, at most what the
+ * context holds (`maxLayers`, the array textures' layer limit) and the grid's tiles.
+ */
+export function decalChunkLayers(tilePx, maxLayers, totalTiles) {
+  const bytes = Math.max(1, tilePx * tilePx * 4);
+  const byBytes = Math.floor(DECAL_CHUNK_BYTES / bytes);
+  return Math.max(DECAL_CHUNK_MIN_LAYERS, Math.min(byBytes, Math.max(DECAL_CHUNK_MIN_LAYERS, maxLayers | 0), Math.max(DECAL_CHUNK_MIN_LAYERS, totalTiles | 0)));
+}
+
+/** E-552: the array texture one chunk draws from, its instance buffer and its mesh. */
+class DecalChunk {
+  /**
+   * @param {TextureSource} source the chunk's array texture
+   * @param {Mesh} mesh
+   * @param {Float32Array} instances a tile's corner (world px) and its layer an instance
+   * @param {Buffer} buffer the instances' vertex buffer
+   */
+  constructor(source, mesh, instances, buffer) {
+    this.source = source;
+    this.mesh = mesh;
+    this.instances = instances;
+    this.buffer = buffer;
+    this.count = 0;
+    this.used = 0; // layers taken
+    this.copyBuffer = null;
+  }
+}
+
+/** The decal grid's stamped tiles, their cull, their draws and their uploads, for one renderer worker. */
 export class PixiDecalTiles {
   /** @param {object} worker the PixiRenderer that owns this (its renderer, camera, canvas and the grid's settings) */
   constructor(worker) {
     this.worker = worker;
     this.nextScanIndex = 0;
-    this.sprites = []; // Array of Sprite per tile
-    this.textureSources = []; // TextureSource per tile (for updating)
+    // E-552: the chunks of the tiles' array textures, the layers in each, and where each stamped tile sits
+    // (chunk * layersPerChunk + layer; -1 none).
+    this.chunks = [];
+    this.layersPerChunk = 0;
+    this.tileSlot = new Int32Array(0);
+    this.programOpts = null;
+    this.quad = null;
+    this.quadIndex = null;
     // E-175: which tiles have been stamped, and the tile range the camera's view covers (x0, y0, x1, y1; -1: none
-    // yet): only stamped tiles in it are drawn.
+    // yet): only stamped tiles in it are drawn. E-552: and whether a tile was stamped since the instances were built.
     this.stamped = new Uint8Array(0);
     this.view = new Int32Array([-1, -1, -1, -1]);
+    this.instancesDirty = false;
     this.copyBuffers = null;
   }
 
   /**
-   * Create sprites for each blood decal splat tile (SAB tiles, not TileMap background)
-   * Each tile is a Sprite with an initially transparent texture
-   * Textures are updated when particle_worker marks tiles as dirty
+   * The decal tiles (SAB tiles, not TileMap background): nothing is drawn until a tile is stamped (update). E-552: the
+   * program every chunk's mesh uses, made here so it links ahead with the others.
    */
-  createSprites() {
-    const tileSize = this.worker.decalsTileSize;
-
-    for (let ty = 0; ty < this.worker.decalsTilesY; ty++) {
-      for (let tx = 0; tx < this.worker.decalsTilesX; tx++) {
-        const tileIndex = tx + ty * this.worker.decalsTilesX;
-
-        // Create an initially transparent texture for this tile
-        // We'll update the texture source when the tile becomes dirty
-        const sprite = new PIXI.Sprite(PIXI.Texture.EMPTY);
-        sprite.x = tx * tileSize;
-        sprite.y = ty * tileSize;
-        sprite.width = tileSize;
-        sprite.height = tileSize;
-        sprite.visible = false; // Hidden until first decal splat, and while outside the view (_cullDecalTiles)
-
-        this.sprites[tileIndex] = sprite;
-        this.textureSources[tileIndex] = null; // Created on first update
-        this.worker.decalTileContainer.addChild(sprite);
-      }
-    }
-
-    this.stamped = new Uint8Array(this.worker.decalsTilesX * this.worker.decalsTilesY);
+  create() {
+    const tiles = this.worker.decalsTilesX * this.worker.decalsTilesY;
+    this.stamped = new Uint8Array(tiles);
+    this.tileSlot = new Int32Array(tiles).fill(-1);
     this.view.fill(-1);
-    debugWorkerLog(`PIXI WORKER: Created ${this.worker.decalsTotalTiles} decal tile sprites`);
+    const gl = this.worker._useWebGpu ? null : this.worker.pixiApp?.renderer?.gl;
+    const limits = this.worker._useWebGpu ? this.worker.pixiApp?.renderer?.gpu?.device?.limits : null;
+    const maxLayers = gl ? gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) : (limits?.maxTextureArrayLayers ?? 256);
+    this.layersPerChunk = decalChunkLayers(this.worker.decalsTilePixelSize, maxLayers, tiles);
+    const shaders = this.worker._engineShaders;
+    this.programOpts = this.worker._useWebGpu
+      ? { gpuProgram: gpuProgramFromWgsl(GpuProgram, shaders.decalTile, 'decal-tiles') }
+      : { glProgram: GlProgram.from({ vertex: shaders.decalTileVert, fragment: shaders.decalTileFrag, name: 'decal-tiles' }) };
+    this.quad = new Buffer({ data: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), usage: BufferUsage.VERTEX, label: 'decal-tile-quad' });
+    this.quadIndex = new Buffer({ data: new Uint16Array([0, 1, 2, 0, 2, 3]), usage: BufferUsage.INDEX, label: 'decal-tile-index' });
+    debugWorkerLog(`PIXI WORKER: ${this.worker.decalsTotalTiles} decal tiles, ${this.layersPerChunk} an array chunk`);
+  }
+
+  /** E-552: a chunk of layersPerChunk tiles: its array texture, its instanced mesh in the decal container, hidden. */
+  _makeChunk() {
+    const px = this.worker.decalsTilePixelSize;
+    const layers = this.layersPerChunk;
+    const gpu = this.worker._useWebGpu;
+    const renderer = this.worker.pixiApp?.renderer;
+    const source = new TextureSource({
+      width: px,
+      height: px,
+      format: 'rgba8unorm',
+      alphaMode: 'premultiplied-alpha',
+      scaleMode: 'linear',
+      addressMode: 'clamp-to-edge',
+      viewDimension: '2d-array',
+      arrayLayerCount: layers,
+      autoGenerateMipmaps: false,
+      label: 'weed-decal-tiles',
+    });
+    source.autoGarbageCollect = false;
+    source.uploadMethodId = gpu ? 'external' : 'unknown';
+    if (gpu) createDecalArrayTexture(renderer, source, px, layers);
+    const instances = new Float32Array(layers * 3);
+    const buffer = new Buffer({ data: instances, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST, label: 'weed-decal-tiles' });
+    const geometry = new Geometry({
+      attributes: {
+        aPosition: { buffer: this.quad, format: 'float32x2', stride: 8, offset: 0 },
+        aTile: { buffer, format: 'float32x3', stride: 12, offset: 0, instance: true },
+      },
+      indexBuffer: this.quadIndex,
+    });
+    geometry.instanceCount = 0;
+    const uniforms = { uTileSize: { value: this.worker.decalsTileSize, type: 'f32' } };
+    const shader = new Shader({
+      ...this.programOpts,
+      resources: gpu ? { uTiles: source, uTilesSampler: source.style, uniforms } : { uTiles: source, uniforms },
+    });
+    const mesh = new Mesh({ geometry, shader, label: 'weed-decal-tiles' });
+    mesh.cullable = false;
+    mesh.visible = false;
+    const chunk = new DecalChunk(source, mesh, instances, buffer);
+    this.chunks.push(chunk);
+    this.worker.decalTileContainer.addChild(mesh);
+    return chunk;
+  }
+
+  /** E-552: the tile's layer, in its chunk (a new chunk when the last one is full). The slot is kept for good. */
+  _chunkSlot(tileIndex) {
+    let slot = this.tileSlot[tileIndex];
+    if (slot >= 0) return slot;
+    const perChunk = this.layersPerChunk;
+    let chunkIndex = this.chunks.length - 1;
+    if (chunkIndex < 0 || this.chunks[chunkIndex].used >= perChunk) {
+      this._makeChunk();
+      chunkIndex = this.chunks.length - 1;
+    }
+    const layer = this.chunks[chunkIndex].used++;
+    slot = chunkIndex * perChunk + layer;
+    this.tileSlot[tileIndex] = slot;
+    return slot;
   }
 
   /**
    * E-175: only the stamped decal tiles the camera's view covers are drawn (with a rotation, the view's bounding box).
-   * The decal container is a render group, so a tile shown or hidden rebuilds its few instructions; a frame whose view
-   * stays on the same tiles changes nothing.
+   * E-552: the instances of each chunk's mesh are the stamped tiles in that range, rebuilt when the range moves or a tile
+   * is stamped in it; a frame whose view stays on the same tiles changes nothing.
    */
   cull(zoom, cameraX, cameraY, rot) {
-    const sprites = this.sprites;
     const tilesX = this.worker.decalsTilesX | 0;
     const tilesY = this.worker.decalsTilesY | 0;
     const size = this.worker.decalsTileSize;
-    if (tilesX <= 0 || tilesY <= 0 || !(size > 0) || sprites.length === 0) return;
+    if (tilesX <= 0 || tilesY <= 0 || !(size > 0) || this.tileSlot.length === 0) return;
     const z = zoom || 1;
     const w = (this.worker.canvasWidth || 0) / z;
     const h = (this.worker.canvasHeight || 0) / z;
@@ -98,39 +191,43 @@ export class PixiDecalTiles {
     const ty0 = Math.max(0, Math.min(tilesY - 1, Math.floor(y0 / size)));
     const ty1 = Math.max(0, Math.min(tilesY - 1, Math.floor(y1 / size)));
     const view = this.view;
-    if (view[0] === tx0 && view[1] === ty0 && view[2] === tx1 && view[3] === ty1) return;
-    const stamped = this.stamped;
-    // The old range's tiles out, the new range's stamped tiles in.
-    if (view[0] >= 0) {
-      for (let ty = view[1]; ty <= view[3]; ty++) {
-        for (let tx = view[0]; tx <= view[2]; tx++) {
-          if (tx >= tx0 && tx <= tx1 && ty >= ty0 && ty <= ty1) continue;
-          const sprite = sprites[tx + ty * tilesX];
-          if (sprite.visible) sprite.visible = false;
-        }
-      }
-    }
-    for (let ty = ty0; ty <= ty1; ty++) {
-      for (let tx = tx0; tx <= tx1; tx++) {
-        const i = tx + ty * tilesX;
-        const show = stamped[i] === 1;
-        if (sprites[i].visible !== show) sprites[i].visible = show;
-      }
-    }
+    if (!this.instancesDirty && view[0] === tx0 && view[1] === ty0 && view[2] === tx1 && view[3] === ty1) return;
     view[0] = tx0;
     view[1] = ty0;
     view[2] = tx1;
     view[3] = ty1;
+    this._buildInstances();
   }
 
-  /** E-175: whether decal tile `tileIndex` is in the camera's view (_cullDecalTiles' last range). */
-  _tileInView(tileIndex) {
-    const view = this.view;
-    if (view[0] < 0) return false;
+  /** E-552: each chunk's instances: the stamped tiles in the view's range (x, y, layer), and its mesh shown if it has any. */
+  _buildInstances() {
+    this.instancesDirty = false;
     const tilesX = this.worker.decalsTilesX | 0;
-    const tx = tileIndex % tilesX;
-    const ty = (tileIndex - tx) / tilesX;
-    return tx >= view[0] && tx <= view[2] && ty >= view[1] && ty <= view[3];
+    const size = this.worker.decalsTileSize;
+    const perChunk = this.layersPerChunk;
+    const chunks = this.chunks;
+    const stamped = this.stamped;
+    const tileSlot = this.tileSlot;
+    const view = this.view;
+    for (let c = 0; c < chunks.length; c++) chunks[c].count = 0;
+    for (let ty = view[1]; ty <= view[3]; ty++) {
+      for (let tx = view[0]; tx <= view[2]; tx++) {
+        const i = tx + ty * tilesX;
+        if (stamped[i] !== 1) continue;
+        const slot = tileSlot[i];
+        const chunk = chunks[(slot / perChunk) | 0];
+        const at = chunk.count++ * 3;
+        chunk.instances[at] = tx * size;
+        chunk.instances[at + 1] = ty * size;
+        chunk.instances[at + 2] = slot % perChunk;
+      }
+    }
+    for (let c = 0; c < chunks.length; c++) {
+      const chunk = chunks[c];
+      chunk.mesh.geometry.instanceCount = chunk.count;
+      chunk.mesh.visible = chunk.count > 0;
+      if (chunk.count > 0) chunk.buffer.update(chunk.count * 12);
+    }
   }
 
   /**
@@ -201,24 +298,13 @@ export class PixiDecalTiles {
       // The tile, premultiplied in the decal memory's scratch, into its own array for the upload.
       premultiplyDecalTile(this.worker._decalPremultiply, tileIndex, tileRGBA);
 
-      const sprite = this.sprites[tileIndex];
-      let source = this.textureSources[tileIndex];
-      if (!source) {
-        source = new PIXI.ImageSource({
-          resource: tileRGBA,
-          width: tilePixelSize,
-          height: tilePixelSize,
-          format: 'rgba8unorm',
-          alphaMode: 'premultiplied-alpha',
-          autoGenerateMipmaps: false,
-        });
-        source.uploadMethodId = this.worker._useWebGpu ? 'external' : 'unknown';
-        sprite.texture = new PIXI.Texture({ source });
-        this.textureSources[tileIndex] = source;
+      const slot = this._chunkSlot(tileIndex);
+      const chunk = this.chunks[(slot / this.layersPerChunk) | 0];
+      this._uploadLayer(chunk.source, tileRGBA, tilePixelSize, slot % this.layersPerChunk);
+      if (this.stamped[tileIndex] === 0) {
+        this.stamped[tileIndex] = 1;
+        this.instancesDirty = true;
       }
-      this._uploadRgba8(source, tileRGBA, tilePixelSize, tilePixelSize);
-      this.stamped[tileIndex] = 1;
-      sprite.visible = this._tileInView(tileIndex);
 
       processed++;
       tileIndex = (tileIndex + 1) % totalTiles;
@@ -229,33 +315,35 @@ export class PixiDecalTiles {
     this.worker._decalTilesUploadedThisFrame = processed;
   }
 
-  _uploadRgba8(source, data, width, height) {
+  /** E-552: `data` (a tile's premultiplied RGBA) into layer `layer` of the chunk's array texture. */
+  _uploadLayer(source, data, tilePx, layer) {
     const renderer = this.worker.pixiApp?.renderer;
     if (!renderer || !source || !data) return;
     if (this.worker._useWebGpu) {
-      writeRgba8(renderer, source, data, width, height, 'decal-tile');
+      writeRgba8Layer(renderer, source, data, tilePx, layer);
       return;
     }
     const gl = renderer.gl;
     const texSys = renderer.texture;
     if (!gl || !texSys) return;
     if (!source._decalGlReady) {
+      // Pixi allocates the array (texImage3D, no data: the 'unknown' upload) at the source's first update.
       source.update();
       source._decalGlReady = true;
     }
     if (typeof texSys.bind === 'function') texSys.bind(source, 0);
     else if (typeof texSys.bindSource === 'function') texSys.bindSource(source, 0);
     const glSource = typeof texSys.getGlSource === 'function' ? texSys.getGlSource(source) : null;
-    const target = glSource?.target || gl.TEXTURE_2D;
+    const target = gl.TEXTURE_2D_ARRAY;
     // N-94: the active unit's binding goes back after the upload (see _uploadRgba32FloatGl).
-    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D_ARRAY);
     if (glSource?.texture) gl.bindTexture(target, glSource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     if (gl.UNPACK_FLIP_Y_WEBGL != null) gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
     if (gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL != null) {
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
     }
-    gl.texSubImage2D(target, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texSubImage3D(target, 0, 0, 0, layer, tilePx, tilePx, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
     gl.bindTexture(target, prev);
   }
 }
