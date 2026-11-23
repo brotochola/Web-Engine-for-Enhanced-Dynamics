@@ -28,12 +28,30 @@ class PatchedBindGroup extends UpstreamBindGroup {
   }
 }
 
+const MAX_COMBINED = 0x8b4d;
+
+/** A texture system that logs each bind and keeps what each unit holds, as Pixi's does (_boundTextures). */
+function textureSystem(calls) {
+  const bound = [];
+  return {
+    _boundTextures: bound,
+    bind: (resource, unit) => {
+      calls.push(['texture', resource.label, unit]);
+      bound[unit] = resource.source;
+    },
+  };
+}
+
 /** A renderer and shader system that log what the sync does. */
 function recorder() {
   const calls = [];
   const renderer = {
-    gl: { uniform1i: (location, unit) => calls.push(['uniform1i', location, unit]) },
-    texture: { bind: (source, unit) => calls.push(['texture', source.label, unit]) },
+    gl: {
+      MAX_COMBINED_TEXTURE_IMAGE_UNITS: MAX_COMBINED,
+      getParameter: (name) => (name === MAX_COMBINED ? 32 : null),
+      uniform1i: (location, unit) => calls.push(['uniform1i', location, unit]),
+    },
+    texture: textureSystem(calls),
     shader: {
       _getProgramData: () => ({ uniformData: { uA: { location: 'locA', value: -1 }, uB: { location: 'locB', value: -1 } } }),
       bindUniformBlock: (resource, name, index) => calls.push(['block', name, index]),
@@ -47,10 +65,11 @@ function shaderOf(groups, bindMap) {
   return { glProgram: {}, groups, _uniformBindMap: bindMap };
 }
 
+/** The calls with their units left out (E-417 picks other units than upstream's count from 0; the tests below say which). */
 function run(sync, shader) {
   const { calls, renderer } = recorder();
   sync(renderer, shader, { textureCount: 0, blockIndex: 0 });
-  return calls;
+  return calls.map((c) => (c[0] === 'texture' || c[0] === 'uniform1i' ? c.slice(0, 2) : c));
 }
 
 const texture = (label) => {
@@ -128,9 +147,8 @@ test('E-236: a BindGroup with other keys, or the same keys in another order, reb
 
 // N-109: Pixi's batcher declares sixteen float samplers and binds only the units its batch uses; WebGL2 drops a draw
 // whose sampler finds an integer texture in its unit. Integer textures take the top units, counting down, and leave the
-// low ones to float textures, numbered as before.
-test('integer textures take the top texture units, float ones the low units in order', () => {
-  const MAX_COMBINED = 0x8b4d;
+// others to float textures (E-417: from the first unit past the batcher's sixteen).
+test('integer textures take the top texture units, float ones the units past the batcher\'s in order', () => {
   const calls = [];
   const renderer = {
     gl: {
@@ -138,7 +156,7 @@ test('integer textures take the top texture units, float ones the low units in o
       getParameter: (name) => (name === MAX_COMBINED ? 32 : null),
       uniform1i: (location, unit) => calls.push(['uniform1i', location, unit]),
     },
-    texture: { bind: (source, unit) => calls.push(['texture', source.label, unit]) },
+    texture: textureSystem(calls),
     shader: {
       _getProgramData: () => ({
         uniformData: Object.fromEntries(['uA', 'uB', 'uC', 'uD'].map((n) => [n, { location: 'loc' + n.slice(1), value: -1 }])),
@@ -157,10 +175,10 @@ test('integer textures take the top texture units, float ones the low units in o
   };
   const shader = shaderOf(groups, { 1: { 0: 'uA', 1: 'uB', 2: 'uC', 3: 'uD' } });
   const expected = [
-    ['texture', 'A', 0], ['uniform1i', 'locA', 0],
+    ['texture', 'A', 16], ['uniform1i', 'locA', 16],
     ['texture', 'B', 31], ['uniform1i', 'locB', 31],
     ['texture', 'C', 30], ['uniform1i', 'locC', 30],
-    ['texture', 'D', 1], ['uniform1i', 'locD', 1],
+    ['texture', 'D', 17], ['uniform1i', 'locD', 17],
   ];
   for (const bind of ['first bind', 'from the plan']) {
     calls.length = 0;
@@ -179,4 +197,102 @@ test('the bundled BindGroup counts the resource slots it gains, not the ones it 
   assert.equal(group._weedKeys, 2);
   group.setResource({ on() {}, off() {} }, 0);
   assert.equal(group._weedKeys, 2, 'replacing slot 0 adds nothing');
+});
+
+// E-417: a float texture keeps the unit it sits on across programs, a new one takes the unit past the batcher's sixteen
+// used longest ago that the program has not taken; the top four units stay the integer textures'. E-389: a sampler's
+// uniform1i is written when its unit changes, and remembered.
+function program(names) {
+  return { uniformData: Object.fromEntries(names.map((n) => [n, { location: 'loc' + n.slice(1), value: 0 }])) };
+}
+
+function sharedRenderer(calls, programs) {
+  return {
+    gl: {
+      MAX_COMBINED_TEXTURE_IMAGE_UNITS: MAX_COMBINED,
+      getParameter: (name) => (name === MAX_COMBINED ? 32 : null),
+      uniform1i: (location, unit) => calls.push(['uniform1i', location, unit]),
+    },
+    texture: textureSystem(calls),
+    shader: { _getProgramData: (glProgram) => programs.get(glProgram) },
+  };
+}
+
+test('E-417: a texture already on a unit stays there for the next program, which binds only what is new', () => {
+  const calls = [];
+  const atlas = texture('atlas');
+  const lut = texture('lut');
+  const maps = texture('maps');
+  const p1 = {};
+  const p2 = {};
+  const renderer = sharedRenderer(calls, new Map([[p1, program(['uA', 'uB'])], [p2, program(['uC', 'uD'])]]));
+  const first = { glProgram: p1, groups: { 1: new PatchedBindGroup({ a: atlas, b: lut }) }, _uniformBindMap: { 1: { 0: 'uA', 1: 'uB' } } };
+  const second = { glProgram: p2, groups: { 1: new PatchedBindGroup({ c: maps, d: atlas }) }, _uniformBindMap: { 1: { 0: 'uC', 1: 'uD' } } };
+  syncShader(renderer, first, { textureCount: 0, blockIndex: 0 });
+  assert.deepEqual(calls, [['texture', 'atlas', 16], ['uniform1i', 'locA', 16], ['texture', 'lut', 17], ['uniform1i', 'locB', 17]]);
+  calls.length = 0;
+  syncShader(renderer, second, { textureCount: 0, blockIndex: 0 });
+  assert.deepEqual(calls, [['texture', 'maps', 18], ['uniform1i', 'locC', 18], ['texture', 'atlas', 16], ['uniform1i', 'locD', 16]],
+    'the atlas stays on 16');
+  calls.length = 0;
+  syncShader(renderer, first, { textureCount: 0, blockIndex: 0 });
+  assert.deepEqual(calls, [['texture', 'atlas', 16], ['texture', 'lut', 17]], 'nothing moves, no uniform1i (E-389)');
+});
+
+test('E-417: with every float unit held, a new texture takes the one used longest ago, never one the program holds', () => {
+  const calls = [];
+  const programs = new Map();
+  const renderer = sharedRenderer(calls, programs);
+  const syncOne = (label) => {
+    const glProgram = {};
+    programs.set(glProgram, program(['uA']));
+    const shader = { glProgram, groups: { 0: new PatchedBindGroup({ a: texture(label) }) }, _uniformBindMap: { 0: { 0: 'uA' } } };
+    calls.length = 0;
+    syncShader(renderer, shader, { textureCount: 0, blockIndex: 0 });
+    return calls.find((c) => c[0] === 'texture')[2];
+  };
+  // 32 units: the batcher's 0 to 15, the top 4 the integer textures': 16 to 27 filled in order.
+  const firsts = Array.from({ length: 12 }, (_, k) => syncOne('t' + k));
+  assert.deepEqual(firsts, Array.from({ length: 12 }, (_, k) => 16 + k));
+  assert.equal(syncOne('t12'), 16, 'the oldest, unit 16');
+  assert.equal(syncOne('t13'), 17);
+  // A program of two new textures while unit 18 is the oldest: they take 18 and 19, not the same one twice.
+  const glProgram = {};
+  programs.set(glProgram, program(['uA', 'uB']));
+  calls.length = 0;
+  syncShader(renderer, { glProgram, groups: { 0: new PatchedBindGroup({ a: texture('x'), b: texture('y') }) }, _uniformBindMap: { 0: { 0: 'uA', 1: 'uB' } } },
+    { textureCount: 0, blockIndex: 0 });
+  assert.deepEqual(calls.filter((c) => c[0] === 'texture').map((c) => c[2]), [18, 19]);
+  assert.ok(renderer.texture._boundTextures.slice(28).every((t) => t === undefined), 'the integer units untouched');
+  // A program of thirteen new textures: twelve past the batcher's units, the thirteenth on the batcher's oldest.
+  const many = {};
+  programs.set(many, program(Array.from({ length: 13 }, (_, k) => 'u' + k)));
+  calls.length = 0;
+  const resources = Object.fromEntries(Array.from({ length: 13 }, (_, k) => [k, texture('m' + k)]));
+  syncShader(renderer, { glProgram: many, groups: { 0: new PatchedBindGroup(resources) }, _uniformBindMap: { 0: Object.fromEntries(Array.from({ length: 13 }, (_, k) => [k, 'u' + k])) } },
+    { textureCount: 0, blockIndex: 0 });
+  const units = calls.filter((c) => c[0] === 'texture').map((c) => c[2]);
+  assert.deepEqual(units.slice(0, 12).sort((a, b) => a - b), Array.from({ length: 12 }, (_, k) => 16 + k));
+  assert.equal(units[12], 0);
+});
+
+test('E-417: integer textures of two programs keep their own top units instead of taking turns on the last one', () => {
+  const calls = [];
+  const programs = new Map();
+  const renderer = sharedRenderer(calls, programs);
+  const integer = (label) => Object.assign(new TextureSource({ width: 1, height: 1, format: 'r32uint' }), { label });
+  const statics = integer('statics');
+  const tiles = integer('tiles');
+  const sync = (source) => {
+    const glProgram = {};
+    programs.set(glProgram, program(['uA']));
+    calls.length = 0;
+    syncShader(renderer, { glProgram, groups: { 0: new PatchedBindGroup({ a: source }) }, _uniformBindMap: { 0: { 0: 'uA' } } },
+      { textureCount: 0, blockIndex: 0 });
+    return calls.find((c) => c[0] === 'texture')[2];
+  };
+  assert.equal(sync(statics), 31, 'the last unit first');
+  assert.equal(sync(tiles), 30, 'the next one down, not 31 again');
+  assert.equal(sync(statics), 31, 'still where it was');
+  assert.equal(renderer.texture._boundTextures[30], tiles);
 });
