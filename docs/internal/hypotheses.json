@@ -24637,18 +24637,21 @@
         "R-1802",
         "R-1866",
         "R-1867",
-        "R-1868"
+        "R-1868",
+        "R-1869",
+        "R-1870",
+        "R-1871"
       ],
       "refs": [],
       "id": "E-531",
       "title": "Map shadows (sunShadows and lampShadows 'map') on art without maps cost Predator +57 % GPU by day against the classic layer (5.75 against 3.67 ms): bring them near it, then make them the default and drop the layer mode",
-      "status": "open",
+      "status": "running",
       "kind": "hypothesis",
       "area": "render speed",
       "date": "2026-11-20",
-      "statusText": "held for the end (owner 2026-11-22): unifying the light and shadow systems is to be discussed with the owner once the rest of the backlog is done; nothing starts before. 2026-11-22 (R-1802): after E-395 and the lamps off by day, map shadows cost +10 % GPU by day (+0.3 ms on the GTX 1650) and the classic layer's CPU; the owner decides the default.",
+      "statusText": "the owner approved unifying (2026-11-22 23:27): on exp/one-shadow-path the shadow maps are the one way (76608b6f; Flash.elevation, the demos' heights, no cookies, N-413, N-415 part 1), shown to the owner before merging. Predator's default: by day neutral; by night pre-render +5.5 % and renderer +3.0 % against main after N-413 (R-1869, R-1871); on the ASUS, for the same shadows, the maps cost 22 to 30 % less (R-1870).",
       "result": "",
-      "next": "Owner 2026-11-21: (a) Predator turns its TallLights off by day, switched at once, no fade (\"como las luces normales\"), after E-538 merges (it edits tallLight.js too); (b) the engine must be optimal whatever a game does: lamps lit by day included. So, measured on a quiet machine: (1) E-517 (a lamp tile nothing changed is neither cleared nor drawn) against E-460 (still casters cached per tile, movers over it), read first how many of Predator's 48 tiles have a moving caster each frame; (2) the sun map is laid out on the screen, so caching its still casters only holds with a still camera: lowest priority. Before: B 4.09/4.11 ms by day (lamps' map 0.51, sun map 0.36-0.38).",
+      "next": "The owner's word on merging exp/one-shadow-path. Then: N-414 and N-415's rest; the night's residual on pre-render (the stamp kernel's fade costs 8 % of the stamp, 0.026 ms a frame on Predator's fixture; the rest spread).",
       "rank": 12,
       "aliases": [
         "cheap map shadows",
@@ -25258,6 +25261,50 @@
         "barn shadow detached",
         "silhouette shadow below the object"
       ]
+    },
+    {
+      "records": [
+        "R-1871"
+      ],
+      "refs": [],
+      "id": "N-413",
+      "title": "The lamps' map loses each stamp row's fade, and maxShadowsPerLight's cut pops: a fading per-lamp budget (and the zoom budget again) for the one shadow path",
+      "status": "kept",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "kept 2026-11-23 on exp/one-shadow-path (64444388, R-1871), merges with E-531",
+      "next": "",
+      "aliases": []
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-414",
+      "title": "Dead since E-531: the entity batch's keyed sun pass and its shadow stream (E-191's instances, E-211), and gpuPack's shadow terms for it",
+      "status": "open",
+      "kind": "refactor",
+      "area": "render",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "filed 2026-11-23: nothing turns them on any more (the shadows' layer drew them)",
+      "next": "instancedSpriteBatch.js: enableKeyedShadows, setKeyedShadowStream, makeKeyedSunShader, makeKeyedCasterShader, makeKeyedShadowPrograms, _keyedSunProgram, _keyedCasterProgram, _keyedShadowGeometryFor, _keyedShadowRowGeometryFor and their fields; gpuPackClient.js keyed.shadowByte / shadowed and pack_keyed's shadow terms in wasm/gpuPack.c, the render-queue memory's shadow stream region; their tests (gpuPackKeyed, instancedSpriteKeyed, instancedSpriteKeyedRowPoses, opaquePass, startupPixiFirstUse). Costs nothing at runtime (the stream stays off), so hygiene: the suites, a kernel run of pack_keyed.",
+      "aliases": []
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-415",
+      "title": "Dead since E-531: the light pass's old shadows' layer input (uShadowComposite, uShadowMap), the sun map programs' heights:false variants, and the cone cookie's built-in frame",
+      "status": "open",
+      "kind": "refactor",
+      "area": "render",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "part 1 done 2026-11-23 on exp/one-shadow-path (de4123af): uShadowComposite and uShadowMap gone from the light pass; parts 2 and 3 open",
+      "next": "sunShadowMap.js: sunMapVertex / sunMapColumnsVertex / sunMapWgsl / sunMapColumnsWgsl's { heights: false } (the layer's cards and solids) and their tests (sunShadowMap.test.js, wgslLayoutDeclares.test.js). atlasBuiltins.js: '_lightGradientHalf' (DX-SPOT's cone cookie) and atlasBuild's afterSort for it, createHalfCircularGradientCanvas; demos/littleCity/baked/bigAtlas.json carries the frame, so bake it again.",
+      "aliases": []
     }
   ],
   "records": [
@@ -42816,6 +42863,33 @@
       "title": "E-531 with equal work (main after E-455 step 3, GTX 1650): by night 64 casters a lamp both, NEUTRAL (renderer +3.0 %, pre-render +0.1 %, GPU +1.9 %); by day pre-render -18.5 %, renderer equal; map mode's default draws ~400 casters a lamp against the classic budget's ~65 (N-212)",
       "verdict": "note",
       "text": "**E-531 with equal work, on main after E-455 step 3 (17003e90 and on), Predator crowd 2.5, GTX 1650: classic layer\n(A) against map shadows (B). For the same shadows the two modes cost the same; map mode by default draws about six times\nmore lamp shadows.**\n\n**Why by night differed (R-1866).** A console probe of pre-render's stamp pass, one frame in 120:\n\n| arm | casters stamped | casting lights | casters a lamp |\n| --- | --- | --- | --- |\n| classic | about 3 100 | 148 to 150 | about 65 |\n| map | 19 100 to 19 800 | 97 | about 400 |\n\nPredator asks 512 casters a lamp in both modes (`maxShadowsPerLight`). The classic layer cuts each lamp's set by the\nadaptive budget, which shrinks with zoom × shadowResolution. N-212 turned that budget off for the lamps' map (3a160eac),\nbecause its tiles keep their size and the cut set changed as people walked. Fewer lights cast in map mode because N-265\ndrops the lamps at floor height.\n\n**Equal work by night** (`&shadowsPerLight=64` both arms), `runPredatorAbab --vs HEAD --query-b\n\"sunShadows=map&lampShadows=map\"`, 8 pairs, 18:43 to 18:50: NEUTRAL.\n\n| worker | A -> B | paired |\n| --- | --- | --- |\n| renderer | 7.922 -> 8.126 ms | +3.0 % (5/8, +1.0 % against the others) |\n| pre-render | 8.825 -> 8.919 ms | +0.1 % |\n| logic, physics, spatial | | within 2.1 % |\n\nLoad keys within 1.1 %.\n\n**GPU by night** (glFrameRecorder `--gpu-draws`, one run each):\n\n| arm | GPU in draws |\n| --- | --- |\n| classic, 64 a lamp | 4.844 ms |\n| map, 64 a lamp | 4.934 ms (+1.9 %) |\n| map, its default full sets | 5.071 ms |\n\n**By day on today's main**, 8 pairs, 18:52 to 18:58:\n\n| worker | A -> B | paired |\n| --- | --- | --- |\n| pre-render | 8.502 -> 6.761 ms | -18.5 % (8/8) |\n| renderer | 6.415 -> 6.417 ms | +3.4 % (5/8, the means equal) |\n\nThe runner's FAIL (load) is the classic cookies' counter alone (GPU_SHADOW_LIGHTS 47.6 -> 0).\n\n**So on this machine:** map mode costs what the classic layer does for the same shadows, and less on pre-render by day.\nWhat is left by night is a quality choice: every caster in a lamp's reach casts in the map, about 400 against the\nclassic's budgeted 65. A budget for the map that does not pop is the open part (N-212's reason).\n\nThe ASUS's HD 620 (job 0905a, main ba333a19 before E-455 step 3, unequal work): by day every worker under the floor at\ncrowd 0.5; by night GPU-bound, map drawn 43.4 -> 41.2 fps (-5.5 %, 7/8), load keys apart (casters +16 %). An equal-work\nsitting there is queued."
+    },
+    {
+      "id": "R-1869",
+      "date": "2026-11-23",
+      "time": "00:24",
+      "timeFrom": "recorded",
+      "title": "E-531 unified on exp/one-shadow-path: by day neutral, by night pre-render +10.6 % and renderer +1.9 % against main's classic layer",
+      "verdict": "mixed",
+      "text": "Branch exp/one-shadow-path, the unification in four commits: the maps the one way, sunShadows / lampShadows /\nadaptiveShadowBudget gone (76608b6f); Flash.elevation (1d652288); the demos' lights that cast get a height (59800f29);\nno light cookies (01a739d0). The light bench, already on maps, draws main's pixels by day and by night\n(compareCaptures --full-rev: 0 of 921600 differ).\n\nPredator's default (crowd 2.5, mix 1, fresh battles), main 3a8907a7 (the classic layer) against 01a739d0, whole\nrevisions, 4 pairs, this PC (GTX 1650):\n- night (hour 22): REGRESSION. pre-render 9.20 -> 10.52 ms (+14.1 %, 4/4; +10.6 % against the other workers), renderer\n  8.45 -> 9.04 ms (+7.2 %, 4/4; +1.9 % against the others). Physics, which nothing here reaches, moved +6.0 %, logic\n  +3.2 %: drift; read against it the cost is pre-render's. GPU_CASTERS 39 696 / 40 019, shadow lights 48 / 48.\n- day (hour 12): neutral. pre-render +2.2 % (+0.8 % against the others), renderer +2.1 % (0.0 %). FAIL (load) only from\n  GPU_SHADOW_LIGHTS 47 -> 30, which counted cookies and now counts the lamps' map's tiles: not a load change.\n\nWhy by night: the map had no zoom budget (N-212 turned it off, it popped), so each lamp stamps up to Predator's 512\ncasters where the classic layer's adaptive budget kept far fewer zoomed out. N-413 brings the budget back, fading."
+    },
+    {
+      "id": "R-1870",
+      "date": "2026-11-22",
+      "time": "19:51",
+      "timeFrom": "recorded",
+      "title": "E-531 on the ASUS (0905b, 0905c): for the same shadows the maps cost 22 to 30 % less than the classic layer on the HD 620 and the MX110",
+      "verdict": "note",
+      "text": "ASUS (i7-7500U), jobs 0905b and 0905c, Predator crowd 0.5 by night, 8 pairs each, Chrome stable, main pcmain1122b/c,\nA the classic layer, B map shadows (sunShadows and lampShadows 'map', the keys of that day).\n\n- 0905b, the GeForce MX110 at the default load (512 casters a lamp in Predator): renderer 1.88 -> 2.08 ms,\n  pre-render 1.92 -> 1.78 ms, presented 60.1 -> 60.1 fps. Below the 6 ms floor, not judged.\n- 0905c, the same work in both modes (?shadowsPerLight=64): Intel HD 620 renderer 4.12 -> 2.87 ms (-30 %),\n  pre-render 4.12 -> 2.99 ms (-27 %); GeForce MX110 renderer 1.57 -> 1.17 ms (-25 %), pre-render 1.49 -> 1.17 ms\n  (-22 %). GPU_CASTERS equal (4970 / 4975), 48 shadow lights each side. Below the floor, not judged, but every side moved\n  the same way.\n\nOn the ASUS, for the same shadows the maps cost less than the classic layer on both GPUs (on this PC they tied, R-1868)."
+    },
+    {
+      "id": "R-1871",
+      "date": "2026-11-23",
+      "time": "00:43",
+      "timeFrom": "recorded",
+      "title": "N-413 kept: each stamp row's fade at a light's cut and the zoom budget back; Predator by night pre-render -7.4 % against the unification, still +5.5 % against main",
+      "verdict": "kept",
+      "text": "Kept on exp/one-shadow-path (64444388): the stamp kernel keeps each light's nearest candidate left out and writes every\nrow's fade in its light vec4's w (that light's maxShadowsPerLight cut fade times N-330's); the lamps' map multiplies the\ncaster's opacity by it; pre-render's zoom budget comes back for the map (5 % of a lamp's pool in shadow texels, 16 at\nleast). The kernel writes the reference's rows bit for bit (the stamp suites, shadowStampLightCut.test.js new).\n\nPredator's default by night (crowd 2.5, mix 1, hour 22, fresh), 4 pairs, this PC (GTX 1650):\n- against the unification without it (01a739d0): KEPT. pre-render 10.62 -> 9.83 ms (-7.4 %, 0/4 worse; -4.3 % against\n  the other workers), renderer 9.06 -> 8.59 ms (-6.2 %; -1.3 % against the others). Every worker went down (physics\n  -6.5 %): drift, read against it.\n- against main (3a8907a7, the classic layer; whole revisions): still REGRESSION. pre-render 9.58 -> 10.29 ms (+8.3 %,\n  4/4; +5.5 % against the others), renderer 8.56 -> 8.96 ms (+4.8 %; +3.0 %). The night cost of the one shadow path\n  went from +10.6 % to +5.5 % on pre-render and from +1.9 % to +3.0 % on the renderer (two sittings, drift read apart)."
     }
   ],
   "leads": [
