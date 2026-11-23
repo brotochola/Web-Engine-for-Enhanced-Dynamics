@@ -351,6 +351,8 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * row or a diagonal than across it. Each one is a texture read a map a pixel. pixelArt takes 1. Read when the scene starts.
    */
   shadowSamples?: number;
+  /** How much of a lamp's light its shadows take out, 0 to 1 (default 1), as sun.shadowAlpha does for the sun. */
+  lampShadowAlpha?: number;
   /**
    * Tiled light culling: the side, in px of the light's target, of the screen tiles whose lists of lights each light pixel
    * loops over, 4 to 256 (default 16). Not a resolution: the picture is the same at any size, only the work moves. Smaller

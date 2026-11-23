@@ -89,6 +89,15 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   px.lampMap.readTiles();
   px.lighting.updateLighting();
   assert.equal(d[MAX_LIGHTS * 12 + lamp * 4], 1);
+
+  // lighting.lampShadowAlpha: its shadows take out that share of its light (the fade times it); a light without a tile
+  // keeps 1.
+  px.lighting.lampShadowAlpha = 0.6;
+  gpu.stampLightFade[0] = 0.5;
+  px.lampMap.readTiles();
+  px.lighting.updateLighting();
+  assert.equal(d[MAX_LIGHTS * 12 + lamp * 4], Math.fround(0.5 * 0.6));
+  assert.equal(d[MAX_LIGHTS * 12 + plain * 4], 1);
 });
 
 test('N-212: a light that loses its tile goes back to fade 1', async () => {

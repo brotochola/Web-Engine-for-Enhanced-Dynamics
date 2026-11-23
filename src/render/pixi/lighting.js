@@ -25,6 +25,7 @@ import { Query } from '../../core/query.js';
 import { Sun } from '../../core/sun.js';
 import {
   PARTICLE_DEFAULTS,
+  lampShadowAlphaOf,
   lightBehindWallsOf,
   normalShadingOf,
   resolveZenithalMaxHeight,
@@ -142,6 +143,9 @@ export class PixiLighting {
     this.lampTileOf = new Int16Array(0);
     /** N-212: each lamp's map shadow fade at the cut, by entity (1 inside it), read with its tile (_readLampTiles). */
     this.lampFadeOf = new Float32Array(0);
+    // lighting.lampShadowAlpha: how much of a lamp's light its shadows take out (a double from the start: it holds a
+    // fraction; set when the light pass is made).
+    this.lampShadowAlpha = NaN;
     // The light pass's uLampAtlas: tiles a row, a tile's texels, the atlas's width and height.
     this.lampAtlas = new Float32Array([1, 256, 256, 256]);
     this.sunMapK = new Float32Array(4);
@@ -249,6 +253,7 @@ export class PixiLighting {
   }
 
   createLightingSystem() {
+    this.lampShadowAlpha = lampShadowAlphaOf(this.worker.config.lighting);
     const geometry = new PIXI.Geometry({
       attributes: {
         aPosition: [-1, -1, 1, -1, 1, 1, -1, 1],
@@ -682,6 +687,8 @@ export class PixiLighting {
     const tileOf = this.lampTileOf;
     // N-212: and its fourth row's x its map shadow's fade at the cut (1 for any other light).
     const fadeOf = this.lampFadeOf;
+    // lighting.lampShadowAlpha (1 before the light pass is made).
+    const shadowAlpha = this.lampShadowAlpha >= 0 ? this.lampShadowAlpha : 1;
     const row3 = row2 + row2 - row1;
     const ids = this.faceIdsOn;
     // OL-4: each lamp's row of the walls' texture, + 1 (0: nothing stops it), in its fourth row's z.
@@ -746,7 +753,8 @@ export class PixiLighting {
           // DX-GBUF: with the ids map, its entity's id in the fourth row's w, so a pixel of its own entity does not shade
           // from it (lightingBasic lampOwner). N-189: it rode in the tag, -(tile + 1 + 256 · id), which held 256 tiles.
           if (ids) lightData[i3 + 3] = gbufEntityId(entityIndex);
-          if (entityIndex < fadeOf.length) lightData[i3] = fadeOf[entityIndex];
+          // N-212: its fade at the cut, times lighting.lampShadowAlpha: how much of its light its shadows take out.
+          lightData[i3] = (entityIndex < fadeOf.length ? fadeOf[entityIndex] : 1) * shadowAlpha;
           // E-510: how far its shadows reach, where its shadowRange is under its radius (its tile spans that).
           const shadowRange = lightShadowRange[entityIndex];
           if (shadowRange > 0 && shadowRange < rad) lightData[i3 + 1] = shadowRange;

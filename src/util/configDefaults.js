@@ -839,6 +839,11 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   shadowSamples: 5,
   /**
+   * How much of a lamp's light its shadows take out, 0 to 1 (1, the default: all of it), as lighting.sun.shadowAlpha does
+   * for the sun. Under 1 a crowd around a lamp lets some of its light through, as the shadows' layer's stamps did.
+   */
+  lampShadowAlpha: 1,
+  /**
    * E-205, tiled light culling: the side, in px of the light pass's target, of the screen tiles whose lists of lights each
    * pixel loops over, 4 to 256 (lightCullingTileSizeOf). Not a resolution: every tile lists every light that reaches it, so
    * the picture is the same at any size; only the work moves. Smaller tiles follow the lights' reach closer (fewer lights a
@@ -976,6 +981,13 @@ export function lightGlowResolutionOf(lighting) {
 export function lightBehindWallsOf(lighting) {
   const v = lighting?.lightBehindWalls;
   if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightBehindWalls;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** lighting.lampShadowAlpha within 0..1; anything that is not a number takes the default (1). */
+export function lampShadowAlphaOf(lighting) {
+  const v = lighting?.lampShadowAlpha;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lampShadowAlpha;
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
