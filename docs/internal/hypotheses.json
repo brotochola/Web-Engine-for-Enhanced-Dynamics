@@ -14281,7 +14281,7 @@
       "id": "E-270",
       "title": "Decal tiles are premultiplied into a scratch, copied into the tile's array, and uploaded whole (texSubImage2D of the full tile) for any stamp",
       "status": "open",
-      "statusText": "re-read 2026-11-22 (R-1835): the lever is the upload count, not the rows",
+      "statusText": "re-read 2026-11-22 (R-1835): the lever is the upload count, not the rows; E-552 (R-1953) keeps the per-tile whole-tile uploads, now into an array layer",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
@@ -14298,7 +14298,8 @@
       ],
       "records": [
         "R-1427",
-        "R-1835"
+        "R-1835",
+        "R-1953"
       ]
     },
     {
@@ -25538,18 +25539,19 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-1953"
+      ],
       "refs": [],
       "id": "E-552",
       "title": "Pixi's batcher rebinds the decal tiles every frame: each is its own 128 x 128 texture and a batch holds sixteen, so Predator's tiles (more than sixteen in view) are bound again every frame (about 100 binds and unit switches)",
-      "status": "open",
+      "status": "kept",
       "kind": "speed",
       "area": "renderer",
       "date": "2026-11-23",
-      "result": "",
-      "statusText": "filed 2026-11-23 from E-417 (R-1950)",
-      "next": "Draw the tiles from one texture: a tile atlas (the decals already have tiles of one size) or a texture array, one batch with one texture; glFrameRecorder's bindTexture and Chrome's GPU process before and after. Uploads (E-270) go with it: a tile's texSubImage2D into the atlas.",
-      "rank": 22,
+      "result": "Decal tiles as array-texture layers drawn by instanced meshes: Chrome's GPU process -73 % (Predator light3d night), -32 % (crowd 2.5 day); GL calls 1746 -> 330 and 625 -> 245 a frame (e55682b9)",
+      "statusText": "kept 2026-11-23 (R-1953)",
+      "next": "",
       "aliases": [
         "decal tiles atlas",
         "decal batcher binds"
@@ -43481,6 +43483,15 @@
       "title": "E-464 kept: Pixi on WebGPU writes its shifted uniform buffer, no submit of its own: submits 12.7 -> 7 a frame, Chrome's GPU process -11 % at Predator crowd 2.5 (3/3)",
       "verdict": "kept",
       "text": "751caa27 (merged 557309fd): buildPixi.mjs patches GpuUniformBatchPipe._uploadBindGroups, which copied each render call's\nuniforms into the second, shifted buffer in an encoder and a submit of its own; it now writes the shifted bytes with\nqueue.writeBuffer (upstream's change in 8.23, #12345), before the render call's own submit. webgpuFrameRecorder, Predator\ncrowd 2.5 by day: submits and command encoders 12.7 -> 7 a frame, writeBuffer 22.5 -> 28.8, 222 -> 195 calls. Chrome's GPU\nprocess main thread (gpuProcessTrace, untraced, 15:17, 4 pairs ABAB, main ec10d93d against it; the first pair dropped: a\nheaded probe of another session ran into it): CrGpuMain 296 -> 264 ms/s (-11 %, 3/3; B 285, 220, 264), PutChanged 231 -> 205\nms/s (-13 %, 3/3). Captures on WebGPU against main, dxCaptureScene hour 22, the light gallery (?outline=1), houseLightScene:\n0 of 921 600 pixels. The worker's side drops an encoder, a finish and a submit a render call and adds a writeBuffer, so\nno Predator gate was run (its cost can only fall). One submit a frame is the next step (one encoder across the frame's\nrender calls; the engine's passes are separate renderer.render calls)."
+    },
+    {
+      "id": "R-1953",
+      "date": "2026-11-23",
+      "time": "15:46",
+      "timeFrom": "recorded",
+      "title": "E-552 kept: decal tiles from array textures, one instanced mesh a chunk: Chrome's GPU process main thread -73 % by night and -32 % by day, GL calls 1746 -> 330 a frame in Predator light3d",
+      "verdict": "kept",
+      "text": "e55682b9 (merged cdc6c556): src/render/pixi/decalTiles.js. The stamped decal tiles' texels are layers of 2D array textures (a\nchunk of at most 8 MB), each chunk draws the tiles in view as an instanced mesh (decalTile.vert.glsl, .frag.glsl, .wgsl);\ninstances rebuilt when the view's tile range moves or a tile is stamped. A sprite a tile, each with its own texture, had\nPixi's sixteen-unit batcher rebind them every frame.\n- GL calls a frame (glFrameRecorder, 3 s): Predator ?light3d=1&hour=22&crowd=0.5 1746 -> 330 (bindTexture 732 -> 38,\n  activeTexture 714 -> 19); crowd 2.5 by day 625 -> 245.\n- Chrome's GPU process main thread (gpuProcessTrace, untraced, GTX 1650, main e85c2304 against it, ABAB), 15:46 by the result file: light3d night\n  crowd 0.5 539 -> 145 ms/s (-73 %, 4/4), PutChanged 482 -> 93 ms/s; crowd 2.5 day 287 -> 194 ms/s (-32 %, 3/3),\n  PutChanged 229 -> 139 ms/s.\n- Predator gate (light3d night crowd 0.5 from the restored save, 4 pairs, 15:38 by the result files): NEUTRAL, every worker below the 6 ms\n  floor (a quiet save: physics 0.5 ms); the renderer 1.115 -> 0.962 ms (-14 %), presented 60.0 both, so the gate judges\n  nothing but shows no regression.\n- Captures against main: decalCaptureScene (new: seeded decals over the whole world, a still floor) at ?resolution=2 (512 px\n  tiles, several chunks) and ?zoom=2, and with no query, WebGL and WebGPU: 0 of 921 600 pixels apart in all six. An A/A of\n  the scene reads 0 too. Node 3593/3593, demos 143/143.\nE-270 (tiles copied whole per stamp) is untouched: the upload is still the whole tile."
     }
   ],
   "leads": [
