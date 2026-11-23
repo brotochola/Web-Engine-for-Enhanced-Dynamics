@@ -11354,7 +11354,7 @@
     {
       "id": "E-202",
       "title": "Decals stamped on the GPU",
-      "status": "open",
+      "status": "parked",
       "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
       "date": "2026-11-10",
       "result": "",
@@ -11370,7 +11370,8 @@
         "decalBlitStressScene"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-1958"
       ]
     },
     {
@@ -43642,6 +43643,15 @@
       "title": "E-270 kept: dirty decal tiles go up in runs of consecutive layers: decalBlit's Pixi 2.08 -> 0.81 ms (-61 %), Chrome's GPU process -76 %, GL calls 7 208 -> 71 a frame",
       "verdict": "kept",
       "text": "c8f90881 (perf/decal-upload-runs): src/render/pixi/decalTiles.js. A claimed dirty tile is premultiplied after the others of its\nrun, and the run goes up with one texSubImage3D (writeTexture on WebGPU) over its layers; it ends at a tile whose layer does not\nfollow, at a chunk's first layer and at 256 KB (256 tiles of 16 px, 4 of 128). E-552's array textures made it possible: before\nit each tile was a texture of its own. The tiles' own copy arrays are gone (one a stamped tile: 64 KB at 128 px), one run's\narray is left.\n- decalBlitStressScene, GTX 1650, headed, main fc085e4b against c8f90881, 4 pairs (--pool, 17:11 to 17:14 by the result files),\n  1 024 tiles uploaded a frame on both sides: renderer STEP - WAIT 2.083 -> 0.807 ms (-60.7 %, pairs -68, -60, -61, -59 %, 4/4;\n  cv 10 % and 2 %). Both sides are under the 6 ms floor, so the runner's word is NEUTRAL; every pair is past ten times the\n  bar. DECAL_TILES_DIRTY 3 927 against 3 660 (the backlog the cap leaves, cv 32 and 20 %).\n- Chrome's GPU process main thread (gpuProcessTrace, untraced, 3 ABAB pairs, to 17:18): 931 -> 225 ms/s (-76 %, 3/3),\n  PutChanged 865 -> 186 ms/s (-79 %).\n- glFrameRecorder, a side each: 7 208 -> 71 GL calls a frame (bindTexture 2 049 -> 10), the same 1 024 KB of texels.\n- decalCaptureScene, main against it: 0 of 921 600 pixels differ on WebGL and on WebGPU. tests/node/decalUploadRuns.test.js: every\n  claimed tile's layer holds its texels, in any stamping order, chunk size, run room and upload cap, on both backends. Suite 3612/3612.\nNot run: a Predator gate (a few tiles a frame there, its renderer about 1 ms, under the floor)."
+    },
+    {
+      "id": "R-1958",
+      "date": "2026-11-23",
+      "time": "17:19",
+      "timeFrom": "recorded",
+      "title": "E-202 parked: after E-552 and E-270 decalBlit's Pixi is 0.81 ms at 1 024 tiles uploaded a frame, so stamping on the GPU has little left to win there",
+      "verdict": "note",
+      "text": "Its owner scene's Pixi was 228 ms/s of uploads when it was filed; R-1957 left 0.81 ms a frame at 1 024 tiles of 16 px (48 ms/s) and Chrome's GPU process at 225 ms/s. What stays on the CPU is the blending itself (the particle worker, about 1.9 ms in that scene). Stamping on the GPU would still cost a readback for saves and the context-loss path. Parked until a scene shows the blending or the uploads as a cost."
     }
   ],
   "leads": [
