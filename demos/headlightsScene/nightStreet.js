@@ -25,6 +25,7 @@ export const HEADLIGHT = {
   color: 0xfff1c4, // warm white
   coneAngle: Math.PI / 3, // the whole aperture: 60 degrees, 30 each side of the car's heading
   coneSoftness: 0.35, // the outer 35 % of each half fades out; 0 is a hard edge
+  elevation: 20, // the lamps' height on the bumper: what the beam meets casts its shadow from there
 };
 
 /** A street lamp: a round light (no coneAngle), its bulb up the post. */
@@ -129,6 +130,7 @@ export class Car extends GameObject {
     light.offsetX = front; // the box's front: the front bumper
     light.coneAngle = HEADLIGHT.coneAngle;
     light.coneSoftness = HEADLIGHT.coneSoftness;
+    light.elevation = HEADLIGHT.elevation;
     light.direction = 0; // where the cone points from the car's heading (radians); 0 is the default
   }
 

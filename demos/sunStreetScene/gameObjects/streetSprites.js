@@ -140,6 +140,8 @@ export class StreetCar extends GameObject {
     this.lightEmitter.color = 0xfff1c4;
     this.lightEmitter.radius = 0;
     this.lightEmitter.offsetX = config.offset;
+    // The headlights 20 px up, on the bumper: what the beam meets casts its shadow from there.
+    this.lightEmitter.elevation = 20;
     // A wall only where the scene asks for walls (lighting.walls), as the houses.
     if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
   }
