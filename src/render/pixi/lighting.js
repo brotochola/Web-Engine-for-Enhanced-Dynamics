@@ -636,7 +636,7 @@ export class PixiLighting {
       if (!(lightRadius[i] > 0)) continue;
 
       // World-space light position from Transform SAB, same source as
-      // updateLighting/updateShadowSprites use.
+      // updateLighting and the shadow maps use.
       const ox = offsetX[i];
       const oy = offsetY[i];
       const x = worldX[i] + ox * rotC[i] - oy * rotS[i];
@@ -956,34 +956,15 @@ export class PixiLighting {
     u.uFlipY = !rt && !this.worker._useWebGpu ? 1 : 0;
   }
 
+  /** The shadow maps' texels per canvas px: the canvas at lighting.shadowResolution, rounded to whole texels. */
   shadowPixelScale() {
-    const rt = this.worker.shadowRT;
-    return rtPixelScale(this.worker.canvasWidth, rt ? rt.width : rtPixelSize(this.worker.canvasWidth, this.worker.shadowResolution));
+    return rtPixelScale(this.worker.canvasWidth, rtPixelSize(this.worker.canvasWidth, this.worker.shadowResolution));
   }
 
-  _lightingShadowSource() {
-    return this.worker.shadowRT?.source || PIXI.Texture.EMPTY.source;
-  }
-
+  /** The pass's old shadows' layer binding (uShadowComposite stays 0): an empty texture. */
   _lightingShadowResources() {
-    const src = this._lightingShadowSource();
+    const src = PIXI.Texture.EMPTY.source;
     return { uShadowMap: src, uShadowSampler: src.style };
-  }
-
-  bindLightingShadowMap() {
-    const res = this.lightingShader?.resources;
-    if (!res) return;
-    const src = this._lightingShadowSource();
-    res.uShadowMap = src;
-    res.uShadowSampler = src.style;
-  }
-
-  unbindLightingShadowMap() {
-    const res = this.lightingShader?.resources;
-    if (!res) return;
-    const empty = PIXI.Texture.EMPTY.source;
-    res.uShadowMap = empty;
-    res.uShadowSampler = empty.style;
   }
 
   /**

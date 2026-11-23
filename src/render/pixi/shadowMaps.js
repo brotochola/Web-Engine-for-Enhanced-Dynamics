@@ -1,9 +1,9 @@
 /**
- * N-256 PW-8: the renderer's 3D shadow maps, moved out of pixiWorker.js as they were (DX-SHADOW3D and after). The sun's
- * map (lighting.sunShadows 'map'), its keyed rows, the volumes drawn into it and the solids' columns; the lamps' map
- * (lighting.lampShadows 'map'), its tiles, keyed strips, card and volume programs and the still lamps' cache (E-508);
- * the shadows' layer's sprite system and the GPU casters' passes (DX-GPUSHADOWS), keyed or not. The light pass binds
- * the maps' targets, which stay the worker's with the lighting state (sunMapRT, lampMapRT, the tile size and fades).
+ * N-256 PW-8: the renderer's 3D shadow maps, moved out of pixiWorker.js as they were (DX-SHADOW3D and after), the one way
+ * shadows are drawn (E-531). The sun's map, its keyed rows, the volumes drawn into it and the solids' columns; the
+ * lamps' map (lampMap.js), its tiles, keyed strips, card and volume programs and the still lamps' cache (E-508); the GPU
+ * casters' batch whose rows both draw (DX-GPUSHADOWS), keyed or not. The light pass binds the maps' targets, which stay
+ * the worker's with the lighting state (sunMapRT, lampMapRT, the tile size and fades).
  *
  * Until the renderer's other subsystems move (N-256), what this class reads of the worker (its renderer, backend,
  * camera, config, lighting state, batches, queues, shaders, assets and custom layers) goes through `this.worker`.
@@ -24,23 +24,19 @@ import {
   Mesh,
   RenderTexture,
   Shader,
-  Sprite,
   State,
 } from '../../vendor/pixi.min.js';
 import {
   GPU_CASTER_FLOATS,
-  GPU_FLAG_CASTER_OWN,
   GPU_FLAG_KEYED_CASTERS,
-  GPU_HDR_COOKIE,
   GPU_HDR_FLAGS,
   GPU_HDR_STAMP,
   GPU_HDR_SUN,
   GPU_KEYED_CASTER_FLOATS,
   GPU_KEYED_STAMP_FLOATS,
-  GPU_SPRITE_FLOATS,
 } from '../gpuQueueLayout.js';
 import { rtPixelSize } from '../gpuShadowCasters.js';
-import { INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch, TEX_LUT_FLOATS } from '../instancedSpriteBatch.js';
+import { InstancedSpriteBatch, TEX_LUT_FLOATS } from '../instancedSpriteBatch.js';
 import { lampMapColumnsVertex, lampMapColumnsWgsl, lampMapFragment } from '../lampShadowMap.js';
 import { layerIsVisible } from '../pixi/layerHelpers.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../spriteIndexed.js';
@@ -63,11 +59,10 @@ import {
 } from '../sunShadowMap.js';
 import { volumeMapGpuProgram, volumeMapWgsl } from '../volumeShadowMap.js';
 import { glProgramFrom } from '../webgl/glProgram.js';
-import { pickInstancedSpriteFragmentGlsl } from '../webgl/instancedSpriteGlsl.js';
 import { sunShadowGpuProgram } from '../webgpu/instancedSpriteWgsl.js';
 
 // The Pixi classes the moved bodies name as PIXI.X, as pixiWorker.js's namespace does.
-const PIXI = Object.freeze({ Container, Geometry, GlProgram, Mesh, RenderTexture, Shader, Sprite, State });
+const PIXI = Object.freeze({ Container, Geometry, GlProgram, Mesh, RenderTexture, Shader });
 
 /**
  * DX-GBUF: the shadow maps' programs' state (sunShadowMap.frag.glsl): no blending, a depth test (less) and its writes, so
@@ -87,17 +82,7 @@ export class PixiShadowMaps {
   /** @param {object} worker the PixiRenderer that owns this (its renderer, camera, lighting state and batches) */
   constructor(worker) {
     this.worker = worker;
-    // E-191: the sun's shadow pass over the entity batch's keyed instances (made on the first shadow pass that can use
-    // it; null where it cannot be), and whether that was tried.
-    this.keyedSunMesh = null;
-    this.keyedSunTried = false;
-    // E-211: whether the last sun pass would have drawn those instances (it had no keyed caster rows from pre-render),
-    // so the keyed pack writes their shadow terms for the next one.
-    this.keyedSunWanted = false;
-    // E-191 step 2: the shadow passes over pre-render's keyed caster rows (the sun's, the stamps'), made with the keyed
-    // sun pass; whether that was tried; and whether a frame of such rows was refused for want of them (said once).
-    this.keyedSunRowsMesh = null;
-    this.keyedStampRowsMesh = null;
+    // E-191 step 2: whether the maps' use of pre-render's keyed caster rows was settled (_ensureKeyedCasters).
     this.keyedCastersTried = false;
     // DX-SHADOW3D (F6): the volumes' map programs, one a volumes' batch (made on first use).
     this.volumeMapMeshes = [];
@@ -115,9 +100,6 @@ export class PixiShadowMaps {
     // E-395: the columns passes over keyed caster rows, made on first use (_keyedColumnsFor, which picks one by name).
     this.sunMapKeyedColumns = null;
     this.lampMapKeyedColumns = null;
-    // DX-SHADOW3D: layer shadows in a scene with height maps (WebGL): cards that skip mapped frames, and the columns of
-    // the mapped ones on the shadows' layer (max blending). { cards, columns } once made (_drawSunSolids).
-    this.sunSolids = null;
     this.sunMapUniforms = null;
     this.sunMapTerms = new Float32Array(4);
     this.sunMapNeed = new Float64Array(4);
@@ -128,12 +110,13 @@ export class PixiShadowMaps {
     this.sunMapClear = false;
     this.shadowUpdateInterval = 1;
     this.shadowUpdateTick = 0;
-    this.gpuSunDrew = false;
-    // N-411: whether the shadows' target holds what a pass drew (true at first: a new target is cleared once).
-    this.shadowTargetHeld = true;
   }
 
-  createShadowSpriteSystem() {
+  /**
+   * E-531: the shadows' state, made once with shadows on: lighting's shadow keys and the casters' batch, whose geometries
+   * the sun's and the lamps' maps draw (pre-render's sun and stamp rows, full or keyed).
+   */
+  create() {
     const lightingConfig = this.worker.config.lighting || {};
     this.worker.shadowResolution = lightingConfig.shadowResolution ?? LIGHTING_DEFAULTS.shadowResolution;
     this.shadowUpdateInterval = lightingConfig.shadowUpdateInterval ?? LIGHTING_DEFAULTS.shadowUpdateInterval ?? 1;
@@ -143,27 +126,10 @@ export class PixiShadowMaps {
       this.worker.maxShadowCastingLights = lightingConfig.maxShadowCastingLights;
     }
 
-    this.worker.shadowRT = PIXI.RenderTexture.create({
-      width: rtPixelSize(this.worker.canvasWidth, this.worker.shadowResolution),
-      height: rtPixelSize(this.worker.canvasHeight, this.worker.shadowResolution),
-    });
-
     const gpuCaps = this.worker.gpuQueueBuffers && this.worker.gpuQueueBuffers[0] ? this.worker.gpuQueueBuffers[0].caps : null;
-    const cookieCap = gpuCaps ? Math.max(1, gpuCaps.maxCookie | 0) : Math.max(1, this.worker.maxLights | 0);
     const casterCap = gpuCaps
       ? Math.max(1, gpuCaps.maxSun | 0, gpuCaps.maxStamp | 0)
       : Math.max(1, this.worker.renderQueueMaxItems | 0);
-    this.worker.shadowBatch = new InstancedSpriteBatch({
-      capacity: cookieCap,
-      label: 'shadows-instanced',
-      atlasSource: this.worker.assets.resolveAtlasSource(),
-      lutSource: this.worker.assets.texLutSource,
-      depthTest: false,
-      depthMask: false,
-      useWebGpu: this.worker._useWebGpu,
-      shaders: this.worker._engineShaders,
-      arena: this.worker._batchArena(cookieCap * INSTANCED_SPRITE_FLOATS),
-    });
     this.worker.gpuCasterBatch = new InstancedSpriteBatch({
       capacity: casterCap,
       label: 'gpu-casters',
@@ -180,60 +146,40 @@ export class PixiShadowMaps {
       this.worker.gpuCasterBatch.mesh.shader = this.worker.gpuCasterBatch.shadowShader;
       // E-494: its sprite program is never drawn (the batch draws casters only): not linked ahead, unless another batch's
       // is the same program (GlProgram.from).
-      this.worker._leaveOutOfLinksAhead(this.worker.gpuCasterBatch.shader, [this.worker.shadowBatch.shader]);
+      this.worker._leaveOutOfLinksAhead(this.worker.gpuCasterBatch.shader, [this.worker.entitiesBatch?.shader, this.worker.entitiesGlowBatch?.shader]);
     }
+    debugWorkerLog(`PIXI WORKER: shadow maps' casters (${casterCap})`);
+  }
 
-    this.worker.shadowDisplaySprite = new PIXI.Sprite(this.worker.shadowRT);
-    this.worker.shadowDisplaySprite.anchor.set(0, 0);
-    this.worker.shadowDisplaySprite.position.set(0, 0);
-    this.worker.shadowDisplaySprite.scale.set(
-      this.worker.canvasWidth / this.worker.shadowRT.width,
-      this.worker.canvasHeight / this.worker.shadowRT.height
-    );
-    this.worker.lighting.bindLightingShadowMap();
-    this.worker._registerLayerDisplayObject('castedShadows', this.worker.shadowDisplaySprite);
-    this.worker.pixiApp.stage.addChild(this.worker.shadowDisplaySprite);
+  /** The screen's size in the sun map's texels before N-317's margins: the canvas at lighting.shadowResolution. */
+  viewWidth() {
+    return rtPixelSize(this.worker.canvasWidth, this.worker.shadowResolution);
+  }
 
-    debugWorkerLog(
-      `PIXI WORKER: Shadow instanced RT (${this.worker.shadowRT.width}x${this.worker.shadowRT.height}, casters ${casterCap})`
-    );
+  viewHeight() {
+    return rtPixelSize(this.worker.canvasHeight, this.worker.shadowResolution);
   }
 
   /**
-   * Create the RenderTexture-based shadow system:
-   * 1. Create shadowRT (RenderTexture) - cleared transparent each frame
-   * 2. Create shadowBatch - instanced Mesh (per-light soft cookies + black shadows)
-   * 3. Create shadowDisplaySprite - displays shadowRT with multiply blend
-   *
-   * Rendering order per frame (SoA already interleaved per light):
-   * - Clear shadowRT to transparent (not opaque black — that fills the multiply layer)
-   * - Draw light cookies then that light's shadows (multi-light attenuation)
-   * - shadowDisplaySprite (multiply) darkens the scene where RT is dark
+   * A frame's shadows: the sun's and the lamps' maps drawn from pre-render's rows (every lighting.shadowUpdateInterval
+   * frames), or cleared once while the casted-shadows layer is hidden.
    */
-  updateShadowSprites() {
-    if (!this.worker.shadowSpritesEnabled) return;
-    if (!this.worker.shadowBatch || !this.worker.shadowRT) return;
+  update() {
+    if (!this.worker.shadowsEnabled) return;
     if (!layerIsVisible(Layer.castedShadows?.id)) {
-      this._setKeyedSunStream(false);
       this._clearShadowMapsWhileHidden();
       return;
     }
     const interval = this.shadowUpdateInterval | 0;
     const skip = interval > 1 && (this.shadowUpdateTick % interval) !== 0;
     this.shadowUpdateTick++;
-    if (!skip) {
-      this._drawGpuCasterShadows();
-    }
-    // E-211: the next frame's keyed pack writes the instances' shadow terms only when that frame's sun pass runs and
-    // would draw them.
-    const nextSkip = interval > 1 && (this.shadowUpdateTick % interval) !== 0;
-    this._setKeyedSunStream(this.keyedSunWanted && !nextSkip);
+    if (!skip) this._drawMaps();
   }
 
   /**
-   * DBG-1: the casted-shadows layer hidden means no shadows. In map mode the light pass samples the sun's and the lamps'
-   * maps, and only the shadow pass draws or clears them: left alone they would stand on screen, frozen. They are cleared
-   * once, and the tick restarts so the first frame shown again draws them whatever shadowUpdateInterval is.
+   * DBG-1: the casted-shadows layer hidden means no shadows. The light pass samples the sun's and the lamps' maps, and
+   * only the shadow pass draws or clears them: left alone they would stand on screen, frozen. They are cleared once, and
+   * the tick restarts so the first frame shown again draws them whatever shadowUpdateInterval is.
    */
   _clearShadowMapsWhileHidden() {
     this.shadowUpdateTick = 0;
@@ -247,247 +193,81 @@ export class PixiShadowMaps {
     }
   }
 
-  /** E-211: whether the entity batch's next keyed packs write its instances' shadow terms (once it has them). */
-  _setKeyedSunStream(on) {
-    const b = this.worker.entitiesBatch;
-    if (b && b.keyedShadows) b.setKeyedShadowStream(on);
-  }
-
-  _drawGpuCasterShadows() {
-    this.keyedSunWanted = false;
-    this.gpuSunDrew = false;
+  /** The sun's rows into its map, the stamps' into the lamps' tiles, the volumes into both. */
+  _drawMaps() {
     this.worker._gpuPassesThisFrame = 0;
     this.worker._gpuCastersThisFrame = 0;
     this.worker._gpuShadowLightsThisFrame = 0;
     const batch = this.worker.gpuCasterBatch;
     const mesh = batch && batch.mesh;
     const shader = batch && batch.shadowShader;
-    if (!shader || !mesh || !this.worker.shadowRT) return;
-    const group = shader.resources && shader.resources.uniforms;
-    const u = group && group.uniforms;
-    if (!u || !u.uCam || !u.uSun || !u.uLight) return;
+    if (!shader || !mesh) return;
 
-    this._ensureKeyedCasters(shader);
+    this._ensureKeyedCasters();
     const gpu = this.worker._gpuQueueRead;
     // DBG-1: the sun and stamp rows are the entities' (pre-render takes them from the render queue), so a hidden entities
-    // layer casts nothing, and its cookies (they only lighten what casters drew) go with them. Volumes cast on their own.
+    // layer casts nothing. Volumes cast on their own.
     const castersShown = !!(gpu && gpu.header) && layerIsVisible(Layer.entitiesId);
     const sunN = castersShown ? (gpu.header[GPU_HDR_SUN] | 0) : 0;
     const stampN = castersShown ? (gpu.header[GPU_HDR_STAMP] | 0) : 0;
-    const cookieN = castersShown ? (gpu.header[GPU_HDR_COOKIE] | 0) : 0;
     // E-191 step 2: pre-render's sun and stamp rows are keyed caster rows (a pose, a key, the shadow terms; a stamp's
     // light) when it found Pixi's statics recent.
     const keyedRows = gpu && gpu.header ? ((gpu.header[GPU_HDR_FLAGS] | 0) & GPU_FLAG_KEYED_CASTERS) !== 0 : false;
-    // N-188: this frame's rows carry casters' own ways: they are drawn, not the entity batch's keyed instances.
-    const ownRows = gpu && gpu.header ? ((gpu.header[GPU_HDR_FLAGS] | 0) & GPU_FLAG_CASTER_OWN) !== 0 : false;
     this.worker._gpuCastersThisFrame = sunN;
-    this.worker._gpuShadowLightsThisFrame = cookieN;
 
-    const zoom = this.worker._renderZoom || 1;
-    const res = this.worker.lighting.shadowPixelScale();
-    u.uCam[0] = this.worker._renderCameraX;
-    u.uCam[1] = this.worker._renderCameraY;
-    u.uCam[2] = zoom * res;
-    const sunOn = Sun.isInitialized && Sun.enabled && Sun.intensity > 0.1;
-    if (sunOn) {
-      u.uSun[0] = Sun.shadowDirY;
-      u.uSun[1] = -Sun.shadowDirX;
-      u.uSun[2] = Sun.shadowLengthRatio;
-      u.uSun[3] = Sun.shadowOpacity;
-      // DX-SHADOW3D: the sun's card, in both shadow modes: each picture point lands along the sun's ray (no longer than
-      // shadowMaxLengthRatio per px of height), its columns across the sun.
-      this.worker.lighting.writeFaceSun();
-      const t = sunMapTerms(this.worker.lighting.faceSun, this.sunMapTerms, Sun.shadowMaxLengthRatio);
-      u.uSunK[0] = t[0];
-      u.uSunK[1] = t[1];
-      u.uSunK[3] = this.worker._heightScaleY > 0 ? this.worker._heightScaleY : 1;
-      u.uSunPerp[0] = t[2];
-      u.uSunPerp[1] = t[3];
-    } else {
-      u.uSun[3] = 0;
-    }
-    u.uGroundInvScaleY = this.worker._groundInvScaleY || 1;
-    u.uLight[0] = 0;
-    u.uLight[1] = 0;
-    u.uLight[2] = 0;
-    u.uLight[3] = 0;
-    u.uPointScale = 0;
-    if (mesh.shader !== shader) mesh.shader = shader;
-    mesh.position.set(0, 0);
-    mesh.scale.set(1, 1);
-    const rtOpts = this.worker._rtRenderOpts;
-    rtOpts.target = this.worker.shadowRT;
-    rtOpts.clearColor = this.worker._clearTransparent;
-
+    const screenScale = (this.worker._renderZoom || 1) * this.worker.lighting.shadowPixelScale();
+    const sunOn = Sun.isInitialized && Sun.enabled && Sun.intensity > 0.1 && Sun.shadowOpacity > 0;
     batch.setTargetSpace(false, 0, 0, 1);
     this.sunMapDrew = false;
     if (this.worker._sunMapOn) {
-      // DX-SHADOW3D: the sun's rows go to its shadow map, not to the shadows' layer.
-      if (u.uSun[3] > 0 && (sunN > 0 || this._volumesCast()) && this._drawSunMap(batch, gpu, sunN, zoom * res, keyedRows)) {
+      if (sunOn && (sunN > 0 || this._volumesCast()) && this._drawSunMap(batch, gpu, sunN, screenScale, keyedRows)) {
         this.sunMapDrew = true;
       }
       this._clearSunMapIfEmpty();
-    } else if (u.uSun[3] > 0 && sunN > 0 && !keyedRows && this.sunSolidsOn()) {
-      // DX-SHADOW3D: a scene with height maps: what has one casts its solid's columns, the rest its card (full rows).
-      this.worker._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
-      this._drawSunSolids(batch, group);
-    } else if (u.uSun[3] > 0 && sunN > 0) {
-      // E-211: pre-render's keyed sun rows when it wrote them (it packs them for the stamps in any case): 28 bytes a
-      // caster, read in order, where the instances cost the keyed pack 12 bytes a sprite gathered from three more
-      // queue columns and 12 more written. Else (E-191) the entity batch's own instances, when this frame's pack wrote
-      // their shadow terms (a sprite that casts none has no height); else pre-render's full sun rows.
-      this.keyedSunWanted = !keyedRows && !ownRows;
-      const keyedSun = keyedRows || ownRows ? null : this._keyedSunFor(shader);
-      if (keyedRows) {
-        const rows = this.worker._keyedRowsMesh(this.keyedSunRowsMesh, gpu.sun, sunN, GPU_KEYED_CASTER_FLOATS);
-        if (rows !== null) this._drawGpuCasterPass(rows, group, true);
-      } else if (keyedSun !== null) {
-        this._drawGpuCasterPass(keyedSun, group, true);
-      } else {
-        this.worker._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
-        this._drawGpuCasterPass(mesh, group, true);
+    }
+
+    const lampMap = this.worker.lampMap;
+    lampMap.mapDrew = false;
+    if (this.worker._lampMapOn) {
+      if (stampN > 0) {
+        // DX-SHADOW3D (F7): each lamp's casters into its tile of the lamps' map; the light pass takes each lamp out alone.
+        // E-395: keyed stamp rows too.
+        lampMap.mapDrew = lampMap.draw(batch, gpu, stampN, keyedRows);
+      } else if ((lampMap.tileCount | 0) > 0) {
+        // OL-5: lamps with tiles and no stamp row (no sprite caster in any lamp's reach): the volumes alone.
+        lampMap.mapDrew = lampMap.drawVolumes(gpu);
       }
+      if (!lampMap.mapDrew) lampMap.clearIfEmpty();
+      this.worker._gpuShadowLightsThisFrame = lampMap.tileCount | 0;
     }
-
-    const sunI = sunOn ? Sun.intensity : 0;
-    let pointScale = 0.33 * (1 - sunI * 0.9);
-    if (pointScale < 0.2) pointScale = 0.2;
-    u.uPointScale = pointScale;
-    u.uGroundInvScaleY = this.worker._groundInvScaleY || 1;
-
-    if (cookieN > 0 && this.worker.shadowBatch && gpu.cookie) {
-      const screenScale = zoom * res;
-      this.worker.shadowBatch.setTargetSpace(true, this.worker._renderCameraX, this.worker._renderCameraY, screenScale);
-      if (this.worker._commitPackedBatch(this.worker.shadowBatch, gpu.cookie, cookieN, GPU_SPRITE_FLOATS)) {
-        rtOpts.container = this.worker.shadowBatch.mesh;
-        rtOpts.target = this.worker.shadowRT;
-        rtOpts.clear = !this.gpuSunDrew;
-        rtOpts.clearColor = this.worker._clearTransparent;
-        this.worker._submitRender(rtOpts);
-        this.worker._gpuPassesThisFrame++;
-        this.gpuSunDrew = true;
-      }
-    }
-
-    this.worker.lampMap.mapDrew = false;
-    if (stampN > 0 && this.worker._lampMapOn) {
-      // DX-SHADOW3D (F7): each lamp's casters into its tile of the lamps' map; the light pass takes each lamp out alone.
-      // E-395: keyed stamp rows too (WebGL).
-      this.worker.lampMap.mapDrew = this.worker.lampMap.draw(batch, gpu, stampN, keyedRows);
-    } else if (stampN > 0) {
-      u.uLight[0] = 0;
-      u.uLight[1] = 0;
-      u.uLight[2] = 0;
-      u.uLight[3] = 0;
-      if (keyedRows) {
-        const rows = this.worker._keyedRowsMesh(this.keyedStampRowsMesh, gpu.stamp, stampN, GPU_KEYED_STAMP_FLOATS);
-        if (rows !== null) this._drawGpuCasterPass(rows, group, !this.gpuSunDrew);
-      } else {
-        this.worker._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
-        this._drawGpuCasterPass(mesh, group, !this.gpuSunDrew);
-      }
-    } else if (stampN <= 0 && this.worker._lampMapOn && (this.worker.lampMap.tileCount | 0) > 0) {
-      // OL-5: lamps with tiles and no stamp row (no sprite caster in any lamp's reach): the volumes alone.
-      this.worker.lampMap.mapDrew = this.worker.lampMap.drawVolumes(gpu);
-    }
-
-    if (this.worker._lampMapOn && !this.worker.lampMap.mapDrew) this.worker.lampMap.clearIfEmpty();
-
-    // N-411: with nothing drawn into the shadows' target this frame (map mode, where the sun and the lamps go to their
-    // maps, or a frame with no caster), its composite multiplied a transparent target over the whole canvas: a full
-    // pass a frame that changed no pixel. It is skipped, and the target cleared once when it last held shadows (a debug
-    // view shows it; the light pass never reads it). The next pass that draws into it clears it first.
-    if (!this.gpuSunDrew && this.shadowTargetHeld) {
-      rtOpts.container = this.worker._rtEmptyContainer;
-      rtOpts.clear = true;
-      this.worker._submitRender(rtOpts);
-    }
-    this.shadowTargetHeld = this.gpuSunDrew;
-    const composite = this.worker.shadowDisplaySprite;
-    if (composite && composite.renderable !== this.gpuSunDrew) composite.renderable = this.gpuSunDrew;
-  }
-
-  _drawGpuCasterPass(mesh, group, needClear) {
-    if ((mesh.geometry.instanceCount | 0) <= 0) return false;
-    const rtOpts = this.worker._rtRenderOpts;
-    rtOpts.container = mesh;
-    rtOpts.target = this.worker.shadowRT;
-    rtOpts.clear = needClear;
-    this.worker._syncUniformGroup(group);
-    this.worker._submitRender(rtOpts);
-    this.worker._gpuPassesThisFrame++;
-    this.gpuSunDrew = true;
-    return true;
   }
 
   /**
-   * E-191: the sun pass's mesh over the entity batch's keyed instances of this frame, or null (no keyed frame this
-   * frame, WebGPU, or no shadow stream). Made on first use: the shadow program reading the statics by key, the caster
-   * shader's resources and uniform group, the caster batch's state.
+   * E-191 step 2: once, whether the maps draw pre-render's keyed caster rows. With the entity batch's keyed frames (and,
+   * where the atlas has height maps, its copy of the slots' statics, which the columns over keyed rows pick their rows
+   * by: enableStaticsMirror), the entity batch's keyed uploads tell pre-render (its header's LIVE word), which then
+   * writes such rows; the maps' keyed programs (_drawSunMap, lampMap.js draw) read them.
    */
-  _keyedSunFor(sunShader) {
-    // Those instances are the sprites': a ShadowCaster's own texture is only in pre-render's rows.
-    // DX-SHADOW3D: a directional caster's sun frame rides in pre-render's rows (full or keyed, plan §17.2); these
-    // instances have no room for it.
-    // N-188: casters' own ways (a frame, a kind) and the keyed paths' diagnostic switch ride in pre-render's rows (the
-    // frame's GPU_FLAG_CASTER_OWN, which the caller reads).
-    if (this.worker.config?.lighting?.keyedCasters === false || this.worker.config?.lighting?.directionalCasters === true) return null;
-    const b = this.worker.entitiesBatch;
-    if (!this.keyedSunTried) {
-      this.keyedSunTried = true;
-      const casters = this.worker.gpuCasterBatch;
-      if (b && b.keyed && casters && casters.mesh && b.enableKeyedShadows()) {
-        const shader = b.makeKeyedSunShader(sunShader);
-        if (shader) {
-          this.keyedSunMesh = new PIXI.Mesh({
-            geometry: b.keyedShadowGeometry,
-            shader,
-            state: casters.mesh.state,
-            label: 'keyed-sun-casters',
-          });
-        }
-      }
-    }
-    if (this.keyedSunMesh === null || !b || !b.keyedShadowReady) return null;
-    this.keyedSunMesh.geometry = b.keyedShadowGeometry;
-    return this.keyedSunMesh;
-  }
-
-  /**
-   * E-191 step 2: the shadow passes over pre-render's keyed caster rows, made once: the sun rows' and the stamp rows'
-   * programs (the entity batch's statics by key) on the caster batch's geometries for such rows. Once both are made the
-   * entity batch's keyed uploads tell pre-render (its header's LIVE word), which then writes such rows.
-   */
-  _ensureKeyedCasters(sunShader) {
-    // DX-SHADOW3D: the sun's map and the renders' solids read pre-render's full rows (their columns need a frame's
-    // instance whole); a directional caster's sun frame rides in the keyed rows too (plan §17.2).
-    // E-395: the maps draw keyed rows too (_drawSunMap, lampMap.js draw), and the renders' columns over them, picked with the
-    // entity batch's copy of the slots' statics (enableStaticsMirror) where the atlas has height maps.
+  _ensureKeyedCasters() {
     if (this.keyedCastersTried) return;
     this.keyedCastersTried = true;
     const b = this.worker.entitiesBatch;
     const casters = this.worker.gpuCasterBatch;
     if (!b || !b.keyed || !casters || !casters.mesh) return;
-    if (this.sunSolidsOn() && !b.enableStaticsMirror()) return;
-    const sun = b.makeKeyedCasterShader(sunShader, false);
-    const stamp = b.makeKeyedCasterShader(sunShader, true);
-    if (sun === null || stamp === null) return;
-    const state = casters.mesh.state;
-    this.keyedSunRowsMesh = new PIXI.Mesh({ geometry: casters.keyedCasterGeometry(false), shader: sun, state, label: 'keyed-sun-rows' });
-    this.keyedStampRowsMesh = new PIXI.Mesh({ geometry: casters.keyedCasterGeometry(true), shader: stamp, state, label: 'keyed-stamp-rows' });
+    if (this.worker.assets.atlasMapsSource !== null && !b.enableStaticsMirror()) return;
     b.keyedCasters = true;
   }
 
   /**
-   * N-317: the sun map reaches past the shadows' layer by the margins this frame's sun needs (sunMapMargins: the atlas's
+   * N-317: the sun map reaches past the screen by the margins this frame's sun needs (sunMapMargins: the atlas's
    * tallest frame, at most SUN_MAP_ZMAX px of height, landing by the sun's terms), so a pixel near the screen's edge finds
    * its ray's landing in it. The map is made again only when a margin needs more than it has, or has more than twice what
    * it needs and 64 texels besides (each made with a quarter more, rounded up to 16 texels). Sets the camera its passes
    * draw from (moved by the top-left margins) and the light pass's uSunMapRect (the screen's uv into the map).
    */
   _fitSunMap(screenScale) {
-    const w = this.worker.shadowRT.width;
-    const h = this.worker.shadowRT.height;
+    const w = this.viewWidth();
+    const h = this.viewHeight();
     const hs = this.worker._heightScaleY > 0 ? this.worker._heightScaleY : 1;
     const s = screenScale > 0 ? screenScale : 1;
     const tallest = Math.min(SUN_MAP_ZMAX, this.sunMapTallestPx / hs);
@@ -523,7 +303,7 @@ export class PixiShadowMaps {
     this.sunMapCamY = this.worker._renderCameraY - m[1] / s;
   }
 
-  /** DX-SHADOW3D: the sun's shadow map, the size of the shadows' layer and N-317's margins, bound to the light pass. */
+  /** DX-SHADOW3D: the sun's shadow map, the screen at lighting.shadowResolution and N-317's margins, bound to the light pass. */
   createSunMap(width, height) {
     if (this.worker.sunMapRT) this.worker.sunMapRT.destroy(true);
     this.worker.sunMapRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
@@ -540,8 +320,8 @@ export class PixiShadowMaps {
    */
   _drawSunMap(batch, gpu, sunN, screenScale, keyedRows = false) {
     const shaders = this.worker._engineShaders;
-    if (!this.worker.shadowRT || !(this.worker._useWebGpu ? shaders?.shadowWgsl : shaders?.shadowVert && shaders?.sunMapFrag)) return false;
-    // Made here (the shadow layer is created before the lighting config is read), to the margins the sun asks for now.
+    if (!(this.worker._useWebGpu ? shaders?.shadowWgsl : shaders?.shadowVert && shaders?.sunMapFrag)) return false;
+    // Made here, to the margins the sun asks for now.
     this.worker.lighting.writeFaceSun();
     sunMapTerms(this.worker.lighting.faceSun, this.sunMapTerms, Sun.shadowMaxLengthRatio);
     this._fitSunMap(screenScale);
@@ -655,7 +435,6 @@ export class PixiShadowMaps {
       this.worker._gpuPassesThisFrame++;
     }
     this._drawVolumesInSunMap(rtOpts, screenScale);
-    rtOpts.target = this.worker.shadowRT;
     this.worker._gpuPassesThisFrame++;
     return true;
   }
@@ -708,92 +487,25 @@ export class PixiShadowMaps {
     rtOpts.clear = true;
     rtOpts.clearColor = this.worker._clearTransparent;
     this.worker._submitRender(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.sunMapClear = true;
   }
 
   /**
-   * DX-SHADOW3D: a sun shadow pass's program as a Shader's options: 'map' (the sun map's cards: heights), 'mapColumns'
-   * (a render's columns into the map), 'cards' (the layer shadows' cards, a render's frames skipped) or 'columns' (a
-   * render's solid on the shadows' layer). GLSL on WebGL (sunMapVertex / sunMapColumnsVertex), WGSL on WebGPU
+   * DX-SHADOW3D: a sun map pass's program as a Shader's options: 'map' (the map's cards, with their heights) or
+   * 'mapColumns' (a render's columns into the map). GLSL on WebGL (sunMapVertex / sunMapColumnsVertex), WGSL on WebGPU
    * (sunMapWgsl / sunMapColumnsWgsl).
-   * @param {'map'|'mapColumns'|'cards'|'columns'} kind
+   * @param {'map'|'mapColumns'} kind
    */
   sunShadowProgram(kind) {
     const shaders = this.worker._engineShaders;
-    const heights = kind === 'map' || kind === 'mapColumns';
-    const columns = kind === 'mapColumns' || kind === 'columns';
-    const name = kind === 'map' ? 'sun-map' : kind === 'mapColumns' ? 'sun-map-columns' : kind === 'cards' ? 'sun-cards' : 'sun-columns';
+    const columns = kind === 'mapColumns';
+    const name = columns ? 'sun-map-columns' : 'sun-map';
     if (this.worker._useWebGpu) {
-      const source = columns
-        ? sunMapColumnsWgsl(shaders.shadowWgsl, SUN_MAP_COLUMNS, { heights })
-        : sunMapWgsl(shaders.shadowWgsl, { heights });
-      return { gpuProgram: sunShadowGpuProgram(GpuProgram, source, heights ? 'mainFragMap' : 'mainFrag', name, { maps: columns }) };
+      const source = columns ? sunMapColumnsWgsl(shaders.shadowWgsl, SUN_MAP_COLUMNS) : sunMapWgsl(shaders.shadowWgsl);
+      return { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragMap', name, { maps: columns }) };
     }
-    const vertex = columns
-      ? sunMapColumnsVertex(shaders.shadowVert, SUN_MAP_COLUMNS, { heights })
-      : sunMapVertex(shaders.shadowVert, { heights });
-    const fragment = heights ? shaders.sunMapFrag : pickInstancedSpriteFragmentGlsl(true, shaders);
-    return { glProgram: glProgramFrom(PIXI.GlProgram, vertex, fragment, name) };
-  }
-
-  /** DX-SHADOW3D: whether the layer shadows cast solids: the atlas has height maps (and the backend's shadow source). */
-  sunSolidsOn() {
-    return this.worker.assets.atlasMapsSource !== null && Boolean(this.worker._useWebGpu ? this.worker._engineShaders?.shadowWgsl : this.worker._engineShaders?.shadowVert);
-  }
-
-  /**
-   * DX-SHADOW3D: the sun's layer shadows in a scene with height maps, as the light bench cast them: a frame with a height
-   * map casts its solid (the columns of sunMapColumnsVertex, max blending, so overlapping columns are one shadow), every
-   * other frame its card. Both read the committed full rows and the sun pass's own uniforms.
-   */
-  _drawSunSolids(batch, group) {
-    if (this.sunSolids === null) {
-      const r = batch.shadowShader.resources;
-      // The cards read no twin page (uMaps): only the columns get it, with the footprints.
-      const resources = () => ({ uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms: group });
-      const state = new PIXI.State();
-      state.blend = true;
-      state.blendMode = 'max';
-      state.depthTest = false;
-      state.depthMask = false;
-      state.culling = false;
-      this.sunSolids = {
-        cards: new PIXI.Mesh({ geometry: batch.mesh.geometry, shader: new PIXI.Shader({ ...this.sunShadowProgram('cards'), resources: resources() }), state: batch.mesh.state, label: 'sun-cards' }),
-        columns: {
-          shader: new PIXI.Shader({
-            ...this.sunShadowProgram('columns'),
-            resources: {
-              ...resources(),
-              uMaps: this.worker.assets.atlasMapsSource ?? this.worker.lighting.emptyMapsSource(),
-              uMapsLut: this.worker.assets.mapsTableSourceOrEmpty(),
-              uFoot: this.worker.assets.footSourceOrEmpty(),
-            },
-          }),
-          grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
-          index: sunMapColumnIndex(SUN_MAP_COLUMNS),
-          state,
-          rows: new Float32Array(64 * GPU_CASTER_FLOATS),
-          blocks: new Float32Array(64 * 4),
-          slots: [],
-          ring: 0,
-          label: 'sun-columns',
-        },
-      };
-    }
-    const cards = this.sunSolids.cards;
-    cards.geometry = batch.mesh.geometry;
-    this._drawGpuCasterPass(cards, group, true);
-    // E-379: the rows that cast columns, as their own instances.
-    const columns = this._columnsHost(batch, batch.mesh.geometry.instanceCount | 0, this.sunSolids.columns, 0);
-    if (columns === null) return;
-    const rtOpts = this.worker._rtRenderOpts;
-    rtOpts.container = columns;
-    rtOpts.target = this.worker.shadowRT;
-    rtOpts.clear = false;
-    this.worker._syncUniformGroup(group);
-    this.worker._submitRender(rtOpts);
-    this.worker._gpuPassesThisFrame++;
+    const vertex = columns ? sunMapColumnsVertex(shaders.shadowVert, SUN_MAP_COLUMNS) : sunMapVertex(shaders.shadowVert);
+    return { glProgram: glProgramFrom(PIXI.GlProgram, vertex, shaders.sunMapFrag, name) };
   }
 
   /** N-190: whether a sun-projected volumes' layer has a volume this frame (they cast into the maps without sprite rows). */
@@ -1074,12 +786,12 @@ export class PixiShadowMaps {
   }
 
   /**
-   * DX-SHADOW3D: every program that binds the footprints (uFoot) on the current source: the layer shadows' columns, the
-   * sun map's and the lamps' map's (their layouts name binding 7 whether or not their WGSL reads it).
+   * DX-SHADOW3D: every program that binds the footprints (uFoot) on the current source: the sun map's columns and the
+   * lamps' map's (their layouts name binding 7 whether or not their WGSL reads it).
    */
   pointFootPrograms() {
     const source = this.worker.assets.footSource;
-    const holders = [this.sunSolids && this.sunSolids.columns, this.sunMapColumns, this.worker.lampMap.columns];
+    const holders = [this.sunMapColumns, this.worker.lampMap.columns];
     for (let i = 0; i < holders.length; i++) {
       const c = holders[i];
       if (c && c.shader && c.shader.resources.uFoot !== source) c.shader.resources.uFoot = source;
@@ -1090,7 +802,7 @@ export class PixiShadowMaps {
   /** E-496: every program that binds the maps table (uMapsLut) on the current source: the columns', the entities'. */
   pointMapsTablePrograms() {
     const source = this.worker.assets.mapsTableSource;
-    const holders = [this.sunSolids && this.sunSolids.columns, this.sunMapColumns, this.worker.lampMap.columns];
+    const holders = [this.sunMapColumns, this.worker.lampMap.columns];
     for (let i = 0; i < holders.length; i++) {
       const c = holders[i];
       if (c && c.shader && c.shader.resources.uMapsLut !== undefined) c.shader.resources.uMapsLut = source;

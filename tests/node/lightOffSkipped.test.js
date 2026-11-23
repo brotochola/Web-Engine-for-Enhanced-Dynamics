@@ -26,6 +26,8 @@ function bind() {
   LightEmitter.radius.fill(300);
   LightEmitter.castShadows.fill(1);
   LightEmitter.brightness.set([1, 0, 0.25, 2]);
+  // Off the floor: a lamp at elevation 0 casts nothing into the lamps' map (N-265).
+  LightEmitter.elevation.fill(40);
   FlashComponent.active = new Uint8Array(N);
 }
 

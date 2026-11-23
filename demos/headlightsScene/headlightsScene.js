@@ -12,7 +12,7 @@
 // The panel's keys (C V F B K R G N) change one field of every headlight (or lamp) at a time; nothing else changes.
 // The road, its meshes and the panel are Sun Street's: this scene is about the lights.
 //
-// URL: ?hour=22 (15 is day), ?cars=6, ?carSpeed=3, ?walls=0 (no walls: the lamps cast layer shadows instead),
+// URL: ?hour=22 (15 is day), ?cars=6, ?carSpeed=3, ?walls=0 (no walls: the lamps' shadows come from their shadow maps alone),
 // ?wallDepth=24 (the default: the light enters each house 24 px from the edge it reaches; 0 lights its picture whole),
 // ?behindWalls=0.33 (the default: a wall's shadow keeps a third of the lamp's light; 0 leaves it the ambient alone),
 // ?backend=webgpu.
@@ -92,7 +92,7 @@ export class HeadlightsScene extends Scene {
       baseAmbient: 0.05,
       maxLights: 32, // 7 lamps and up to 25 cars in view
       maxVolumes: HOUSES + CARS, // each house's box and each car's body and cabin
-      shadowsEnabled: true, // the sun's shadows (the volumes), and the lamps' layer shadows with ?walls=0
+      shadowsEnabled: true, // the sun's shadows (the volumes), and the lamps' shadow maps
       sun: {
         enabled: true,
         dayCycle: { enabled: false }, // the hour only moves with N (create sets it)
@@ -282,7 +282,7 @@ export class HeadlightsScene extends Scene {
     panel.show('v', deg(APERTURES[this._aperture]));
     panel.show('f', String(SOFTNESS[this._softness]));
     panel.show('b', String(BRIGHTNESS[this._brightness]));
-    panel.show('k', !WALLS ? (this._castShadows ? 'on (layer shadows)' : 'off') : this._castShadows ? 'on' : 'off');
+    panel.show('k', !WALLS ? (this._castShadows ? 'on (shadow maps)' : 'off') : this._castShadows ? 'on' : 'off');
     panel.show('r', SHADOW_RANGES[this._shadowRange] === 0 ? 'the radius' : `${SHADOW_RANGES[this._shadowRange]} px`);
     panel.show('g', this._lampGlow ? String(LAMP.glow) : '0');
     panel.show('n', `${Math.floor(Sun.hour)}:00`);

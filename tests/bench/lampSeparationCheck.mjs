@@ -11,7 +11,7 @@
  * plan §6.6), worked out here; pixels within --edge px of its outline are left out. Also printed: how much of the
  * lamp's light the shadow kept (1 is all of it; today's layer shadows keep 1 - their alpha).
  *
- *   node tests/bench/lampSeparationCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--edge 4] [--sun-shadows map|layer]
+ *   node tests/bench/lampSeparationCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--edge 4]
  *     [--save dir] [--headless] [--wait-ms 3000] [--query k=v]
  *
  * Exit 0 when every compared pixel, in the shadow and around it, is within --tolerance of 255.
@@ -25,14 +25,14 @@ import {
   verdict, withCheckBrowser,
 } from './checks/checkLib.mjs';
 
-const USAGE = 'node tests/bench/lampSeparationCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--edge 4] [--sun-shadows map|layer] [--save dir] [--headless]';
+const USAGE = 'node tests/bench/lampSeparationCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--edge 4] [--save dir] [--headless]';
 
 async function main() {
-  const opts = parseCheckCli(process.argv.slice(2), { tolerance: 3, usage: USAGE, flags: { edge: 4, sunShadows: 'map' } });
+  const opts = parseCheckCli(process.argv.slice(2), { tolerance: 3, usage: USAGE, flags: { edge: 4 } });
   await withCheckBrowser(opts, async (ctx) => {
     for (const backend of opts.backends) {
-      const query = queryOf(opts, { backend, sunShadows: opts.sunShadows });
-      const save = opts.save ? path.join(opts.save, `lampSeparation-${opts.sunShadows}-${backend}.png`) : null;
+      const query = queryOf(opts, { backend });
+      const save = opts.save ? path.join(opts.save, `lampSeparation-${backend}.png`) : null;
       const { pixels, sun, errors } = await captureStill(ctx, {
         scene: '/tests/bench/checks/lampSeparationScene.js',
         sceneExport: 'LampSeparationScene',
@@ -86,11 +86,11 @@ async function main() {
       }
       const describe = (s) => (s.worst ? `worst ${s.worst.delta.toFixed(1)} at (${s.worst.u}, ${s.worst.v}) channel ${s.worst.c} read ${s.worst.read} want ${s.worst.want.toFixed(1)}, p99 ${percentile(s.deltas, 0.99).toFixed(1)}` : 'no pixel');
       const kept = inside.kept.length ? inside.kept.slice().sort((a, b) => a - b)[inside.kept.length >> 1] : NaN;
-      console.log(`  ${backend} ${opts.sunShadows}: in the sun's shadow ${inside.deltas.length / 3} px, ${describe(inside)}; the lamp's light kept there: ${(kept * 100).toFixed(1)} %`);
-      console.log(`  ${backend} ${opts.sunShadows}: around it ${outside.deltas.length / 3} px, ${describe(outside)}`);
+      console.log(`  ${backend}: in the sun's shadow ${inside.deltas.length / 3} px, ${describe(inside)}; the lamp's light kept there: ${(kept * 100).toFixed(1)} %`);
+      console.log(`  ${backend}: around it ${outside.deltas.length / 3} px, ${describe(outside)}`);
       if (errors.length) console.log(`  ${backend}: page errors: ${errors.slice(0, 3).join(' | ')}`);
       verdict(
-        `lampSeparation ${backend} ${opts.sunShadows}`,
+        `lampSeparation ${backend}`,
         errors.length === 0 && inside.deltas.length > 0 && outside.deltas.length > 0 && inside.worst.delta <= opts.tolerance && outside.worst.delta <= opts.tolerance,
         `the sun's shadow keeps the lamp's light (${(kept * 100).toFixed(1)} % kept), within ${opts.tolerance} of 255; sun ${sun.intensity.toFixed(3)} at ${sun.elevation.toFixed(1)} deg, shadowAlpha ${sun.shadowAlpha}`,
       );

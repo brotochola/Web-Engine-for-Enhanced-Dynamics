@@ -147,10 +147,10 @@ test('a sun ray that lands past the map\'s edge reads nothing there: lit, in bot
   }
 });
 
-test('lighting.sunShadows and lampShadows are keys, the layer by default', () => {
-  assert.equal(LIGHTING_DEFAULTS.sunShadows, 'layer');
-  assert.equal(LIGHTING_DEFAULTS.lampShadows, 'layer');
-  assert.deepEqual(unknownConfigKeys({ lighting: { sunShadows: 'map' } }), []);
+test('E-531: the shadow maps are the one way: lighting.sunShadows and lampShadows are no keys', () => {
+  assert.equal('sunShadows' in LIGHTING_DEFAULTS, false);
+  assert.equal('lampShadows' in LIGHTING_DEFAULTS, false);
+  assert.deepEqual(unknownConfigKeys({ lighting: { sunShadows: 'map', lampShadows: 'map' } }).map((k) => k.path), ['lighting.sunShadows', 'lighting.lampShadows']);
 });
 
 test('lighting.selfShadow: the light pass steps towards the sun over the face map, only with faces', async () => {

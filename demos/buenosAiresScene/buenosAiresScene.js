@@ -245,8 +245,6 @@ export class BuenosAiresScene extends Scene {
       // Every house holds a volume (its hull) for the shadow maps.
       maxVolumes: HOUSES + 16,
       shadowsEnabled: true,
-      sunShadows: 'map',
-      lampShadows: 'map',
       ...(LAMP_CACHE ? {} : { lampMapCache: false }),
       selfShadow: SELF_SHADOW,
       maxShadowCastingLights: 16,

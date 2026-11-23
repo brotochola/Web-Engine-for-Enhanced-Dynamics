@@ -1,16 +1,14 @@
 import WEED from '/src/index.js';
 import { SEPARATION as L } from './layouts.js';
-import { CheckLamp, checkConfig, param, sunConfig } from './checkScene.js';
+import { CheckLamp, checkConfig, sunConfig } from './checkScene.js';
 
 const { Scene, Camera, Sun, GameObject, ShadowCaster } = WEED;
 
 /**
  * lampSeparationCheck's still scene (DX-SHADOW3D, plan §6.7, §8.2): a box (setBox) casts the sun's shadow (8 h, from the
  * upper left, shadowAlpha 0.8) on the white floor, and a lamp that casts no shadow lights that floor. Each light is taken
- * out by its own shadow only: under the sun's shadow the lamp's light stays whole. `?sunShadows=layer` puts the sun's
- * shadows on the shadows' layer instead (today's way, which darkens the lamp too: the control). `?backend=webgpu`.
+ * out by its own shadow only: under the sun's shadow the lamp's light stays whole. `?backend=webgpu`.
  */
-export const SUN_SHADOWS = param('sunShadows') === 'layer' ? 'layer' : 'map';
 
 class BoxCaster extends GameObject {
   static components = [ShadowCaster];
@@ -27,8 +25,6 @@ export class LampSeparationScene extends Scene {
       shadowsEnabled: true,
       // The box casts a volume: lighting.maxVolumes is its room (0, the default, makes none).
       maxVolumes: 4,
-      sunShadows: SUN_SHADOWS,
-      lampShadows: 'map',
       selfShadow: false,
       sun: sunConfig({ hour: L.sun.hour, towards: L.sun.towards, shadowAlpha: L.sun.shadowAlpha }),
     },

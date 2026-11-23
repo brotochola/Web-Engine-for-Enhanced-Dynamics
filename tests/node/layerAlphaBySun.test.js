@@ -54,7 +54,7 @@ test('Sun.shadowOpacity is 0 with no sun, the sun off, and at or under the thres
 test('the pass reads the one function', () => {
   // N-256 PW-8: the casters' pass is the shadow maps' (src/render/pixi/shadowMaps.js).
   const shadowMaps = fs.readFileSync(new URL('../../src/render/pixi/shadowMaps.js', import.meta.url), 'utf8');
-  assert.match(shadowMaps, /u\.uSun\[3\] = Sun\.shadowOpacity;/);
+  assert.match(shadowMaps, /Sun\.shadowOpacity > 0/);
 });
 
 test('alphaFactor: shadow, night and the ramp, both ways', () => {

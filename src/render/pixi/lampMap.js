@@ -447,7 +447,6 @@ export class PixiLampMap {
       this.worker._gpuPassesThisFrame++;
     }
     this._drawVolumes(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.mapClear = false;
     return true;
   }
@@ -529,7 +528,6 @@ export class PixiLampMap {
       this.worker._gpuPassesThisFrame++;
     }
     this._drawVolumes(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.mapClear = false;
     return true;
   }
@@ -566,7 +564,6 @@ export class PixiLampMap {
     this.worker._submitRender(rtOpts);
     this.worker._gpuPassesThisFrame++;
     this._drawVolumes(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.mapClear = false;
     return true;
   }
@@ -940,7 +937,6 @@ export class PixiLampMap {
     rtOpts.clear = true;
     rtOpts.clearColor = this.worker._clearTransparent;
     this.worker._submitRender(rtOpts);
-    rtOpts.target = this.worker.shadowRT;
     this.mapClear = true;
   }
 }

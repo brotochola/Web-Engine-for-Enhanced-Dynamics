@@ -2,7 +2,7 @@
 // a scene, waits, then evaluates an expression inside each worker whose URL matches, with the worker's global as `self`
 // (pre-render's instance is self.preRenderWorker, Pixi's self.pixiWorker), a few times a second; prints what it read.
 //   node tests/bench/workerProbe.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene \
-//     --query "dayCycle=0&sunShadows=map" --worker preRenderWorker --expr "({ kinds: self.preRenderWorker._casterKindsOn })"
+//     --query "dayCycle=0" --worker preRenderWorker --expr "({ kinds: self.preRenderWorker._casterKindsOn })"
 //     [--wait-ms 12000] [--samples 5] [--interval-ms 250]
 // Each line starts with the wall-clock seconds since the scene was prepared, so a long series (--samples 60
 // --interval-ms 1000) shows how a state evolves.

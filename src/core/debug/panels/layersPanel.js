@@ -238,9 +238,8 @@ export class LayersPanel extends DebugPanel {
     label.style.cssText = 'font-weight:bold;color:rgba(255,255,255,0.85);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     label.textContent = layerName;
     label.title = layerName;
-    // DBG-1: in shadow-map mode the castedShadows layer's own picture is empty; its row stands for the maps' shadows.
-    const lighting = this.debugUI.scene?.config?.lighting;
-    if (layerName === 'castedShadows' && (lighting?.sunShadows === 'map' || lighting?.lampShadows === 'map')) {
+    // DBG-1: the castedShadows layer has no picture of its own; its row stands for the shadow maps' shadows.
+    if (layerName === 'castedShadows') {
       label.title = 'castedShadows: the shadows in the light pass (the sun\'s and the lamps\' shadow maps)';
     }
     row.appendChild(label);

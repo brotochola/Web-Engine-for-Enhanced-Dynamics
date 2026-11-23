@@ -14,7 +14,6 @@ const LEGENDS = Object.freeze({
   [RENDER_VIEW.FLAGS]: "grey a face, magenta unshaded, blue lit as drawn, yellow a sprite's own normal; green: shades itself",
   [RENDER_VIEW.LIGHT]: "the light alone, at lighting.resolution's size",
   [RENDER_VIEW.UNSHADED]: 'the unshaded colours, as the unshaded pass drew them',
-  [RENDER_VIEW.SHADOWS]: 'the casted shadows layer, on white',
   [RENDER_VIEW.SUN_MAP]: "the sun's shadow map: caster heights as a ramp (the whole map, margins included)",
   [RENDER_VIEW.LAMP_MAP]: "the lamps' shadow atlas: every lamp's tile, heights as a ramp",
   [RENDER_VIEW.LIGHT_TILES]: 'lights per light tile: black none, the ramp up to 32 (or lighting.maxLights) white; the tile grid in grey',

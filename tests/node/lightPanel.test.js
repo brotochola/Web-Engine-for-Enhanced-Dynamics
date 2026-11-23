@@ -98,13 +98,13 @@ test('every sun slider is a Sun property with a setter, and moving one sets it',
 });
 
 test('the options table lists every LIGHTING_DEFAULTS key it does not say it leaves out', () => {
-  const rows = lightingOptionRows({ sunShadows: 'map', maxLights: 32 });
+  const rows = lightingOptionRows({ shadowResolution: 0.25, maxLights: 32 });
   const keys = rows.map(([k]) => k);
   for (const key of Object.keys(LIGHTING_DEFAULTS)) {
     assert.ok(keys.includes(key) || key in LIGHT_OPTIONS_NOT_SHOWN, key);
   }
-  assert.deepEqual(rows.find(([k]) => k === 'sunShadows'), ['sunShadows', 'map']);
-  assert.deepEqual(rows.find(([k]) => k === 'lampShadows'), ['lampShadows', String(LIGHTING_DEFAULTS.lampShadows)]);
+  assert.deepEqual(rows.find(([k]) => k === 'shadowResolution'), ['shadowResolution', '0.25']);
+  assert.deepEqual(rows.find(([k]) => k === 'shadowUpdateInterval'), ['shadowUpdateInterval', String(LIGHTING_DEFAULTS.shadowUpdateInterval)]);
   assert.equal(sliderText(0.456, 0.01), '0.46');
   assert.equal(sliderText(45.5, 0.5), '45.5');
 });

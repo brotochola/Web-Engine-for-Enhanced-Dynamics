@@ -792,7 +792,7 @@ The engine renders everything through **layers**. Four built-in pipeline layers 
 | Name | zIndex | Purpose |
 |---|---|---|
 | `decals` | 1 | Blood tiles, floor stains |
-| `castedShadows` | 2 | Entity shadow projections |
+| `castedShadows` | 2 | The ShadowCasters' shadows (drawn in the light pass from the shadow maps; hiding it hides them) |
 | `entities` | 3 | Default entity rendering (main render queue) |
 | `lighting` | 4 | Point lights, ambient overlay |
 
@@ -1592,7 +1592,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A render with a height map cast pixel by pixel | `this.shadowCaster.setHeightMap()` |
 | No shadow | `this.shadowCaster.clear()` |
 | Particles or liquid that light the floor | `lightRadius` on an emit (`lighting.particleLights`), or on `LiquidFun.emit` |
-| Shadows that fall on sprites and leave the other lights lit (an oblique view) | `lighting.sunShadows: 'map'` and `lighting.lampShadows: 'map'` (the 3D light mode, below) |
+| Shadows that fall on sprites and leave the other lights lit | `lighting.shadowsEnabled: true` (the sun's and the lamps' shadow maps, below), a lamp's `elevation` above 0 |
 | A sprite lit as the surface it shows | `heightMap` / `normalMap` on its sheet, or `reliefMap` (a bump map from a 2D tool) |
 | A sheet drawn for another camera than the scene's | `artCamera: { floorScaleY, heightScaleY }` on its sheet (or in its json's `meta`) |
 | Walls and roofs that light as the faces of a volume | decorations with `faceNormalX`, `faceNormalY`, `faceNormalZ` and `faceHeight` (no switch) |
@@ -1611,7 +1611,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 
 The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, with walls (`lighting.walls`): cone headlights on carScene's cars, round lamps, houses with a volume for the sun and a wall for the beams, and a key for each field. The light bench (`demos/lightBenchScene/`) does the same for the 3D light mode: a farm of props rendered from 32 directions, cars, trees, a person you walk with WASD and lamps, each piece on a key to compare.
 
-A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. Every camera has the same light pass, and two things stop a lamp in it: the shadows of `ShadowCaster`s, stamped on the layer for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`), and, in a scene with `lighting.walls: true`, the walls (`shadowCaster.setWall()`), which cut each light that casts shadows at their outline ("A wall", below).
+A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. Every camera has the same light pass, and two things stop a lamp in it: the shadows of `ShadowCaster`s, drawn into a shadow map each for the `lighting.maxShadowCastingLights` lights nearest the camera (a light at elevation 0 casts none), and, in a scene with `lighting.walls: true`, the walls (`shadowCaster.setWall()`), which cut each light that casts shadows at their outline ("A wall", below).
 
 ```javascript
 class StreetLamp extends GameObject {
@@ -1657,7 +1657,7 @@ A circle on the floor is drawn `floorScaleY` times as tall as it is wide, so a l
 | 3/4 top-down (people and walls drawn from the front) | about `0.7` |
 | 2:1 isometric / dimetric | `0.5` |
 
-It is read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point and cone lights, LiquidFun and particle lights, the cookies of shadow-casting lights, and the fade and reach of point-light shadows. The reach `R` (the radius) and every cull built on it do not change (the ellipse fits inside the circle). Glow sprites stay round: they are the bulb, not the floor.
+It is read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point and cone lights, LiquidFun and particle lights, and the fade and reach of point-light shadows. The reach `R` (the radius) and every cull built on it do not change (the ellipse fits inside the circle). Glow sprites stay round: they are the bulb, not the floor.
 
 `LightEmitter.elevation` (default `0`, world px) is how high the source sits above the floor. The falloff becomes `I / (I + h² + d²)`: the pool keeps its centre and its reach, but it is flatter, like a lamp post rather than a torch on the ground. A floor light is at full strength at its foot; a raised one peaks at `I / (I + h²)` (a radius of 20h gives 0.8), so raise the radius when the foot gets too dim. Where things go:
 
@@ -1687,8 +1687,8 @@ With an oblique camera, sheets that bring a height map, and the two shadow maps,
 | The camera | `config.camera.pitch` (or `floorScaleY` and `heightScaleY`), above |
 | Sprites lit as the surfaces they show | `heightMap` / `normalMap` / `reliefMap` on a sheet |
 | Walls and roofs lit as the faces of a volume | decorations with a face's normal (`faceNormalX`…): no switch |
-| The sun's shadows on everything that has height | `lighting.sunShadows: 'map'` |
-| Each lamp's own shadows | `lighting.lampShadows: 'map'` |
+| The sun's shadows on everything that has height | `lighting.shadowsEnabled: true` |
+| Each lamp's own shadows | the same, and the lamp's `elevation` |
 | A surface's self-shadow | `lighting.selfShadow: true` |
 | Depth that corrects the painter | on by itself with an oblique camera and maps, faces or walls (`renderer.pixelDepth`) |
 | Sprites no light touches | `unshaded: true` on a sheet, or `spriteRenderer.unshaded` on one sprite (without a sheet with maps, an unshaded sheet or a shadow map, with `lighting.unshaded: true`) |
@@ -1766,8 +1766,6 @@ export class FarmScene extends Scene {
       resolution: 1, // the light pass and the shadows at the canvas's size: sharp edges
       shadowResolution: 1,
       shadowsEnabled: true,
-      sunShadows: 'map',
-      lampShadows: 'map',
       selfShadow: true,
       sun: { enabled: true, angle: 215, elevation: 45, intensity: 1, startHour: 16, shadowAlpha: 0.7 },
     },
@@ -1863,13 +1861,13 @@ static assets = {
 - They go through the G-buffer pass, which a sheet with maps turns on. A prebaked `assets.bigAtlas` carries them (`npm run bake:atlas` writes `bigAtlas_maps.png` beside it; `assets.bigAtlas.maps` names another file).
 - `tests/bench/stressScenes/maps/makeShapes.mjs` writes a sheet and both maps from shapes it ray-traces: a model of what an exporter writes.
 
-### The sun's shadows: `lighting.sunShadows`
+### The sun's shadows
 
-By default (`'layer'`) a ShadowCaster's sun shadow is drawn on the `castedShadows` layer, under the entities, and it darkens every light by `Sun.shadowOpacity`: the sun's `shadowAlpha`, times its intensity, and lighter for a long shadow by `shadowStretchAlphaFactor`. With `sunShadows: 'map'` the sun draws its casters into a shadow map instead, and the light pass looks each pixel up in it:
+With `lighting.shadowsEnabled` the sun draws its casters into a shadow map, and the light pass looks each pixel up in it:
 
 - the sun's shadow takes out the sun alone: a lamp still lights the ground inside it;
 - it falls on what has height where that is: the shadow of a pillar climbs a crate's front and stops at its lid, if the crate is a face or has a height map;
-- it takes out `Sun.shadowAlpha` (0 to 1) of the sun's light, the same share at every hour and for a long shadow as for a short one; the light bench uses `shadowAlpha: 0.7`, with `shadowStretchAlphaFactor: 0` so that long shadows are not lighter in `'layer'` mode either;
+- it takes out `Sun.shadowAlpha` (0 to 1) of the sun's light, the same share at every hour and for a long shadow as for a short one; the light bench uses `shadowAlpha: 0.7`;
 - it costs one map a frame whatever the number of casters, at `lighting.shadowResolution` of the canvas.
 
 ```javascript
@@ -1878,13 +1876,12 @@ static config = {
   lighting: {
     enabled: true,
     shadowsEnabled: true,
-    sunShadows: 'map',
     sun: { enabled: true, shadowAlpha: 0.7 },
   },
 };
 ```
 
-In both modes a picture of one view casts a card: the picture standing on its base, facing the sun, cut out by its alpha. The base is measured from the frame when the atlas is packed: the lowest opaque row (the feet, the foot of a trunk), or, for a render that casts its card, its contact nearest the light (the wheels, the legs). The card falls along the sun's ray with the sun's real elevation, no longer than `shadowMaxLengthRatio` times its height. A render with a height map casts its solid: each pixel where it is in 3D, so a barn's shadow is the barn's, not its picture's. A `DirectionalSprite` casts the frame the sun sees: a person walking towards the camera with the sun to its side casts the shadow of its profile. A solid keeps the view the camera sees, since it is already the object in 3D. What casts which, and how to change it, is the next section.
+A picture of one view casts a card: the picture standing on its base, facing the sun, cut out by its alpha. The base is measured from the frame when the atlas is packed: the lowest opaque row (the feet, the foot of a trunk), or, for a render that casts its card, its contact nearest the light (the wheels, the legs). The card falls along the sun's ray with the sun's real elevation, no longer than `shadowMaxLengthRatio` times its height. A render with a height map casts its solid: each pixel where it is in 3D, so a barn's shadow is the barn's, not its picture's. A `DirectionalSprite` casts the frame the sun sees: a person walking towards the camera with the sun to its side casts the shadow of its profile. A solid keeps the view the camera sees, since it is already the object in 3D. What casts which, and how to change it, is the next section.
 
 A ShadowCaster's volume (`setBox`, `addLevel`, `setHull`) casts into the map.
 
@@ -1928,7 +1925,7 @@ class Hedge extends GameObject {
 - `setSprite(options)` casts its card, `setHeightMap()` its solid (it needs the sheet's `heightMap`), `clear()` nothing. The same three are on `shadowCaster.sun` and `shadowCaster.lamps`, with `sun.setBox` (a volume for the sun alone) and `lamps.setWall` (a wall for the lamps alone), below.
 - `setSprite`'s options shape the card, for every light that casts it: `heightScale` its height, times (1 by default, 0 casts none); `frame` another frame of the atlas as the silhouette, with `scaleX` / `scaleY` its scale and `anchorX` / `anchorY` its own anchor (left out, the sprite's); while a caster uses one, the shadows come from pre-render's full caster rows (a pass over them, the keyed paths off those frames); without a frame, `anchorX` / `anchorY` move the card's foot from the sprite's anchor, in fractions of the sprite, a rare case since the base is measured.
 - `setSprite({ orient: 'fixed' })` stands the card along the object through its anchor and shows the object face on, for every light: a fence or a wall, whose card turned to face the light is right only when the light is across it. The card runs across where the entity faces (a DirectionalSprite's `facing` turned a quarter; along the screen without one). `orient: 'light'` turns it back. It is one value for the entity, kept until set again.
-- `opacity` (0 to 1, 1 at spawn) is how much light it takes out. The layer shadows read it (the sun's in `'layer'` mode, the lamps' stamps), and so does a wall; the shadow maps do not yet.
+- `opacity` (0 to 1, 1 at spawn) is how much light it takes out, in the sun's and the lamps' shadow maps and for a wall.
 - `baseRadius` (px, 0 at spawn: the base measured from the frame) corrects the base its card stands on, and `selfShadow` (`true`, `false` or `'auto'`, the asset's way) whether it shades itself. Both are kept for the 3D shadows.
 - `type` reads what the sun casts: `'sprite'`, `'heightMap'`, `'box'`, `'hull'`, `'wall'` or `'none'`. With nothing set it is the sheet's way: `'heightMap'` for a render that casts its solid, else `'sprite'`.
 - `CAST_KIND` (`AUTO`, `SPRITE`, `HEIGHT_MAP`, `BOX`, `HULL`, `WALL`, `NONE`) holds the values of the columns `ShadowCaster.sunKind` and `ShadowCaster.lampKind`, for code that reads them in bulk. A spawn sets both to `AUTO`, the sheet's way.
@@ -1991,14 +1988,14 @@ The old members warn once, saying what replaces them, and do nothing; `lighting.
 
 A render whose json carries a floor polygon a frame around its anchor (`meta.footprints`, or `meta.light3d.footprints`) casts its solid swept north to it, each cell at its own height, as a 3D object does (light passes under a table). It is on by default; `lighting.footprintSolids: false` turns it off.
 
-### The lamps' shadows from a shadow map: `lighting.lampShadows: 'map'`
+### The lamps' shadows
 
-By default (`'layer'`) a lamp stamps each caster's shadow on the `castedShadows` layer, stretched away from it, and the stamp darkens every light. With `lampShadows: 'map'` each lamp that casts gets a shadow map of its own, a square tile in an atlas, and the light pass takes out that lamp's light alone where something stands between it and the pixel: two lamps light each other's shadows, the sun's shadow does not dim a lamp, and a lamp's shadow falls on what has height.
+With `lighting.shadowsEnabled` each lamp that casts gets a shadow map of its own, a square tile in an atlas, and the light pass takes out that lamp's light alone where something stands between it and the pixel: two lamps light each other's shadows, the sun's shadow does not dim a lamp, and a lamp's shadow falls on what has height.
 
 ```javascript
 static config = {
   camera: { pitch: 47 },
-  lighting: { enabled: true, shadowsEnabled: true, lampShadows: 'map' },
+  lighting: { enabled: true, shadowsEnabled: true },
 };
 
 // In a lamp's onSpawned: the bulb 75 px above the floor.
@@ -2006,19 +2003,19 @@ Object.assign(this.lightEmitter, { radius: 330, color: 0xffcf8a, elevation: 75, 
 ```
 
 - The lamps that cast are the ones they always were: `castShadows` on (the default), the `lighting.maxShadowCastingLights` nearest the camera (20 by default), each with the casters it picks (`lighting.maxShadowsPerLight`, within its `shadowRange`).
-- `LightEmitter.elevation` is the bulb's height, and with the caster's height it makes the shadow's length: a car under a lamp at 150 px casts a short shadow, under one at 40 px a long one. What stands higher than the bulb casts nothing for it, and a lamp at elevation 0 casts no shadows in this mode (nor takes one of the `maxShadowCastingLights`).
+- `LightEmitter.elevation` is the bulb's height, and with the caster's height it makes the shadow's length: a car under a lamp at 150 px casts a short shadow, under one at 40 px a long one. What stands higher than the bulb casts nothing for it, and a lamp at elevation 0 casts no shadows (nor takes one of the `maxShadowCastingLights`).
 - A tile spans how far the lamp's shadows reach on the floor: its `shadowRange` when that is under its radius, else its radius. Past it the lamp still lights, without shadows, which fade out over the reach's last fifth; a short `shadowRange` makes the tiles smaller and the lamp cheaper. `lampShadowTile` sets how sharp its shadows are: `'auto'` (the default) makes the tiles as fine as the widest casting lamp's reach and `lighting.shadowResolution` ask (at most 2 floor px a texel at resolution 1, up to 1024 texels a side, within a 4096 × 2048 map); a number (32 to 1024) fixes the texels a side.
 - `lighting.lampMapCache` (default `true`): a lamp that stays still draws the shadows of the volumes (`setBox`, `addLevel`, `setHull`) into its tile once and copies them each frame, until it or a volume moves; a moving lamp (a car's headlights) draws them every frame. It is used where the volumes are heavy for the tiles (a city's houses); `false` draws them every frame.
 - `lighting.dither: true` adds half a step of noise to the light before it is stored (8 bits a channel), so a lamp's dim falloff on a plain dark wall does not show rings; no pixel moves more than one level, and with `pixelArt` each art pixel keeps one colour. Off by default (on an Intel HD 620 it cost about 4 % of the frames).
 - `renderer.atlasScaleMode: 'nearest'` puts each sprite on the screen's pixel grid in its vertex shader. `renderer.pixelSnapCorners` (default `true`) snaps an axis-aligned sprite's corners, so sprites laid edge to edge (a floor of tiles) never open a seam at a fractional zoom; such a sprite is then a pixel wider or narrower from place to place. `false` snaps its origin only, keeping its size on screen, which at some fractional zooms leaves a column of background between neighbours. A turned or sheared sprite snaps its origin either way.
 - `lighting.pixelArt: true` lights each world pixel whole, at its centre, and reads the sun's and the lamps' maps with one tap: in a pixel-art game the light and the shadows fall crisply on the art's pixel grid instead of smoothly at the screen's. Use it with `lighting.resolution: 1` and `renderer.atlasScaleMode: 'nearest'`.
 - `lighting.shadowSamples` (1 to 9, default 5) is how many texels of the sun's and the lamps' maps each pixel averages, out of the 3 × 3 around its point: 1 reads its texel alone (a hard edge, on the texels' steps), 5 a cross (soft), 9 all of them (the softest). Each count is laid out as evenly as it can be, symmetric about the point; 2 and 3 take a row, 6 and 7 the cross and one diagonal, so their edges soften more one way than the other. Every sample is one more texture read a map a pixel; `pixelArt` takes 1. It is read when the scene starts. On a GTX 1650 (Predator at 1080p, the light at half the canvas) the light pass took 0.95, 1.03 and 1.10 ms in the afternoon with 1, 5 and 9 samples, and 1.01, 1.12 and 1.14 ms at night, in a GPU frame of 6.6 to 7.8 ms.
-- In both modes a lamp casts the frame of a `DirectionalSprite` that it sees, a card turned towards it or a render's solid as the caster says (above), and a lamp is not shaded by its own entity: a car's headlights are not stopped by the car, and a post does not shade its own lamp.
+- A lamp casts the frame of a `DirectionalSprite` that it sees, a card turned towards it or a render's solid as the caster says (above), and a lamp is not shaded by its own entity: a car's headlights are not stopped by the car, and a post does not shade its own lamp.
 - WebGL and WebGPU.
 
 ### A surface's self-shadow: `lighting.selfShadow`
 
-`lighting.selfShadow: true` adds the shadow a surface casts on itself and its neighbours: a face or a sprite with a height map looks towards the sun over the heights around it, and what rises above that line takes the sun out (an arm over a body, a crate's lid over its front). With `lampShadows: 'map'` it does the same towards each lamp that has a tile, where that lamp's light still counts. It reads every height around a pixel, not only its own entity's. It works with either `sunShadows`, costs a few lookups a lit pixel that has a height, on WebGL and WebGPU.
+`lighting.selfShadow: true` adds the shadow a surface casts on itself and its neighbours: a face or a sprite with a height map looks towards the sun over the heights around it, and what rises above that line takes the sun out (an arm over a body, a crate's lid over its front). With shadows on it does the same towards each lamp that has a tile, where that lamp's light still counts. It reads every height around a pixel, not only its own entity's. It costs a few lookups a lit pixel that has a height, on WebGL and WebGPU.
 
 ### Depth that corrects the painter: `renderer.pixelDepth`
 

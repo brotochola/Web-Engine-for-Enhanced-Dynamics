@@ -8,10 +8,9 @@ export const RENDER_VIEW = Object.freeze({
   FLAGS: 4,
   LIGHT: 5,
   UNSHADED: 6,
-  SHADOWS: 7,
-  SUN_MAP: 8,
-  LAMP_MAP: 9,
-  LIGHT_TILES: 10,
+  SUN_MAP: 7,
+  LAMP_MAP: 8,
+  LIGHT_TILES: 9,
 });
 export const RENDER_VIEWS = Object.freeze([{ id: 0, label: 'Final', needs: '' }]);
 export const RENDER_VIEW_Z = 1e9;

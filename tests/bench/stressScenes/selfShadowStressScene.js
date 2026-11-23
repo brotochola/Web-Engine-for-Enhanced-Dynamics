@@ -23,7 +23,7 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
  *   is written: the engine's default.
  * - `?res=` lighting.resolution (default 1, as the light bench: a light texel a screen px), the pixels the steps run for.
  * - `?lamps=` lamps that cast shadows (default 0); with `?shadows=1` each gets a tile in the lamps' map
- *   (lighting.lampShadows 'map') and the steps run towards it too.
+ *   and the steps run towards it too.
  * - `?shadows=0` lighting.shadowsEnabled off: no shadow maps, the sun's self-shadow alone (default 1: the sun's map and
  *   the lamps', as the light bench).
  * - `?hour=` (default 16), `?backend=webgl|webgpu` (default webgl), `?still=1` the lamps hold still (captures to compare).
@@ -68,8 +68,6 @@ const lighting = {
   maxLights: Math.max(8, LAMPS + 4),
   resolution: RES,
   shadowsEnabled: SHADOWS,
-  sunShadows: 'map',
-  lampShadows: 'map',
   maxShadowCastingLights: Math.max(1, LAMPS),
   selfShadow: true,
   sun: {

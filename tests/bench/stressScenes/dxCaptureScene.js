@@ -10,7 +10,6 @@ const { Scene, Camera, Sun, Decoration, LAYER_KIND, BLEND_MODES } = WEED;
  * the view's centre. A revision without a knob ignores its key, so the defaults compare
  * across revisions, and a knob compares against its own absence.
  *
- * `?maps=1` (E-395): lighting.sunShadows and lampShadows 'map', the shadow maps with an atlas that has no height map.
  * `?posesByRow=0` (renderer.keyedPosesByRow off, E-201). `?hour=` (default 12), `?lights=` (default 8), `?backend=webgpu`, `?walls=1` (lighting.walls: every light sweeps for walls, and none is there to stop it), `?night=1` (lighting.sun.night),
  * `?colors=1` (lighting.sun.colors), `?propSprite=`, `?propAlpha=` and `?propShadow=` (a frame of its own: setSprite({ frame })). `?shade=1`: overlapping black squares on a MESH layer, `?shadeLook=1` with a look
  * shader that passes its RT through, `?shadeAlpha=` (default 1) the layer's alpha, `?shadeMeshAlpha=` (default 1) each
@@ -40,8 +39,6 @@ export const HOUR = queryNumber('hour', 12);
 export const LIGHTS = Math.max(0, Math.floor(queryNumber('lights', 8)));
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 export const WALLS = queryNumber('walls', 0) === 1;
-/** E-395: `?maps=1` casts into the sun's map and the lamps' map instead of the shadows' layer. */
-export const MAPS = queryNumber('maps', 0) === 1;
 /** E-395: `?fullRows=1` lighting.keyedCasters false, pre-render's full caster rows always (the keyed rows' control). */
 export const FULL_ROWS = queryNumber('fullRows', 0) === 1;
 export const NIGHT = queryNumber('night', 0) === 1;
@@ -62,8 +59,6 @@ export const LAMP_SHIFT = queryNumber('lampShift', 0);
 /** `?worldFloor=1`: a procedural floor (a worldRect layer) over the ground; `?worldFloorCache=0` paints it every frame (E-504). */
 export const WORLD_FLOOR = queryNumber('worldFloor', 0) === 1;
 export const WORLD_FLOOR_CACHE = queryNumber('worldFloorCache', 1) === 1;
-/** `?shadowMaps=1`: the sun's and the lamps' shadows in shadow maps the light pass samples (sunShadows and lampShadows 'map'). */
-export const SHADOW_MAPS = queryNumber('shadowMaps', 0) === 1;
 export const stressSceneConfig = {
   requested: {
     hour: HOUR,
@@ -80,7 +75,6 @@ export const stressSceneConfig = {
     decoAlpha: DECO_ALPHA,
     worldFloor: WORLD_FLOOR ? 1 : 0,
     worldFloorCache: WORLD_FLOOR_CACHE ? 1 : 0,
-    shadowMaps: SHADOW_MAPS ? 1 : 0,
   },
 };
 
@@ -142,12 +136,10 @@ export class DxCaptureScene extends Scene {
       // ?walls=1: the walls' sweep and the light pass's walls path on, with no wall to stop a light (no prop calls
       // setWall): a capture of that path against the scene without it.
       ...(WALLS ? { walls: true } : {}),
-      ...(MAPS ? { sunShadows: 'map', lampShadows: 'map' } : {}),
       ...(FULL_ROWS ? { keyedCasters: false } : {}),
       baseAmbient: 0.1,
       maxLights: 32,
       shadowsEnabled: true,
-      ...(SHADOW_MAPS ? { sunShadows: 'map', lampShadows: 'map' } : {}),
       maxShadowCastingLights: 8,
       maxShadowsPerLight: 32,
       resolution: 1,

@@ -774,7 +774,7 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   baseAmbient: 0.05,
   maxLights: 10,
   shadowsEnabled: false,
-  /** Cookie+shadow pairs for the N lights closest to the camera. Distinct from maxLights. */
+  /** The N lights nearest the view's centre that cast shadows, a tile each in the lamps' shadow map. Distinct from maxLights. */
   maxShadowCastingLights: 20,
   /** Each of those lights draws at most N in-range casters (compact order). */
   maxShadowsPerLight: 15,
@@ -795,10 +795,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxVolumeVerts: 16,
   resolution: 0.25,
   shadowResolution: 0.5,
-  /** 1 = update shadowRT every frame; N > 1 reuses last shadowRT for N-1 frames. */
+  /** 1 = the shadow maps drawn every frame; N > 1 keeps them for N-1 frames. */
   shadowUpdateInterval: 1,
-  /** Scale shadow caster budget per light dynamically based on on-screen light radius when zoomed out. */
-  adaptiveShadowBudget: true,
   /** With lighting.walls: the most vertices of a light's visibility polygon (what its sweep of the walls leaves). */
   maxPolygonVertices: 128,
   /**
@@ -807,20 +805,6 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * a diagnostic to compare the two (the same picture, more work).
    */
   keyedCasters: true,
-  /**
-   * DX-SHADOW3D: where the sun's ShadowCaster shadows are drawn. 'layer' (default): each caster's card painted on the
-   * shadows' layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes
-   * out the sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit. Any other
-   * value warns (Pixi's lighting set-up) and draws on the layer.
-   */
-  sunShadows: 'layer',
-  /**
-   * DX-SHADOW3D (F7): where the lamps' shadows are drawn. 'layer' (default): each caster stamped on the shadows' layer,
-   * stretched away from its lamp. 'map': a shadow map a lamp in the floor's terms (src/render/lampShadowMap.js, one tile
-   * each in an atlas, the lights maxShadowCastingLights picks) that takes out that lamp's light alone, with the caster's
-   * height and the lamp's (LightEmitter.elevation) in the shadow's length. Any other value warns and stamps on the layer.
-   */
-  lampShadows: 'layer',
   /**
    * DX-SHADOW3D: a render with a footprint in its sheet's json (meta.footprints) casts its solid swept north to it at
    * each cell's own height, as the light bench's heightmap did (light under a table), instead of columns down to the
@@ -834,7 +818,7 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   lampShadowTile: 'auto',
   /**
-   * E-508: with lampShadows 'map', a lamp that stays still (a street lamp) draws its volumes (VolumeShadowCaster) into its
+   * E-508: a lamp that stays still (a street lamp) draws its volumes (VolumeShadowCaster) into its
    * tile once, into a cache, and copies them each frame, until it or a volume moves; a moving one (a car's headlights)
    * draws them every frame. The volumes' draw ran every vertex of every volume once a lamp each frame.
    */

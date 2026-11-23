@@ -13,7 +13,7 @@ const { Scene, Camera, LAYER_KIND, Sun } = WEED;
  *
  * Load: `?walkers=` (3000), `?props=` (400), `?lamps=` (24), `?hour=` (12, the day cycle off).
  * The branch's pieces, off by default (a key main does not know is never written then): `?pitch=` (camera.pitch, an
- * oblique camera, e.g. 47), `?sunMap=1` (lighting.sunShadows 'map'), `?lampMap=1` (lighting.lampShadows 'map'), `?self=1`
+ * oblique camera, e.g. 47), `?self=1`
  * (lighting.selfShadow), `?depth=1` (renderer.pixelDepth), `?maps=1` (the people's height and normal maps), `?ds=1` (the
  * people through DirectionalSprite), `?all=1` (all of them, pitch 47). `?backend=webgpu`.
  * `?staticProps=1`: the props declare isStatic (static scenery, E-127; the lamps' map caches their shadows, E-418).
@@ -33,8 +33,6 @@ export const PROPS = Math.max(0, Math.floor(num('props', 400)));
 export const LAMPS = Math.max(0, Math.floor(num('lamps', 24)));
 export const HOUR = num('hour', 12);
 export const PITCH = ALL ? num('pitch', 47) : num('pitch', 0);
-export const SUN_MAP = on('sunMap');
-export const LAMP_MAP = on('lampMap');
 export const SELF = on('self');
 export const DEPTH = on('depth');
 export const MAPS = on('maps');
@@ -45,7 +43,7 @@ export const STILL = P?.get('still') === '1';
 
 export const stressSceneConfig = {
   requested: {
-    walkers: WALKERS, props: PROPS, lamps: LAMPS, hour: HOUR, pitch: PITCH, sunMap: SUN_MAP ? 1 : 0, lampMap: LAMP_MAP ? 1 : 0,
+    walkers: WALKERS, props: PROPS, lamps: LAMPS, hour: HOUR, pitch: PITCH,
     self: SELF ? 1 : 0, depth: DEPTH ? 1 : 0, maps: MAPS ? 1 : 0, ds: DS ? 1 : 0, backend: BACKEND,
     staticProps: STATIC_PROPS ? 1 : 0, still: STILL ? 1 : 0,
   },
@@ -103,8 +101,6 @@ export class Light3dCompareScene extends Scene {
       maxShadowCastingLights: Math.max(1, LAMPS),
       maxShadowsPerLight: 512,
       maxShadowsPerEntity: 3,
-      ...(SUN_MAP ? { sunShadows: 'map' } : {}),
-      ...(LAMP_MAP ? { lampShadows: 'map' } : {}),
       ...(SELF ? { selfShadow: true } : {}),
       sun: {
         enabled: true,

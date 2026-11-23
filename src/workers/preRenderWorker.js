@@ -1315,17 +1315,6 @@ function stampLightOrder(a, b) {
     return a.id - b.id;
 }
 
-/**
- * Whether each light's casters follow lighting.adaptiveShadowBudget (fewer when zoomed out): for the stamps on the shadows'
- * layer, whose texels follow the zoom. N-212: not with lighting.lampShadows 'map', whose tiles keep their size: zoomed out,
- * the budget cut a crowd's shadows to each lamp's nearest and the set changed as people walked (a TallLight's 400 px of
- * shadows at shadowResolution 0.5 keep 512 down to zoom 0.28, then fewer).
- * @param {object|undefined} lighting config.lighting
- */
-export function adaptiveStampBudget(lighting) {
-    return lighting?.adaptiveShadowBudget !== false && lighting?.lampShadows !== 'map';
-}
-
 /** N-212: the part of the cut's distance over which the kept lights' shadows fade out (fadeStampLightsAtCut). */
 export const STAMP_CUT_FADE = 0.2;
 
@@ -1762,7 +1751,6 @@ class PreRenderWorker extends AbstractWorker {
         this.maxShadowsPerLight = 15;
         this.maxShadowsPerEntity = 0;
         this.shadowUpdateInterval = 1;
-        this.adaptiveShadowBudget = true;
         this._shadowUpdateTick = 0;
 
         // GC OPTIMIZATION: Pre-allocated buffer for Y-sorted light indices
@@ -1911,10 +1899,6 @@ class PreRenderWorker extends AbstractWorker {
         // Stamp lights and their scratch: first written when a light first shows.
         this._stampLights = null;
         this._stampLightCount = 0;
-        this._stampSortLights = false;
-        // OL-5: the lamps cast into their map (lighting.lampShadows 'map'): the casting lamps
-        // are ordered and named every frame, a stamp row or none, since the volumes are drawn into their tiles too.
-        this._lampMapCasts = false;
         this._stampRangeSpec = null;
         this._gpuLightVec = null;
         this._gpuStampTmp = null;
@@ -2428,7 +2412,6 @@ class PreRenderWorker extends AbstractWorker {
             data.buffers?.componentData?.ShadowCaster
         ) {
             this.shadowsEnabled = true;
-            this._lampMapCasts = this.config?.lighting?.lampShadows === 'map';
             this._keyedCastersAllowed = this.config?.lighting?.keyedCasters !== false;
             this._sunFrameTables = sunFrameTables(data.directionTables);
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
@@ -2437,7 +2420,6 @@ class PreRenderWorker extends AbstractWorker {
             this.shadowUpdateInterval = (data.shadows.shadowUpdateInterval | 0)
                 || (this.config.lighting?.shadowUpdateInterval | 0)
                 || 1;
-            this.adaptiveShadowBudget = adaptiveStampBudget(this.config.lighting);
             this._shadowUpdateTick = 0;
         }
 
@@ -4623,9 +4605,9 @@ class PreRenderWorker extends AbstractWorker {
         const lightBrightness = LightEmitter.brightness;
         const lightDirC = LightEmitter.dirC;
         const lightDirS = LightEmitter.dirS;
-        // N-265: with the lamps' shadow map, a light at the floor's height casts nothing there (lampCasts): it takes no
-        // tile and no slot of maxShadowCastingLights, and nothing is stamped for it.
-        const lightElevation = this.config.lighting?.lampShadows === 'map' ? LightEmitter.elevation : null;
+        // N-265: a light at the floor's height casts nothing into the lamps' map (lampCasts): it takes no tile and no slot
+        // of maxShadowCastingLights, and nothing is stamped for it.
+        const lightElevation = LightEmitter.elevation;
         // DX-SPOT: a cone is measured on the floor (y over groundScaleY).
         const invG = 1 / cameraFloorScaleY(this.config);
         const offsetX = LightEmitter.offsetX;
@@ -4653,7 +4635,7 @@ class PreRenderWorker extends AbstractWorker {
             if (!lightEnabled[id] || !lightCasts[id]) continue;
             const influence = lightRadius[id];
             if (!(influence > 0)) continue;
-            if (lightElevation !== null && !(lightElevation[id] > 0)) continue;
+            if (!(lightElevation[id] > 0)) continue;
             // E-531: a light at brightness 0 is off (its shadow's strength is its brightness, below): no tile in the
             // lamps' map, no slot of maxShadowCastingLights, nothing stamped. A lamp a game dims by day costs nothing.
             if (lightBrightness[id] === 0) continue;
@@ -4715,12 +4697,10 @@ class PreRenderWorker extends AbstractWorker {
             n++;
         }
         this._stampLightCount = n;
-        // Cookie pack needs the list; dist-order is only for stamping casters.
-        if (this._stampSortLights) {
-            this._sortPrefix(out, n, this._stampLightCmp);
-            // N-212: the kept lights near the cut fade their shadows out rather than pop.
-            fadeStampLightsAtCut(out, n, this.maxShadowCastingLights | 0);
-        }
+        // OL-5: ordered, and faded at the cut, without a sun caster too: each one kept takes a tile of the lamps' map,
+        // where the volumes are drawn. N-212: the kept lights near the cut fade their shadows out rather than pop.
+        this._sortPrefix(out, n, this._stampLightCmp);
+        fadeStampLightsAtCut(out, n, this.maxShadowCastingLights | 0);
     }
 
     _sortPrefix(arr, count, compare) {
@@ -5070,9 +5050,6 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _stampAgainstSun(dst, sun, sunN, stampBase, lightBegin, lightStride) {
-        // OL-5: with the lamps' map the lights are ordered, and faded at the cut, without a sun caster too: each one kept
-        // takes a tile, where the volumes are drawn.
-        this._stampSortLights = (sunN | 0) > 0 || this._lampMapCasts;
         // E-29. A SUB-TIMER of SHADOW_Q_MS, not a peer of it. `_stampAgainstSun` is
         // reached from `_packGpuShadows`, inside the window SHADOW_Q_MS measures, so this
         // time is already counted there. It gets its own slot because that window was the
@@ -5087,22 +5064,6 @@ class PreRenderWorker extends AbstractWorker {
         const capL = Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0);
         const caps = this.gpuQueueCaps;
         const stampCap = caps ? (caps.maxStamp | 0) : 0;
-        const maxPL = this.maxShadowsPerLight | 0;
-        if (this.adaptiveShadowBudget !== false && maxPL > 0 && capL > 0) {
-            const zoom = this._frameCameraZoom > 0 ? this._frameCameraZoom : 1;
-            const shadowRes = this.config.lighting?.shadowResolution || 0.25;
-            const texScale = zoom * shadowRes;
-            if (texScale < 0.25) {
-                const scaleSq = texScale * texScale;
-                for (let i = 0; i < capL; i++) {
-                    const L = lights[i];
-                    if (!L || !(L.rangeSq > 0)) continue;
-                    const texArea = 3.14159 * L.rangeSq * scaleSq;
-                    const budget = Math.max(16, (texArea * 0.05 + 0.5) | 0);
-                    L.maxShadows = budget < maxPL ? budget : maxPL;
-                }
-            }
-        }
         this._ensureStampScratch(sunN);
         if (!this._gpuLightVec) this._gpuLightVec = new Float32Array(4);
 
@@ -5272,11 +5233,8 @@ class PreRenderWorker extends AbstractWorker {
             this._republishGpuShadows(dst, res);
             return res;
         }
-        // OL-12: with no sun caster there is nothing to stamp, and the shadow lights are gathered for nothing (720
-        // lamps: 0.05 ms a frame) unless the lamps cast into their map, where each one gathered takes a tile (OL-5).
-        const stamp = sunN <= 0 && !this._lampMapCasts
-            ? 0
-            : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
+        // OL-5: the shadow lights are gathered with no sun caster too: each one gathered takes a tile of the lamps' map.
+        const stamp = this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
         // DX-SHADOW3D: a lamp's silhouettes in the direction that lamp sees (full rows; keyed ones keep the sun's).
         if (stamp > 0 && this._stampLights && dst.stampLightIdx) {
             // A lamp is not shaded by its own entity (a car's headlights by the car); a directional caster shows it the frame
@@ -5311,7 +5269,6 @@ class PreRenderWorker extends AbstractWorker {
     _writeStampLightIds(dst, stampN) {
         const ids = dst.stampLightIds;
         if (!ids || ids.length === 0 || !this._stampLights) return 0;
-        if (!(stampN > 0) && !this._lampMapCasts) return 0;
         const n = Math.min(this._stampLightCount | 0, ids.length);
         const lights = this._stampLights;
         for (let i = 0; i < n; i++) ids[i] = lights[i].id;

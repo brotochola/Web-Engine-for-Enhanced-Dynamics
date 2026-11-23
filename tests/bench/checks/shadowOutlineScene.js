@@ -7,8 +7,8 @@ const { Scene, Camera, Sun, GameObject, SpriteRenderer, DirectionalSprite, Shado
 
 /**
  * shadowOutlineCheck's still scene (DX-SHADOW3D, plan §8.2): a box (setBox), a card (a picture of one view, no maps)
- * and a crate (a render with height maps, which casts its solid) on the white floor, their shadows from the maps
- * (lighting.sunShadows and lampShadows 'map'). `?part=sun&dir=` the sun at 8 h coming from `dir` degrees (the screen's
+ * and a crate (a render with height maps, which casts its solid) on the white floor, their shadows from the maps.
+ * `?part=sun&dir=` the sun at 8 h coming from `dir` degrees (the screen's
  * angle: 0 east, 90 south), full shadow alpha; `?part=lamp&height=` night and one lamp at that height among them.
  * shadowOutlineCheck.mjs compares each shadow's outline with its projection. `?backend=webgpu`.
  */
@@ -53,8 +53,6 @@ export class ShadowOutlineScene extends Scene {
       shadowsEnabled: true,
       // The box casts a volume: lighting.maxVolumes is its room (0, the default, makes none).
       maxVolumes: 4,
-      sunShadows: 'map',
-      lampShadows: 'map',
       lampShadowTile: L.lampTile,
       selfShadow: false,
       maxShadowCastingLights: 1,

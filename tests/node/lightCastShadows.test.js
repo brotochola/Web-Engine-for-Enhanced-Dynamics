@@ -25,6 +25,8 @@ function bind() {
   LightEmitter.radius.fill(300);
   LightEmitter.brightness.fill(1); // a spawned light's (resetLightEmitterRow); 0 is off (E-531)
   LightEmitter.castShadows.set([1, 0, 1, 0]);
+  // Off the floor: a lamp at elevation 0 casts nothing into the lamps' map (N-265).
+  LightEmitter.elevation.fill(40);
 }
 
 
