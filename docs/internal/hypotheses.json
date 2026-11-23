@@ -25386,6 +25386,25 @@
         "statics mirror NaN",
         "keyed statics copy wrong"
       ]
+    },
+    {
+      "records": [
+        "R-1878"
+      ],
+      "refs": [],
+      "id": "E-549",
+      "title": "The keyed statics' CPU copy took every keyed update (25 000 a frame in Predator light3d by night, about 0.5 ms of Pixi's) for the renders' columns over keyed rows, which found none there",
+      "status": "kept-hygiene",
+      "kind": "speed",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "Pixi's copy keeps only the slots that can cast columns: Predator light3d by night renderer 10.26 -> 10.04 ms (-1.9 %, 7/8 pairs), under the bar",
+      "statusText": "kept-hygiene 2026-11-23 on exp/one-shadow-path (5bc5e1d3, R-1878), merges with E-531",
+      "next": "",
+      "aliases": [
+        "statics mirror cost",
+        "mirrorKeyedStatics"
+      ]
     }
   ],
   "records": [
@@ -43025,6 +43044,15 @@
       "title": "E-548 dropped: the lamps' map's ceiling half over the rows that reach above their lamp saved nothing (0.444 -> 0.43 ms); N-417 found on the way and fixed (the keyed statics' copy read NaN)",
       "verdict": "dropped",
       "text": "E-548 (exp/one-shadow-path, not committed): glFrameRecorder --gpu-draws on Predator light3d by night (crowd 2.5, mix 1, GTX 1650)\nshowed the lamps' map's ceiling half (DX-LAMPPANO) at 0.444 ms a frame over all 13 366 stamp rows, and lampMapVertex leaves\nout a row whose picture tops out under its lamp only after its vertex work. Pixi copied the rows that reach above their\nlamp (the program's own test: the LUT's trim height times |scale y| over heightScaleY times the row's shadow height,\nagainst the lamp of its tile) into a buffer of the ceiling's own; the batch's rows kept their order (reordered in place,\nthe floor's half kept the other of two equal depths, whose entity decides a pixel's own shade: 49 977 pixels of\nlight3dCompare ?all=1). Captures byte-identical against 712599cb on 10 still scenes. The ceiling's draw, two recordings:\n6 818 / 6 613 instances, 0.434 / 0.431 ms (before 0.444): under Predator's oblique camera (heightScaleY 0.68) half the\nrows really reach above the 110 px lamps, and the rows left out were cheap. Dropped, not committed.\nAn earlier try read 0 rows above their lamps (0.444 -> 0.000 ms) because N-417's copy held NaN for every slot.\nN-417: the keyed statics' CPU copy (E-395) read the updates through float views the constructor set to empty arrays\nright after making them, so every value it held was NaN (light3dCompare ?all=1: texture 0 and NaN scales; Predator: all\nthree NaN), and begun when the maps first drew it would have missed every slot that did not change again (FULL has\npre-render write every row's statics into the queue, not send them as updates). Fixed in 4bbdf324: the views stay; a keyed\nWebGL batch makes the copy with its statics texture. After it every keyed stamp row of Predator and light3dCompare reads a\ntexture and a scale. Captures against 712599cb byte-identical (light3dCompare ?all=1 by night and day, the light bench by\nnight and at 16:00, dxCapture by night): no scene measured draws a render's columns over keyed rows, the copy's one\nreader."
+    },
+    {
+      "id": "R-1878",
+      "date": "2026-11-23",
+      "time": "11:18",
+      "timeFrom": "recorded",
+      "title": "E-549 kept-hygiene: the keyed statics' copy keeps only the slots that can cast columns; Pixi's copy keeps only the slots that can cast columns: Predator light3d by night renderer 10.26 -> 10.04 ms (-1.9 %, 7/8 pairs), under the bar",
+      "verdict": "kept-hygiene",
+      "text": "exp/one-shadow-path 5bc5e1d3. A CPU trace of Predator light3d by night (crowd 2.5, 4bbdf324) put _mirrorKeyedStatics at\n882 ms and compactKeyedColumnRows at 296 ms of Pixi's 18 s busy (about 0.5 and 0.16 ms a frame; 1 011 ms before N-417,\nso not new): the keyed statics' copy took 16 000 full updates and 9 300 texture ones a frame, for the renders' columns\nover keyed caster rows, which found none (32 of the atlas's 1 986 frames are renders; the scan returned 0 every frame by\nday and by night). The atlas's table now flags the textures that can cast columns from a keyed row\n(keyedColumnTextures); the copy keeps the slots that show one or showed one, and with none in the atlas copies nothing and\nthe scan is skipped (keyedStaticsMirror.test.js, the real methods).\nrunPredatorAbab, Predator light3d by night, whole revisions, fresh, 4 + 4 pairs (appended): renderer 10.261 -> 10.041 ms\n(-1.9 % paired, 7/8 pairs lower, -2.5 % against the other workers); logic +3.2 %, spatial +1.3 %, physics +0.7 %,\npre-render +0.7 % (unreachable, drift). NEUTRAL as speed (under 3 %); kept for hygiene: no worker worse, and N-417 made\nthe copy run in every keyed WebGL scene, which it now leaves alone where no frame casts columns."
     }
   ],
   "leads": [
