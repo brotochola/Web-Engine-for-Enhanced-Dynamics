@@ -17,8 +17,8 @@ Open it from the demo menu (Buenos Aires), or `demos/index.html?scene=buenosaire
 | `ShadowCaster.setSprite({ frame })` | a tree casts its whole silhouette (its branches are decorations, which cast none) |
 | Height maps, pixel depth | people (LPC), cars (MinZiin) and objects bring a height map (no normal map): lit as the surfaces they show, in front of or behind each part of a wall |
 | `DirectionalSprite` | people drawn from four sides; cars from 48 headings, half of them mirrored |
-| `Transform.parent` | each car's right headlight and its police beacon are `LuzAuto` children: entities with only a light that follow the car |
-| Cone lights | headlights (two cones from the front corners), the police beacon (red and blue to each side, swapping every 0.3 s) |
+| `Transform.parent` | each car's right headlight (`LuzAuto`) and a police beacon's two lamps (`Baliza`) are children: entities with a light that follow the car |
+| Cone lights | headlights (two cones from the front corners), the police beacon (a red beam and a blue one, half a turn apart, turning 1.2 times a second) |
 | `unshaded` | the windows' lit panes (an unshaded sheet), a lamp's lit glass, the traffic lights' lamps |
 | GPU particles (`ParticleEmitter.emitGpu`) | the fountain's jet: a batch every 100 ms, one config reused |
 | A `worldRect` shader layer | the floor, painted pixel by pixel from the editor's baked data (`floor.frag`, `floor.wgsl`) |

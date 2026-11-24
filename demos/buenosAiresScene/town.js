@@ -79,6 +79,14 @@ export class PersonaState extends Component {
   };
 }
 
+/** A police beacon's lamp: the car it is on and whether it is the blue one. */
+export class BeaconState extends Component {
+  static ARRAY_SCHEMA = {
+    car: Int32Array,
+    blue: Uint8Array,
+  };
+}
+
 /**
  * A car's state, in components so that any logic worker sees it (an entity's tick moves between workers). `car` marks
  * one for the people and the other cars; halfLength and halfWidth are its collider on the screen, rebuilt as it turns.
@@ -112,15 +120,13 @@ export class AutoState extends Component {
     lightsOn: Uint8Array, // its headlights (or its beacon's cones) are on: 2 before the first decision
     darkness: Float32Array, // its lights come on when Sun.intensity drops under this (each car its own)
     rightHeadlight: Int32Array, // its right headlight, a LuzAuto child: entity index + 1, 0 for none
-    beaconLeft: Int32Array, // the police beacon's cones, LuzAuto children: entity index + 1
+    beaconLeft: Int32Array, // the police beacon's lamps, Baliza children (red on the left, blue on the right): entity index + 1
     beaconRight: Int32Array,
-    beaconDotLeft: Int32Array, // its coloured dots and their halos, attached decorations: pool index + 1
-    beaconDotRight: Int32Array,
-    beaconHaloLeft: Int32Array,
-    beaconHaloRight: Int32Array,
-    beaconRedLeft: Uint8Array, // which side is red now: 1 left, 0 right, 2 not drawn yet
-    beaconHeight: Float32Array, // the light bar's height above the floor, px of height
-    beaconPhase: Float32Array, // seconds its blinking is shifted, so police cars do not blink together
+    beaconSparkLeft: Int32Array, // its lamps' sparks and flashes, attached decorations: pool index + 1
+    beaconSparkRight: Int32Array,
+    beaconFlashLeft: Int32Array,
+    beaconFlashRight: Int32Array,
+    beaconPhase: Float32Array, // turns its beacon is ahead, so police cars do not turn together
     homeX: Float32Array, // where it started: a car stuck off screen goes back there
     homeY: Float32Array,
     homeRotation: Float32Array,

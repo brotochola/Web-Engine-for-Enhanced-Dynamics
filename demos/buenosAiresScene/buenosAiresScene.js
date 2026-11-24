@@ -24,9 +24,9 @@ import {
   ROUNDABOUT,
 } from './town.js';
 import { Casa, Arbol, Prop, Semaforo, SemaforoLuz, Fuente } from './townObjects.js';
-import { AutoIA, AutoEstacionado, LuzAuto } from './cars.js';
+import { AutoIA, AutoEstacionado, Baliza, LuzAuto } from './cars.js';
 import { Persona, PEOPLE_SHEETS, LPC_UNUSED, WALK_FIELDS } from './walkers.js';
-import { CAR_DIR, CAR_SHEETS, chooseCarSheets } from './carModels.js';
+import { CAR_DIR, CAR_SHEETS, POLICE_DRIVING_MINIMUM, chooseCarSheets } from './carModels.js';
 import { LitWindows } from './litWindows.js';
 import { worldToFloorMetres } from './traffic.js';
 import {
@@ -35,7 +35,7 @@ import {
 } from './standardObjects.js';
 
 const {
-  Scene, Camera, Decoration, DecorationComponent, Keyboard, Mouse, Layer, LightEmitter, NavGrid, SharedResource, Sun, BLEND_MODES,
+  Scene, Camera, Decoration, DecorationComponent, Keyboard, Mouse, Layer, LightEmitter, NavGrid, SharedResource, Sun,
   LAYER_KIND, rng,
 } = WEED;
 
@@ -117,16 +117,17 @@ const TRAFFIC_LIGHTS = count('nSemaforos', TRAFFIC.nSem | 0);
 const FOUNTAINS = count('nFuentes', 4);
 const CAR_PLACES = count('nAutos');
 const DRIVING_CARS = count('nAutosM', CAR_PLACES);
-const POLICE_CARS = count('nPoli', CAR_PLACES);
+/** The editor's police cars, and the driving ones the scene adds (carModels.js). */
+const POLICE_CARS = count('nPoli', CAR_PLACES) + POLICE_DRIVING_MINIMUM;
 const PARKED_CARS = Math.max(0, CAR_PLACES - DRIVING_CARS);
 /** A scene with physics holds 65 535 entities at most (N-253): the people get what the barrio leaves. */
 const ENTITY_LIMIT = 65535;
 const POOLS_BUT_PEOPLE =
   HOUSES + 8 + TREES + 8 + OBJECTS_PLACED + 64 + TRAFFIC_LIGHTS + 8 + 4 * (TRAFFIC_LIGHTS + 8) + FOUNTAINS + 4 +
-  DRIVING_CARS + 8 + PARKED_CARS + 8 + DRIVING_CARS + 2 * POLICE_CARS + 16;
+  DRIVING_CARS + 8 + PARKED_CARS + 8 + DRIVING_CARS + 8 + 2 * POLICE_CARS + 8;
 const PEOPLE_MAX = Math.max(0, ENTITY_LIMIT - POOLS_BUT_PEOPLE - 64);
 const PEOPLE = Math.max(0, Math.min(PEOPLE_MAX, Math.floor(param('people', DEFAULT_PEOPLE))));
-/** Decorations: what the package places (its count, else the sum of its kinds), and room for the beacons' dots and the headlights' shine. */
+/** Decorations: what the package places (its count, else the sum of its kinds), and room for the beacons' glows and the headlights' shine. */
 const DECORATIONS = Math.min(
   1048575,
   (Number.isFinite(META.nDecoraciones)
@@ -293,8 +294,6 @@ export class BuenosAiresScene extends Scene {
       // The fountain's water: GPU particles over the entities (its jet is over 3 m up: what passes in front stays under it).
       water: { kind: LAYER_KIND.GPU_PARTICLES, zIndex: 3.4, maxParticles: 4096, gpuRings: { main: 0, logic: 1, particle: 0 }, pixelSnap: true },
       cables: { zIndex: 3.5, ySorting: false, maxItems: Math.max(1000, count('nCables') + 100) },
-      // The beacons' halos: additive for real (sprite layers compose with shader.containerBlend).
-      glows: { zIndex: 5.5, blendMode: BLEND_MODES.ADD, shader: { containerBlend: BLEND_MODES.ADD }, ySorting: false, maxItems: 500 },
     },
   };
 
@@ -324,7 +323,8 @@ export class BuenosAiresScene extends Scene {
     [Fuente, FOUNTAINS + 4],
     [AutoIA, DRIVING_CARS + 8],
     [AutoEstacionado, PARKED_CARS + 8],
-    [LuzAuto, DRIVING_CARS + 2 * POLICE_CARS + 16],
+    [LuzAuto, DRIVING_CARS + 8],
+    [Baliza, 2 * POLICE_CARS + 8],
     [Persona, PEOPLE + 16],
   ];
 
@@ -421,7 +421,10 @@ export class BuenosAiresScene extends Scene {
       Semaforo: (config, context) => this.spawnProp({ f: TRAFFIC_LIGHT_OBJECT, ...config }, context),
       Fuente: (config, context) => this.spawnProp({ f: FOUNTAIN_OBJECT, ...config }, context),
       LugarAuto: (config) => {
-        this.carPlaces.push({ x: config.x, y: config.y, rotation: config.rotation || 0, color: config.color, moving: !!config.moving });
+        this.carPlaces.push({
+          x: config.x, y: config.y, rotation: config.rotation || 0, color: config.color,
+          moving: !!config.moving, police: !!config.poli, wreck: !!config.burnt,
+        });
         return -1;
       },
     };
@@ -453,7 +456,7 @@ export class BuenosAiresScene extends Scene {
     this.carPlaces.forEach((place, position) => {
       const { sheet, driveForce } = chosen[position];
       const config = { x: place.x, y: place.y, rotation: place.rotation, sheet, driveForce };
-      const drives = place.moving && place.color !== 'burnt';
+      const drives = place.moving && !place.wreck;
       if (drives ? AutoIA.spawn(config) : AutoEstacionado.spawn(config)) this.cars++;
     });
   }

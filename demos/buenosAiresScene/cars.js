@@ -1,6 +1,6 @@
 // The barrio's cars: Box2D bodies drawn with the demos' standard MinZiin sheets (DirectionalSprite picks the frame from
 // the rotation; each sheet's json says which heading each frame shows and mirrors the other half) and their height maps,
-// with two cone headlights that come on as the light goes, and the police cars' beacon. AutoIA drives the Editor de
+// with two cone headlights that come on as the light goes, and the police cars' turning beacon. AutoIA drives the Editor de
 // Barrios' lanes (the `calles` flowfield) and keeps the traffic law (traffic.js); AutoEstacionado stays where it was put.
 
 import WEED from '/src/index.js';
@@ -10,7 +10,7 @@ import { PICTURE_FLOOR_SCALE, PICTURE_HEIGHT_SCALE, frontSeen, pointOnScreen, sc
 import { POLICE_SHEET } from './carModels.js';
 import { PERSON_RADIUS } from './walkers.js';
 import {
-  META, HEADLIGHT_COLOR, OFF, isOff, TRAFFIC, CROSSING_STRIDE, ROUNDABOUT, Traffic, AutoState, PersonaState,
+  META, HEADLIGHT_COLOR, OFF, isOff, TRAFFIC, CROSSING_STRIDE, ROUNDABOUT, Traffic, AutoState, BeaconState, PersonaState,
 } from './town.js';
 import {
   LIGHT, ZONE, RIGHT_OF_WAY_PATIENCE_S, EMERGENCY_BRAKE_MS2, lightPhase, speedLimitKmh, crossingZone, crossingIdOf,
@@ -55,18 +55,28 @@ const HALO_IN_FRONT = 8;
 const DARKNESS_MIN = 0.25;
 const DARKNESS_SPREAD = 0.3;
 
-// The police beacon (the owner's ask to the game, 13/11: red and blue on its roof, pointing to the sides, alternating):
-// a cone to each side from the side of its footprint, red on one side and blue on the other, swapped every
-// BEACON_PERIOD_S; a coloured dot on each end of the light bar (seen by day) and its halo (seen at night). The cones
-// light only at night (by day their light would wash out the sun's shadows) and cast no shadows (cheaper). 120° wide,
-// 420 px, 1.5 bright (at 1, coloured light on dark asphalt hardly showed), from the light bar's height.
-const BEACON_RADIUS = 420;
-const BEACON_CONE = 120 * DEG;
+// The police beacon (the owner's ask, 24/11: red and blue, turning): on each end of its light bar a lamp whose beam turns,
+// red on the left and blue on the right, always opposite each other, so the two colours sweep the street and the walls in
+// turn; on each lamp a spark and a flash round it, as its beam comes round to the camera. The beams light only at night (by
+// day their light would wash out the sun's shadows) and cast no shadows (cheaper). 80° wide, 560 px, 5 bright (at 2,
+// coloured light on dark asphalt hardly showed), from the light bar's height.
+const BEACON_RADIUS = 560;
+const BEACON_CONE = 80 * DEG;
 const BEACON_SOFTNESS = 0.6;
-const BEACON_BRIGHTNESS = 1.5;
-const BEACON_PERIOD_S = 0.3;
+const BEACON_BRIGHTNESS = 5;
+/** How fast the beams turn: a real beacon does between one and three turns a second. */
+const BEACON_TURNS_PER_S = 1.2;
 const BEACON_RED = 0xff2a2a;
 const BEACON_BLUE = 0x2f5bff;
+/** Where its lamps are on the light bar: this share of the car's half width, to each side. */
+const BEACON_SIDE = 0.4;
+/** A lamp's spark and the flash round it (px round them), and their alpha with the beam away from the camera and facing it. */
+const BEACON_SPARK_RADIUS = 8;
+const BEACON_SPARK_ALPHA = [0.55, 1];
+const BEACON_FLASH_RADIUS = 30;
+const BEACON_FLASH_ALPHA = [0, 0.9];
+/** As HALO_IN_FRONT, for the lamps on the roof: they stand on the floor this far in front of the one under them. */
+const BEACON_IN_FRONT = 12;
 
 // The driving.
 /** The neighbours a driving car reads reach this far (px): enough to see a person at the stopping distance of 30 km/h. */
@@ -114,9 +124,9 @@ function aimHeadlight(light, height) {
   light.active = 0;
 }
 
-/** A beacon cone: to the side its LuzAuto is turned to, from the light bar's height, without shadows. */
-function aimBeacon(light, barHeight) {
-  light.color = BEACON_RED;
+/** A beacon's beam, from the light bar's height, without shadows: its Baliza turns it. */
+function aimBeacon(light, color, barHeight) {
+  light.color = color;
   light.glow = 0;
   light.radius = 0;
   light.brightness = BEACON_BRIGHTNESS;
@@ -135,17 +145,45 @@ function switchLight(index, on, radius) {
   LightEmitter.radius[index] = on ? radius : 0;
 }
 
-/**
- * A light that hangs from a car (Transform.parent: physics places it with the car every frame): the right headlight,
- * or one side of the police beacon (`beacon` 1, `turn` its rotation from the car's heading, ±90°), `height` px of height.
- */
+/** A car's right headlight, `height` px of height: a light that hangs from it (Transform.parent: physics places it with the car every frame). */
 export class LuzAuto extends GameObject {
   static components = [LightEmitter];
 
   onSpawned(config = {}) {
-    if (config.beacon) aimBeacon(this.lightEmitter, config.height || 0);
-    else aimHeadlight(this.lightEmitter, config.height || 0);
-    this.transform.localRotation = config.turn || 0;
+    aimHeadlight(this.lightEmitter, config.height || 0);
+    this.transform.localRotation = 0;
+  }
+}
+
+/**
+ * One lamp of a police car's beacon (`blue` 1, or the red one), hung from the car as LuzAuto: it turns its beam every frame
+ * and lights the spark and the flash its car draws for it as the beam comes round. The two lamps of a car are half a turn apart.
+ */
+export class Baliza extends GameObject {
+  static components = [LightEmitter, BeaconState];
+
+  onSpawned(config = {}) {
+    this.beaconState.car = config.parent;
+    this.beaconState.blue = config.blue ? 1 : 0;
+    this.transform.localRotation = 0;
+    aimBeacon(this.lightEmitter, config.blue ? BEACON_BLUE : BEACON_RED, config.height || 0);
+  }
+
+  tick() {
+    const index = this.index;
+    if (!Transform.active[index]) return;
+    const car = BeaconState.car[index];
+    const blue = BeaconState.blue[index];
+    const turns = (performance.now() / 1000) * BEACON_TURNS_PER_S + AutoState.beaconPhase[car] + (blue ? 0.5 : 0);
+    const angle = (turns - Math.floor(turns)) * 2 * Math.PI;
+    this.lightEmitter.direction = angle;
+    // How much the beam looks at the camera (down the screen), on the floor: its own turn and the car's heading.
+    const facing = Math.sin(angle) * Transform.rotC[index] + Math.cos(angle) * Transform.rotS[index];
+    const shine = facing > 0 ? facing * facing : 0;
+    const [sparkAway, sparkFacing] = BEACON_SPARK_ALPHA;
+    const [flashAway, flashFacing] = BEACON_FLASH_ALPHA;
+    fadeDecoration((blue ? AutoState.beaconSparkRight[car] : AutoState.beaconSparkLeft[car]) - 1, sparkAway + (sparkFacing - sparkAway) * shine);
+    fadeDecoration((blue ? AutoState.beaconFlashRight[car] : AutoState.beaconFlashLeft[car]) - 1, flashAway + (flashFacing - flashAway) * shine);
   }
 }
 
@@ -218,14 +256,14 @@ export class Auto extends GameObject {
     state.lampHaloRight = 0;
     state.beaconLeft = 0;
     state.beaconRight = 0;
-    state.beaconDotLeft = 0;
-    state.beaconDotRight = 0;
-    state.beaconHaloLeft = 0;
-    state.beaconHaloRight = 0;
+    state.beaconSparkLeft = 0;
+    state.beaconSparkRight = 0;
+    state.beaconFlashLeft = 0;
+    state.beaconFlashRight = 0;
     const light = this.lightEmitter;
     if (state.headlights) {
       aimHeadlight(light, height);
-      state.rightHeadlight = this.hangLight(0, 0, 0, 0, height);
+      state.rightHeadlight = this.hangLight(LuzAuto, { height });
       // Hung unturned (inheritParentRotation false): their offsets are the screen's, the frame drawn's own.
       const haloLift = height * PICTURE_HEIGHT_SCALE + HALO_IN_FRONT;
       const anchorY = 0.5 + haloLift / (2 * LAMP_HALO_RADIUS);
@@ -286,47 +324,46 @@ export class Auto extends GameObject {
     fadeDecoration(AutoState.lampHaloRight[index] - 1, LAMP_HALO_ALPHA * seen);
   }
 
-  /** A LuzAuto hung from the car at (localX, localY) of its frame (`beacon` 1, or a headlight): its index + 1, 0 when the pool is full. */
-  hangLight(localX, localY, turn, beacon, height) {
+  /** A light (LuzAuto or Baliza) hung from the car at (localX, localY) of its frame: its index + 1, 0 when the pool is full. */
+  hangLight(LightClass, config, localX = 0, localY = 0) {
     const cos = Math.cos(this.rotation);
     const sin = Math.sin(this.rotation);
-    const light = LuzAuto.spawn({
+    const light = LightClass.spawn({
+      ...config,
       x: this.x + cos * localX - sin * localY,
       y: this.y + sin * localX + cos * localY,
       parent: this.index,
       localX,
       localY,
-      turn,
-      beacon,
-      height,
     });
     return light ? light.index + 1 : 0;
   }
 
-  /** The police beacon: a cone to each side (LuzAuto children turned ±90°), a dot and a halo on each end of the bar. */
+  /** The police beacon: a lamp on each end of the light bar (Baliza children), each with its spark and its flash. */
   mountBeacon(sheet) {
     const state = this.autoState;
     const barHeight = CARS[sheet].zmax; // the light bar's top, px of height (the pictures' 18 px a metre, as the barrio)
-    state.beaconHeight = barHeight;
-    state.beaconPhase = rng() * 10;
-    state.beaconRedLeft = 2;
-    this.findSide(this.rotation, -1);
-    state.beaconLeft = this.hangLight(_lamp.x, _lamp.y, -Math.PI / 2, 1, barHeight);
-    this.findSide(this.rotation, 1);
-    state.beaconRight = this.hangLight(_lamp.x, _lamp.y, Math.PI / 2, 1, barHeight);
+    state.beaconPhase = rng();
+    this.findBeaconLamp(this.rotation, -1);
+    state.beaconLeft = this.hangLight(Baliza, { blue: 0, height: barHeight }, _lamp.x, _lamp.y);
+    this.findBeaconLamp(this.rotation, 1);
+    state.beaconRight = this.hangLight(Baliza, { blue: 1, height: barHeight }, _lamp.x, _lamp.y);
     // Hung unturned (inheritParentRotation false): their offsets are the screen's, set each frame from the car's heading.
-    const dot = { tint: BEACON_RED, alpha: 1, anchorX: 0.5, anchorY: 0.5, inheritParentRotation: false };
-    const halo = { ...dot, layer: 'glows' };
-    state.beaconDotLeft = this.addDecoration('_whiteCircle', 0, 0, 0.36, 0.36, 2, dot) + 1;
-    state.beaconDotRight = this.addDecoration('_whiteCircle', 0, 0, 0.36, 0.36, 2, { ...dot, tint: BEACON_BLUE }) + 1;
-    state.beaconHaloLeft = this.addDecoration('_lightGradient', 0, 0, 0.3, 0.3, 1, halo) + 1;
-    state.beaconHaloRight = this.addDecoration('_lightGradient', 0, 0, 0.3, 0.3, 1, { ...halo, tint: BEACON_BLUE }) + 1;
-    this.placeBeaconDots();
+    const lift = barHeight * PICTURE_HEIGHT_SCALE + BEACON_IN_FRONT;
+    const addGlow = (color, radius, alpha, innerZ) =>
+      this.addDecoration('_lightHalo', 0, 0, radius / 100, radius / 100, innerZ, {
+        tint: color, alpha, anchorX: 0.5, anchorY: 0.5 + lift / (2 * radius), inheritParentRotation: false,
+      }) + 1;
+    state.beaconFlashLeft = addGlow(BEACON_RED, BEACON_FLASH_RADIUS, BEACON_FLASH_ALPHA[0], 2);
+    state.beaconFlashRight = addGlow(BEACON_BLUE, BEACON_FLASH_RADIUS, BEACON_FLASH_ALPHA[0], 2);
+    state.beaconSparkLeft = addGlow(BEACON_RED, BEACON_SPARK_RADIUS, BEACON_SPARK_ALPHA[0], 3);
+    state.beaconSparkRight = addGlow(BEACON_BLUE, BEACON_SPARK_RADIUS, BEACON_SPARK_ALPHA[0], 3);
+    this.placeBeaconGlows();
   }
 
   /**
    * A new frame (DirectionalSprite drew the one nearest the heading): the collider to the footprint at the heading it
-   * shows, the headlights on the front corners, the beacon's cones on the sides.
+   * shows, the headlights on the front corners, the beacon's lamps on its light bar.
    */
   onDirectionChanged() {
     const index = this.index;
@@ -343,17 +380,17 @@ export class Auto extends GameObject {
     }
     if (AutoState.headlights[index]) this.placeLamps(angle);
     if (AutoState.police[index]) {
-      this.findSide(angle, -1);
+      this.findBeaconLamp(angle, -1);
       setLocalOffset(AutoState.beaconLeft[index] - 1, _lamp.x, _lamp.y);
-      this.findSide(angle, 1);
+      this.findBeaconLamp(angle, 1);
       setLocalOffset(AutoState.beaconRight[index] - 1, _lamp.x, _lamp.y);
-      this.placeBeaconDots();
+      this.placeBeaconGlows();
     }
   }
 
-  /** The middle of its left side (`side` -1) or its right one (1), in its own frame, drawn at the screen heading `angle`: into _lamp. */
-  findSide(angle, side) {
-    pointOnScreen(angle, 0, side * AutoState.floorHalfWidth[this.index], 0, _lamp);
+  /** The floor under its beacon's left lamp (`side` -1) or its right one (1), in its own frame, drawn at the screen heading `angle`: into _lamp. */
+  findBeaconLamp(angle, side) {
+    pointOnScreen(angle, 0, side * AutoState.floorHalfWidth[this.index] * BEACON_SIDE, 0, _lamp);
     turnBack(_lamp, Math.cos(angle), Math.sin(angle));
   }
 
@@ -362,7 +399,6 @@ export class Auto extends GameObject {
     if (!Transform.active[index]) return;
     this.updateLights();
     if (AutoState.headlights[index] && AutoState.lightsOn[index] === 1) this.holdLights();
-    if (AutoState.police[index]) this.blinkBeacon();
   }
 
   /** Lights on when it gets dark enough for this car (and the panel leaves them on), off when the light comes back. */
@@ -380,40 +416,23 @@ export class Auto extends GameObject {
     switchLight(AutoState.beaconRight[index] - 1, wanted, BEACON_RADIUS);
   }
 
-  /** The beacon: red and blue swap sides every BEACON_PERIOD_S. */
-  blinkBeacon() {
-    const index = this.index;
-    const redLeft = Math.floor((performance.now() / 1000 + AutoState.beaconPhase[index]) / BEACON_PERIOD_S) % 2 === 0 ? 1 : 0;
-    if (redLeft === AutoState.beaconRedLeft[index]) return;
-    AutoState.beaconRedLeft[index] = redLeft;
-    const leftColor = redLeft ? BEACON_RED : BEACON_BLUE;
-    const rightColor = redLeft ? BEACON_BLUE : BEACON_RED;
-    paintLight(AutoState.beaconLeft[index] - 1, leftColor);
-    paintLight(AutoState.beaconRight[index] - 1, rightColor);
-    paintDecoration(AutoState.beaconDotLeft[index] - 1, leftColor);
-    paintDecoration(AutoState.beaconHaloLeft[index] - 1, leftColor);
-    paintDecoration(AutoState.beaconDotRight[index] - 1, rightColor);
-    paintDecoration(AutoState.beaconHaloRight[index] - 1, rightColor);
-  }
-
   /**
-   * The beacon's dots on the roof of the frame drawn: 40 % of the half width to each side of the car on its floor, and the
-   * bar's height up the screen.
+   * The beacon's sparks and flashes on the frame drawn: on the floor under each lamp, BEACON_IN_FRONT nearer the camera, and
+   * drawn from there up to the lamp by their anchor.
    */
-  placeBeaconDots() {
+  placeBeaconGlows() {
     const index = this.index;
     const drawn = this.directionalSprite.directionAngle;
     const angle = Number.isFinite(drawn) ? drawn : this.rotation;
     const theta = Math.atan2(Math.sin(angle) / PICTURE_FLOOR_SCALE, Math.cos(angle));
-    const side = AutoState.floorHalfWidth[index] * 0.4;
-    const up = AutoState.beaconHeight[index] * PICTURE_HEIGHT_SCALE;
+    const side = AutoState.floorHalfWidth[index] * BEACON_SIDE;
     // On the floor (y down) the left of the heading (cos, sin) is (sin, −cos).
     const leftX = side * Math.sin(theta);
     const leftY = -side * PICTURE_FLOOR_SCALE * Math.cos(theta);
-    placeDecoration(AutoState.beaconDotLeft[index] - 1, leftX, leftY - up);
-    placeDecoration(AutoState.beaconHaloLeft[index] - 1, leftX, leftY - up);
-    placeDecoration(AutoState.beaconDotRight[index] - 1, -leftX, -leftY - up);
-    placeDecoration(AutoState.beaconHaloRight[index] - 1, -leftX, -leftY - up);
+    placeDecoration(AutoState.beaconSparkLeft[index] - 1, leftX, leftY + BEACON_IN_FRONT);
+    placeDecoration(AutoState.beaconFlashLeft[index] - 1, leftX, leftY + BEACON_IN_FRONT);
+    placeDecoration(AutoState.beaconSparkRight[index] - 1, -leftX, -leftY + BEACON_IN_FRONT);
+    placeDecoration(AutoState.beaconFlashRight[index] - 1, -leftX, -leftY + BEACON_IN_FRONT);
   }
 }
 
@@ -424,13 +443,6 @@ function setLocalOffset(index, localX, localY) {
   Transform.localY[index] = localY;
 }
 
-function paintLight(index, color) {
-  if (index >= 0) LightEmitter.color[index] = color;
-}
-
-function paintDecoration(index, color) {
-  if (index >= 0) DecorationComponent.tint[index] = color;
-}
 
 function fadeDecoration(index, alpha) {
   if (index >= 0) DecorationComponent.alpha[index] = alpha;
@@ -443,8 +455,8 @@ function placeDecoration(index, localX, localY) {
 }
 
 /**
- * A parked car (or a wreck): a static body that listens to no collisions. It ticks every 4 frames, often enough for a
- * police car's beacon to swap its colours every 0.3 s.
+ * A parked car (or a wreck): a static body that listens to no collisions. It ticks every 4 frames: only its lights come and
+ * go (a police car's beacon turns on its own, Baliza).
  */
 export class AutoEstacionado extends Auto {
   static tickInterval = 4;

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { PICTURE_FLOOR_SCALE, PICTURE_HEIGHT_SCALE, frontSeen, pointOnScreen, screenFootprint, turnBack } from '../buenosAiresScene/carGeometry.js';
+import { POLICE_DRIVING_MINIMUM, POLICE_SHEET, WRECK_SHEET, chooseCarSheets } from '../buenosAiresScene/carModels.js';
 import { CARS } from '../img/autos/index.js';
 import { CAR_LAMPS } from '../img/autos/lamps.js';
 
@@ -80,4 +81,21 @@ test('the lamps are where the owner marked them on four cars, to a few px (2026-
       assert.ok(Math.min(...gaps) < 6, `${sheet}: ${Math.min(...gaps).toFixed(1)} px from the mark`);
     }
   }
+});
+
+test('the editor\'s police cars and wrecks are read (N-442), and enough police cars drive', () => {
+  let seed = 7;
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const places = [];
+  for (let k = 0; k < 120; k++) places.push({ x: 400 * k, y: 0, rotation: 0, color: 'red', moving: k < 60, police: false, wreck: false });
+  places[0].police = true; // driving
+  places[70].police = true; // parked
+  places[80].wreck = true;
+  const chosen = chooseCarSheets(places, [], () => 0.5, random, 18);
+  assert.equal(chosen[0].sheet, POLICE_SHEET);
+  assert.equal(chosen[70].sheet, POLICE_SHEET);
+  assert.equal(chosen[80].sheet, WRECK_SHEET);
+  const police = chosen.map((car, index) => (car.sheet === POLICE_SHEET ? index : -1)).filter((index) => index >= 0);
+  assert.equal(police.filter((index) => places[index].moving).length, POLICE_DRIVING_MINIMUM, 'driving');
+  assert.equal(police.filter((index) => !places[index].moving).length, 1, 'parked: only the editor\'s');
 });

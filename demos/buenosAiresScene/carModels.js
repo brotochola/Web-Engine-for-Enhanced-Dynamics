@@ -1,6 +1,6 @@
 // The barrio's cars are the demos' standard cars ("TopDown Vehicles" v1.17 by MinZiin, CC BY 4.0: demos/img/autos). The
-// Editor de Barrios only says where each car is, its heading, whether it drives and a colour ('poli' a police car,
-// 'burnt' a wreck); which model it is, the demo chooses, as the game did: by weight, by how rich the block is, and only
+// Editor de Barrios only says where each car is, its heading, whether it drives and a colour, or that it is a police car
+// (`poli`) or a wreck (`burnt`); which model it is, the demo chooses, as the game did: by weight, by how rich the block is, and only
 // where the model fits.
 
 import { CARS } from '../img/autos/index.js';
@@ -24,6 +24,8 @@ export const CAR_MODELS = Object.freeze({
   camion: { sheets: ['camion_rojo'], weight: 3.5, minimumDriving: 2, driveForce: 300 },
   colectivo: { sheets: ['colectivo_amarillo'], weight: 2.5, minimumDriving: 4, drivingOnly: true, driveForce: 270 },
 });
+/** How many police cars drive at least: the editor marks a few (6 in Parque Chas), the rest are driving places drawn at random. */
+export const POLICE_DRIVING_MINIMUM = 20;
 export const POLICE_SHEET = 'policia';
 export const WRECK_SHEET = 'quemado_sedan';
 
@@ -53,7 +55,7 @@ export function boxesOverlap(a, b) {
 }
 
 /**
- * Which sheet each car place gets. `places`: [{ x, y, rotation, color, moving }] (world px); `solidProps`: flat x, y,
+ * Which sheet each car place gets. `places`: [{ x, y, rotation, color, moving, police, wreck }] (world px); `solidProps`: flat x, y,
  * radius of the objects that stop a car; `wealthAt(x, y)`: 0 poor to 1 rich; `random`: () => [0, 1); `pxPerMetre`: the
  * editor's px a metre for sizes on the floor. Returns [{ sheet, driveForce }], one per place.
  *
@@ -63,10 +65,11 @@ export function boxesOverlap(a, b) {
 export function chooseCarSheets(places, solidProps, wealthAt, random, pxPerMetre) {
   const fit = makeFitTest(places, solidProps, pxPerMetre);
   const chosen = new Array(places.length).fill(null);
-  placeMinimums(places, chosen, fit, random);
+  const police = choosePolice(places, random);
+  placeMinimums(places, police, chosen, fit, random);
   return places.map((place, index) => {
-    if (place.color === 'burnt') return { sheet: WRECK_SHEET, driveForce: 0 };
-    if (place.color === 'poli') return { sheet: POLICE_SHEET, driveForce: 340 };
+    if (place.wreck) return { sheet: WRECK_SHEET, driveForce: 0 };
+    if (police[index]) return { sheet: POLICE_SHEET, driveForce: 340 };
     const modelName = chosen[index] ?? pickModel(place, index, fit, wealthAt, random);
     const model = CAR_MODELS[modelName];
     fit.claim(index, modelName);
@@ -74,16 +77,34 @@ export function chooseCarSheets(places, solidProps, wealthAt, random, pxPerMetre
   });
 }
 
-/** The models with a minimum of driving cars: given first, to driving places drawn at random where they fit. */
-function placeMinimums(places, chosen, fit, random) {
+/** The driving places that are no wreck nor police car, in random order. */
+function shuffledDriving(places, police, random) {
   const driving = [];
   places.forEach((place, index) => {
-    if (place.moving && place.color !== 'burnt' && place.color !== 'poli') driving.push(index);
+    if (place.moving && !place.wreck && !police[index]) driving.push(index);
   });
   for (let last = driving.length - 1; last > 0; last--) {
     const pick = Math.floor(random() * (last + 1));
     [driving[last], driving[pick]] = [driving[pick], driving[last]];
   }
+  return driving;
+}
+
+/** Whether each place is a police car: the editor's, and driving places at random up to POLICE_DRIVING_MINIMUM driving. */
+function choosePolice(places, random) {
+  const police = places.map((place) => !!place.police && !place.wreck);
+  let driving = places.filter((place, index) => police[index] && place.moving).length;
+  if (driving >= POLICE_DRIVING_MINIMUM) return police;
+  for (const index of shuffledDriving(places, police, random)) {
+    if (driving++ >= POLICE_DRIVING_MINIMUM) break;
+    police[index] = true;
+  }
+  return police;
+}
+
+/** The models with a minimum of driving cars: given first, to driving places drawn at random where they fit. */
+function placeMinimums(places, police, chosen, fit, random) {
+  const driving = shuffledDriving(places, police, random);
   for (const [modelName, model] of Object.entries(CAR_MODELS)) {
     let given = 0;
     for (const index of driving) {
