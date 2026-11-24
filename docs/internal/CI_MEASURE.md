@@ -59,3 +59,19 @@ times mean nothing on them.
 5. **No engine change is kept on GitHub's numbers alone.** A bug (a torn read, a failing test) is a bug on one machine.
 6. Apple's chips and Zen 4/5 weigh more than server ARM: players have them.
 7. No hardware counters: VMs do not expose them reliably. GPU times on Linux and Windows do not exist.
+
+## Calibration (2026-11-24)
+
+An A/A of the catalog's kernels, 5 rounds, one VM an observation (R-1982). The limit is what a difference must pass there.
+
+| Machine | VMs | Limit, median | Limit, 9 of 10 kernels | Kernels at 3 % or less | Minutes a VM |
+|---|---|---|---|---|---|
+| `linux` | 8 | 0.5 % | 1.4 % | 39 of 41 | 10 to 14 |
+| `linuxArm` | 8 | 0.4 % | 2.4 % | 39 of 41 | 12 |
+| `win` | 6 | 1.0 % | 6.3 % | 33 of 41 | 9 to 16 |
+| `winArm` | 4 | 0.7 % | 2.3 % | 39 of 41 | 32 |
+| `mac` | 1, 9 rounds | not a limit: the one VM's A/A differed 2.3 % (median), 5.7 % (9 of 10) | | | 20 |
+
+`audioSlots` and `queryPublish` cannot be read on x64, nor `gpuQueuePack` on ARM. The M1 is for bugs, its GPU and machine
+code, not for times. GitHub may not find a Mac for a job (one was dropped after 15 minutes): Mac jobs go in a request of
+their own.
