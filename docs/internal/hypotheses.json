@@ -25598,6 +25598,26 @@
         "decal transparent fill",
         "decal tile cells"
       ]
+    },
+    {
+      "records": [
+        "R-1980"
+      ],
+      "refs": [],
+      "id": "N-450",
+      "title": "With pixel depth on, a sprite without a normal takes its drawn y as its depth foot, without its sortOffsetY: a world decoration hung at roof height is hidden by its own house",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "Found 2026-11-23 in the Buenos Aires package: water tanks, air conditioners, antennas and roof pots (class Accesorio) did not show since faces write their plane depth; worked around in the Editor de Barrios (each accessory is an upright face)",
+      "next": "depthFloor of a sprite that is no face (pixelDepth.js, GLSL and WGSL) reads aInstXY.y, the drawn place; the painter's key reads y + sortOffsetY (preRenderWorker.js). Carry the foot (y + sortOffsetY) to the depth programs, for world-owned and attached decorations, with a parity test of the two orders",
+      "aliases": [
+        "sortOffsetY depth",
+        "accessories behind the house",
+        "Accesorio"
+      ]
     }
   ],
   "records": [
@@ -43696,6 +43716,15 @@
       "title": "E-466's cause: ANGLE streams the mesh batch's DYNAMIC buffers whole at each draw; the STATIC hint takes Chrome's GPU process from 564 to 81 ms/s in volumeStress (trial, not decided: no GPU time, captures or pairs yet)",
       "verdict": "note",
       "text": "Trial branch perf/e466-static (0850ec23): MeshUvFillBatch's vertex and index buffers with Pixi's BufferUsage.STATIC on WebGL, two\nlines. 17:33 to 17:35 by the result files, GTX 1650, headed, volumeStressScene defaults (about 200 KB of its 37 MB of records and\nindices move a frame, with bufferSubData):\n- gpuProcessTrace --decoder on main: glDrawElements 518 of the GPU process main thread's 611 ms/s, over 299 draws a second, so\n  about 8.7 ms a frame if it is the mesh draw's (one of about five a frame).\n- gpuProcessTrace untraced, main be31535e against 0850ec23, 2 pairs ABBA: CrGpuMain 576, 552 -> 82, 80 ms/s (-86 %, 2/2), PutChanged\n  537, 508 -> 43, 42 (-92 %). The GL calls are the same (74.9 and 78.0 a frame).\nRead as: a DYNAMIC buffer's used range is copied by ANGLE (Direct3D 11) into a streaming buffer at each draw, and the index range\nsearched; meshFillGpuBench (0.6 ms a draw) makes its buffers STATIC. Not proven by a trace of ANGLE's own, and E-477 (the same\ngap in other scenes) has a case with no uploads that this does not explain.\nNot measured, so not decided: the draw's GPU time (a changed STATIC buffer is copied from a staging one, whole, and mapping it may\nwait for the GPU), captures (the hint changes no shader or state), the renderer's STEP_MS, other GPUs and other ANGLE backends, and\nthe cost where the whole buffer changes every frame (paint, a corner rewrite of the layer).\nE-422 in the same sitting: spriteMapsStressScene's colour pass 0.859 ms a frame (7 draws, 1 207 instances, 1785 MHz); 2.4 ms on\n2026-11-16. The lamps' map is 5.40 ms there, 5.2 of it two column draws of 179 instances each."
+    },
+    {
+      "id": "R-1980",
+      "date": "2026-11-23",
+      "time": "22:38",
+      "timeFrom": "recorded",
+      "title": "N-450 filed: a sprite without a normal is depth-tested at its y, without its sortOffsetY (the barrio's tanks, air conditioners and antennas were hidden by their own house)",
+      "verdict": "note",
+      "text": "Seen, not measured. Buenos Aires package (Parque Chas) in the editor's own WeedJS view, the same place and hour: with the package of 2026-11-18 and the bundle of 70ba822b no accessory shows on any roof; the same with the dist of main 2c7c5548. A part that stands out past the parapet (an antenna, a chimney of a grill) does show, so they are drawn, behind.\nWhy: an Accesorio (chas_0 of that package) has y at roof height (-158) and sortOffsetY 136, so the painter sorts it at -22.48, just over its roof (-22.5, innerZ 1 against 0). The depth does not read sortOffsetY: facesDepthCoreGlsl starts from depthFloor = aInstXY.y * uDepth.x, the drawn place, 136 px further back, and the roof's plane wins.\nCheck: the same package with faceNormal (0, 1, 0) and the height of its centre on each accessory (an upright face at its foot) shows them in order with parapets, walls and tree crowns (WebGL at 13:00, 17:00 and 21:00; WebGPU at 13:00). The editor exports them so now (editor-de-barrios df5151f), and the demo's package is re-exported on demo/parquechas-2026-11-23. Not run: a version before DX-FACEDEPTH, to date the regression."
     }
   ],
   "leads": [
