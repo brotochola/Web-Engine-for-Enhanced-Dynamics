@@ -25,18 +25,46 @@ export function screenFootprint(floorHalfLength, floorHalfWidth, cos, sin, out) 
 }
 
 /**
- * A point of a car (`ahead` of its centre and `side` to its right, px on its pictures' floor, `height` px over it) as its
- * picture shows it, in the car's own frame on the screen (x along its heading), the car drawn at the screen heading `angle`.
- * The pictures' floor is flattened, so a car's front is not square to its heading on the screen: at 35° its front runs 17°
- * off square.
+ * Where a car's picture draws a point of it (`ahead` of its centre and `side` to its right, px on its pictures' floor,
+ * `height` px over it): screen px from its centre, the car drawn at the screen heading `angle`. The pictures' floor is
+ * flattened, so a car's front is not square to its heading on the screen: at 35° its front runs 17° off square.
  */
-export function pointInCarFrame(angle, ahead, side, height, out) {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  const theta = Math.atan2(sin / PICTURE_FLOOR_SCALE, cos);
-  const screenX = ahead * Math.cos(theta) - side * Math.sin(theta);
-  const screenY = PICTURE_FLOOR_SCALE * (ahead * Math.sin(theta) + side * Math.cos(theta)) - PICTURE_HEIGHT_SCALE * height;
-  out.x = screenX * cos + screenY * sin;
-  out.y = screenY * cos - screenX * sin;
+export function pointOnScreen(angle, ahead, side, height, out) {
+  const theta = Math.atan2(Math.sin(angle) / PICTURE_FLOOR_SCALE, Math.cos(angle));
+  out.x = ahead * Math.cos(theta) - side * Math.sin(theta);
+  out.y = PICTURE_FLOOR_SCALE * (ahead * Math.sin(theta) + side * Math.cos(theta)) - PICTURE_HEIGHT_SCALE * height;
+  return out;
+}
+
+/** A screen offset (in place) in the frame of an entity turned by (cos, sin): what its rotation turns back into it. */
+export function turnBack(point, cos, sin) {
+  const { x, y } = point;
+  point.x = x * cos + y * sin;
+  point.y = y * cos - x * sin;
+  return point;
+}
+
+/** How much of a car's front faces the camera, drawn at the screen heading `angle`: 1 seen, 0 hidden behind the car. */
+export function frontSeen(angle) {
+  const towardsCamera = Math.sin(Math.atan2(Math.sin(angle) / PICTURE_FLOOR_SCALE, Math.cos(angle)));
+  return Math.max(0, Math.min(1, (towardsCamera + 0.25) / 0.3));
+}
+
+/**
+ * A light's cone, measured on the scene's floor (`sceneFloorScale` as tall as it is wide; `halfCone` radians to each side),
+ * as the screen shows it, its light pointing at the screen angle `angle`: the screen angle from there to the middle of its
+ * two edges (`turn`), half the screen angle between them (`half`), and how long `length` px of floor are along that middle.
+ */
+export function coneOnScreen(angle, sceneFloorScale, halfCone, length, out) {
+  const axis = Math.atan2(Math.sin(angle) / sceneFloorScale, Math.cos(angle));
+  const edge = (a) => Math.atan2(sceneFloorScale * Math.sin(a), Math.cos(a));
+  const near = (a) => angle + Math.atan2(Math.sin(a - angle), Math.cos(a - angle));
+  const from = near(edge(axis - halfCone));
+  const to = near(edge(axis + halfCone));
+  const middle = (from + to) / 2;
+  const onFloor = Math.atan2(Math.sin(middle) / sceneFloorScale, Math.cos(middle));
+  out.turn = middle - angle;
+  out.half = (to - from) / 2;
+  out.length = length * Math.sqrt(Math.cos(onFloor) ** 2 + (sceneFloorScale * Math.sin(onFloor)) ** 2);
   return out;
 }
