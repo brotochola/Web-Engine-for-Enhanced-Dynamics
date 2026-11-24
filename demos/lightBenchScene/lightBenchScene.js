@@ -38,7 +38,7 @@
 //   ?carEven=1    the cars' frames taken as even 7.5° turns (frame number × 7.5), not the headings their sheets keep
 
 import WEED from '/src/index.js';
-import { BENCH_ASSETS, benchSheetSpec, nextCarFacing, sheetScale } from './benchAssets.js';
+import { BENCH_ASSETS, benchSheetSpec, carFacingOnScreen, nextCarFacing, sheetScale } from './benchAssets.js';
 import { elementCode, lampCode, sceneCode } from './benchCode.js';
 import {
   KIND_NAMES, LAMP_KINDS, NORMALS, ORIENTS, SELF_SHADOWS, SUN_KINDS,
@@ -427,10 +427,12 @@ export class LightBenchScene extends Scene {
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     for (const [sheet, x, y] of FARM) {
       // The prototype's turn is counter-clockwise on the floor; a facing is the world's angle (clockwise, y down). A car's
-      // turn is its heading; a prop's frame k is its model turned k steps, frame 0 at facing 90° (its sheet's stand table).
+      // turn is its heading, faced as the screen shows it; a prop's frame k is its model turned k steps, frame 0 at facing
+      // 90° (its sheet's stand table).
       const turn = Math.floor(rnd() * 360);
       const isCar = BENCH_ASSETS[sheet].kind === 'car';
-      const facing = isCar && CAR_FACING !== null ? CAR_FACING * DEG : (isCar ? -turn : 90 - turn) * DEG;
+      const carFacing = CAR_FACING !== null ? CAR_FACING * DEG : carFacingOnScreen(-turn * DEG);
+      const facing = isCar ? carFacing : (90 - turn) * DEG;
       if (!wanted(sheet)) continue;
       this._addElement(BENCH_ASSETS[sheet].kind === 'car' ? 'car' : 'prop', sheet, null, x, y, facing);
     }

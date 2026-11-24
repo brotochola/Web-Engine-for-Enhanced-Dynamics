@@ -1037,7 +1037,9 @@ export type SpriteDirectionEntry = string | { anim: string; flipX?: boolean };
 /**
  * DX-DIRSPRITE: a directionless animation's directions. Keys are direction names (`right`, `downRight`, `down`,
  * `downLeft`, `left`, `upLeft`, `up`, `upRight`) or degrees of the world (0 east, 90 south: y down); `mirrorX: true`
- * mirrors each drawn heading a into 180° - a where the sheet has none. Or the count form for renders: `count`
+ * mirrors each drawn heading a into 180° - a where the sheet has none. A sheet with an {@link SceneSpritesheetAsset.artCamera}
+ * gives degrees on the floor it was drawn on: the frame drawn is the one that points where the facing does on the screen.
+ * Or the count form for renders: `count`
  * directions from `startAngle` (degrees, default 0), clockwise on the screen unless `clockwise: false`, each the
  * animation `anims` names with `{i}` replaced by its number.
  */
@@ -4866,7 +4868,7 @@ export declare class DirectionalSprite extends Component {
   set turnMargin(radians: number);
   /** The direction drawn, as the sheet names it ('left', 'downRight', '12'); null before the first. */
   readonly direction: string | null;
-  /** The direction drawn as world radians (π/2 south); NaN before the first. */
+  /** The direction drawn as world radians (π/2 south), where its picture points on the screen; NaN before the first. */
   readonly directionAngle: number;
   /** The direction drawn as an index into `directions`; 255 before the first. */
   readonly directionIndex: number;

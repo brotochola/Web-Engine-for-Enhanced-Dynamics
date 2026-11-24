@@ -178,12 +178,16 @@ export function sunFrameTables(byId) {
     let any = false;
     for (const [id, src] of Object.entries(byId)) {
         if (!src || !(src.count > 0)) continue;
+        // A light's frame is picked on the floor the sheet was drawn on (spriteDirections.js): its angles there.
+        const floor = src.floor || src;
         const entry = {
             count: src.count,
-            uniform: src.uniform === true,
-            start: +src.start,
+            uniform: floor.uniform === true,
+            start: +floor.start,
             step: +src.step,
-            angles: Float64Array.from(src.angles),
+            angles: Float64Array.from(floor.angles),
+            // How tall that floor was drawn, where a facing (the world's, as the screen shows it) is another angle; else 1.
+            facingScaleY: src.floor ? +src.floor.scaleY : 1,
             anim: Uint8Array.from(src.anim),
             flip: Uint8Array.from(src.flip),
             groups: src.groups.length,
@@ -1168,7 +1172,8 @@ function dropOwnStampsInto(rows, stampN, lightIdx, lights) {
 function sunFrameDirection(t, e, turn) {
     const ax = DirectionalSprite.aimX[e];
     const ay = DirectionalSprite.aimY[e];
-    const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+    let facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+    if (t.facingScaleY !== 1) facing = Math.atan2(Math.sin(facing) / t.facingScaleY, Math.cos(facing));
     // E-388: the turn read here and the facing through PICK_ARGS: no double crosses a call (they were boxed per caster).
     PICK_ARGS[0] = facing + turn[0];
     PICK_ARGS[1] = 0;

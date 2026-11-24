@@ -2408,6 +2408,16 @@ test('N-297: a full sun row carries its frame\'s turn from the sun when its shee
   assert.ok(plain > 300, `rows of sheets on no contact, with no turn (${plain})`);
 });
 
+test('a table whose directions are told on the screen picks its lights\' frames on the floor it was drawn on', async () => {
+  const m = await worker();
+  const floorAngles = [0, 45, 90, 180, 270].map((d) => (d * Math.PI) / 180);
+  const src = { ...contactSheet([0, 26.565, 90, 180, 270], false), floor: { scaleY: 0.5, angles: floorAngles, uniform: false, start: 0 } };
+  const [t, plain] = m.sunFrameTables({ 0: src, 1: contactSheet([0, 45, 90, 180, 270], false) });
+  assert.deepEqual(Array.from(t.angles), Array.from(plain.angles), 'the floor\'s angles');
+  assert.equal(t.facingScaleY, 0.5);
+  assert.equal(plain.facingScaleY, 1);
+});
+
 test('a render drawn for another camera than the scene\'s is turned on its own floor, for the sun and for a lamp', async () => {
   const m = await worker();
   // A car drawn on a floor 0.75 tall in a scene whose floor is 0.5 tall: 1.5 times as tall. 72 directions, one texture each.

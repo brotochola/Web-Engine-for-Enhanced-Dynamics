@@ -1785,7 +1785,7 @@ class Scene {
       const names = [];
       for (const [k, n] of Object.entries(proxyData.indexToName || {})) names[k | 0] = n;
       const problems = [];
-      const table = buildDirectionTable(sheetName, spec, names, problems);
+      const table = buildDirectionTable(sheetName, spec, names, problems, proxyData.artCamera?.floorScaleY);
       for (const text of problems) warnOnce(`${sheetName}:${text}`, 'DX-DIRSPRITE', text);
       // DX-SHADOW3D: a render with height maps stands on a contact (frameBase.js) and casts its solid, which is built
       // from the frame the camera sees: pre-render leaves such a sheet's frame alone in the sun rows. DX-CASTER: the proxy
