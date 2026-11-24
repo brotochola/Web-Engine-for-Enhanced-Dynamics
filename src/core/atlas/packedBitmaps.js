@@ -1,7 +1,5 @@
 // The renderer's bitmaps of a packed atlas (atlasBuild.js buildBigAtlas's result), in the atlas worker or on the page.
 
-import { bitmapOfCanvas } from './canvasBitmap.js';
-
 /**
  * The atlas from its canvas (after anything read it back: an OffscreenCanvas gives its pixels up), the twin page from its
  * texels as data: no premultiplied alpha, no colour space (a 2D canvas would round a height under a low A).
@@ -10,7 +8,9 @@ import { bitmapOfCanvas } from './canvasBitmap.js';
  */
 export async function packedBitmaps(packed) {
   const canvas = packed.canvas;
-  const imageBitmap = await bitmapOfCanvas(canvas);
+  const imageBitmap = typeof canvas.transferToImageBitmap === 'function'
+    ? canvas.transferToImageBitmap()
+    : await createImageBitmap(canvas);
   const mapsBitmap = packed.mapsTexels && packed.mapsSize
     ? await createImageBitmap(new ImageData(packed.mapsTexels, packed.mapsSize.w, packed.mapsSize.h), {
       premultiplyAlpha: 'none',

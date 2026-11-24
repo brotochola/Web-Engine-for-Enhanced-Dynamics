@@ -4,7 +4,6 @@
 
 import { MaxRectsPacker } from './maxRectsPacker.js';
 import { needsFrameTexels, readCanvasPixels } from './atlasFrames.js';
-import { bitmapOfCanvas } from './canvasBitmap.js';
 
 /**
  * Where an atlas of width × height gets built-ins it lacks: in the space its frames leave free (each frame keeps
@@ -134,7 +133,7 @@ export async function completeBakedPixels({ image, json, decals, builtins = [], 
   const read = readCanvasPixels(ctx, width, height, full, { decals });
   let bitmap = null;
   if (adds.length > 0) {
-    bitmap = await bitmapOfCanvas(canvas);
+    bitmap = typeof canvas.transferToImageBitmap === 'function' ? canvas.transferToImageBitmap() : await createImageBitmap(canvas);
   }
   return { decals: read.decals, texels: read.texels, added, bitmap };
 }
