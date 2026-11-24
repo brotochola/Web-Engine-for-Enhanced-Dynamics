@@ -115,14 +115,18 @@ ivec2 smoothKinds(float wx, float wy) {
   for (int c = 0; c < 4; c++) { if (sb[c] > vb) { vb = sb[c]; bestB = kb[c]; } if (sa[c] > va) { va = sa[c]; bestA = ka[c]; } }
   return ivec2(bestB, bestA);
 }
-struct Seg { vec2 a; vec2 dir; vec2 n; float len, hw, sw, med, cls, w; int type, mat; bool cant; };
+// A street's prio is its class (4 avenue, 3 street, 2 passage, 1 alley) plus 5000 a step of its material (4 asphalt, 3 cobbles,
+// 2 broken asphalt, 1 dirt): where streets cross, the better one covers the worse in its whole width. tips: a byte an end (a, b * 256):
+// 0 ends round; v fills a T's mouth: it goes on (v - 1) * 0.1 m past that end, over worse streets only.
+struct Seg { vec2 a; vec2 dir; vec2 n; float len, hw, sw, med, prio, w; int type, mat, tips; };
+int rankOf(float prio) { return int(prio / 5000.0); }
 float u16(int id, int m) { vec4 t = texelFetch(segs, ivec2(m >> 1, id), 0); return (m & 1) == 0 ? float(b8(t.r) + b8(t.g) * 256) : float(b8(t.b) + b8(t.a) * 256); }
 float dPos(float q) { return q / 50.0 - 20.0; }
 float dUnit(float q) { return q / 32767.5 - 1.0; }
 Seg loadSeg(int id) { Seg s;
   s.a = vec2(dPos(u16(id, 0)), dPos(u16(id, 1))); s.dir = vec2(dUnit(u16(id, 2)), dUnit(u16(id, 3))); s.n = vec2(dUnit(u16(id, 4)), dUnit(u16(id, 5)));
-  s.len = u16(id, 6) / 50.0; s.hw = u16(id, 7) / 1000.0; s.sw = u16(id, 8) / 1000.0; s.med = u16(id, 9) / 1000.0; s.cls = u16(id, 10); s.w = u16(id, 11) / 1000.0;
-  s.type = int(u16(id, 12)); s.mat = int(u16(id, 13)); s.cant = u16(id, 14) > .5; return s; }
+  s.len = u16(id, 6) / 50.0; s.hw = u16(id, 7) / 1000.0; s.sw = u16(id, 8) / 1000.0; s.med = u16(id, 9) / 1000.0; s.prio = u16(id, 10); s.w = u16(id, 11) / 1000.0;
+  s.type = int(u16(id, 12)); s.mat = int(u16(id, 13)); s.tips = int(u16(id, 15)); return s; }
 bool nearCross(int id, float t, float r) {
   for (int m = 16; m < 24; m++) { float q = u16(id, m); if (q > 65534.5) break; if (abs(t - dPos(q)) < r) return true; }
   return false; }
@@ -138,10 +142,17 @@ Mat pixelMat(float wx, float wy, int ix, int iy) {
   vec4 A = texelFetch(cellA, cc, 0), B = texelFetch(cellB, cc, 0);
   int ids[3]; ids[0] = b8(A.r) + b8(A.g) * 256 - 1; ids[1] = b8(A.b) + b8(A.a) * 256 - 1; ids[2] = b8(B.r) + b8(B.g) * 256 - 1;
   int rid = -1, wid = -1; float rk = 0.0, wk = 0.0, rd = 0.0, rt = 0.0, rds = 0.0, wd = 0.0, wt = 0.0, wds = 0.0;
-  for (int k = 0; k < 3; k++) { int id = ids[k]; if (id < 0) continue; Seg s = loadSeg(id);
+  // the worst material among the streets over the point (no alley), and the best street whose tip would fill it
+  int worst = 9, rrank = 0, tid = -1, trank = 0; float tt = 0.0, tds = 0.0;
+  for (int k = 0; k < 3; k++) { int id = ids[k]; if (id < 0) continue; Seg s = loadSeg(id); int rank = rankOf(s.prio);
     vec2 p = vec2(wx, wy) - s.a; float t = dot(p, s.dir), tc = clamp(t, 0.0, s.len), d = length(vec2(wx, wy) - (s.a + s.dir * tc)), ds = dot(p, s.n);
-    if (d < s.hw) { float kk = (d - s.hw) - s.cls * .01; if (rid < 0 || kk < rk) { rid = id; rk = kk; rd = d; rt = t; rds = ds; } }
+    int tip = t < 0.0 ? s.tips & 255 : t > s.len ? s.tips >> 8 : 0;
+    if (tip > 0 && abs(ds) < s.hw) { if (max(-t, t - s.len) < float(tip - 1) * .1 && (tid < 0 || rank > trank)) { tid = id; trank = rank; tt = t; tds = ds; } }
+    else if (d < s.hw) { float kk = (d - s.hw) - s.prio * .01; if (rank > 0) worst = min(worst, rank); if (rid < 0 || kk < rk) { rid = id; rk = kk; rd = d; rt = t; rds = ds; rrank = rank; } }
     else if (s.sw > 0.0 && d < s.hw + s.sw) { float kk = d - s.hw - s.sw; if (wid < 0 || kk < wk) { wid = id; wk = kk; wd = d; wt = t; wds = ds; } } }
+  bool tip = rid >= 0 && tid >= 0 && trank > rrank;
+  if (tip) { rid = tid; rrank = trank; rt = tt; rds = tds; rd = abs(tds); }
+  bool over = worst < rrank;   // it covers a worse street here: a mouth, with no kerb nor lines
   if (dr < uRE) {
     float e = uRE - dr;
     if (rid < 0 && e < .07) return rgbM(vec3(112, 110, 104));
@@ -149,7 +160,7 @@ Mat pixelMat(float wx, float wy, int ix, int iy) {
     return asphaltM(1.0); }
   if (rid >= 0) {
     Seg s = loadSeg(rid); float ad = abs(rds), edge = s.hw - rd;
-    if (s.sw > 0.0 && s.mat != 2 && s.mat != 3 && edge < .07) return rgbM(vec3(112, 110, 104));
+    if (s.sw > 0.0 && s.mat != 2 && s.mat != 3 && edge < .07 && !over) return rgbM(vec3(112, 110, 104));
     if (s.mat == 3) { if (wealthAt(wx, wy) > .18 || NB(ix, iy) > .5) return tilesM(rt, ad, 4, true); return dirtM(1.0); }
     if (s.mat == 2) {
       if (s.type != 3 && s.sw > 0.0 && edge < 1.4) {
@@ -161,9 +172,9 @@ Mat pixelMat(float wx, float wy, int ix, int iy) {
       if (NC(ix + 91, iy + 37) > .8 && NB(ix, iy) > .35) { float w = NC(ix + 91, iy + 37); return rgbM(w > .83 ? vec3(96.0 + 40.0 * NG(ix, iy), 112.0 + 30.0 * NG(ix, iy), 120) : vec3(78, 62, 48)); }
       return dirtM(mul);
     }
-    if (s.type == 0 && ad < s.med) { if (s.med - ad < .15) return rgbM(vec3(214, 210, 200)); return grassM(.3); }
-    if (s.type == 0 && ad < s.med + .12) return rgbM(vec3(150, 148, 142));
-    if (s.sw > 0.0 && edge < .4) { float f = .95 + .08 * NG(ix, iy); return rgbM(vec3(160, 158, 152) * f); }
+    if (s.type == 0 && ad < s.med && !tip) { if (s.med - ad < .15) return rgbM(vec3(214, 210, 200)); return grassM(.3); }
+    if (s.type == 0 && ad < s.med + .12 && !tip) return rgbM(vec3(150, 148, 142));
+    if (s.sw > 0.0 && edge < .4 && !over) { float f = .95 + .08 * NG(ix, iy); return rgbM(vec3(160, 158, 152) * f); }
     float mul = 1.0;
     if (s.mat == 1) {
       float ph = NC(ix + 300, iy + 120), pb = NB(ix + 13, iy + 77);
@@ -174,7 +185,9 @@ Mat pixelMat(float wx, float wy, int ix, int iy) {
     }
     Mat col = asphaltM(mul);
     if (s.mat == 4) col = adoquinM(rt, ad, mul);
+    if (tip) return col;
     if (nearCross(rid, rt, 1.5)) { if (fmod_(ad + 10.0, 1.0) < .55 && NG(ix, iy) > .1) return rgbM(vec3(210, 208, 198)); return col; }
+    if (over) return col;
     if (s.type == 0) { float lane = abs(ad - (s.med + (s.hw - s.med) / 2.0)); if (lane < .07 && fmod_(rt, 6.0) < 3.0) return rgbM(vec3(214, 212, 204)); }
     else if (s.mat == 0 && s.w > .3 && ad < .07 && fmod_(rt, 5.0) < 2.5) return rgbM(s.w > .6 ? vec3(230, 200, 80) : vec3(214, 212, 204));
     return col;
@@ -185,8 +198,6 @@ Mat pixelMat(float wx, float wy, int ix, int iy) {
     if (s.mat == 2) { if (dd < .6) return grassM(.7); }
     else { if (dd < .16) return rgbM(vec3(222, 218, 208)); if (dd < .2) return rgbM(vec3(168, 164, 156)); }
     Mat cz = cazuelaM(wx, wy, ix, iy); if (cz.m != M_NONE) return cz;
-    bool cant = s.cant && dd < 1.0 && !nearCross(wid, wt, 1.6);
-    if (cant) return grassM(.2);
     int vk = sk.x; int kind = vk & 15; bool dmg = (vk & 16) != 0;
     if (kind == 0) { kind = s.w < .3 ? 1 : 2; dmg = s.w < .45; }
     return tilesM(wt, dd, kind, dmg);

@@ -164,7 +164,8 @@ fn smoothKinds(wx: f32, wy: f32) -> vec2<i32> {
   }
   return vec2<i32>(bestB, bestA);
 }
-struct Seg { a: vec2f, dir: vec2f, n: vec2f, len: f32, hw: f32, sw: f32, med: f32, cls: f32, w: f32, rtype: i32, mat: i32, cant: bool }
+struct Seg { a: vec2f, dir: vec2f, n: vec2f, len: f32, hw: f32, sw: f32, med: f32, prio: f32, w: f32, rtype: i32, mat: i32, tips: i32 }
+fn rankOf(prio: f32) -> i32 { return i32(prio / 5000.0); }
 fn u16(id: i32, m: i32) -> f32 {
   let t = textureLoad(segs, vec2<i32>(m >> 1u, id), 0);
   if ((m & 1) == 0) { return f32(b8(t.r) + b8(t.g) * 256); }
@@ -181,11 +182,11 @@ fn loadSeg(id: i32) -> Seg {
   s.hw = u16(id, 7) / 1000.0;
   s.sw = u16(id, 8) / 1000.0;
   s.med = u16(id, 9) / 1000.0;
-  s.cls = u16(id, 10);
+  s.prio = u16(id, 10);
   s.w = u16(id, 11) / 1000.0;
   s.rtype = i32(u16(id, 12));
   s.mat = i32(u16(id, 13));
-  s.cant = u16(id, 14) > 0.5;
+  s.tips = i32(u16(id, 15));
   return s;
 }
 fn nearCross(id: i32, t: f32, r: f32) -> bool {
@@ -224,23 +225,38 @@ fn pixelMat(wx: f32, wy: f32, ix: i32, iy: i32) -> Mat {
   var wd = 0.0;
   var wt = 0.0;
   var wds = 0.0;
+  var worst = 9;
+  var rrank = 0;
+  var tid = -1;
+  var trank = 0;
+  var tt = 0.0;
+  var tds = 0.0;
   for (var k = 0; k < 3; k++) {
     let id = ids[k];
     if (id < 0) { continue; }
     let s = loadSeg(id);
+    let rank = rankOf(s.prio);
     let p = vec2f(wx, wy) - s.a;
     let t = dot(p, s.dir);
     let tc = clamp(t, 0.0, s.len);
     let d = length(vec2f(wx, wy) - (s.a + s.dir * tc));
     let ds = dot(p, s.n);
-    if (d < s.hw) {
-      let kk = (d - s.hw) - s.cls * 0.01;
-      if (rid < 0 || kk < rk) { rid = id; rk = kk; rd = d; rt = t; rds = ds; }
+    var tipV = 0;
+    if (t < 0.0) { tipV = s.tips & 255; } else if (t > s.len) { tipV = s.tips >> 8u; }
+    if (tipV > 0 && abs(ds) < s.hw) {
+      if (max(-t, t - s.len) < f32(tipV - 1) * 0.1 && (tid < 0 || rank > trank)) { tid = id; trank = rank; tt = t; tds = ds; }
+    } else if (d < s.hw) {
+      let kk = (d - s.hw) - s.prio * 0.01;
+      if (rank > 0) { worst = min(worst, rank); }
+      if (rid < 0 || kk < rk) { rid = id; rk = kk; rd = d; rt = t; rds = ds; rrank = rank; }
     } else if (s.sw > 0.0 && d < s.hw + s.sw) {
       let kk = d - s.hw - s.sw;
       if (wid < 0 || kk < wk) { wid = id; wk = kk; wd = d; wt = t; wds = ds; }
     }
   }
+  let tip = rid >= 0 && tid >= 0 && trank > rrank;
+  if (tip) { rid = tid; rrank = trank; rt = tt; rds = tds; rd = abs(tds); }
+  let over = worst < rrank;
   if (dr < U.uRE) {
     let e = U.uRE - dr;
     if (rid < 0 && e < 0.07) { return rgbM(vec3f(112.0, 110.0, 104.0)); }
@@ -251,7 +267,7 @@ fn pixelMat(wx: f32, wy: f32, ix: i32, iy: i32) -> Mat {
     let s = loadSeg(rid);
     let ad = abs(rds);
     let edge = s.hw - rd;
-    if (s.sw > 0.0 && s.mat != 2 && s.mat != 3 && edge < 0.07) { return rgbM(vec3f(112.0, 110.0, 104.0)); }
+    if (s.sw > 0.0 && s.mat != 2 && s.mat != 3 && edge < 0.07 && !over) { return rgbM(vec3f(112.0, 110.0, 104.0)); }
     if (s.mat == 3) {
       if (wealthAt(wx, wy) > 0.18 || NB(ix, iy) > 0.5) { return tilesM(rt, ad, 4, true); }
       return dirtM(1.0);
@@ -272,12 +288,12 @@ fn pixelMat(wx: f32, wy: f32, ix: i32, iy: i32) -> Mat {
       }
       return dirtM(mul);
     }
-    if (s.rtype == 0 && ad < s.med) {
+    if (s.rtype == 0 && ad < s.med && !tip) {
       if (s.med - ad < 0.15) { return rgbM(vec3f(214.0, 210.0, 200.0)); }
       return grassM(0.3);
     }
-    if (s.rtype == 0 && ad < s.med + 0.12) { return rgbM(vec3f(150.0, 148.0, 142.0)); }
-    if (s.sw > 0.0 && edge < 0.4) { return rgbM(vec3f(160.0, 158.0, 152.0) * (0.95 + 0.08 * NG(ix, iy))); }
+    if (s.rtype == 0 && ad < s.med + 0.12 && !tip) { return rgbM(vec3f(150.0, 148.0, 142.0)); }
+    if (s.sw > 0.0 && edge < 0.4 && !over) { return rgbM(vec3f(160.0, 158.0, 152.0) * (0.95 + 0.08 * NG(ix, iy))); }
     var mul = 1.0;
     if (s.mat == 1) {
       let ph = NC(ix + 300, iy + 120);
@@ -292,10 +308,12 @@ fn pixelMat(wx: f32, wy: f32, ix: i32, iy: i32) -> Mat {
     }
     var col = asphaltM(mul);
     if (s.mat == 4) { col = adoquinM(rt, ad, mul); }
+    if (tip) { return col; }
     if (nearCross(rid, rt, 1.5)) {
       if (fmod_(ad + 10.0, 1.0) < 0.55 && NG(ix, iy) > 0.1) { return rgbM(vec3f(210.0, 208.0, 198.0)); }
       return col;
     }
+    if (over) { return col; }
     if (s.rtype == 0) {
       let lane = abs(ad - (s.med + (s.hw - s.med) / 2.0));
       if (lane < 0.07 && fmod_(rt, 6.0) < 3.0) { return rgbM(vec3f(214.0, 212.0, 204.0)); }
@@ -316,8 +334,6 @@ fn pixelMat(wx: f32, wy: f32, ix: i32, iy: i32) -> Mat {
     }
     let cz = cazuelaM(wx, wy, ix, iy);
     if (cz.m != M_NONE) { return cz; }
-    let cant = s.cant && dd < 1.0 && !nearCross(wid, wt, 1.6);
-    if (cant) { return grassM(0.2); }
     let vk = sk.x;
     var kind = vk & 15;
     var dmg = (vk & 16) != 0;
