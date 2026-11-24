@@ -151,7 +151,6 @@ export class ComputeLayer {
       prevPoseY: null,
       prevPoseRotC: null,
       prevPoseRotS: null,
-      poseAlpha: 1,
     };
     this._layoutNames = null;
     this._bindGroups = Object.create(null);
@@ -648,7 +647,6 @@ export class ComputeLayer {
     packOpts.prevPoseY = pose ? pose.prevPoseY : null;
     packOpts.prevPoseRotC = pose ? pose.prevPoseRotC : null;
     packOpts.prevPoseRotS = pose ? pose.prevPoseRotS : null;
-    packOpts.poseAlpha = pose && pose.poseAlpha < 1 ? pose.poseAlpha : 1;
 
     let bodyCount = 0;
     let vertCount = 0;

@@ -39,7 +39,7 @@ import { RenderStep, STENCIL_MASK_ACTIVE, STENCIL_MASK_ADD, STENCIL_OFF, stencil
 import {
   opaqueKeyedRowsWasm,
   GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
-  packPoseRowsWasm, packSplitRowsWasm,
+  packSplitRowsWasm,
 } from './gpuPackClient.js';
 import {
   faceFragmentGlsl, faceGbufFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, faceUnshadedFragment,
@@ -62,17 +62,13 @@ import { PIXI_KEYED_HEADER, PIXI_KEYED_HEADER_WORDS } from '../util/wasmMemoryMa
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
- *  A pose batch splits the same terms, with the previous xy, into two streams (below). */
+ *  A split batch holds the same terms in two streams (below). */
 export const INSTANCED_SPRITE_FLOATS = 15;
-// E-82. A pose batch uploads two streams instead of one 17-float record. The pose (x, y, rotC, rotS,
-// prevX, prevY) goes up every frame; the statics (scale, anchor, depth, tint, texture, tile terms)
-// only when they change: when the queue's staticGen, the rows packed, the type filter or the screen
-// scale differ from what the static buffer holds. 24 bytes a sprite a frame instead of 68.
-export const POSE_DYN_FLOATS = 6;
+// E-82, E-82b. A split batch is a plain batch in two streams. The pose (x, y, rotC, rotS) goes up every frame; the
+// statics (scale, anchor, depth, tint, texture, tile terms) only when they change: when the queue's staticGen, the rows
+// packed, the type filter or the screen scale differ from what the static buffer holds. 16 bytes a sprite on a frame whose
+// statics hold, the same 60 as a plain batch on one whose statics change.
 export const POSE_STATIC_FLOATS = GPU_STATIC_FLOATS;
-// E-82b. A split batch is a plain batch in the same two streams, its pose 4 floats (x, y, rotC, rotS) and
-// the previous xy read from the current one: 16 bytes a sprite on a frame whose statics hold, the same 60
-// as a plain batch on one whose statics change.
 export const SPLIT_POSE_FLOATS = GPU_POSE_FLOATS;
 
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
@@ -104,7 +100,7 @@ const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragUns
 const unshadedStencilStep = (mode, reference, colorMask) =>
   stencilStep('weed-unshaded-stencil', mode, reference, colorMask, true);
 
-/** E-448: what the opaque mesh draws: a pose or split frame's rows (its poses copied each frame), a by-row keyed frame's. */
+/** E-448: what the opaque mesh draws: a split frame's rows (its poses copied each frame), a by-row keyed frame's. */
 const OPAQUE_KIND_POSE = 0;
 const OPAQUE_KIND_KEYED_ROWS = 1;
 /** E-448: frames a by-row batch skips building its opaque rows after a frame where the pass did not pay (a quarter second). */
@@ -394,12 +390,10 @@ export class InstancedSpriteBatch {
    * @param {object|null} [opts.opaquePass] - E-448 (opaquePass.js): the instances whose frames are binary drawn first,
    *   nearest first, unblended, writing depth (opaqueHost, which the caller puts right before the batch's own mesh), and
    *   the batch's own mesh testing it: the record texture helper its pose texture is made with and copied into
-   *   (pixiWorker._gpuRecordTexture: `make`, `fromBuffer`; null: none). Only a WebGL pose or split batch with normal
-   *   premultiplied blending, without pixel depth or G-buffer words, takes it (opaqueOn), on its pose and split frames and
+   *   (pixiWorker._gpuRecordTexture: `make`, `fromBuffer`; null: none). Only a WebGL split batch with normal
+   *   premultiplied blending, without pixel depth or G-buffer words, takes it (opaqueOn), on its split frames and
    *   its keyed frames drawn by queue row (not its indexed ones, nor keyed ones drawn by their poses); its target needs a
    *   depth buffer
-   * @param {boolean} [opts.staticBuffers=false] - the vertex buffers made with a static usage hint on WebGL, which ANGLE
-   *   binds directly instead of copying each draw's attributes; for a batch that uploads once a frame
    * @param {boolean} [opts.depthFaces=false] - DX-FACEDEPTH: with pixel depth, the depth programs read faces from the start
    *   (setDepthFaces)
    * @param {import('../vendor/pixi.min.js').TextureSource|null} [opts.mapsTable] - E-496: the maps table (mapsTable.js),
@@ -417,7 +411,6 @@ export class InstancedSpriteBatch {
     lutSource = null,
     useWebGpu = true,
     shaders = null,
-    poseInterp = false,
     shadowCast = false,
     data = null,
     gpuPack = null,
@@ -429,21 +422,13 @@ export class InstancedSpriteBatch {
     pixelDepth = null,
     gbuf = false,
     opaquePass = null,
-    staticBuffers = false,
     mapsTable = null,
     depthFaces = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
-    // The vertex buffers' usage. ANGLE's D3D11 backend binds a buffer made with DYNAMIC_DRAW to no draw directly: it copies
-    // the attributes each draw reads into a streaming buffer of its own, on the GPU process's main thread (instances x
-    // stride bytes: bunnyMark's 250 000 sprites, 17 MB and 5.7 ms a draw, found in E-448's sitting). A STATIC_DRAW buffer
-    // is bound as it is, rewritten every frame or not, but a rewrite then waits on the GPU for the draws still reading
-    // it: `staticBuffers` (WebGL) for a batch that uploads once a frame, whose ring of two the frame pacer keeps clear
-    // (with every batch static, light3dCompare's lamps' map pass took 1.23 -> 1.67 ms of GPU). WebGPU has no such hint.
-    this._vertexUsage = BufferUsage.VERTEX | BufferUsage.COPY_DST | (staticBuffers && !useWebGpu ? BufferUsage.STATIC : 0);
-    this.poseInterp = !!poseInterp;
-    this.shadowCast = !!shadowCast && !poseInterp;
-    this.split = !!split && !this.poseInterp && !this.shadowCast;
+    this._vertexUsage = BufferUsage.VERTEX | BufferUsage.COPY_DST;
+    this.shadowCast = !!shadowCast;
+    this.split = !!split && !this.shadowCast;
     // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), GPU_GBUF_FLOATS a sprite in a stream of their own
     // that every geometry the batch draws carries (aInstGbuf), uploaded after each frame's rows (commitGbuf). The G-buffer
     // pass reads them. Off, the batch's geometries and programs are as they always were.
@@ -473,16 +458,14 @@ export class InstancedSpriteBatch {
     // E-162: a split batch given `statics` also takes indexed frames: the poses, a slot stream (each instance's statics
     // row and depth) and every queue row's statics in row order, in a texture (WebGL) or a storage buffer (WebGPU).
     this.indexed = this.split && statics !== null;
-    // Two streams, a pose and the statics: a pose batch's (E-82) or a split batch's (E-82b).
-    this._twoStreams = this.poseInterp || this.split;
-    this._floats = this.poseInterp ? POSE_DYN_FLOATS : this.split ? SPLIT_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
+    this._floats = this.split ? SPLIT_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
     if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
     // W30: in a private memory (sharedCopy.createPrivateArena) when Pixi passes one, so the copies out of the
-    // render-queue memory run as memory.copy (copyIn); else arrays of the batch's own. E-448: a pose or split batch that
+    // render-queue memory run as memory.copy (copyIn); else arrays of the batch's own. E-448: a split batch that
     // may draw the opaque pass copies its pose buffer into a texture in whole texture rows (opaquePass.js), so its data
     // reaches the last one.
-    const dataFloats = Math.max(this.capacity * this._floats, opaquePass !== null && this._twoStreams
+    const dataFloats = Math.max(this.capacity * this._floats, opaquePass !== null && this.split
       ? opaquePoseTextureRows(this.capacity, this._floats) * OPAQUE_POSE_TEXELS * 4
       : 0);
     this.data = (arena && arena.f32(dataFloats)) || new Float32Array(dataFloats);
@@ -493,20 +476,18 @@ export class InstancedSpriteBatch {
     // of the render-queue memory (`data`); they are copied into `this.data` before the upload, as
     // _commitPackedBatch copies pre-render's. Uploading from the shared rows themselves made every other
     // worker slower in Predator (E-123: physics +9.5 %, spatial +6.3 %, 4/4). A split batch packs the same
-    // region as its two streams, the poses first; so does a pose batch (W9e), whose rows are 17 floats.
-    const poseFloats = this.poseInterp ? POSE_DYN_FLOATS : SPLIT_POSE_FLOATS;
-    const rowFloats = this.poseInterp ? POSE_DYN_FLOATS + POSE_STATIC_FLOATS : INSTANCED_SPRITE_FLOATS;
-    const shared = !this.shadowCast && data instanceof Float32Array && data.length >= this.capacity * rowFloats ? data : null;
-    this._sharedRows = shared && !this.poseInterp ? shared : new Float32Array(0);
+    // region as its two streams, the poses first.
+    const shared = !this.shadowCast && data instanceof Float32Array && data.length >= this.capacity * INSTANCED_SPRITE_FLOATS ? data : null;
+    this._sharedRows = shared || new Float32Array(0);
     this._gpuPack = shared && gpuPack ? gpuPack : null;
-    this._sharedPose = shared && this._twoStreams ? shared.subarray(0, this.capacity * poseFloats) : new Float32Array(0);
-    this._sharedStatic = shared && this._twoStreams
-      ? new Float32Array(shared.buffer, shared.byteOffset + this.capacity * poseFloats * 4, this.capacity * POSE_STATIC_FLOATS)
+    this._sharedPose = shared && this.split ? shared.subarray(0, this.capacity * SPLIT_POSE_FLOATS) : new Float32Array(0);
+    this._sharedStatic = shared && this.split
+      ? new Float32Array(shared.buffer, shared.byteOffset + this.capacity * SPLIT_POSE_FLOATS * 4, this.capacity * POSE_STATIC_FLOATS)
       : new Float32Array(0);
     // The static stream (E-82): its CPU copy, the key of what it holds, and the version each ring
     // slot's GPU copy holds (-1: none).
-    this.staticData = (this._twoStreams && arena && arena.f32(this.capacity * POSE_STATIC_FLOATS))
-      || new Float32Array(this._twoStreams ? this.capacity * POSE_STATIC_FLOATS : 0);
+    this.staticData = (this.split && arena && arena.f32(this.capacity * POSE_STATIC_FLOATS))
+      || new Float32Array(this.split ? this.capacity * POSE_STATIC_FLOATS : 0);
     this.staticDataU32 = new Uint32Array(this.staticData.buffer, this.staticData.byteOffset, this.staticData.length);
     // W30: the arena's copy, the shared buffer it copies from and the arena's own (null: TypedArray.set).
     this._copy = arena ? arena.copy : null;
@@ -647,7 +628,7 @@ export class InstancedSpriteBatch {
     // _packRefused said its reason.
     this._packRefusedWarned = false;
     this._buffers = this._ringBuffers(this.data, labelName);
-    this._staticBuffers = this._twoStreams ? this._ringBuffers(this.staticData, labelName + '-static') : null;
+    this._staticBuffers = this.split ? this._ringBuffers(this.staticData, labelName + '-static') : null;
     this._slotBuffers = this.indexed ? this._ringBuffers(this._slotData, labelName + '-slots') : null;
     // DX-GBUF: a gbuf buffer a ring slot, each geometry over that slot's.
     this._gbufBuffers = this.gbuf ? this._ringBuffers(this._gbufData, labelName + '-gbuf') : null;
@@ -702,12 +683,12 @@ export class InstancedSpriteBatch {
     this.edgeMesh = null;
     // E-448: the colour program's sources on WebGL (_makeSpriteShader) and the by-row one's before its depth
     // (_makeRowShader), which the opaque pass's programs are made from; whether the batch takes the pass (opaqueOn once
-    // made): a WebGL pose or split batch with normal premultiplied blending, without pixel depth or G-buffer words.
+    // made): a WebGL split batch with normal premultiplied blending, without pixel depth or G-buffer words.
     this._colorVertex = '';
     this._colorFragment = '';
     this._colorRowVertex = '';
     this._opWanted = opaquePass !== null && typeof opaquePass?.make === 'function' && typeof opaquePass.fromBuffer === 'function'
-      && !useWebGpu && this._twoStreams && this._premultiplyAlpha && (blendMode || 'normal') === 'normal'
+      && !useWebGpu && this.split && this._premultiplyAlpha && (blendMode || 'normal') === 'normal'
       && this._pixelDepth === null && !this.gbuf && this.capacity <= OPAQUE_MAX_ROWS;
     this.shader = this._makeSpriteShader(atlas, lut, label || 'instanced-sprites');
     // E-162: the statics texture and the program that reads it; the mesh draws with it on indexed frames.
@@ -1017,9 +998,8 @@ export class InstancedSpriteBatch {
   }
 
   _geometryFor(buf, staticBuf) {
-    if (this._twoStreams) {
-      // E-82: the pose stream (24-byte stride) and the static stream (44). E-82b, a split batch: a 16-byte
-      // pose whose previous xy is the current one (the pose shader's mix at uPoseAlpha 1 gives it back).
+    if (this.split) {
+      // E-82b: the pose stream (16-byte stride) and the static stream (44).
       const ds = this._floats * 4;
       const ss = POSE_STATIC_FLOATS * 4;
       const geometry = new Geometry({
@@ -1027,7 +1007,6 @@ export class InstancedSpriteBatch {
           aQuad: { buffer: this._quad, format: 'float32x2' },
           aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
           aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-          aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: this.poseInterp ? 16 : 0, instance: true },
           aInstScale: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 0, instance: true },
           aInstAnchor: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 8, instance: true },
           aInstDepth: { buffer: staticBuf, format: 'float32', stride: ss, offset: 16, instance: true },
@@ -1329,12 +1308,6 @@ export class InstancedSpriteBatch {
     const uniforms = {
       uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
     };
-    if (this._twoStreams) {
-      // Number, not Float32Array. Pixi's WebGL f32 sync compares the value
-      // with !==. The same array never looks changed, so the GPU stays at 0.
-      // A split batch keeps 1 (setPoseAlpha leaves it).
-      uniforms.uPoseAlpha = { value: 1, type: 'f32' };
-    }
     if (this._pixelDepth) uniforms.uDepth = { value: this._depthTerms, type: 'vec4<f32>' };
     // E-448: the painter's depth step of a by-row keyed frame (opaquePass.js opaqueRowVertex), 1 / denom.
     if (this._opWanted && this.posesByRow) uniforms.uOpDepth = { value: 1 / (this.capacity + 1), type: 'f32' };
@@ -1353,8 +1326,8 @@ export class InstancedSpriteBatch {
       fragEntry = 'mainFrag';
     }
     const shaders = this._engineShaders;
-    const spriteSource = this._twoStreams ? shaders?.spritePose : shaders?.sprite;
-    const vertSource = this._twoStreams ? shaders?.spriteVertPose : shaders?.spriteVert;
+    const spriteSource = shaders?.sprite;
+    const vertSource = shaders?.spriteVert;
     if (this._useWebGpu) {
       // DX-DEPTH: the sprite WGSL writing the floor depth, uDepth after the group's other entries (as `uniforms` lists
       // them), the twin page as binding 5.
@@ -1506,7 +1479,7 @@ export class InstancedSpriteBatch {
       if (this.keyed) this._staticsSource.autoGarbageCollect = false;
     }
     const shaders = this._engineShaders;
-    // DX-DEPTH: over the split program's group, which holds uPoseAlpha before uDepth (the plain WGSL reads neither).
+    // DX-DEPTH: over the split program's group.
     const depth = this._pixelDepth !== null && !!shaders?.sprite;
     const plainSource = shaders?.sprite && this.gbuf ? gbufAttributeWgsl(shaders.sprite) : shaders?.sprite;
     const indexedSource = plainSource ? spriteIndexedWgsl(plainSource) : null;
@@ -1514,7 +1487,7 @@ export class InstancedSpriteBatch {
     // E-378: the edge program's module of its own when its vertex culls (a nearest atlas) or runs over every instance.
     const plainEdge = this._pixelDepth?.plainEdge === true;
     const depthOf = (cull, edge = false) =>
-      pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams, gbuf: this.gbuf, faces, cull, plainEdge: edge && plainEdge });
+      pixelDepthWgsl(indexedSource, { gbuf: this.gbuf, faces, cull, plainEdge: edge && plainEdge });
     const program = depth ? depthOf(faces ? 'flat' : 'none') : indexedSource;
     const entry = this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd';
     const gpuProgram = instancedSpriteIndexedGpuProgram(GpuProgram, program, entry, `${name}-indexed`, { maps: depth });
@@ -1585,7 +1558,7 @@ export class InstancedSpriteBatch {
       this._opPoseRows, `${name}-opaque-poses`);
     const r = this.shader.resources;
     this._opShader = new Shader({
-      glProgram: glProgramFrom(GlProgram, opaqueVertex(this._colorVertex, poseWords), opaqueFragment(this._colorFragment),
+      glProgram: glProgramFrom(GlProgram, opaqueVertex(this._colorVertex), opaqueFragment(this._colorFragment),
         `${name}-opaque`),
       resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms: r.uniforms, uOpPoses: this._opPoseSource },
     });
@@ -1925,16 +1898,8 @@ export class InstancedSpriteBatch {
     }
   }
 
-  setPoseAlpha(alpha) {
-    if (!this.poseInterp) return;
-    const group = this.shader?.resources?.uniforms;
-    if (!group?.uniforms) return;
-    group.uniforms.uPoseAlpha = alpha;
-    if (typeof group.update === 'function') group.update();
-  }
-
   /**
-   * Call-level setup shared by upload() and _uploadPose(). Mutates this._uploadCtx.
+   * Call-level setup of upload(). Mutates this._uploadCtx.
    * @returns {object|null}
    */
   _beginUpload(q, opts) {
@@ -2035,7 +2000,6 @@ export class InstancedSpriteBatch {
   upload(q, opts) {
     this.gbufPacked = false;
     this.gbufInStatics = false;
-    if (this.poseInterp) return this._uploadPose(q, opts);
     if (this.split) return this._uploadSplit(q, opts);
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
@@ -2073,28 +2037,6 @@ export class InstancedSpriteBatch {
     this._stFilter = filter;
     this._staticVersion++;
     return false;
-  }
-
-  /**
-   * A pose batch's upload (renderer.interpolation): the pose stream, and the statics when _staticsCurrent says the
-   * GPU's are not this upload's. Through gpuPack.wasm (W9e, pack_pose), into its region of the render-queue memory and
-   * then into its own arrays (E-123).
-   */
-  _uploadPose(q, opts) {
-    const ctx = this._beginUpload(q, opts);
-    if (!ctx) return 0;
-    const current = this._staticsCurrent(q, ctx);
-    const out = this._gpuPack !== null
-      ? packPoseRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity)
-      : -1;
-    if (out < 0) return this._packRefused(POSE_DYN_FLOATS * 4);
-    if (out > 0) {
-      this.copyIn(this.data, this._sharedPose, out * POSE_DYN_FLOATS);
-      if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
-    }
-    const drawn = this._finishUpload(out, POSE_DYN_FLOATS * 4);
-    if (this.opaqueOn) this._commitOpaque(drawn);
-    return drawn;
   }
 
   /**
@@ -2298,7 +2240,7 @@ export class InstancedSpriteBatch {
    * DX-GBUF: one of the batch's passes over its own instances for the light (AUX_FACE, AUX_IDS, ...), over this frame's
    * geometry: one mesh a geometry the batch draws from, none swapped (the ring swaps the geometry every frame, and Mesh's
    * setter makes garbage), the program that reads that geometry's layout (plain, indexed, by row). The programs are made on
-   * the kind's first use, their uniforms the face map's group (uTileWorld, uFaceSpace, uPoseAlpha).
+   * the kind's first use, their uniforms the face map's group (uTileWorld, uFaceSpace).
    * @returns {Mesh|null}
    */
   _auxMesh(kind, heightScaleY, groundScaleY, maps) {
@@ -2335,7 +2277,6 @@ export class InstancedSpriteBatch {
         uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
         uFaceSpace: { value: this._faceSpace, type: 'vec4<f32>' },
       };
-      if (this._twoStreams) uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
     const r = this.shader.resources;
     const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: maps, uMapsLut: this._mapsTable, uniforms };
@@ -2357,10 +2298,10 @@ export class InstancedSpriteBatch {
       : depth ? gbufDepthVertex(faceMapVertex(source, gbuf)) : faceMapVertex(source, gbuf));
     const frag = this._useWebGpu ? null : depth ? gbufDepthFragment(this._auxFragment(kind, true), depthOpts) : this._auxFragment(kind, false);
     if (this._useWebGpu) {
-      const source = depthWgsl(faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite, gbuf));
+      const source = depthWgsl(faceMapWgsl(shaders.sprite, gbuf));
       aux.shader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, entry, name, { maps: true }), resources });
     } else {
-      const vertex = vertexOf(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert);
+      const vertex = vertexOf(shaders.spriteVert);
       aux.shader = new Shader({ glProgram: glProgramFrom(GlProgram, vertex, frag, name), resources });
     }
     // The shared group, for the kinds made after this one.

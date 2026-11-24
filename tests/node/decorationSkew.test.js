@@ -22,7 +22,7 @@ const D = DecorationComponent;
 const f = Math.fround;
 
 /** The two numbers each sprite shader decides a shear by, read from the shader as it ships. */
-const SHADER_NUMBERS = ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl', 'instancedSprite.wgsl', 'instancedSpritePose.wgsl'].map((name) => {
+const SHADER_NUMBERS = ['instancedSprite.vert.glsl', 'instancedSprite.wgsl'].map((name) => {
   const source = readEngineShader(name);
   const isShear = source.match(/isShear = c > ([\d.]+);/);
   const scale = source.match(/t = \(c - 1\.5\) \* ([\d.]+);/);

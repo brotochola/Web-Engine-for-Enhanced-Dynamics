@@ -235,7 +235,7 @@ test('fetch failure message names the asset and HTTP status', () => {
   );
 });
 
-test('E-177: keyed sprite frames where Pixi packs without interpolation, unless indexedSprites is off', async () => {
+test('E-177: keyed sprite frames where Pixi packs, unless indexedSprites is off', async () => {
   const { keyedSpritesEnabled, keyedStaticsMax, keyedDecorationsFit, keyedLiquidFunFit, INDEXED_SPRITES_MAX_WEBGL,
     INDEXED_SPRITES_MAX_WEBGPU } = await import('../../src/render/rendererBackend.js');
   const config = (renderer, packGpuSprites = 'pixi') => ({ renderer, preRender: { packGpuSprites } });
@@ -253,7 +253,6 @@ test('E-177: keyed sprite frames where Pixi packs without interpolation, unless 
   assert.equal(keyedLiquidFunFit(INDEXED_SPRITES_MAX_WEBGPU, 0, 10, 1), true);
   assert.equal(keyedLiquidFunFit(INDEXED_SPRITES_MAX_WEBGPU, 0, 10, 1, INDEXED_SPRITES_MAX_WEBGPU), false);
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }, 'prerender'), 40000, 20000), false, 'pre-render packs');
-  assert.equal(keyedSpritesEnabled(config({ backend: 'webgl', interpolation: true }), 40000, 20000), false, 'pose batches');
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl', indexedSprites: false }), 40000, 20000), false, 'switched off');
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }), INDEXED_SPRITES_MAX_WEBGL, 1), false, 'past the texture');
   assert.equal(keyedSpritesEnabled(null, 1, 1), false);

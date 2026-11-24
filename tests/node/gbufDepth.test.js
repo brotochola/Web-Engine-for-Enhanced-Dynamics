@@ -15,7 +15,7 @@ const count = (s, part) => s.split(part).length - 1;
 // shading and its shadows.
 
 test('N-274: the G-buffer\'s vertex passes on the floor place and painter step the colour pass\'s depth works out', () => {
-  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+  for (const name of ['instancedSprite.vert.glsl']) {
     const v = gbufDepthVertex(faceMapVertex(shader(name), { gbuf: true }));
     assert.equal(count(v, 'out float vGbufFloor;'), 1, name);
     // N-262: the painter step, the foot and its feet's half depth in one flat vec3.
@@ -34,7 +34,7 @@ test('N-274: the G-buffer\'s vertex passes on the floor place and painter step t
 
 test('N-189: the painter step counts from the first instance in the colour pass and the G-buffer pass (WebGL)', () => {
   const painter = '(gl_InstanceID + uWeedFirstInstance) & 127';
-  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+  for (const name of ['instancedSprite.vert.glsl']) {
     const g = gbufDepthVertex(faceMapVertex(shader(name), { gbuf: true }));
     assert.equal(count(g, 'uniform int uWeedFirstInstance;'), 1, `${name}: the G-buffer pass declares it once`);
     assert.ok(g.includes(`float depthPainter = float(${painter});`), name);
@@ -68,7 +68,6 @@ test('N-274: the G-buffer\'s WGSL writes frag_depth from the one pass\'s entry, 
   const words = (name) => gbufAttributeWgsl(shader(name));
   for (const source of [
     faceMapWgsl(words('instancedSprite.wgsl'), { gbuf: true, unshaded: true }),
-    faceMapWgsl(words('instancedSpritePose.wgsl'), { gbuf: true }),
     spriteIndexedWgsl(faceMapWgsl(words('instancedSprite.wgsl'), { gbuf: true })),
   ]) {
     const w = gbufDepthWgsl(source);

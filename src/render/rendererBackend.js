@@ -50,7 +50,7 @@ export function errorSortSpritesInvalid(value) {
 
 /**
  * One owner for GPU sprite pack, one owner for the CPU painter. Never both sort.
- * @param {{ ySort?: unknown, packGpuSprites?: unknown, sortSprites?: unknown, rendererInterpolation?: unknown }} opts
+ * @param {{ ySort?: unknown, packGpuSprites?: unknown, sortSprites?: unknown }} opts
  * @returns {{ packGpuSprites: 'preRender'|'pixi', sortSprites: 'none'|'preRender'|'pixi' }}
  */
 export function resolveSpritePipeline(opts) {
@@ -75,19 +75,6 @@ export function resolveSpritePipeline(opts) {
   }
 
   if (!yOn) sort = SORT_SPRITES_NONE;
-
-  if (o.rendererInterpolation === true && pack === PACK_GPU_SPRITES_PRERENDER) {
-    console.warn(
-      'WeedJS: renderer.interpolation ignores GPU sprite rows packed on the pre-render worker. Sprite pack runs on Pixi. Set preRender.packGpuSprites to "pixi".'
-    );
-    pack = PACK_GPU_SPRITES_PIXI;
-    if (sort === SORT_SPRITES_PRERENDER) {
-      console.warn(
-        'WeedJS: renderer.interpolation ignores pre-render packed rows, so preRender.sortSprites "preRender" cannot run there. Painter sort runs on Pixi. Set preRender.sortSprites to "pixi".'
-      );
-      sort = SORT_SPRITES_PIXI;
-    }
-  }
 
   if (sort === SORT_SPRITES_PIXI && pack === PACK_GPU_SPRITES_PRERENDER) {
     throw new Error(
@@ -261,7 +248,7 @@ export function keyedStaticsMax(config) {
 /**
  * E-177: whether Pixi draws the main sprites as keyed frames (their statics kept by entity on the GPU, the changed
  * ones scattered there: a draw into a texture on WebGL, a compute pass over a storage buffer on WebGPU, E-187): where
- * Pixi packs them (preRender.packGpuSprites 'pixi') without pose interpolation, unless renderer.indexedSprites is false,
+ * Pixi packs them (preRender.packGpuSprites 'pixi'), unless renderer.indexedSprites is false,
  * and when the backend's statics hold a row for every entity and every queue row (keyedStaticsMax).
  * @param {object} [config] the scene's config
  * @param {number} entities the scene's entities
@@ -270,7 +257,7 @@ export function keyedStaticsMax(config) {
  */
 export function keyedSpritesEnabled(config, entities, maxSprites) {
   const renderer = config?.renderer;
-  if (!renderer || renderer.indexedSprites === false || renderer.interpolation === true) return false;
+  if (!renderer || renderer.indexedSprites === false) return false;
   if (config.preRender?.packGpuSprites !== 'pixi') return false;
   return (entities | 0) + (maxSprites | 0) <= keyedStaticsMax(config);
 }

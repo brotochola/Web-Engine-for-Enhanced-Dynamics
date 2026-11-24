@@ -24,7 +24,7 @@ import { readEngineShader } from './engineShaderSources.mjs';
 const MAX = 2000;
 const YS_ROWS = 900;
 const readShader = readEngineShader;
-const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl'), spritePose: readShader('instancedSpritePose.wgsl') };
+const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl') };
 
 class Thing extends GameObject {}
 Thing.components = [RigidBody, Collider, SpriteRenderer];

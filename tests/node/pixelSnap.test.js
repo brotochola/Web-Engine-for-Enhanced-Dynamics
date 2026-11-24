@@ -15,31 +15,23 @@ test('N-271, N-302: the sprite sources snap their drawn corners (axis-aligned) o
   assert.ok(vert.includes(`vec2 world = weedSnapWorld(aInstXY, isShear ? sheared : spun, ${square});`));
   assert.ok(vert.indexOf('vec2 weedSnapWorld') < vert.indexOf('void main()'), 'the functions come before main');
 
-  const pose = pixelSnapGlsl(read('instancedSpritePose.vert.glsl'));
-  assert.ok(pose.includes('vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);'), 'the blend is untouched');
-  assert.ok(pose.includes(`vec2 world = weedSnapWorld(xy, isShear ? sheared : spun, ${square});`), 'a blended pose snaps after its blend');
-
   const wgsl = pixelSnapWgsl(read('instancedSprite.wgsl'));
   assert.equal(count(wgsl, 'fn weedSnapXY('), 1);
   assert.equal(count(wgsl, 'fn weedSnapWorld('), 1);
   assert.ok(wgsl.includes(`let world = weedSnapWorld(aInstXY, select(spun, sheared, isShear), ${square});`));
-  const wgslPose = pixelSnapWgsl(read('instancedSpritePose.wgsl'));
-  assert.ok(wgslPose.includes(`let world = weedSnapWorld(xy, select(spun, sheared, isShear), ${square});`));
 
   assert.throws(() => pixelSnapGlsl('void main() {}'), /pixel snap/);
 });
 
 test('N-271: applyPixelSnap changes the backend\'s sprite sources once', () => {
-  const gl = { spriteVert: read('instancedSprite.vert.glsl'), spriteVertPose: read('instancedSpritePose.vert.glsl'), sprite: 'untouched' };
+  const gl = { spriteVert: read('instancedSprite.vert.glsl'), sprite: 'untouched' };
   applyPixelSnap(gl, false);
   applyPixelSnap(gl, false);
   assert.equal(count(gl.spriteVert, 'vec2 weedSnapXY('), 1);
-  assert.equal(count(gl.spriteVertPose, 'vec2 weedSnapXY('), 1);
   assert.equal(gl.sprite, 'untouched');
-  const gpu = { sprite: read('instancedSprite.wgsl'), spritePose: read('instancedSpritePose.wgsl') };
+  const gpu = { sprite: read('instancedSprite.wgsl') };
   applyPixelSnap(gpu, true);
   assert.equal(count(gpu.sprite, 'fn weedSnapXY('), 1);
-  assert.equal(count(gpu.spritePose, 'fn weedSnapXY('), 1);
 });
 
 /** weedSnapXY as the shaders write it (column-major mat3: m[col][row]), in float64. */
@@ -115,12 +107,10 @@ test('N-302: corners on the grid leave no seam between pieces edge to edge at a 
 });
 
 test('N-302: renderer.pixelSnapCorners false snaps every sprite\'s origin, its size on screen kept', () => {
-  const gl = { spriteVert: read('instancedSprite.vert.glsl'), spriteVertPose: read('instancedSpritePose.vert.glsl') };
+  const gl = { spriteVert: read('instancedSprite.vert.glsl') };
   applyPixelSnap(gl, false, false);
   assert.ok(gl.spriteVert.includes('vec2 world = weedSnapWorld(aInstXY, isShear ? sheared : spun, false);'));
-  assert.ok(gl.spriteVertPose.includes('vec2 world = weedSnapWorld(xy, isShear ? sheared : spun, false);'));
-  const gpu = { sprite: read('instancedSprite.wgsl'), spritePose: read('instancedSpritePose.wgsl') };
+  const gpu = { sprite: read('instancedSprite.wgsl') };
   applyPixelSnap(gpu, true, false);
   assert.ok(gpu.sprite.includes('let world = weedSnapWorld(aInstXY, select(spun, sheared, isShear), false);'));
-  assert.ok(gpu.spritePose.includes('let world = weedSnapWorld(xy, select(spun, sheared, isShear), false);'));
 });

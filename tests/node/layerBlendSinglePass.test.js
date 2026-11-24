@@ -21,7 +21,6 @@ import { readEngineShader } from './engineShaderSources.mjs';
 const readShader = readEngineShader;
 const GPU_SHADERS = {
   sprite: readShader('instancedSprite.wgsl'),
-  spritePose: readShader('instancedSpritePose.wgsl'),
   colliderFill: readShader('colliderFill.wgsl'),
   meshUvFill: readShader('meshUvFill.wgsl'),
 };

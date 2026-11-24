@@ -78,8 +78,6 @@ export class PixiCustomLayers {
       prevPoseY: null,
       prevPoseRotC: null,
       prevPoseRotS: null,
-      // The frame's interpolation alpha (a fraction from the start: CR-32).
-      poseAlpha: NaN,
     };
     this.splatUploadOpts = {
       layerId: 0,
@@ -591,7 +589,6 @@ export class PixiCustomLayers {
       const rtOpts = this.worker._rtRenderOpts;
       if (cl.compute) {
         if (!this.worker._gpuLive()) continue;
-        this.computePose.poseAlpha = this.worker._poseAlpha;
         cl.compute.step(frameUniforms, this.computePose);
         applyComputeTexSizeUniform(cl);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {

@@ -135,7 +135,7 @@ async function setup(ctx, S, o) {
   const gpuQueueBytes = S.gql.computeGpuQueueBufferSize(caps);
   const product = S.rqm.createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emitSpec, null, null, false, collect);
   const tableBytes = S.rqm.GPU_PACK_TABLE_SLOTS * S.pack.GPU_PACK_COLUMNS.length * 4;
-  const map = S.map.renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emitSpec, null, null, 0, collect, null, 15,
+  const map = S.map.renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emitSpec, null, null, 0, collect, null,
     pixiExtraSpec(S, emitSpec, maxItems));
   if (map.regions.queueB.byte !== product.layout.queueBByte || map.regions.emitTable.byte !== product.layout.emit.tableByte) {
     throw new Error('preRenderEmit: the region map and createRenderQueueMemory disagree');

@@ -29,10 +29,10 @@ export class BunnyMarkN1HuntScene extends Scene {
       noLimitFPS: false,
       ySort: false,
       maxVisibleRenderables: N,
-      interpolation: true,
     },
     preRender: {
       skipCull: true,
+      packGpuSprites: 'pixi',
       interpolation: false,
     },
     lighting: { enabled: false },

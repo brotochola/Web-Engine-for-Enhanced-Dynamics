@@ -40,7 +40,7 @@ globalThis.OffscreenCanvas ??= class {
 };
 const readShader = readEngineShader;
 const GL_SHADERS = spriteGlslShaders();
-const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl'), spritePose: readShader('instancedSpritePose.wgsl') };
+const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl') };
 
 class Thing extends GameObject {}
 Thing.components = [RigidBody, Collider, SpriteRenderer];

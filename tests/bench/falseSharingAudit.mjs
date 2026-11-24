@@ -569,7 +569,6 @@ async function renderQueueRegionMap(L) {
   const [maxItems, queueBytes, gpuQueueBytes, emit, stamp, sway, pixiPack] = spec.args;
   const n = maxItems | 0;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
-  const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
   // renderQueueMemory.js pixiExtraSpec (not exported), the same arithmetic.
   const extra = emit ? (() => {
     const tableSlots = GPU_PACK_TABLE_SLOTS + 2 * ((emit.customLayers && emit.customLayers.length) | 0);
@@ -580,8 +579,8 @@ async function renderQueueRegionMap(L) {
   const inBlock = scene.renderQueueMemory.buffer === L.memory?.buffer;
   const off = inBlock ? base : 0;
   for (const painter of [spec.painter, null]) {
-    const map = mm.renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiFloats > 0 ? n : 0,
-      lay.collect ? spec.collect : null, painter, pixiFloats || 15, extra);
+    const map = mm.renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0,
+      lay.collect ? spec.collect : null, painter, extra);
     const r = map.regions;
     const same = r.queueA.byte + off === lay.queueAByte && r.queueB.byte + off === lay.queueBByte && r.packIndices.byte + off === lay.indexByte
       && (!r.spriteRenderer || r.spriteRenderer.bytes === 0 || r.spriteRenderer.byte + off === scene.buffers.componentDataByte.SpriteRenderer)

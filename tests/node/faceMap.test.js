@@ -118,7 +118,7 @@ test('without faces the light pass is the old one: no face code left in either s
 });
 
 test('the face map is made from every sprite vertex shader the batch uses', () => {
-  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+  for (const name of ['instancedSprite.vert.glsl']) {
     const v = faceMapVertex(shader(name));
     assert.match(v, /flat out vec2 vFaceOct;/, name);
     assert.match(v, /vFaceZ = float\(faceHeight & \d+u\) \/ [\d.]+ \+ faceDz;/, name);
@@ -126,7 +126,7 @@ test('the face map is made from every sprite vertex shader the batch uses', () =
   const indexed = spriteIndexedVertex(faceMapVertex(shader('instancedSprite.vert.glsl')));
   assert.match(indexed, /vFaceZ = float\(faceHeight & \d+u\) \/ [\d.]+ \+ faceDz;/);
   assert.throws(() => faceMapVertex('void main() {\n}\n'), /vTileOff/);
-  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+  for (const name of ['instancedSprite.wgsl']) {
     const w = faceMapWgsl(shader(name));
     assert.match(w, /fn mainFragFace/, name);
     assert.match(w, /@interpolate\(flat\) vFaceOct/, name);
@@ -232,7 +232,7 @@ test('the face programs take the G-buffer words only when the batch carries them
   assert.doesNotMatch(withPass, /254\.5 \/ 255\.0/, 'no code in the twin page any more');
   assert.ok(frag.includes(`vec2(${FACE_FLAT_CODE}.0 / 255.0)`), 'the FLAT code');
   assert.ok(frag.includes(`${FACE_K_BIT - 1}.0)) + (k ? ${FACE_K_BIT}.0`), 'heights of 15 bits and the k bit');
-  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+  for (const name of ['instancedSprite.wgsl']) {
     const off = faceMapWgsl(shader(name));
     assert.doesNotMatch(off, /aInstGbuf|vGbuf/, name);
     const w = faceMapWgsl(shader(name), { gbuf: true });
@@ -249,7 +249,7 @@ test('the face programs take the G-buffer words only when the batch carries them
 // input and Pixi warned of aInstGbuf ("not present in the shader") in every map-mode scene without maps.
 test('a GLSL colour program takes the G-buffer words, read or not, once, in every sprite form', async () => {
   const { gbufAttributeGlsl } = await import('../../src/render/faceMap.js');
-  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+  for (const name of ['instancedSprite.vert.glsl']) {
     for (const [form, src] of [['plain', shader(name)], ['indexed', spriteIndexedVertex(shader(name))]]) {
       const out = gbufAttributeGlsl(src);
       assert.equal(out.split('in vec3 aInstGbuf;').length, 2, `${name} ${form}: declared once`);
@@ -289,7 +289,7 @@ test('the G-buffer in one pass (MRT) writes the face texel at location 0 and the
 test('the unshaded mask leaves out the instances that cannot be unshaded, in every sprite form and both languages', async () => {
   const { faceUnshadedMaskFragment, unshadedMaskVertex } = await import('../../src/render/faceMap.js');
   const cut = /& 1u\) == 0u && !twinUnshaded\(twinWindow\(int\(aInstTexId \+ 0\.5\)\)\)\) gl_Position = vec4\(2\.0, 2\.0, 2\.0, 1\.0\);/;
-  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+  for (const name of ['instancedSprite.vert.glsl']) {
     const plain = faceMapVertex(shader(name), { gbuf: true });
     assert.doesNotMatch(plain, /2\.0, 2\.0, 2\.0, 1\.0/, name);
     const mask = unshadedMaskVertex(plain);
@@ -305,7 +305,7 @@ test('the unshaded mask leaves out the instances that cannot be unshaded, in eve
   // A whole quad, no work a pixel: no discard and no texture read.
   const frag = faceUnshadedMaskFragment();
   assert.doesNotMatch(frag, /discard|texture\(/);
-  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+  for (const name of ['instancedSprite.wgsl']) {
     assert.doesNotMatch(faceMapWgsl(shader(name), { gbuf: true, unshaded: true }), /vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\)/, name);
     const w = faceMapWgsl(shader(name), { gbuf: true, unshaded: true, unshadedMask: true });
     assert.match(w, /& 1u\) == 0u && !twinUnshaded\(twinWindow\(tid\)\)\) \{ out\.position = vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\); \}/, name);
@@ -370,7 +370,7 @@ test('a sprite\'s normals mirror with a negative scale and turn with its rotatio
   const frag = faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true });
   assert.match(frag, /vec3 n = turnNormal\(sobel \? heightNormal\(tc, zm\) : twinStoredNormal\(m, tc\)\);/, 'the map\'s normal and the Sobel\'s alike');
   assert.match(frag, /vec3 n = turnNormal\(TWIN_NORMALS \? twinStoredNormal\(m, tc\) : heightNormal\(tc, twinZ\(m\)\)\);/, 'without words too');
-  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+  for (const name of ['instancedSprite.wgsl']) {
     const w = faceMapWgsl(shader(name), { gbuf: true });
     assert.match(w, /@location\(13\) @interpolate\(flat\) vNormalTurn: vec4<f32>,/, name);
     assert.match(w, /n = turnNormal\(n, in\.vNormalTurn\);/, name);
@@ -392,7 +392,7 @@ test('a frame without heights takes its surface\'s height in the G-buffer, depth
   assert.match(frag, /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale\s*: \(\(flags & 4u\) == 0u && uFaceSpace\.x > 0\.0 \? max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x : 0\.0\);/);
   assert.match(frag, /if \(\(flags & 4u\) == 0u && uFaceSpace\.x > 0\.0\) \{\s*finalColor = faceTexel\(vec2\(254\.0 \/ 255\.0\), max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x, false\);/, 'a sprite without maps too');
   assert.equal(frag.split('/ uFaceSpace.x').length - 1, 2, 'no other card height that divides by heightScaleY');
-  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+  for (const name of ['instancedSprite.wgsl']) {
     const w = faceMapWgsl(shader(name), { gbuf: true });
     assert.match(w, /else if \(\(flags & 4u\) == 0u && uniforms\.uFaceSpace\.x > 0\.0\) \{ zw = max\(in\.vFootY - in\.vWorld\.y, 0\.0\) \/ uniforms\.uFaceSpace\.x; \}/, name);
     assert.match(w, /if \(\(flags & 4u\) == 0u && uniforms\.uFaceSpace\.x > 0\.0\) \{\s*return faceTexel\([^,]+, max\(in\.vFootY - in\.vWorld\.y, 0\.0\) \/ uniforms\.uFaceSpace\.x, false\);/, `${name}: without maps too`);

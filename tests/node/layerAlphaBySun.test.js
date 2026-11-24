@@ -90,7 +90,7 @@ test('normalizeAlphaBySun keeps the three forms and refuses the rest, by name', 
 
 test('every instanced sprite and mesh fill shader, both dialects, takes the layer alpha', () => {
   const read = readEngineShader;
-  for (const name of ['instancedSprite', 'instancedSpritePose', 'colliderFill', 'meshUvFill']) {
+  for (const name of ['instancedSprite', 'colliderFill', 'meshUvFill']) {
     const glsl = read(`${name}.vert.glsl`);
     assert.match(glsl, /uniform vec4 uColor;/, name);
     // N-418: the sprites' times the additive frame's sign.

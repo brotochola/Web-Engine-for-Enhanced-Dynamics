@@ -132,32 +132,21 @@ export function opaqueFragment(source) {
 const OPAQUE_VERT = 'the opaque pass\'s sprite vertex shader';
 
 /**
- * The opaque pass's vertex shader from the batch's (instancedSprite.vert.glsl's pose variant, a pose or a split batch's): the pose
- * attributes become globals read first from uOpPoses, the batch's pose stream in an RGBA32UI texture (a float's bits a
- * channel, OPAQUE_POSE_TEXELS texels a row), at the row's painter slot aInstSlot: `poseWords` 6 (x, y, the turn, the
- * previous x, y: a pose batch) or 4 (x, y, the turn; the previous pose is the current one, as a split batch's geometry
- * reads it). The rest of the shader is the batch's own, so the statics, the position and the colour are its own.
+ * The opaque pass's vertex shader from a split batch's (instancedSprite.vert.glsl): the pose attributes become globals read
+ * first from uOpPoses, the batch's pose stream (x, y and the turn a row) in an RGBA32UI texture (a float's bits a channel,
+ * OPAQUE_POSE_TEXELS texels a row), at the row's painter slot aInstSlot. The rest of the shader is the batch's own, so the
+ * statics, the position and the colour are its own.
  * @param {string} source
- * @param {number} poseWords
  * @returns {string}
  */
-export function opaqueVertex(source, poseWords) {
-  if (poseWords !== 4 && poseWords !== 6) throw new Error(`WeedJS: the opaque pass reads 4 or 6 pose words, not ${poseWords}`);
+export function opaqueVertex(source) {
   let out = replaceOnce(source, 'in vec2 aInstXY;\n', 'vec2 aInstXY;\n', OPAQUE_VERT);
   out = replaceOnce(out, 'in vec2 aInstRotCS;\n', 'vec2 aInstRotCS;\n', OPAQUE_VERT);
-  out = replaceOnce(out, 'in vec2 aInstPrevXY;\n', 'vec2 aInstPrevXY;\n', OPAQUE_VERT);
   const fetch = (t) => `texelFetch(uOpPoses, ivec2((${t}) & ${OPAQUE_POSE_TEXELS - 1}, (${t}) >> ${POSE_ROW_SHIFT - 2}), 0)`;
   const head = '// E-448: this row\'s painter slot, whose pose uOpPoses holds (the batch\'s pose stream, copied on the GPU).\n' +
     'in float aInstSlot;\nuniform highp usampler2D uOpPoses;\n\n';
-  const body = poseWords === 4
-    ? `  int weedOpSlot = int(aInstSlot + 0.5);\n  uvec4 weedOpA = ${fetch('weedOpSlot')};\n` +
-      '  aInstXY = uintBitsToFloat(weedOpA.xy);\n  aInstRotCS = uintBitsToFloat(weedOpA.zw);\n  aInstPrevXY = aInstXY;\n'
-    : '  int weedOpSlot = int(aInstSlot + 0.5);\n  int weedOpT = (weedOpSlot * 6) >> 2;\n' +
-      `  uvec4 weedOpA = ${fetch('weedOpT')};\n  uvec4 weedOpB = ${fetch('weedOpT + 1')};\n` +
-      '  bool weedOpOdd = (weedOpSlot & 1) == 1;\n' +
-      '  aInstXY = uintBitsToFloat(weedOpOdd ? weedOpA.zw : weedOpA.xy);\n' +
-      '  aInstRotCS = uintBitsToFloat(weedOpOdd ? weedOpB.xy : weedOpA.zw);\n' +
-      '  aInstPrevXY = uintBitsToFloat(weedOpOdd ? weedOpB.zw : weedOpB.xy);\n';
+  const body = `  int weedOpSlot = int(aInstSlot + 0.5);\n  uvec4 weedOpA = ${fetch('weedOpSlot')};\n` +
+    '  aInstXY = uintBitsToFloat(weedOpA.xy);\n  aInstRotCS = uintBitsToFloat(weedOpA.zw);\n';
   const main = 'void main() {\n';
   const at = out.indexOf(main);
   if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: the opaque pass needs one "void main() {" in the sprite vertex shader');

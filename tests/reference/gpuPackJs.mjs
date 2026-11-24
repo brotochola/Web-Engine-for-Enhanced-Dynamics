@@ -1,8 +1,8 @@
 // The JS instanced-row packers gpuPack.wasm replaced (E-76 W9, W9b, W9d, W9e, E-82b; close-out group B), as they were in
 // src/render/gpuQueueLayout.js and InstancedSpriteBatch: packInstancedRows (every call: world and screen space, type
-// filters, casters; N-271: without the pixel snap, which the sprite vertex shaders do now), packSplitRows and splitInterleavedRows (the two streams of a split batch), and a
-// batch's pose-batch packers. The kernel's parity tests and the pack benches compare with them; installBatchPackJs
-// gives a batch its JS packing back (every upload in JS, as a batch without a kernel packed before).
+// filters, casters; N-271: without the pixel snap, which the sprite vertex shaders do now), packSplitRows and
+// splitInterleavedRows (the two streams of a split batch). The kernel's parity tests and the pack benches compare with
+// them; installBatchPackJs gives a batch its JS packing back (every upload in JS, as a batch without a kernel packed before).
 import {
   GPU_CASTER_FLOATS,
   GPU_CASTER_LIGHT_FLOAT,
@@ -12,7 +12,6 @@ import {
 } from '../../src/render/gpuQueueLayout.js';
 import {
   INSTANCED_SPRITE_FLOATS,
-  POSE_DYN_FLOATS,
   POSE_STATIC_FLOATS,
   SPLIT_POSE_FLOATS,
 } from '../../src/render/instancedSpriteBatch.js';
@@ -388,222 +387,13 @@ function commitRowsSplit(src, srcU32, count) {
   return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4);
 }
 
-/** The pose stream alone: the statics on the GPU are current. A copy of the loop below. */
-function _packPoseOnly(q, ctx) {
-  const o = ctx.o;
-  const data = this.data;
-  const indices = ctx.indices;
-  const useIndices = ctx.useIndices;
-  const useScreen = ctx.useScreen;
-  const cameraX = ctx.cameraX;
-  const cameraY = ctx.cameraY;
-  const screenScale = ctx.screenScale;
-  const typeArr = ctx.typeArr;
-  const includeType = ctx.includeType;
-  const exclude0 = ctx.exclude0;
-  const exclude1 = ctx.exclude1;
-  const hasInclude = ctx.hasInclude;
-  const filterTypes = ctx.filterTypes;
-  const scanCount = ctx.scanCount;
-  const snap = !!o.snap;
-  const prevXArr = snap ? null : o.prevX;
-  const prevYArr = snap ? null : o.prevY;
-  const rqX = q.x;
-  const rqY = q.y;
-  const rqRotC = q.rotC;
-  const rqRotS = q.rotS;
-  let base = 0;
-  let out = 0;
-  for (let k = 0; k < scanCount; k++) {
-    const i = useIndices ? indices[k] : k;
-    if (filterTypes) {
-      const t = typeArr[i];
-      if (hasInclude && t !== includeType) continue;
-      if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
-    }
-    if (out >= this.capacity) break;
-    let x = rqX[i];
-    let y = rqY[i];
-    let px = prevXArr ? prevXArr[i] : x;
-    let py = prevYArr ? prevYArr[i] : y;
-    if (useScreen) {
-      if (ctx.cameraRot) {
-        const c = ctx.camC;
-        const s = ctx.camS;
-        const dx = x - ctx.focusX;
-        const dy = y - ctx.focusY;
-        x = ctx.halfW + (dx * c - dy * s) * screenScale;
-        y = ctx.halfH + (dx * s + dy * c) * screenScale;
-        const pdx = px - ctx.focusX;
-        const pdy = py - ctx.focusY;
-        px = ctx.halfW + (pdx * c - pdy * s) * screenScale;
-        py = ctx.halfH + (pdx * s + pdy * c) * screenScale;
-      } else {
-        x = (x - cameraX) * screenScale;
-        y = (y - cameraY) * screenScale;
-        px = (px - cameraX) * screenScale;
-        py = (py - cameraY) * screenScale;
-      }
-    }
-    let rc = rqRotC[i];
-    let rs = rqRotS[i];
-    if (useScreen && ctx.cameraRot) {
-      const c = ctx.camC;
-      const s = ctx.camS;
-      const nrc = rc * c - rs * s;
-      rs = rs * c + rc * s;
-      rc = nrc;
-    }
-    data[base] = x;
-    data[base + 1] = y;
-    data[base + 2] = rc;
-    data[base + 3] = rs;
-    data[base + 4] = px;
-    data[base + 5] = py;
-    base += POSE_DYN_FLOATS;
-    out++;
-  }
-  return out;
-}
-
-/** Both streams: the pose into data, the statics into staticData. */
-function _packPoseAndStatics(q, ctx) {
-  const o = ctx.o;
-  const data = this.data;
-  const stat = this.staticData;
-  const statU32 = this.staticDataU32;
-  const indices = ctx.indices;
-  const useIndices = ctx.useIndices;
-  const useScreen = ctx.useScreen;
-  const cameraX = ctx.cameraX;
-  const cameraY = ctx.cameraY;
-  const screenScale = ctx.screenScale;
-  const typeArr = ctx.typeArr;
-  const includeType = ctx.includeType;
-  const exclude0 = ctx.exclude0;
-  const exclude1 = ctx.exclude1;
-  const hasInclude = ctx.hasInclude;
-  const filterTypes = ctx.filterTypes;
-  const depthDenom = ctx.depthDenom;
-  const scanCount = ctx.scanCount;
-  const snap = !!o.snap;
-  const prevXArr = snap ? null : o.prevX;
-  const prevYArr = snap ? null : o.prevY;
-  const rqX = q.x;
-  const rqY = q.y;
-  const rqScaleX = q.scaleX;
-  const rqScaleY = q.scaleY;
-  const rqRotC = q.rotC;
-  const rqRotS = q.rotS;
-  const rqAlpha = q.alpha;
-  const rqTint = q.tint;
-  const rqTextureId = q.textureId;
-  const rqAnchorX = q.anchorX;
-  const rqAnchorY = q.anchorY;
-  const rqRepeatX = q.repeatX;
-  const rqRepeatY = q.repeatY;
-  const rqTileMulX = q.tileMulX;
-  const rqTileMulY = q.tileMulY;
-  const rqTileOffU = q.tileOffsetU;
-  const rqTileOffV = q.tileOffsetV;
-  let base = 0;
-  let sBase = 0;
-  let out = 0;
-  for (let k = 0; k < scanCount; k++) {
-    const i = useIndices ? indices[k] : k;
-    if (filterTypes) {
-      const t = typeArr[i];
-      if (hasInclude && t !== includeType) continue;
-      if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
-    }
-    if (out >= this.capacity) break;
-    let x = rqX[i];
-    let y = rqY[i];
-    let px = prevXArr ? prevXArr[i] : x;
-    let py = prevYArr ? prevYArr[i] : y;
-    let sx = rqScaleX[i];
-    let sy = rqScaleY[i];
-    if (useScreen) {
-      if (ctx.cameraRot) {
-        const c = ctx.camC;
-        const s = ctx.camS;
-        const dx = x - ctx.focusX;
-        const dy = y - ctx.focusY;
-        x = ctx.halfW + (dx * c - dy * s) * screenScale;
-        y = ctx.halfH + (dx * s + dy * c) * screenScale;
-        const pdx = px - ctx.focusX;
-        const pdy = py - ctx.focusY;
-        px = ctx.halfW + (pdx * c - pdy * s) * screenScale;
-        py = ctx.halfH + (pdx * s + pdy * c) * screenScale;
-      } else {
-        x = (x - cameraX) * screenScale;
-        y = (y - cameraY) * screenScale;
-        px = (px - cameraX) * screenScale;
-        py = (py - cameraY) * screenScale;
-      }
-      sx *= screenScale;
-      sy *= screenScale;
-    }
-    const depth = 1.0 - (out + 1) / depthDenom;
-    let a = rqAlpha[i];
-    if (a < 0) a = 0;
-    else if (a > 1) a = 1;
-    const a8 = (a * 255 + 0.5) | 0;
-    const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
-    const rx = rqRepeatX ? rqRepeatX[i] : 0;
-    const ry = rqRepeatY ? rqRepeatY[i] : 0;
-    const invX = rqTileMulX ? rqTileMulX[i] : (rx > 0 ? 1 / rx : 0);
-    const invY = rqTileMulY ? rqTileMulY[i] : (ry > 0 ? 1 / ry : 0);
-    let rc = rqRotC[i];
-    let rs = rqRotS[i];
-    if (useScreen && ctx.cameraRot) {
-      const c = ctx.camC;
-      const s = ctx.camS;
-      const nrc = rc * c - rs * s;
-      rs = rs * c + rc * s;
-      rc = nrc;
-    }
-    data[base] = x;
-    data[base + 1] = y;
-    data[base + 2] = rc;
-    data[base + 3] = rs;
-    data[base + 4] = px;
-    data[base + 5] = py;
-    stat[sBase] = sx;
-    stat[sBase + 1] = sy;
-    stat[sBase + 2] = rqAnchorX[i];
-    stat[sBase + 3] = rqAnchorY[i];
-    stat[sBase + 4] = depth;
-    statU32[sBase + 5] = packed >>> 0;
-    stat[sBase + 6] = rqTextureId[i];
-    stat[sBase + 7] = invX;
-    stat[sBase + 8] = invY;
-    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
-    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
-    base += POSE_DYN_FLOATS;
-    sBase += POSE_STATIC_FLOATS;
-    out++;
-  }
-  return out;
-}
-
-/** A batch's upload in JS: packInstancedRows into its own arrays (a pose or split batch: their packers). */
+/** A batch's upload in JS: packInstancedRows into its own arrays (a split batch: its packer). */
 function upload(q, opts) {
-  if (this.poseInterp) return this._uploadPose(q, opts);
   if (this.split) return this._uploadSplit(q, opts);
   const ctx = this._beginUpload(q, opts);
   if (!ctx) return 0;
   const out = packInstancedRows(q, ctx, this.data, this.dataU32, this._floats, this.capacity, this.shadowCast);
   return this._finishUpload(out, this._strideBytes);
-}
-
-/** A pose batch's upload in JS: the pose stream, and the statics when the GPU's are not this upload's. */
-function uploadPose(q, opts) {
-  const ctx = this._beginUpload(q, opts);
-  if (!ctx) return 0;
-  const current = this._staticsCurrent(q, ctx);
-  const out = current ? _packPoseOnly.call(this, q, ctx) : _packPoseAndStatics.call(this, q, ctx);
-  return this._finishUpload(out, POSE_DYN_FLOATS * 4);
 }
 
 /** A split batch's upload in JS: packSplitRows, else 15-float rows split afterwards. */
@@ -616,16 +406,10 @@ function uploadSplit(q, opts) {
   return this._finishUpload(out, SPLIT_POSE_FLOATS * 4);
 }
 
-/**
- * Give `batch` (an InstancedSpriteBatch) its JS packing: every upload packs in JS, into its own arrays, and a pose
- * batch's two packers are its methods again (_packPoseOnly, _packPoseAndStatics), as the pose parity test calls them.
- */
+/** Give `batch` (an InstancedSpriteBatch) its JS packing: every upload packs in JS, into its own arrays. */
 export function installBatchPackJs(batch) {
   batch.upload = upload;
-  batch._uploadPose = uploadPose;
   batch._uploadSplit = uploadSplit;
   batch.commitRowsSplit = commitRowsSplit;
-  batch._packPoseOnly = _packPoseOnly;
-  batch._packPoseAndStatics = _packPoseAndStatics;
   return batch;
 }

@@ -61,7 +61,7 @@ import {
   renderViewTextures,
 } from '../render/renderViews.js';
 import { wallEdgesWanted } from '../render/lightEdges.js';
-import { additiveFragGlsl, spritePoseGlsl, spritePoseWgsl } from '../render/shaderVariants.js';
+import { additiveFragGlsl } from '../render/shaderVariants.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
   GPU_SPRITE_FLOATS,
@@ -95,8 +95,8 @@ import { bindMeshPoseList, takeMeshPoseList, MESH_POSE_FLOATS } from '../util/me
 import {
   InstancedSpriteBatch,
   INSTANCED_SPRITE_FLOATS,
-  POSE_DYN_FLOATS,
   POSE_STATIC_FLOATS,
+  SPLIT_POSE_FLOATS,
   BATCH_SPACE,
   BATCH_DEPTH,
   TEX_LUT_FLOATS,
@@ -487,7 +487,6 @@ class PixiRenderer extends AbstractWorker {
     this._queueWaitStepMs = NaN;
     this._queueWaitPeriodMs = NaN;
     this._queueWaitLastStart = NaN;
-    this._queueInterp = false;
     /** E-201: renderer.keyedPosesByRow (the entity batch's keyed frames drawn by queue row). */
     this._keyedPosesByRow = false;
     /** N-138: pre-render's lists of the poses its sprites that have a mesh were drawn at, one per queue buffer. */
@@ -495,14 +494,6 @@ class PixiRenderer extends AbstractWorker {
     /** Per entity, the frame whose sprite pose _meshQueuePose holds (x, y, rotC, rotS); the mesh fill takes it. */
     this._meshQueueStamp = new Int32Array(0);
     this._meshQueuePose = new Float32Array(0);
-    this._latchedPrevX = null;
-    this._latchedPrevY = null;
-    this._latchedPrevCount = 0;
-    this._poseWall = 0;
-    this._poseInterval = 0;
-    this._poseAlpha = 1;
-    this._poseSnap = true;
-    this._posePacked = false;
     this.renderQueueMaxItems = 0;
 
     // Double buffer storage - views for both buffers
@@ -820,23 +811,6 @@ class PixiRenderer extends AbstractWorker {
     const stampView = this.renderQueueStampBuffers[bufferIdx];
     this._queueStamp = stampView ? stampView[0] : 0;
     this._gpuQueueRead = this.gpuQueueBuffers ? this.gpuQueueBuffers[bufferIdx] : null;
-  }
-
-  _notePosePublish() {
-    const now = performance.now();
-    if (this._poseWall > 0) {
-      const gap = now - this._poseWall;
-      if (gap > 0) {
-        this._poseInterval = this._poseInterval ? this._poseInterval * 0.8 + gap * 0.2 : gap;
-      }
-    }
-    this._poseWall = now;
-    this._poseAlpha = this._poseSnap ? 1 : 0;
-  }
-
-  _tickPoseAlpha() {
-    const elapsed = performance.now() - this._poseWall;
-    this._poseAlpha = this._poseInterval > 0 ? Math.min(1, elapsed / this._poseInterval) : 1;
   }
 
   /**
@@ -1265,11 +1239,6 @@ class PixiRenderer extends AbstractWorker {
     this._addSortMs = (ms) => { this.sortTimeThisFrame += ms; };
     this._writeLayerSprites = (packOpts) => this._packBatch.upload(this._packQ, packOpts);
     this._writeEntitySprites = (packOpts) => {
-      if (this.entitiesBatch.poseInterp) {
-        packOpts.prevX = this._latchedPrevX;
-        packOpts.prevY = this._latchedPrevY;
-        packOpts.snap = this._poseSnap;
-      }
       // E-177: a keyed batch takes the queue frame it draws (its changed marks are that frame's) and its buffer.
       this.entitiesBatch.keyedFrame = this.lastReadFrame;
       this.entitiesBatch.keyedBuffer = (this.lastReadFrame - 1) & 1;
@@ -1278,13 +1247,7 @@ class PixiRenderer extends AbstractWorker {
         this.entitiesBatch.setGbufColumns(SpriteRenderer.gbufFlags, ShadowCaster.selfShadow,
           this._painter !== null && SpriteRenderer.zIndexUsers() > 0 ? SpriteRenderer.zIndex : null);
       }
-      const n = this.entitiesBatch.upload(this._packQ, packOpts);
-      packOpts.prevX = null;
-      packOpts.prevY = null;
-      packOpts.snap = false;
-      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
-      this._posePacked = true;
-      return n;
+      return this.entitiesBatch.upload(this._packQ, packOpts);
     };
     this._writeEntityGlow = (packOpts) => this._packGlowBatch.upload(this._packQ, packOpts);
     this._pixiLayerPack = {
@@ -1406,7 +1369,6 @@ class PixiRenderer extends AbstractWorker {
       gpu &&
       gpu.header &&
       (gpu.header[GPU_HDR_VERSION] | 0) === GPU_QUEUE_VERSION &&
-      !this.entitiesBatch.poseInterp &&
       // Pre-render packed nothing of a queue with rows (a frame of glow rows only packs them all as glows).
       !(packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0 && soaN > 0) &&
       (!needOrder || (packedFlags & GPU_FLAG_SORTED)) &&
@@ -1456,8 +1418,6 @@ class PixiRenderer extends AbstractWorker {
       if (this.entitiesBatch.gbuf && this.visibleEntityCount > 0) {
         this.entitiesBatch.commitGbuf((packedFlags & GPU_FLAG_GBUF) !== 0 ? gpu.spriteGbuf : null, this.visibleEntityCount);
       }
-      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
-      this._posePacked = true;
       const glowId = Layer.get('lightGlows')?.id;
       const glowOn = this._lightGlowAdd && layerIsVisible(glowId);
       if (this.entitiesGlowBatch) {
@@ -1576,7 +1536,6 @@ class PixiRenderer extends AbstractWorker {
     if (!gpu || !gpu.header) return 'no GPU queue';
     const version = gpu.header[GPU_HDR_VERSION] | 0;
     if (version !== GPU_QUEUE_VERSION) return `GPU queue version ${version}, not ${GPU_QUEUE_VERSION}`;
-    if (this.entitiesBatch.poseInterp) return 'the entity batch interpolates poses';
     if (packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0) return 'pre-render packed none of them';
     if (needOrder && !(packedFlags & GPU_FLAG_SORTED)) return 'they need an order and pre-render did not sort them';
     if ((packedFlags & GPU_FLAG_INDEXED) && !this.entitiesBatch.indexed) return 'an indexed frame for an entity batch that reads none';
@@ -2038,8 +1997,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * W9d: gpuPack.wasm on Pixi's regions of the render-queue memory, when the scene laid them out (W9e: with pose
-   * interpolation too, 17 floats a row for the pose batch's two streams).
+   * W9d: gpuPack.wasm on Pixi's regions of the render-queue memory, when the scene laid them out.
    */
   async _bindPixiGpuPack(data) {
     const memory = data.renderQueueMemory;
@@ -2056,11 +2014,8 @@ class PixiRenderer extends AbstractWorker {
       inverseByte: 0,
     });
     const rows = layout.pixiInstanceRows | 0;
-    const floats = layout.pixiInstanceFloats | 0 || INSTANCED_SPRITE_FLOATS;
-    // A layout made for the other mode (interpolation on or off) leaves the entity batch packing in JS.
-    if (rows > 0 && rows >= (this.renderQueueMaxItems | 0)
-      && floats === (this._queueInterp ? POSE_DYN_FLOATS + POSE_STATIC_FLOATS : INSTANCED_SPRITE_FLOATS)) {
-      this._pixiInstanceRows = new Float32Array(memory.buffer, layout.pixiInstanceByte, rows * floats);
+    if (rows > 0 && rows >= (this.renderQueueMaxItems | 0)) {
+      this._pixiInstanceRows = new Float32Array(memory.buffer, layout.pixiInstanceByte, rows * INSTANCED_SPRITE_FLOATS);
     }
     if ((layout.pixiGlowRows | 0) >= (this.renderQueueMaxItems | 0) && layout.pixiGlowByte >= 0) {
       this._pixiGlowRows = new Float32Array(memory.buffer, layout.pixiGlowByte, (this.renderQueueMaxItems | 0) * INSTANCED_SPRITE_FLOATS);
@@ -2115,12 +2070,11 @@ class PixiRenderer extends AbstractWorker {
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
-      poseInterp: this._queueInterp,
       data: this._pixiInstanceRows,
       gpuPack: this._pixiGpuPack,
       // E-82b: the plain sprites in two streams, the statics uploaded when they change. E-513: a nearest atlas too (its
       // pixel snap is in the sprite vertex shaders: N-271, pixelSnap.js).
-      split: !this._queueInterp,
+      split: true,
       // E-162: with the queue's indexed frames (renderer.indexedSprites), where their statics go: a texture through the
       // record texture helper (WebGL), or a storage buffer within the device's binding size (WebGPU), which a keyed
       // batch's compute pass scatters into (E-187).
@@ -2146,15 +2100,11 @@ class PixiRenderer extends AbstractWorker {
       // record textures (the pass's pose texture); the batch takes it where it can (WebGL, no pixel depth, no G-buffer
       // words).
       opaquePass: pixelDepth === null && !this._useWebGpu ? this._gpuRecordTexture() : null,
-      // A pose batch's vertex buffers bound by ANGLE as they are (one upload a frame): no copy of every draw's attributes.
-      // Not a keyed or split one, which the hint made slower on the GPU (why is not traced): Predator's keyed colour pass
-      // 1.66 -> 2.12 ms (~800 MHz), bunnyMarkStress's split frames 3.12 -> 3.23 ms (medians of 4).
-      staticBuffers: this._queueInterp,
-      // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
+      // W30: room for its two streams (15 floats a row), and an indexed frame's slot
       // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
       // shadow stream of the sun's pass over its instances (3 floats a row). E-448: a pose texture row more for the pose
       // stream, which the opaque pass copies whole rows of.
-      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS) + OPAQUE_POSE_TEXELS * 4
+      arena: this._batchArena(maxItems * (SPLIT_POSE_FLOATS + POSE_STATIC_FLOATS) + OPAQUE_POSE_TEXELS * 4
         + (keyed !== null
           ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS + 3)
           : indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)
@@ -2267,12 +2217,6 @@ class PixiRenderer extends AbstractWorker {
     }
     let consumedNewFrame = false;
     if (readyFrame > this.lastReadFrame && readyFrame > 0) {
-      if (this._queueInterp && this.renderQueueX) {
-        this._latchedPrevX = this.renderQueueX;
-        this._latchedPrevY = this.renderQueueY;
-        this._latchedPrevCount = this.renderQueueCount[0] | 0;
-      }
-      const previousReady = this.lastReadFrame;
       consumedNewFrame = true;
       const readBufferIndex = (readyFrame - 1) & 1;
       this._setReadBuffer(readBufferIndex);
@@ -2301,12 +2245,6 @@ class PixiRenderer extends AbstractWorker {
         this._renderCameraRot = this.renderQueueCamera.length > 3 ? (this.renderQueueCamera[3] || 0) : 0;
         this._cameraInitialized = true;
       }
-      if (this._queueInterp) {
-        const currentCount = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
-        const consecutive = previousReady > 0 && readyFrame === previousReady + 1;
-        this._poseSnap = !consecutive || this._latchedPrevCount !== currentCount;
-        this._notePosePublish();
-      }
     }
     if (started) this.queueTimeThisFrame = performance.now() - started;
     return consumedNewFrame;
@@ -2314,14 +2252,6 @@ class PixiRenderer extends AbstractWorker {
 
   shouldDrawFrameLockedPasses(consumedNewFrame, resuming) {
     return consumedNewFrame || resuming || this.lastReadFrame <= 0 || !this.renderQueueSync;
-  }
-
-  tickInterpolatedPose() {
-    if (!this._queueInterp || !this._posePacked || !this.entitiesBatch) return;
-    const started = this.collectDetailedStats ? performance.now() : 0;
-    this._tickPoseAlpha();
-    this.entitiesBatch.setPoseAlpha(this._poseAlpha);
-    if (started) this.miscTimeThisFrame += performance.now() - started;
   }
 
   ensureCameraBeforeFirstFrame() {
@@ -2809,7 +2739,6 @@ class PixiRenderer extends AbstractWorker {
     this._gpuShadowLightsThisFrame = 0;
 
     try {
-      if (!consumedNewFrame) this.tickInterpolatedPose();
       this.ensureCameraBeforeFirstFrame();
       this.updateCameraTransform();
       this.updateGpuParticleLayers();
@@ -3664,7 +3593,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * SST-1: the engine shaders this backend's passes read, fetched at boot (a bundle's come embedded in the boot message).
-   * N-303 CR-14: the pose and additive variants are made from their base as it arrives (shaderVariants.js).
+   * N-303 CR-14: the additive variant is made from its base as it arrives (shaderVariants.js).
    */
   _fetchEngineShaders() {
     this._engineShaders = {};
@@ -3674,7 +3603,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaderFetches.push(
         fetchEngineShader('/src/shaders/instancedSprite.wgsl').then((s) => {
           sh.sprite = s;
-          sh.spritePose = spritePoseWgsl(s);
         }),
         fetchEngineShader('/src/shaders/instancedSpriteShadow.wgsl').then((s) => {
           sh.shadowWgsl = s;
@@ -3708,7 +3636,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaderFetches.push(
         fetchEngineShader('/src/shaders/instancedSprite.vert.glsl').then((s) => {
           sh.spriteVert = s;
-          sh.spriteVertPose = spritePoseGlsl(s);
         }),
         fetchEngineShader('/src/shaders/instancedSpriteShadow.vert.glsl').then((s) => {
           sh.shadowVert = s;
@@ -3888,19 +3815,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Read renderer-specific configuration
     const rendererConfig = this.config.renderer || {};
-    this._queueInterp = rendererConfig.interpolation === true;
     this._keyedPosesByRow = (rendererConfig.keyedPosesByRow ?? RENDERER_DEFAULTS.keyedPosesByRow) === true;
 
     this._ySortMode = rendererConfig.ySort;
     this._ySort = ySortEnabled(this._ySortMode);
     const preCfg = this.config.preRender || {};
     this._queueBackpressure = preCfg.backpressure !== false;
-    this._queueWait = rendererConfig.waitForQueue !== false && !this._queueInterp;
+    this._queueWait = rendererConfig.waitForQueue !== false;
     const spritePipe = resolveSpritePipeline({
       ySort: this._ySortMode,
       packGpuSprites: preCfg.packGpuSprites,
       sortSprites: preCfg.sortSprites,
-      rendererInterpolation: this._queueInterp,
     });
     this._packGpuSpritesOn = spritePipe.packGpuSprites;
     this._sortSpritesOn = spritePipe.sortSprites;

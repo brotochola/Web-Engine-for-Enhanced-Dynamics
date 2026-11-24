@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BATCH_SPACE, InstancedSpriteBatch, POSE_DYN_FLOATS, POSE_STATIC_FLOATS } from '../../src/render/instancedSpriteBatch.js';
+import { BATCH_SPACE, InstancedSpriteBatch, POSE_STATIC_FLOATS, SPLIT_POSE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
 import { TextureSource } from '../../src/vendor/pixi.min.js';
 import { bindGpuPack } from '../../src/render/gpuPackClient.js';
 import { gpuIndexedStaticRows } from '../../src/render/gpuQueueLayout.js';
@@ -73,37 +73,21 @@ test('the opaque rows are the binary frames under an opaque tint, the last paint
 });
 
 test('the opaque vertex shader reads its pose from the pose texture at its painter slot', () => {
-  for (const words of [6, 4]) {
-    const out = opaqueVertex(shaders.spriteVertPose, words);
-    for (const name of ['aInstXY', 'aInstRotCS', 'aInstPrevXY']) {
-      assert.doesNotMatch(out, new RegExp(`^in vec2 ${name};`, 'm'), `${name} is no attribute`);
-      assert.match(out, new RegExp(`^vec2 ${name};`, 'm'));
-    }
-    assert.equal(out.split('in float aInstSlot;').length, 2);
-    assert.equal(out.split('uniform highp usampler2D uOpPoses;').length, 2);
-    // The rest is the batch's own: the statics, the mix with the previous pose, the depth.
-    assert.match(out, /vec2 xy = mix\(aInstPrevXY, aInstXY, uPoseAlpha\);/);
-    assert.match(out, /gl_Position = vec4\(clip\.xy, aInstDepth, 1\.0\);/);
+  const out = opaqueVertex(shaders.spriteVert);
+  for (const name of ['aInstXY', 'aInstRotCS']) {
+    assert.doesNotMatch(out, new RegExp(`^in vec2 ${name};`, 'm'), `${name} is no attribute`);
+    assert.match(out, new RegExp(`^vec2 ${name};`, 'm'));
   }
-  assert.match(opaqueVertex(shaders.spriteVertPose, 4), /aInstPrevXY = aInstXY;/);
-  // The words a pose row of 6 is read from, as the shader addresses them: texel t = 6k >> 2, x and y from its first or
-  // last half (k even or odd), the turn and the previous pose after them, across a texture row's end too.
-  for (const k of [0, 1, 2, 3, 681, 682, 683, 1364, 1365, 1366]) {
-    const t = (k * 6) >> 2;
-    const odd = (k & 1) === 1;
-    const word = (texel, ch) => texel * 4 + ch;
-    const got = [
-      odd ? word(t, 2) : word(t, 0), odd ? word(t, 3) : word(t, 1),
-      odd ? word(t + 1, 0) : word(t, 2), odd ? word(t + 1, 1) : word(t, 3),
-      odd ? word(t + 1, 2) : word(t + 1, 0), odd ? word(t + 1, 3) : word(t + 1, 1),
-    ];
-    assert.deepEqual(got, [0, 1, 2, 3, 4, 5].map((w) => k * 6 + w), `slot ${k}`);
-  }
-  assert.equal(opaquePoseTextureRows(1, 6), 1);
-  assert.equal(opaquePoseTextureRows(682, 6), 1);
-  assert.equal(opaquePoseTextureRows(683, 6), 2);
-  assert.equal(opaquePoseTextureRows(250000, 6), Math.ceil((250000 * 6) / 4 / OPAQUE_POSE_TEXELS));
-  assert.throws(() => opaqueVertex(shaders.spriteVert, 6), /aInstPrevXY/);
+  assert.equal(out.split('in float aInstSlot;').length, 2);
+  assert.equal(out.split('uniform highp usampler2D uOpPoses;').length, 2);
+  // The rest is the batch's own: the statics, the position, the depth.
+  assert.match(out, /vec2 world = \(isShear \? sheared : spun\) \+ aInstXY;/);
+  assert.match(out, /gl_Position = vec4\(clip\.xy, aInstDepth, 1\.0\);/);
+  assert.equal(opaquePoseTextureRows(1, 4), 1);
+  assert.equal(opaquePoseTextureRows(OPAQUE_POSE_TEXELS, 4), 1);
+  assert.equal(opaquePoseTextureRows(OPAQUE_POSE_TEXELS + 1, 4), 2);
+  assert.equal(opaquePoseTextureRows(250000, 4), Math.ceil(250000 / OPAQUE_POSE_TEXELS));
+  assert.throws(() => opaqueVertex('void main() {\n}\n'), /aInstXY/);
 });
 
 test('a keyed frame drawn by row takes the painter depth from its draw slot, the opaque twin from the slot it carries', () => {
@@ -216,7 +200,7 @@ async function setup() {
     q.anchorX[i] = 0.5;
     q.anchorY[i] = 0.5;
   }
-  const region = alloc(Float32Array, N * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS));
+  const region = alloc(Float32Array, N * (SPLIT_POSE_FLOATS + POSE_STATIC_FLOATS));
   const tableByte = (top = (top + 15) & ~15);
   top += 4 * 18 * 4;
   const indexByte = (top = (top + 15) & ~15);
@@ -225,11 +209,11 @@ async function setup() {
   top += 160;
   const pack = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
   // As Pixi makes it: the streams in a private arena (W30), the statics after the poses, not at its start.
-  const arena = createPrivateArena(memory, (N * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS) + OPAQUE_POSE_TEXELS * 4) * 4);
+  const arena = createPrivateArena(memory, (N * (SPLIT_POSE_FLOATS + POSE_STATIC_FLOATS) + OPAQUE_POSE_TEXELS * 4) * 4);
   assert.ok(arena, 'multi-memory');
   const textures = recordTextures();
   const batch = new InstancedSpriteBatch({
-    capacity: N, label: 'e448', poseInterp: true, useWebGpu: false, shaders, data: region, gpuPack: pack, opaquePass: textures,
+    capacity: N, label: 'e448', split: true, useWebGpu: false, shaders, data: region, gpuPack: pack, opaquePass: textures,
     depthTest: false, depthMask: false, arena,
   });
   assert.ok(batch.data.buffer === arena.buffer && batch.staticData.buffer === arena.buffer && batch.staticData.byteOffset > 0);
@@ -247,11 +231,11 @@ function eligible(q, texels, k) {
   return q.alpha[k] >= 1 && (texels[q.textureId[k]] & OPAQUE_FRAME_MASK) === 0;
 }
 
-test('a pose batch draws the opaque pass over its binary frames, nearest first, at their painter depth', async () => {
+test('a split batch draws the opaque pass over its binary frames, nearest first, at their painter depth', async () => {
   const { q, batch, uploads, textures } = await setup();
   assert.equal(batch.opaqueOn, true);
   // The pose texture holds the whole pose stream, and the pose array reaches its last row (the copy reads whole rows).
-  const texRows = opaquePoseTextureRows(N, POSE_DYN_FLOATS);
+  const texRows = opaquePoseTextureRows(N, SPLIT_POSE_FLOATS);
   assert.deepEqual(textures.made.map((t) => [t.width, t.height, t.bits.length]), [[OPAQUE_POSE_TEXELS, texRows, OPAQUE_POSE_TEXELS * 4 * texRows]]);
   assert.ok(batch.data.length >= texRows * OPAQUE_POSE_TEXELS * 4);
   assert.equal(batch._opShader.resources.uOpPoses, batch._opPoseSource);
@@ -341,14 +325,14 @@ test('a pose batch draws the opaque pass over its binary frames, nearest first, 
 });
 
 test('the opaque pass stays off where it cannot draw the same picture', async () => {
-  const base = { capacity: 16, label: 'e448-off', poseInterp: true, shaders, opaquePass: recordTextures() };
+  const base = { capacity: 16, label: 'e448-off', split: true, shaders, opaquePass: recordTextures() };
   assert.equal(new InstancedSpriteBatch({ ...base, useWebGpu: false }).opaqueOn, true);
   assert.equal(new InstancedSpriteBatch({ ...base, useWebGpu: false, blendMode: 'add' }).opaqueOn, false);
   assert.equal(new InstancedSpriteBatch({ ...base, useWebGpu: false, premultiplyAlpha: false }).opaqueOn, false);
   assert.equal(new InstancedSpriteBatch({ ...base, useWebGpu: false, opaquePass: null }).opaqueOn, false);
   assert.equal(new InstancedSpriteBatch({ ...base, useWebGpu: false, gbuf: true }).opaqueOn, false);
   // Without the pass, the pose array is the stream's own length.
-  assert.equal(new InstancedSpriteBatch({ ...base, useWebGpu: false, opaquePass: null }).data.length, 16 * POSE_DYN_FLOATS);
+  assert.equal(new InstancedSpriteBatch({ ...base, useWebGpu: false, opaquePass: null }).data.length, 16 * SPLIT_POSE_FLOATS);
 });
 
 test('a keyed batch draws its frames by queue row with the opaque pass, at the painter depth of each draw slot', async () => {

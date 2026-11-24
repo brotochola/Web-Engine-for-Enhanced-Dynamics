@@ -61,8 +61,7 @@ function withSunFrameRegions(map, emit) {
  *   component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
- * @param {boolean | number} [pixiPack] Pixi's sprite rows and pack scratch too (W9d), one row per queue row: true or 15
- *   floats a row, 17 for a pose batch's two streams (W9e, renderer.interpolation), false or 0 for none
+ * @param {boolean} [pixiPack] Pixi's sprite rows and pack scratch too (W9d), one row (15 floats) per queue row
  * @param {null | { entities: number, transformBytes: number, colliderBytes: number, rigidBodyBytes?: number }} [collect]
  *   the sprite collect's blocks too (W4b): Transform, its pose, Collider and the kernel's scratch; with
  *   rigidBodyBytes (physics, in Box2D's block) RigidBody and the published pose buffers instead of the pose
@@ -76,10 +75,9 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   const n = maxItems | 0;
   if (n <= 0) return null;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
-  const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
-  const pixiRows = pixiFloats > 0 ? n : 0;
+  const pixiRows = pixiPack ? n : 0;
   const pixiExtra = pixiExtraSpec(emit, n);
-  const map = withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiFloats || 15, pixiExtra), emit);
+  const map = withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiExtra), emit);
   const base = place ? place.baseByte | 0 : 0;
   if (place) {
     if ((base & 63) !== 0 || base + map.bytes > place.memory.buffer.byteLength) return null;
@@ -117,7 +115,6 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         // (close-out group B: whenever the emit's regions are there, for Pixi's custom layers and glow batch), with
         // a column table per queue buffer it packs; the glow batch's rows in pixi pack mode.
         pixiInstanceRows: pixiRows,
-        pixiInstanceFloats: pixiRows > 0 ? pixiFloats : 0,
         pixiInstanceByte: pixiRows > 0 ? r.pixiInstances.byte : -1,
         pixiIndexByte: r.pixiPackIndices ? r.pixiPackIndices.byte : -1,
         pixiTableByte: r.pixiPackTables ? r.pixiPackTables.byte : -1,
@@ -295,8 +292,7 @@ export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit
   const n = maxItems | 0;
   if (n <= 0) return 0;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
-  const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
-  return withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiFloats > 0 ? n : 0, collect, painter, pixiFloats || 15, pixiExtraSpec(emit, n)), emit).bytes;
+  return withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0, collect, painter, pixiExtraSpec(emit, n)), emit).bytes;
 }
 
 function stampLayout(r, stamp) {

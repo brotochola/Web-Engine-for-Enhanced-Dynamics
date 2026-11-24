@@ -4,7 +4,7 @@
  * chunks a file includes put in (shaderChunks.js, CR-15).
  */
 import fs from 'node:fs';
-import { additiveFragGlsl, spritePoseGlsl, spritePoseWgsl } from '../../src/render/shaderVariants.js';
+import { additiveFragGlsl } from '../../src/render/shaderVariants.js';
 import { withShaderChunks } from '../../src/render/shaderChunks.js';
 
 const SHADER_DIR = new URL('../../src/shaders/', import.meta.url);
@@ -12,8 +12,6 @@ const file = (name) => withShaderChunks(fs.readFileSync(new URL(name, SHADER_DIR
 
 /** The variants the renderer makes, by the name each one's file had. */
 const MADE = {
-  'instancedSpritePose.vert.glsl': () => spritePoseGlsl(file('instancedSprite.vert.glsl')),
-  'instancedSpritePose.wgsl': () => spritePoseWgsl(file('instancedSprite.wgsl')),
   'instancedSpriteAdditive.frag.glsl': () => additiveFragGlsl(file('instancedSprite.frag.glsl')),
   'gpuParticleAdditive.frag.glsl': () => additiveFragGlsl(file('gpuParticle.frag.glsl')),
 };
@@ -27,7 +25,6 @@ export function readEngineShader(name) {
 /** The instanced sprite batch's WebGL sources, by the keys the renderer gives the batch (a new object each call). */
 export function spriteGlslShaders() {
   return {
-    spriteVertPose: readEngineShader('instancedSpritePose.vert.glsl'),
     spriteVert: readEngineShader('instancedSprite.vert.glsl'),
     spriteFrag: readEngineShader('instancedSprite.frag.glsl'),
     spriteFragAdd: readEngineShader('instancedSpriteAdditive.frag.glsl'),

@@ -455,12 +455,11 @@ function facesDepthCoreWgsl(gbuf) {
  * the vertex-depth opaque program's, writing no depth of its own (no `<name>Edge`). E-378: `plainEdge` as
  * pixelDepthVertex's, for a module only the edge pass's program uses (one vertex entry serves every entry of a module).
  * @param {string} source
- * @param {{ poseAlpha?: boolean, gbuf?: boolean, faces?: boolean, cull?: 'none'|'flat'|'heights', plainEdge?: boolean }}
- *   [opts] `poseAlpha`: the group holds uPoseAlpha before uDepth though this source does not read it (the indexed
- *   program over a split batch's group); `gbuf`: the source takes aInstGbuf
+ * @param {{ gbuf?: boolean, faces?: boolean, cull?: 'none'|'flat'|'heights', plainEdge?: boolean }} [opts]
+ *   `gbuf`: the source takes aInstGbuf
  * @returns {string}
  */
-export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces = false, cull = 'none', plainEdge = false } = {}) {
+export function pixelDepthWgsl(source, { gbuf = false, faces = false, cull = 'none', plainEdge = false } = {}) {
   const once = (text, find, add, what) => {
     if (!hasOnce(text, find)) throw new Error(`WeedJS: pixel depth needs the sprite WGSL (${what})`);
     return text.replace(find, () => find + add);
@@ -471,11 +470,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces 
   const plainEdgeCull = plainEdge
     ? '  if (out.vPlain > 0.5 && instA * localUniforms.uColor.a >= 1.0) { out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); }\n'
     : '';
-  const pose = '  uPoseAlpha: f32,\n';
-  const hasPose = hasOnce(source, pose);
-  let out = hasPose
-    ? once(source, pose, '  uDepth: vec4<f32>,\n', 'uPoseAlpha')
-    : once(source, '  uTileWorld: vec4<f32>,\n', `${poseAlpha ? pose : ''}  uDepth: vec4<f32>,\n`, 'uTileWorld');
+  let out = once(source, '  uTileWorld: vec4<f32>,\n', '  uDepth: vec4<f32>,\n', 'uTileWorld');
   out = once(
     out,
     '  @location(5) vTileOff: vec2<f32>,\n',

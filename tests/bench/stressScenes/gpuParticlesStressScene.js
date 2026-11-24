@@ -10,7 +10,7 @@ const { Scene, GameObject, SpriteRenderer, ParticleEmitter, Camera, SharedResour
 //   ?columns=<n>            smoke columns started every second (default 6)
 //   ?count=<n>              GPU particles per column (default 400)
 //   ?look=1                 the smoke layer goes through a look shader (its density pass is GPU particles)
-//   ?interp=1               renderer.interpolation: Pixi packs the entities (and lists the groups) itself
+//   ?pack=pixi              Pixi packs the entities (and lists the groups) itself
 //   ?hold=<n>               n columns started at once, alive for the whole run, and none after (columns is ignored):
 //                           the painter's groups and gaps stay as they are from frame to frame
 //   ?trail=<n>              n movers (at most 1024) that each call emitGpu every tick, one particle with a second of
@@ -33,7 +33,7 @@ const SORT = param('sort', '1') !== '0';
 const COLUMNS = Math.max(0, parseInt(param('columns', '6'), 10) || 0);
 const COUNT = Math.max(1, parseInt(param('count', '400'), 10) || 400);
 const LOOK = param('look', '0') === '1';
-const INTERP = param('interp', '0') === '1';
+const PIXI_PACK = param('pack', '') === 'pixi';
 const HOLD = Math.max(0, parseInt(param('hold', '0'), 10) || 0);
 const MAX_TRAIL = 1024;
 const TRAIL = Math.min(MAX_TRAIL, Math.max(0, parseInt(param('trail', '0'), 10) || 0));
@@ -41,7 +41,7 @@ const RES = Number(param('res', 'NaN'));
 const RES_KEY = RES > 0 ? { resolution: RES } : {};
 
 export const stressSceneConfig = {
-  requested: { backend: BACKEND, sort: SORT, columns: COLUMNS, count: COUNT, look: LOOK, interp: INTERP, hold: HOLD, trail: TRAIL },
+  requested: { backend: BACKEND, sort: SORT, columns: COLUMNS, count: COUNT, look: LOOK, pixiPack: PIXI_PACK, hold: HOLD, trail: TRAIL },
 };
 
 /** The page's knobs, for the logic worker (which does not see the page's query string). */
@@ -206,8 +206,8 @@ export class GpuParticlesStressScene extends Scene {
     worldHeight: WORLD_H,
     seed: 0x5eed,
     physics: { enabled: false },
-    renderer: { backend: BACKEND, ySort: true, noLimitFPS: false, interpolation: INTERP },
-    ...(INTERP ? { preRender: { packGpuSprites: 'pixi', sortSprites: 'pixi' } } : {}),
+    renderer: { backend: BACKEND, ySort: true, noLimitFPS: false },
+    ...(PIXI_PACK ? { preRender: { packGpuSprites: 'pixi', sortSprites: 'pixi' } } : {}),
     logic: { numberOfLogicWorkers: 1, noLimitFPS: false },
     particle: { maxParticles: 4000 },
     layers: {

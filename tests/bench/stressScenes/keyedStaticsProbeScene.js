@@ -61,7 +61,6 @@ export class KeyedStaticsProbeScene extends Scene {
       backend: 'webgl',
       noLimitFPS: false,
       ySort: true,
-      interpolation: false,
       autoGenerateMipmaps: false,
       ...(INDEXED ? {} : { indexedSprites: false }),
       ...(POSES_BY_ROW ? {} : { keyedPosesByRow: false }),

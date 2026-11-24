@@ -592,10 +592,8 @@ export function renderQueueMemorySpec(scene) {
     ? { decorations: config.decoration.maxDecorations | 0, buckets: buckets > 1 ? buckets : 0 }
     : null;
   // W9d: Pixi packs the sprite rows itself (packGpuSprites 'pixi'), with the pack kernel, on rows of its own in this
-  // memory: 15 floats a row, or (W9e) with pose interpolation 17, a pose batch's pose stream then its statics.
-  const pixiPack = config.preRender?.packGpuSprites === 'pixi'
-    ? (config.renderer?.interpolation === true ? 17 : 15)
-    : 0;
+  // memory, 15 floats a row.
+  const pixiPack = config.preRender?.packGpuSprites === 'pixi';
   // W4b: Transform (its state block and, without physics, its pose) and Collider too, next to the emit's
   // SpriteRenderer, so the sprite collect kernel reads every column there. With physics the pose is in Box2D's
   // heap, so these blocks, RigidBody's and the published pose buffers go only in Box2D's block (Phase 4).

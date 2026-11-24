@@ -5,8 +5,7 @@
 //
 // The painter is not touched. Its output is the entities batch's instance order, sorted by key, so a group's place
 // is where its key would be inserted: a binary search over the packed instances' keys (upperBoundByKey). The
-// worker that packs the entities (pre-render by default, Pixi with renderer.interpolation or packGpuSprites
-// 'pixi') lists the frame's groups with their instance index ("splits"); Pixi then draws the entities batch in
+// worker that packs the entities (pre-render by default, Pixi with packGpuSprites 'pixi') lists the frame's groups with their instance index ("splits"); Pixi then draws the entities batch in
 // chunks with the groups in the gaps (gpuParticleChunks.js).
 //
 // A group's key is the one a CPU particle on its ground row would have: round(sortY) * Y_SORT_K +

@@ -14,7 +14,7 @@ const { ShapeType } = enums;
  * `?faces=0` spawns them without normals (the same sprites, lit as the floor), `?hour=` (default 22), `?resolution=`
  * (default 1), `?skyLight=` (lighting.sun.skyLight, default 0.4), `?groundScaleY=` (default 0.5), `?heightScaleY=` (default 0.866),
  * `?backend=webgpu`, `?columns=` and `?rows=` (default 1): the layout that many times over, the load for a measurement.
- * The sprite paths, one key each: `?ySort=0`, `?indexed=0`, `?interpolation=1`, `?nearest=1` (the plain rows), `?pack=pixi`
+ * The sprite paths, one key each: `?ySort=0`, `?indexed=0`, `?nearest=1` (the plain rows), `?pack=pixi`
  * (keyed frames on WebGL). The load for a measurement: `?town=` that many small faces on the screen, `?lamps=` that many more
  * lamps (at most 56).
  */
@@ -74,7 +74,6 @@ export class FaceLightScene extends Scene {
       backend: BACKEND,
       ySort: query('ySort') !== '0',
       indexedSprites: query('indexed') !== '0',
-      interpolation: query('interpolation') === '1',
       atlasScaleMode: query('nearest') === '1' ? 'nearest' : 'linear',
       noLimitFPS: false,
       maxVisibleRenderables: 8000 + TOWN,

@@ -18,8 +18,6 @@ const INITIAL_BUNNIES = (() => {
     return Number.isFinite(n) && n > 0 ? n : 250_000;
 })();
 const STILL = bunnySearchParam('still') === '1';
-// `?interpolation=0`: the renderer draws the queue's poses as they come, so Pixi packs the bunnies as keyed frames.
-const INTERPOLATION = bunnySearchParam('interpolation') !== '0';
 
 const HUD_CSS =
     'position:fixed;left:12px;bottom:12px;z-index:940;pointer-events:none;' +
@@ -63,7 +61,6 @@ export class BunnyMarkScene extends Scene {
             noLimitFPS: false,
             ySort: false,
             maxVisibleRenderables: INITIAL_BUNNIES,
-            interpolation: INTERPOLATION,
         },
         preRender: {
             skipCull: true,

@@ -100,7 +100,7 @@ const GENERAL_PARAMS = 16;
 export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', engineWasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
-    'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
+    'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general',
     'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
     'pack_casters_keyed_scan_xy',
     'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
@@ -153,8 +153,6 @@ export async function bindGpuPack(memory, layout) {
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
     castersGeneral: k.pack_casters_general,
-    // W9e: a pose batch's two streams (renderer.interpolation), on the same parameters.
-    pose: k.pack_pose,
     params: new Float64Array(memory.buffer, layout.particlesByte + 16, GENERAL_PARAMS),
     paramsByte: layout.particlesByte + 16,
     inverseByte: layout.inverseByte | 0,
@@ -831,31 +829,4 @@ export function lampFramesWasm(b, rows, stampN, lightIdx, lights, lightCount, in
   const done = b.lampFrames(rows.byteOffset, n, lightIdx.byteOffset, m, invG, region.lampByte, keyed ? 1 : 0) >>> 0;
   cols.listed = B[LAMP_FRAMES.LISTED];
   return done;
-}
-
-/**
- * W9e: a pose batch's upload (instancedSpriteBatch.js _packPoseOnly, or _packPoseAndStatics when `stat` is not
- * null) through the kernel: the pose stream into `pose` (POSE_DYN_FLOATS a row) and the statics into `stat`
- * (POSE_STATIC_FLOATS a row). The context's values go in as the JS reads them (an unset snap zoom stays NaN, which
- * skips the snap as snapWorldToPixel does).
- * @returns {number} the rows written, or -1 when this call is not one the kernel packs (an array outside the memory)
- */
-export function packPoseRowsWasm(b, q, ctx, pose, stat, capacity) {
-  if (!b || !q || !pose || !ctx) return -1;
-  const o = ctx.o || ctx;
-  if (pose.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
-  const typeArr = ctx.typeArr;
-  if (typeArr && typeArr.buffer !== b.buffer) return -1;
-  // The previous pose: none with the pose snap, as the JS reads it.
-  const prevX = o.snap ? null : o.prevX || null;
-  const prevY = o.snap ? null : o.prevY || null;
-  if ((prevX && prevX.buffer !== b.buffer) || (prevY && prevY.buffer !== b.buffer)) return -1;
-  const table = tableFor(b, q);
-  if (table < 0) return -1;
-  const count = ctx.scanCount | 0;
-  const indexByte = indexByteFor(b, ctx, count, capacity);
-  if (indexByte < 0) return -1;
-  writeGeneralParams(b.params, ctx, ctx.cameraX, ctx.cameraY, ctx.screenScale);
-  return b.pose(table, indexByte, count, capacity | 0, ctx.depthDenom, pose.byteOffset, stat !== null ? stat.byteOffset : 0,
-    typeArr ? typeArr.byteOffset : 0, prevX ? prevX.byteOffset : 0, prevY ? prevY.byteOffset : 0, b.paramsByte);
 }

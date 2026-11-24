@@ -441,7 +441,6 @@ test('pre-render told to sort on a memory without its painter state has no paint
 const readShader = readEngineShader;
 const GPU_SHADERS = {
   sprite: readShader('instancedSprite.wgsl'),
-  spritePose: readShader('instancedSpritePose.wgsl'),
 };
 
 class Thing extends GameObject {}

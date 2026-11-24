@@ -62,45 +62,38 @@ fn weedSnapWorld(origin: vec2<f32>, corner: vec2<f32>, square: bool) -> vec2<f32
 `;
 
 /**
- * instancedSprite.vert.glsl or its pose form, on the pixel grid (an axis-aligned sprite's corners, another's origin).
+ * instancedSprite.vert.glsl on the pixel grid (an axis-aligned sprite's corners, another's origin).
  * @param {string} source
  * @returns {string}
  */
 export function pixelSnapGlsl(source, corners = true) {
-  const pose = source.includes('vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);');
   let out = replaceOnce(source, 'void main() {', `${SNAP_GLSL}\nvoid main() {`, 'the pixel snap (a sprite vertex shader)');
-  // An interpolated pose snaps after its blend.
-  const origin = pose ? 'xy' : 'aInstXY';
-  out = replaceOnce(out, `vec2 world = (isShear ? sheared : spun) + ${origin};`,
-    `vec2 world = weedSnapWorld(${origin}, isShear ? sheared : spun, ${squareTest(corners)});`, 'the pixel snap (the corner)');
+  out = replaceOnce(out, 'vec2 world = (isShear ? sheared : spun) + aInstXY;',
+    `vec2 world = weedSnapWorld(aInstXY, isShear ? sheared : spun, ${squareTest(corners)});`, 'the pixel snap (the corner)');
   return out;
 }
 
 /**
- * instancedSprite.wgsl or its pose form, on the pixel grid (an axis-aligned sprite's corners, another's origin).
+ * instancedSprite.wgsl on the pixel grid (an axis-aligned sprite's corners, another's origin).
  * @param {string} source
  * @returns {string}
  */
 export function pixelSnapWgsl(source, corners = true) {
-  const pose = source.includes('let xy = mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha);');
   let out = replaceOnce(source, '@vertex', `${SNAP_WGSL}\n@vertex`, 'the pixel snap (a sprite WGSL)');
-  const origin = pose ? 'xy' : 'aInstXY';
-  out = replaceOnce(out, `let world = select(spun, sheared, isShear) + ${origin};`,
-    `let world = weedSnapWorld(${origin}, select(spun, sheared, isShear), ${squareTest(corners)});`, 'the pixel snap (the corner)');
+  out = replaceOnce(out, 'let world = select(spun, sheared, isShear) + aInstXY;',
+    `let world = weedSnapWorld(aInstXY, select(spun, sheared, isShear), ${squareTest(corners)});`, 'the pixel snap (the corner)');
   return out;
 }
 
 /**
- * The engine's sprite sources with the snap, in place: WebGL's spriteVert and spriteVertPose, WebGPU's sprite and
- * spritePose. Every sprite program (indexed, pose, G-buffer, pixel depth, the opaque pass) is made from these.
+ * The engine's sprite source with the snap, in place: WebGL's spriteVert, WebGPU's sprite. Every sprite program (indexed,
+ * by row, G-buffer, pixel depth, the opaque pass) is made from it.
  * @param {Record<string, string>} shaders the Pixi worker's engine shaders
  * @param {boolean} webgpu
  * @param {boolean} [corners] renderer.pixelSnapCorners: an axis-aligned sprite's corners on the grid (default), else its origin
  */
 export function applyPixelSnap(shaders, webgpu, corners = true) {
-  const keys = webgpu ? ['sprite', 'spritePose'] : ['spriteVert', 'spriteVertPose'];
-  for (const key of keys) {
-    if (typeof shaders[key] !== 'string' || shaders[key].includes('weedSnapXY')) continue;
-    shaders[key] = webgpu ? pixelSnapWgsl(shaders[key], corners) : pixelSnapGlsl(shaders[key], corners);
-  }
+  const key = webgpu ? 'sprite' : 'spriteVert';
+  if (typeof shaders[key] !== 'string' || shaders[key].includes('weedSnapXY')) return;
+  shaders[key] = webgpu ? pixelSnapWgsl(shaders[key], corners) : pixelSnapGlsl(shaders[key], corners);
 }

@@ -18,11 +18,7 @@ const { checkFirstInstance } = await import('../../src/core/debug/devChecks.js')
 globalThis.WEED = WEED; // landingScene reads the global, as a page that imported the engine has it
 
 /** scene file (from the repo root) and export → the lines it gives on purpose. */
-const EXPECTED = {
-  'tests/bench/stressScenes/bunnyMarkN1HuntScene.js BunnyMarkN1HuntScene': [
-    'W WeedJS: renderer.interpolation ignores GPU sprite rows packed on the pre-render worker. Sprite pack runs on Pixi. Set preRender.packGpuSprites to "pixi".',
-  ],
-};
+const EXPECTED = {};
 
 function sceneFiles() {
   const out = [];

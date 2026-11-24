@@ -68,36 +68,25 @@ test('the volumes\' map programs declare every binding their layouts name', () =
 
 test('the sprites\' pixel depth programs declare every binding their layouts name', () => {
   const sprite = shader('instancedSprite.wgsl');
-  const pose = shader('instancedSpritePose.wgsl');
   // DX-FACEDEPTH: the opaque pass's two programs and the edge pass's, with faces.
   for (const cull of ['none', 'flat', 'heights']) {
-    for (const src of [sprite, pose]) {
-      assertLayoutDeclared(`sprite-depth faces ${cull}`, instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(src, { faces: true, cull }), 'mainFrag', 'f', { maps: true }));
-    }
+    assertLayoutDeclared(`sprite-depth faces ${cull}`, instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(sprite, { faces: true, cull }), 'mainFrag', 'f', { maps: true }));
   }
   assertLayoutDeclared('sprite-depth', instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(sprite), 'mainFrag', 's', { maps: true }));
-  assertLayoutDeclared('sprite-pose-depth', instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(pose), 'mainFrag', 'p', { maps: true }));
   const indexed = spriteIndexedWgsl(sprite);
-  for (const poseAlpha of [false, true]) {
-    assertLayoutDeclared(
-      `sprite-indexed-depth poseAlpha=${poseAlpha}`,
-      instancedSpriteIndexedGpuProgram(GpuProgram, pixelDepthWgsl(indexed, { poseAlpha }), 'mainFrag', 'i', { maps: true }),
-    );
-  }
+  assertLayoutDeclared('sprite-indexed-depth', instancedSpriteIndexedGpuProgram(GpuProgram, pixelDepthWgsl(indexed), 'mainFrag', 'i', { maps: true }));
 });
 
 test('the G-buffer passes and the light pass declare every binding their layouts name', async () => {
   const { faceMapWgsl, lightingSource } = await import('../../src/render/faceMap.js');
   const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');
   const sprite = shader('instancedSprite.wgsl');
-  const pose = shader('instancedSpritePose.wgsl');
   for (const [gbuf, unshaded, unshadedMask] of [[false, false, false], [true, false, false], [true, true, false], [true, true, true]]) {
     const opts = { gbuf, unshaded, unshadedMask };
     const entries = unshadedMask ? ['mainFragUnshadedMask'] : gbuf ? ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragUnshaded'] : ['mainFragFace'];
     for (const entry of entries) {
       const label = `${entry} gbuf=${gbuf} unshaded=${unshaded} unshadedMask=${unshadedMask}`;
       assertLayoutDeclared(`face ${label}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(sprite, opts), entry, 'f', { maps: true }));
-      assertLayoutDeclared(`face pose ${label}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(pose, opts), entry, 'f', { maps: true }));
       assertLayoutDeclared(
         `face indexed ${label}`,
         instancedSpriteIndexedGpuProgram(GpuProgram, spriteIndexedWgsl(faceMapWgsl(sprite, opts)), entry, 'f', { maps: true }),

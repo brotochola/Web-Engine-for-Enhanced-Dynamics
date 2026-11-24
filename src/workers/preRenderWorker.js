@@ -2139,7 +2139,6 @@ class PreRenderWorker extends AbstractWorker {
             ySort: this._ySortMode,
             packGpuSprites: preRenderConfig.packGpuSprites,
             sortSprites: preRenderConfig.sortSprites,
-            rendererInterpolation: rendererConfig.interpolation === true,
         });
         this._packGpuSpritesOn = spritePipe.packGpuSprites;
         this._sortSprites = spritePipe.sortSprites;

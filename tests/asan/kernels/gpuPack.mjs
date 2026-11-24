@@ -10,8 +10,7 @@
  * copied, a short list; texture updates on and off; the pose and the by-row form), gpuPackKeyedGbuf's
  * G-buffer words (every column variant, bands, ids past the wrap), pack_casters_keyed and the keyed caster scan
  * (gpuPackKeyed's cases, plus outputs exactly as long as the casters, caps of 0 and 1), the other forms (gpuPackWasm,
- * Scatter, Split, Indexed, poseInterpPack's cases: the gather and the scatter, the slow path, the split and indexed
- * streams, the pose batch), edge cases (one-row queues, keys at keyBase, every key missing, keyBase 0, entity ids at the
+ * Scatter, Split and Indexed's cases: the gather and the scatter, the slow path, the split and indexed streams), edge cases (one-row queues, keys at keyBase, every key missing, keyBase 0, entity ids at the
  * G-buffer columns' ends), and on a revision whose scan writes the sun frames (E-372), the scan with them: tables of
  * every shape synced by the revision's own syncKeyedSunTables, in the product's one region and each sub-table and frame
  * table in a block of its own, entities and directions past every table's ends, lists that overflow their capacity.
@@ -45,7 +44,6 @@ const FNS = {
   castersKeyedScan: 'pack_casters_keyed_scan',
   spritesGeneral: 'pack_sprites_general',
   castersGeneral: 'pack_casters_general',
-  pose: 'pack_pose',
   // E-394: the full caster rows with their sun frames and entities.
   castersFramed: 'pack_casters_framed',
   castersScatterFramed: 'pack_casters_scatter_framed',
@@ -58,7 +56,6 @@ const FNS = {
   // E-393: the lamps' frames of the stamp rows.
   lampFrames: 'lamp_frames',
 };
-const POSE_DYN_FLOATS = 6; // gpuPack.c POSE_DYN_FLOATS (instancedSpriteBatch.js)
 const KEY_NONE = 0xffffffff;
 const U16_COLUMNS = new Set(['textureId']);
 
@@ -518,7 +515,7 @@ function castersGroup(S) {
   return { label: 'pack_casters_keyed and the keyed caster scan', cases };
 }
 
-// --- the other forms: gpuPackWasm, gpuPackScatter, gpuPackSplit, gpuPackIndexed, poseInterpPackWasm ----------------------
+// --- the other forms: gpuPackWasm, gpuPackScatter, gpuPackSplit, gpuPackIndexed -------------------------------------------
 
 function formsCase(S, seed, label, make) {
   return async (ctx) => {
@@ -619,45 +616,7 @@ function formsGroup(S, quick) {
       });
     }
   }
-  // packPoseRowsWasm: poseInterpPackWasm's cases.
-  const poseCases = [
-    ['world', () => ({ space: W })],
-    ['world, the previous pose', (p) => ({ space: W, ...p })],
-    ['world, the pose snap', (p) => ({ space: W, ...p, snap: true })],
-    ['world, pixel snap', (p) => ({ space: W, ...p, pixelSnap: true, snapCameraX: 17.3, snapCameraY: -9.75, snapZoom: 2.5 })],
-    ['screen, turned, snapped', (p) => ({ ...cam, space: SCREEN, cameraRot: -1.2, pixelSnap: true, ...p })],
-    ['include a type', (p, s) => ({ space: W, type: s.q.type, includeType: 3, ...p })],
-    ['exclude two types', (p, s) => ({ space: W, type: s.q.type, excludeType0: 1, excludeType1: 4, ...p })],
-    ['indices in the memory', (p, s) => ({ space: W, indices: s.order, indexCount: s.N, ...p })],
-    ['indices copied in', (p, s) => ({ ...cam, space: SCREEN, cameraRot: 0.3, indices: Uint32Array.from(s.order), indexCount: 2222, ...p })],
-    ['a depth denominator', (p) => ({ space: W, depthDenom: 5000, ...p })],
-  ];
-  for (const [label, v] of poseCases) {
-    for (const statics of [true, false]) {
-      for (const cap of quick ? [5000] : [5000, 1777]) {
-        add(`pose batch${statics ? '' : ', the pose alone'}: ${label}, capacity ${cap}`, (s) => {
-          const prevX = s.session.alloc(Float32Array, s.N, 'prevX');
-          const prevY = s.session.alloc(Float32Array, s.N, 'prevY');
-          for (let i = 0; i < s.N; i++) {
-            prevX[i] = s.q.x[i] + (s.r() - 0.5) * 8;
-            prevY[i] = s.q.y[i] + (s.r() - 0.5) * 8;
-          }
-          const opts = { includeType: -1, excludeType0: -1, excludeType1: -1, ...v({ prevX, prevY }, s) };
-          const n = nOf(opts, s.N, cap);
-          const pose = s.session.alloc(Float32Array, n * POSE_DYN_FLOATS, 'pose (6 floats)');
-          const stat = statics ? s.session.alloc(Float32Array, n * s.G.GPU_STATIC_FLOATS, 'statics') : null;
-          const outs = [['pose', pose]];
-          if (stat) outs.push(['statics', stat]);
-          const mismatch = dual(s.session, s.P, outs, () => {
-            const c = s.G.makePackContext(s.q, opts, cap, {});
-            return [s.C.packPoseRowsWasm(s.P.b, s.q, c, pose, stat, cap)];
-          });
-          return { calls: s.P.counter.n, rows: n, mismatch };
-        });
-      }
-    }
-  }
-  return { label: 'the other forms: gather, scatter, slow path, split, indexed, pose batch', cases };
+  return { label: 'the other forms: gather, scatter, slow path, split, indexed', cases };
 }
 
 // --- edge cases ------------------------------------------------------------------------------------------------------

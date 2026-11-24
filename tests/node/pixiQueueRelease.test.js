@@ -122,7 +122,6 @@ test('B-01: release happens on the normal (GPU available) path too', { concurren
   Atomics.store(sync, 0, 1);
   const ctx = makeContext({ sync, gpuLive: true });
   // Stub the draw passes so update() reaches its finally without a GPU.
-  ctx.tickInterpolatedPose = () => {};
   ctx.ensureCameraBeforeFirstFrame = () => {};
   ctx.updateCameraTransform = () => {};
   ctx.updateGpuParticleLayers = () => {};
@@ -157,7 +156,6 @@ test('B-01: not presenting releases immediately inside consumeNextRenderQueue', 
   // before the consume, so the not-presenting branch is only reachable with a
   // live GPU.
   const ctx = makeContext({ sync, gpuLive: true, presenting: false });
-  ctx.tickInterpolatedPose = () => {};
   ctx.ensureCameraBeforeFirstFrame = () => {};
   ctx.updateCameraTransform = () => {};
   ctx.updateGpuParticleLayers = () => {};
@@ -191,7 +189,6 @@ test('B-01: catch-up after an outage walks forward one frame at a time', { concu
   Atomics.store(sync, 0, 1);
   const ctx = makeContext({ sync, gpuLive: true });
   const drawStubs = () => {
-    ctx.tickInterpolatedPose = () => {};
     ctx.ensureCameraBeforeFirstFrame = () => {};
     ctx.updateCameraTransform = () => {};
     ctx.updateGpuParticleLayers = () => {};
@@ -246,7 +243,6 @@ function busyGl() {
 
 function drawableContext(sync) {
   const ctx = makeContext({ sync, gpuLive: true });
-  ctx.tickInterpolatedPose = () => {};
   ctx.ensureCameraBeforeFirstFrame = () => {};
   ctx.updateCameraTransform = () => {};
   ctx.updateGpuParticleLayers = () => {};

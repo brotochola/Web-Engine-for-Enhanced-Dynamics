@@ -129,12 +129,12 @@ test('a type-filtered upload packs through the kernel\'s general entry, with the
   sameRows(wasm, js, nj, 'filtered');
 });
 
-test('a pose batch and a caster batch keep their own rows', async () => {
+test('a caster batch keeps its own rows', async () => {
   const s = await setup(7);
-  const pose = new InstancedSpriteBatch({ capacity: N, label: 'p', useWebGpu: false, shaders, poseInterp: true, data: s.rows, gpuPack: s.pack });
-  assert.notEqual(pose.data, s.rows);
-  assert.equal(pose._sharedRows.length, 0);
-  assert.equal(pose._gpuPack, null);
+  const casters = new InstancedSpriteBatch({ capacity: N, label: 'c', useWebGpu: false, shaders, shadowCast: true, data: s.rows, gpuPack: s.pack });
+  assert.notEqual(casters.data, s.rows);
+  assert.equal(casters._sharedRows.length, 0);
+  assert.equal(casters._gpuPack, null);
 });
 
 test('N-102: an upload whose options leave out the type filter packs every row, as the documented -1 says', async () => {

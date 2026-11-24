@@ -153,17 +153,14 @@ test('the batch\'s streams are the GPU queue\'s', () => {
   assert.equal(POSE_STATIC_FLOATS, GPU_STATIC_FLOATS);
 });
 
-test('a split batch reads the previous xy from the current one', () => {
+test('a split batch reads its pose and its statics from two streams', () => {
   const { batch } = makeBatch(true);
   const attrs = batch.geometry.attributes;
-  assert.equal(attrs.aInstPrevXY.offset, 0);
   assert.equal(attrs.aInstXY.offset, 0);
   assert.equal(attrs.aInstRotCS.offset, 8);
   assert.equal(attrs.aInstXY.stride, 16);
   assert.equal(attrs.aInstScale.stride, 44);
   const { batch: plain } = makeBatch(false);
   assert.equal(plain.split, false);
-  assert.equal(plain.geometry.attributes.aInstPrevXY, undefined);
-  const pose = installBatchPackJs(new InstancedSpriteBatch({ capacity: 4, label: 'pose', poseInterp: true, split: true, useWebGpu: false, shaders }));
-  assert.equal(pose.split, false, 'a pose batch is never split');
+  assert.equal(plain.geometry.attributes.aInstXY.stride, 60);
 });

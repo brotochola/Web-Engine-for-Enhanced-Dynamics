@@ -80,7 +80,7 @@ test('H-EDGE: each pass leaves before the twin page and the depth for the pixels
 // Under 1, a texel of 128 to 254 (FRAME_HALF) falls under 0.5 and is the edge pass's: those instances stay.
 test('the edge pass leaves out a plain frame\'s instance at a tint alpha of 1 when the atlas is nearest', () => {
   const cull = 'if (vPlain > 0.5 && instA * uColor.a >= 1.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);';
-  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+  for (const name of ['instancedSprite.vert.glsl']) {
     for (const gbuf of [false, true]) {
       for (const faces of [false, true]) {
         const plain = pixelDepthVertex(shader(name), { gbuf, faces });
@@ -125,7 +125,7 @@ test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only
     assert.doesNotMatch(fd, /gl_FragDepth/, 'the vertex-depth program keeps early depth');
     assert.match(fd, /if \(ad < 0\.5 \|\| glow\) discard;/);
   }
-  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+  for (const name of ['instancedSprite.wgsl']) {
     const w = pixelDepthWgsl(shader(name), { gbuf: true, faces: true, cull: 'flat' });
     assert.match(w, /@location\(6\) vDepthFloor: f32,/, name);
     assert.match(w, /depthFloor = \(world\.y \+ uniforms\.uDepth\.y \* dfZ\) \* uniforms\.uDepth\.x \+ dfInner \* 0\.2500;/, name);
@@ -171,7 +171,7 @@ function assertBalanced(source, label) {
 
 test('every depth variant the batch builds is balanced, in both languages (an unbalanced formula drew no entity)', () => {
   const bools = [false, true];
-  for (const vert of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+  for (const vert of ['instancedSprite.vert.glsl']) {
     for (const gbuf of bools) {
       for (const faces of bools) {
         for (const cull of faces ? ['none', 'flat', 'heights'] : ['none']) {
@@ -209,7 +209,7 @@ test('every depth variant the batch builds is balanced, in both languages (an un
 test("the WebGPU edge module leaves out a plain frame's instance at a tint alpha of 1 when the atlas is nearest", () => {
   const cull = 'if (out.vPlain > 0.5 && instA * localUniforms.uColor.a >= 1.0) { out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); }';
   const plain = shader('instancedSprite.wgsl');
-  const sources = [['instancedSprite.wgsl', plain], ['instancedSpritePose.wgsl', shader('instancedSpritePose.wgsl')], ['indexed', spriteIndexedWgsl(plain)]];
+  const sources = [['instancedSprite.wgsl', plain], ['indexed', spriteIndexedWgsl(plain)]];
   for (const [name, source] of sources) {
     for (const gbuf of [false, true]) {
       for (const faces of [false, true]) {

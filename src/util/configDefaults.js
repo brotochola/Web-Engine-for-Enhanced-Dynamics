@@ -677,12 +677,6 @@ export const RENDERER_DEFAULTS = Object.freeze({
    */
   pixelSnapCorners: true,
   /**
-   * Blend the last two pre-render queue publishes in the entity sprite shader.
-   * Use when preRender.fixedFps is below the display rate. Not physics-pose
-   * smoothing (that is preRender.interpolation). Both true adds a frame of lag.
-   */
-  interpolation: false,
-  /**
    * E-198: when this vsync's render queue is not out yet as a frame starts, Pixi waits for it (up to the frame less
    * its own work) instead of drawing the one pre-render published a vsync earlier: a frame less from an input to the
    * screen. A wait that times out turns the waits off for two seconds. false draws the newest queue out at once.
@@ -711,7 +705,7 @@ export const RENDERER_DEFAULTS = Object.freeze({
   /**
    * E-201: keyed frames (the entity sprites' statics kept by key) drawn by queue row on WebGL: each instance carries its
    * queue row and the vertex shader fetches its pose from the queue's own pose columns, uploaded as a texture, instead of
-   * a pose stream Pixi gathers in the painter's order. WebGPU and interpolated frames keep the pose stream. On by default
+   * a pose stream Pixi gathers in the painter's order. WebGPU keeps the pose stream. On by default
    * (Predator: the keyed pack's refills from beyond L2 -70 %, Pixi about -0.16 ms a frame); false keeps the stream.
    */
   keyedPosesByRow: true,
@@ -1119,8 +1113,7 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
   /**
    * Blend the last two published physics poses while packing the render queue.
    * true lags display by up to one physics frame. Does not guess ahead
-   * (no extrapolation). Bunny-style scenes leave this false and use
-   * renderer.interpolation instead.
+   * (no extrapolation).
    */
   interpolation: false,
   /**
