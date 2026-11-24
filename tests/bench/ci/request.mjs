@@ -8,6 +8,8 @@
  *
  * { "name": "x", "collectRun": <run id> } runs nothing: it gathers the artifacts another run left.
  *
+ * `plan` is the list a sweep job reads (sweep.mjs).
+ *
  * `args` go to the task's script as --key value; `shards: n` splits a task's work over n jobs (--shard k/n) on every VM.
  */
 import fs from 'node:fs';
@@ -31,6 +33,7 @@ export const TASKS = Object.freeze({
   race: { script: 'tests/bench/ci/raceStress.mjs', minutes: 60, browsers: [] },
   repeatTests: { script: 'tests/bench/ci/repeatTests.mjs', minutes: 90, browsers: [] },
   kernelAb: { script: 'tests/bench/ci/kernelAb.mjs', minutes: 180, browsers: [] },
+  sweep: { script: 'tests/bench/ci/sweep.mjs', minutes: 330, browsers: [] },
   kernelSmoke: { script: 'tests/bench/ci/kernelSmoke.mjs', minutes: 120, browsers: [] },
   d8: { script: 'tests/bench/d8/runD8.mjs', minutes: 90, browsers: [] },
   scenes: { script: 'tests/bench/ci/sceneSmoke.mjs', minutes: 120, browsers: (args) => [args.browser || 'chromium'] },

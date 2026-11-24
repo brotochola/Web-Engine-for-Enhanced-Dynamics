@@ -115,6 +115,10 @@ function brief(r, exit) {
     for (let i = 0; i < lines.length; i += 8) out.push(lines.slice(i, i + 8).join('\n'));
     return out;
   }
+  if (r.kind === 'sweep') {
+    const bad = r.rows.filter((x) => x.error);
+    return [`${head}\n${r.rows.length - bad.length} of ${r.rows.length} comparisons ran\n${bad.slice(0, 25).map((x) => `${x.label} ${x.kernel}: ${x.error.slice(0, 100)}`).join('\n')}`];
+  }
   if (r.kind === 'kernelSmoke') {
     const bad = r.rows.filter((x) => x.error);
     return [`${head}\n${r.rows.length - bad.length} of ${r.rows.length} kernels ran\n${bad.map((x) => `${x.kernel}: ${x.error.slice(0, 120)}`).join('\n')}`];

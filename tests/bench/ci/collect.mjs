@@ -74,6 +74,50 @@ export function kernelTable(jobs) {
   });
 }
 
+/**
+ * A sweep's comparisons: per machine, comparison and rate, what the VMs read between the sides (B faster is +), as
+ * kernelTable does, with the VMs of each CPU apart.
+ */
+export function sweepTable(jobs) {
+  const groups = new Map();
+  const failed = new Map();
+  for (const job of jobs) {
+    if (job.result?.kind !== 'sweep') continue;
+    for (const row of job.result.rows) {
+      const name = `${job.machineKey}|${row.label}|${row.kernel}|${row.commit || ''}`;
+      if (row.error) {
+        failed.set(name, row.error);
+        continue;
+      }
+      for (const [rate, m] of Object.entries(row.metrics)) {
+        const key = `${name}|${rate}`;
+        const g = groups.get(key) || { machine: job.machineKey, label: row.label, kernel: row.kernel, commit: row.commit || '', type: row.type, rate, vms: [], checksums: 0 };
+        const d = Math.log(median(m.b) / median(m.a));
+        g.vms.push({ d: m.higher ? d : -d, cpu: job.machine?.cpu, within: sd(m.a.map((v) => Math.log(v / median(m.a)))) });
+        if (!row.checksumsAgree) g.checksums++;
+        groups.set(key, g);
+      }
+    }
+  }
+  const rows = [...groups.values()].map((g) => {
+    const d = g.vms.map((v) => v.d);
+    const n = d.length;
+    return {
+      machine: g.machine, label: g.label, kernel: g.kernel, commit: g.commit, type: g.type, rate: g.rate, n,
+      meanPct: +(100 * mean(d)).toFixed(2),
+      sdPct: n > 1 ? +(100 * sd(d)).toFixed(2) : null,
+      limitPct: n > 1 ? +(100 * 2.5 * sd(d) / Math.sqrt(n)).toFixed(2) : null,
+      better: d.filter((x) => x > 0).length,
+      ...(g.checksums ? { checksums: g.checksums } : {}),
+      byCpu: Object.fromEntries([...new Set(g.vms.map((v) => v.cpu))].map((cpu) => {
+        const own = g.vms.filter((v) => v.cpu === cpu).map((v) => v.d);
+        return [cpu, { n: own.length, meanPct: +(100 * mean(own)).toFixed(2) }];
+      })),
+    };
+  });
+  return { rows, failed: Object.fromEntries(failed) };
+}
+
 function table(head, rows) {
   return [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.map((c) => String(c ?? '').replace(/\|/g, '/').replace(/\n/g, ' ')).join(' | ')} |`), ''].join('\n');
 }
@@ -132,13 +176,17 @@ export function summarize(dir) {
       kernels.map((k) => [k.label, k.machine, k.id, k.n, k.meanPct, k.sdPct, k.limitPct, k.worstPct, k.n ? `${k.better}/${k.n}` : '',
         k.errors ? `FAILED ${k.errors[0].slice(0, 120)}` : k.runMs])));
   }
-  return { jobs, kernels, md: md.join('\n') };
+  const sweep = sweepTable(jobs);
+  if (sweep.rows.length) {
+    md.push('## Sweep', '', `${sweep.rows.length} rates of ${new Set(sweep.rows.map((r) => `${r.label}|${r.kernel}|${r.commit}`)).size} comparisons; ${Object.keys(sweep.failed).length} failed. All in summary.json.`, '');
+  }
+  return { jobs, kernels, sweep, md: md.join('\n') };
 }
 
 const dir = process.argv[2];
 if (dir && process.argv[1]?.endsWith('collect.mjs')) {
   const s = summarize(dir);
-  fs.writeFileSync(path.join(dir, 'summary.json'), `${JSON.stringify({ jobs: s.jobs, kernels: s.kernels }, null, 1)}\n`);
+  fs.writeFileSync(path.join(dir, 'summary.json'), `${JSON.stringify({ jobs: s.jobs.map((j) => (j.result?.kind === 'sweep' ? { ...j, result: { kind: 'sweep', rows: j.result.rows.length } } : j)), kernels: s.kernels, sweep: s.sweep }, null, 1)}\n`);
   fs.writeFileSync(path.join(dir, 'summary.md'), `${s.md}\n`);
   console.log(s.md.slice(0, 20000));
 }

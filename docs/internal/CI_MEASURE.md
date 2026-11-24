@@ -41,6 +41,7 @@ times mean nothing on them.
 | `race` | [`raceStress.mjs`](../../tests/bench/ci/raceStress.mjs) | does a cross-thread protocol tear on a weakly ordered CPU |
 | `repeatTests` | [`repeatTests.mjs`](../../tests/bench/ci/repeatTests.mjs) | how often do the threaded tests fail there |
 | `kernelAb` | [`kernelAb.mjs`](../../tests/bench/ci/kernelAb.mjs) | a kernel, revision A against B; `a` and `b` equal is an A/A |
+| `sweep` | [`sweep.mjs`](../../tests/bench/ci/sweep.mjs) | old verdicts again: a commit against its parent, or a kernel's variants; every rate each kernel reports |
 | `kernelSmoke` | [`kernelSmoke.mjs`](../../tests/bench/ci/kernelSmoke.mjs) | which of the Node kernels still run |
 | `d8` | [`runD8.mjs`](../../tests/bench/d8/runD8.mjs) | V8's machine code for a kernel (ARM's on `mac`), or its time in d8 |
 | `scenes` | [`sceneSmoke.mjs`](../../tests/bench/ci/sceneSmoke.mjs) | does every demo boot, draw and stay quiet in a browser |
