@@ -16,6 +16,8 @@ const median = (v) => {
 };
 const mean = (v) => v.reduce((a, b) => a + b, 0) / v.length;
 const sd = (v) => (v.length < 2 ? NaN : Math.sqrt(v.reduce((a, b) => a + (b - mean(v)) ** 2, 0) / (v.length - 1)));
+/** A difference of logarithms (what the VMs are averaged in) as the percent it is. */
+const pct = (log) => +(100 * Math.expm1(log)).toFixed(2);
 const readJson = (f) => {
   try {
     return JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -58,17 +60,17 @@ export function kernelTable(jobs) {
     const spread = sd(d);
     return {
       label: g.label, machine: g.machine, id: g.id, informational: g.informational, n,
-      meanPct: n ? +(100 * mean(d)).toFixed(2) : null,
-      sdPct: n > 1 ? +(100 * spread).toFixed(2) : null,
-      limitPct: n > 1 ? +(100 * 2.5 * spread / Math.sqrt(n)).toFixed(2) : null,
-      worstPct: n ? +(100 * Math.max(...d.map(Math.abs))).toFixed(2) : null,
+      meanPct: n ? pct(mean(d)) : null,
+      sdPct: n > 1 ? pct(spread) : null,
+      limitPct: n > 1 ? pct(2.5 * spread / Math.sqrt(n)) : null,
+      worstPct: n ? pct(Math.max(...d.map(Math.abs))) : null,
       better: d.filter((x) => x > 0).length,
       runMs: g.runMs.length ? Math.round(median(g.runMs)) : null,
       ...(g.checksums ? { checksums: g.checksums } : {}),
       ...(g.errors.length ? { errors: [...new Set(g.errors)].slice(0, 2) } : {}),
       byCpu: Object.fromEntries([...new Set(g.vms.map((v) => v.cpu))].map((cpu) => {
         const own = g.vms.filter((v) => v.cpu === cpu);
-        return [cpu, { n: own.length, meanPct: +(100 * mean(own.map((v) => v.d))).toFixed(2), ops: Math.round(median(own.map((v) => v.ops))) }];
+        return [cpu, { n: own.length, meanPct: pct(mean(own.map((v) => v.d))), ops: Math.round(median(own.map((v) => v.ops))) }];
       })),
     };
   });
@@ -104,14 +106,14 @@ export function sweepTable(jobs) {
     const n = d.length;
     return {
       machine: g.machine, label: g.label, kernel: g.kernel, commit: g.commit, type: g.type, rate: g.rate, n,
-      meanPct: +(100 * mean(d)).toFixed(2),
-      sdPct: n > 1 ? +(100 * sd(d)).toFixed(2) : null,
-      limitPct: n > 1 ? +(100 * 2.5 * sd(d) / Math.sqrt(n)).toFixed(2) : null,
+      meanPct: pct(mean(d)),
+      sdPct: n > 1 ? pct(sd(d)) : null,
+      limitPct: n > 1 ? pct(2.5 * sd(d) / Math.sqrt(n)) : null,
       better: d.filter((x) => x > 0).length,
       ...(g.checksums ? { checksums: g.checksums } : {}),
       byCpu: Object.fromEntries([...new Set(g.vms.map((v) => v.cpu))].map((cpu) => {
         const own = g.vms.filter((v) => v.cpu === cpu).map((v) => v.d);
-        return [cpu, { n: own.length, meanPct: +(100 * mean(own)).toFixed(2) }];
+        return [cpu, { n: own.length, meanPct: pct(mean(own)) }];
       })),
     };
   });
