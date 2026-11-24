@@ -18,6 +18,11 @@ export const CLOCK_BYTES = 32;
 const SIM_NOW = new Float64Array(1);
 /** This realm's last consistent read of the clock: base, its wall time, the scale, running (readSimNowInto's fallback). */
 const SIM_LAST = new Float64Array(4);
+/**
+ * The sequence SIM_LAST was read at (N-452): while the clock's is still that, SIM_LAST is the clock, so most reads are one
+ * Atomics.load, no data and no fence. -1, which no even sequence is, when nothing was read.
+ */
+const SIM_LAST_SEQ = new Int32Array(1).fill(-1);
 
 /** This realm's time origin: a constant, and a slow read through the bindings (about 150 ns in Chrome 156). */
 const TIME_ORIGIN = performance.timeOrigin;
@@ -111,6 +116,7 @@ export class Time {
       this.unbind();
       return;
     }
+    SIM_LAST_SEQ[0] = -1;
     this.view = new Float32Array(sab, 0, 1);
     if (sab.byteLength >= CLOCK_BYTES) {
       this._simSeq = new Int32Array(sab, 4, 1);
@@ -166,6 +172,11 @@ export class Time {
     const wall = run[0] !== 0 ? readerWallMs() : 0;
     for (let tries = 0; tries < 64; tries++) {
       const before = Atomics.load(seq, 0);
+      if (before === SIM_LAST_SEQ[0]) {
+        const late = wall - SIM_LAST[1] - SIM_CLOCK_HOLD_MS;
+        out[index] = SIM_LAST[3] !== 0 && late > 0 ? SIM_LAST[0] + late * SIM_LAST[2] : SIM_LAST[0];
+        return;
+      }
       if (before & 1) continue;
       const base = now[0];
       const at = now[1];
@@ -173,6 +184,7 @@ export class Time {
       const scale = sanitizeTimeScale(view[TIME_SCALE_INDEX]);
       memoryFence();
       if (Atomics.load(seq, 0) === before) {
+        SIM_LAST_SEQ[0] = before;
         SIM_LAST[0] = base;
         SIM_LAST[1] = at;
         SIM_LAST[2] = scale;
