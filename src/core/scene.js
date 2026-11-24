@@ -43,7 +43,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { SpriteSheetRegistry, addBigAtlasChunks } from './spriteSheetRegistry.js';
-import { sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
+import { artFloorRatio, foreignArtFloor, sheetArtFloor, sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
@@ -1785,7 +1785,7 @@ class Scene {
       const names = [];
       for (const [k, n] of Object.entries(proxyData.indexToName || {})) names[k | 0] = n;
       const problems = [];
-      const table = buildDirectionTable(sheetName, spec, names, problems);
+      const table = buildDirectionTable(sheetName, spec, names, problems, proxyData.artCamera?.floorScaleY);
       for (const text of problems) warnOnce(`${sheetName}:${text}`, 'DX-DIRSPRITE', text);
       // DX-SHADOW3D: a render with height maps stands on a contact (frameBase.js) and casts its solid, which is built
       // from the frame the camera sees: pre-render leaves such a sheet's frame alone in the sun rows. DX-CASTER: the proxy
@@ -1794,6 +1794,11 @@ class Scene {
       if (table && solid) table.solid = true;
       // N-203: a render on a contact casts its solid for the lamps when left to its sheet, even if the sun takes its card.
       if (table && sheetStandsOnContact(json, proxyData)) table.contact = true;
+      // A render drawn for another camera than the scene's: the lights' turns around it are its own floor's.
+      if (table) {
+        const floor = cameraFloorScaleY(this.config);
+        table.floorRatio = artFloorRatio(foreignArtFloor(sheetArtFloor(json, proxyData), this.config, floor), floor);
+      }
       if (table || solid) {
         const copy = { ...proxyData };
         if (table) copy.directions = table;

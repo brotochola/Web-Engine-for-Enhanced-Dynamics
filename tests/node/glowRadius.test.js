@@ -11,7 +11,7 @@ import { LIGHTING_DEFAULTS, unshadedGlowsOf } from '../../src/util/configDefault
 
 test('glowRadius is appended to LightEmitter (the columns before it keep their place) and reads back at least 0', () => {
   const columns = Object.keys(LightEmitter.ARRAY_SCHEMA);
-  assert.equal(columns.at(-1), 'glowRadius', 'append, do not move');
+  assert.equal(columns.indexOf('glowRadius'), columns.indexOf('followFlip') + 1, 'append, do not move');
   assert.equal(LightEmitter.ARRAY_SCHEMA.glowRadius, Float32Array);
   const previous = LightEmitter.glowRadius;
   try {

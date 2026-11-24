@@ -5,6 +5,7 @@
 import { bitsOfFlags } from '../../src/core/entityTypes.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
@@ -104,11 +105,12 @@ test('GameObject flipX mirrors a followFlip light once per change, and leaves ot
   }
 });
 
-/** lightingBasic's cone term for a floor offset (dx, dy) from the light, as the shader writes it. */
-function coneTerm(cone, dx, dy) {
-  const len2 = dx * dx + dy * dy;
-  const cosA = len2 > 0 ? (dx * cone[0] + dy * cone[1]) / Math.sqrt(len2) : 1;
-  const t = Math.min(Math.max((cosA - cone[2]) * cone[3], 0), 1);
+/** lightingBasic's cone term for an offset (dx, dy on the floor, dz up) from the light, as the shader writes it. */
+function coneTerm(cone, dx, dy, dz = 0) {
+  const len2 = dx * dx + dy * dy + dz * dz;
+  const lean = Math.sqrt(Math.max(1 - 1e-6 - (cone[0] * cone[0] + cone[1] * cone[1]), 0)) * (cone[3] < 0 ? 1 : -1);
+  const cosA = len2 > 0 ? (dx * cone[0] + dy * cone[1] + dz * lean) / Math.sqrt(len2) : 1;
+  const t = Math.min(Math.max((cosA - cone[2]) * Math.abs(cone[3]), 0), 1);
   return t * t * (3 - 2 * t);
 }
 
@@ -297,3 +299,126 @@ test('a narrow cone is at full light on its axis: the soft edge never reaches pa
   assert.equal(term(0.01), 0);
 });
 
+/** The row of light 1 on a real Pixi worker: entity 1 at (300, 300), facing +x, a floor drawn as tall as it is wide. */
+async function coneRow(setUp) {
+  lights();
+  Transform.active = new Uint8Array(N).fill(1);
+  Transform.x = new Float32Array([100, 300, 0, 0]);
+  Transform.y = new Float32Array([100, 300, 0, 0]);
+  Transform.rotC = new Float32Array([1, 1, 1, 1]);
+  Transform.rotS = new Float32Array([0, 0, 0, 0]);
+  Collider.visualRange = new Float32Array(N);
+  LightEmitter.active.fill(1);
+  LightEmitter.radius.set([400, 400, 0, 0]);
+  LightEmitter.color.set([0xffffff, 0xffffff, 0, 0]);
+  setUp(new LightEmitter(1));
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  px.lightingEnabled = true;
+  px._groundScaleY = 1;
+  px._groundInvScaleY = 1;
+  px.maxLights = MAX_LIGHTS;
+  px.lighting.lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS));
+  px.lighting.lightDataSource = null;
+  px.lighting.visibleLightsAll = [{ entityId: 1, distSq: 0 }];
+  px.lighting.visibleLightsAllCount = 1;
+  px.lighting._stampLightCamera = () => {};
+  px.lighting.applyLightingViewport = () => {};
+  px.lighting.lightingShader = { resources: { uniforms: { uniforms: { uConeCount: 0 }, update() {} } } };
+  px.lighting.updateLighting();
+  return Array.from(px.lighting.lightDataFloats.subarray(MAX_LIGHTS * 8, MAX_LIGHTS * 8 + 4));
+}
+
+test('DX-CONE3D: a level cone above the floor meets it ahead, and a wall at its own height', async () => {
+  const cone = await coneRow((L) => {
+    L.coneAngle = (44 * Math.PI) / 180;
+    L.elevation = 12;
+  });
+  assert.equal(cone[0], 1, 'level: its row is the one it always was');
+  assert.equal(cone[1], 0);
+  const floor = (ahead, side = 0) => coneTerm(cone, ahead, side, -12);
+  const meets = 12 / Math.tan((22 * Math.PI) / 180); // 29.7 px
+  assert.equal(floor(0), 0, 'the floor under the lamp is dark');
+  assert.equal(floor(meets - 1), 0);
+  assert.equal(floor(meets + 1), 1);
+  assert.equal(floor(300), 1);
+  assert.equal(coneTerm(cone, 100, 0, 0), 1, 'a wall at the lamp\'s height');
+  assert.equal(coneTerm(cone, 100, 0, 39), 1);
+  assert.equal(coneTerm(cone, 100, 0, 42), 0, 'and not above its aperture (100 tan 22 = 40.4)');
+  // On the floor (elevation 0) it is the wedge it always was, right from the light.
+  assert.equal(coneTerm(cone, 1, 0, 0), 1);
+  assert.equal(coneTerm(cone, 10, 5, 0), 0);
+});
+
+test('DX-CONE3D: tilt leans the cone down or up; straight down is a round pool', async () => {
+  const down = await coneRow((L) => {
+    L.coneAngle = Math.PI / 3;
+    L.tilt = Math.PI / 2;
+  });
+  for (const [x, y] of [[1, 0], [0, 1], [-1, 0], [0.6, -0.8]]) {
+    // 100 above the floor: the pool is 100 tan 30 = 57.7 px round, whatever way it faces.
+    assert.equal(coneTerm(down, x * 55, y * 55, -100), 1);
+    assert.equal(coneTerm(down, x * 60, y * 60, -100), 0);
+  }
+  assert.equal(coneTerm(down, 0, 0, 50), 0, 'nothing above it');
+  const up = await coneRow((L) => {
+    L.coneAngle = Math.PI / 6;
+    L.tilt = -Math.PI / 4;
+  });
+  assert.equal(coneTerm(up, 100, 0, 100), 1, 'a searchlight at 45 degrees');
+  assert.equal(coneTerm(up, 100, 0, -100), 0);
+  const L = new LightEmitter(1);
+  L.tilt = 9;
+  assert.ok(Math.abs(L.tilt - Math.PI / 2) < 1e-6, 'held at straight down');
+  L.tilt = NaN;
+  assert.equal(L.tilt, 0);
+});
+
+test('DX-CONE3D: the wedge on the floor holds the whole cone, and no more than it needs', () => {
+  lights();
+  const L = new LightEmitter(1);
+  for (const half of [5, 15, 22, 40, 60]) {
+    for (const tilt of [0, 5, 20, 45, 70, -30]) {
+      L.coneAngle = (2 * half * Math.PI) / 180;
+      L.tilt = (tilt * Math.PI) / 180;
+      const wedge = LightEmitter.floorCos[1];
+      if (tilt === 0) {
+        assert.equal(wedge, LightEmitter.coneCos[1], 'a level cone\'s is its own');
+        continue;
+      }
+      // Every direction of the cone's edge, its angle round from the axis on the floor.
+      const c = Math.cos(L.tilt);
+      const s = Math.sin(L.tilt);
+      const h = (half * Math.PI) / 180;
+      let least = 1;
+      for (let k = 0; k < 720; k++) {
+        const a = (k * Math.PI) / 360;
+        // The axis (c, 0, -s), and the edge around it: a side (0, 1, 0), and up (s, 0, c).
+        const x = Math.cos(h) * c + Math.sin(h) * Math.sin(a) * s;
+        const y = Math.sin(h) * Math.cos(a);
+        const flat = Math.sqrt(x * x + y * y);
+        if (flat > 1e-9) least = Math.min(least, x / flat);
+      }
+      if (Math.abs(tilt) + half >= 90) {
+        assert.equal(wedge, NO_CONE, `half ${half}, tilt ${tilt}: all around`);
+      } else {
+        assert.ok(wedge <= least + 1e-6, `half ${half}, tilt ${tilt}: holds the cone (${wedge} against ${least})`);
+        assert.ok(wedge > least - 1e-3, `half ${half}, tilt ${tilt}: no wider (${wedge} against ${least})`);
+      }
+    }
+  }
+  L.coneAngle = Math.PI * 2;
+  assert.equal(LightEmitter.floorCos[1], NO_CONE, 'round');
+});
+
+test('DX-CONE3D: both light passes cut the cone in 3D, the floor at the light\'s height below it', () => {
+  for (const [file, floorCall] of [
+    ['lightingBasic.frag.glsl', 'coneFactor(vec3(deltaScaled, -col.a * DISTANCE_SCALE), cone)'],
+    ['lightingBasic.wgsl', 'coneFactor(vec3<f32>(deltaScaled, -col.a * DISTANCE_SCALE), cone)'],
+  ]) {
+    const src = readFileSync(new URL(`../../src/shaders/${file}`, import.meta.url), 'utf8');
+    assert.ok(src.includes(floorCall), `${file}: the floor`);
+    assert.ok(src.includes('-toLight.xy, coneZ - col.a)'), `${file}: a pixel with a height`);
+    assert.ok(src.includes('uGroundInvScaleY > 1.0'), `${file}: no height in a flat view`);
+    assert.ok(/delta\.z \* lean/.test(src) && /1\.0 - 1e-6 - dot\(cone\.xy, cone\.xy\)/.test(src), `${file}: its axis leans`);
+  }
+});

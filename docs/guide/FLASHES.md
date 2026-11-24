@@ -52,6 +52,7 @@ Flash.spawn({
 | `castShadows` | `true` | `false` / `0` = still lights the scene, casts nothing (`LightEmitter.castShadows` 0: the flash is not one of the stamp's lights). |
 | `coneAngle` | `2π` | A cone's whole aperture in radians, as `LightEmitter.coneAngle`: a muzzle flash that lights ahead of the barrel only. |
 | `coneSoftness` | `0` | 0..1, how much of the cone's edge fades. |
+| `tilt` | `0` | Radians the cone leans down from level, as `LightEmitter.tilt`. |
 | `direction` | `0` | Radians, where the cone points, in the world's frame (a flash never turns). |
 
 `Flash.spawn` returns the `Flash` instance, or `null` if the pool is exhausted, not initialized, off-screen, or spawn was routed away. `Flash.spawnIndex` (the same config) returns the flash's entity index, or -1, and makes no instance: a gunfight's flashes make no object.

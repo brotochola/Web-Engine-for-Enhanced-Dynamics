@@ -126,13 +126,13 @@ const POOLS_BUT_PEOPLE =
   DRIVING_CARS + 8 + PARKED_CARS + 8 + DRIVING_CARS + 2 * POLICE_CARS + 16;
 const PEOPLE_MAX = Math.max(0, ENTITY_LIMIT - POOLS_BUT_PEOPLE - 64);
 const PEOPLE = Math.max(0, Math.min(PEOPLE_MAX, Math.floor(param('people', DEFAULT_PEOPLE))));
-/** Decorations: what the package places (its count, else the sum of its kinds), and room for the beacons' dots. */
+/** Decorations: what the package places (its count, else the sum of its kinds), and room for the beacons' dots and the headlights' shine. */
 const DECORATIONS = Math.min(
   1048575,
   (Number.isFinite(META.nDecoraciones)
     ? META.nDecoraciones
     : count('nTiles') + count('nPiezasArboles') + count('nDecoProps') + count('nCables') + count('nGrafitis') +
-      count('nLineas') + count('nVentanas')) + 4 * POLICE_CARS + 4096,
+      count('nLineas') + count('nVentanas')) + 4 * POLICE_CARS + 2 * DRIVING_CARS + 4096,
 );
 
 // ---- the assets ----
@@ -232,8 +232,8 @@ export class BuenosAiresScene extends Scene {
     renderer: { backend: BACKEND, ySort: true, atlasScaleMode: 'nearest' },
     // The houses are decorations: they do not fade out as the camera goes back.
     preRender: { startFadingDecorationsAtZoom: 0.2, hideDecorationsAtZoom: 0.1, cullingRatio: 0.3 },
-    // The barrio's camera, the standard art's (people, cars, objects): the floor drawn SYN as tall as it is wide, a px
-    // of height rising CZ px on the screen.
+    // The barrio's camera: the floor drawn SYN as tall as it is wide, a px of height rising CZ px on the screen. The people,
+    // the cars and the objects are drawn for another (0.736, 0.752: their sheets' artCamera), which the engine fits to it.
     camera: { floorScaleY: META.SYN, heightScaleY: META.CZ },
     lighting: {
       enabled: true,

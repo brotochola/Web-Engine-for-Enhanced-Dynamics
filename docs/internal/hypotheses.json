@@ -25618,6 +25618,86 @@
         "accessories behind the house",
         "Accesorio"
       ]
+    },
+    {
+      "records": [
+        "R-1962"
+      ],
+      "refs": [],
+      "id": "N-440",
+      "title": "The sun's card of a render drawn for another camera than the scene's (artCamera) was worked out on the scene's floor: Buenos Aires' cars cast a dark wedge on the sun's side",
+      "status": "kept",
+      "kind": "bug",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "Light bench with the barrio's camera: the silhouette 3369 px from its height map -> 1948 (1964 with its own camera); the taxi offline, 72 headings and suns: overlap 39 -> 59 %, false shadow on the sun's side 82 -> 4 px2; light bench 0 px from main",
+      "statusText": "Fixed 2026-11-23 (a70eb65f), merged into main the same night",
+      "next": "",
+      "aliases": [
+        "car shadow barrio",
+        "artCamera floor",
+        "taxi shadow wedge"
+      ]
+    },
+    {
+      "records": [
+        "R-1962",
+        "R-1963",
+        "R-1964"
+      ],
+      "refs": [],
+      "id": "N-441",
+      "title": "DirectionalSprite compared the screen's angles (a rotation, a velocity) with headings on the art's floor: cars drawn beside their beam, and Buenos Aires' headlights hung off the bumper",
+      "status": "kept",
+      "kind": "bug",
+      "area": "engine",
+      "date": "2026-11-23",
+      "result": "Beam against picture mean 5.6 -> 2.1 degrees (worst 13.6 -> 5.3), lamp against the drawn corner mean 3.8 -> 1.3 world px; traffic and speed unchanged",
+      "statusText": "Fixed 2026-11-23 (0a181fe3 the engine; 1416bdf0, 86fe05d7 and 3bbefcef the demo, whose lights DX-CONE3D then put at their lamps), merged into main the same night",
+      "next": "",
+      "aliases": [
+        "headlights misaligned",
+        "car headings screen angle"
+      ]
+    },
+    {
+      "records": [
+        "R-1962"
+      ],
+      "refs": [],
+      "id": "N-442",
+      "title": "Buenos Aires shows no police car: the barrio's package marks its 52 police places poli: true and the scene reads color 'poli'",
+      "status": "open",
+      "kind": "bug",
+      "area": "demos",
+      "date": "2026-11-23",
+      "result": "",
+      "statusText": "Found 2026-11-23 while checking the beacons (a capture with the file patched shows them, beacons and all)",
+      "next": "One line where the scene reads a place (buenosAiresScene.js LugarAuto): color poli when config.poli; check burnt the same way",
+      "aliases": [
+        "police cars missing",
+        "poli true"
+      ]
+    },
+    {
+      "records": [
+        "R-1965"
+      ],
+      "refs": [],
+      "id": "DX-CONE3D",
+      "title": "Cone lights in 3D: a cone opens from its height (it was a wedge on the floor, as tall as the world), and LightEmitter.tilt leans it",
+      "status": "kept",
+      "kind": "dx",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "Flat views 0 px from before (spot light, light gallery, dxCapture, light bench; WebGL and WebGPU); the light pass with 400 cones 1.839 -> 1.798 ms with faces, 1.814 -> 1.661 on the floor, inside the spread",
+      "statusText": "Kept 2026-11-23 (1b503491), merged into main the same night",
+      "next": "The floor still takes every light whole whatever its angle (by its normal a headlight would give it 10 % at 120 px): the engine's reference, which stays",
+      "aliases": [
+        "3D cones",
+        "tilt",
+        "spot light height"
+      ]
     }
   ],
   "records": [
@@ -43725,6 +43805,58 @@
       "title": "N-450 filed: a sprite without a normal is depth-tested at its y, without its sortOffsetY (the barrio's tanks, air conditioners and antennas were hidden by their own house)",
       "verdict": "note",
       "text": "Seen, not measured. Buenos Aires package (Parque Chas) in the editor's own WeedJS view, the same place and hour: with the package of 2026-11-18 and the bundle of 70ba822b no accessory shows on any roof; the same with the dist of main 2c7c5548. A part that stands out past the parapet (an antenna, a chimney of a grill) does show, so they are drawn, behind.\nWhy: an Accesorio (chas_0 of that package) has y at roof height (-158) and sortOffsetY 136, so the painter sorts it at -22.48, just over its roof (-22.5, innerZ 1 against 0). The depth does not read sortOffsetY: facesDepthCoreGlsl starts from depthFloor = aInstXY.y * uDepth.x, the drawn place, 136 px further back, and the roof's plane wins.\nCheck: the same package with faceNormal (0, 1, 0) and the height of its centre on each accessory (an upright face at its foot) shows them in order with parapets, walls and tree crowns (WebGL at 13:00, 17:00 and 21:00; WebGPU at 13:00). The editor exports them so now (editor-de-barrios df5151f), and the demo's package is re-exported on demo/parquechas-2026-11-23. Not run: a version before DX-FACEDEPTH, to date the regression."
+    },
+    {
+      "id": "R-1962",
+      "date": "2026-11-23",
+      "time": "21:10",
+      "timeFrom": "recorded",
+      "title": "artCamera fits a sheet's floor and headings, not its heights alone: the barrio's car shadows and headlights",
+      "verdict": "kept-hygiene",
+      "text": "**N-440 and N-441 fixed on fix/art-camera-floor (a70eb65f, 0a181fe3, 1416bdf0): a sheet's artCamera now fits its floor and its headings to the scene, not its heights alone.** The owner saw the taxi's shadow wrong in Buenos Aires at 18:46 and the headlights off; the light bench, whose camera is the cars' own, had neither.\n\n- **Cause:** the barrio's camera is 0.5 / 0.866 and the cars' art 0.736 / 0.752. The card of a render read its picture's depth on the scene's floor (reach 55 px instead of 37) and pre-render turned the sun there; DirectionalSprite compared the screen's angle with the art's floor headings. Reproduced in the light bench with pitch=30, floor=0.5, height=0.866: the wedge, with the silhouette alone.\n- **Half a fix was worse:** correcting reach and depth alone took the wedge away (82 -> 3 px2 of false shadow) and left the shape worse (overlap with the exact shadow 39 -> 35 %); with the sun's direction and the frame on the art's floor too, 59 % (58 % is the card's own best).\n- **Checked:** light bench 0 px from main at 16:00, 18:30, 22:00 and on WebGPU, after each step; Buenos Aires at 7:30, 15:00, 18:46 (WebGL and WebGPU, whose own difference stays: 1224 -> 1148 px); Headlights, Sun Street and carScene captured, littleCity 0 px in a view with no cars; node 3628, demos 145.\n- **Speed:** Buenos Aires, headless, 4 pairs: pre-render 1.796 -> 1.795 ms, Pixi 0.998 -> 0.999, every worker under the 6 ms floor, so a guard and no verdict. Traffic over 45 s, two runs a side: mean speed 41.6 and 44.0 -> 41.1 and 44.6.\n- **Not done:** the bench's volumes for props take a floor heading as a rotation (a volume takes the screen's); lamps that cast a car's card were changed and not captured (no scene asks for it).\n- **Found:** N-442, no police car in the barrio.",
+      "commits": [
+        "a70eb65f",
+        "0a181fe3",
+        "1416bdf0"
+      ]
+    },
+    {
+      "id": "R-1963",
+      "date": "2026-11-23",
+      "time": "21:27",
+      "timeFrom": "recorded",
+      "title": "Buenos Aires' headlights leave the lamps drawn, measured on the sheets",
+      "verdict": "kept-hygiene",
+      "text": "**The headlights' beams leave the lamps drawn (86fe05d7, fix/art-camera-floor).** The owner marked on a capture where the lights belong; the cones started on the floor under the lamp. measureCarLamps.mjs measures each sheet's lamps (29 of 54; a white car takes its model's in another colour, the bus the owner's marks, a wreck the usual one) and cars.js hangs the cone there as the screen shows it. Against the owner's hand-placed marks: 0.2 and 1.0 px on the SUV, under 6 on the rest, where the measured lamp is the one on the drawn pixels. Captured at eight headings and with people in the beams, whose shadows fall away from the lamp drawn. demos 147.",
+      "commits": [
+        "86fe05d7"
+      ]
+    },
+    {
+      "id": "R-1964",
+      "date": "2026-11-23",
+      "time": "21:59",
+      "timeFrom": "recorded",
+      "title": "Buenos Aires' headlights drawn over the car's front, held on the frame's lamps",
+      "verdict": "kept-hygiene",
+      "text": "**The headlights shine over the car's front (after the owner: the beam passed behind the car).** A light brightens what faces it, so the bumper stayed dark between the lamp and the pool. A halo and a cone with the floor cone's own edges, decorations of the car, draw that stretch over it; the lamps' offsets take the car's rotation out each tick (on the bus 5 degrees were 6 px). 211 cars driving: left lamp median 0 px off the picture (p99 0.55), right 0.04 (p99 2.4). Tried and left: normals 'flat' at night (hard white patches on bonnets). demos 149.",
+      "commits": [
+        "3bbefcef"
+      ]
+    },
+    {
+      "id": "R-1965",
+      "date": "2026-11-23",
+      "time": "22:40",
+      "timeFrom": "recorded",
+      "title": "Cone lights in 3D, and tilt",
+      "verdict": "kept",
+      "text": "**Cones in 3D, kept on feat/cone-3d (1b503491, fb43417c, 6a701b99).** The owner asked why a headlight lit the floor under its own bumper and had to be drawn over the car: a cone was a point light cut by a wedge on the floor, with no height. The light pass now tests the pixel's 3D offset against the cone's axis, and tilt leans it (pi / 2: a ceiling lamp's pool); a level cone's row is bit for bit what it was. The gathers take the floor's wedge that holds the cone (floorCos; brute-forced in lightCone.test.js).\n\n- **Found by the captures:** in a view straight from above the engine gives a picture's length as its height, and the 3D cone cut the far end of every rock and car (229 097 px of the spot light scene): a flat view now takes a sprite as the floor it stands on, 0 px.\n- **Checked:** 0 px from the base on spotLightStress (still=1 cone=1, plain, faces, WebGPU), lightGallery and dxCapture (both backends), the light bench (both); Headlights and Buenos Aires change, as they must. node 3632, demos 148.\n- **Speed:** the light pass's GPU time, 400 cones, glFrameRecorder --gpu-draws, 4 + 4 pairs ABAB on the GTX 1650: faces 1.839 -> 1.798 ms (2 of 4), floor 1.814 -> 1.661 (3 of 4); the clock wandered 780 to 945 MHz, so no verdict under about 10 %.\n- **What it replaced:** in Buenos Aires the light drawn 8 px up the screen and the cone sprite over the bumper (3bbefcef). By the cars' height maps 8 or 9 px of a front face its own lamp; normals 'flat' left hard patches.",
+      "commits": [
+        "1b503491",
+        "fb43417c",
+        "6a701b99"
+      ]
     }
   ],
   "leads": [

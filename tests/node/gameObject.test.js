@@ -24,7 +24,7 @@ import {
 } from '../../src/util/spawnCommandRing.js';
 
 /** DX-SPOT: LightEmitter's cone columns, which the pooled reset writes. */
-const CONE_COLUMNS = ["dirC","dirS","coneHalf","coneSoftness","coneCos","coneInvSpan","followFlip"];
+const CONE_COLUMNS = ["dirC","dirS","coneHalf","coneSoftness","coneCos","coneInvSpan","followFlip","tilt","tiltC","floorCos"];
 function bindCone(n) {
   for (const k of CONE_COLUMNS) LightEmitter[k] = k === 'followFlip' ? new Uint8Array(n).fill(1) : new Float32Array(n).fill(9);
 }
@@ -37,6 +37,9 @@ function assertConeReset(rows, untouched) {
     assert.equal(LightEmitter.coneCos[i], -2);
     assert.equal(LightEmitter.coneInvSpan[i], 0);
     assert.equal(LightEmitter.followFlip[i], 0);
+    assert.equal(LightEmitter.tilt[i], 0);
+    assert.equal(LightEmitter.tiltC[i], 1);
+    assert.equal(LightEmitter.floorCos[i], -2);
   }
   if (untouched >= 0) assert.equal(LightEmitter.coneCos[untouched], 9);
 }

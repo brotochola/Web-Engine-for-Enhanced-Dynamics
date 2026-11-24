@@ -178,12 +178,16 @@ export function sunFrameTables(byId) {
     let any = false;
     for (const [id, src] of Object.entries(byId)) {
         if (!src || !(src.count > 0)) continue;
+        // A light's frame is picked on the floor the sheet was drawn on (spriteDirections.js): its angles there.
+        const floor = src.floor || src;
         const entry = {
             count: src.count,
-            uniform: src.uniform === true,
-            start: +src.start,
+            uniform: floor.uniform === true,
+            start: +floor.start,
             step: +src.step,
-            angles: Float64Array.from(src.angles),
+            angles: Float64Array.from(floor.angles),
+            // How tall that floor was drawn, where a facing (the world's, as the screen shows it) is another angle; else 1.
+            facingScaleY: src.floor ? +src.floor.scaleY : 1,
             anim: Uint8Array.from(src.anim),
             flip: Uint8Array.from(src.flip),
             groups: src.groups.length,
@@ -191,6 +195,10 @@ export function sunFrameTables(byId) {
             solid: src.solid === true,
             // N-203: it stands on a contact (sheetStandsOnContact): left to its sheet, it casts its solid for the lamps.
             contact: src.contact === true,
+            // A render drawn for another camera than the scene's: how tall its floor is drawn against the scene's
+            // (frameBase.js artFloorRatio; 1: the scene's own), and the sun's turn on its floor (prepareSunFrames).
+            floorRatio: src.floorRatio > 0 ? +src.floorRatio : 1,
+            turn: new Float64Array(1),
             // DX-CASTER: a fixed card's frame, the object seen face on (facing the camera, south).
             front: 0,
             // E-368: each slot's (group × direction) first texture and frame count (sunFrameSlotsOf), and the proxy map
@@ -296,9 +304,7 @@ export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, 
     }
 }
 
-/** E-368: the sun's turn this call (prepareSunFrames writes it): a double the frame passes read, not one they are handed. */
-const SUN_TURN = new Float64Array(1);
-/** E-388: a lamp's turn for sunFrameDirection (lampFrameFor writes it), as SUN_TURN carries the sun's. */
+/** E-388: a lamp's turn for sunFrameDirection (lampFrameFor writes it), as a table's `turn` carries the sun's. */
 const LAMP_TURN = new Float64Array(1);
 /** N-197: a caster's kind for a light that casts its card (CAST_KIND.SPRITE, shadowCaster.js). */
 const CARD_KIND = 1;
@@ -319,12 +325,12 @@ const CARD_TURN_MOST = 31;
 const TURN_WHOLE = 2 * Math.PI;
 
 /**
- * N-297: SUN_FRAME_TURN for a card that shows table t's direction d to a light turned SUN_TURN from the camera, the
+ * N-297: SUN_FRAME_TURN for a card that shows table t's direction d to a light turned t.turn from the camera, the
  * object drawn at direction cur: how far the frame's own view is from the light's (their headings' difference, wrapped,
  * in steps; past CARD_TURN_MOST steps a side it is held there).
  */
 function sunFrameTurnCode(t, cur, d) {
-    let a = t.angles[cur] + SUN_TURN[0] - t.angles[d];
+    let a = t.angles[cur] + t.turn[0] - t.angles[d];
     a -= TURN_WHOLE * Math.round(a / TURN_WHOLE);
     let c = Math.round(a / CARD_TURN_STEP);
     if (c > CARD_TURN_MOST) c = CARD_TURN_MOST;
@@ -349,19 +355,27 @@ function castsCard(t, kinds, e, lamps) {
 /**
  * E-368: once a call per sheet, not per caster: its slots (rebuilt when the proxy map is another), and a uniform
  * table's turn by the sun's angle in whole steps (the direction the logic worker drew, its margin kept, turned by it).
+ * The turn is the sun's on the scene's floor; a render drawn on another (t.floorRatio) is turned on its own, where its
+ * directions' angles are.
  */
 export function prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn, turn) {
-    SUN_TURN[0] = turn;
     for (let sheet = 0; sheet < tables.length; sheet++) {
         const t = tables[sheet];
         if (t === undefined) continue;
         if (t.slotsOf !== proxy) sunFrameSlotsOf(t, proxy[sheet], starts, counts, proxy);
+        t.turn[0] = t.floorRatio === 1 ? turn : turnOnFloor(turn, t.floorRatio);
         if (t.uniform && shiftTurn[sheet] !== turn) {
             shiftTurn[sheet] = turn;
-            shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
+            shift[sheet] = Math.round(wrapAngle(t.turn[0]) / t.step) % t.count;
         }
         if (t.uniform && t.frameShift !== shift[sheet]) sunFrameResolve(t, shift[sheet], t.frameOf);
     }
+}
+
+/** A light's turn from the camera (-π/2 minus the angle of its ray on the scene's floor), on a floor `ratio` as tall. */
+function turnOnFloor(turn, ratio) {
+    const ray = -Math.PI / 2 - turn;
+    return -Math.PI / 2 - Math.atan2(Math.sin(ray) / ratio, Math.cos(ray));
 }
 
 /**
@@ -400,12 +414,12 @@ function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables
         return t.frameOf[(cur * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
     } else if (t.contact && cur < t.count) {
         // N-297: the direction nearest the drawn one turned by the sun.
-        PICK_ARGS[0] = t.angles[cur] + SUN_TURN[0];
+        PICK_ARGS[0] = t.angles[cur] + t.turn[0];
         PICK_ARGS[1] = 0;
         d = pickDirectionArgs(t, 255);
         sunFrameTurnCode(t, cur, d);
     } else {
-        d = sunFrameDirection(t, e, SUN_TURN);
+        d = sunFrameDirection(t, e, t.turn);
     }
     const g = anims[e];
     const slot = (g < t.groups ? g : 0) * t.count + d;
@@ -729,17 +743,18 @@ function prepareLampFrames(tables, proxy, starts, counts) {
 /**
  * E-369: the frame lamp L sees of directional caster e at floor point (x, y): the direction the logic worker drew turned
  * by the angle from the camera's view to the lamp's (along the shadow, lamp to caster), read from the absolute table;
- * ±(textureId + 1), 0 for the sprite's own. The doubles come in through LAMP_RAY (dx, dy on the floor).
+ * ±(textureId + 1), 0 for the sprite's own. The doubles come in through LAMP_RAY (dx, dy on the scene's floor; a render drawn
+ * on another is turned on its own, t.floorRatio).
  */
 function lampFrameFor(e, t, dirs, anims, frames) {
     const cur = dirs[e];
     let d = 0;
     if (t.uniform && cur < t.count) {
-        const turn = -1.5707963267948966 - fastAtan2(LAMP_RAY[1], LAMP_RAY[0]);
+        const turn = -1.5707963267948966 - fastAtan2(LAMP_RAY[1] / t.floorRatio, LAMP_RAY[0]);
         d = (cur + Math.round(wrapAngle(turn) / t.step)) % t.count;
         if (d < 0) d += t.count;
     } else {
-        LAMP_TURN[0] = -1.5707963267948966 - Math.atan2(LAMP_RAY[1], LAMP_RAY[0]);
+        LAMP_TURN[0] = -1.5707963267948966 - Math.atan2(LAMP_RAY[1] / t.floorRatio, LAMP_RAY[0]);
         d = sunFrameDirection(t, e, LAMP_TURN);
     }
     const g = anims[e];
@@ -747,6 +762,9 @@ function lampFrameFor(e, t, dirs, anims, frames) {
     if (f < 0 || f >= t.maxFrames) f = 0;
     return t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
 }
+
+/** DX-CONE3D: the stamp's 1 / soft edge for a wedge with none (a hard edge, as LightEmitter's cone of no width). */
+const CONE_HARD_INV_SPAN = 1e30;
 
 /** E-369: the ray from a lamp to its caster on the floor (dx, dy), for lampFrameFor. */
 const LAMP_RAY = new Float64Array(2);
@@ -769,11 +787,11 @@ const QUARTER_S = Float64Array.of(0, 1, 0, -1);
  * (-dy, -dx) rounded to whole steps: turned on by half a step, the sector of j steps starts at j steps, so each quarter of
  * the turn holds count / 4 sectors, whose borders lie i steps into it (i = 0 to count / 4, the ends exact). lampGeo: the
  * cos and sin of half a step, then each border's. Only a count that is a multiple of 4 with a step that is a whole turn's
- * share: any other table (lampQuarter 0) keeps lampFrameFor's turn.
+ * share: any other table (lampQuarter 0) keeps lampFrameFor's turn, and so does one drawn on another floor than the scene's.
  */
 function lampTurnGeometry(t) {
     const n = t.count;
-    if (!t.uniform || n < 4 || (n & 3) !== 0 || !(Math.abs(t.step * n - 2 * Math.PI) < 1e-9)) return;
+    if (t.floorRatio !== 1 || !t.uniform || n < 4 || (n & 3) !== 0 || !(Math.abs(t.step * n - 2 * Math.PI) < 1e-9)) return;
     const quarter = n >> 2;
     const geo = new Float64Array(4 + 2 * quarter);
     geo[0] = Math.cos(t.step / 2);
@@ -1153,11 +1171,12 @@ function dropOwnStampsInto(rows, stampN, lightIdx, lights) {
 }
 
 /** A table that is not uniform (or a sprite with no direction yet): the facing turned by the sun, nearest direction. */
-/** The direction a light turned by turn[0] from the camera sees (turn: SUN_TURN or LAMP_TURN, a double not passed). */
+/** The direction a light turned by turn[0] from the camera sees (turn: a table's or LAMP_TURN, a double not passed). */
 function sunFrameDirection(t, e, turn) {
     const ax = DirectionalSprite.aimX[e];
     const ay = DirectionalSprite.aimY[e];
-    const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+    let facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+    if (t.facingScaleY !== 1) facing = Math.atan2(Math.sin(facing) / t.facingScaleY, Math.cos(facing));
     // E-388: the turn read here and the facing through PICK_ARGS: no double crosses a call (they were boxed per caster).
     PICK_ARGS[0] = facing + turn[0];
     PICK_ARGS[1] = 0;
@@ -4575,7 +4594,9 @@ class PreRenderWorker extends AbstractWorker {
         const lightRadius = LightEmitter.radius;
         const lightCasts = LightEmitter.castShadows;
         const lightShadowRange = LightEmitter.shadowRange;
-        const lightConeCos = LightEmitter.coneCos;
+        // DX-CONE3D: the wedge on the floor the cone stands in (its own for a level cone, wider for one that leans).
+        const lightConeCos = LightEmitter.floorCos;
+        const lightOwnConeCos = LightEmitter.coneCos;
         const lightConeInvSpan = LightEmitter.coneInvSpan;
         const lightBrightness = LightEmitter.brightness;
         const lightDirC = LightEmitter.dirC;
@@ -4658,7 +4679,8 @@ class PreRenderWorker extends AbstractWorker {
                 slot.coneDirX = len > 0 ? wx / len : 1;
                 slot.coneDirYW = len > 0 ? (wy / len) * invG : 0;
                 slot.coneCos = coneCos;
-                slot.coneInvSpan = lightConeInvSpan[id];
+                // A leaning cone's wedge has no soft edge of its own: what stands in it casts whole (the light pass cuts it).
+                slot.coneInvSpan = coneCos === lightOwnConeCos[id] ? lightConeInvSpan[id] : CONE_HARD_INV_SPAN;
             } else {
                 slot.coneDirX = 1;
                 slot.coneDirYW = 0;
@@ -5824,8 +5846,9 @@ class PreRenderWorker extends AbstractWorker {
         const lightOffsetY = LightEmitter.offsetY;
         const lightRotC = Transform.rotC;
         const lightRotS = Transform.rotS;
-        // DX-SPOT: a cone light gathers only what can shadow its wedge (the light pass cuts the cone itself).
-        const lightConeCos = LightEmitter.coneCos;
+        // DX-SPOT: a cone light gathers only what can shadow its wedge (the light pass cuts the cone itself). DX-CONE3D: the
+        // wedge on the floor the cone stands in.
+        const lightConeCos = LightEmitter.floorCos;
         const lightDirC = LightEmitter.dirC;
         const lightDirS = LightEmitter.dirS;
         const groundY = cameraFloorScaleY(this.config);

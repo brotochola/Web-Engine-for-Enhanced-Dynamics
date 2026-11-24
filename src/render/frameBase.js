@@ -295,6 +295,48 @@ export function maplessBaseShader(b) {
   return `(${b}.x < 0.0 && floor(fract(-${b}.x - 1.0) * ${HEIGHT_PER_ROW_CODES}.0 + 0.5) > ${MAPLESS_ROW_CODE - 0.5})`;
 }
 
+/**
+ * A render drawn for another camera than the scene's (its sheet's artCamera): a row of its picture is 1 / artCamera's
+ * floorScaleY px of its floor, not 1 / the scene's. The base's second float keeps that floorScaleY in its fraction (its sign
+ * and its whole part are the card's mark and the footprint's row): a code in ART_FLOOR_CODES-ths, in ART_FLOOR_STEPS-ths of
+ * the floor's scale, 1 to ART_FLOOR_MOST. 0 is none, and so is a half, the mark of a card with no footprint (-0.5). A float32
+ * holds it exactly beside a row under 8 192.
+ */
+export const ART_FLOOR_CODES = 2048;
+export const ART_FLOOR_STEPS = 512;
+export const ART_FLOOR_MOST = 1023;
+/** A sheet's floor this near the scene's is the scene's: what the scene already draws stays as it is to the bit. */
+const ART_FLOOR_NEAR = 1 / 256;
+
+/** An art floor's scale as its code (0: none). */
+function artFloorCode(artFloor) {
+  if (!(artFloor > 0)) return 0;
+  return Math.min(ART_FLOOR_MOST, Math.max(1, Math.round(artFloor * ART_FLOOR_STEPS)));
+}
+
+/**
+ * The floorScaleY a render was drawn with, where it is not the scene's: what its card's shadow is worked out on. 0 for a
+ * frame with none (base.artFloor), for a scene with no camera, or where the two are the same.
+ * @param {number|undefined} artFloor base.artFloor
+ * @param {{ camera?: object }|null|undefined} config the scene's
+ * @param {number} sceneFloor its camera's floorScaleY (cameraView.js cameraFloorScaleY)
+ */
+export function foreignArtFloor(artFloor, config, sceneFloor) {
+  if (!(artFloor > 0) || !config?.camera || !(sceneFloor > 0)) return 0;
+  return Math.abs(artFloor - sceneFloor) > ART_FLOOR_NEAR ? artFloor : 0;
+}
+
+/**
+ * How tall an art floor is drawn against the scene's (its floorScaleY over the scene's), as the shadow shaders' own
+ * artFloorRatio reads it from the base's code: 1 for none. A floor px of the picture is this many of the scene's, towards the camera.
+ * @param {number} artFloor foreignArtFloor's
+ * @param {number} sceneFloor
+ */
+export function artFloorRatio(artFloor, sceneFloor) {
+  const code = artFloorCode(artFloor);
+  return code > 0 ? code / ART_FLOOR_STEPS / sceneFloor : 1;
+}
+
 /** A group spec's keys that are no direction (spriteDirections.js). */
 const GROUP_KEYS = new Set(['count', 'startAngle', 'clockwise', 'anims', 'mirrorX']);
 
@@ -321,14 +363,16 @@ export function isRenderDirections(spec) {
  * [-(1 + its lowest contact's whole row + its height per row's code / HEIGHT_PER_ROW_CODES), 0] (N-297: the contact is
  * that row's centre; base.heightPerRow, measureHeightPerRow), or -0.5 in the second when it casts its card for the sun
  * (base.card: the sheet's shadowCast.sun 'sprite'; N-412: a render with no height map, base.mapless, is one with
- * MAPLESS_ROW_CODE). writeLutSlot then puts its footprint row there, + 1, with that sign. H-EDGE: a base also says
+ * MAPLESS_ROW_CODE). writeLutSlot then puts its footprint row there, + 1, with that sign. A render of another camera keeps
+ * its art floor's code in that float's fraction (ART_FLOOR_CODES), with the same sign. H-EDGE: a base also says
  * what its frame's texels hold (base.texels, FRAME_SOFT...), which the texture table keeps apart (buildTextureLut); a
  * base of that alone floats as none.
  * @param {{ cx?: number, rx?: number, ry?: number, contact?: number, heightPerRow?: number, texels?: number } | null | undefined} base
  * @param {Float32Array|number[]} out
  * @param {number} at
+ * @param {number} [artFloor] foreignArtFloor's (0: none)
  */
-export function lutBaseFloats(base, out, at) {
+export function lutBaseFloats(base, out, at, artFloor = 0) {
   out[at] = 0;
   out[at + 1] = 0;
   if (!base) return;
@@ -337,13 +381,30 @@ export function lutBaseFloats(base, out, at) {
     let code = perRow >= 0 ? 1 + Math.min(Math.round(perRow * HEIGHT_PER_ROW_STEPS), MAPLESS_ROW_CODE - 2) : 0;
     if (base.mapless === true) code = MAPLESS_ROW_CODE;
     out[at] = -(1 + Math.floor(base.contact) + code / HEIGHT_PER_ROW_CODES);
-    if (base.card === true) out[at + 1] = -0.5;
+    const fraction = artFloorCode(artFloor) / ART_FLOOR_CODES;
+    if (base.card === true) out[at + 1] = fraction > 0 ? -fraction : -0.5;
+    else out[at + 1] = fraction;
   } else if (base.rx > 0 && base.cx >= 0) {
     out[at] = base.cx + 1;
     out[at + 1] = base.ry >= base.rx ? -base.rx : base.rx;
   }
 }
 
+/**
+ * The floorScaleY a sheet's renders were drawn with (its first frame's base.artFloor; 0: none of its own): pre-render turns
+ * their sun on that floor.
+ * @param {{ animations?: object, frames?: object } | null | undefined} json the big atlas's
+ * @param {{ animations?: Record<string, { prefixedName?: string }> } | null | undefined} proxy the sheet's proxy entry
+ * @returns {number}
+ */
+export function sheetArtFloor(json, proxy) {
+  for (const a of Object.values(proxy?.animations || {})) {
+    const first = json?.animations?.[a?.prefixedName]?.[0];
+    const base = first !== undefined ? json?.frames?.[first]?.base : undefined;
+    if (base && base.artFloor > 0) return base.artFloor;
+  }
+  return 0;
+}
 
 /**
  * Whether a sheet of the big atlas casts its solid: a frame of it stands on a contact (a render with height maps, its

@@ -35,14 +35,14 @@ function bind() {
 }
 
 /** A proxy sheet as the scene installs it: its animations by index and its table. */
-function sheet(name, animations, spec) {
+function sheet(name, animations, spec, artFloorScaleY = 0) {
   const indexToName = {};
   const anims = {};
   animations.forEach((n, k) => {
     indexToName[k] = n;
     anims[n] = { originalName: n, index: k };
   });
-  const directions = buildDirectionTable(name, spec, animations);
+  const directions = buildDirectionTable(name, spec, animations, [], artFloorScaleY);
   SpriteSheetRegistry.registerProxy(name, { isProxy: true, targetSheet: 'bigAtlas', prefix: `${name}_`, animations: anims, indexToName, directions });
   SpriteSheetRegistry.frameDimensions.set(name, new Map());
   return SpriteSheetRegistry.getSpritesheetId(name);
@@ -392,4 +392,44 @@ test('E-364: a type that ticks every N frames through its buckets resolves the e
   RigidBody.vy.fill(40, 0, 4);
   logic._resolveDirections.call(fake, 8);
   assert.deepEqual(dirs(), ['down', 'down', 'down', 'down'], 'a frame the buckets did not tick (countdown path): every entity');
+});
+
+test('a sheet drawn for an oblique camera: the frame that points where the facing does on the screen', () => {
+  // Eight headings of a floor drawn 0.5 as tall as it is wide: 45 degrees there points 26.57 on the screen.
+  const names = [0, 45, 90, 135, 180, 225, 270, 315].map((d) => `drive_${d}`);
+  const spec = { drive: Object.fromEntries(names.map((n) => [n.slice(6), n])) };
+  const flat = buildDirectionTable('car', spec, names);
+  const t = buildDirectionTable('car', spec, names, [], 0.5);
+  assert.equal(flat.floor, undefined);
+  const deg = (r) => Math.round((r * 180) / Math.PI * 100) / 100;
+  assert.deepEqual(t.angles.map(deg), [0, 26.57, 90, 153.43, 180, 206.57, 270, 333.43]);
+  assert.deepEqual(t.floor.angles.map(deg), [0, 45, 90, 135, 180, 225, 270, 315], 'the floor\'s, for the lights\' frames');
+  assert.equal(t.uniform, false);
+  assert.equal(t.floor.uniform, true);
+  assert.equal(t.floor.scaleY, 0.5);
+  assert.deepEqual(t.names, flat.names, 'the directions keep their order and their names');
+  assert.deepEqual(t.anim, flat.anim);
+  // Four cardinals are where they were: an LPC person's table is the very one.
+  const people = { walk: { right: 'w_r', down: 'w_d', left: 'w_l', up: 'w_u' } };
+  const peopleNames = ['w_r', 'w_d', 'w_l', 'w_u'];
+  assert.deepEqual(buildDirectionTable('p', people, peopleNames, [], 0.736), buildDirectionTable('p', people, peopleNames));
+
+  // On an entity: a car driving 30 degrees down the screen shows the frame drawn at 45 on its floor; taken as the screen's
+  // own, the same number was nearer to 45 and 26 alike. At 62 the frame at 90 is nearer (58.3 the border), not 45's.
+  const id = sheet('car', names, spec, 0.5);
+  const ds = entity(0, id, { from: FACING_FROM.ROTATION });
+  ds.turnMargin = 0;
+  const at = (degrees) => {
+    Transform.rotC[0] = Math.cos((degrees * Math.PI) / 180);
+    Transform.rotS[0] = Math.sin((degrees * Math.PI) / 180);
+    DirectionalSprite.mode[0] = 1;
+    DirectionalSprite.animation[0] = 0;
+    DirectionalSprite.resolve(0);
+    return ds.direction;
+  };
+  assert.equal(at(30), '45');
+  assert.equal(at(10), '0');
+  assert.equal(at(62), '90', 'the border between 26.57 and 90 is 58.28');
+  assert.equal(at(55), '45');
+  assert.ok(Math.abs(ds.directionAngle - Math.atan2(0.5, 1)) < 1e-9, 'directionAngle: where the picture points on the screen');
 });

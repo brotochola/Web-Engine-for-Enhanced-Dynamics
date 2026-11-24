@@ -1037,7 +1037,9 @@ export type SpriteDirectionEntry = string | { anim: string; flipX?: boolean };
 /**
  * DX-DIRSPRITE: a directionless animation's directions. Keys are direction names (`right`, `downRight`, `down`,
  * `downLeft`, `left`, `upLeft`, `up`, `upRight`) or degrees of the world (0 east, 90 south: y down); `mirrorX: true`
- * mirrors each drawn heading a into 180° - a where the sheet has none. Or the count form for renders: `count`
+ * mirrors each drawn heading a into 180° - a where the sheet has none. A sheet with an {@link SceneSpritesheetAsset.artCamera}
+ * gives degrees on the floor it was drawn on: the frame drawn is the one that points where the facing does on the screen.
+ * Or the count form for renders: `count`
  * directions from `startAngle` (degrees, default 0), clockwise on the screen unless `clockwise: false`, each the
  * animation `anims` names with `{i}` replaced by its number.
  */
@@ -1081,7 +1083,8 @@ export interface SceneSpritesheetAsset extends Record<string, unknown> {
   reliefMap?: string | { png: string; strength?: number };
   /**
    * DX-MAPCAMERA: the camera the sheet's pictures and maps were drawn for, both positive. Its heights are scaled at load
-   * by its heightScaleY over the scene's (config.camera), so a pixel rises on the scene's screen as on the art's.
+   * by its heightScaleY over the scene's (config.camera), so a pixel rises on the scene's screen as on the art's. The card a
+   * render casts is worked out on the floor it was drawn on (its floorScaleY).
    * Or `meta.artCamera` in its json; this one wins. Left out: the scene's own camera.
    */
   artCamera?: { floorScaleY: number; heightScaleY: number };
@@ -1335,6 +1338,8 @@ export interface FlashCreateConfig {
   coneSoftness?: number;
   /** Radians, where the cone points, in the world's frame (a flash never turns). Default 0. */
   direction?: number;
+  /** Radians the cone leans down from level, as LightEmitter.tilt. Default 0. */
+  tilt?: number;
 }
 
 /** A flash preset's config: spawnIndex's keys, the position too optional (spawnPreset gives it). */
@@ -4714,6 +4719,7 @@ export declare class LightEmitter extends Component {
   static setDirection(index: number, angle: number): void;
   static setConeAngle(index: number, angle: number): void;
   static setConeSoftness(index: number, value: number): void;
+  static setTilt(index: number, angle: number): void;
   static setFollowFlip(index: number, on: number | boolean): void;
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
@@ -4736,6 +4742,9 @@ export declare class LightEmitter extends Component {
     coneInvSpan: typeof Float32Array;
     followFlip: typeof Uint8Array;
     glowRadius: typeof Float32Array;
+    tilt: typeof Float32Array;
+    tiltC: typeof Float32Array;
+    floorCos: typeof Float32Array;
   };
   static active: Uint8Array;
   /** 0xRRGGBB. */
@@ -4795,6 +4804,12 @@ export declare class LightEmitter extends Component {
   static coneInvSpan: Float32Array;
   /** 1: offsetX and the direction mirror with the entity's flipX. */
   static followFlip: Uint8Array;
+  /** Radians a cone leans down from level (negative: up). Set it with `tilt` or {@link LightEmitter.setTilt}. */
+  static tilt: Float32Array;
+  /** The tilt's cosine. Written by the setters. */
+  static tiltC: Float32Array;
+  /** The cosine of half the wedge on the floor the cone stands in, -2 for all around. Written by the setters. */
+  static floorCos: Float32Array;
   /** The halo's alpha, at least 0. */
   get glow(): number;
   set glow(value: number);
@@ -4817,6 +4832,13 @@ export declare class LightEmitter extends Component {
    */
   get direction(): number;
   set direction(angle: number);
+  /**
+   * Radians a cone leans down from level: 0 (the default) level, as a headlight or a hand's flashlight; π/2 straight down, a
+   * ceiling lamp's pool; negative up. The cone opens in 3D from the source, its `elevation` above the floor: a level one
+   * meets the floor ahead of it, at elevation / tan(coneAngle / 2).
+   */
+  get tilt(): number;
+  set tilt(angle: number);
   /** Radians, the cone's whole aperture; 2π (the default) is a point light, the same light it always was. */
   get coneAngle(): number;
   set coneAngle(angle: number);
@@ -4865,7 +4887,7 @@ export declare class DirectionalSprite extends Component {
   set turnMargin(radians: number);
   /** The direction drawn, as the sheet names it ('left', 'downRight', '12'); null before the first. */
   readonly direction: string | null;
-  /** The direction drawn as world radians (π/2 south); NaN before the first. */
+  /** The direction drawn as world radians (π/2 south), where its picture points on the screen; NaN before the first. */
   readonly directionAngle: number;
   /** The direction drawn as an index into `directions`; 255 before the first. */
   readonly directionIndex: number;

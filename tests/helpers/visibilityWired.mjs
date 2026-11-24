@@ -357,6 +357,7 @@ export function writeFrame(boot, t, { scene = boot.scene, revision = 7 } = {}) {
       LightEmitter.castShadows[i] = e.casts === 0 ? 0 : 1;
       // DX-SPOT: a cone light's columns as LightEmitter's setters write them (no cone: coneCos -2).
       LightEmitter.coneCos[i] = e.coneHalf > 0 ? Math.cos(e.coneHalf) : -2;
+      LightEmitter.floorCos[i] = LightEmitter.coneCos[i];
       LightEmitter.coneInvSpan[i] = e.coneHalf > 0 ? 4 : 0;
       LightEmitter.dirC[i] = e.coneHalf > 0 ? Math.cos(e.dir) : 1;
       LightEmitter.dirS[i] = e.coneHalf > 0 ? Math.sin(e.dir) : 0;

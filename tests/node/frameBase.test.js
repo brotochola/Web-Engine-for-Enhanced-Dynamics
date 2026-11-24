@@ -2,12 +2,18 @@
 // over its roots, a render's legs; and how the base rides in the texture table's spare floats.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
+  ART_FLOOR_CODES,
+  ART_FLOOR_MOST,
+  ART_FLOOR_STEPS,
   CONTACT_HEIGHT,
   CONTACT_SHARE,
   MAPLESS_ROW_CODE,
+  artFloorRatio,
   baseIsMapless,
+  foreignArtFloor,
   maplessBaseShader,
   HEIGHT_PER_ROW_CODES,
   HEIGHT_PER_ROW_STEPS,
@@ -16,6 +22,7 @@ import {
   measureHeightPerRow,
   measureLowestContact,
   measureStandingBase,
+  sheetArtFloor,
   sheetCastsSolid,
   sheetStandsOnContact,
 } from '../../src/render/frameBase.js';
@@ -149,6 +156,68 @@ test('the base rides in the texture table\'s last two floats', () => {
   assert.deepEqual(Array.from(lut.subarray(22, 24)), [0, 0], 'no base: zeros');
   const rgba = packTextureLutRgba(lut, 2);
   assert.deepEqual(Array.from(rgba.subarray(10, 12)), [33, 8], 'the third texel\'s zw');
+});
+
+/** A shadow shader's own artFloorRatio, its text run here (its operators are JavaScript's). */
+function shaderArtFloorRatio(file) {
+  const src = readFileSync(new URL('../../src/shaders/' + file, import.meta.url), 'utf8');
+  const at = src.search(/(float|fn) artFloorRatio\(/);
+  assert.ok(at >= 0, file + ' has its artFloorRatio');
+  const open = src.indexOf('{', at);
+  const body = src.slice(open + 1, src.indexOf('\n}', open)).replace(/\b(float|let) code/, 'const code');
+  const fract = (v) => v - Math.floor(v);
+  const select = (no, yes, when) => (when ? yes : no);
+  return new Function('fract', 'abs', 'floor', 'select', 'return (y, groundInvScaleY) => {' + body + '};')(
+    fract, Math.abs, Math.floor, select);
+}
+
+test('a render of another camera keeps its art floor beside the card\'s mark and the footprint\'s row, as the shaders read it', () => {
+  const tex = { orig: { width: 64, height: 64 }, uvs: { x0: 0, y0: 0, x2: 0.5, y2: 0.5 }, trim: null, width: 64, height: 64 };
+  const readers = [shaderArtFloorRatio('instancedSpriteShadow.vert.glsl'), shaderArtFloorRatio('instancedSpriteShadow.wgsl')];
+  const base = { contact: 39.5, heightPerRow: 0.25 };
+  for (const card of [false, true]) {
+    for (const slot of [-1, 0, 1, 54, 4095, 8190]) {
+      for (const floor of [0, 0.736, 0.5, 0.7, 1, 0.01, 1.9]) {
+        const t = { ...tex, weedBase: { ...base, card }, weedArtFloor: floor };
+        if (slot >= 0) t.weedFootSlot = slot;
+        const y = buildTextureLut([t])[11];
+        const what = 'card ' + card + ', footprint ' + slot + ', floor ' + floor;
+        // The card's mark and the footprint's row, as every program reads them.
+        assert.equal(y < 0, card, what + ': the sign');
+        assert.equal(Math.abs(y) >= 1, slot >= 0, what + ': a footprint or none');
+        if (slot >= 0) assert.equal(Math.trunc(Math.abs(y) + 0.5) - 1, slot, what + ': the row');
+        for (const sceneFloor of [0.5, 0.736]) {
+          const want = artFloorRatio(floor, sceneFloor);
+          for (const read of readers) assert.ok(Math.abs(read(y, 1 / sceneFloor) - want) < 1e-6, what + ': the ratio');
+          if (floor === 0) assert.equal(want, 1, 'no art floor: exactly the scene\'s');
+          else assert.ok(Math.abs(want - floor / sceneFloor) < 0.0021, what + ': ' + want);
+        }
+      }
+    }
+  }
+  assert.equal(ART_FLOOR_MOST, ART_FLOOR_CODES / 2 - 1, 'a half is the mark of a card with no footprint: no code reaches it');
+  assert.ok(artFloorRatio(99, 1) * ART_FLOOR_STEPS <= ART_FLOOR_MOST, 'a floor past the codes is held at the last');
+  // With no art floor the table holds what it held before, to the bit.
+  const out = new Float32Array(2);
+  lutBaseFloats({ ...base, card: true }, out, 0, 0);
+  assert.equal(out[1], -0.5);
+  lutBaseFloats(base, out, 0);
+  assert.equal(Object.is(out[1], 0), true);
+});
+
+test('only a render drawn for another camera than the scene\'s has an art floor of its own', () => {
+  const scene = { camera: { floorScaleY: 0.5 } };
+  assert.equal(foreignArtFloor(0.736, scene, 0.5), 0.736);
+  assert.equal(foreignArtFloor(0.736, { camera: {} }, 0.7364193217154872), 0, 'the same camera, written with more digits');
+  assert.equal(foreignArtFloor(0.736, {}, 1), 0, 'a scene with no camera draws no heights');
+  assert.equal(foreignArtFloor(undefined, scene, 0.5), 0);
+  const json = {
+    animations: { car_drive_0: ['car/0'], walker_walk_up: ['walker/0'] },
+    frames: { 'car/0': { base: { contact: 41, card: true, artFloor: 0.736 } }, 'walker/0': { base: { cx: 8, rx: 5, ry: 3 } } },
+  };
+  assert.equal(sheetArtFloor(json, { animations: { drive_0: { prefixedName: 'car_drive_0' } } }), 0.736);
+  assert.equal(sheetArtFloor(json, { animations: { walk_up: { prefixedName: 'walker_walk_up' } } }), 0);
+  assert.equal(sheetArtFloor(null, { animations: {} }), 0);
 });
 
 test('a sheet casts its solid when a frame of it stands on a contact (a render with height maps)', () => {

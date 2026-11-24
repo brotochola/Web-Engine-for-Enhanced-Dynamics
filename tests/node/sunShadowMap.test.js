@@ -71,7 +71,7 @@ test('the layer shadows\' sun card stands on the frame\'s lowest opaque row, not
   assert.match(src, /float contactRow = floor\(packed\) \+ 0\.5;/);
   assert.match(src, new RegExp(`float perRowCode = floor\\(fract\\(packed\\) \\* ${HEIGHT_PER_ROW_CODES}\\.0 \\+ 0\\.5\\);`));
   assert.match(src, new RegExp(`float heightShare = clamp\\(\\(perRowCode - 1\\.0\\) / ${HEIGHT_PER_ROW_STEPS}\\.0 \\* uSunK\\.w, 0\\.0, 1\\.0\\);`));
-  assert.match(src, /rowDepth = \(1\.0 - heightShare\) \* uGroundInvScaleY;\n        rowHeight = heightShare \* height \/ uSunK\.w;/);
+  assert.match(src, /rowDepth = \(1\.0 - heightShare\) \* artInvScaleY;\n        rowHeight = heightShare \* height \/ uSunK\.w;/);
   assert.match(src, /float turnCode = floor\(fract\(aInstTexId\) \* 128\.0 \+ 0\.5\);/);
   // The old skewed sprite (stretched by shadowLengthRatio, turned on the screen) is gone from the sun's branch.
   assert.doesNotMatch(src, /uSun\.z/);

@@ -15,6 +15,16 @@ import { CARS } from '../img/autos/index.js';
 const FARM_DIR = '/demos/lightBenchScene/assets/';
 const CAR_DIR = '/demos/img/autos/';
 
+/** The floor the standard cars are drawn on, as tall as this against its width (their json's meta.artCamera). */
+const CAR_FLOOR_SCALE_Y = 0.736;
+
+/**
+ * A car's heading on that floor (radians) as the screen shows it, which is what directionalSprite.facing and rotation are.
+ */
+export function carFacingOnScreen(heading) {
+  return Math.atan2(CAR_FLOOR_SCALE_Y * Math.sin(heading), Math.cos(heading));
+}
+
 /** The standard cars the bench offers, and their scale next to its art. */
 const BENCH_CARS = ['hatch_rojo', 'pickup_blanco', 'colectivo_amarillo', 'taxi', 'camion_rojo'];
 const CAR_SCALE = 2;
@@ -107,14 +117,15 @@ export function sheetScale(name) {
 }
 
 /**
- * A car sheet's directions in degrees, the turn's order (0 east, clockwise): the headings its frames are drawn at and
- * their mirrors (180° − a), as DirectionalSprite has them; null for a sheet without them.
+ * A car sheet's directions in degrees, the turn's order (0 east, clockwise): where its frames and their mirrors (180° − a)
+ * point on the screen, as DirectionalSprite has them; null for a sheet without them.
  */
 function carDirections(name) {
   const h = BENCH_ASSETS[name]?.headings;
   if (!Array.isArray(h) || h.length === 0) return null;
   const all = new Set();
-  for (const a of h) {
+  for (const heading of h) {
+    const a = (carFacingOnScreen((heading * Math.PI) / 180) * 180) / Math.PI;
     all.add(((a % 360) + 360) % 360);
     all.add((((180 - a) % 360) + 360) % 360);
   }

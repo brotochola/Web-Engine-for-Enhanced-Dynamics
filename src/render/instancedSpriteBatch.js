@@ -216,10 +216,14 @@ function writeLutSlot(lut, base, tex) {
     lut[base + 9] = origH;
   }
   // DX-SHADOW3D: where the frame stands (set by the Pixi worker from the atlas's json), else [0, 0].
-  lutBaseFloats(tex.weedBase, lut, base + 10);
+  lutBaseFloats(tex.weedBase, lut, base + 10, tex.weedArtFloor);
   // DX-SHADOW3D: a render's footprint row (the Pixi worker's footprint texture), + 1, in its base's spare float, negative
-  // for a render that casts its card for the sun (frameBase.js lutBaseFloats).
-  if (tex.weedFootSlot >= 0 && lut[base + 10] < 0) lut[base + 11] = (lut[base + 11] < 0 ? -1 : 1) * (tex.weedFootSlot + 1);
+  // for a render that casts its card for the sun (frameBase.js lutBaseFloats), the art floor's code kept in the fraction.
+  if (tex.weedFootSlot >= 0 && lut[base + 10] < 0) {
+    const y = lut[base + 11];
+    const fraction = y === -0.5 ? 0 : Math.abs(y);
+    lut[base + 11] = (y < 0 ? -1 : 1) * (tex.weedFootSlot + 1 + fraction);
+  }
 }
 
 /** E-448: a texture's frame's solid texels (alpha 255: its json base's `solidTexels`), 0 when its scan did not count them. */

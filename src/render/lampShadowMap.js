@@ -372,6 +372,7 @@ export function lampMapVertex(source) {
 ${lampTileGlsl(` || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0 && !${MAPLESS}) || (uTileWorld.z > 0.5 && zPerRow <= lamp.z)`)}  vec2 content = aInstTrim.xy + vec2(aQuad.x, 1.0) * aInstTrim.zw;
   float bottom = aInstTrim.y + aInstTrim.w;
   // The picture's column at the card's foot, and the foot: under the lowest row, or the base's edge towards the lamp.
+  float art = 1.0;
   float footCol = anchor.x * aInstSize.x;
   vec2 foot = vec2(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uGroundInvScaleY);
   if (aInstBase.x >= 1.0) {
@@ -391,12 +392,17 @@ ${lampTileGlsl(` || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBas
     foot += u * sqrt(rx * rx * u.x * u.x + ry * ry * u.y * u.y);
   } else if (aInstBase.x < 0.0) {
     // A render asked to cast its card (DX-CASTER): on its contact, that far from the anchor towards the lamp.
+    // Drawn for another camera than the scene's, it stands there on its art's floor (instancedSpriteShadow.vert.glsl).
+    art = artFloorRatio(aInstBase.y, uGroundInvScaleY);
     vec2 anchorFloor = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY);
     vec2 tl = lamp.xy - anchorFloor;
+    tl.y /= art;
     float tlen = length(tl);
     // N-297: the contact's whole row, in the float's whole part (frameBase.js lutBaseFloats): its centre.
-    float reach = (floor(-aInstBase.x - 1.0) + 0.5 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uGroundInvScaleY;
-    foot = anchorFloor + (tlen > 1e-3 ? tl / tlen : vec2(0.0, -1.0)) * reach;
+    float reach = (floor(-aInstBase.x - 1.0) + 0.5 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * (uGroundInvScaleY / art);
+    vec2 toFoot = (tlen > 1e-3 ? tl / tlen : vec2(0.0, -1.0)) * reach;
+    toFoot.y *= art;
+    foot = anchorFloor + toFoot;
   }
   // Its columns run across the lamp (to the right of someone at the lamp looking at it).
   if (castFixed) {
@@ -407,7 +413,12 @@ ${lampTileGlsl(` || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBas
   vec2 toLamp = lamp.xy - foot;
   float dl = length(toLamp);
   vec2 dir = dl > 1e-3 ? toLamp / dl : vec2(0.0, -1.0);
-  vec2 p = foot + (content.x - footCol) * aInstScale.x * (castFixed ? castAxis : vec2(dir.y, -dir.x));
+  vec2 across = vec2(dir.y, -dir.x);
+  if (art != 1.0) {
+    vec2 artDir = normalize(vec2(dir.x, dir.y / art));
+    across = vec2(artDir.y, -artDir.x * art);
+  }
+  vec2 p = foot + (content.x - footCol) * aInstScale.x * (castFixed ? castAxis : across);
 ${lampRowsGlsl('zPerRow', 'length(p - lamp.xy)', 'aQuad.y')}  vec2 lampQuad = vec2(aQuad.x, 1.0 - zReal / max(zPerRow, 1e-3));
   vec2 land = lamp.xy + (p - lamp.xy) / w;
   vSunZ = zReal;
@@ -560,6 +571,7 @@ export function lampMapWgsl(source) {
   return `${head}  let zPerRow = aInstTrim.w * abs(aInstScale.y) / uniforms.uSunK.w * height;
 ${lampTileWgsl(` || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0 && !${MAPLESS}) || (uniforms.uTileWorld.z > 0.5 && zPerRow <= lamp.z)`)}  let content = aInstTrim.xy + vec2<f32>(aQuad.x, 1.0) * aInstTrim.zw;
   let bottom = aInstTrim.y + aInstTrim.w;
+  var art = 1.0;
   var footCol = anchor.x * aInstSize.x;
   var foot = vec2<f32>(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uniforms.uGroundInvScaleY);
   if (aInstBase.x >= 1.0) {
@@ -580,13 +592,17 @@ ${lampTileWgsl(` || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBas
     foot += u * sqrt(rx * rx * u.x * u.x + ry * ry * u.y * u.y);
   } else if (aInstBase.x < 0.0) {
     // A render asked to cast its card (lampMapVertex says how).
+    art = artFloorRatio(aInstBase.y, uniforms.uGroundInvScaleY);
     let anchorFloor = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY);
-    let tl = lamp.xy - anchorFloor;
+    var tl = lamp.xy - anchorFloor;
+    tl.y /= art;
     let tlen = length(tl);
     var tdir = vec2<f32>(0.0, -1.0);
     if (tlen > 1e-3) { tdir = tl / tlen; }
-    let reach = (floor(-aInstBase.x - 1.0) + 0.5 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
-    foot = anchorFloor + tdir * reach;
+    let reach = (floor(-aInstBase.x - 1.0) + 0.5 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * (uniforms.uGroundInvScaleY / art);
+    var toFoot = tdir * reach;
+    toFoot.y *= art;
+    foot = anchorFloor + toFoot;
   }
   if (castFixed) {
     foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY);
@@ -596,7 +612,12 @@ ${lampTileWgsl(` || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBas
   let dl = length(toLamp);
   var dir = vec2<f32>(0.0, -1.0);
   if (dl > 1e-3) { dir = toLamp / dl; }
-  let p = foot + (content.x - footCol) * aInstScale.x * select(vec2<f32>(dir.y, -dir.x), castAxis, castFixed);
+  var across = vec2<f32>(dir.y, -dir.x);
+  if (art != 1.0) {
+    let artDir = normalize(vec2<f32>(dir.x, dir.y / art));
+    across = vec2<f32>(artDir.y, -artDir.x * art);
+  }
+  let p = foot + (content.x - footCol) * aInstScale.x * select(across, castAxis, castFixed);
   // DX-LAMPPANO: the strip's three rows in this half (lampMapVertex says how).
 ${lampRowsWgsl('zPerRow', 'length(p - lamp.xy)', 'aQuad.y')}  let lampQuad = vec2<f32>(aQuad.x, 1.0 - zReal / max(zPerRow, 1e-3));
   let land = lamp.xy + (p - lamp.xy) / w;
