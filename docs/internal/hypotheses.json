@@ -25702,7 +25702,8 @@
     },
     {
       "records": [
-        "R-1982"
+        "R-1982",
+        "R-1991"
       ],
       "refs": [],
       "id": "DX-CI",
@@ -25711,8 +25712,8 @@
       "kind": "tools",
       "area": "tools",
       "result": "Phases 0 and 1 done: tests on six machines, 42 kernel scripts calibrated (detection limit about 0.4 to 1 % with 4 to 8 VMs), the first runs on ARM, on Metal and in WebKit; found N-451, N-452, N-453, N-454, N-455",
-      "statusText": "Phases 0 and 1 done 2026-11-24 on branch ci-tools (local, not merged): docs/internal/CI_MEASURE.md there",
-      "next": "Merge ci-tools (the owner's call). Phase 2: the kept and dropped kernel verdicts on ARM, Zen 4, Zen 5 and Intel; phase 3: the backlog items with a kernel; phase 4: WebGL against WebGPU on Metal; phase 5: a small nightly",
+      "statusText": "Phases 0 and 1 done 2026-11-24, on main (docs/internal/CI_MEASURE.md); phase 2 in progress",
+      "next": "Phase 2: the cases inside each kernel compared across machines (dump), then phase 3 (the backlog items with a kernel), 4 (WebGL against WebGPU on Metal) and 5 (a small nightly; measure:all for releases, the owner asked 2026-11-24)",
       "aliases": [
         "GitHub Actions",
         "CI",
@@ -25722,17 +25723,18 @@
     },
     {
       "records": [
-        "R-1983"
+        "R-1983",
+        "R-1988"
       ],
       "refs": [],
       "id": "N-451",
       "title": "Safari (WebKit): a WebAssembly.Memory's buffer and the buffer posted beside it are two objects in a worker, so the kernels refuse every column: no sprites, and 20 of 36 demos do not boot",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "engine",
-      "result": "",
-      "statusText": "Found 2026-11-24 in Playwright's WebKit 26.5 on macOS 15 (Apple M1) and on Linux; installed Safari not tried",
-      "next": "Post the memory alone and take memory.buffer in each worker, at one place (the workers' init message), instead of the memory and its buffer; then the demos in WebKit on a Mac (scenes task), where they draw. WebKit on Linux boots far enough to show the boot errors go (its workers get no WebGL)",
+      "result": "fixed (d9964065): init messages packed where the clone splits a memory from its buffer; WebKit 26.5 on macOS boots 29 of 36 demos and draws (the other 7 ask for WebGPU)",
+      "statusText": "Fixed 2026-11-24 (d9964065), on main",
+      "next": "Installed Safari and an iPhone, when one is at hand",
       "aliases": [
         "Safari",
         "WebKit",
@@ -25744,17 +25746,18 @@
     },
     {
       "records": [
-        "R-1984"
+        "R-1984",
+        "R-1989"
       ],
       "refs": [],
       "id": "N-452",
       "title": "The seqlock readers accept torn reads on ARM: a plain load between two Atomics.load may be satisfied after the second (the camera, timeScale, a frameClock slot)",
-      "status": "open",
+      "status": "kept",
       "kind": "bug",
       "area": "engine",
-      "result": "",
-      "statusText": "Found 2026-11-24 on Neoverse N2, Cobalt 100 and Apple M1; never on x86. Rare in a game: the stress writes the camera millions of times a second",
-      "next": "A reader fence (an Atomics.add of 0 on a private word) between the data and the second mark in camera.js, timeScale.js, frameClock.js, and the same pattern in frameTotals.js, box2dMovedBodiesImpl.js, preRenderWorker._composeChildren (none of the three seen torn); raceStress on ARM to check, the x86 cost of the fence",
+      "result": "kept (ba692e42, 32257818): fenced seqlocks, 0 torn reads on ARM where the old readers tore; emitGpu +5 % on x64 and ARM (12 of 12 VMs)",
+      "statusText": "Fixed 2026-11-24 (ba692e42, 32257818), on main",
+      "next": "",
       "aliases": [
         "ARM memory order",
         "seqlock",
@@ -25792,7 +25795,7 @@
       "kind": "bug",
       "area": "harness",
       "result": "",
-      "statusText": "The catalog's three fixed on ci-tools (2026-11-24, not merged); the other three open",
+      "statusText": "The catalog's three fixed 2026-11-24 (a1ece0b4), on main; logPair, stampGridCellCache and parCam open",
       "next": "Merge ci-tools; logPair (an await in a function that is not async), stampGridCellCache (a constant its source no longer has) and parCam: fix or delete; kernelSmoke in a nightly",
       "aliases": [
         "kernelSmoke",
@@ -25816,6 +25819,90 @@
       "aliases": [
         "Atomics.wait macOS",
         "timer coalescing"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-1990"
+      ],
+      "refs": [],
+      "id": "N-456",
+      "title": "Safari (WebKit): a transferred atlas bitmap reaches WebGL without its alpha multiplied in, so glows and soft edges come out hard and bright",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "render",
+      "result": "fixed (774d133e): the atlas canvas copied into its bitmap in WebKit",
+      "statusText": "Found and fixed 2026-11-24 (774d133e)",
+      "next": "",
+      "aliases": [
+        "transferToImageBitmap",
+        "premultiplied alpha in Safari"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-457",
+      "title": "Safari (WebKit): the maps page (heights and normals) loses bits: createImageBitmap of an ImageData with premultiplyAlpha none goes through premultiplied 8-bit (252 for a 255 under alpha 128)",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "result": "",
+      "statusText": "Found 2026-11-24 by sceneSmoke's bitmap probe on WebKit 26.5 (macOS and Linux); no scene compared",
+      "next": "Upload the maps page from its bytes in WebKit (a typed-array source, no bitmap), or from the PNG (pngNone is exact there); a capture of spriteMapsStressScene in WebKit against Chromium",
+      "aliases": [
+        "maps bitmap Safari"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-458",
+      "title": "A WebGL context lost while a scene boots never ends the boot: no fatal overlay, the load waits for ever",
+      "status": "open",
+      "kind": "bug",
+      "area": "engine",
+      "result": "",
+      "statusText": "Seen 2026-11-24 in WebKit on a macOS VM whose GPU process had gone: 33 scenes in a row logged \"WebGL: context lost.\" and timed out at 120 s",
+      "next": "Report the loss during boot as a fatal error (boot waits on it), or boot on the restored context; a Chromium test with WEBGL_lose_context before the scene starts",
+      "aliases": [
+        "context lost at boot"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-554",
+      "title": "E-184's whole-block shortcuts cost the sparse list build 25 to 29 % on x64 (Predator's pool: 150 live of 10 000)",
+      "status": "open",
+      "kind": "speed",
+      "area": "particle",
+      "result": "",
+      "statusText": "Found 2026-11-24 measuring e7111409 against its parent on Zen 2, Zen 3, Zen 5 and Xeon 6975P; ARM unchanged. About 0.5 us a frame in Predator",
+      "next": "Low: read build_lists_f32x4 on blocks of one or two live slots (the empty-slot sweep lost its early exit, or the copies cost registers); the three cases of particleListsWasmMicrobench must not lose",
+      "aliases": [
+        "particle lists sparse"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-555",
+      "title": "The pose batch (renderer.interpolation) in WASM (W9e) no longer beats the JS it replaced: the pixel snap that made it slow is gone (N-271)",
+      "status": "open",
+      "kind": "speed",
+      "area": "pixi",
+      "result": "",
+      "statusText": "Found 2026-11-24: poseInterpPackMicrobench js against wasm (with its copy) -5.5 % on Zen 2, -14 % on Xeon 6975P, +2 % on Neoverse; +346 % when it landed",
+      "next": "Low (0.1 ms at 250 000 interpolated sprites): the JS packer back and the kernel out, or a pack straight into the array the upload reads; bunnyMark with interpolation decides",
+      "aliases": [
+        "pack_pose",
+        "W9e"
       ],
       "date": "2026-11-24"
     }
@@ -44043,6 +44130,52 @@
       "title": "frameChainWait on an M1 VM: a wait of under 1 ms takes 5 to 6 ms, 93 of 112 runs",
       "verdict": "note",
       "text": "repeatTests on one GitHub macOS 15 VM (Apple M1, 3 cores): tests/node/frameChainWait.test.js failed 93 of 112 runs, all read in \"a miss costs under a millisecond, not Windows's timer period\" with waits of 4.8 to 6.1 ms where the engine asked for under 1 ms (E-219's bound). It passed once in the whole suite on another M1 VM, and 0 of its runs failed on Linux x64, Linux ARM, Windows x64 and Windows ARM. If it holds on real Macs, four missed waits cost about 20 ms before the engine turns them off for 120 frames. One VM: the VM's scheduling is not ruled out."
+    },
+    {
+      "id": "R-1988",
+      "date": "2026-11-24",
+      "time": "19:05",
+      "timeFrom": "recorded",
+      "title": "N-451 fixed: WebKit draws; 29 of 36 demos boot on a Mac, the other 7 ask for WebGPU",
+      "verdict": "kept-hygiene",
+      "text": "**Fixed (d9964065):** where the browser's clone splits a memory from its buffer (asked once, a structuredClone of a one-page memory), the init message goes packed: each memory once, references in place of every other mention, its buffer and the views on it; AbstractWorker unpacks before it reads anything. Chrome and Firefox send the message as before (the probe says no there). The physics host gets the plain message: it reads by bytes alone.\n\nPlaywright's WebKit 26.5, macOS 15 on an M1 (GitHub), 36 demos: 12 booted without sprites before; now 29 boot (twice, 1.4 to 2 min a third, a new browser a scene in the second), no memory error in any, captures of Predator, Buenos Aires, balls and headlights looked at. The 7 others ask for WebGPU, which that build does not expose. On Linux (no WebGL in its workers) the memory errors of all 36 are gone.\n\nRenderer frames a second there, 3 virtual cores: most 40 to 60, Predator 11 to 16, sunStreet 8 to 18, headlights 24, Buenos Aires 0.4 to 1.4 (Chromium on the same kind of VM: 42, 50, 49 and 40). Not looked into: a virtual GPU. One run whose GPU process died read \"context lost\" for 33 scenes (N-458).\n\nTests: tests/node/sharedMemoryMessage.test.js; node 3639, demos 149, bundles rebuilt and smoked. Not run: installed Safari, an iPhone.",
+      "commits": [
+        "d9964065"
+      ]
+    },
+    {
+      "id": "R-1989",
+      "date": "2026-11-24",
+      "time": "19:05",
+      "timeFrom": "recorded",
+      "title": "N-452 fixed: a fence in the seqlocks, 0 torn on ARM; the clock read by its sequence makes emitGpu 5 % faster",
+      "verdict": "kept",
+      "text": "**Fixed (ba692e42):** memoryFence() (an Atomics.add of 0 on a word of the thread's own) after the odd mark and before the second read of it: camera, sim clock, frame clock and totals, moved bodies, child list. The fence in the clock's reader cost emitGpuCallMicrobench 5 to 8 % here, so **32257818**: a read whose sequence has not moved takes the thread's last read, one Atomics.load, no data and no fence.\n\n- **Races**, 25 s x 2 a case, on 5 Neoverse, 2 Cobalt, 2 M1 and 1 x64 VMs: 0 torn in all six protocols (camera 1.5 G reads, sim clock 8.7 G). The control with the old reader, same VMs: 164, 0, 1, 0, 1 147 (Neoverse), 0, 1 (Cobalt), 82, 666 (M1), 0 (x64).\n- **emitGpu** against main (15bb814f), 9 rounds, 4 VMs each: Linux x64 +5.0 % (limit 0.8), Neoverse +4.7 % (0.5), Windows x64 +5.0 % (0.3); 12 of 12 VMs.\n- **The catalog's 47 kernels**, 5 VMs each on Linux x64 and Neoverse: none worse past its limit.\n\nnode 3637 and demos 149 then; bundles rebuilt and smoked. No scene sitting: the paths run a few times a frame.",
+      "commits": [
+        "ba692e42",
+        "32257818"
+      ]
+    },
+    {
+      "id": "R-1990",
+      "date": "2026-11-24",
+      "time": "19:05",
+      "timeFrom": "recorded",
+      "title": "N-456 fixed: in WebKit the atlas canvas is copied into its bitmap, not transferred",
+      "verdict": "kept-hygiene",
+      "text": "sceneSmoke's bitmap probe: a half-transparent red texel (255, 0, 0, 128) uploaded from a bitmap. Chromium 151 gives 128, 128 from every bitmap but premultiplyAlpha none; WebKit 26.5 (macOS and Linux) the same, except OffscreenCanvas.transferToImageBitmap: 255, 128 whatever the upload asks. The packed atlas and a baked atlas with built-ins added were transferred. Seen: the lamps' halos of headlightsScene as hard discs, the balls with bright edges.\n\nFixed (774d133e): bitmapOfCanvas copies (createImageBitmap) where the browser is WebKit, by its name (no test short of a WebGL upload tells them apart), and transfers elsewhere as before. Seen in WebKit on the Mac after: no discs, round balls, Buenos Aires drawn. Found: N-457.",
+      "commits": [
+        "774d133e"
+      ]
+    },
+    {
+      "id": "R-1991",
+      "date": "2026-11-24",
+      "time": "19:05",
+      "timeFrom": "recorded",
+      "title": "Phase 2, first part: the shipped kernel variants hold on Intel, ARM and Apple; 186 commits measured again",
+      "verdict": "note",
+      "text": "**Variants** (22 kernels, 47 comparisons, 5 rounds, limits 0 to 2 % on x64 and ARM): Xeon 6975P (8 VMs), Neoverse N2 (6), M1 (3, limits 1 to 40 %). Every shipped WASM kernel beats its JS on all three: bulletTick +46 / +176 / +128 %, decalStamp x3.4 / x2.9 / x5.8, navFlowfield x15 / x20 / x20, preRenderEmit +170 / +199 / +235 %, shadowStamp +164 / +173 / +186 %, particleLists (f32x4, 4 cases) x1.8 to x17, spatialGather ordered +33 / +38 / +44 %. The float32 forms that ship (sweep, sway, lists, integrate) are the best or tie; shadowStamp's double form beats its float32 ones on x64 and ARM.\n- **Stay dropped:** W6 (the grid rebuild in C) -7 % Xeon, -16 % Neoverse, +6 +- 17 % M1 (Zen 2 today +8 %); the FSM variants -15 to -24 % everywhere; E-195 (f32x4 stamp) loses to the shipped double form on x64, ARM and M1.\n- **By machine:** painterRadix simd_inplace on stress-move: Zen 2 +46 %, Neoverse +29 %, Xeon -9 %, M1 -12 %; its other four cases +48 to +309 % everywhere. Kept.\n- **Found:** E-555 (the pose batch).\n\n**Commits** (src/ of the parent against the commit's, the kernel as it was; 306 pairs of 186 commits, 111 hypotheses; Linux 6 VMs, Neoverse 5): 245 gave numbers, 122 machine-and-pair runs failed (kernels that need recorded inputs or a later fixture). A win of 3 % or more past the limit on both: 43 hypotheses; on x64 alone E-387, E-184, E-486, E-178, N-215; on ARM alone E-79, E-370, E-372, E-179, E-181, E-337, E-182; none seen in 47 (their kernel's default case is not the one they moved, or a later or earlier commit did: not a verdict). Nothing kept turned into a loss on one machine but E-554 (E-184's sparse case); the other 46 rates that fell are fixes, features with a case the parent did not run (E-526's static hooks), or noise (E-179).\nReproduced here: E-184 sparse -28.6 %, stress +2.3 %, zoomed +0.8 %."
     }
   ],
   "leads": [
