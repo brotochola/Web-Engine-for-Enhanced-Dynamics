@@ -713,9 +713,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       scene.workers.physics,
       initData,
       physicsExtra,
-      getPortTransferables(workerPorts.physics),
-      // The physics host reads the buffers alone, by their bytes, and unpacks nothing.
-      false
+      getPortTransferables(workerPorts.physics)
     );
   }
 

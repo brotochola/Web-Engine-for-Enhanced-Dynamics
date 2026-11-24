@@ -7,7 +7,6 @@ import { nativeImport } from './sceneScript.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
 import { WEED_LOGO_ART } from './weedLogo.js';
-import { cloneSplitsMemories, packSharedMemories } from './sharedMemoryMessage.js';
 import { rotatedHalfExtents } from './viewBounds.js';
 import { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius, resolveGroundScaleY } from './lightRadius.js';
 export {
@@ -786,23 +785,22 @@ export function getPortTransferables(portGroup) {
  * @param {Object} baseInitData - Shared init payload for all workers
  * @param {Object} [extraData={}] - Worker-specific init fields
  * @param {Array<Transferable>} [transferables=[]] - Transferables for postMessage
- * @param {boolean} [packMemories] - N-451: the receiver unpacks the message (AbstractWorker does, the physics host does
- *   not), so in a browser whose clone splits a memory from its buffer it goes packed (sharedMemoryMessage.js)
  */
 export function postWorkerInitMessage(
   worker,
   baseInitData,
   extraData = {},
-  transferables = [],
-  packMemories = true
+  transferables = []
 ) {
   const workerName = extraData.workerName ?? worker.name;
-  const message = {
-    ...baseInitData,
-    ...extraData,
-    ...(workerName ? { workerName } : {}),
-  };
-  worker.postMessage(packMemories && cloneSplitsMemories() ? packSharedMemories(message) : message, transferables);
+  worker.postMessage(
+    {
+      ...baseInitData,
+      ...extraData,
+      ...(workerName ? { workerName } : {}),
+    },
+    transferables
+  );
 }
 
 // ============================================================================
