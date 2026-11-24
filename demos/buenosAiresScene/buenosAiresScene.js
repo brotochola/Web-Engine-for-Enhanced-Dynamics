@@ -132,7 +132,7 @@ const DECORATIONS = Math.min(
   (Number.isFinite(META.nDecoraciones)
     ? META.nDecoraciones
     : count('nTiles') + count('nPiezasArboles') + count('nDecoProps') + count('nCables') + count('nGrafitis') +
-      count('nLineas') + count('nVentanas')) + 4 * POLICE_CARS + 4 * DRIVING_CARS + 4096,
+      count('nLineas') + count('nVentanas')) + 4 * POLICE_CARS + 2 * DRIVING_CARS + 4096,
 );
 
 // ---- the assets ----
@@ -146,8 +146,6 @@ SHEETS.arboles = editorSheet('arboles');
 if (META.nGrafitis !== 0) SHEETS.grafitis = editorSheet('grafitis');
 // The windows' lit panes keep their colour at night: an unshaded sheet (DX-UNSHADED).
 if (META.nVentanas !== 0) SHEETS.ventanas = { ...editorSheet('ventanas'), unshaded: true };
-// The first stretch of a car's beam, over the car's front: light, so the night does not darken it.
-SHEETS.hazAuto = { json: '/demos/img/haz_auto.json', png: '/demos/img/haz_auto.png', unshaded: true };
 Object.assign(SHEETS, objectSheetSpecs());
 // People and cars: the demos' standard sheets with their height maps; no normal maps (the engine derives them).
 for (const name of PEOPLE_SHEETS) {

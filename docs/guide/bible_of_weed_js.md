@@ -2252,13 +2252,14 @@ onSpawned() {
 }
 ```
 
-### Cone lights: `direction`, `coneAngle`, `coneSoftness`, `followFlip`
+### Cone lights: `direction`, `coneAngle`, `coneSoftness`, `tilt`, `followFlip`
 
 A light with `coneAngle` under 2π lights a cone instead of a circle: car headlights seen from above, a flashlight. The cone is part of the same light, so its radius, brightness, colour, elevation, offset and shadows work as on any other.
 
 - `coneAngle` (radians) is the whole aperture: `Math.PI / 3` is 60 degrees, 30 each side of its axis. 2π, the default, is a round light.
 - `coneSoftness` (0..1, default 0) is how much of each half fades out: 0 is a hard edge, 1 fades all the way from the axis.
-- `direction` (radians, default 0) is where the cone points relative to the way the entity faces. The entity's `rotation` turns it, as it turns `offsetX`, so a car's headlights follow its heading with no code per frame. Like the pool, the cone is measured on the floor (`camera.floorScaleY`).
+- `direction` (radians, default 0) is where the cone points relative to the way the entity faces. The entity's `rotation` turns it, as it turns `offsetX`, so a car's headlights follow its heading with no code per frame. Like the pool, it is measured on the floor (`camera.floorScaleY`).
+- `tilt` (radians, default 0) is how far the cone leans down from level: 0 level (headlights, a flashlight), `Math.PI / 2` straight down (a ceiling lamp's round pool), negative up. The cone opens in 3D from the light, its `elevation` above the floor: a level cone meets the floor ahead of the light, at `elevation / tan(coneAngle / 2)` px, reaches a wall at the light's own height, and lights what is above or below its axis only inside its aperture. With `elevation` 0 the light is on the floor and its cone lights it from there. In a view straight from above or from the side (no oblique `config.camera`) sprites have no height, and a cone takes them as the floor they stand on.
 - `followFlip` (default 0): with 1, a change of the entity's `flipX` mirrors the light's `offsetX` and `direction`, so a flashlight in a hero's hand points the way the hero looks. With 0 a flip leaves the light alone (a car whose mirrored frame is only art). The getters read back what you wrote.
 
 ```javascript

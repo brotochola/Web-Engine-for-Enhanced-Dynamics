@@ -12,10 +12,24 @@ const CONE_EDGE_MIN_ANGLE = (0.25 * Math.PI) / 180;
 /** coneInvSpan of a cone with no width (coneAngle 0): nothing but its axis is inside, and that only at 0. */
 const CONE_NO_WIDTH_INV_SPAN = 1e30;
 const FULL_TURN = Math.PI * 2;
+const QUARTER_TURN = Math.PI / 2;
 
 /** Whether entity i's light stores its x mirrored: it follows the flip and the entity is flipped. */
 function mirrored(i) {
   return LightEmitter.followFlip[i] !== 0 && LightEmitter.isFlippedX(i);
+}
+
+/**
+ * DX-CONE3D: the cosine of half the wedge on the floor a cone of half aperture `half` leaning `lean` from level stands in
+ * (NO_CONE: it looks straight down or up from some of its edge, so it stands all around its source). A level cone's is its
+ * own (`outer`): what is off its axis's height is farther inside it on the floor. A leaning one spreads wider: its farthest
+ * edge to a side is asin(sin half / cos lean) round.
+ */
+function floorWedgeCos(half, lean, outer) {
+  if (lean === 0) return outer;
+  if (lean + half >= QUARTER_TURN) return NO_CONE;
+  const sin = Math.sin(half) / Math.cos(lean);
+  return sin < 1 ? Math.sqrt(1 - sin * sin) : 0;
 }
 
 /** setDirection's work, the angle in SETTER_ARGS64[0] (NaN: 0, where the entity faces). */
@@ -53,11 +67,15 @@ function setDirectionFromArgs(i) {
  *   set for it, unless its entity has one (it reads its neighbours: SST-21). That entity's neighbour list is its
  *   code's, so it stays what its visualRange gives, and the light finds its occluders within it.
  * - DX-SPOT, a cone: `coneAngle` (radians, the whole aperture; 2π, the default, is a point light), `coneSoftness` (0..1:
- *   how much of the cone's edge fades), `direction` (radians, where it points relative to the entity's facing: the
- *   entity's rotation turns it, as it turns the offset), `followFlip` (0 by default: 1 mirrors the light's offsetX and
+ *   how much of the cone's edge fades), `direction` (radians, where it points on the floor, relative to the entity's facing:
+ *   the entity's rotation turns it, as it turns the offset), `tilt` (radians it leans down from level: 0, the default, level;
+ *   π/2 straight down, a ceiling lamp's pool; negative, up), `followFlip` (0 by default: 1 mirrors the light's offsetX and
  *   direction when the entity's flipX changes, a flashlight in a hand; 0 leaves them, a car whose flip is art).
- *   The cone is measured on the floor. The setters store what the frame reads: the direction's cosine and sine, the
- *   cosine of the half aperture (NO_CONE without a cone) and 1 / the soft edge's width in cosine.
+ *   The cone opens in 3D from the source, its `elevation` above the floor: a level one meets the floor ahead of it, at
+ *   elevation / tan(half its aperture), and a wall at the source's own height. The setters store what the frame reads: the
+ *   direction's cosine and sine, the tilt's cosine, the cosine of the half aperture (NO_CONE without a cone), 1 / the soft
+ *   edge's width in cosine, and the wedge on the floor the whole cone stands in (`floorCos`), which the gathers of what can
+ *   shade it take.
  */
 export class LightEmitter extends Component {
   static ARRAY_SCHEMA = {
@@ -83,6 +101,10 @@ export class LightEmitter extends Component {
     followFlip: Uint8Array, // 1 = offsetX and direction mirror with the entity's flipX
     // DX-GLOWRADIUS, appended (append, don't move):
     glowRadius: Float32Array, // px, the halo's radius as it shows (E-498's compact glow); 0 = about 0.14 of the light's radius
+    // DX-CONE3D, appended (append, don't move):
+    tilt: Float32Array, // radians a cone leans down from level (negative: up)
+    tiltC: Float32Array, // its cosine
+    floorCos: Float32Array, // cosine of half the wedge on the floor the cone stands in, or NO_CONE (all around, or no cone)
   };
 
   /**
@@ -199,6 +221,26 @@ export class LightEmitter extends Component {
     setDirectionFromArgs(i);
   }
 
+  /** Radians a cone leans down from level: 0 (the default) level, π/2 straight down, negative up. */
+  get tilt() {
+    return LightEmitter.tilt[this.index];
+  }
+
+  set tilt(angle) {
+    LightEmitter.setTilt(this.index, angle);
+  }
+
+  /**
+   * DX-CONE3D: entity i's `tilt`, by index: radians its cone leans down from level, -π/2 to π/2.
+   * @param {number} i
+   * @param {number} angle
+   */
+  static setTilt(i, angle) {
+    const a = +angle || 0;
+    LightEmitter.tilt[i] = a > QUARTER_TURN ? QUARTER_TURN : a < -QUARTER_TURN ? -QUARTER_TURN : a;
+    LightEmitter.updateCone(i);
+  }
+
   /** Radians, the cone's whole aperture; 2π (the default) is a point light. */
   get coneAngle() {
     return LightEmitter.coneHalf[this.index] * 2;
@@ -262,12 +304,15 @@ export class LightEmitter extends Component {
     LightEmitter.followFlip[i] = v;
   }
 
-  /** coneCos and coneInvSpan from coneHalf and coneSoftness. */
+  /** coneCos and coneInvSpan from coneHalf and coneSoftness; tiltC and floorCos from the tilt with them. */
   static updateCone(i) {
     const half = LightEmitter.coneHalf[i];
+    const tilt = LightEmitter.tilt[i];
+    LightEmitter.tiltC[i] = Math.cos(tilt);
     if (half >= Math.PI) {
       LightEmitter.coneCos[i] = NO_CONE;
       LightEmitter.coneInvSpan[i] = 0;
+      LightEmitter.floorCos[i] = NO_CONE;
       return;
     }
     const outer = Math.cos(half);
@@ -283,6 +328,7 @@ export class LightEmitter extends Component {
     if (span > most) span = most;
     LightEmitter.coneCos[i] = outer;
     LightEmitter.coneInvSpan[i] = span > 0 ? 1 / span : CONE_NO_WIDTH_INV_SPAN;
+    LightEmitter.floorCos[i] = floorWedgeCos(half, Math.abs(tilt), outer);
   }
 
   /** The light's local x mirrored: GameObject calls it when a followFlip light's entity changes its flipX. */
@@ -300,5 +346,8 @@ export class LightEmitter extends Component {
     LightEmitter.coneCos[i] = NO_CONE;
     LightEmitter.coneInvSpan[i] = 0;
     LightEmitter.followFlip[i] = 0;
+    LightEmitter.tilt[i] = 0;
+    LightEmitter.tiltC[i] = 1;
+    LightEmitter.floorCos[i] = NO_CONE;
   }
 }

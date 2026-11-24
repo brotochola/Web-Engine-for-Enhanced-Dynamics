@@ -67,6 +67,7 @@ export const INSPECTOR_FORMATTERS = Object.freeze({
     // π (or more) means no cone: the light shines all round.
     coneHalf: (v) => (v >= Math.PI - 1e-4 ? 'no cone' : `${degrees(2 * v)} aperture`),
     coneSoftness: share,
+    tilt: (v) => (v === 0 ? 'level' : `${degrees(Math.abs(v))} ${v > 0 ? 'down' : 'up'}`),
     castShadows: yesNo,
     followFlip: yesNo,
   },

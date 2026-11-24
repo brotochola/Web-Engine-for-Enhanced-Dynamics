@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PICTURE_FLOOR_SCALE, PICTURE_HEIGHT_SCALE, coneOnScreen, frontSeen, pointOnScreen, screenFootprint, turnBack } from '../buenosAiresScene/carGeometry.js';
+import { PICTURE_FLOOR_SCALE, PICTURE_HEIGHT_SCALE, frontSeen, pointOnScreen, screenFootprint, turnBack } from '../buenosAiresScene/carGeometry.js';
 import { CARS } from '../img/autos/index.js';
 import { CAR_LAMPS } from '../img/autos/lamps.js';
 
@@ -80,24 +80,4 @@ test('the lamps are where the owner marked them on four cars, to a few px (2026-
       assert.ok(Math.min(...gaps) < 6, `${sheet}: ${Math.min(...gaps).toFixed(1)} px from the mark`);
     }
   }
-});test('the beam drawn over the car has the edges of the cone the floor shows', () => {
-  const out = { turn: 0, half: 0, length: 0 };
-  const G = 0.5;
-  const same = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 1e-9;
-  for (let degrees = -180; degrees < 180; degrees += 7) {
-    const angle = degrees * DEG;
-    const axis = Math.atan2(Math.sin(angle) / G, Math.cos(angle));
-    coneOnScreen(angle, G, 22 * DEG, 40, out);
-    for (const which of [-1, 1]) {
-      const edge = Math.atan2(G * Math.sin(axis + which * 22 * DEG), Math.cos(axis + which * 22 * DEG));
-      assert.ok(same(angle + out.turn + which * out.half, edge), `heading ${degrees}: edge ${which}`);
-    }
-    assert.ok(out.half > 0.1 && out.half < 0.8 && out.length >= 40 * G - 1e-9 && out.length <= 40 + 1e-9);
-  }
-  coneOnScreen(0, G, 22 * DEG, 40, out);
-  assert.ok(Math.abs(out.turn) < 1e-9 && Math.abs(out.length - 40) < 1e-9, 'across the screen: straight, whole');
-  coneOnScreen(90 * DEG, G, 22 * DEG, 40, out);
-  assert.ok(Math.abs(out.length - 20) < 1e-9, 'towards the camera: the floor is drawn half as tall');
 });
-
-

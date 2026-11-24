@@ -1338,6 +1338,8 @@ export interface FlashCreateConfig {
   coneSoftness?: number;
   /** Radians, where the cone points, in the world's frame (a flash never turns). Default 0. */
   direction?: number;
+  /** Radians the cone leans down from level, as LightEmitter.tilt. Default 0. */
+  tilt?: number;
 }
 
 /** A flash preset's config: spawnIndex's keys, the position too optional (spawnPreset gives it). */
@@ -4717,6 +4719,7 @@ export declare class LightEmitter extends Component {
   static setDirection(index: number, angle: number): void;
   static setConeAngle(index: number, angle: number): void;
   static setConeSoftness(index: number, value: number): void;
+  static setTilt(index: number, angle: number): void;
   static setFollowFlip(index: number, on: number | boolean): void;
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
@@ -4739,6 +4742,9 @@ export declare class LightEmitter extends Component {
     coneInvSpan: typeof Float32Array;
     followFlip: typeof Uint8Array;
     glowRadius: typeof Float32Array;
+    tilt: typeof Float32Array;
+    tiltC: typeof Float32Array;
+    floorCos: typeof Float32Array;
   };
   static active: Uint8Array;
   /** 0xRRGGBB. */
@@ -4798,6 +4804,12 @@ export declare class LightEmitter extends Component {
   static coneInvSpan: Float32Array;
   /** 1: offsetX and the direction mirror with the entity's flipX. */
   static followFlip: Uint8Array;
+  /** Radians a cone leans down from level (negative: up). Set it with `tilt` or {@link LightEmitter.setTilt}. */
+  static tilt: Float32Array;
+  /** The tilt's cosine. Written by the setters. */
+  static tiltC: Float32Array;
+  /** The cosine of half the wedge on the floor the cone stands in, -2 for all around. Written by the setters. */
+  static floorCos: Float32Array;
   /** The halo's alpha, at least 0. */
   get glow(): number;
   set glow(value: number);
@@ -4820,6 +4832,13 @@ export declare class LightEmitter extends Component {
    */
   get direction(): number;
   set direction(angle: number);
+  /**
+   * Radians a cone leans down from level: 0 (the default) level, as a headlight or a hand's flashlight; π/2 straight down, a
+   * ceiling lamp's pool; negative up. The cone opens in 3D from the source, its `elevation` above the floor: a level one
+   * meets the floor ahead of it, at elevation / tan(coneAngle / 2).
+   */
+  get tilt(): number;
+  set tilt(angle: number);
   /** Radians, the cone's whole aperture; 2π (the default) is a point light, the same light it always was. */
   get coneAngle(): number;
   set coneAngle(angle: number);

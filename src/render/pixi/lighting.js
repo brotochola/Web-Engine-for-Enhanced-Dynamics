@@ -706,6 +706,8 @@ export class PixiLighting {
     const lightConeInvSpan = LightEmitter.coneInvSpan;
     const lightDirC = LightEmitter.dirC;
     const lightDirS = LightEmitter.dirS;
+    const lightTilt = LightEmitter.tilt;
+    const lightTiltC = LightEmitter.tiltC;
     // E-510: how far each light's shadows reach (0: its radius).
     const lightShadowRange = LightEmitter.shadowRange;
     let coneSlot = 0;
@@ -769,7 +771,8 @@ export class PixiLighting {
       lightData[i1 + 3] = h; // DX-FACES: a face needs the source's height itself
       if (isCone) {
         // The cone's direction: the entity's facing turns the light's own (dirC, dirS); on the floor, y over
-        // groundScaleY, unit length. Then the cosine of the half aperture and 1 / the soft edge's width.
+        // groundScaleY, unit length; DX-CONE3D: times the tilt's cosine, so its length tells the tilt. Then the cosine of
+        // the half aperture and 1 / the soft edge's width, negative for a cone that leans up.
         const dc = lightDirC[entityIndex];
         const ds = lightDirS[entityIndex];
         const rc = rotC[entityIndex];
@@ -778,10 +781,11 @@ export class PixiLighting {
         const wy = (rs * dc + rc * ds) * groundInvY;
         const len = Math.sqrt(wx * wx + wy * wy);
         const i2 = row2 + i0;
-        lightData[i2] = len > 0 ? wx / len : 1;
-        lightData[i2 + 1] = len > 0 ? wy / len : 0;
+        const level = lightTiltC[entityIndex];
+        lightData[i2] = len > 0 ? (wx / len) * level : level;
+        lightData[i2 + 1] = len > 0 ? (wy / len) * level : 0;
         lightData[i2 + 2] = coneCos;
-        lightData[i2 + 3] = lightConeInvSpan[entityIndex];
+        lightData[i2 + 3] = lightTilt[entityIndex] < 0 ? -lightConeInvSpan[entityIndex] : lightConeInvSpan[entityIndex];
       }
     }
 

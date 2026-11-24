@@ -25658,6 +25658,26 @@
         "police cars missing",
         "poli true"
       ]
+    },
+    {
+      "records": [
+        "R-1965"
+      ],
+      "refs": [],
+      "id": "DX-CONE3D",
+      "title": "Cone lights in 3D: a cone opens from its height (it was a wedge on the floor, as tall as the world), and LightEmitter.tilt leans it",
+      "status": "kept",
+      "kind": "dx",
+      "area": "renderer",
+      "date": "2026-11-23",
+      "result": "Flat views 0 px from before (spot light, light gallery, dxCapture, light bench; WebGL and WebGPU); the light pass with 400 cones 1.839 -> 1.798 ms with faces, 1.814 -> 1.661 on the floor, inside the spread",
+      "statusText": "Kept 2026-11-23 on feat/cone-3d (1b503491), not merged: main is held for 0.15.0",
+      "next": "Merge after fix/art-camera-floor (it stands on it), once the owner has seen Headlights and Buenos Aires; the floor still takes every light whole whatever its angle (by its normal a headlight would give it 10 % at 120 px), which is the engine's reference and stays",
+      "aliases": [
+        "3D cones",
+        "tilt",
+        "spot light height"
+      ]
     }
   ],
   "records": [
@@ -43793,6 +43813,20 @@
       "text": "**The headlights shine over the car's front (after the owner: the beam passed behind the car).** A light brightens what faces it, so the bumper stayed dark between the lamp and the pool. A halo and a cone with the floor cone's own edges, decorations of the car, draw that stretch over it; the lamps' offsets take the car's rotation out each tick (on the bus 5 degrees were 6 px). 211 cars driving: left lamp median 0 px off the picture (p99 0.55), right 0.04 (p99 2.4). Tried and left: normals 'flat' at night (hard white patches on bonnets). demos 149.",
       "commits": [
         "3bbefcef"
+      ]
+    },
+    {
+      "id": "R-1965",
+      "date": "2026-11-23",
+      "time": "22:40",
+      "timeFrom": "recorded",
+      "title": "Cone lights in 3D, and tilt",
+      "verdict": "kept",
+      "text": "**Cones in 3D, kept on feat/cone-3d (1b503491, fb43417c, 6a701b99).** The owner asked why a headlight lit the floor under its own bumper and had to be drawn over the car: a cone was a point light cut by a wedge on the floor, with no height. The light pass now tests the pixel's 3D offset against the cone's axis, and tilt leans it (pi / 2: a ceiling lamp's pool); a level cone's row is bit for bit what it was. The gathers take the floor's wedge that holds the cone (floorCos; brute-forced in lightCone.test.js).\n\n- **Found by the captures:** in a view straight from above the engine gives a picture's length as its height, and the 3D cone cut the far end of every rock and car (229 097 px of the spot light scene): a flat view now takes a sprite as the floor it stands on, 0 px.\n- **Checked:** 0 px from the base on spotLightStress (still=1 cone=1, plain, faces, WebGPU), lightGallery and dxCapture (both backends), the light bench (both); Headlights and Buenos Aires change, as they must. node 3632, demos 148.\n- **Speed:** the light pass's GPU time, 400 cones, glFrameRecorder --gpu-draws, 4 + 4 pairs ABAB on the GTX 1650: faces 1.839 -> 1.798 ms (2 of 4), floor 1.814 -> 1.661 (3 of 4); the clock wandered 780 to 945 MHz, so no verdict under about 10 %.\n- **What it replaced:** in Buenos Aires the light drawn 8 px up the screen and the cone sprite over the bumper (3bbefcef). By the cars' height maps 8 or 9 px of a front face its own lamp; normals 'flat' left hard patches.",
+      "commits": [
+        "1b503491",
+        "fb43417c",
+        "6a701b99"
       ]
     }
   ],

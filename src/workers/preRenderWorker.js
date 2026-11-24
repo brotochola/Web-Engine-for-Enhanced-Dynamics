@@ -763,6 +763,9 @@ function lampFrameFor(e, t, dirs, anims, frames) {
     return t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
 }
 
+/** DX-CONE3D: the stamp's 1 / soft edge for a wedge with none (a hard edge, as LightEmitter's cone of no width). */
+const CONE_HARD_INV_SPAN = 1e30;
+
 /** E-369: the ray from a lamp to its caster on the floor (dx, dy), for lampFrameFor. */
 const LAMP_RAY = new Float64Array(2);
 
@@ -4591,7 +4594,9 @@ class PreRenderWorker extends AbstractWorker {
         const lightRadius = LightEmitter.radius;
         const lightCasts = LightEmitter.castShadows;
         const lightShadowRange = LightEmitter.shadowRange;
-        const lightConeCos = LightEmitter.coneCos;
+        // DX-CONE3D: the wedge on the floor the cone stands in (its own for a level cone, wider for one that leans).
+        const lightConeCos = LightEmitter.floorCos;
+        const lightOwnConeCos = LightEmitter.coneCos;
         const lightConeInvSpan = LightEmitter.coneInvSpan;
         const lightBrightness = LightEmitter.brightness;
         const lightDirC = LightEmitter.dirC;
@@ -4674,7 +4679,8 @@ class PreRenderWorker extends AbstractWorker {
                 slot.coneDirX = len > 0 ? wx / len : 1;
                 slot.coneDirYW = len > 0 ? (wy / len) * invG : 0;
                 slot.coneCos = coneCos;
-                slot.coneInvSpan = lightConeInvSpan[id];
+                // A leaning cone's wedge has no soft edge of its own: what stands in it casts whole (the light pass cuts it).
+                slot.coneInvSpan = coneCos === lightOwnConeCos[id] ? lightConeInvSpan[id] : CONE_HARD_INV_SPAN;
             } else {
                 slot.coneDirX = 1;
                 slot.coneDirYW = 0;
@@ -5840,8 +5846,9 @@ class PreRenderWorker extends AbstractWorker {
         const lightOffsetY = LightEmitter.offsetY;
         const lightRotC = Transform.rotC;
         const lightRotS = Transform.rotS;
-        // DX-SPOT: a cone light gathers only what can shadow its wedge (the light pass cuts the cone itself).
-        const lightConeCos = LightEmitter.coneCos;
+        // DX-SPOT: a cone light gathers only what can shadow its wedge (the light pass cuts the cone itself). DX-CONE3D: the
+        // wedge on the floor the cone stands in.
+        const lightConeCos = LightEmitter.floorCos;
         const lightDirC = LightEmitter.dirC;
         const lightDirS = LightEmitter.dirS;
         const groundY = cameraFloorScaleY(this.config);

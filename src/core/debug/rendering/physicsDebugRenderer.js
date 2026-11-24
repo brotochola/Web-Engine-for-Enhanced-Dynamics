@@ -1207,7 +1207,8 @@ export class PhysicsDebugRenderer {
         const r = (LightEmitter.radius[i] || 0) * zoom;
         if (!(r > 2)) continue;
         ctx.strokeStyle = on ? 'rgba(255, 220, 80, 0.75)' : 'rgba(160, 160, 160, 0.5)';
-        const half = LightEmitter.coneHalf[i];
+        // DX-CONE3D: the wedge on the floor the cone stands in.
+        const half = LightEmitter.floorCos[i] >= -1 ? Math.acos(LightEmitter.floorCos[i]) : Math.PI;
         if (!(half < Math.PI - 1e-4)) {
           ctx.beginPath();
           ctx.ellipse(sx, sy, r, r * floorScaleY, 0, 0, Math.PI * 2);
