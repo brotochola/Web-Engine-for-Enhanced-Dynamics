@@ -390,7 +390,8 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS) {
   float zA = 0.0;
   if (aInstBase.y >= 1.0) {
     float north = aInstXY.y * uGroundInvScaleY
-      + footprintNorth(int(aInstBase.y + 0.5) - 1, content.x - aInstAnchor.x * aInstSize.x) * abs(aInstScale.y);
+      + footprintNorth(int(aInstBase.y + 0.5) - 1, content.x - aInstAnchor.x * aInstSize.x) * abs(aInstScale.y)
+        * artFloorRatio(aInstBase.y, uGroundInvScaleY);
     float halfCell = 0.5 * cell.y * uGroundInvScaleY + 0.5;
     a = vec2(base.x, base.y + halfCell) - z * uSunK.xy;
     b = vec2(base.x, min(north, base.y) - halfCell) - z * uSunK.xy;
@@ -569,7 +570,8 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS) {
   var zA = 0.0;
   if (aInstBase.y >= 1.0) {
     let north = aInstXY.y * uniforms.uGroundInvScaleY
-      + footprintNorth(i32(aInstBase.y + 0.5) - 1, content.x - aInstAnchor.x * aInstSize.x) * abs(aInstScale.y);
+      + footprintNorth(i32(aInstBase.y + 0.5) - 1, content.x - aInstAnchor.x * aInstSize.x) * abs(aInstScale.y)
+        * artFloorRatio(aInstBase.y, uniforms.uGroundInvScaleY);
     let halfCell = 0.5 * cell.y * uniforms.uGroundInvScaleY + 0.5;
     a = vec2<f32>(base.x, base.y + halfCell) - z * uniforms.uSunK.xy;
     b = vec2<f32>(base.x, min(north, base.y) - halfCell) - z * uniforms.uSunK.xy;

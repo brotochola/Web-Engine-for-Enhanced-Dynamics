@@ -2407,3 +2407,61 @@ test('N-297: a full sun row carries its frame\'s turn from the sun when its shee
   assert.ok(short > 50 && past > 50, `turns to either side of the frame's view (${short}, ${past})`);
   assert.ok(plain > 300, `rows of sheets on no contact, with no turn (${plain})`);
 });
+
+test('a table whose directions are told on the screen picks its lights\' frames on the floor it was drawn on', async () => {
+  const m = await worker();
+  const floorAngles = [0, 45, 90, 180, 270].map((d) => (d * Math.PI) / 180);
+  const src = { ...contactSheet([0, 26.565, 90, 180, 270], false), floor: { scaleY: 0.5, angles: floorAngles, uniform: false, start: 0 } };
+  const [t, plain] = m.sunFrameTables({ 0: src, 1: contactSheet([0, 45, 90, 180, 270], false) });
+  assert.deepEqual(Array.from(t.angles), Array.from(plain.angles), 'the floor\'s angles');
+  assert.equal(t.facingScaleY, 0.5);
+  assert.equal(plain.facingScaleY, 1);
+});
+
+test('a render drawn for another camera than the scene\'s is turned on its own floor, for the sun and for a lamp', async () => {
+  const m = await worker();
+  // A car drawn on a floor 0.75 tall in a scene whose floor is 0.5 tall: 1.5 times as tall. 72 directions, one texture each.
+  const degrees = Array.from({ length: 72 }, (_, k) => k * 5);
+  const tables = m.sunFrameTables({
+    0: { ...contactSheet(degrees, false), floorRatio: 1.5 },
+    1: contactSheet(degrees, false),
+    2: { ...contactSheet(degrees, true), floorRatio: 1.5 },
+  });
+  assert.equal(tables[1].floorRatio, 1, 'a table with none is the scene\'s own');
+  assert.equal(tables[2].lampQuarter, 0, 'a uniform table on another floor leaves the borders to lampFrameFor');
+  const proxy = { 0: {}, 1: {}, 2: {} };
+  const starts = [];
+  const counts = [];
+  for (const sheet of [0, 1, 2]) for (let a = 0; a < 72; a++) {
+    proxy[sheet][a] = starts.length;
+    starts.push(1000 * (sheet + 1) + a);
+    counts.push(1);
+  }
+  // The sun's shadow runs 45 degrees down the scene's floor: turn = -90 - 45. On the car's floor that ray is
+  // atan(1 / 1.5) = 33.69 degrees, so the sun sees the car (drawn at 40 degrees) at 40 - 90 - 33.69 = 276.31: the frame at
+  // 275, the view 1.31 past it, two steps of 0.75. The scene's own car: 40 - 135 = 265 exactly.
+  const turn = (-135 * Math.PI) / 180;
+  const col = (v) => Uint8Array.of(v, v, v);
+  const rows = new Float32Array(3 * GPU_CASTER_FLOATS);
+  const shift = new Int16Array(256);
+  m.prepareSunFrames(tables, proxy, starts, counts, shift, new Float64Array(256).fill(NaN), turn);
+  m.applySunFramesFor(rows, 3, Uint32Array.of(0, 1, 2), Uint8Array.of(0, 0, 0), Uint32Array.of(0, 1, 2), col(1), col(1), col(1),
+    Uint8Array.of(0, 1, 2), col(8), col(0), null, tables, shift, col(0), col(0), Float32Array.of(1, 1, 1));
+  const texture = (k) => rows[k * GPU_CASTER_FLOATS + GPU_ROW_TEXTURE];
+  assert.equal(texture(0), 1000 + 55 + (32 + 2) / 128, 'the sun, on the car\'s floor');
+  assert.equal(texture(1), 2000 + 53 + 32 / 128, 'the sun, on the scene\'s');
+  assert.equal(texture(2), 3000 + 55 + (32 + 2) / 128, 'the sun, a uniform table on the car\'s floor');
+  // A lamp at the same bearing: its ray (1, 1) on the scene's floor, the caster's kind for the lamps a card.
+  const lamp = new Float32Array(3 * GPU_CASTER_FLOATS);
+  for (let k = 0; k < 3; k++) {
+    lamp[k * GPU_CASTER_FLOATS] = 100;
+    lamp[k * GPU_CASTER_FLOATS + 1] = 50;
+    lamp[k * GPU_CASTER_FLOATS + GPU_ROW_SCALE_X] = 1;
+    lamp[k * GPU_CASTER_FLOATS + GPU_ROW_TINT] = k;
+  }
+  m.applyLampFramesInto(lamp, 3, Uint8Array.of(0, 0, 0), [{ id: -5, x: 0, y: 0 }], 2, tables, proxy, starts, counts, null, col(1),
+    col(1), col(8), col(0), Uint8Array.of(0, 1, 2), null, col(1));
+  const lampTexture = (k) => lamp[k * GPU_CASTER_FLOATS + GPU_ROW_TEXTURE];
+  // These are facings, not directions drawn, for a table that is not uniform: the uniform one tells them apart.
+  assert.equal(lampTexture(2), 3000 + 55, 'a lamp, on the car\'s floor (276.31 degrees)');
+});

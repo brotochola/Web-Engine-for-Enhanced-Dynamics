@@ -354,6 +354,8 @@ export async function buildBigAtlas(
               footprint: Array.isArray(footprints) ? readFootprint(footprints[frameOrdinal]) : null,
               sunCard,
               renderDirections: isRenderDirections(config.directions ?? jsonDirections),
+              // The floor its picture was drawn on (its art camera's floorScaleY; 0: the scene's own).
+              artFloor: artCamera !== null ? artCamera.floorScaleY : 0,
             });
           }
 
@@ -518,11 +520,14 @@ export async function buildBigAtlas(
     // came out below it. It casts its card for every light (no heights to build columns from).
     if (b.contact === undefined && d.renderDirections && !d.maps?.heightImg) {
       frames[d.name].base = { contact: b.bottom - 0.5, heightPerRow: -1, card: true, mapless: true };
+      if (d.artFloor > 0) frames[d.name].base.artFloor = d.artFloor;
       continue;
     }
     frames[d.name].base = b.contact >= 0
       ? (d.sunCard ? { contact: b.contact, heightPerRow: b.heightPerRow, card: true } : { contact: b.contact, heightPerRow: b.heightPerRow })
       : { cx: b.cx, rx: b.rx, ry: b.ry };
+    // A render's card is worked out on the floor its picture was drawn on (the Pixi worker's texture table, pre-render's turn).
+    if (b.contact >= 0 && d.artFloor > 0) frames[d.name].base.artFloor = d.artFloor;
     // A render with its footprint casts its solid swept north to it (the Pixi worker's footprint texture).
     if (b.contact >= 0 && d.footprint) frames[d.name].footprint = d.footprint;
   }

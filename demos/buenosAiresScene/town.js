@@ -99,6 +99,21 @@ export class AutoState extends Component {
     floorHalfLength: Float32Array, // its footprint on its pictures' floor (18 px a metre), px
     floorHalfWidth: Float32Array,
     headlights: Uint8Array, // 1: it has headlights
+    lampAhead: Float32Array, // where its picture draws them: ahead of its centre and to each side (px on its pictures' floor),
+    lampSide: Float32Array, // and px of height
+    lampHeight: Float32Array,
+    lampLeftX: Float32Array, // where the frame drawn shows them, screen px from its centre
+    lampLeftY: Float32Array,
+    lampRightX: Float32Array,
+    lampRightY: Float32Array,
+    lampSeen: Float32Array, // how much of them the frame drawn shows: 1 facing the camera, 0 hidden behind the car
+    lampHaloLeft: Int32Array, // their shine over the car, attached decorations: pool index + 1
+    lampHaloRight: Int32Array,
+    lampBeamLeft: Int32Array, // their beams' first stretch over the car's front, attached decorations: pool index + 1
+    lampBeamRight: Int32Array,
+    beamTurn: Float32Array, // that stretch as the frame drawn shows it: turned from the heading, and its scale
+    beamScaleX: Float32Array,
+    beamScaleY: Float32Array,
     lightsOn: Uint8Array, // its headlights (or its beacon's cones) are on: 2 before the first decision
     darkness: Float32Array, // its lights come on when Sun.intensity drops under this (each car its own)
     rightHeadlight: Int32Array, // its right headlight, a LuzAuto child: entity index + 1, 0 for none

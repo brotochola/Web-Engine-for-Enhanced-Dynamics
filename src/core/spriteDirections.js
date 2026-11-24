@@ -3,7 +3,10 @@
 // the sheet (its proxy's `directions`). DirectionalSprite reads it there.
 //
 // Angles are the world's, as `rotation` and LightEmitter.direction: radians from +x, with y down, so π/2 is south (towards
-// the camera). In a spec they are degrees.
+// the camera). In a spec they are degrees. A sheet that says the camera it was drawn for (its artCamera) gives them on the
+// floor it was drawn on, and a floor seen at an angle is drawn flattened: a car drawn at 45° there points 36° on the screen
+// with a floor 0.736 tall. Its table's angles are where its pictures point on the screen, which is what a rotation, a velocity
+// and a light's cone are; `floor` keeps the floor's, where a light's frame is picked.
 
 /** The eight names a spec may use, every 45° from east. */
 export const DIRECTION_NAMES = Object.freeze(['right', 'downRight', 'down', 'downLeft', 'left', 'upLeft', 'up', 'upRight']);
@@ -156,10 +159,13 @@ export function detectDirectionGroups(animationNames) {
  * @param {object|boolean|undefined|null} spec
  * @param {string[]} animationNames the sheet's animations, by index
  * @param {string[]} [problems] what was wrong in the spec, as sentences
+ * @param {number} [artFloorScaleY] how tall the floor it was drawn on is drawn (its artCamera's floorScaleY), where the
+ *   spec's angles are that floor's; none: they are the world's
  * @returns {null | { count: number, angles: number[], names: string[], uniform: boolean, start: number, step: number,
- *   groups: string[], anim: number[], flip: number[], hasFlip: boolean, groupOfAnim: number[] }}
+ *   groups: string[], anim: number[], flip: number[], hasFlip: boolean, groupOfAnim: number[],
+ *   floor?: { scaleY: number, angles: number[], uniform: boolean, start: number } }}
  */
-export function buildDirectionTable(sheetName, spec, animationNames, problems = []) {
+export function buildDirectionTable(sheetName, spec, animationNames, problems = [], artFloorScaleY = 0) {
   if (spec === false) return null;
   const index = new Map(animationNames.map((n, k) => [n, k]));
   const animIndexOf = (name) => {
@@ -232,7 +238,20 @@ export function buildDirectionTable(sheetName, spec, animationNames, problems = 
     }
     for (const d of e) if (groupOfAnim[d.anim] < 0) groupOfAnim[d.anim] = g;
   }
-  return { count, angles, names, uniform, start: angles[0], step, groups, anim, flip, hasFlip, groupOfAnim };
+  const table = { count, angles, names, uniform, start: angles[0], step, groups, anim, flip, hasFlip, groupOfAnim };
+  return artFloorScaleY > 0 ? directionsOnScreen(table, artFloorScaleY) : table;
+}
+
+/**
+ * A table whose angles are the floor's it was drawn on, that floor `scaleY` as tall as it is wide: its angles where its
+ * pictures point on the screen, the floor's kept in `floor`. The order holds (the four cardinals stay, and no angle passes
+ * another), so a direction's index means the same in both. The table as it is where no angle moves (four cardinals).
+ */
+function directionsOnScreen(table, scaleY) {
+  const angles = table.angles.map((a) => wrapAngle(Math.atan2(scaleY * Math.sin(a), Math.cos(a))));
+  if (angles.every((a, k) => angleDistance(a, table.angles[k]) < 1e-6)) return table;
+  const { uniform, start } = table;
+  return { ...table, angles, uniform: false, start: angles[0], floor: { scaleY, angles: table.angles, uniform, start } };
 }
 
 /**
