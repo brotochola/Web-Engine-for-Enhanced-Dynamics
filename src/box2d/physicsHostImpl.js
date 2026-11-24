@@ -62,6 +62,9 @@
   var FC_SEQ = 4;
   var FC_GEN = 5;
 
+  // src/util/memoryFence.js's word (N-452), copied.
+  var fcFence = new Int32Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(4) : new ArrayBuffer(4));
+
   function fcReadGen(i32) {
     var gen = 0;
     for (var spin = 0; spin < 8; spin++) {
@@ -84,6 +87,7 @@
     var i32Base = (FC_HEADER + slot * FC_SLOT) >> 2;
     var f64Base = (FC_HEADER + slot * FC_SLOT) >> 3;
     Atomics.add(i32, i32Base + 5, 1);
+    Atomics.add(fcFence, 0, 0);
     f64[f64Base] = startAbs;
     f64[f64Base + 1] = endAbs;
     Atomics.store(i32, i32Base + 4, gen);
@@ -95,6 +99,7 @@
   var FT_HEADER = 64;
   var FT_BINS = 1024;
   var FT_SLOT = FT_HEADER + FT_BINS * 4;
+  var ftFence = new Int32Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(4) : new ArrayBuffer(4));
 
   function ftAdd(state, stepMs, waitMs, extraMs) {
     var slot = state.fcSlot;
@@ -107,6 +112,7 @@
     var bin = work > 0 ? (work * 8) | 0 : 0;
     if (bin >= FT_BINS) bin = FT_BINS - 1;
     Atomics.add(i32, seq, 1);
+    Atomics.add(ftFence, 0, 0);
     f64[f0 + 1] += 1;
     f64[f0 + 2] += stepMs;
     if (waitMs > 0) f64[f0 + 3] += waitMs;

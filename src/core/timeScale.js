@@ -2,6 +2,8 @@
 // (Time.simNowMs, behind a seqlock). Wall FPS and STEP_MS do not read the scale. Input and the audio mixer do not
 // either.
 
+import { memoryFence } from '../util/memoryFence.js';
+
 /** Index of the scale inside `clockData`. */
 export const TIME_SCALE_INDEX = 0;
 
@@ -169,6 +171,7 @@ export class Time {
       const at = now[1];
       const running = run[0];
       const scale = sanitizeTimeScale(view[TIME_SCALE_INDEX]);
+      memoryFence();
       if (Atomics.load(seq, 0) === before) {
         SIM_LAST[0] = base;
         SIM_LAST[1] = at;
@@ -209,7 +212,10 @@ export class Time {
     if (!seq) return false;
     for (;;) {
       const v = Atomics.load(seq, 0);
-      if ((v & 1) === 0 && Atomics.compareExchange(seq, 0, v, v + 1) === v) return true;
+      if ((v & 1) === 0 && Atomics.compareExchange(seq, 0, v, v + 1) === v) {
+        memoryFence();
+        return true;
+      }
     }
   }
 

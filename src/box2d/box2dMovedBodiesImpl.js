@@ -24,6 +24,8 @@
   var movedBits = null;
   var fellAsleep = null;
   var entityCapacity = 0;
+  // src/util/memoryFence.js's word (N-452), copied: a classic script cannot import it.
+  var fence = new Int32Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(4) : new ArrayBuffer(4));
 
   function createMovedBodiesSab(entityCount) {
     var cap = Math.max(1, entityCount | 0);
@@ -148,6 +150,7 @@
   ) {
     if (!hdrI32 || !movedList || !movedBits) return 0;
     Atomics.add(hdrI32, HDR_SEQ, 1);
+    Atomics.add(fence, 0, 0);
     var cap = entityCapacity;
     movedBits.fill(0);
     if (fellAsleep) fellAsleep.fill(0);
@@ -219,6 +222,7 @@
   function copyMovedBodies(dst, count, seq) {
     if (!hdrI32 || !movedList || seq < 0 || count > dst.length || count > entityCapacity) return false;
     for (var i = 0; i < count; i++) dst[i] = movedList[i];
+    Atomics.add(fence, 0, 0);
     return (Atomics.load(hdrI32, HDR_SEQ) | 0) === seq;
   }
 

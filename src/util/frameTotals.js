@@ -24,6 +24,7 @@
 // tests/node/frameTotals.test.js compares the two byte for byte.
 
 import { SLOT_COUNT } from './frameClock.js';
+import { memoryFence } from './memoryFence.js';
 
 export const HEADER_BYTES = 64;
 export const HIST_BINS = 1024;
@@ -78,6 +79,7 @@ export function addFrame(view, slot, stepMs, waitMs, extraMs) {
   let bin = work > 0 ? (work * BINS_PER_MS) | 0 : 0;
   if (bin >= HIST_BINS) bin = HIST_BINS - 1;
   Atomics.add(i32, seq + SEQ, 1);
+  memoryFence();
   f64[f0 + FRAMES] += 1;
   f64[f0 + STEP] += stepMs;
   if (waitMs > 0) f64[f0 + WAIT] += waitMs;
@@ -106,6 +108,7 @@ export function readTotals(view, slot) {
     const waitSum = f64[f0 + WAIT];
     const extraSum = f64[f0 + EXTRA];
     hist.set(view.u32.subarray(h0, h0 + HIST_BINS));
+    memoryFence();
     if (Atomics.load(i32, seq + SEQ) === s1) return { frames, stepSum, waitSum, extraSum, hist };
   }
   return null;

@@ -156,6 +156,7 @@ import { StaticSceneryGrid } from '../render/staticSceneryGrid.js';
 import { bindMeshPoseList, writeMeshPoseList } from '../util/meshPoseList.js';
 import { addWaitMs, waitMeterMs } from '../util/waitMeter.js';
 import { devChecksOn, staticsAfterEmit, staticsBeforeEmit } from '../core/debug/devChecks.js';
+import { memoryFence } from '../util/memoryFence.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -3982,6 +3983,7 @@ class PreRenderWorker extends AbstractWorker {
             out[m++] = c;
         }
         this._childMarkedCount = m;
+        memoryFence();
         if (Atomics.load(words, LINK_LIST_SEQ) === seq) return;
         for (let k = 0; k < m; k++) mark[out[k]] = 0;
         this._childMarkedCount = 0;

@@ -34,6 +34,8 @@
  */
 export const TIME_ORIGIN = performance.timeOrigin;
 
+import { memoryFence } from './memoryFence.js';
+
 export const HEADER_BYTES = 32;
 export const SLOT_BYTES = 32;
 export const MAX_LOGIC = 8;
@@ -109,6 +111,7 @@ function slotI32(slot) {
 export function publishFrame(view, absNow) {
   const i32 = view.i32;
   Atomics.add(i32, HEADER_SEQ, 1);
+  memoryFence();
   view.f64[0] = absNow;
   const gen = Atomics.add(i32, HEADER_GEN, 1) + 1;
   Atomics.add(i32, HEADER_SEQ, 1);
@@ -124,6 +127,7 @@ export function readFrame(view) {
     if (s1 & 1) continue;
     const t0 = f64[0];
     const gen = Atomics.load(i32, HEADER_GEN);
+    memoryFence();
     const s2 = Atomics.load(i32, HEADER_SEQ);
     if (s1 === s2 && (s2 & 1) === 0) return { t0, gen };
   }
@@ -163,6 +167,7 @@ export function stampStep(view, slot, times) {
   const seq = slotI32(slot) + 5;
   const genAt = slotI32(slot) + 4;
   Atomics.add(i32, seq, 1);
+  memoryFence();
   f64[f0] = startAbs;
   f64[f0 + 1] = endAbs;
   Atomics.store(i32, genAt, gen);
@@ -182,6 +187,7 @@ export function readSlot(view, slot) {
     const start = f64[f0];
     const end = f64[f0 + 1];
     const gen = Atomics.load(i32, genAt);
+    memoryFence();
     const s2 = Atomics.load(i32, seq);
     if (s1 === s2 && (s2 & 1) === 0) {
       return { name: SLOT_NAME[slot], gen, start, end };

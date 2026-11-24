@@ -35,6 +35,7 @@ import { addFrame, bindFrameTotals, createFrameTotalsBuffer, readTotals } from '
 import { bindImpactRing, IMPACT_FLOATS, impactRingBytes, publishImpacts } from '../../../src/util/impactRing.js';
 import { bindListUpdateRing, createListUpdateRings, listUpdateRecordOffset, listUpdatesPending, listUpdatesRead,
   markListUpdatesRead, pushListUpdates } from '../../../src/util/listUpdateRing.js';
+import { memoryFence } from '../../../src/util/memoryFence.js';
 import { createMessageInbox, drainMessages, pushMessage } from '../../../src/util/messageRing.js';
 import { bindNavRequestRing, createNavRequestRings, drainNavRequests, pushNavRequest }
   from '../../../src/util/navRequestRing.js';
@@ -69,6 +70,7 @@ function shippedPublishChildList(words, published) {
   const end = post.indexOf('// child-links-end', at);
   if (at < 0 || end < 0) throw new Error('publishChildList not found in weedjsPost.js');
   return new Function('linkWords', 'linkPublished', `
+    const linkFence = new Int32Array(new SharedArrayBuffer(4));
     let childPublishDue = false, childList = null, childQueued = null, childCount = 0;
     ${post.slice(at, end)}
     return (list, queued, count) => { childList = list; childQueued = queued; childCount = count; publishChildList(); };
@@ -175,6 +177,7 @@ export const CASES = {
           const v = Atomics.load(seq, 0);
           if ((v & 1) === 0 && Atomics.compareExchange(seq, 0, v, v + 1) === v) break;
         }
+        memoryFence();
         base[0] = k;
         base[1] = k;
         Atomics.add(seq, 0, 1);
@@ -197,6 +200,7 @@ export const CASES = {
           const base = now[0];
           const at = now[1];
           const scale = view[0];
+          memoryFence();
           if (Atomics.load(seq, 0) !== before) continue;
           accepted++;
           if (base !== at || scale > 1) bad++;
@@ -366,6 +370,7 @@ export const CASES = {
           const count = (seq & 1) === 0 ? Atomics.load(w, 3) : 0;
           if (count === 0) continue;
           for (let k = 0; k < count; k++) dst[k] = l[k];
+          memoryFence();
           if (Atomics.load(w, 2) !== seq) continue;
           accepted++;
           if (count !== LIST_N || !wholeParity(dst, LIST_N)) bad++;

@@ -7,6 +7,7 @@ import { RigidBody } from '../components/rigidBody.js';
 import Keyboard from './keyboard.js';
 import { Mouse } from './mouse.js';
 import { rotatedHalfExtents, viewScreenToWorld, viewWorldToScreen } from '../util/viewBounds.js';
+import { memoryFence } from '../util/memoryFence.js';
 
 /**
  * Camera center that keeps the entity inside a world-pixel box.
@@ -230,7 +231,10 @@ export class Camera {
    * them as a set. Nested calls only count depth.
    */
   static _followWriteBegin() {
-    if (this._writeDepth++ === 0 && this._followSeq) Atomics.add(this._followSeq, 0, 1);
+    if (this._writeDepth++ === 0 && this._followSeq) {
+      Atomics.add(this._followSeq, 0, 1);
+      memoryFence();
+    }
   }
 
   /** Mark the end of a camera write (seqlock becomes even at the outermost end). */
@@ -280,6 +284,7 @@ export class Camera {
       const zoom = data[this.IDX_ZOOM];
       const camX = data[this.IDX_X];
       const camY = data[this.IDX_Y];
+      memoryFence();
       if (Atomics.load(seq, 0) !== s0) continue;
       snap.slot = slot;
       snap.usedX = usedX;

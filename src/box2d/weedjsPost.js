@@ -823,6 +823,7 @@
   }
 
   // child-links-start (tests/node/transformParent.test.js runs this block as shipped)
+  const linkFence = new Int32Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(4) : new ArrayBuffer(4));
   // DX-PARENT: Transform.parent. Physics is the one writer of a linked child's pose: after the step and before the pose
   // is published (doStep's writeChildPoses), every child goes where its parent is: parent.xy + rotate(parent.rotation,
   // local.xy), turned by parent.rotation + localRotation. Every reader of a light's owner (pre-render's and Pixi's light
@@ -986,6 +987,8 @@
     const n = childCount;
     const seq = words[2];
     Atomics.store(words, 2, (seq + 1) | 0);
+    // N-452: the odd mark before the list on a weakly ordered CPU (src/util/memoryFence.js, copied).
+    Atomics.add(linkFence, 0, 0);
     let m = 0;
     for (let k = 0; k < n; k++) {
       const c = list[k];
