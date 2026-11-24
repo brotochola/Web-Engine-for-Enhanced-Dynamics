@@ -6,6 +6,46 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Monday 23 November 2026 (night): Shadows and Headlights That Belong to the Car
+
+**A taxi with a shadow on the wrong side.** At 18:46 in Buenos Aires the owner saw a parked taxi cast a dark wedge towards
+the sun, and a blue car whose headlights did not line up with it. On the light bench the same cars were right, with either
+kind of shadow. The difference was the camera. The cars are drawn for a floor 0.736 as tall as it is wide; the barrio's is
+0.5. A sheet has said which camera it was drawn for since artCamera, but the engine fitted only its heights: the card a car
+casts for the sun still read its picture's depth on the scene's floor, so it stood 47 % too far towards the sun, and the sun
+was turned round the car on the wrong floor, which picked the wrong frame. Giving the light bench the barrio's camera
+brought the wedge up there too, which settled it.
+
+**Half a fix looked worse.** Correcting how far the card stands took the wedge away and left a worse shape: against the
+exact shadow it overlapped 35 %, less than the 39 % it had. With the sun's direction and the frame worked out on the art's
+own floor too it is 59 %, as good as the same car gets with its own camera (58 %). On the light bench with the barrio's
+camera the silhouette went from 3369 px off its height map's shadow to 1948 (N-440).
+
+**The car pointed one way and drove another.** A rotation and a light's cone are the screen's angles; the cars' sheets list
+their headings on the floor they were drawn on. DirectionalSprite compared the two as they were, so a car driving at 40
+degrees was drawn at 34, beside its beam at 40. A sheet with an artCamera now keeps its directions where its pictures point
+on the screen, worked out once at load, and the floor's for the lights' frames. Beam against picture went from 5.6 degrees
+off to 2.1 on average (N-441). The light bench's pictures did not move by one pixel through any of it.
+
+**"Why does the light pass behind the car?"** The owner marked in red where the lamps are. They are measured on the sheets
+now, the bluish white pixels of each car's front placed in 3D by its height map, and the marks fell on them. Then came the
+real question: the floor lit up from right under the bumper, and the bumper stayed dark. Lighting the car anyway left hard
+white patches on its bonnet; moving the light up the screen and drawing a cone over the car looked right, and was two
+tricks. "I don't like workarounds, let's talk." By the height maps only 8 or 9 pixels of a car's front face its own lamp, so
+the bumper is rightly dark. The fault was the cone: every light was a point in 3D, but a cone was that point cut by a wedge
+on the floor, as tall as the world.
+
+**Cones that open from the lamp.** The light pass tests each pixel's place in 3D against the cone's axis. A level headlight
+meets the street ahead of the car, as one does, and a wall at its own height; `tilt` leans it, and straight down it is a
+ceiling lamp's round pool (DX-CONE3D). No light's data grew, and the light pass with 400 cones takes what it took. The tricks
+are gone; the lamps keep their glow. The captures caught one thing on the way: seen straight from above, a car's length is
+not its height, and the new cone cut off the far end of every rock and car until a flat view took a sprite as the floor it
+stands on.
+
+**Left.** The floor still takes every light whole whatever its angle: it is the engine's reference, and changing it would
+darken every low lamp in every game. And Buenos Aires shows no police car: the barrio's package and the scene name them
+differently (N-442).
+
 ## Monday 23 November 2026 (afternoon): A Light Pass That Stops Waiting, and Passes That See the G-buffer
 
 **The light pass was waiting on itself.** Each light it visits needs two rows of the light data, its place and its
