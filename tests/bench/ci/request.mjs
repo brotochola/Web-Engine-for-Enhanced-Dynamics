@@ -6,6 +6,8 @@
  *     "jobs": [ { "task": "tests", "machines": ["linux", "mac"], "vms": 1 },
  *               { "task": "kernelAb", "machines": ["linux"], "vms": 8, "args": { "a": "<sha>", "b": "<sha>", "rounds": 5 } } ] }
  *
+ * { "name": "x", "collectRun": <run id> } runs nothing: it gathers the artifacts another run left.
+ *
  * `args` go to the task's script as --key value; `shards: n` splits a task's work over n jobs (--shard k/n) on every VM.
  */
 import fs from 'node:fs';
@@ -37,7 +39,8 @@ export const TASKS = Object.freeze({
 export function readRequest(file) {
   const req = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!/^[a-z0-9][a-z0-9-]{1,40}$/.test(req.name || '')) throw new Error(`request name "${req.name}": lower case, digits and dashes`);
-  if (!Array.isArray(req.jobs) || req.jobs.length === 0) throw new Error('the request has no jobs');
+  if (req.collectRun && !req.jobs) req.jobs = [];
+  if (!Array.isArray(req.jobs) || (req.jobs.length === 0 && !req.collectRun)) throw new Error('the request has no jobs');
   return req;
 }
 

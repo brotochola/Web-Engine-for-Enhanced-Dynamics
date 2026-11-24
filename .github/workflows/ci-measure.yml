@@ -15,6 +15,8 @@ jobs:
     outputs:
       name: ${{ steps.plan.outputs.name }}
       matrix: ${{ steps.plan.outputs.matrix }}
+      jobs: ${{ steps.plan.outputs.jobs }}
+      from: ${{ steps.plan.outputs.from }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,6 +31,7 @@ jobs:
 
   run:
     needs: plan
+    if: needs.plan.outputs.jobs != '0'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -82,6 +85,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
     env:
       REQUEST: ${{ needs.plan.outputs.name }}
     steps:
@@ -92,21 +96,26 @@ jobs:
             tests/bench/ci
             ci-request.json
           sparse-checkout-cone-mode: false
+      # A request's own run, or the run a collectRun request names (its results branch never came).
       - uses: actions/download-artifact@v8
         with:
+          run-id: ${{ needs.plan.outputs.from || github.run_id }}
+          github-token: ${{ github.token }}
           pattern: out-*
           path: ci-out
           merge-multiple: true
       - run: node tests/bench/ci/collect.mjs ci-out
-      # The results branch has no history: one commit, force-pushed by a re-run.
+      # The results branch has no history: one commit in a repository of its own, force-pushed by a re-run.
       - name: Results branch
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          mv ci-out "$RUNNER_TEMP/ci-out"
-          git checkout --orphan results
-          git rm -rfq --cached .
-          mv "$RUNNER_TEMP/ci-out" ci-out
+          mkdir "$RUNNER_TEMP/results"
+          mv ci-out "$RUNNER_TEMP/results/ci-out"
+          cd "$RUNNER_TEMP/results"
+          git init -q -b results
           git add -f ci-out
           git -c user.name=ci-measure -c user.email=ci-measure@users.noreply.github.com \
             commit -qm "CI results: $REQUEST ($GITHUB_SHA)"
-          git push -f origin "HEAD:refs/heads/ci-results/$REQUEST"
+          git push -f "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "HEAD:refs/heads/ci-results/$REQUEST"

@@ -6,7 +6,7 @@ import { expandRequest, readRequest } from './request.mjs';
 
 const req = readRequest('ci-request.json');
 const include = expandRequest(req);
-const text = `name=${req.name}\nmatrix=${JSON.stringify({ include })}\n`;
+const text = `name=${req.name}\nmatrix=${JSON.stringify({ include })}\njobs=${include.length}\nfrom=${req.collectRun || ''}\n`;
 if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, text);
 for (const e of include) console.log(`${e.id.padEnd(34)} ${e.os.padEnd(18)} ${e.args}`);
 console.log(`${include.length} jobs`);
