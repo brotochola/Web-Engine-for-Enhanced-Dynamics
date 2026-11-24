@@ -25662,18 +25662,19 @@
     },
     {
       "records": [
-        "R-1962"
+        "R-1962",
+        "R-1981"
       ],
       "refs": [],
       "id": "N-442",
       "title": "Buenos Aires shows no police car: the barrio's package marks its 52 police places poli: true and the scene reads color 'poli'",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "demos",
       "date": "2026-11-23",
-      "result": "",
-      "statusText": "Found 2026-11-23 while checking the beacons (a capture with the file patched shows them, beacons and all)",
-      "next": "One line where the scene reads a place (buenosAiresScene.js LugarAuto): color poli when config.poli; check burnt the same way",
+      "result": "fixed: the scene reads poli and burnt; 47 parked police cars and 20 driving, with a turning red and blue beacon",
+      "statusText": "Fixed 2026-11-24 (8ab0b705), demo/parquechas-2026-11-23",
+      "next": "",
       "aliases": [
         "police cars missing",
         "poli true"
@@ -43857,6 +43858,15 @@
         "fb43417c",
         "6a701b99"
       ]
+    },
+    {
+      "id": "R-1981",
+      "date": "2026-11-24",
+      "time": "01:05",
+      "timeFrom": "recorded",
+      "title": "N-442 fixed: Buenos Aires reads the package's police places and wrecks, and the police beacons turn (red and blue, half a turn apart)",
+      "verdict": "kept-hygiene",
+      "text": "The scene read color 'poli' and 'burnt'; the package's format says poli: true and burnt: true. With it read, Parque Chas has 47 parked police cars and 6 driving; the scene now makes driving places police up to 20 driving (the owner asked for police cars to be seen).\nThe beacon, at the owner's ask, turns: two Baliza children on the light bar, a red beam and a blue one half a turn apart, 1.2 turns a second, each with its spark and flash (headlight-style halos among the entities; the additive glows layer is gone, it was drawn over the houses in front).\nSeen by day and at 22:00, WebGL and WebGPU: 67 beacons lit at night. Not measured: worker times read off the page at 600 people were renderer 3.8 to 4.1 ms and logic 1.7 to 2.0 ms, no baseline beside them. Node and demo suites green."
     }
   ],
   "leads": [
