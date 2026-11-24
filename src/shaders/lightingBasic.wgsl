@@ -19,8 +19,8 @@ struct LightingUniforms {
   uNightR: f32,
   uNightG: f32,
   uNightB: f32,
-  // DX-SPOT: the first uConeCount lights are cones, with a third row (direction on the floor, cos of the half aperture,
-  // 1 / the soft edge's width); they loop apart, so a point light runs the loop it always ran. A float (see pixiWorker).
+  // DX-SPOT: the first uConeCount lights are cones, with a third row (direction on the floor times the cosine of its tilt,
+  // cos of the half aperture, 1 / the soft edge's width, negative where the cone leans up); they loop apart, so a point light runs the loop it always ran. A float (see pixiWorker).
   uConeCount: f32,
   uTileGrid: vec4<f32>, // E-205: a tile's px, the border's tiles, the grid's columns and rows (border included)
   uTileWords: vec4<f32>, // words in use, texel rows a word's band (the grid's rows + 1)
@@ -148,12 +148,14 @@ fn wallVisibility(p: vec2<f32>, tag: f32, selfId: f32) -> f32 {
 }
 // #endif WALLS
 
-// DX-SPOT: how far inside its cone a point at floor offset delta from the light is: 1 inside, 0 outside, smooth across
-// the soft edge. At the light itself, 1.
-fn coneFactor(delta: vec2<f32>, cone: vec4<f32>) -> f32 {
+// DX-SPOT: how far inside its cone a point at offset delta from the light is (DX-CONE3D: in 3D, z its height less the
+// light's): 1 inside, 0 outside, smooth across the soft edge. At the light itself, 1. The axis leans down by the tilt, whose
+// cosine is the length of cone.xy (1e-6: a level cone's rounding).
+fn coneFactor(delta: vec3<f32>, cone: vec4<f32>) -> f32 {
   let len2 = dot(delta, delta);
-  let cosA = select(1.0, dot(delta, cone.xy) * inverseSqrt(len2), len2 > 0.0);
-  let t = clamp((cosA - cone.z) * cone.w, 0.0, 1.0);
+  let lean = sqrt(max(1.0 - 1e-6 - dot(cone.xy, cone.xy), 0.0)) * select(-1.0, 1.0, cone.w < 0.0);
+  let cosA = select(1.0, (dot(delta.xy, cone.xy) + delta.z * lean) * inverseSqrt(len2), len2 > 0.0);
+  let t = clamp((cosA - cone.z) * abs(cone.w), 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
 }
 
@@ -433,6 +435,8 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
   let z = select(q, q - 32768.0, kRule) / 8.0;
   let lit = uniforms.uFaceLight;
   let p = vec3<f32>(world.x, (world.y + z * lit.x) * uniforms.uGroundInvScaleY, z);
+  // DX-CONE3D: in a flat view a picture's height is no height (the GLSL says why).
+  let coneZ = select(0.0, z, uniforms.uGroundInvScaleY > 1.0);
   // E-205: the tile of the floor point under p, where a light's reach is measured (lightTiles.js bins the floor's).
   let tile = lightTile(weedWorldToNorm(vec2<f32>(world.x, world.y + z * lit.x)) * uniforms.uViewport);
   let tileWords = i32(uniforms.uTileWords.x);
@@ -490,7 +494,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     if (cosine <= 0.0 && !both) { continue; }
     let scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     let intensityScaled = posInt.z * scaled;
-    var cone = coneFactor(p.xy - posInt.xy, textureLoad(uLightData, vec2<i32>(i, 2), 0))
+    var cone = coneFactor(vec3<f32>(-toLight.xy, coneZ - col.a), textureLoad(uLightData, vec2<i32>(i, 2), 0))
       * reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, selfId, i);
@@ -682,7 +686,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #if WALLS
     if (attenuation > 0.0) { attenuation *= wallVisibility(fragWorld, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, wallSelf); }
 // #endif WALLS
-    totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
+    totalLight += col.rgb * attenuation * coneFactor(vec3<f32>(deltaScaled, -col.a * DISTANCE_SCALE), cone);
     } else {
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);

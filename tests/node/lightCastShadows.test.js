@@ -152,15 +152,16 @@ test('DX-GLOWRADIUS: Flash.spawn({ glowRadius }) gives the flash a halo of its o
 
 test('DX-SPOT: Flash.spawn({ coneAngle, coneSoftness, direction }) gives the flash a cone; a later spawn without one is round', async () => {
   bind();
-  for (const [k, T] of Object.entries({ dirC: Float32Array, dirS: Float32Array, coneHalf: Float32Array, coneSoftness: Float32Array, coneCos: Float32Array, coneInvSpan: Float32Array, followFlip: Uint8Array })) {
+  for (const [k, T] of Object.entries({ dirC: Float32Array, dirS: Float32Array, coneHalf: Float32Array, coneSoftness: Float32Array, coneCos: Float32Array, coneInvSpan: Float32Array, followFlip: Uint8Array, tilt: Float32Array, tiltC: Float32Array, floorCos: Float32Array })) {
     LightEmitter[k] = new T(4);
   }
   const le = new LightEmitter(1);
-  await flashSpawned({ x: 0, y: 0, coneAngle: Math.PI / 2, coneSoftness: 0.5, direction: Math.PI / 3 });
+  await flashSpawned({ x: 0, y: 0, coneAngle: Math.PI / 2, coneSoftness: 0.5, direction: Math.PI / 3, tilt: 0.25 });
   assert.equal(LightEmitter.coneCos[1], Math.fround(Math.cos(Math.PI / 4)));
   assert.equal(LightEmitter.dirC[1], Math.fround(Math.cos(Math.PI / 3)));
   assert.equal(LightEmitter.dirS[1], Math.fround(Math.sin(Math.PI / 3)));
   assert.ok(Math.abs(le.coneSoftness - 0.5) < 1e-7);
+  assert.equal(le.tilt, 0.25);
   await flashSpawned({ x: 0, y: 0 });
   assert.equal(LightEmitter.coneCos[1], -2, 'round again');
   assert.equal(LightEmitter.dirC[1], 1);

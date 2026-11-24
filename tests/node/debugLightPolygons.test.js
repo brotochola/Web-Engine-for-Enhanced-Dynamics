@@ -68,7 +68,7 @@ test('no rows, or none published yet: only the lights\' own marks are drawn', ()
 
 /** Two lamps: #0 a point light, #1 a cone of 90° pointing along +x of an entity turned 90° (so down the screen). */
 function withLamps(fn) {
-  const keys = ['active', 'radius', 'brightness', 'offsetX', 'offsetY', 'coneHalf', 'dirC', 'dirS'];
+  const keys = ['active', 'radius', 'brightness', 'offsetX', 'offsetY', 'coneHalf', 'floorCos', 'dirC', 'dirS'];
   const tkeys = ['active', 'x', 'y', 'rotC', 'rotS'];
   const saved = Object.fromEntries(keys.map((k) => [k, LightEmitter[k]]));
   const tsaved = Object.fromEntries(tkeys.map((k) => [k, Transform[k]]));
@@ -79,6 +79,7 @@ function withLamps(fn) {
     LightEmitter.offsetX = new Float32Array([10, 0]);
     LightEmitter.offsetY = new Float32Array([0, 0]);
     LightEmitter.coneHalf = new Float32Array([Math.PI, Math.PI / 4]);
+    LightEmitter.floorCos = new Float32Array([-2, Math.cos(Math.PI / 4)]);
     LightEmitter.dirC = new Float32Array([1, 1]);
     LightEmitter.dirS = new Float32Array([0, 0]);
     Transform.active = new Uint8Array([1, 1]);

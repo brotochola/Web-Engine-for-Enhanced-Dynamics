@@ -14,8 +14,8 @@ uniform vec2 uFullCanvasSize;
 uniform vec2 uCameraRot;
 
 uniform sampler2D uLightData;
-// DX-SPOT: the first uConeCount lights are cones, with a third row (direction on the floor, cos of the half aperture,
-// 1 / the soft edge's width); they loop apart, so a point light runs the loop it always ran.
+// DX-SPOT: the first uConeCount lights are cones, with a third row (direction on the floor times the cosine of its tilt, cos
+// of the half aperture, 1 / the soft edge's width, negative where the cone leans up); they loop apart, so a point light runs the loop it always ran.
 uniform float uConeCount;
 uniform float uBaseAmbient;
 uniform float uSunIntensity;
@@ -59,12 +59,14 @@ int lowBit(highp uint bits) {
 // ANGLE's D3D11 where a textureLod at a normalized coordinate was a sampled read): 0 position and I', 1 colour and
 // height, 2 a cone, 3 x a lamp's map shadow fade at the cut of maxShadowCastingLights (N-212; 1 for a light not fading).
 
-// DX-SPOT: how far inside its cone a point at floor offset delta from the light is: 1 inside, 0 outside, smooth across
-// the soft edge. At the light itself, 1.
-float coneFactor(vec2 delta, vec4 cone) {
+// DX-SPOT: how far inside its cone a point at offset delta from the light is (DX-CONE3D: in 3D, z its height less the
+// light's): 1 inside, 0 outside, smooth across the soft edge. At the light itself, 1. The axis leans down by the tilt, whose
+// cosine is the length of cone.xy (1e-6: a level cone's rounding).
+float coneFactor(vec3 delta, vec4 cone) {
   float len2 = dot(delta, delta);
-  float cosA = len2 > 0.0 ? dot(delta, cone.xy) * inversesqrt(len2) : 1.0;
-  float t = clamp((cosA - cone.z) * cone.w, 0.0, 1.0);
+  float lean = sqrt(max(1.0 - 1e-6 - dot(cone.xy, cone.xy), 0.0)) * (cone.w < 0.0 ? 1.0 : -1.0);
+  float cosA = len2 > 0.0 ? (dot(delta.xy, cone.xy) + delta.z * lean) * inversesqrt(len2) : 1.0;
+  float t = clamp((cosA - cone.z) * abs(cone.w), 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
 }
 
@@ -435,6 +437,9 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   n = normalize(n);
   float z = (kRule ? q - 32768.0 : q) / 8.0;
   vec3 p = vec3(world.x, (world.y + z * uFaceLight.x) * uGroundInvScaleY, z);
+  // DX-CONE3D: seen straight from above or from the side a picture's height is no height (a car's length, seen from above):
+  // a cone takes it as the floor it stands on.
+  float coneZ = uGroundInvScaleY > 1.0 ? z : 0.0;
   // E-205: the tile of the floor point under p, where a light's reach is measured (lightTiles.js bins the floor's).
   ivec2 tile = lightTile(weedWorldToNorm(vec2(world.x, world.y + z * uFaceLight.x)) * uViewport);
   int tileWords = int(uTileWords.x);
@@ -496,7 +501,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     if (cosine <= 0.0 && !both) continue;
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
-    float cone = coneFactor(p.xy - posInt.xy, texelFetch(uLightData, ivec2(i, 2), 0))
+    float cone = coneFactor(vec3(-toLight.xy, coneZ - col.a), texelFetch(uLightData, ivec2(i, 2), 0))
       * reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, selfId, i);
@@ -697,7 +702,7 @@ void main() {
 // #if WALLS
     if (attenuation > 0.0) attenuation *= wallVisibility(fragWorld, texelFetch(uLightData, ivec2(i, 3), 0).z, wallSelf);
 // #endif WALLS
-    totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
+    totalLight += col.rgb * attenuation * coneFactor(vec3(deltaScaled, -col.a * DISTANCE_SCALE), cone);
     } else {
 
     vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);

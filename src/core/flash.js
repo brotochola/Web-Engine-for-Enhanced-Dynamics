@@ -21,7 +21,7 @@ import { debugWorkerLog } from '../util/debugLog.js';
 /** A flash's config compiled: one row of doubles, every key with its default applied. */
 const ROW_NAMES = [
   'X', 'Y', 'Z', 'LIFESPAN', 'COLOR', 'RADIUS', 'BRIGHTNESS', 'GLOW', 'GLOW_RADIUS', 'CAST_SHADOWS', 'DIRECTION',
-  'CONE_ANGLE', 'CONE_SOFTNESS', 'ELEVATION',
+  'CONE_ANGLE', 'CONE_SOFTNESS', 'ELEVATION', 'TILT',
 ];
 const F = Object.freeze(Object.fromEntries(ROW_NAMES.map((name, i) => [name, i])));
 const ROW_SLOTS = ROW_NAMES.length;
@@ -29,7 +29,7 @@ const ROW_SLOTS = ROW_NAMES.length;
 /** The keys a flash's config can have; Flash.define refuses any other. */
 export const FLASH_KEYS = Object.freeze([
   'x', 'y', 'z', 'lifespan', 'color', 'radius', 'brightness', 'glow', 'glowRadius', 'castShadows', 'coneAngle',
-  'coneSoftness', 'direction', 'elevation',
+  'coneSoftness', 'direction', 'elevation', 'tilt',
 ]);
 const FLASH_KEY_SET = new Set(FLASH_KEYS);
 
@@ -79,6 +79,7 @@ function compileFlash(T, o, cfg) {
   T[o + F.CONE_ANGLE] = cfg.coneAngle ?? Math.PI * 2;
   T[o + F.CONE_SOFTNESS] = cfg.coneSoftness ?? 0;
   T[o + F.ELEVATION] = cfg.elevation ?? 0;
+  T[o + F.TILT] = cfg.tilt ?? 0;
 }
 
 /** Flash i's light and life from SPAWN_ROW. */
@@ -97,6 +98,7 @@ function writeFlash(i) {
   LightEmitter.castShadows[i] = T[F.CAST_SHADOWS];
   LightEmitter.elevation[i] = T[F.ELEVATION];
   // DX-SPOT: its cone (2π, the default, is round); a flash never turns, so the direction is the world's.
+  LightEmitter.setTilt(i, T[F.TILT]);
   LightEmitter.setConeAngle(i, T[F.CONE_ANGLE]);
   LightEmitter.setConeSoftness(i, T[F.CONE_SOFTNESS]);
   LightEmitter.setDirection(i, T[F.DIRECTION]);
@@ -178,6 +180,7 @@ export class Flash extends GameObject {
    * @param {number} [config.coneAngle=2π] - A cone's whole aperture in radians (2π: round), as LightEmitter's
    * @param {number} [config.coneSoftness=0] - 0..1, how much of the cone's edge fades
    * @param {number} [config.direction=0] - Radians, where the cone points (a flash never turns: in the world's frame)
+   * @param {number} [config.tilt=0] - Radians the cone leans down from level, as LightEmitter.tilt
    * @returns {number} - The flash's entity index, or -1 if not initialized, off-screen or the pool is full
    *
    * @example
@@ -356,6 +359,7 @@ export class Flash extends GameObject {
         coneAngle: T[F.CONE_ANGLE],
         coneSoftness: T[F.CONE_SOFTNESS],
         elevation: T[F.ELEVATION],
+        tilt: T[F.TILT],
       });
     }
     return super.spawnIndex(FROM_ROW);
