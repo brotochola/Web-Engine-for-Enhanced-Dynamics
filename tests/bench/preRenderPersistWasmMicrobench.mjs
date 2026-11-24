@@ -8,6 +8,8 @@
  *   persist   a frame whose rows are the ones its buffer last held: the check, then the poses-only pass;
  *             the buffers alternate as pre-render's frames do (BunnyMark's every frame)
  *   remember  the rows a full emit leaves, remembered for the next check (a frame the check missed)
+ *   keyed     (--variant keyed, E-557) a persist frame of a scene whose sprites go keyed (Pixi draws every frame before
+ *             the next is emitted): emitSpriteQueue whole, so what it decides a frame is timed too
  *
  *   js    the shipped functions, as emitSpriteQueue calls them
  *   wasm  the kernel as emitSpriteQueue calls it: the column table written (preRenderEmitClient.js), then
@@ -29,6 +31,7 @@ import { DecorationComponent } from '../../src/components/decorationComponent.js
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { PIXI_KEYED_HEADER } from '../../src/util/wasmMemoryMap.js';
 import { writeEmitColumns, writePersistColumns } from '../../src/workers/preRenderEmitClient.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from './workerHarness.mjs';
@@ -70,6 +73,7 @@ export async function setupPersistKernel(opts = {}) {
     spriteBytes: SpriteRenderer.getBufferSize(N),
     casterBytes: 0,
     decorationBytes: 0,
+    pixiKeyed: !!opts.keyed,
   });
   if (!m) throw new Error('the render-queue memory does not fit');
   const e = m.layout.emit;
@@ -204,6 +208,24 @@ export async function setupPersistKernel(opts = {}) {
     return worker._persistCount[buf];
   };
 
+  /** A keyed scene's frame: emitSpriteQueue, Pixi having drawn the frame before (its header's DRAWN). */
+  let hits = 0;
+  const frameHit = b.persistFrame;
+  b.persistFrame = (...args) => {
+    const others = frameHit(...args);
+    if (others >= 0) hits++;
+    return others;
+  };
+  const emitKeyed = (rows = count) => {
+    nextFrame();
+    const source = worker._emitSource;
+    source.count = rows;
+    Atomics.store(worker._keyedHeader, PIXI_KEYED_HEADER.DRAWN, worker.renderQueueFrame >>> 0);
+    const written = worker.emitSpriteQueue(DT, source);
+    worker.renderQueueFrame++;
+    return written;
+  };
+
   const queueBytes = computeBufferSize(MAX_ITEMS);
   const hashed = [
     new Uint8Array(m.buffer, m.layout.queueAByte, queueBytes),
@@ -216,7 +238,7 @@ export async function setupPersistKernel(opts = {}) {
     for (const bytes of hashed) h = hashBytes(h, bytes);
     return h;
   };
-  return { worker, count, persistJs, rememberJs, persistWasm, rememberWasm, hashState, kernel: b };
+  return { worker, count, persistJs, rememberJs, persistWasm, rememberWasm, emitKeyed, hits: () => hits, hashState, kernel: b };
 }
 
 function hashBytes(h, bytes) {
@@ -227,8 +249,9 @@ function hashBytes(h, bytes) {
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'js');
-  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
-  const k = await setupPersistKernel({ seed: Number(args.seed ?? 0xb0b) });
+  if (!['js', 'wasm', 'keyed'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  const k = await setupPersistKernel({ seed: Number(args.seed ?? 0xb0b), keyed: variant === 'keyed' });
+  if (variant === 'keyed') return mainKeyed(args, k);
   const persist = variant === 'wasm' ? k.persistWasm : k.persistJs;
   const remember = variant === 'wasm' ? k.rememberWasm : k.rememberJs;
 
@@ -268,6 +291,25 @@ async function main() {
   };
   if (args.output) writeReport(String(args.output), report);
   else console.log(`checksum ${checksum} rows ${k.count}${tier ? ` tier ${tier}` : ''} persist ${cases.persist.opsPerSec.toFixed(1)} ops/s remember ${cases.remember.opsPerSec.toFixed(1)} ops/s`);
+}
+
+async function mainKeyed(args, k) {
+  let checksum = 2166136261;
+  for (let f = 0; f < 10; f++) checksum = Math.imul(checksum ^ k.emitKeyed(), 16777619) >>> 0;
+  checksum = k.hashState(checksum);
+  // Short frames (64 rows, with their own misses) until the kernel is optimized, then the whole queue's again.
+  const tier = await warmWasm(k.kernel.emitRows, () => k.emitKeyed(64));
+  for (let f = 0; f < 400; f++) k.emitKeyed(64);
+  for (let f = 0; f < 10; f++) k.emitKeyed();
+  const before = k.hits();
+  const cases = {
+    keyed: timeIt(`preRender keyed persist frame (${k.count} sprites)`, () => k.emitKeyed(), { iterations: 60, warmup: 20 }),
+  };
+  if (k.hits() - before < 80) throw new Error('a timed frame was no persist hit');
+  const report = { feature: 'preRender-persist-keyed', variant: 'keyed', functions: ['PreRenderWorker.emitSpriteQueue', 'preRenderEmit.persist_frame'],
+    rows: k.count, checksum, wasmTier: tier, machine: machineState(), cases };
+  if (args.output) writeReport(String(args.output), report);
+  else console.log(`checksum ${checksum} rows ${k.count}${tier ? ` tier ${tier}` : ''} keyed ${cases.keyed.opsPerSec.toFixed(1)} ops/s (${(1e3 / cases.keyed.opsPerSec).toFixed(3)} ms)`);
 }
 
 if (isCli(import.meta.url)) await main();
