@@ -117,6 +117,8 @@ import {
     EMIT_PERSIST_MISS,
     EMIT_PRESORTED,
     EMIT_OTHERS_ONLY,
+    EMIT_SEEN,
+    EMIT_MARKS,
     EMIT_SORT_KEY,
     EMIT_TILES_DIRTY,
     EMIT_WARN_BULLET_START,
@@ -1621,6 +1623,14 @@ class PreRenderWorker extends AbstractWorker {
         // last main-queue emit did.
         this._keyedTexUpdates = false;
         this._keyedComplete = new Uint8Array(2);
+        // E-557, the keyed persist frames: the queue frame of the last hit and how many came in a row up to it (3 at most);
+        // whether their sprites' last emitted frames stay behind (persist_seen); whether a buffer's keys may hold marks; the
+        // last queue frame a change was marked in.
+        this._keyedHitFrame = 0;
+        this._keyedHits = 0;
+        this._keyedSeenBehind = false;
+        this._keyedMarks = new Uint8Array(2).fill(1);
+        this._keyedChangeFrame = 0;
         this._emitSkippedStatics = false;
         this._gpuSunKeyed = false;
         /** E-331: whether this frame's keyed caster scan also wrote the casters' x, y and bounds for the stamp. */
@@ -2271,6 +2281,11 @@ class PreRenderWorker extends AbstractWorker {
             this._persistFrame = [0, 1].map((b) => persistView(Uint16Array, emitLayout?.persistFrameByte, b));
             this._persistAnim = [0, 1].map((b) => persistView(Uint16Array, emitLayout?.persistAnimByte, b));
             this._persistCount = [0, 0];
+            this._keyedHitFrame = 0;
+            this._keyedHits = 0;
+            this._keyedSeenBehind = false;
+            this._keyedMarks.fill(1);
+            this._keyedChangeFrame = 0;
 
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
@@ -4228,6 +4243,9 @@ class PreRenderWorker extends AbstractWorker {
             if (!keySkip && this._keyedComplete[this._queueBuf] === 0) persistBuf = -1;
             setEmitKeyFrames(this._emitWasm, keyFrame, keySince, keySkip);
         }
+        // E-557: what this frame's persist walk need not read or write (_persistKeyedHit keeps it).
+        const keyFlags = keyHeader === null ? 0
+            : (this._keyedHits >= 3 && this._keyedHitFrame === this._emitWasm.keyFrame - 1 ? EMIT_SEEN : 0) | (this._keyedMarks[this._queueBuf] !== 0 || this._keyedChangeFrame > keySince ? EMIT_MARKS : 0);
         this._emitSkippedStatics = keySkip;
         if (!this._writeEmitTable(source, this._resolveBuiltinTextureId('_bulletTrail'))) {
             return this._emitRefused('a column it reads is outside the render-queue memory');
@@ -4238,9 +4256,13 @@ class PreRenderWorker extends AbstractWorker {
         // Rows other than sprites are rewritten in full on a persist frame too (E-82 staticGen).
         let persistOthers = 0;
         if (persistWasm) {
-            persistOthers = this._persistFrameWasm(persistBuf, count, maxItems, deltaTime);
+            persistOthers = this._persistFrameWasm(persistBuf, count, maxItems, deltaTime, keyFlags);
             persistHit = persistOthers >= 0;
             if (!persistHit) persistOthers = 0;
+        }
+        if (keyHeader !== null) {
+            if (persistHit) this._persistKeyedHit();
+            else this._persistKeyedMiss(maxItems);
         }
         // N-408: a frame the persist path missed takes the sprites' renderDirty before the full emit reads their rows (a
         // setter after that marks its sprite again); clearing them after the emit lost a mark set while it ran.
@@ -4349,7 +4371,7 @@ class PreRenderWorker extends AbstractWorker {
      * _persistFramesRepaired, the sprites whose frame moved to _persistFramesMoved, the play-once ends
      * through the entity-type filter, as the JS sends them.
      */
-    _persistFrameWasm(bufIdx, count, maxItems, deltaTime) {
+    _persistFrameWasm(bufIdx, count, maxItems, deltaTime, keyFlags = 0) {
         if (this._persistCount[bufIdx] !== count) return -1;
         this._persistFramesRepaired = 0;
         const b = this._emitWasm;
@@ -4358,7 +4380,7 @@ class PreRenderWorker extends AbstractWorker {
         const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
         // E-117. Without ShadowCaster every sprite row's shadow terms are the zeros the full emit wrote.
         const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0) | (bounds ? EMIT_BOUNDS : 0)
-            | (ShadowCaster.active ? 0 : EMIT_NO_CASTERS);
+            | (ShadowCaster.active ? 0 : EMIT_NO_CASTERS) | keyFlags;
         const others = b.persistFrame(b.tableByte, count, maxItems, flags, deltaTime / 1000, this._zBand);
         if (others === EMIT_PERSIST_MISS) return -1;
         const results = b.results;
@@ -4371,6 +4393,43 @@ class PreRenderWorker extends AbstractWorker {
             if (this._animEndByType[Transform.entityType[idx]] === 1) this._spriteAnimationEnded(idx, u32[at + 1]);
         }
         return others;
+    }
+
+    /**
+     * E-557. After a persist hit of a keyed queue: what the next one need not read or write. A hit's walk finds each of its
+     * sprites in the frame before, so the second of three hits in a row says one buffer's sprites are all in the other's,
+     * and the third says it the other way: from then on, while the hits go on, every sprite was in the frame before
+     * (EMIT_SEEN). A walk that left the keys alone leaves the sprites' last emitted frames behind; one that wrote them marked
+     * the buffer's keys or did not, and took a change or did not.
+     */
+    _persistKeyedHit() {
+        const b = this._emitWasm;
+        const frame = b.keyFrame;
+        const wrote = b.results[3] !== 0;
+        this._keyedHits = this._keyedHitFrame === frame - 1 && this._keyedHits > 0 ? Math.min(3, this._keyedHits + 1) : 1;
+        this._keyedHitFrame = frame;
+        this._keyedSeenBehind = !wrote;
+        if (!wrote) return;
+        this._keyedMarks[this._queueBuf] = b.results[4] !== 0 ? 1 : 0;
+        if (b.results[5] !== 0) this._keyedChangeFrame = frame;
+    }
+
+    /**
+     * E-557. Before the full emit of a keyed queue: the sprites' last emitted frames, where the persist frames before left
+     * them behind (both buffers hold the same sprites: this one's rows name them), and the marks it may make.
+     */
+    _persistKeyedMiss(maxItems) {
+        const b = this._emitWasm;
+        const buf = this._queueBuf;
+        if (this._keyedSeenBehind && writePersistColumns(b, this, SpriteRenderer, buf)) {
+            const rows = this._persistCount[buf];
+            b.persistSeen(b.tableByte, rows < maxItems ? rows : maxItems, this._keyedHitFrame);
+        }
+        this._keyedSeenBehind = false;
+        this._keyedHitFrame = 0;
+        this._keyedHits = 0;
+        this._keyedMarks[buf] = 1;
+        this._keyedChangeFrame = b.keyFrame;
     }
 
     /**

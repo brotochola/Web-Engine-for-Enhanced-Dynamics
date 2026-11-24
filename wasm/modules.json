@@ -86,6 +86,7 @@
         "persist_frame",
         "persist_take_dirty",
         "persist_remember",
+        "persist_seen",
         "adobe_advance",
         "stamp_light_range",
         "sway_decorations",
@@ -276,6 +277,7 @@
         "persist_frame",
         "persist_take_dirty",
         "persist_remember",
+        "persist_seen",
         "adobe_advance"
       ],
       "maxMemoryPages": 32768,

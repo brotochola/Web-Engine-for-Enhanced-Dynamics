@@ -81,6 +81,10 @@ export const EMIT_NO_CASTERS = 16;
 export const EMIT_PRESORTED = 64;
 /** A persist frame's emit_rows: every row but the sprites, which persist_frame (or the JS persist path) wrote. */
 export const EMIT_OTHERS_ONLY = 128;
+/** E-557: persist_frame's, for a keyed queue: every sprite of the buffer's rows was in the queue frame before. */
+export const EMIT_SEEN = 256;
+/** E-557: the buffer's keys hold marks, or a change Pixi may not have drawn: the walk writes them. */
+export const EMIT_MARKS = 512;
 /** What JS reads back from emit_rows when it declined the frame (u32 0xffffffff as an i32). */
 export const EMIT_DECLINED = -1;
 /** What persist_frame returns when the rows are not the ones the buffer last held (W4c). */
@@ -169,7 +173,7 @@ export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
  * @param {Record<string, number>} emit createRenderQueueMemory's layout.emit
  */
 export async function bindPreRenderEmit(memory, emit) {
-  const k = await loadWasmKernel('preRenderEmit', engineWasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_take_dirty', 'persist_remember', 'adobe_advance']);
+  const k = await loadWasmKernel('preRenderEmit', engineWasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_take_dirty', 'persist_remember', 'persist_seen', 'adobe_advance']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, emit.tableByte, EMIT_SLOTS.length);
   table[SLOT.rEnds] = emit.endsByte;
@@ -188,6 +192,7 @@ export async function bindPreRenderEmit(memory, emit) {
     persistFrame: k.persist_frame,
     persistTakeDirty: k.persist_take_dirty,
     persistRemember: k.persist_remember,
+    persistSeen: k.persist_seen,
     adobeAdvance: k.adobe_advance,
     layout: emit,
     table,

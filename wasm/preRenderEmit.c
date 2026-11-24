@@ -148,6 +148,11 @@ enum {
    (the full emit's sprite loop carries no test of it). A frame with an Adobe root never gets here (persist_frame
    misses on one); it is declined. */
 #define F_OTHERS_ONLY 128u
+/* E-557, persist_frame of a keyed queue: every sprite the walked rows hold was in the queue frame before (both buffers hold
+   the same sprites and that frame was a persist one), so the walk reads no K_CHANGE. */
+#define F_SEEN 256u
+/* E-557: this buffer's keys hold marks, or a change Pixi may not have drawn: the keys are written whatever the walk finds. */
+#define F_MARKS 512u
 
 /* Warning kinds, for the JS to replay with its own keys. */
 #define WARN_NO_ANIM 0u    /* sprite: no global animation for (sheet, state), sheet set */
@@ -1419,8 +1424,12 @@ INLINE int32_t global_anim(const int32_t *proxy, uint32_t nSheets, uint32_t shee
    time, wait until every row has passed: the animated sprites' rows are listed in R_FOREIGN (unused on a
    persist frame) and advanced in row order after it (_advancePersistFrame, which advances on
    clock >= duration, as the full emit does: a NaN speed or clock advances on neither, N-65).
+   E-557: on a keyed queue a hit then writes the sprites' keys and marks. With F_SEEN and no F_MARKS, a frame whose
+   sprites carry no keyed flag leaves them: this buffer's keys stand without a mark, and each sprite's last emitted frame
+   (K_CHANGE's third word) stays behind until persist_seen or the next pass over the keys.
    Returns PERSIST_MISS or the rows of other types; R_COUNTS gets [play-once ends ([entity, state] pairs in
-   R_ENDS), sprites whose frame moved, repairs]. */
+   R_ENDS), sprites whose frame moved, repairs, whether the keys were written, the rows marked, whether a flag was
+   taken]. */
 __attribute__((export_name("persist_frame")))
 uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags,
                        double deltaSeconds, double band) {
@@ -1492,8 +1501,9 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   /* N-238: a sprite missing from the queue frame before (the other buffer's) enters the view in this one, and its mark
      sends the statics its row holds, which this buffer's last emit may have left unwritten (K_SKIP): a miss, so the full
      emit writes them. */
-  const uint32_t *kSeen = keyed ? PTR(const uint32_t, K_CHANGE) : 0;
+  const uint32_t *kSeen = keyed && (flags & F_SEEN) == 0 ? PTR(const uint32_t, K_CHANGE) : 0;
   const uint32_t kNow = t[K_FRAME];
+  uint32_t flagged = 0;
   /* Rows past the buffer pass the check (the JS reads undefined on both sides of each comparison there)
      and count as other types (their type reads undefined). */
   const uint32_t n = count < maxItems ? count : maxItems;
@@ -1511,6 +1521,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
     }
     if (sDirty && sDirty[idx]) return PERSIST_MISS;
     if (kSeen && kNow - kSeen[K_CHANGE_WORDS * (uint32_t)idx + 2u] > 1u) return PERSIST_MISS;
+    if (keyed) flagged |= sKeyedDirty[idx];
     const uint32_t anim = sAnim[idx];
     if (pAnim[i] != anim) return PERSIST_MISS;
     const uint32_t frame = aFrame[idx];
@@ -1603,7 +1614,11 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   /* E-177: a hit, so the sprites' rows stand as this buffer last held them, keys too: rewritten, a sprite flagged since
      (a repair, an advance, a statics change) marked changed, and a repeating one too (as the full emit marks it: its
      row's tile multiplier is the one this buffer last got, which may be older than the other buffer's). */
-  if (keyed) {
+  uint32_t marked = 0;
+  uint32_t taken = 0;
+  const int keys = keyed && ((flags & (F_SEEN | F_MARKS)) != F_SEEN || moved != 0 || repaired != 0
+                             || (flagged & (KEYED_DIRTY_STATICS | KEYED_DIRTY_TEXTURE)) != 0);
+  if (keys) {
     const uint16_t *qRepeatX = PTR(const uint16_t, Q_REPEAT_X);
     const uint16_t *qRepeatY = PTR(const uint16_t, Q_REPEAT_Y);
     uint32_t *kChange = PTR(uint32_t, K_CHANGE);
@@ -1620,6 +1635,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
         if (d & KEYED_DIRTY_STATICS) __atomic_fetch_or(&sKeyedDirty[idx], (uint8_t)KEYED_DIRTY_LATE, __ATOMIC_SEQ_CST);
         c |= d & KEYED_DIRTY_STATICS;
         texOnly = !c && (d & KEYED_DIRTY_TEXTURE) != 0;
+        taken = 1;
       }
       if (kChange) {
         /* E-312: as sprite_row marks it (N-238: the walk missed on a sprite entering the view, so none does here). */
@@ -1630,13 +1646,31 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
         c |= (kSince == 0) | (kc[0] > kSince);
         texOnly = !c && (kc[1] > kSince);
       }
+      marked += c | texOnly;
       qKey[i] = (uint32_t)idx | (c << 31) | (texOnly ? (KEY_CHANGED | KEY_TEX_ONLY) : 0u);
     }
   }
   counts[0] = nEnds;
   counts[1] = moved;
   counts[2] = repaired;
+  counts[3] = (uint32_t)keys;
+  counts[4] = marked;
+  counts[5] = taken;
   return others;
+}
+
+/* E-557: the sprites of this buffer's remembered rows (`rows` of them) as emitted in queue frame `frame`: what the persist
+   frames that left the keys alone did not write, before a frame that reads it. */
+__attribute__((export_name("persist_seen")))
+void persist_seen(uint32_t table, uint32_t rows, uint32_t frame) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint8_t *pType = PTR(const uint8_t, P_TYPE);
+  const int32_t *pEntity = PTR(const int32_t, P_ENTITY);
+  uint32_t *kChange = PTR(uint32_t, K_CHANGE);
+  if (!kChange) return;
+  for (uint32_t i = 0; i < rows; i++) {
+    if (pType[i] == 0) kChange[K_CHANGE_WORDS * (uint32_t)pEntity[i] + 2u] = frame;
+  }
 }
 
 /* N-408: before a full emit of the persist path, the queued sprites' renderDirty taken (an atomic exchange, a full
