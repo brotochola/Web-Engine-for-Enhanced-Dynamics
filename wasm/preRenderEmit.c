@@ -122,6 +122,9 @@ enum {
 #define KEY_TEX_ONLY 0x40000000u
 #define KEYED_DIRTY_STATICS 1u
 #define KEYED_DIRTY_TEXTURE 2u
+/* N-459: a persist frame took this sprite's statics mark and sent the statics its queue row held; the setter may have
+   come after the walk read its renderDirty, so the next full emit, which writes the new ones, marks it again. */
+#define KEYED_DIRTY_LATE 4u
 /* E-188: a keyed decoration's record: scaleX, scaleY, alpha, tint, texture, anchorX, anchorY as the row got them, and the
    epoch of that emit. */
 #define DECO_KEYED_WORDS 8u
@@ -604,7 +607,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq, int all) {
   uint32_t texMoved = 0;
   if (HAS(e->sKeyedDirty) && e->sKeyedDirty[idx]) {
     const uint32_t d = __atomic_exchange_n(&e->sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
-    changed = d & KEYED_DIRTY_STATICS;
+    changed = (d & (KEYED_DIRTY_STATICS | KEYED_DIRTY_LATE)) != 0;
     texMoved = (d & KEYED_DIRTY_TEXTURE) != 0;
   }
   /* E-312: the frame this sprite's statics changed in, now; its key is marked for a change after K_SINCE. N-238: the
@@ -1612,8 +1615,9 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       uint32_t c = (qRepeatX && qRepeatX[i] != 0) | (qRepeatY && qRepeatY[i] != 0);
       uint32_t texOnly = 0;
       uint32_t d = 0;
-      if (sKeyedDirty[idx]) {
-        d = __atomic_exchange_n(&sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
+      if (sKeyedDirty[idx] & (KEYED_DIRTY_STATICS | KEYED_DIRTY_TEXTURE)) {
+        d = __atomic_fetch_and(&sKeyedDirty[idx], (uint8_t)KEYED_DIRTY_LATE, __ATOMIC_SEQ_CST);
+        if (d & KEYED_DIRTY_STATICS) __atomic_fetch_or(&sKeyedDirty[idx], (uint8_t)KEYED_DIRTY_LATE, __ATOMIC_SEQ_CST);
         c |= d & KEYED_DIRTY_STATICS;
         texOnly = !c && (d & KEYED_DIRTY_TEXTURE) != 0;
       }

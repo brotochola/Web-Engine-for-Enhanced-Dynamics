@@ -27,14 +27,14 @@ export function oneAnimationMetadata(frames, size = 16) {
 
 /**
  * @param {number} entities
- * @param {{ maxItems?: number, textureMetadata?: object, config?: object, adobe?: boolean, particles?: number, extra?: object }} [opts]
+ * @param {{ maxItems?: number, textureMetadata?: object, config?: object, adobe?: boolean, particles?: number, keyed?: boolean, extra?: object }} [opts]
  *   `adobe`: the Adobe regions too (AdobeAnimComponent, the collector's pose stash, the asset tables), as a scene with Adobe
- *   characters has them; `particles`: a pool of that many particles in the particle memory placed in this one; `extra`:
+ *   characters has them; `particles`: a pool of that many particles in the particle memory placed in this one; `keyed`: the sprites go keyed (E-177); `extra`:
  *   more of the init payload (the particle lists, say)
  * @returns {Promise<{ worker: object, m: object }>} the worker (its kernel bound) and the memory
  */
 export async function bootEmitWorker(entities, {
-  maxItems = 8, textureMetadata = oneAnimationMetadata(1), config = {}, adobe = false, particles = 0, extra = {},
+  maxItems = 8, textureMetadata = oneAnimationMetadata(1), config = {}, adobe = false, particles = 0, keyed = false, extra = {},
 } = {}) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   const m = createRenderQueueMemory(maxItems, computeBufferSize(maxItems), computeGpuQueueBufferSize(caps), {
@@ -44,6 +44,7 @@ export async function bootEmitWorker(entities, {
     decorationBytes: 0,
     adobe: adobe ? { animBytes: AdobeAnimComponent.getBufferSize(entities), tableBytes: 1 << 16 } : null,
     particleBytes: particles > 0 ? particleMemoryBytes(particles, ParticleComponent.getBufferSize(particles)) : 0,
+    pixiKeyed: keyed,
   });
   const e = m.layout.emit;
   const pm = particles > 0
