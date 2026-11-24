@@ -5,7 +5,8 @@
 
 import WEED from '/src/index.js';
 import { CARS } from '../img/autos/index.js';
-import { PICTURE_FLOOR_SCALE, PICTURE_HEIGHT_SCALE, floorPointInCarFrame, screenFootprint } from './carGeometry.js';
+import { CAR_LAMPS } from '../img/autos/lamps.js';
+import { PICTURE_FLOOR_SCALE, PICTURE_HEIGHT_SCALE, pointInCarFrame, screenFootprint } from './carGeometry.js';
 import { POLICE_SHEET } from './carModels.js';
 import { PERSON_RADIUS } from './walkers.js';
 import {
@@ -25,15 +26,14 @@ const { ShapeType } = enums;
 
 const DEG = Math.PI / 180;
 
-// Headlights: two cones from the front corners of the footprint, where its picture draws them (HEADLIGHT_SIDE of its half
-// width out), measured on the floor. They reach about 65 m (900 px; half the light 6.7 m out), each 44° wide, fading over the outer half of each side,
+// Headlights: two cones from the lamps its picture draws (CAR_LAMPS, measured on each sheet), so each beam leaves its lamp on
+// the screen; the cones are measured on the floor. They reach about 65 m (900 px; half the light 6.7 m out), each 44° wide, fading over the outer half of each side,
 // at 0.7 brightness (where they meet, ahead, they add up). The car's own LightEmitter is the left one; the right one is
 // a LuzAuto child (Transform.parent), which follows the car with no code a frame.
 const HEADLIGHT_RADIUS = 900;
 const HEADLIGHT_CONE = 44 * DEG;
 const HEADLIGHT_SOFTNESS = 0.5;
 const HEADLIGHT_BRIGHTNESS = 0.7;
-const HEADLIGHT_SIDE = 0.62;
 /** The shadows its headlights cast reach 160 px: cheaper than the whole beam. */
 const HEADLIGHT_SHADOW_RANGE = 160;
 /**
@@ -198,6 +198,10 @@ export class Auto extends GameObject {
     state.lightsOn = 2;
     state.darkness = DARKNESS_MIN + rng() * DARKNESS_SPREAD;
     state.headlights = state.drives;
+    const [ahead, side, height] = CAR_LAMPS[sheet];
+    state.lampAhead = ahead * state.floorHalfLength;
+    state.lampSide = side * state.floorHalfWidth;
+    state.lampHeight = height;
     state.rightHeadlight = 0;
     state.beaconLeft = 0;
     state.beaconRight = 0;
@@ -208,11 +212,10 @@ export class Auto extends GameObject {
     const light = this.lightEmitter;
     if (state.headlights) {
       aimHeadlight(light);
-      const out = state.floorHalfWidth * HEADLIGHT_SIDE;
-      floorPointInCarFrame(this.rotation, state.floorHalfLength, -out, _lamp);
+      this.findHeadlight(this.rotation, -1);
       light.offsetX = _lamp.x;
       light.offsetY = _lamp.y;
-      floorPointInCarFrame(this.rotation, state.floorHalfLength, out, _lamp);
+      this.findHeadlight(this.rotation, 1);
       state.rightHeadlight = this.hangLight(_lamp.x, _lamp.y, 0, null);
     } else {
       light.radius = 0;
@@ -220,6 +223,12 @@ export class Auto extends GameObject {
     }
     if (state.police) this.mountBeacon(sheet);
     this.updateLights();
+  }
+
+  /** The lamp its picture draws at the screen heading `angle`, the left one (`side` -1) or the right one (1): into _lamp. */
+  findHeadlight(angle, side) {
+    const index = this.index;
+    pointInCarFrame(angle, AutoState.lampAhead[index], side * AutoState.lampSide[index], AutoState.lampHeight[index], _lamp);
   }
 
   /** A LuzAuto hung from the car at (localX, localY) of its frame: its index + 1, 0 when the pool is full. */
@@ -246,9 +255,9 @@ export class Auto extends GameObject {
     state.beaconHeight = barHeight;
     state.beaconPhase = rng() * 10;
     state.beaconRedLeft = 2;
-    floorPointInCarFrame(this.rotation, 0, -state.floorHalfWidth, _lamp);
+    pointInCarFrame(this.rotation, 0, -state.floorHalfWidth, 0, _lamp);
     state.beaconLeft = this.hangLight(_lamp.x, _lamp.y, -Math.PI / 2, barHeight);
-    floorPointInCarFrame(this.rotation, 0, state.floorHalfWidth, _lamp);
+    pointInCarFrame(this.rotation, 0, state.floorHalfWidth, 0, _lamp);
     state.beaconRight = this.hangLight(_lamp.x, _lamp.y, Math.PI / 2, barHeight);
     // Hung unturned (inheritParentRotation false): their offsets are the screen's, set each frame from the car's heading.
     const dot = { tint: BEACON_RED, alpha: 1, anchorX: 0.5, anchorY: 0.5, inheritParentRotation: false };
@@ -277,19 +286,18 @@ export class Auto extends GameObject {
       AutoState.halfLength[index] = halfLength;
       AutoState.halfWidth[index] = halfWidth;
     }
-    const floorHalfLength = AutoState.floorHalfLength[index];
-    const floorHalfWidth = AutoState.floorHalfWidth[index];
     if (AutoState.headlights[index]) {
-      floorPointInCarFrame(angle, floorHalfLength, -floorHalfWidth * HEADLIGHT_SIDE, _lamp);
+      this.findHeadlight(angle, -1);
       LightEmitter.offsetX[index] = _lamp.x;
       LightEmitter.offsetY[index] = _lamp.y;
-      floorPointInCarFrame(angle, floorHalfLength, floorHalfWidth * HEADLIGHT_SIDE, _lamp);
+      this.findHeadlight(angle, 1);
       setLocalOffset(AutoState.rightHeadlight[index] - 1, _lamp.x, _lamp.y);
     }
     if (AutoState.police[index]) {
-      floorPointInCarFrame(angle, 0, -floorHalfWidth, _lamp);
+      const floorHalfWidth = AutoState.floorHalfWidth[index];
+      pointInCarFrame(angle, 0, -floorHalfWidth, 0, _lamp);
       setLocalOffset(AutoState.beaconLeft[index] - 1, _lamp.x, _lamp.y);
-      floorPointInCarFrame(angle, 0, floorHalfWidth, _lamp);
+      pointInCarFrame(angle, 0, floorHalfWidth, 0, _lamp);
       setLocalOffset(AutoState.beaconRight[index] - 1, _lamp.x, _lamp.y);
       this.placeBeaconDots();
     }

@@ -25,16 +25,17 @@ export function screenFootprint(floorHalfLength, floorHalfWidth, cos, sin, out) 
 }
 
 /**
- * A point of a car's floor (`ahead` of its centre and `side` to its right, px on its pictures' floor) in the car's own frame
- * on the screen (x along its heading), the car drawn at the screen heading `angle`. The pictures' floor is flattened, so a
- * car's front is not square to its heading on the screen: at 35° its front runs 17° off square.
+ * A point of a car (`ahead` of its centre and `side` to its right, px on its pictures' floor, `height` px over it) as its
+ * picture shows it, in the car's own frame on the screen (x along its heading), the car drawn at the screen heading `angle`.
+ * The pictures' floor is flattened, so a car's front is not square to its heading on the screen: at 35° its front runs 17°
+ * off square.
  */
-export function floorPointInCarFrame(angle, ahead, side, out) {
+export function pointInCarFrame(angle, ahead, side, height, out) {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const theta = Math.atan2(sin / PICTURE_FLOOR_SCALE, cos);
   const screenX = ahead * Math.cos(theta) - side * Math.sin(theta);
-  const screenY = PICTURE_FLOOR_SCALE * (ahead * Math.sin(theta) + side * Math.cos(theta));
+  const screenY = PICTURE_FLOOR_SCALE * (ahead * Math.sin(theta) + side * Math.cos(theta)) - PICTURE_HEIGHT_SCALE * height;
   out.x = screenX * cos + screenY * sin;
   out.y = screenY * cos - screenX * sin;
   return out;

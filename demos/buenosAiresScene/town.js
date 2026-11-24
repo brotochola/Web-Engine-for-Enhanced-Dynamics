@@ -99,6 +99,9 @@ export class AutoState extends Component {
     floorHalfLength: Float32Array, // its footprint on its pictures' floor (18 px a metre), px
     floorHalfWidth: Float32Array,
     headlights: Uint8Array, // 1: it has headlights
+    lampAhead: Float32Array, // where its picture draws them: ahead of its centre and to each side (px on its pictures' floor),
+    lampSide: Float32Array, // and px of height
+    lampHeight: Float32Array,
     lightsOn: Uint8Array, // its headlights (or its beacon's cones) are on: 2 before the first decision
     darkness: Float32Array, // its lights come on when Sun.intensity drops under this (each car its own)
     rightHeadlight: Int32Array, // its right headlight, a LuzAuto child: entity index + 1, 0 for none
