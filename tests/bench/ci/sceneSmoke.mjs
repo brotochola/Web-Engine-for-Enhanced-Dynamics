@@ -97,6 +97,61 @@ function probeSharedIdentity(page) {
   }));
 }
 
+/**
+ * What WebGL gets from an ImageBitmap of one half-transparent red texel (255, 0, 0, 128), by how the bitmap was made and
+ * what the upload asks: 128 is premultiplied, 255 is not. The engine's atlas is bitmaps made with the default option and
+ * uploaded with premultiply on.
+ */
+function probeBitmapAlpha(page) {
+  return page.evaluate(async () => {
+    const size = 4;
+    const pixels = new ImageData(size, size);
+    for (let i = 0; i < pixels.data.length; i += 4) pixels.data.set([255, 0, 0, 128], i);
+    const canvas = new OffscreenCanvas(size, size);
+    canvas.getContext('2d').putImageData(pixels, 0, 0);
+    const png = await canvas.convertToBlob({ type: 'image/png' });
+    const gl = new OffscreenCanvas(size, size).getContext('webgl2') || document.createElement('canvas').getContext('webgl2');
+    if (!gl) return { error: 'no WebGL' };
+    const read = (source, unpack) => {
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, unpack);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      const out = new Uint8Array(4);
+      gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
+      return `${out[0]},${out[3]}`;
+    };
+    const sources = {
+      pngDefault: () => createImageBitmap(png),
+      pngPremultiply: () => createImageBitmap(png, { premultiplyAlpha: 'premultiply' }),
+      pngNone: () => createImageBitmap(png, { premultiplyAlpha: 'none' }),
+      canvasDefault: () => createImageBitmap(canvas),
+      canvasPremultiply: () => createImageBitmap(canvas, { premultiplyAlpha: 'premultiply' }),
+      imageDataDefault: () => createImageBitmap(pixels),
+      imageDataPremultiply: () => createImageBitmap(pixels, { premultiplyAlpha: 'premultiply' }),
+      imageDataNone: () => createImageBitmap(pixels, { premultiplyAlpha: 'none' }),
+      transferred: async () => {
+        const c = new OffscreenCanvas(size, size);
+        c.getContext('2d').putImageData(pixels, 0, 0);
+        return c.transferToImageBitmap();
+      },
+      canvasItself: async () => canvas,
+    };
+    const out = {};
+    for (const [name, make] of Object.entries(sources)) {
+      try {
+        out[name] = { unpackOn: read(await make(), true), unpackOff: read(await make(), false) };
+      } catch (e) {
+        out[name] = `error: ${e.message}`;
+      }
+    }
+    return out;
+  });
+}
+
 /** Frames every worker has published so far, by worker. */
 function framesNow(page) {
   return page.evaluate(async () => {
@@ -185,6 +240,7 @@ async function main() {
   await probe.goto(`http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html`, { waitUntil: 'load' });
   out.gpu = await probeGpu(probe).catch((e) => ({ error: e.message }));
   out.gpu.sharedIdentity = await probeSharedIdentity(probe).catch((e) => ({ error: e.message }));
+  out.gpu.bitmapAlpha = await probeBitmapAlpha(probe).catch((e) => ({ error: e.message }));
   await probe.close();
   console.log(`${which} ${out.version}`, JSON.stringify(out.gpu));
   try {
