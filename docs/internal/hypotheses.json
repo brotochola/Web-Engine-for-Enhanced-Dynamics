@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-23",
+  "updated": "2026-11-24",
   "about": "The register of WeedJS's work, the project's one backlog, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, every bug (kind `bug`, with its review item in REVIEW_PLAN.md) and the approved features and developer-experience todos (kinds `feature`, `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, docs/internal/hypotheses.html, which reads this file itself: `npm run dev`, then `/docs/internal/hypotheses.html` (it reads the file again when it changes). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -25699,6 +25699,125 @@
         "tilt",
         "spot light height"
       ]
+    },
+    {
+      "records": [
+        "R-1982"
+      ],
+      "refs": [],
+      "id": "DX-CI",
+      "title": "Tests, kernels and scenes on GitHub's machines: Linux, Windows, macOS, x64 and ARM",
+      "status": "open",
+      "kind": "tools",
+      "area": "tools",
+      "result": "Phases 0 and 1 done: tests on six machines, 42 kernel scripts calibrated (detection limit about 0.4 to 1 % with 4 to 8 VMs), the first runs on ARM, on Metal and in WebKit; found N-451, N-452, N-453, N-454, N-455",
+      "statusText": "Phases 0 and 1 done 2026-11-24 on branch ci-tools (local, not merged): docs/internal/CI_MEASURE.md there",
+      "next": "Merge ci-tools (the owner's call). Phase 2: the kept and dropped kernel verdicts on ARM, Zen 4, Zen 5 and Intel; phase 3: the backlog items with a kernel; phase 4: WebGL against WebGPU on Metal; phase 5: a small nightly",
+      "aliases": [
+        "GitHub Actions",
+        "CI",
+        "ci-measure"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-1983"
+      ],
+      "refs": [],
+      "id": "N-451",
+      "title": "Safari (WebKit): a WebAssembly.Memory's buffer and the buffer posted beside it are two objects in a worker, so the kernels refuse every column: no sprites, and 20 of 36 demos do not boot",
+      "status": "open",
+      "kind": "bug",
+      "area": "engine",
+      "result": "",
+      "statusText": "Found 2026-11-24 in Playwright's WebKit 26.5 on macOS 15 (Apple M1) and on Linux; installed Safari not tried",
+      "next": "Post the memory alone and take memory.buffer in each worker, at one place (the workers' init message), instead of the memory and its buffer; then the demos in WebKit on a Mac (scenes task), where they draw. WebKit on Linux boots far enough to show the boot errors go (its workers get no WebGL)",
+      "aliases": [
+        "Safari",
+        "WebKit",
+        "iPhone",
+        "outside the render-queue memory",
+        "navigation without its navigation memory"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-1984"
+      ],
+      "refs": [],
+      "id": "N-452",
+      "title": "The seqlock readers accept torn reads on ARM: a plain load between two Atomics.load may be satisfied after the second (the camera, timeScale, a frameClock slot)",
+      "status": "open",
+      "kind": "bug",
+      "area": "engine",
+      "result": "",
+      "statusText": "Found 2026-11-24 on Neoverse N2, Cobalt 100 and Apple M1; never on x86. Rare in a game: the stress writes the camera millions of times a second",
+      "next": "A reader fence (an Atomics.add of 0 on a private word) between the data and the second mark in camera.js, timeScale.js, frameClock.js, and the same pattern in frameTotals.js, box2dMovedBodiesImpl.js, preRenderWorker._composeChildren (none of the three seen torn); raceStress on ARM to check, the x86 cost of the fence",
+      "aliases": [
+        "ARM memory order",
+        "seqlock",
+        "torn camera"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-1985"
+      ],
+      "refs": [],
+      "id": "N-453",
+      "title": "A Windows clone with core.autocrlf=true (the default of Git for Windows) fails 13 node tests: they look for the sources' text by \"\\n\"",
+      "status": "open",
+      "kind": "bug",
+      "area": "harness",
+      "result": "",
+      "statusText": "Found 2026-11-24 on GitHub's Windows images; with autocrlf=false 3632 of 3632 pass on both",
+      "next": "A text rule in .gitattributes for the files those tests read (the repository holds CR LF files too: git ls-files --eol first), or the tests read through a helper that drops CR",
+      "aliases": [
+        "autocrlf",
+        "CRLF clone"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-1986"
+      ],
+      "refs": [],
+      "id": "N-454",
+      "title": "Kernels nobody runs had rotted: visPoly, audioStorm and decalPremultiply of the catalog, logPair, stampGridCellCache and parCam outside it",
+      "status": "open",
+      "kind": "bug",
+      "area": "harness",
+      "result": "",
+      "statusText": "The catalog's three fixed on ci-tools (2026-11-24, not merged); the other three open",
+      "next": "Merge ci-tools; logPair (an await in a function that is not async), stampGridCellCache (a constant its source no longer has) and parCam: fix or delete; kernelSmoke in a nightly",
+      "aliases": [
+        "kernelSmoke",
+        "stale kernels"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-1987"
+      ],
+      "refs": [],
+      "id": "N-455",
+      "title": "On macOS a bounded wait of under 1 ms that runs out takes 5 to 6 ms: frameChainWait fails 93 of 112 runs on an Apple M1 VM",
+      "status": "open",
+      "kind": "bug",
+      "area": "workers",
+      "result": "",
+      "statusText": "Found 2026-11-24 on one GitHub M1 VM; not told apart from the VM's own scheduling",
+      "next": "A probe of Atomics.wait timeouts (0.2 to 5 ms) on several M1 VMs and, if one is at hand, a real Mac; if it holds, the waits measure one expiry and stay off where it overshoots",
+      "aliases": [
+        "Atomics.wait macOS",
+        "timer coalescing"
+      ],
+      "date": "2026-11-24"
     }
   ],
   "records": [
@@ -43867,6 +43986,63 @@
       "title": "N-442 fixed: Buenos Aires reads the package's police places and wrecks, and the police beacons turn (red and blue, half a turn apart)",
       "verdict": "kept-hygiene",
       "text": "The scene read color 'poli' and 'burnt'; the package's format says poli: true and burnt: true. With it read, Parque Chas has 47 parked police cars and 6 driving; the scene now makes driving places police up to 20 driving (the owner asked for police cars to be seen).\nThe beacon, at the owner's ask, turns: two Baliza children on the light bar, a red beam and a blue one half a turn apart, 1.2 turns a second, each with its spark and flash (headlight-style halos among the entities; the additive glows layer is gone, it was drawn over the houses in front).\nSeen by day and at 22:00, WebGL and WebGPU: 67 beacons lit at night. Not measured: worker times read off the page at 600 people were renderer 3.8 to 4.1 ms and logic 1.7 to 2.0 ms, no baseline beside them. Node and demo suites green."
+    },
+    {
+      "id": "R-1982",
+      "date": "2026-11-24",
+      "time": "16:46",
+      "timeFrom": "recorded",
+      "title": "GitHub's machines: tests on six, the kernels' A/A limits, the first runs on ARM, Metal and WebKit",
+      "verdict": "note",
+      "text": "**GitHub's standard runners work for us without a token: a push to ci/<name> runs a request, the results come back as a branch (docs/internal/CI_MEASURE.md, branch ci-tools).** 2026-11-24, about 100 jobs, main 2f077387 plus the tools.\n\n- **Tests** (3632 node, 149 demos): all pass on Linux x64, Linux ARM (Neoverse N2), macOS M1, and Windows x64 and ARM with core.autocrlf=false (N-453). macOS Intel: 1 failure in timeScale.test.js (a time under 60 ms expected, 139 read), seen once, not repeated there.\n- **Calibration**, A/A, 41 kernels, 5 rounds, one VM an observation, limit = 2.5 x sd / sqrt(VMs): Linux x64 8 VMs median 0.49 %, p90 1.41 %, 39 of 41 at 3 % or less; Linux ARM 8 VMs 0.39 / 2.39 %, 39 of 41; Windows x64 6 VMs 1.03 / 6.31 %, 33 of 41; Windows ARM 4 VMs 0.70 / 2.31 %, 39 of 41. A/A means past their limit: 1, 0, 1 and 5 of 41 (the last with 4 VMs, four of them under 0.15 %). Not readable: audioSlots (5.6 % on Linux, 14 % on Windows), queryPublish (3.0, 7.9), gpuQueuePack on ARM (3.9, 5.0). The three kernels repaired later (N-454) read 0.1 to 1.7 % on Linux x64 and ARM.\n- **macOS M1 times are poor:** A/A of one VM, median difference 8.45 % at 3 rounds, 2.33 % at 9 (p90 5.7 %, max 22.6 %). For bugs, the GPU and machine code.\n- **CPUs met:** EPYC 9V74, 7763, 9V45, Xeon 6975P-C, 8573C, 8370C (x64: 2 cores, 4 threads), Neoverse N2, Cobalt 100 (4 cores), M1 (3 cores, 128-byte lines), i7-8700B.\n- **Cost:** the catalog's A/A takes 10 to 14 min a VM on Linux, 12 on ARM, 15 on Windows, 32 on Windows ARM; all 162 kernels once, 7 min. A queued macOS ARM job may never get a machine (one was dropped after 15 min).\n- **GPU:** Linux and Windows VMs draw in software (bunnyMark 0.1 fps). macOS M1 has a virtual Metal GPU (\"ANGLE Metal Renderer: Apple Paravirtual device\", WebGPU \"apple\", no WebGPU timestamps, WebGL timer queries yes): Chromium 151 boots 36 of 36 demos there, Predator 42 fps, Buenos Aires 40, bunnyMark 49, gpuGalaxy 20, most others 50 to 60 (8 s each, 1280 x 720, 3 cores; two captures looked at).\n- **d8 debug for mac-arm64 exists:** V8 16.0.122's ARM64 code of 3 of 4 kernels (tickLoopKernel does not run in d8).\n- **Threaded tests, 16 239 runs** on six machines: failures only in spatialGridMovers on Windows (N-453's CR LF) and frameChainWait on the Mac (N-455)."
+    },
+    {
+      "id": "R-1983",
+      "date": "2026-11-24",
+      "time": "16:46",
+      "timeFrom": "recorded",
+      "title": "WebKit: no sprites and 24 of 36 demos do not boot; a memory's buffer is another object in a worker",
+      "verdict": "note",
+      "text": "**In WebKit the engine draws no sprites and most demos do not boot.** Playwright's WebKit 26.5, macOS 15 on an M1 (GitHub), 36 demos of the start page, from src: 12 boot and every one of them logs \"the collect kernel cannot take the sprites (a column it reads is outside the render-queue memory): they are not drawn\" (the captures of 8 are the same file size, the one opened is black). 24 do not boot: 20 over a memory (ParticleComponent is not in the particle memory, navigation without its navigation memory, MeshGeometry is not bound on the mesh memory), 4 because they ask for WebGPU, which that build does not expose.\n\n**Cause, probed** (sceneSmoke's probeSharedIdentity: a worker is posted a shared WebAssembly.Memory, its buffer and a view of it in one message): Chromium 151 and Firefox 153 give memory.buffer === buffer; WebKit 26.5 gives two objects on the same memory (a write through one reads through the other), on macOS and on Linux. The clients compare view.buffer with memory.buffer before a kernel reads a column by its byte (gpuPackClient, painterRadixClient, wasmColumnTable, particleIntegrateClient, meshCornersClient and others).\n\nNot run: installed Safari, an iPhone. Chromium on the same Mac boots 36 of 36 (DX-CI)."
+    },
+    {
+      "id": "R-1984",
+      "date": "2026-11-24",
+      "time": "16:46",
+      "timeFrom": "recorded",
+      "title": "Torn seqlock reads on ARM (camera, timeScale, frameClock), none on x86; a reader fence mends them",
+      "verdict": "note",
+      "text": "**Torn reads accepted on ARM, none on x86.** raceStress.mjs (branch ci-tools): the shipped functions, a writer thread and the reader, 20 s a round, Node 22.16; a bad read is one the protocol called whole whose fields came from two writes.\n\n- **Camera:** x86 (Linux, Windows, macOS Intel) 0 of 722 M in 8 rounds; Linux ARM (Neoverse N2) 2 187 of 498 M, 5 of 8 rounds on 4 VMs; M1 856 of 459 M, 4 of 4 rounds on 2 VMs; Windows ARM (Cobalt 100) 2 of 231 M.\n- **timeScale** (its read loop, copied): 24 670 of 1.04 G and 1 783 of 1.16 G on two Linux ARM VMs of four, 3 of 1.62 G on an M1, 0 elsewhere. **frameClock slot:** 7 on an M1 (3 in the pilot), 0 elsewhere.\n- **0 everywhere:** frameTotals, movedBodies, the child list, the published list, the message, spawn, command, nav, list-update and impact rings. movedBodies and the child list have the camera's pattern.\n- **The machines do reorder:** the control (a flag and its data, both plain) reads stale 43 to 46 % of the time on Neoverse and Cobalt, 11 to 15 % on an M1, never on x86. VMs differ: some read 0 in every round.\n- **What mends it** (the camera's layout, one side changed, 25 s x 2 a VM, 4 Neoverse VMs, 1 Cobalt, 1 M1): as shipped 0, 1 144, 48 645, 90 873, 1 and 62 bad; a fence in the writer alone 0, 0, 19 982, 5, 2 and 311; a fence in the reader, the second mark read with Atomics.add, or the data read with Atomics: 0 in all six. The reader's plain loads pass its second Atomics.load; a writer fence does not help.\n\nIn a game the camera is written a few times a frame, so a torn read is very rare and lasts a frame. No engine change made."
+    },
+    {
+      "id": "R-1985",
+      "date": "2026-11-24",
+      "time": "16:46",
+      "timeFrom": "recorded",
+      "title": "13 node tests fail on a Windows clone with autocrlf=true, none with false",
+      "verdict": "note",
+      "text": "GitHub's windows-2025 and windows-11-arm images set core.autocrlf=true, as Git for Windows does by default: 13 node tests fail there, the same 13 on both (box2dEngineBlock, devChecks, entityHooksSync, isolationServiceWorker, particlePresetGuide x2, spatialGridMovers x2, spatialOwnedList x2, spatialPublishRecount x2, sunNight): they look for a source's or a guide's text by its line ends. With core.autocrlf=false before the checkout, 3632 of 3632 and 149 of 149 pass on both. The demo tests pass either way."
+    },
+    {
+      "id": "R-1986",
+      "date": "2026-11-24",
+      "time": "16:46",
+      "timeFrom": "recorded",
+      "title": "Three catalog kernels repaired on ci-tools; three more outside the catalog do not run",
+      "verdict": "note",
+      "text": "Three of the catalog's 42 kernel scripts failed on every machine, this one included: visPoly since N-300 (its merge keeps fewer rays than bins and the kernel asserted as many), audioStorm since N-303 CR-6 (every mix goes through the buses and the kernel gave none), decalPremultiply since N-303 CR-11 (the scalar form moved to a test module). Repaired on ci-tools: decalPremultiply's three variants agree (checksum 2857520151), audioStorm mixes through one bus at unity. Their numbers before and after the break are not comparable for audioStorm (another mix path).\n\nkernelSmoke (every …Microbench and …Kernel once, defaults, 120 s): 153 of 162 on Linux x64, 154 on ARM, 7 min. Besides three that need arguments or recorded inputs: logPair (a syntax error), stampGridCellCache (its constant is gone), parCam (throws, not read); spawnSort and gatherInstancedRows pass 120 s; particleEase exits 1 on Linux x64 alone (not read).",
+      "commits": [
+        "a1ece0b4"
+      ]
+    },
+    {
+      "id": "R-1987",
+      "date": "2026-11-24",
+      "time": "16:46",
+      "timeFrom": "recorded",
+      "title": "frameChainWait on an M1 VM: a wait of under 1 ms takes 5 to 6 ms, 93 of 112 runs",
+      "verdict": "note",
+      "text": "repeatTests on one GitHub macOS 15 VM (Apple M1, 3 cores): tests/node/frameChainWait.test.js failed 93 of 112 runs, all read in \"a miss costs under a millisecond, not Windows's timer period\" with waits of 4.8 to 6.1 ms where the engine asked for under 1 ms (E-219's bound). It passed once in the whole suite on another M1 VM, and 0 of its runs failed on Linux x64, Linux ARM, Windows x64 and Windows ARM. If it holds on real Macs, four missed waits cost about 20 ms before the engine turns them off for 120 frames. One VM: the VM's scheduling is not ruled out."
     }
   ],
   "leads": [
