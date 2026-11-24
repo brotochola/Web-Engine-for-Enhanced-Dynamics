@@ -37,3 +37,6 @@ tests/results/
 !trailer2.mp4
 # The checks' shape art (tests/bench/checks/makeCheckArt.mjs makes it when it is missing).
 tests/bench/checks/art/
+
+# Results of a CI request on its VM (tests/bench/ci/runJob.mjs)
+ci-out/

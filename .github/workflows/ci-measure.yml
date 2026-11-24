@@ -1,0 +1,112 @@
+# Measuring and testing on GitHub's machines (docs/internal/CI_MEASURE.md).
+# A push to a ci/<name> branch runs the ci-request.json at that branch's root, one job a VM, and leaves the results in
+# the branch ci-results/<name>. Nothing here runs on main or on a pull request.
+name: ci-measure
+on:
+  push:
+    branches: ['ci/**']
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      name: ${{ steps.plan.outputs.name }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            tests/bench/ci
+            ci-request.json
+          sparse-checkout-cone-mode: false
+      - id: plan
+        run: node tests/bench/ci/plan.mjs
+
+  run:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: ${{ matrix.id }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.minutes }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.16.0
+      - name: Dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Revisions
+        env:
+          JOB_ARGS: ${{ matrix.args }}
+        run: node tests/bench/ci/fetchRevs.mjs
+      - name: Browsers
+        if: matrix.browsers != ''
+        env:
+          BROWSERS: ${{ matrix.browsers }}
+        run: |
+          for b in $BROWSERS; do
+            if [ "$RUNNER_OS" = Linux ]; then npx playwright install --with-deps "$b"; else npx playwright install "$b"; fi
+          done
+      - name: Job
+        env:
+          JOB_ID: ${{ matrix.id }}
+          JOB_TASK: ${{ matrix.task }}
+          JOB_ARGS: ${{ matrix.args }}
+          JOB_MACHINE: ${{ matrix.machine }}
+        run: node tests/bench/ci/runJob.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: out-${{ matrix.id }}
+          path: ci-out
+          if-no-files-found: warn
+
+  collect:
+    needs: [plan, run]
+    if: ${{ always() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      REQUEST: ${{ needs.plan.outputs.name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            tests/bench/ci
+            ci-request.json
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: out-*
+          path: ci-out
+          merge-multiple: true
+      - run: node tests/bench/ci/collect.mjs ci-out
+      # The results branch has no history: one commit, force-pushed by a re-run.
+      - name: Results branch
+        run: |
+          set -e
+          mv ci-out "$RUNNER_TEMP/ci-out"
+          git checkout --orphan results
+          git rm -rfq --cached .
+          mv "$RUNNER_TEMP/ci-out" ci-out
+          git add -f ci-out
+          git -c user.name=ci-measure -c user.email=ci-measure@users.noreply.github.com \
+            commit -qm "CI results: $REQUEST ($GITHUB_SHA)"
+          git push -f origin "HEAD:refs/heads/ci-results/$REQUEST"
