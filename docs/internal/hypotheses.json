@@ -25611,8 +25611,8 @@
       "area": "renderer",
       "date": "2026-11-23",
       "result": "Light bench with the barrio's camera: the silhouette 3369 px from its height map -> 1948 (1964 with its own camera); the taxi offline, 72 headings and suns: overlap 39 -> 59 %, false shadow on the sun's side 82 -> 4 px2; light bench 0 px from main",
-      "statusText": "Fixed 2026-11-23 on fix/art-camera-floor (a70eb65f), not merged: main is held for 0.15.0",
-      "next": "Merge after 0.15.0; the bundles then",
+      "statusText": "Fixed 2026-11-23 (a70eb65f), merged into main the same night",
+      "next": "",
       "aliases": [
         "car shadow barrio",
         "artCamera floor",
@@ -25633,8 +25633,8 @@
       "area": "engine",
       "date": "2026-11-23",
       "result": "Beam against picture mean 5.6 -> 2.1 degrees (worst 13.6 -> 5.3), lamp against the drawn corner mean 3.8 -> 1.3 world px; traffic and speed unchanged",
-      "statusText": "Fixed 2026-11-23 on fix/art-camera-floor (0a181fe3 the engine, 1416bdf0 the demo), not merged",
-      "next": "Merge after 0.15.0, once the owner has seen the five demos",
+      "statusText": "Fixed 2026-11-23 (0a181fe3 the engine; 1416bdf0, 86fe05d7 and 3bbefcef the demo, whose lights DX-CONE3D then put at their lamps), merged into main the same night",
+      "next": "",
       "aliases": [
         "headlights misaligned",
         "car headings screen angle"
@@ -25671,8 +25671,8 @@
       "area": "renderer",
       "date": "2026-11-23",
       "result": "Flat views 0 px from before (spot light, light gallery, dxCapture, light bench; WebGL and WebGPU); the light pass with 400 cones 1.839 -> 1.798 ms with faces, 1.814 -> 1.661 on the floor, inside the spread",
-      "statusText": "Kept 2026-11-23 on feat/cone-3d (1b503491), not merged: main is held for 0.15.0",
-      "next": "Merge after fix/art-camera-floor (it stands on it), once the owner has seen Headlights and Buenos Aires; the floor still takes every light whole whatever its angle (by its normal a headlight would give it 10 % at 120 px), which is the engine's reference and stays",
+      "statusText": "Kept 2026-11-23 (1b503491), merged into main the same night",
+      "next": "The floor still takes every light whole whatever its angle (by its normal a headlight would give it 10 % at 120 px): the engine's reference, which stays",
       "aliases": [
         "3D cones",
         "tilt",
