@@ -25622,7 +25622,8 @@
     {
       "records": [
         "R-1962",
-        "R-1963"
+        "R-1963",
+        "R-1964"
       ],
       "refs": [],
       "id": "N-441",
@@ -43780,6 +43781,18 @@
       "text": "**The headlights' beams leave the lamps drawn (86fe05d7, fix/art-camera-floor).** The owner marked on a capture where the lights belong; the cones started on the floor under the lamp. measureCarLamps.mjs measures each sheet's lamps (29 of 54; a white car takes its model's in another colour, the bus the owner's marks, a wreck the usual one) and cars.js hangs the cone there as the screen shows it. Against the owner's hand-placed marks: 0.2 and 1.0 px on the SUV, under 6 on the rest, where the measured lamp is the one on the drawn pixels. Captured at eight headings and with people in the beams, whose shadows fall away from the lamp drawn. demos 147.",
       "commits": [
         "86fe05d7"
+      ]
+    },
+    {
+      "id": "R-1964",
+      "date": "2026-11-23",
+      "time": "21:59",
+      "timeFrom": "recorded",
+      "title": "Buenos Aires' headlights drawn over the car's front, held on the frame's lamps",
+      "verdict": "kept-hygiene",
+      "text": "**The headlights shine over the car's front (after the owner: the beam passed behind the car).** A light brightens what faces it, so the bumper stayed dark between the lamp and the pool. A halo and a cone with the floor cone's own edges, decorations of the car, draw that stretch over it; the lamps' offsets take the car's rotation out each tick (on the bus 5 degrees were 6 px). 211 cars driving: left lamp median 0 px off the picture (p99 0.55), right 0.04 (p99 2.4). Tried and left: normals 'flat' at night (hard white patches on bonnets). demos 149.",
+      "commits": [
+        "3bbefcef"
       ]
     }
   ],
