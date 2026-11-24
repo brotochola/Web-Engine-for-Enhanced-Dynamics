@@ -115,6 +115,10 @@ function brief(r, exit) {
     for (let i = 0; i < lines.length; i += 8) out.push(lines.slice(i, i + 8).join('\n'));
     return out;
   }
+  if (r.kind === 'kernelSmoke') {
+    const bad = r.rows.filter((x) => x.error);
+    return [`${head}\n${r.rows.length - bad.length} of ${r.rows.length} kernels ran\n${bad.map((x) => `${x.kernel}: ${x.error.slice(0, 120)}`).join('\n')}`];
+  }
   if (r.kind === 'kernelAb') {
     const med = (v) => [...v].sort((a, b) => a - b)[v.length >> 1];
     const lines = r.rows.map((x) => (x.error ? `${x.id} FAILED ${x.error.slice(0, 160)}` : `${x.id} ${(100 * (med(x.b) / med(x.a) - 1)).toFixed(1)}%`));
