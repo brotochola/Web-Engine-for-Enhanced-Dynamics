@@ -816,6 +816,104 @@ uint32_t pack_sprites_keyed_rows_gbuf_statics(uint32_t table, uint32_t keyByte, 
                                (uint32_t *)(uintptr_t)texUpdatesByte, (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 1);
 }
 
+/* E-479: the opaque pass's rows of a by-row keyed frame (opaquePass.js), nearest first: of its n draw slots, from the last,
+   slot k's queue row (rowsByte, a float, as pack_sprites_keyed_rows writes it) and statics key (slotsByte, a float a slot)
+   with k as a float, OPAQUE_ROW_FLOATS at outByte, for the rows whose alpha packs to 255 (packed_tint: a * 255 + 0.5 is
+   255 or more, which a float is from OPAQUE_ALPHA up, and NaN is not) and whose frame (its texture, under `frames`) has
+   none of `mask` in texelsByte (a byte a frame). Four slots at a time: a block that is all opaque is three stores, one
+   with none is skipped, and a mixed one stores every slot's row and steps over those that are not (outByte has room for
+   n rows). At coverByte (0: not worked out), a double: the rows' cover, each one's frame's solid texels (areaByte, a float
+   a frame, under `areas`) times its scale's, in world px, in float32 sums of a block. Returns the rows. */
+#define OPAQUE_ROW_FLOATS 3
+#define OPAQUE_ALPHA 0x1.feff00p-1f
+
+INLINE uint32_t opaque_frame(uint32_t tex, const uint8_t *texels, uint32_t frames, uint32_t mask) {
+  return tex < frames && (texels[tex] & mask) == 0;
+}
+
+INLINE float opaque_cover(uint32_t i, uint32_t tex, const float *area, uint32_t areas, const float *SX, const float *SY) {
+  return tex < areas ? __builtin_fabsf(area[tex] * SX[i] * SY[i]) : 0.0f;
+}
+
+__attribute__((export_name("opaque_keyed_rows")))
+uint32_t opaque_keyed_rows(uint32_t table, uint32_t rowsByte, uint32_t slotsByte, uint32_t n, uint32_t texelsByte,
+                           uint32_t frames, uint32_t areaByte, uint32_t areas, uint32_t mask, uint32_t outByte,
+                           uint32_t coverByte) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const float *A = F32(t, COL_ALPHA), *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y);
+  const uint16_t *TX = U16(t, COL_TEXTURE);
+  const float *rows = (const float *)(uintptr_t)rowsByte;
+  const float *slots = (const float *)(uintptr_t)slotsByte;
+  const uint8_t *texels = (const uint8_t *)(uintptr_t)texelsByte;
+  const float *area = (const float *)(uintptr_t)areaByte;
+  float *out = (float *)(uintptr_t)outByte;
+  const v128_t limit = wasm_f32x4_const_splat(OPAQUE_ALPHA);
+  double cover = 0.0;
+  uint32_t k = n;
+  for (; k >= 4; k -= 4) {
+    const v128_t R = wasm_v128_load(rows + k - 4);
+    const v128_t at = wasm_u32x4_trunc_sat_f32x4(R);
+    const uint32_t i0 = wasm_u32x4_extract_lane(at, 0), i1 = wasm_u32x4_extract_lane(at, 1);
+    const uint32_t i2 = wasm_u32x4_extract_lane(at, 2), i3 = wasm_u32x4_extract_lane(at, 3);
+    v128_t alpha = wasm_v128_load32_zero(A + i0);
+    alpha = wasm_v128_load32_lane(A + i1, alpha, 1);
+    alpha = wasm_v128_load32_lane(A + i2, alpha, 2);
+    alpha = wasm_v128_load32_lane(A + i3, alpha, 3);
+    uint32_t ok = (uint32_t)wasm_i32x4_bitmask(wasm_f32x4_ge(alpha, limit));
+    if (ok == 0) continue;
+    const uint32_t t0 = TX[i0], t1 = TX[i1], t2 = TX[i2], t3 = TX[i3];
+    ok &= opaque_frame(t0, texels, frames, mask) | opaque_frame(t1, texels, frames, mask) << 1 |
+          opaque_frame(t2, texels, frames, mask) << 2 | opaque_frame(t3, texels, frames, mask) << 3;
+    if (ok == 0) continue;
+    if (coverByte) {
+      float sum = 0.0f;
+      if (ok & 8) sum += opaque_cover(i3, t3, area, areas, SX, SY);
+      if (ok & 4) sum += opaque_cover(i2, t2, area, areas, SX, SY);
+      if (ok & 2) sum += opaque_cover(i1, t1, area, areas, SX, SY);
+      if (ok & 1) sum += opaque_cover(i0, t0, area, areas, SX, SY);
+      cover += (double)sum;
+    }
+    const v128_t S = wasm_v128_load(slots + k - 4);
+    const v128_t K = wasm_f32x4_sub(wasm_f32x4_splat((float)k), wasm_f32x4_const(4.0f, 3.0f, 2.0f, 1.0f));
+    /* (row, slot) of lanes 0, 1 and of 2, 3. */
+    const v128_t lo = wasm_i32x4_shuffle(R, S, 0, 4, 1, 5);
+    const v128_t hi = wasm_i32x4_shuffle(R, S, 2, 6, 3, 7);
+    if (ok == 15) {
+      /* Lane 3 first: R3 S3 K3 R2, S2 K2 R1 S1, K1 R0 S0 K0. */
+      wasm_v128_store(out, wasm_i32x4_shuffle(hi, K, 2, 3, 7, 0));
+      wasm_v128_store(out + 4, wasm_i32x4_shuffle(wasm_i32x4_shuffle(hi, K, 1, 6, 1, 6), lo, 0, 1, 6, 7));
+      wasm_v128_store(out + 8, wasm_i32x4_shuffle(lo, K, 5, 0, 1, 4));
+      out += 4 * OPAQUE_ROW_FLOATS;
+      continue;
+    }
+    wasm_v128_store64_lane(out, hi, 1);
+    wasm_v128_store32_lane(out + 2, K, 3);
+    out += (ok >> 3) * OPAQUE_ROW_FLOATS;
+    wasm_v128_store64_lane(out, hi, 0);
+    wasm_v128_store32_lane(out + 2, K, 2);
+    out += ((ok >> 2) & 1) * OPAQUE_ROW_FLOATS;
+    wasm_v128_store64_lane(out, lo, 1);
+    wasm_v128_store32_lane(out + 2, K, 1);
+    out += ((ok >> 1) & 1) * OPAQUE_ROW_FLOATS;
+    wasm_v128_store64_lane(out, lo, 0);
+    wasm_v128_store32_lane(out + 2, K, 0);
+    out += (ok & 1) * OPAQUE_ROW_FLOATS;
+  }
+  while (k > 0) {
+    k--;
+    const uint32_t i = wasm_u32x4_extract_lane(wasm_u32x4_trunc_sat_f32x4(wasm_f32x4_splat(rows[k])), 0);
+    const uint32_t tex = TX[i];
+    if (!(A[i] >= OPAQUE_ALPHA) || !opaque_frame(tex, texels, frames, mask)) continue;
+    out[0] = rows[k];
+    out[1] = slots[k];
+    out[2] = (float)k;
+    out += OPAQUE_ROW_FLOATS;
+    if (coverByte) cover += (double)opaque_cover(i, tex, area, areas, SX, SY);
+  }
+  if (coverByte) *(double *)(uintptr_t)coverByte = cover;
+  return (uint32_t)(out - (float *)(uintptr_t)outByte) / OPAQUE_ROW_FLOATS;
+}
+
 /* E-191: a keyed caster row (KEYED_CASTER_FLOATS) for each queue row listed at indices: its x and y, its key as a float
    and a zero (the slot pair the shadow program reads the row's statics by, from the keyed frames' statics texture), and
    its shadow terms (shadowH, offX, offY). 0xffffffff, and the rows not to be trusted, when a listed row has no key below

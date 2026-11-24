@@ -106,7 +106,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
     'pack_casters_framed', 'pack_casters_scatter_framed', 'pack_sprites_split_gbuf', 'pack_sprites_split_scatter_gbuf',
     'pack_sprites_indexed_scatter_gbuf', 'diff_indexed_statics', 'pack_sprites_keyed_gbuf_statics',
-    'pack_sprites_keyed_rows_gbuf_statics',
+    'pack_sprites_keyed_rows_gbuf_statics', 'opaque_keyed_rows',
   ]);
   return {
     buffer: memory.buffer,
@@ -139,6 +139,8 @@ export async function bindGpuPack(memory, layout) {
     // E-455 step 3: the two with each slot's word in its statics updates and none a drawn instance (no bands).
     spritesKeyedGbufStatics: k.pack_sprites_keyed_gbuf_statics,
     spritesKeyedRowsGbufStatics: k.pack_sprites_keyed_rows_gbuf_statics,
+    // E-479: the opaque pass's rows of a by-row keyed frame.
+    opaqueKeyedRows: k.opaque_keyed_rows,
     // E-191: keyed caster rows (a pose, a key, the shadow terms) of a list of queue rows.
     castersKeyed: k.pack_casters_keyed,
     // E-192: the same rows for the casters it finds in the queue itself.
@@ -166,6 +168,8 @@ export async function bindGpuPack(memory, layout) {
     particlesByte: layout.particlesByte,
     // E-372: the sun frames' region (null: the keyed caster scan writes no frame).
     keyedSun: keyedSunViews(memory.buffer, layout.keyedSunByte | 0),
+    // E-479: the frames' texels in the memory (opaqueKeyedRowsWasm's table), a view kept while its place does.
+    opaqueTexels: null,
   };
 }
 
@@ -197,6 +201,44 @@ function writeGeneralParams(P, ctx, cameraX, cameraY, screenScale) {
   P[13] = ctx.includeType | 0;
   P[14] = ctx.exclude0 | 0;
   P[15] = ctx.exclude1 | 0;
+}
+
+/**
+ * E-479: the opaque pass's rows of a by-row keyed frame of `n` draw slots just packed (`rows` and `slots`, the views
+ * packKeyedRowsByRowWasm wrote): the slots whose packed alpha is 255 and whose frame has none of `mask` in `texels`,
+ * nearest first, three floats each into `out` (the queue row, the statics key, the slot), and, with `cover`, their cover
+ * (opaquePass.js opaquePassPays) in cover[0]. `tables` is room in the memory for the two frame tables, copied there each call: `area`
+ * (a float a frame), then `texels` (a byte). -1, nothing written, when a view is outside the memory or a table does not fit.
+ * @param {object} b bindGpuPack's
+ * @param {object} q the queue
+ * @param {Float32Array} rows
+ * @param {Float32Array} slots
+ * @param {number} n
+ * @param {Uint8Array} texels
+ * @param {Float32Array} area
+ * @param {number} mask
+ * @param {Float32Array} tables
+ * @param {Float32Array} out
+ * @param {Float64Array|null} cover null: not worked out
+ * @returns {number} the rows written, or -1
+ */
+export function opaqueKeyedRowsWasm(b, q, rows, slots, n, texels, area, mask, tables, out, cover) {
+  if (rows.buffer !== b.buffer || slots.buffer !== b.buffer || out.buffer !== b.buffer || tables.buffer !== b.buffer) return -1;
+  const areas = area.length;
+  const frames = texels.length;
+  if (rows.length < n || slots.length < n || out.length < n * 3 || (areas + ((frames + 3) >> 2)) > tables.length) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  tables.set(area);
+  const texelsByte = tables.byteOffset + areas * 4;
+  if (b.opaqueTexels === null || b.opaqueTexels.byteOffset !== texelsByte || b.opaqueTexels.length !== frames) {
+    b.opaqueTexels = new Uint8Array(b.buffer, texelsByte, frames);
+  }
+  b.opaqueTexels.set(texels);
+  const m = b.opaqueKeyedRows(table, rows.byteOffset, slots.byteOffset, n, texelsByte, frames, tables.byteOffset, areas,
+    mask, out.byteOffset, cover !== null ? b.paramsByte : 0);
+  if (cover !== null) cover[0] = b.params[0];
+  return m;
 }
 
 function tableFor(b, q) {

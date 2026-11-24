@@ -37,6 +37,7 @@ import {
 } from './gpuQueueLayout.js';
 import { RenderStep, STENCIL_MASK_ACTIVE, STENCIL_MASK_ADD, STENCIL_OFF, stencilStep } from './renderStep.js';
 import {
+  opaqueKeyedRowsWasm,
   GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
@@ -46,7 +47,7 @@ import {
 } from './faceMap.js';
 import { FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, TEX_LUT_SOFT_OR_GLOW, lutBaseFloats } from './frameBase.js';
 import {
-  OPAQUE_KEYED_ROW_FLOATS, OPAQUE_MAX_ROWS, OPAQUE_POSE_TEXELS, OPAQUE_ROW_FLOATS, buildOpaqueKeyedRows, buildOpaqueRows,
+  OPAQUE_FRAME_MASK, OPAQUE_KEYED_ROW_FLOATS, OPAQUE_MAX_ROWS, OPAQUE_POSE_TEXELS, OPAQUE_ROW_FLOATS, buildOpaqueRows,
   opaqueFragment, opaquePassPays, opaquePoseTextureRows, opaqueRowVertex, opaqueVertex,
 } from './opaquePass.js';
 import {
@@ -586,6 +587,14 @@ export class InstancedSpriteBatch {
       gbufChanged: true,
     };
     this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
+    // E-479: a by-row keyed frame's opaque rows, which the kernel writes where a pose stream would go on (a by-row frame
+    // writes one float a slot of it), and room for the frames' tables past the slots and the G-buffer words.
+    this._sharedOpaque = this.posesByRow
+      ? this._sharedPose.subarray(this.capacity, this.capacity * (1 + OPAQUE_KEYED_ROW_FLOATS))
+      : new Float32Array(0);
+    this._sharedTables = this.posesByRow
+      ? this._sharedStatic.subarray(gbufAt + this.capacity * GPU_GBUF_FLOATS)
+      : new Float32Array(0);
     const updateWords = k ? this.capacity * GPU_KEYED_ROW_WORDS : 0;
     this._sharedUpdates = k ? new Uint32Array(buf, k.updatesByte, updateWords) : new Uint32Array(0);
     const updateCopy = (k && arena && arena.f32(updateWords)) || new Float32Array(updateWords);
@@ -837,6 +846,11 @@ export class InstancedSpriteBatch {
     this._opSkipFrames = 0;
     this._opSkipZoom = NaN;
     this._opSkipScreen = NaN;
+    // E-479: the by-row pass's cover, worked out one frame in OPAQUE_RECHECK_FRAMES: the frames left, and the rows and the
+    // frames' texels it was worked out for.
+    this._opCoverFrames = 0;
+    this._opCoverRows = -1;
+    this._opCoverTexels = -1;
     this._blendState = state;
     this._depthState = state;
     if (this._opWanted && this._colorVertex !== '' && this._colorFragment !== '') this._makeOpaquePass(labelName, opaquePass);
@@ -1723,16 +1737,15 @@ export class InstancedSpriteBatch {
   }
 
   /**
-   * E-448: the opaque pass over a by-row keyed frame's `n` draw slots (this.data: each one's queue row, _slotData: its
-   * key; `q`: the queue, whose alpha and texture columns choose the rows), built and uploaded every frame (the painter's
-   * order moves), at the painter's depth step of `ctx`.
+   * E-448: the opaque pass over a by-row keyed frame's `n` draw slots, just packed (_sharedPose: each one's queue row,
+   * _sharedSlots: its key; `q`: the queue, whose alpha and texture columns choose the rows), built by the kernel (E-479)
+   * and uploaded every frame (the painter's order moves), at the painter's depth step of `ctx`.
    * @param {number} n
    * @param {object} q
    * @param {object} ctx
    */
   _commitOpaqueRows(n, q, ctx) {
-    if (n <= 0 || !this._opAllowed || this.mesh.blendMode !== 'normal' || this._opRowShader === null || !q.alpha || !q.textureId
-      || !q.scaleX || !q.scaleY) {
+    if (n <= 0 || !this._opAllowed || this.mesh.blendMode !== 'normal' || this._opRowShader === null) {
       this.dropOpaquePass();
       return;
     }
@@ -1744,8 +1757,18 @@ export class InstancedSpriteBatch {
       this.dropOpaquePass();
       return;
     }
-    const m = buildOpaqueKeyedRows(this.data, this._slotData, n, q.alpha, q.textureId, q.scaleX, q.scaleY, this._opTexels,
-      this._opArea, this._opKeyedRows, this._opCover);
+    // The cover moves slowly: worked out again after a while, or when the rows drawn change by more than an eighth.
+    const recheck = this._opCoverFrames <= 0 || this._opCoverTexels !== this._opTexelsVersion
+      || Math.abs(n - this._opCoverRows) * 8 > this._opCoverRows;
+    const m = opaqueKeyedRowsWasm(this._gpuPack, q, this._sharedPose, this._sharedSlots, n, this._opTexels, this._opArea,
+      OPAQUE_FRAME_MASK, this._sharedTables, this._sharedOpaque, recheck ? this._opCover : null);
+    if (recheck) {
+      this._opCoverFrames = OPAQUE_RECHECK_FRAMES;
+      this._opCoverRows = n;
+      this._opCoverTexels = this._opTexelsVersion;
+    } else {
+      this._opCoverFrames--;
+    }
     if (m <= 0 || !this._opaquePays(m)) {
       this._opSkipFrames = OPAQUE_RECHECK_FRAMES;
       this._opSkipZoom = this._opZoom;
@@ -1754,6 +1777,7 @@ export class InstancedSpriteBatch {
       return;
     }
     this._opSkipFrames = 0;
+    this.copyIn(this._opKeyedRows, this._sharedOpaque, m * OPAQUE_KEYED_ROW_FLOATS);
     const group = this.shader.resources.uniforms;
     const step = 1 / (ctx.depthDenom > 0 ? ctx.depthDenom : this.capacity + 1);
     if (group.uniforms.uOpDepth !== step) {

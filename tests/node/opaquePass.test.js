@@ -9,8 +9,9 @@ import { createPrivateArena } from '../../src/render/sharedCopy.js';
 import { FRAME_GLOW, FRAME_HALF, FRAME_SOFT, FRAME_UNSCANNED } from '../../src/render/frameBase.js';
 import {
   OPAQUE_FRAGMENTS_KEPT, OPAQUE_FRAME_MASK, OPAQUE_KEYED_ROW_FLOATS, OPAQUE_POSE_TEXELS, OPAQUE_ROW_FLOATS, OPAQUE_ROW_PIXELS,
-  buildOpaqueKeyedRows, buildOpaqueRows, opaqueFragment, opaquePassPays, opaquePoseTextureRows, opaqueRowVertex, opaqueVertex,
+  buildOpaqueRows, opaqueFragment, opaquePassPays, opaquePoseTextureRows, opaqueRowVertex, opaqueVertex,
 } from '../../src/render/opaquePass.js';
+import { buildOpaqueKeyedRows } from '../reference/opaqueKeyedRowsJs.mjs';
 import { spriteIndexedVertex } from '../../src/render/spriteIndexed.js';
 import { readEngineShader, spriteGlslShaders } from './engineShaderSources.mjs';
 
