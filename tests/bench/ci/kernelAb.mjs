@@ -7,6 +7,12 @@
  *
  *   node tests/bench/ci/kernelAb.mjs --a <rev> --b <rev> [--rounds 5] [--only id,id] [--shard 1/4] --output file.json
  *
+ * --kernels script:key[:lower][,…]: kernels outside the catalog (a path from tests/bench, the number's place in its
+ * report, `lower` when less is better); alone, or with --only's catalog rows. A key with dots goes down the report; `a|b`
+ * in place of the key reads both as rows of their own.
+ * --both-args "--variant x": arguments both sides' kernels get. --a-args and --b-args: one side's (a variant against
+ * another at one revision).
+ *
  * Only src/ comes from a side's revision: the kernels and the rest are this tree's (revWorktree.mjs).
  */
 import { spawnSync } from 'node:child_process';
@@ -20,10 +26,10 @@ import { selectKernelRows } from '../runKernelsVsRev.mjs';
 
 const RUN_TIMEOUT_MS = 240000;
 
-function runOnce(root, script, out) {
+function runOnce(root, script, out, extra = []) {
   fs.rmSync(out, { force: true });
   const t0 = performance.now();
-  const r = spawnSync(process.execPath, [path.join(root, script), '--output', out], {
+  const r = spawnSync(process.execPath, [path.join(root, script), '--output', out, ...extra], {
     cwd: root, encoding: 'utf8', timeout: RUN_TIMEOUT_MS, maxBuffer: 64 << 20,
   });
   const ms = performance.now() - t0;
@@ -39,11 +45,23 @@ function main() {
   const rounds = Number(args.rounds ?? 5);
   const only = args.only ? String(args.only).split(',') : null;
   const byScript = new Map();
-  for (const row of selectKernelRows({ only })) {
+  const extraRows = [];
+  for (const spec of args.kernels ? String(args.kernels).split(',') : []) {
+    const [script, keys, sense] = spec.split(':');
+    const name = path.basename(script, '.mjs').replace(/(Wasm)?Microbench$/, '$1');
+    for (const key of keys.split('|')) {
+      extraRows.push({ id: keys.includes('|') ? `${name}.${key.replace(/^cases\.|\.opsPerSec$/g, '')}` : name,
+        kernel: { script: script.includes('/') ? script : `tests/bench/${script}`, opsKey: key, higherBetter: sense !== 'lower' } });
+    }
+  }
+  const catalog = args.kernels && !only ? [] : selectKernelRows({ only });
+  for (const row of [...catalog, ...extraRows]) {
     const list = byScript.get(row.kernel.script) || [];
     list.push(row);
     byScript.set(row.kernel.script, list);
   }
+  const words = (text) => (typeof text === 'string' && text ? text.split(' ') : []);
+  const sideArgs = { a: [...words(args['both-args']), ...words(args['a-args'])], b: [...words(args['both-args']), ...words(args['b-args'])] };
   let scripts = [...byScript.keys()];
   if (args.shard) {
     const [k, n] = String(args.shard).split('/').map(Number);
@@ -67,7 +85,7 @@ function main() {
     let error = null;
     let runMs = 0;
     const take = (label, record) => {
-      const r = runOnce(sides[label].root, script, path.join(tmp, `${name}-${label}.json`));
+      const r = runOnce(sides[label].root, script, path.join(tmp, `${name}-${label}.json`), sideArgs[label]);
       runMs = Math.max(runMs, r.ms);
       if (r.error) {
         error = `${label}: ${r.error}`;
@@ -91,7 +109,7 @@ function main() {
     console.log(`${((performance.now() - t0) / 60000).toFixed(1)} min  ${name}${error ? `  FAILED ${error}` : `  ${Math.round(runMs)} ms a run`}`);
   }
   const out = {
-    kind: 'kernelAb', a: sides.a.sha, b: sides.b.sha, rounds, minutes: +((performance.now() - t0) / 60000).toFixed(1), rows,
+    kind: 'kernelAb', a: sides.a.sha, b: sides.b.sha, aArgs: sideArgs.a, bArgs: sideArgs.b, rounds, minutes: +((performance.now() - t0) / 60000).toFixed(1), rows,
   };
   fs.writeFileSync(path.resolve(String(args.output ?? 'kernel-ab.json')), `${JSON.stringify(out, null, 1)}\n`);
   const failed = rows.filter((r) => r.error);
