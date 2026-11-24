@@ -245,7 +245,9 @@ async function main() {
   console.log(`${which} ${out.version}`, JSON.stringify(out.gpu));
   try {
     for (const s of scenes) {
-      // A scene that took the browser down with it: the next one gets a new browser.
+      // A scene that took the browser down with it: the next one gets a new browser. WebKit gets one a scene: a WebGL
+      // context lost in one page stayed lost in every later one (macOS VM, 2026-11-24).
+      if (which === 'webkit' && out.rows.length > 0) await within(browser.close().catch(() => {}), 15000);
       if (!browser.isConnected()) browser = await launch(which);
       const row = await runScene(browser, server.port, s, opts);
       out.rows.push(row);
