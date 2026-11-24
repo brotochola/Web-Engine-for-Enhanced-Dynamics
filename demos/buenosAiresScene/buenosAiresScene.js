@@ -232,8 +232,8 @@ export class BuenosAiresScene extends Scene {
     renderer: { backend: BACKEND, ySort: true, atlasScaleMode: 'nearest' },
     // The houses are decorations: they do not fade out as the camera goes back.
     preRender: { startFadingDecorationsAtZoom: 0.2, hideDecorationsAtZoom: 0.1, cullingRatio: 0.3 },
-    // The barrio's camera, the standard art's (people, cars, objects): the floor drawn SYN as tall as it is wide, a px
-    // of height rising CZ px on the screen.
+    // The barrio's camera: the floor drawn SYN as tall as it is wide, a px of height rising CZ px on the screen. The people,
+    // the cars and the objects are drawn for another (0.736, 0.752: their sheets' artCamera), which the engine fits to it.
     camera: { floorScaleY: META.SYN, heightScaleY: META.CZ },
     lighting: {
       enabled: true,
