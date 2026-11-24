@@ -90,6 +90,41 @@ function failures(text) {
   return out;
 }
 
+/** A result in a few short texts (one an annotation). */
+function brief(r, exit) {
+  const head = `${job.machine.cpu} | ${job.machine.threads} threads | exit ${exit}`;
+  if (!r) return [`${head} | no result`];
+  if (r.kind === 'tests') {
+    const out = [`${head}\n${Object.entries(r.suites).map(([n, s]) => `${n}: ${s.pass}/${s.tests} pass, ${s.fail} fail, ${s.seconds} s`).join('\n')}`];
+    for (const [n, s] of Object.entries(r.suites)) {
+      for (const f of s.failed.slice(0, 8)) out.push(`${n}: ${f.name}\n${f.where}\n${f.error}\nexpected ${f.expected} actual ${f.actual}`.slice(0, 1200));
+    }
+    return out;
+  }
+  if (Array.isArray(r.broken)) {
+    return [`${head}\n${r.rows.map((x) => `${x.kind} ${x.name}: bad ${x.bad} of ${x.accepted} (writes ${x.writes})`).join('\n')}`];
+  }
+  if (r.kind === 'repeatTests') {
+    const bad = r.rows.filter((x) => x.failed);
+    return [`${head}\n${r.rows.length} files, ${r.rows.reduce((a, x) => a + x.runs, 0)} runs\n${bad.map((x) => `${x.file}: ${x.failed}/${x.runs} failed`).join('\n') || 'no failure'}`,
+      ...bad.slice(0, 6).map((x) => `${x.file}\n${x.failures[0]}`.slice(0, 1800))];
+  }
+  if (r.kind === 'sceneSmoke') {
+    const lines = r.rows.map((x) => `${x.booted ? 'ok' : 'DEAD'} ${x.scene} ${JSON.stringify(x.fps)}${x.logs.length ? ` | ${x.logs.slice(0, 2).join(' | ').slice(0, 220)}` : ''}`);
+    const out = [`${head}\n${r.browser} ${r.version} ${JSON.stringify(r.gpu)}`];
+    for (let i = 0; i < lines.length; i += 8) out.push(lines.slice(i, i + 8).join('\n'));
+    return out;
+  }
+  if (r.kind === 'kernelAb') {
+    const med = (v) => [...v].sort((a, b) => a - b)[v.length >> 1];
+    const lines = r.rows.map((x) => (x.error ? `${x.id} FAILED ${x.error.slice(0, 160)}` : `${x.id} ${(100 * (med(x.b) / med(x.a) - 1)).toFixed(1)}%`));
+    const out = [];
+    for (let i = 0; i < lines.length; i += 60) out.push(`${head} | ${r.minutes} min\n${lines.slice(i, i + 60).join('\n')}`);
+    return out;
+  }
+  return [`${head}\n${JSON.stringify(r).slice(0, 3000)}`];
+}
+
 const started = new Date().toISOString();
 const t0 = performance.now();
 const job = { id, task: taskName, args, machineKey: process.env.JOB_MACHINE, machine: describeMachine(), started };
@@ -111,6 +146,14 @@ if (taskName === 'tests') {
   status = await run(process.execPath, [path.join(root, task.script), ...argv]);
 }
 await new Promise((resolve) => log.end(resolve));
+
+// The job's result as annotations: the public API shows them as soon as the job ends (the results branch waits for the
+// last job, and a log needs a login). GitHub keeps 10 notices a step, about 4 KB each.
+const result = fs.existsSync(resultFile) ? JSON.parse(fs.readFileSync(resultFile, 'utf8')) : null;
+for (const text of brief(result, status).slice(0, 10)) {
+  const escaped = text.split('%').join('%25').split('\r').join('').split('\n').join('%0A');
+  console.log(`::notice title=${id}::${escaped.slice(0, 3800)}`);
+}
 fs.writeFileSync(path.join(outDir, 'job.json'), `${JSON.stringify({
   ...job, status, minutes: +((performance.now() - t0) / 60000).toFixed(1),
 }, null, 1)}\n`);

@@ -15,6 +15,7 @@
  *            shape on data spread over many lines) say whether this machine shows the reorderings at all. A machine
  *            whose controls read 0 says nothing about the engine cases.
  *   engine   shipped code. Any `bad` is a bug. Exit 1.
+ *   info     shipped code that returns unchecked values on purpose: compare its rate with x86's.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -190,10 +191,10 @@ export const CASES = {
     },
   },
   frameClockHeader: {
-    kind: 'engine',
+    // info, not engine: readFrame gives up after 8 tries and returns an unchecked pair (a writer preempted between its
+    // two marks), so x86 reads a few bad ones too (8 in a million). Compare the machines' rates.
+    kind: 'info',
     writers: 1,
-    // readFrame gives up after 8 tries and returns an unchecked pair, so the header is written at a frame's pace (a
-    // long pause between two) and only a pair it had time to check should come back.
     setup: () => ({ sab: createFrameClockBuffer() }),
     write({ sab }, stop) {
       const view = bindFrameClock(sab);
