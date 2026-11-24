@@ -29,11 +29,11 @@ import { quietly } from './workerHarness.mjs';
 import { setupDecalKernel } from './decalStampWasmMicrobench.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/wasm/engine.wasm'));
+const VARIANTS_URL = pathToFileURL(path.join(repoRoot, 'tests/fixtures/wasm/decalPremultiply.wasm'));
 const TILE_PIXELS = 128;
 const TILE_BYTES = TILE_PIXELS * TILE_PIXELS * 4;
 
-export async function setupPremultiplyKernel() {
+export async function setupPremultiplyKernel(variant = 'wasm') {
   // The scene's tiles after eight frames of its stamps (the shipped stamp, from clear tiles).
   const stamp = await quietly(() => setupDecalKernel());
   stamp.checksumFrames(stamp.stampFrameJs);
@@ -46,7 +46,8 @@ export async function setupPremultiplyKernel() {
   const buffer = memory.buffer;
   new Uint8Array(buffer, 0, stamped.length).set(stamped);
   const bound = await bindDecalPremultiply(memory, m.layout);
-  const k = await loadWasmKernel('decalPremultiply', KERNEL_URL, memory, ['premultiply_scalar', 'premultiply_simd']);
+  // The scalar form ships no more (N-303 CR-11): it is the test module's, loaded for its variant alone.
+  const k = variant === 'wasm-scalar' ? await loadWasmKernel('decalPremultiply', VARIANTS_URL, memory, ['premultiply_scalar']) : {};
   const scratchByte = m.layout.premultipliedByte;
   const scratch = new Uint8ClampedArray(buffer, scratchByte, TILE_BYTES);
 
@@ -92,7 +93,7 @@ async function main() {
   // The shipped path by default (the engine catalog runs it with no flags); js is the reference.
   const variant = String(args.variant || 'wasm');
   if (!['js', 'wasm', 'wasm-scalar'].includes(variant)) throw new Error(`unknown variant ${variant}`);
-  const s = await setupPremultiplyKernel();
+  const s = await setupPremultiplyKernel(variant);
   const run = variant === 'js' ? s.runJs : variant === 'wasm' ? s.runSimd : s.runScalar;
   run();
   const checksum = s.hash();

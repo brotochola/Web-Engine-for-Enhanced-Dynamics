@@ -125,7 +125,9 @@ function runPolarMerge() {
   return clipVisibilityToPolar(0, 0, sweepX, sweepY, n, polarX, polarY, POLAR_BINS);
 }
 const mergeN = runPolarMerge();
-assert.ok(mergeN === POLAR_BINS, `polar merge polygon ${mergeN}`);
+// N-300 (a7ea42ef): the merge takes its rays only over the bins a solid stamped and beside them, so its polygon has
+// fewer vertices than there are bins.
+assert.ok(mergeN >= SEGMENTS && mergeN <= POLAR_BINS, `polar merge polygon ${mergeN}`);
 const mergeChecksum = checksumFloats(polarX, mergeN) ^ checksumFloats(polarY, mergeN);
 assert.notEqual(mergeChecksum, polarChecksum, 'the sweep polygon must change the merged outline');
 

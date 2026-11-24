@@ -2,7 +2,8 @@
 /**
  * Kernel: one AudioWorklet process() quantum of the shipped mixer.
  * Cases are active-voice counts, plus 128 voices in a 2048-slot table
- * (the direct mix walks every slot).
+ * (the mix walks every slot). N-303 CR-6: every mix goes through the buses, here one at unity whose voice cap lets every
+ * active voice through.
  *
  *   node tests/bench/audioMixerMicrobench.mjs
  *   node tests/bench/audioMixerMicrobench.mjs --output out.json
@@ -49,6 +50,39 @@ const H = 4;
 const S = 8;
 const FRAMES = 128;
 const Mixer = loadProcessor();
+// The AudioWorklet global the buses' envelopes read.
+globalThis.sampleRate = 48000;
+const CH_HEADER = 8;
+const CH_STRIDE = 8;
+const LEVEL_RING = 256;
+
+/** The channels and the level ring SoundManager gives the mixer: bus 0 at unity, `cap` voices. */
+function attachBus(p, cap) {
+  const sab = new SharedArrayBuffer((CH_HEADER + CH_STRIDE * 8) * 4);
+  const i32 = new Int32Array(sab);
+  const f32 = new Float32Array(sab);
+  f32.set([1, 1, 0.005, 0.12, 1]);
+  i32[5] = p._max;
+  for (let bus = 0; bus < 8; bus++) {
+    const b = CH_HEADER + bus * CH_STRIDE;
+    f32.set([1, 0], b);
+    i32[b + 2] = cap << 8;
+    f32.set([1, 1, 1, 0, 0.05], b + 3);
+  }
+  p._chI32 = i32;
+  p._chF32 = f32;
+  p._channelCount = 1;
+  p._setVoiceCap(cap);
+  p._applyMaxVoices([cap]);
+  p._env.fill(1);
+  p._masterEnv = 1;
+  const levels = new SharedArrayBuffer((4 + LEVEL_RING * 3) * 4);
+  p._levelsI32 = new Int32Array(levels);
+  p._levelsF32 = new Float32Array(levels);
+  p._levelRing = LEVEL_RING;
+  p._levelMask = LEVEL_RING - 1;
+  p._levelHeader = 4;
+}
 
 function makeMix(slots, active) {
   const p = new Mixer();
@@ -66,6 +100,7 @@ function makeMix(slots, active) {
   const samples = new Float32Array(FRAMES);
   for (let i = 0; i < FRAMES; i++) samples[i] = i & 1 ? 0.25 : -0.25;
   p._assets.set(1, { ch: [samples], len: FRAMES, nCh: 1 });
+  attachBus(p, active);
   for (let s = 0; s < active; s++) {
     const b = H + s * S;
     i32[b + 1] = 1;
