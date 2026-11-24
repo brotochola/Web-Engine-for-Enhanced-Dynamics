@@ -49,22 +49,3 @@ export function frontSeen(angle) {
   const towardsCamera = Math.sin(Math.atan2(Math.sin(angle) / PICTURE_FLOOR_SCALE, Math.cos(angle)));
   return Math.max(0, Math.min(1, (towardsCamera + 0.25) / 0.3));
 }
-
-/**
- * A light's cone, measured on the scene's floor (`sceneFloorScale` as tall as it is wide; `halfCone` radians to each side),
- * as the screen shows it, its light pointing at the screen angle `angle`: the screen angle from there to the middle of its
- * two edges (`turn`), half the screen angle between them (`half`), and how long `length` px of floor are along that middle.
- */
-export function coneOnScreen(angle, sceneFloorScale, halfCone, length, out) {
-  const axis = Math.atan2(Math.sin(angle) / sceneFloorScale, Math.cos(angle));
-  const edge = (a) => Math.atan2(sceneFloorScale * Math.sin(a), Math.cos(a));
-  const near = (a) => angle + Math.atan2(Math.sin(a - angle), Math.cos(a - angle));
-  const from = near(edge(axis - halfCone));
-  const to = near(edge(axis + halfCone));
-  const middle = (from + to) / 2;
-  const onFloor = Math.atan2(Math.sin(middle) / sceneFloorScale, Math.cos(middle));
-  out.turn = middle - angle;
-  out.half = (to - from) / 2;
-  out.length = length * Math.sqrt(Math.cos(onFloor) ** 2 + (sceneFloorScale * Math.sin(onFloor)) ** 2);
-  return out;
-}

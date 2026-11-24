@@ -6,9 +6,7 @@
 import WEED from '/src/index.js';
 import { CARS } from '../img/autos/index.js';
 import { CAR_LAMPS } from '../img/autos/lamps.js';
-import {
-  PICTURE_FLOOR_SCALE, PICTURE_HEIGHT_SCALE, coneOnScreen, frontSeen, pointOnScreen, screenFootprint, turnBack,
-} from './carGeometry.js';
+import { PICTURE_FLOOR_SCALE, PICTURE_HEIGHT_SCALE, frontSeen, pointOnScreen, screenFootprint, turnBack } from './carGeometry.js';
 import { POLICE_SHEET } from './carModels.js';
 import { PERSON_RADIUS } from './walkers.js';
 import {
@@ -22,27 +20,23 @@ import {
 
 const {
   GameObject, RigidBody, Collider, CollisionListener, DirectionalSprite, LightEmitter, ShadowCaster, NavGrid, Transform,
-  Decoration, DecorationComponent, Sun, enums, rng, dot2,
+  DecorationComponent, Sun, enums, rng, dot2,
 } = WEED;
 const { ShapeType } = enums;
 
 const DEG = Math.PI / 180;
 
-// Headlights: two cones from the lamps its picture draws (CAR_LAMPS, measured on each sheet), so each beam leaves its lamp
-// on the screen; the cones are measured on the floor. They reach about 65 m (900 px; half the light 6.7 m out), each 44°
-// wide, fading over the outer half of each side, at 0.7 brightness (where they meet, ahead, they add up). The car's own
-// LightEmitter is the left one; the right one is a LuzAuto child (Transform.parent: it follows the car).
+// Headlights: two cones from the lamps its picture draws (CAR_LAMPS, measured on each sheet), at their height. They reach about
+// 65 m (900 px; half the light 6.7 m out), each 44° wide, fading over the outer half of each side, at 0.7 brightness (where
+// they meet, ahead, they add up), leaning down a little: the floor ahead of the bumper is lit, not the floor under it. The
+// car's own LightEmitter is the left one; the right one is a LuzAuto child (Transform.parent: it follows the car).
 const HEADLIGHT_RADIUS = 900;
 const HEADLIGHT_CONE = 44 * DEG;
 const HEADLIGHT_SOFTNESS = 0.5;
+const HEADLIGHT_TILT = 10 * DEG;
 const HEADLIGHT_BRIGHTNESS = 0.7;
 /** The shadows its headlights cast reach 160 px: cheaper than the whole beam. */
 const HEADLIGHT_SHADOW_RANGE = 160;
-/**
- * How high the headlights are, px of height: about 0.65 m (the pictures' 18 px a metre). A light on the floor (elevation
- * 0) casts nothing into the lamp shadow map, so without a height the headlights cast no shadows of people, cars or posts.
- */
-const HEADLIGHT_HEIGHT = 12;
 /**
  * A lit lamp's shine (px round it): a decoration of the car, so it is drawn over the car's own picture and what passes in
  * front of the car covers it. A light alone shows nothing on the car: it lights the floor, which the picture covers.
@@ -57,16 +51,6 @@ const HALO_SCALE = LAMP_HALO_RADIUS / 100;
  * the bumper) and drawn from there up to the lamp by its anchor.
  */
 const HALO_IN_FRONT = 8;
-/**
- * A light brightens what faces it: the floor, and not the bumper it shines away from, so a beam seemed to come from behind
- * the car. Its first stretch is drawn over the car's front (haz_auto: a cone of the light's own shape on the screen): from the
- * lamp, over the bumper, fading into the pool on the floor.
- */
-const BEAM_LENGTH = 44; // px of the floor
-const BEAM_ALPHA = 0.6;
-/** The picture's length and half its width at the far end (demos/tools/makeHeadlightBeam.mjs), px. */
-const BEAM_PICTURE_LENGTH = 48;
-const BEAM_PICTURE_HALF_WIDTH = 24;
 /** Each car's lights come on when Sun.intensity drops under its own threshold, drawn in this range: not all at once. */
 const DARKNESS_MIN = 0.25;
 const DARKNESS_SPREAD = 0.3;
@@ -106,7 +90,6 @@ const LANE_PROBES = [
 // Scratch objects for the per-frame code: it allocates nothing.
 const _footprint = { length: 0, width: 0 };
 const _lamp = { x: 0, y: 0 };
-const _beam = { turn: 0, half: 0, length: 0 };
 const _heading = { frontX: 0, frontY: 0, rightX: 0, rightY: 0 };
 const _otherHeading = { frontX: 0, frontY: 0, rightX: 0, rightY: 0 };
 const _lane = { x: 0, y: 0 };
@@ -116,13 +99,14 @@ const _offset = { ahead: 0, side: 0 };
 const _offsetSoon = { ahead: 0, side: 0 };
 const _steer = { value: 0 };
 
-/** A headlight's cone: forward (direction 0 is where its entity faces), off until the car turns it on. */
-function aimHeadlight(light) {
+/** A headlight's cone: forward (direction 0 is where its entity faces), `height` px of height, off until the car turns it on. */
+function aimHeadlight(light, height) {
   light.color = HEADLIGHT_COLOR;
   light.glow = 0;
   light.radius = 0;
   light.brightness = HEADLIGHT_BRIGHTNESS;
-  light.elevation = HEADLIGHT_HEIGHT;
+  light.elevation = height;
+  light.tilt = HEADLIGHT_TILT;
   light.shadowRange = HEADLIGHT_SHADOW_RANGE;
   light.coneAngle = HEADLIGHT_CONE;
   light.coneSoftness = HEADLIGHT_SOFTNESS;
@@ -153,14 +137,14 @@ function switchLight(index, on, radius) {
 
 /**
  * A light that hangs from a car (Transform.parent: physics places it with the car every frame): the right headlight,
- * or one side of the police beacon (`beacon` 1, `barHeight`, `turn` its rotation from the car's heading, ±90°).
+ * or one side of the police beacon (`beacon` 1, `turn` its rotation from the car's heading, ±90°), `height` px of height.
  */
 export class LuzAuto extends GameObject {
   static components = [LightEmitter];
 
   onSpawned(config = {}) {
-    if (config.beacon) aimBeacon(this.lightEmitter, config.barHeight || 0);
-    else aimHeadlight(this.lightEmitter);
+    if (config.beacon) aimBeacon(this.lightEmitter, config.height || 0);
+    else aimHeadlight(this.lightEmitter, config.height || 0);
     this.transform.localRotation = config.turn || 0;
   }
 }
@@ -232,8 +216,6 @@ export class Auto extends GameObject {
     state.rightHeadlight = 0;
     state.lampHaloLeft = 0;
     state.lampHaloRight = 0;
-    state.lampBeamLeft = 0;
-    state.lampBeamRight = 0;
     state.beaconLeft = 0;
     state.beaconRight = 0;
     state.beaconDotLeft = 0;
@@ -242,18 +224,14 @@ export class Auto extends GameObject {
     state.beaconHaloRight = 0;
     const light = this.lightEmitter;
     if (state.headlights) {
-      aimHeadlight(light);
-      state.rightHeadlight = this.hangLight(0, 0, 0, null);
+      aimHeadlight(light, height);
+      state.rightHeadlight = this.hangLight(0, 0, 0, 0, height);
       // Hung unturned (inheritParentRotation false): their offsets are the screen's, the frame drawn's own.
       const haloLift = height * PICTURE_HEIGHT_SCALE + HALO_IN_FRONT;
       const anchorY = 0.5 + haloLift / (2 * LAMP_HALO_RADIUS);
       const halo = { tint: HEADLIGHT_COLOR, alpha: 0, anchorX: 0.5, anchorY, inheritParentRotation: false };
       state.lampHaloLeft = this.addDecoration('_lightHalo', 0, 0, HALO_SCALE, HALO_SCALE, 2, halo) + 1;
       state.lampHaloRight = this.addDecoration('_lightHalo', 0, 0, HALO_SCALE, HALO_SCALE, 2, halo) + 1;
-      // The beams turn with the car (they inherit its rotation), under the lamps' shine.
-      const beam = { tint: HEADLIGHT_COLOR, alpha: 0, anchorX: 0, anchorY: 0.5 };
-      state.lampBeamLeft = this.addDecoration('hazAuto_haz', 0, 0, 1, 1, 1, beam) + 1;
-      state.lampBeamRight = this.addDecoration('hazAuto_haz', 0, 0, 1, 1, 1, beam) + 1;
       this.placeLamps(this.rotation);
     } else {
       light.radius = 0;
@@ -263,63 +241,41 @@ export class Auto extends GameObject {
     this.updateLights();
   }
 
-  /** Its lamps where its picture draws them at the screen heading `angle`: their beams and their shine. */
+  /** Its lamps at the screen heading `angle`: their lights over the floor under them, their shine where its picture draws them. */
   placeLamps(angle) {
     const index = this.index;
     const ahead = AutoState.lampAhead[index];
     const side = AutoState.lampSide[index];
-    const height = AutoState.lampHeight[index];
-    const haloLift = height * PICTURE_HEIGHT_SCALE + HALO_IN_FRONT;
-    pointOnScreen(angle, ahead, -side, height, _lamp);
+    pointOnScreen(angle, ahead, -side, 0, _lamp);
     AutoState.lampLeftX[index] = _lamp.x;
     AutoState.lampLeftY[index] = _lamp.y;
-    placeDecoration(AutoState.lampHaloLeft[index] - 1, _lamp.x, _lamp.y + haloLift);
-    pointOnScreen(angle, ahead, side, height, _lamp);
+    placeDecoration(AutoState.lampHaloLeft[index] - 1, _lamp.x, _lamp.y + HALO_IN_FRONT);
+    pointOnScreen(angle, ahead, side, 0, _lamp);
     AutoState.lampRightX[index] = _lamp.x;
     AutoState.lampRightY[index] = _lamp.y;
-    placeDecoration(AutoState.lampHaloRight[index] - 1, _lamp.x, _lamp.y + haloLift);
-    coneOnScreen(angle, META.SYN, HEADLIGHT_CONE / 2, BEAM_LENGTH, _beam);
-    AutoState.beamTurn[index] = _beam.turn;
-    AutoState.beamScaleX[index] = _beam.length / BEAM_PICTURE_LENGTH;
-    AutoState.beamScaleY[index] = (_beam.length * Math.tan(_beam.half)) / BEAM_PICTURE_HALF_WIDTH;
-    shapeBeam(AutoState.lampBeamLeft[index] - 1, _beam.turn, AutoState.beamScaleX[index], AutoState.beamScaleY[index]);
-    shapeBeam(AutoState.lampBeamRight[index] - 1, _beam.turn, AutoState.beamScaleX[index], AutoState.beamScaleY[index]);
+    placeDecoration(AutoState.lampHaloRight[index] - 1, _lamp.x, _lamp.y + HALO_IN_FRONT);
     AutoState.lampSeen[index] = frontSeen(angle);
-    this.holdBeams();
+    this.holdLights();
     this.shineLamps();
   }
 
   /**
-   * The beams on the lamps of the frame drawn. The engine turns a light's offset with the car's rotation, which is up to
+   * The lights on the lamps of the frame drawn. The engine turns a light's offset with the car's rotation, which is up to
    * half a frame's step off the picture: on a bus 5° are 6 px, so the rotation is taken out of the offset, each tick.
    */
-  holdBeams() {
+  holdLights() {
     const index = this.index;
     const cos = Transform.rotC[index];
     const sin = Transform.rotS[index];
-    this.lampInCarFrame(AutoState.lampLeftX[index], AutoState.lampLeftY[index], cos, sin);
+    _lamp.x = AutoState.lampLeftX[index];
+    _lamp.y = AutoState.lampLeftY[index];
+    turnBack(_lamp, cos, sin);
     LightEmitter.offsetX[index] = _lamp.x;
     LightEmitter.offsetY[index] = _lamp.y;
-    this.lampInCarFrame(AutoState.lampRightX[index], AutoState.lampRightY[index], cos, sin);
-    setLocalOffset(AutoState.rightHeadlight[index] - 1, _lamp.x, _lamp.y);
-    // Their first stretch, placed like the halos (HALO_IN_FRONT) and drawn from the lamp by its anchor.
-    const lift = AutoState.lampHeight[index] * PICTURE_HEIGHT_SCALE + HALO_IN_FRONT;
-    const turn = AutoState.beamTurn[index];
-    const beamCos = cos * Math.cos(turn) - sin * Math.sin(turn);
-    const beamSin = sin * Math.cos(turn) + cos * Math.sin(turn);
-    const anchorX = (lift * beamSin) / (BEAM_PICTURE_LENGTH * AutoState.beamScaleX[index]);
-    const anchorY = 0.5 + (lift * beamCos) / (2 * BEAM_PICTURE_HALF_WIDTH * AutoState.beamScaleY[index]);
-    this.lampInCarFrame(AutoState.lampLeftX[index], AutoState.lampLeftY[index] + lift, cos, sin);
-    placeBeam(AutoState.lampBeamLeft[index] - 1, _lamp.x, _lamp.y, anchorX, anchorY);
-    this.lampInCarFrame(AutoState.lampRightX[index], AutoState.lampRightY[index] + lift, cos, sin);
-    placeBeam(AutoState.lampBeamRight[index] - 1, _lamp.x, _lamp.y, anchorX, anchorY);
-  }
-
-  /** A screen offset from its centre as its rotation (cos, sin) turns it back: into _lamp. */
-  lampInCarFrame(x, y, cos, sin) {
-    _lamp.x = x;
-    _lamp.y = y;
+    _lamp.x = AutoState.lampRightX[index];
+    _lamp.y = AutoState.lampRightY[index];
     turnBack(_lamp, cos, sin);
+    setLocalOffset(AutoState.rightHeadlight[index] - 1, _lamp.x, _lamp.y);
   }
 
   /** The lamps' shine: on with the beams, and only the side of the car the frame drawn shows. */
@@ -328,12 +284,10 @@ export class Auto extends GameObject {
     const seen = AutoState.lightsOn[index] === 1 ? AutoState.lampSeen[index] : 0;
     fadeDecoration(AutoState.lampHaloLeft[index] - 1, LAMP_HALO_ALPHA * seen);
     fadeDecoration(AutoState.lampHaloRight[index] - 1, LAMP_HALO_ALPHA * seen);
-    fadeDecoration(AutoState.lampBeamLeft[index] - 1, BEAM_ALPHA * seen);
-    fadeDecoration(AutoState.lampBeamRight[index] - 1, BEAM_ALPHA * seen);
   }
 
-  /** A LuzAuto hung from the car at (localX, localY) of its frame: its index + 1, 0 when the pool is full. */
-  hangLight(localX, localY, turn, barHeight) {
+  /** A LuzAuto hung from the car at (localX, localY) of its frame (`beacon` 1, or a headlight): its index + 1, 0 when the pool is full. */
+  hangLight(localX, localY, turn, beacon, height) {
     const cos = Math.cos(this.rotation);
     const sin = Math.sin(this.rotation);
     const light = LuzAuto.spawn({
@@ -343,8 +297,8 @@ export class Auto extends GameObject {
       localX,
       localY,
       turn,
-      beacon: barHeight === null ? 0 : 1,
-      barHeight: barHeight || 0,
+      beacon,
+      height,
     });
     return light ? light.index + 1 : 0;
   }
@@ -357,9 +311,9 @@ export class Auto extends GameObject {
     state.beaconPhase = rng() * 10;
     state.beaconRedLeft = 2;
     this.findSide(this.rotation, -1);
-    state.beaconLeft = this.hangLight(_lamp.x, _lamp.y, -Math.PI / 2, barHeight);
+    state.beaconLeft = this.hangLight(_lamp.x, _lamp.y, -Math.PI / 2, 1, barHeight);
     this.findSide(this.rotation, 1);
-    state.beaconRight = this.hangLight(_lamp.x, _lamp.y, Math.PI / 2, barHeight);
+    state.beaconRight = this.hangLight(_lamp.x, _lamp.y, Math.PI / 2, 1, barHeight);
     // Hung unturned (inheritParentRotation false): their offsets are the screen's, set each frame from the car's heading.
     const dot = { tint: BEACON_RED, alpha: 1, anchorX: 0.5, anchorY: 0.5, inheritParentRotation: false };
     const halo = { ...dot, layer: 'glows' };
@@ -407,7 +361,7 @@ export class Auto extends GameObject {
     const index = this.index;
     if (!Transform.active[index]) return;
     this.updateLights();
-    if (AutoState.headlights[index] && AutoState.lightsOn[index] === 1) this.holdBeams();
+    if (AutoState.headlights[index] && AutoState.lightsOn[index] === 1) this.holdLights();
     if (AutoState.police[index]) this.blinkBeacon();
   }
 
@@ -476,21 +430,6 @@ function paintLight(index, color) {
 
 function paintDecoration(index, color) {
   if (index >= 0) DecorationComponent.tint[index] = color;
-}
-
-/** A beam's first stretch as the frame drawn shows its cone. */
-function shapeBeam(index, turn, scaleX, scaleY) {
-  if (index < 0) return;
-  Decoration.setBaseRotation(index, turn);
-  Decoration.setScale(index, scaleX, scaleY);
-}
-
-function placeBeam(index, localX, localY, anchorX, anchorY) {
-  if (index < 0) return;
-  DecorationComponent.localX[index] = localX;
-  DecorationComponent.localY[index] = localY;
-  DecorationComponent.anchorX[index] = anchorX;
-  DecorationComponent.anchorY[index] = anchorY;
 }
 
 function fadeDecoration(index, alpha) {
