@@ -22,6 +22,7 @@ import {
   nativeImport,
 } from '../util/sceneScript.js';
 import { swapModule, hotModuleUrl } from '../core/debug/hotSwap.js';
+import { unpackSharedMemories } from '../util/sharedMemoryMessage.js';
 import {
   seededRandom,
   loadEntityScripts,
@@ -1365,6 +1366,8 @@ export class AbstractWorker {
 
       case 'init':
         loadMark('init');
+        // N-451: in WebKit the message comes packed, so that each memory's buffer is one object here too.
+        unpackSharedMemories(e.data);
         debugWorkerLog(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
         if (e.data.pageOrigin) {
           self.__weedPageOrigin = e.data.pageOrigin;
