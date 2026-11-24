@@ -8,7 +8,7 @@
  *
  * { "name": "x", "collectRun": <run id> } runs nothing: it gathers the artifacts another run left.
  *
- * `plan` is the list a sweep job reads (sweep.mjs).
+ * `plan` is what a sweep job reads (sweep.mjs): a list, or "dumpAll".
  *
  * `args` go to the task's script as --key value; `shards: n` splits a task's work over n jobs (--shard k/n) on every VM.
  */

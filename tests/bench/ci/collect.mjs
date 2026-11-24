@@ -91,6 +91,7 @@ export function sweepTable(jobs) {
         failed.set(name, row.error);
         continue;
       }
+      if (row.type === 'dump') continue;
       for (const [rate, m] of Object.entries(row.metrics)) {
         const key = `${name}|${rate}`;
         const g = groups.get(key) || { machine: job.machineKey, label: row.label, kernel: row.kernel, commit: row.commit || '', type: row.type, rate, vms: [], checksums: 0 };

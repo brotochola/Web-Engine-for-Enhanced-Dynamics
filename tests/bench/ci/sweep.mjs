@@ -7,6 +7,9 @@
  *     the kernel as it was at that commit, src/ from the commit's parent (A) against the commit's own (B)
  *   { "id": "simd decalStamp", "type": "variant", "kernel": "tests/bench/decalStampWasmMicrobench.mjs", "variants": ["js", "wasm"] }
  *     this tree's kernel, --variant of the first (A) against each other one (B)
+ *   { "id": "setter", "type": "dump", "kernel": "tests/bench/setterMicrobench.mjs" }
+ *     this tree's kernel alone: its rates (a kernel's cases against each other, on this machine)
+ *   A plan of "dumpAll" in place of the list: every Node kernel of tests/bench, each a dump.
  *
  *   node tests/bench/ci/sweep.mjs --plan ci-request.json [--rounds 5] [--shard 1/4] --output file.json
  *
@@ -111,6 +114,26 @@ function runOnce(root, kernel, extra, out) {
   return { rates: ratesOf(json), checksum: json.checksum ?? null };
 }
 
+/** One kernel's rates over `rounds` processes, the first thrown away. */
+function dump(label, side, kernel, rounds, tmp) {
+  const row = { label, kernel: path.basename(kernel, '.mjs'), metrics: {} };
+  const t0 = performance.now();
+  for (let r = -1; r < rounds; r++) {
+    const got = runOnce(side.root, kernel, side.args, path.join(tmp, 'dump.json'));
+    if (got.error) {
+      row.error = got.error;
+      break;
+    }
+    if (r < 0) continue;
+    for (const [place, m] of Object.entries(got.rates)) {
+      const kept = (row.metrics[place] ??= { higher: m.higher, v: [] });
+      kept.v.push(+m.v.toPrecision(5));
+    }
+  }
+  row.seconds = +((performance.now() - t0) / 1000).toFixed(1);
+  return row;
+}
+
 function compare(label, a, b, kernel, rounds, tmp) {
   const row = { label, kernel: path.basename(kernel, '.mjs'), metrics: {} };
   const t0 = performance.now();
@@ -144,6 +167,10 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const rounds = Number(args.rounds ?? 5);
   let plan = JSON.parse(fs.readFileSync(path.resolve(String(args.plan ?? 'ci-request.json')), 'utf8')).plan;
+  if (plan === 'dumpAll') {
+    plan = fs.readdirSync(path.join(repoRoot, 'tests/bench')).filter((f) => /(Microbench|Kernel)\.mjs$/.test(f) && f !== 'chromeKernel.mjs').sort()
+      .map((f) => ({ id: f.replace(/(Microbench|Kernel)\.mjs$/, ''), type: 'dump', kernel: `tests/bench/${f}` }));
+  }
   if (args.type) plan = plan.filter((e) => e.type === args.type);
   if (args.shard) {
     const [k, n] = String(args.shard).split('/').map(Number);
@@ -171,7 +198,8 @@ function main() {
         const extra = words(entry.args);
         rows = [compare(entry.id, { root: sides.a, args: extra }, { root: sides.b, args: extra }, entry.kernel, rounds, tmp)];
         rows[0].commit = entry.commit.slice(0, 8);
-        // A commit that changes how the kernel reports: the same numbers are asked of both sides or not at all.
+      } else if (entry.type === 'dump') {
+        rows = [dump(entry.id, { root: repoRoot, args: words(entry.args) }, entry.kernel, rounds, tmp)];
       } else {
         const [base, ...others] = entry.variants;
         const side = (v) => ({ root: repoRoot, args: ['--variant', v, ...words(entry.args)] });
