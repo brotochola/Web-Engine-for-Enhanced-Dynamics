@@ -15,6 +15,7 @@
  *            shape on data spread over many lines) say whether this machine shows the reorderings at all. A machine
  *            whose controls read 0 says nothing about the engine cases.
  *   engine   shipped code. Any `bad` is a bug. Exit 1.
+ *   variant  a protocol with one side changed, to find what mends it: never fails the run.
  *   info     shipped code that returns unchecked values on purpose: compare its rate with x86's.
  */
 import fs from 'node:fs';
@@ -159,6 +160,63 @@ export const CASES = {
       return { reads, accepted, bad };
     },
   },
+  timeScale: {
+    kind: 'engine',
+    writers: 1,
+    setup: () => ({ sab: new SharedArrayBuffer(64) }),
+    // The base and the time it was taken, under the clock's lock as _rebaseSim writes them; readSimNow's protocol is read
+    // through readSimNow itself with the clock stopped, so it returns the base it read.
+    write({ sab }, stop) {
+      new Float32Array(sab, 0, 1)[0] = 1;
+      const seq = new Int32Array(sab, 4, 1);
+      const base = new Float64Array(sab, 8, 2);
+      return loop(stop, (k) => {
+        for (;;) {
+          const v = Atomics.load(seq, 0);
+          if ((v & 1) === 0 && Atomics.compareExchange(seq, 0, v, v + 1) === v) break;
+        }
+        base[0] = k;
+        base[1] = k;
+        Atomics.add(seq, 0, 1);
+        pause(60);
+      });
+    },
+    // timeScale.js's read loop, its accesses in its order.
+    read({ sab }, until) {
+      const seq = new Int32Array(sab, 4, 1);
+      const now = new Float64Array(sab, 8, 2);
+      const view = new Float32Array(sab, 0, 1);
+      let reads = 0;
+      let accepted = 0;
+      let bad = 0;
+      while (performance.now() < until) {
+        for (let i = 0; i < 1024; i++) {
+          reads++;
+          const before = Atomics.load(seq, 0);
+          if (before & 1) continue;
+          const base = now[0];
+          const at = now[1];
+          const scale = view[0];
+          if (Atomics.load(seq, 0) !== before) continue;
+          accepted++;
+          if (base !== at || scale > 1) bad++;
+        }
+      }
+      return { reads, accepted, bad };
+    },
+  },
+  // The camera's seqlock with one side changed, to find what mends it (writer, reader):
+  //   plain   as shipped: plain stores after the odd mark; plain loads, then the mark again
+  //   fence   an atomic read-modify-write on a private word between the data and the mark (a full barrier on ARM)
+  //   atomic  the data itself through Atomics, as Int32 (what the language's memory model asks for)
+  //   rmw     the second mark read as Atomics.add(seq, 0, 0)
+  seqPlainPlain: cameraVariant('plain', 'plain'),
+  seqPlainFence: cameraVariant('plain', 'fence'),
+  seqPlainRmw: cameraVariant('plain', 'rmw'),
+  seqPlainAtomic: cameraVariant('plain', 'atomic'),
+  seqFencePlain: cameraVariant('fence', 'plain'),
+  seqFenceFence: cameraVariant('fence', 'fence'),
+  seqAtomicAtomic: cameraVariant('atomic', 'atomic'),
   frameClockSlot: {
     kind: 'engine',
     writers: 1,
@@ -598,6 +656,98 @@ function seqlockControl(begin, end) {
         }
       }
       return { reads, accepted, bad };
+    },
+  };
+}
+
+/** The camera's layout (8 fields, the mark at word 16) and accesses, its writer's and reader's order kept three ways. */
+function cameraVariant(writer, reader) {
+  const FIELDS = 8;
+  const SEQ = 16;
+  return {
+    kind: 'variant',
+    writers: 1,
+    setup: () => ({ sab: new SharedArrayBuffer(256) }),
+    write({ sab }, stop) {
+      const f32 = new Float32Array(sab, 0, 17);
+      const i32 = new Int32Array(sab, 0, 17);
+      const fence = new Int32Array(new SharedArrayBuffer(4));
+      const bits = new Float32Array(1);
+      const asInt = new Int32Array(bits.buffer);
+      if (writer === 'atomic') {
+        return loop(stop, (k) => {
+          bits[0] = k & 0xfffff;
+          const v = asInt[0];
+          Atomics.add(i32, SEQ, 1);
+          for (let f = 0; f < FIELDS; f++) Atomics.store(i32, f, v);
+          Atomics.add(i32, SEQ, 1);
+          pause(60);
+        });
+      }
+      const fenced = writer === 'fence';
+      return loop(stop, (k) => {
+        const v = k & 0xfffff;
+        Atomics.add(i32, SEQ, 1);
+        if (fenced) Atomics.add(fence, 0, 0);
+        f32[0] = v;
+        f32[1] = v;
+        f32[2] = v;
+        f32[3] = v;
+        f32[4] = v;
+        f32[5] = v;
+        f32[6] = v;
+        f32[7] = v;
+        Atomics.add(i32, SEQ, 1);
+        pause(60);
+      });
+    },
+    read({ sab }, until) {
+      const f32 = new Float32Array(sab, 0, 17);
+      const i32 = new Int32Array(sab, 0, 17);
+      const fence = new Int32Array(new SharedArrayBuffer(4));
+      const counts = { reads: 0, accepted: 0, bad: 0 };
+      const turn = reader === 'atomic' ? readAtomic : reader === 'fence' ? readFence : reader === 'rmw' ? readRmw : readPlain;
+      while (performance.now() < until) for (let i = 0; i < 1024; i++) turn();
+      return counts;
+
+      function readPlain() {
+        counts.reads++;
+        const s = Atomics.load(i32, SEQ);
+        if (s & 1) return;
+        const a = f32[0], b = f32[1], c = f32[2], d = f32[3], e = f32[4], f = f32[5], g = f32[6], h = f32[7];
+        if (Atomics.load(i32, SEQ) !== s) return;
+        counts.accepted++;
+        if (a !== b || a !== c || a !== d || a !== e || a !== f || a !== g || a !== h) counts.bad++;
+      }
+      function readFence() {
+        counts.reads++;
+        const s = Atomics.load(i32, SEQ);
+        if (s & 1) return;
+        const a = f32[0], b = f32[1], c = f32[2], d = f32[3], e = f32[4], f = f32[5], g = f32[6], h = f32[7];
+        Atomics.add(fence, 0, 0);
+        if (Atomics.load(i32, SEQ) !== s) return;
+        counts.accepted++;
+        if (a !== b || a !== c || a !== d || a !== e || a !== f || a !== g || a !== h) counts.bad++;
+      }
+      function readRmw() {
+        counts.reads++;
+        const s = Atomics.load(i32, SEQ);
+        if (s & 1) return;
+        const a = f32[0], b = f32[1], c = f32[2], d = f32[3], e = f32[4], f = f32[5], g = f32[6], h = f32[7];
+        if (Atomics.add(i32, SEQ, 0) !== s) return;
+        counts.accepted++;
+        if (a !== b || a !== c || a !== d || a !== e || a !== f || a !== g || a !== h) counts.bad++;
+      }
+      function readAtomic() {
+        counts.reads++;
+        const s = Atomics.load(i32, SEQ);
+        if (s & 1) return;
+        const a = Atomics.load(i32, 0), b = Atomics.load(i32, 1), c = Atomics.load(i32, 2), d = Atomics.load(i32, 3);
+        const e = Atomics.load(i32, 4), f = Atomics.load(i32, 5), g = Atomics.load(i32, 6), h = Atomics.load(i32, 7);
+        if (Atomics.load(i32, SEQ) !== s) return;
+        counts.accepted++;
+        if (a !== b || a !== c || a !== d || a !== e || a !== f || a !== g || a !== h) counts.bad++;
+      }
     },
   };
 }

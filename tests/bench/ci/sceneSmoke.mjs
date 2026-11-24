@@ -72,6 +72,31 @@ function probeGpu(page) {
   });
 }
 
+/**
+ * Is a WebAssembly.Memory's buffer the same object in a worker that gets the memory and its buffer in one message? The
+ * engine's clients ask `view.buffer === memory.buffer` before a kernel reads a column by its byte.
+ */
+function probeSharedIdentity(page) {
+  return page.evaluate(() => new Promise((resolve) => {
+    const code = `onmessage = (e) => {
+      const { memory, sab, view, later } = e.data;
+      const own = memory.buffer;
+      new Int32Array(sab)[0] = 41;
+      const aliased = new Int32Array(own)[0] === 41;
+      postMessage({ sameObject: own === sab, viewSameObject: view.buffer === own, bufferStable: memory.buffer === own,
+        aliased, sabIsView: view.buffer === sab, plainSabSame: later.a === later.b });
+    };`;
+    const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+    const worker = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+    const main = { mainStable: memory.buffer === memory.buffer };
+    worker.onmessage = (e) => resolve({ ...main, ...e.data });
+    worker.onerror = (e) => resolve({ ...main, error: e.message });
+    const plain = new SharedArrayBuffer(8);
+    worker.postMessage({ memory, sab: memory.buffer, view: new Int32Array(memory.buffer), later: { a: plain, b: plain } });
+    setTimeout(() => resolve({ ...main, error: 'timeout' }), 10000);
+  }));
+}
+
 /** Frames every worker has published so far, by worker. */
 function framesNow(page) {
   return page.evaluate(async () => {
@@ -159,6 +184,7 @@ async function main() {
   const probe = await browser.newPage();
   await probe.goto(`http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html`, { waitUntil: 'load' });
   out.gpu = await probeGpu(probe).catch((e) => ({ error: e.message }));
+  out.gpu.sharedIdentity = await probeSharedIdentity(probe).catch((e) => ({ error: e.message }));
   await probe.close();
   console.log(`${which} ${out.version}`, JSON.stringify(out.gpu));
   try {
