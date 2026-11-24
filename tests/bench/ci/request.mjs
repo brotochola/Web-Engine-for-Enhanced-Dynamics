@@ -29,6 +29,7 @@ export const TASKS = Object.freeze({
   race: { script: 'tests/bench/ci/raceStress.mjs', minutes: 60, browsers: [] },
   repeatTests: { script: 'tests/bench/ci/repeatTests.mjs', minutes: 90, browsers: [] },
   kernelAb: { script: 'tests/bench/ci/kernelAb.mjs', minutes: 180, browsers: [] },
+  d8: { script: 'tests/bench/d8/runD8.mjs', minutes: 90, browsers: [] },
   scenes: { script: 'tests/bench/ci/sceneSmoke.mjs', minutes: 120, browsers: (args) => [args.browser || 'chromium'] },
   bench: { script: 'tests/bench/runIntegratedWorkerBenchmark.mjs', minutes: 30, browsers: (args) => [args.channel || 'chrome'] },
 });

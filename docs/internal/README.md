@@ -17,6 +17,7 @@ tried, what is planned, and the journal of building the engine. They are not the
 | File | Use it for |
 | --- | --- |
 | [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md) | The speed protocol: what counts as faster, the three instruments, how a sitting is built and decided, how it is recorded. |
+| [`CI_MEASURE.md`](./CI_MEASURE.md) | Tests, kernels and scenes on GitHub's machines (Linux, Windows, macOS, ARM): how a request runs, where its results are, what they may decide. |
 | [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) | What can be measured: the feature catalog, the kernels, every stress scene by area, the gameplay scenes. |
 | [`V8_JIT_GUIDE.md`](./V8_JIT_GUIDE.md) | Writing JavaScript that V8's JIT handles well, and when to leave it for WebAssembly. |
 | [`../../tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md) | The scene runner's and the gate's options. |
