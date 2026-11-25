@@ -10,6 +10,9 @@
  *   { "id": "setter", "type": "dump", "kernel": "tests/bench/setterMicrobench.mjs" }
  *     this tree's kernel alone: its rates (a kernel's cases against each other, on this machine)
  *   A plan of "dumpAll" in place of the list: every Node kernel of tests/bench, each a dump.
+ *   A plan of { "revs": { "a": "<full sha>", "b": "<full sha>" } }: every Node kernel that reaches the engine, src/ of revision a against src/ of b
+ *   (two releases, say), with the variant the engine ships (shipped.mjs). The kernels are b's; one that does not run on
+ *   both sides is tried as it was at a; one that runs on neither way is a row with its error.
  *
  *   node tests/bench/ci/sweep.mjs --plan ci-request.json [--rounds 5] [--shard 1/4] --output file.json
  *
@@ -20,12 +23,14 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { isCli, parseArgs } from '../microbenchHelpers.mjs';
 import { repoRoot } from '../revWorktree.mjs';
+import { reachesEngine, shippedArgs } from './shipped.mjs';
 
 const RUN_TIMEOUT_MS = 120000;
-const PARTS = ['src', 'tests', 'wasm', 'scripts', 'demos/tests', 'package.json'];
+const PARTS = ['src', 'tests', 'wasm', 'scripts', 'demos/tests', 'demos/**/*.js', 'demos/**/*.json', 'package.json'];
 const treesDir = path.join(path.dirname(repoRoot), 'weed-sweep');
 
 function git(args, cwd = repoRoot) {
@@ -72,6 +77,61 @@ function checkoutCommit(sides, commit) {
     git(['clean', '-fdq', '-e', 'node_modules'], root);
   }
   git(['restore', '-q', `--source=${commit}^`, '--worktree', '--', 'src'], sides.a);
+}
+
+/** Both sides' whole tree at `rev`, with src/ from revision a on side a and from b on side b. */
+function checkoutRevs(sides, rev, a, b) {
+  for (const sha of [rev, a, b]) {
+    try {
+      git(['cat-file', '-e', `${sha}^{tree}`]);
+    } catch {
+      git(['fetch', '-q', '--depth=1', '--filter=blob:none', 'origin', sha]);
+    }
+  }
+  for (const [root, src] of [[sides.a, a], [sides.b, b]]) {
+    git(['checkout', '-q', '-f', '--detach', rev], root);
+    git(['clean', '-fdq', '-e', 'node_modules'], root);
+    if (src !== rev) git(['restore', '-q', `--source=${src}`, '--worktree', '--', 'src'], root);
+  }
+}
+
+/** The Node kernels of `root`'s tests/bench, by file name. */
+function kernelFiles(root) {
+  return fs.readdirSync(path.join(root, 'tests/bench')).filter((f) => /(Microbench|Kernel)\.mjs$/.test(f) && f !== 'chromeKernel.mjs').sort();
+}
+
+/** Two revisions: every kernel with b's tests, those that fail there with a's (`at`: whose tests ran it). */
+function revsSweep({ a, b }, { only, shard, rounds, tmp, done }) {
+  const sides = { a: tree('a'), b: tree('b') };
+  let list = null;
+  for (const [at, rev] of [['b', b], ['a', a]]) {
+    checkoutRevs(sides, rev, a, b);
+    if (list === null) {
+      const engine = (file) => reachesEngine(pathToFileURL(path.join(sides.b, 'tests/bench', file)));
+      list = kernelFiles(sides.b).filter(engine).flatMap((file) => shippedArgs(file).map((args) => ({ file, args })));
+      if (only) list = list.filter((k) => only.some((name) => k.file.startsWith(name)));
+      if (shard) list = list.filter((_, i) => i % shard[1] === shard[0] - 1);
+    }
+    const again = [];
+    for (const k of list) {
+      if (!fs.existsSync(path.join(sides.a, 'tests/bench', k.file))) {
+        done({ ...k.failed, label: k.failed.label, type: 'revs' });
+        continue;
+      }
+      const name = k.file.replace(/(Microbench|Kernel)\.mjs$/, '');
+      const words = k.args ? k.args.split(' ') : [];
+      const row = compare(k.args ? `${name} ${words.slice(1).join(' ')}` : name, { root: sides.a, args: words }, { root: sides.b, args: words },
+        `tests/bench/${k.file}`, rounds, tmp);
+      row.type = 'revs';
+      row.testsAt = at;
+      if (!row.error) done(row);
+      else if (at === 'b') again.push({ ...k, failed: row });
+      else done({ ...row, error: `${k.failed.error} || as it was at a: ${row.error}` });
+    }
+    list = again;
+    if (list.length === 0 || a === b) break;
+  }
+  for (const k of a === b ? list : []) done(k.failed);
 }
 
 /**
@@ -171,6 +231,8 @@ function main() {
     plan = fs.readdirSync(path.join(repoRoot, 'tests/bench')).filter((f) => /(Microbench|Kernel)\.mjs$/.test(f) && f !== 'chromeKernel.mjs').sort()
       .map((f) => ({ id: f.replace(/(Microbench|Kernel)\.mjs$/, ''), type: 'dump', kernel: `tests/bench/${f}` }));
   }
+  const revs = !Array.isArray(plan) && plan?.revs;
+  if (revs) plan = [];
   if (args.type) plan = plan.filter((e) => e.type === args.type);
   if (args.shard) {
     const [k, n] = String(args.shard).split('/').map(Number);
@@ -182,6 +244,17 @@ function main() {
   const write = () => fs.writeFileSync(path.resolve(String(args.output ?? 'sweep.json')), `${JSON.stringify(out)}\n`);
   const t0 = performance.now();
   const words = (text) => (typeof text === 'string' && text ? text.split(' ') : []);
+  if (revs) {
+    Object.assign(out, { a: revs.a, b: revs.b });
+    revsSweep(revs, {
+      only: args.only ? String(args.only).split(',') : null, shard: args.shard ? String(args.shard).split('/').map(Number) : null, rounds, tmp,
+      done: (row) => {
+        out.rows.push(row);
+        console.log(`${((performance.now() - t0) / 60000).toFixed(1)} min  ${row.label} ${row.error ? `FAILED ${row.error.slice(0, 160)}` : `${Object.keys(row.metrics).length} rates, ${row.seconds} s${row.testsAt === 'a' ? ' (the kernel of a)' : ''}`}`);
+        write();
+      },
+    });
+  }
   // Kernels of one commit in a row: a checkout serves them all.
   const ordered = [...plan].sort((x, y) => String(x.commit || '').localeCompare(String(y.commit || '')));
   let sides = null;

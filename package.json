@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.15.47",
+  "version": "0.15.48",
   "description": "A multi-threaded 2D web game engine for high-entity-count browser games",
   "type": "module",
   "main": "dist/weed.prod.bundle.min.js",
@@ -51,6 +51,7 @@
     "test:node:bundle:build": "npm run make_bundle && npm run test:node:bundle",
     "test:bundle": "node scripts/smokeBundleEmbed.mjs && node scripts/smokeBundleBrowser.mjs",
     "test:bundle:build": "npm run make_bundle && npm run test:bundle",
+    "measure:all": "node scripts/measureAll.mjs",
     "test:all": "npm run test:node && npm run test:browser",
     "test:visual": "node tests/bench/runLockstepVisual.mjs",
     "test:faces": "node tests/bench/faceLightCheck.mjs",

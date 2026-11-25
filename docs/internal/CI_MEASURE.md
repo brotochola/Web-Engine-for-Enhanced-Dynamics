@@ -47,6 +47,21 @@ times mean nothing on them.
 | `scenes` | [`sceneSmoke.mjs`](../../tests/bench/ci/sceneSmoke.mjs) | does every demo boot, draw and stay quiet in a browser |
 | `bench` | `runIntegratedWorkerBenchmark.mjs` | one scene run, where the machine has a GPU |
 
+## measure:all, two revisions in one page
+
+`npm run measure:all -- --a v0.14.0 --b v0.15.0` compares two revisions (two releases, or a release and `HEAD`) and writes one
+page, `tests/results/measure-all/<name>/page.md` (git-ignored), and its numbers beside it:
+
+- **Exact**, from git: the bundles' and the WASM modules' bytes, the lines of code, the test cases.
+- **Kernels**: every Node kernel that reaches the engine, with the variant the engine ships
+  ([`shipped.mjs`](../../tests/bench/ci/shipped.mjs)), src/ of one against src/ of the other in the same VM (a sweep of
+  `{ "revs": { a, b } }`). A kernel written for the second that does not run on the first is tried as it was then; one that
+  runs neither way is listed, not left out. A kernel moved when it did by 3 % or more, past its machine's limit.
+- **Health**, when the second is the commit checked out: the suites, the races and the demos.
+
+A kernel that computes something else on each side (its checksums differ) is marked: its speed is read with that. Kernels are
+pieces of a frame, not frames: what a game gets is the scenes' (`npm run bench:scoreboard`), on a GPU.
+
 ## What the numbers may decide
 
 1. **A and B run in the same VM, alternating.** VMs of one kind differ by 40 % and more; a difference between two VMs is
