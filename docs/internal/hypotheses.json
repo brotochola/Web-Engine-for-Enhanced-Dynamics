@@ -25862,16 +25862,18 @@
       "date": "2026-11-24"
     },
     {
-      "records": [],
+      "records": [
+        "R-2001"
+      ],
       "refs": [],
       "id": "N-458",
-      "title": "A WebGL context lost while a scene boots never ends the boot: no fatal overlay, the load waits for ever",
-      "status": "open",
+      "title": "A WebGL context lost while a scene loads: a black canvas without a word, or a load that never ends",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "engine",
-      "result": "",
-      "statusText": "Seen 2026-11-24 in WebKit on a macOS VM whose GPU process had gone: 33 scenes in a row logged \"WebGL: context lost.\" and timed out at 120 s",
-      "next": "In Chrome: WEBGL_lose_context before the scene starts; report the loss during boot as a fatal error (boot waits on it), or boot on the restored context",
+      "result": "fixed (2af9f97a): 8 of 8 black and silent cases now draw (context back) or show the fatal error",
+      "statusText": "Found 2026-11-24 in WebKit on a macOS VM, reproduced and fixed in Chrome the same day (2af9f97a)",
+      "next": "",
       "aliases": [
         "context lost at boot"
       ],
@@ -44375,6 +44377,18 @@
       "text": "Windows x64 on GitHub, the whole suite: \"claim wait not metered: 28.76 ms of 29.96\" at E-556's revision, 1 of 5 VMs (0 of 4 in the repeat), and 29.23 of 29.97 at its parent, 1 of 4 VMs: the same test, with and without the change. The test reads the wall clock, then calls the claim, and allowed 0.5 ms between the two; a thread kept off a core there meters less wait. The other tests of that kind (frameChainWait, spatialTailStartOn) try again; this one failed at the first short try. Fixed (8aebd090): it tries again, five times. With the metering line removed it still fails (0.05 ms of 29.97 in five tries).",
       "commits": [
         "8aebd090"
+      ]
+    },
+    {
+      "id": "R-2001",
+      "date": "2026-11-24",
+      "time": "21:52",
+      "timeFrom": "recorded",
+      "title": "N-458 fixed: a WebGL context lost while a scene loads is waited for, or said so",
+      "verdict": "kept-hygiene",
+      "text": "**Wider than filed.** gpuLossBootProbe serves Chrome the Pixi worker with a prelude that loses its context (WEBGL_lose_context) as Pixi makes it, 30 ms later, as 'init' arrives, or 60 ms after; ballsScene, with the context never back or back after 500 ms. Before: 8 of 8 cases black with no word (0 of 921 600 pixels change in a second, against about 800 000 without a loss); the first left the load waiting for ever, a core at 100 %.\n\n**Causes.** (1) Pixi's checkMaxIfStatementsInShader halves the ifs of a test shader until one compiles; with the context lost none does, the count reaches 0 and the loop never ends. (2) GameEngine._onGpuLost ignored a loss while the scene loads (its state is not READY) and the restore that followed.\n\n**Fixed (2af9f97a).** Pixi's loop throws at 0 (buildPixi.mjs patchPixiLostBoot; the vendor file rebuilt, identical but for it); the renderer's boot watches the canvas from before Pixi makes the context, waits up to 10 s for it and starts Pixi once more, or fails with a message that says the context was lost; the page keeps a loss in the load and restarts the scene from its save when the load ends (a second loss in that restart is the fatal error, as N-301's). After a boot that failed the page's 'start' starts nothing: its own error covered the message.\n\n**After:** the 4 cases whose context comes back draw (about 800 000 pixels move), the 4 whose context never does show the fatal error (10 s after). gpuLossProbe, a loss in a running game: BACK on WebGL (1.43 s) and WebGPU (1.42 s). node 3630, demos 149; bundles rebuilt and smoked. Not tried: a real driver reset, a GPU process killed in the load, phones.",
+      "commits": [
+        "2af9f97a"
       ]
     }
   ],
