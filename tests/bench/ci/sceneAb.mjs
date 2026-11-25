@@ -6,12 +6,13 @@
  * revision (its scenes too) served by this tree's runner. The loads are small: the machines have 4 threads, and a frame's
  * workers already share them.
  *
- *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--query k=v&k=v] [--mode shell] [--draw]
+ *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--query k=v&k=v] [--mode shell] [--draw] [--channel chrome]
  *     [--warmup-ms 6000] [--duration-ms 8000] [--shard 1/2] --output file.json
  *
  * A pair is one observation of a worker's time: ln(B / A). What a scene draws, the GPU's time and the frames on the screen
  * are not here. --set all: every scene both revisions have (sceneList.mjs), instead of the eight below. --mode: how Chromium
- * is started (runScene; frameProbe found no difference once nothing is drawn). Each run says the frames each worker ran: a
+ * is started (runScene; frameProbe found no difference once nothing is drawn). --channel chrome: the installed Chrome (on a
+ * laptop with two GPUs Playwright's Chromium may take the integrated one). Each run says the frames each worker ran: a
  * worker that ran a few, cold, has no time to read.
  */
 import { spawnSync } from 'node:child_process';
@@ -45,7 +46,7 @@ const KINDS = ['logic', 'spatial', 'physics', 'renderer', 'particle', 'preRender
 export function runScene(root, scene, o, out) {
   fs.rmSync(out, { force: true });
   const argv = [path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs'), '--src', '--root', root, ...(o.draw ? [] : ['--no-draw']),
-    '--channel', 'chromium', ...(o.mode === 'window' ? ['--headed'] : o.mode === 'headless' ? ['--new-headless'] : []),
+    '--channel', o.channel ?? 'chromium', ...(o.mode === 'window' ? ['--headed'] : o.mode === 'headless' ? ['--new-headless'] : []),
     '--no-collect-detailed-stats', '--scene', scene.path, '--scene-export', scene.exportName,
     '--warmup-ms', String(o.warmupMs), '--duration-ms', String(o.durationMs), '--output', out, ...(scene.query ? ['--query', scene.query] : [])];
   const virtual = o.mode === 'window' && process.platform === 'linux' && !process.env.DISPLAY;
@@ -72,7 +73,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const o = {
     pairs: Number(args.pairs ?? 3), warmupMs: Number(args['warmup-ms'] ?? 6000), durationMs: Number(args['duration-ms'] ?? 8000),
-    mode: String(args.mode ?? 'shell'), draw: Boolean(args.draw),
+    mode: String(args.mode ?? 'shell'), draw: Boolean(args.draw), channel: typeof args.channel === 'string' ? args.channel : 'chromium',
   };
   const sides = {
     a: ensureRevWorktree(String(args.a ?? 'HEAD'), { tag: 'a', srcOnly: false }),
@@ -92,7 +93,7 @@ function main() {
   }
   const tmp = path.join(repoRoot, 'tests/results/ci-scenes');
   fs.mkdirSync(tmp, { recursive: true });
-  const out = { kind: 'sceneAb', a: sides.a.sha, b: sides.b.sha, pairs: o.pairs, mode: o.mode, draw: o.draw, durationMs: o.durationMs, rows: [] };
+  const out = { kind: 'sceneAb', a: sides.a.sha, b: sides.b.sha, pairs: o.pairs, mode: o.mode, draw: o.draw, channel: o.channel, durationMs: o.durationMs, rows: [] };
   const write = () => fs.writeFileSync(path.resolve(String(args.output ?? 'scene-ab.json')), `${JSON.stringify(out, null, 1)}\n`);
   const t0 = performance.now();
   for (const [index, scene] of scenes.entries()) {
