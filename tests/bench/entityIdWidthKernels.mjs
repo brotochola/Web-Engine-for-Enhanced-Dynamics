@@ -3,7 +3,6 @@
  * Variants live in entityIdEncodings.mjs — src/ is not the source of truth here.
  *
  *   node tests/bench/treiberMicrobench.mjs --campaign
- *   node tests/bench/logPairMicrobench.mjs --campaign
  *   node tests/bench/spatialMicrobench.mjs --campaign
  *   node tests/bench/querySystemMicrobench.mjs --campaign
  */
