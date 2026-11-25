@@ -76,10 +76,12 @@ frames: what a game gets is the scenes' (`npm run bench:scoreboard`), on a GPU.
 Every measure:all of a release or of a merged performance commit is kept as it came, against nothing:
 `node scripts/measures.mjs save <name>` writes `docs/internal/measures/<date>-<name>.json` (both sides' rounds by VM, the
 frames behind each scene, each VM's CPU, the exact numbers), `list` names them and `compare <measure>:a <measure>:b` takes
-any two sides. Two sides of one measure ran in the same VMs. Of two measures, a case is compared on the CPU models both saw,
-over the ruler's rates there ([`ruler.mjs`](../../tests/bench/ci/ruler.mjs): three loops that never change, timed at the start
-and the end of every job since 2026-11-25). The same code (v0.15.0) on two days, before there was a ruler: the median case 0.7 %
-apart, nine in ten within 5.5 %; Neoverse N2 and Xeon 6975P within 2 %, EPYC within 8 to 10.
+any two sides. Two sides of one measure ran in the same VMs. Of two measures, a case is compared on the CPU models both saw:
+the same code (v0.15.0) in three measures of two days reads 0.5 to 0.7 % apart in the median case, nine in ten within 5.5 %
+(Neoverse N2 and Xeon 6975P within about 2 %, EPYC within 3 to 11). Three loops that never change, timed at the start and the
+end of every job to correct for the VM, were tried and dropped (2026-11-25): two VMs of one CPU model read the same code 0.56 %
+apart as they came and 5.5 % apart over them, for the loops' own rates move more than the kernels' (7 to 12 % from a job's
+start to its end).
 
 ## What the numbers may decide
 

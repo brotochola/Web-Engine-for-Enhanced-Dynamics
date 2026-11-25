@@ -2,16 +2,16 @@
 /**
  * The measures kept (DX-MEASURES): every measure:all of a release or of a merged performance commit, as it came, against
  * nothing. docs/internal/measures/<date>-<name>.json holds both sides' raw values by VM: each kernel case's rounds, each
- * scene worker's pairs with the frames behind them, the VM's CPU and the ruler's rates on it (tests/bench/ci/ruler.mjs), and
- * the exact numbers (bytes, lines, tests). Anything is compared later.
+ * scene worker's pairs with the frames behind them, the VM's CPU, and the exact numbers (bytes, lines, tests). Anything is
+ * compared later.
  *
  *   node scripts/measures.mjs save <name> [--date 2026-11-25] [--from <dir with ci-out>]   a fetched measure:all kept
  *   node scripts/measures.mjs list                              (the page: npm run dev, then /docs/internal/measures.html)
  *   node scripts/measures.mjs compare <measure>[:a|:b] <measure>[:a|:b] [--bar 5] [--all]
  *
  * compare: two sides, of the same measure (the same VMs: read it as measure:all's page) or of two. Across measures a case is
- * compared on each CPU model both saw, its rate divided by the ruler's there when both have it: a difference under 10 % is
- * then the machines', not the engine's, and the table says which CPUs it has.
+ * compared on each CPU model both saw: the same code on two days reads 0.5 to 0.7 % apart in the median case and nine in ten
+ * within 5 %, so a difference under 10 % is the machines', not the engine's. The table says which CPUs it has.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,7 +41,7 @@ export function measureOf(name, date, dir, numbers) {
     const result = read(path.join(dir, id, 'result.json'));
     if (!job || !result || (result.kind !== 'sweep' && result.kind !== 'sceneAb')) continue;
     const m = job.machine ?? {};
-    out.vms[id] = { machine: job.machineKey, cpu: m.cpu, threads: m.threads, node: m.node, v8: m.v8, started: job.started, ruler: job.ruler ?? null };
+    out.vms[id] = { machine: job.machineKey, cpu: m.cpu, threads: m.threads, node: m.node, v8: m.v8, started: job.started };
     if (result.kind === 'sweep') {
       for (const row of result.rows) {
         if (row.type !== 'revs' || row.error) continue;
@@ -126,7 +126,7 @@ function main() {
     console.log(`${my.name}:${sy} (${my[sy]?.slice(0, 8)}) against ${mx.name}:${sx} (${mx[sx]?.slice(0, 8)}): ${out.length} cases; + is faster`);
     for (const o of out) {
       if (!rest.includes('--all') && Math.abs(100 * Math.expm1(o.log)) < bar) continue;
-      console.log(`${pct(o.log).padStart(9)}  ${o.key}  [${o.list.map((r) => `${pct(r.log)} ${r.cpu}${r.ruled || mx.file === my.file ? '' : ' unruled'}`).slice(0, 5).join('; ')}]`);
+      console.log(`${pct(o.log).padStart(9)}  ${o.key}  [${o.list.map((r) => `${pct(r.log)} ${r.cpu}`).slice(0, 5).join('; ')}]`);
     }
   } else {
     console.log('usage: measures.mjs save <name> | list | compare <measure>[:a|:b] <measure>[:a|:b]');

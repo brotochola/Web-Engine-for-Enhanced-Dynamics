@@ -7,20 +7,16 @@ export const median = (v) => {
   return s.length % 2 ? s[s.length >> 1] : (s[(s.length >> 1) - 1] + s[s.length >> 1]) / 2;
 };
 
-/** A side's value of a case on a VM: the rounds' median, as a rate (more is better) over the ruler's mean rate there. */
-function sideValue(measure, c, vm, side) {
+/** A side's value of a case on a VM: the rounds' median, as a rate (more is better). */
+function sideValue(c, vm, side) {
   const v = median(c.vms[vm][side]);
   if (!(v > 0)) return null;
-  const rate = c.higher ? v : 1 / v;
-  const ruler = measure.vms[vm]?.ruler;
-  if (!ruler) return { rate, ruled: null };
-  const at = (k) => (ruler.start[k] + (ruler.end?.[k] ?? ruler.start[k])) / 2;
-  return { rate, ruled: rate / Math.cbrt(at('float') * at('memory') * at('branch')) };
+  return c.higher ? v : 1 / v;
 }
 
 /**
  * Side y of one measure against side x of another, case by case and CPU model by CPU model:
- * [{ kernel, case, cpu, log, vms: [x, y], ruled }], log(y / x) of the rates (> 0 is faster). The same measure: by VM.
+ * [{ kernel, case, cpu, log, vms: [x, y] }], log(y / x) of the rates (> 0 is faster). The same measure: by VM.
  */
 export function compareKernels(mx, sx, my, sy) {
   const rows = [];
@@ -35,8 +31,8 @@ export function compareKernels(mx, sx, my, sy) {
       const add = (m, c, side, which) => {
         for (const vm of Object.keys(c.vms)) {
           const cpu = m.vms[vm]?.cpu ?? '?';
-          const v = sideValue(m, c, vm, side);
-          if (!v) continue;
+          const v = sideValue(c, vm, side);
+          if (v === null) continue;
           const key = same ? vm : cpu;
           const g = groups.get(key) ?? { cpu, x: [], y: [] };
           g[which].push(v);
@@ -47,9 +43,7 @@ export function compareKernels(mx, sx, my, sy) {
       add(my, cy, sy, 'y');
       for (const g of groups.values()) {
         if (!g.x.length || !g.y.length) continue;
-        const ruled = !same && [...g.x, ...g.y].every((v) => v.ruled !== null);
-        const pick = (list) => median(list.map((v) => (ruled ? v.ruled : v.rate)));
-        rows.push({ kernel: label, case: name, cpu: g.cpu, log: Math.log(pick(g.y) / pick(g.x)), vms: [g.x.length, g.y.length], ruled });
+        rows.push({ kernel: label, case: name, cpu: g.cpu, log: Math.log(median(g.y) / median(g.x)), vms: [g.x.length, g.y.length] });
       }
     }
   }

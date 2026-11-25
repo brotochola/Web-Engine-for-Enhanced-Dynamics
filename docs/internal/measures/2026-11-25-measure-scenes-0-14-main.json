@@ -6,13 +6,13 @@
  "mode": "shell",
  "exact": {"a":{"version":"0.14.0","bytes":{"weed.prod.bundle.esm.min.js":{"raw":3232465,"gzip":1029826},"weed.prod.bundle.esm.compressed.min.js":{"raw":1845812,"gzip":1056884},"weed.bundle.esm.min.js":{"raw":3428380,"gzip":1081970},"engine.wasm":{"raw":252480,"gzip":64631},"box2dWasm.wasm":{"raw":416750,"gzip":160426}},"lines":{"code":82328,"comment":17302,"files":306},"tests":{"engine":2219,"demos":90}},"b":{"version":"0.15.60","bytes":{"weed.prod.bundle.esm.min.js":{"raw":3991348,"gzip":1305765},"weed.prod.bundle.esm.compressed.min.js":{"raw":2284312,"gzip":1327892},"weed.bundle.esm.min.js":{"raw":4262149,"gzip":1387660},"engine.wasm":{"raw":348528,"gzip":88192},"box2dWasm.wasm":{"raw":429737,"gzip":164787}},"lines":{"code":101737,"comment":28472,"files":388},"tests":{"engine":3444,"demos":120}}},
  "vms": {
-  "scenes-linux-1": {"machine":"linux","cpu":"INTEL(R) XEON(R) PLATINUM 8573C","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:00.033Z","ruler":null},
-  "scenes-linux-2": {"machine":"linux","cpu":"Intel(R) Xeon(R) 6975P-C","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:06.106Z","ruler":null},
-  "scenes-linux-4": {"machine":"linux","cpu":"AMD EPYC 7763 64-Core Processor","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:57:59.740Z","ruler":null},
-  "scenes-linuxArm-1": {"machine":"linuxArm","cpu":"Neoverse-N2","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:06.462Z","ruler":null},
-  "scenes-linuxArm-2": {"machine":"linuxArm","cpu":"Neoverse-N2","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:06.906Z","ruler":null},
-  "scenes-linuxArm-3": {"machine":"linuxArm","cpu":"Neoverse-N2","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:03.130Z","ruler":null},
-  "scenes-linuxArm-4": {"machine":"linuxArm","cpu":"Neoverse-N2","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:03.460Z","ruler":null}
+  "scenes-linux-1": {"machine":"linux","cpu":"INTEL(R) XEON(R) PLATINUM 8573C","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:00.033Z"},
+  "scenes-linux-2": {"machine":"linux","cpu":"Intel(R) Xeon(R) 6975P-C","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:06.106Z"},
+  "scenes-linux-4": {"machine":"linux","cpu":"AMD EPYC 7763 64-Core Processor","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:57:59.740Z"},
+  "scenes-linuxArm-1": {"machine":"linuxArm","cpu":"Neoverse-N2","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:06.462Z"},
+  "scenes-linuxArm-2": {"machine":"linuxArm","cpu":"Neoverse-N2","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:06.906Z"},
+  "scenes-linuxArm-3": {"machine":"linuxArm","cpu":"Neoverse-N2","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:03.130Z"},
+  "scenes-linuxArm-4": {"machine":"linuxArm","cpu":"Neoverse-N2","threads":4,"node":"v22.16.0","v8":"12.4.254.21-node.26","started":"2026-11-25T02:58:03.460Z"}
  },
  "kernels": {
 

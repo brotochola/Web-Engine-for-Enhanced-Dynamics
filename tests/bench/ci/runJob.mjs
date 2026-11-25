@@ -10,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 
 import { describeMachine } from './machine.mjs';
 import { TASKS } from './request.mjs';
-import { runRuler } from './ruler.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const id = process.env.JOB_ID;
@@ -139,8 +138,8 @@ function brief(r, exit) {
 
 const started = new Date().toISOString();
 const t0 = performance.now();
-const job = { id, task: taskName, args, machineKey: process.env.JOB_MACHINE, machine: describeMachine(), started, ruler: { start: runRuler() } };
-console.log(JSON.stringify(job.machine), JSON.stringify(job.ruler));
+const job = { id, task: taskName, args, machineKey: process.env.JOB_MACHINE, machine: describeMachine(), started };
+console.log(JSON.stringify(job.machine));
 fs.writeFileSync(path.join(outDir, 'job.json'), `${JSON.stringify({ ...job, status: 'unfinished' }, null, 1)}\n`);
 
 let status;
@@ -158,7 +157,6 @@ if (taskName === 'tests') {
   status = await run(process.execPath, [path.join(root, task.script), ...argv]);
 }
 await new Promise((resolve) => log.end(resolve));
-job.ruler.end = runRuler();
 
 // The job's result as annotations: the public API shows them as soon as the job ends (the results branch waits for the
 // last job, and a log needs a login). GitHub keeps 10 notices a step, about 4 KB each.
