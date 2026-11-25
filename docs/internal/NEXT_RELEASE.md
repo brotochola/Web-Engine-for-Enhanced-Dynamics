@@ -12,6 +12,8 @@ Since v0.15.0:
 - **A sprite's change is never lost** (N-459). A color, scale, alpha or anchor set just as pre-render walked the
   sprite, in a frame where nothing else changed, could stay undrawn until the sprite changed again (scenes whose sprites Pixi
   packs, `preRender.packGpuSprites: 'pixi'`).
+- **A GPU lost while a scene loads is handled** (N-458): the canvas stayed black without a word, or the load waited for ever.
+  The scene restarts when the browser gives the context back; after 10 s without it, the fatal error says so.
 - **Torn reads on ARM are gone** (N-452): a worker could read half of a camera's or a clock's write on ARM processors
   (phones, ARM laptops). x86 never did.
 
