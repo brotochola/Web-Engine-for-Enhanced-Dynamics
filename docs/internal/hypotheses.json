@@ -25913,16 +25913,18 @@
       "date": "2026-11-24"
     },
     {
-      "records": [],
+      "records": [
+        "R-1999"
+      ],
       "refs": [],
       "id": "E-556",
-      "title": "Interpolated sprites drawn by the keyed path: the previous and the current pose in textures read by key, mixed in the vertex shader; the pose batch (pack_pose) goes",
-      "status": "open",
+      "title": "renderer.interpolation and its pose batch out: one path for the sprites",
+      "status": "kept-hygiene",
       "kind": "speed",
       "area": "pixi",
-      "result": "",
-      "statusText": "Idea of 2026-11-24 (owner: unifying paths is good), from E-555: one path less, if the keyed one costs no more",
-      "next": "bunnyMark interpolation on against off on the rev with E-479, Pixi and pre-render (a ceiling, no code); then the prototype: a pose texture a tick (two, swapped), a row that appeared this tick reading its current pose twice",
+      "result": "out (2ca9b64e): bunnyMark 400 000 renderer 6.864 -> 6.380, pre-render 7.703 -> 7.000 ms; WebGPU renderer +0.39 ms there (E-558); 1 300 lines less; captures identical",
+      "statusText": "Done 2026-11-24 (2ca9b64e)",
+      "next": "",
       "aliases": [
         "unify interpolation",
         "pose batch"
@@ -25930,18 +25932,73 @@
       "date": "2026-11-24"
     },
     {
-      "records": [],
+      "records": [
+        "R-1998"
+      ],
       "refs": [],
       "id": "E-557",
       "title": "Pre-render in bunnyMark: persist_frame costs twice as much without renderer.interpolation as with it",
-      "status": "open",
+      "status": "kept",
       "kind": "speed",
       "area": "pre-render",
-      "result": "",
-      "statusText": "Seen 2026-11-24 in E-555's traces: 635 against 1249 ms in about 6.6 s; pre-render 4.506 against 5.704 ms",
-      "next": "Read what the interpolated frame skips (how many frames emit, what persist_frame copies) before any code; close to E-333",
+      "result": "kept (99cab9b5): bunnyMark 350 000 without interpolation, pre-render 8.242 -> 5.909 ms (-27.3 %), renderer 7.830 -> 5.921 (-23.8 %); kernel +61 to +86 % on GitHub's x64 and ARM",
+      "statusText": "Done 2026-11-24 (99cab9b5; kernel bench 90dc86e3)",
+      "next": "",
       "aliases": [
         "persist_frame interpolation"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-1997"
+      ],
+      "refs": [],
+      "id": "N-459",
+      "title": "A sprite whose color, scale or anchor changes while pre-render walks a persist frame can keep the old one on screen (keyed frames)",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "pre-render",
+      "result": "fixed (26c39fec): a mark a persist frame took is sent again by the next full emit",
+      "statusText": "Found and fixed 2026-11-24 (26c39fec), reading persist_frame for E-557",
+      "next": "",
+      "aliases": [
+        "persist keyed mark race",
+        "KEYED_DIRTY_LATE"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-2000"
+      ],
+      "refs": [],
+      "id": "N-460",
+      "title": "waitMeterClaimBurst.test.js fails when its thread is kept off a core between its clock read and the wait (a Windows VM, 1.2 ms)",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "tests",
+      "result": "fixed (8aebd090): the claim-wait test tries again after a short try",
+      "statusText": "Found and fixed 2026-11-24 (8aebd090)",
+      "next": "",
+      "aliases": [
+        "a blocked claim counts as wait"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-558",
+      "title": "Keyed frames drawn by queue row on WebGPU too (E-201's form there): the pose columns in a storage buffer, and the pose-gathering pack goes",
+      "status": "open",
+      "kind": "speed",
+      "area": "pixi",
+      "result": "",
+      "statusText": "Filed 2026-11-24 from E-556's WebGPU sitting (bunnyMark 250 000: the gathered poses 3.943 -> 4.337 ms against the pose batch that went); E-201's own next step",
+      "next": "Four writeBuffers of the pose columns and the by-row vertex entry in WGSL against pack_sprites_keyed and its 16-byte stream; owners bunnyMark and keyedPackStress with backend=webgpu. If it is no worse, pack_sprites_keyed and the stream go: one keyed path on both backends",
+      "aliases": [
+        "WebGPU poses by row"
       ],
       "date": "2026-11-24"
     }
@@ -44270,6 +44327,55 @@
       "title": "Phase 2 closed: every case of 136 kernels on four CPU families; no dropped idea comes back",
       "verdict": "note",
       "text": "**Dump** (the rates of every case of 136 kernels, so an alternative that lost here is read beside the shipped form on other CPUs): Zen 2 (here), Xeon 6975P with EPYC, Neoverse N2, M1. No alternative beats the shipped form in two families past the limit, except glowSplit's fused loop, and that gap is Node 22's (V8 12.4): in d8 16 the two tie. One family alone: tileMap's guardRecip +8 % (Xeon), srFlags packed (Xeon). Nothing changed.\n\n- **Lesson: a JS kernel that decides between two forms is judged in d8 16 (or Chrome), not in the VMs' Node 22.** WASM kernels read the same in both.\n- **Variants on Windows ARM** (Cobalt 100, 2 VMs, after R-1991): every shipped kernel wins there too (bulletTick +172 / +97 %, decalStamp x2.9, navFlowfield x19, preRenderEmit +169 %, shadowStamp +155 %); W6 -11 %, the FSM variants -15 to -21 %, shadowStamp's double form over its float32 ones; painterRadix stress-move +21 %.\n- **Also run:** N-451 and N-456 taken out, checked on four machines (tests) and two (demos: Linux in software, M1 on Metal); E-479's kernel on three machines (R-1992), not on Windows ARM."
+    },
+    {
+      "id": "R-1997",
+      "date": "2026-11-24",
+      "time": "21:31",
+      "timeFrom": "recorded",
+      "title": "N-459 fixed: a statics mark a persist frame took is sent again by the next full emit",
+      "verdict": "kept-hygiene",
+      "text": "A persist frame's walk reads each sprite's renderDirty, and its second pass takes the keyed marks. A setter between the two (logic runs beside pre-render) had its keyed mark taken with the queue row still holding the old statics: Pixi's texture got those, the next frame missed on renderDirty and emitted the new ones, and nothing marked the row any more, since Pixi had drawn the frame between. The sprite kept its old tint, scale, alpha or anchor until something else changed it.\n\n**Fixed (26c39fec):** a statics mark taken on a persist frame leaves KEYED_DIRTY_LATE in the sprite's flag, and the next full emit marks it again. Marking every sprite whose renderDirty a full emit takes would have been simpler, but setAnimationSpeed sets it every tick (E-177: thousands of statics a frame in Predator). tests/node/persistKeyedMarkRace.test.js fails on the kernel before and passes on this one (the race is played in order: the keyed mark alone in the persist frame, renderDirty after it). The keyed persist kernel 2.34 -> 2.53 ms, which E-557 took out of the steady frames.",
+      "commits": [
+        "26c39fec"
+      ]
+    },
+    {
+      "id": "R-1998",
+      "date": "2026-11-24",
+      "time": "21:31",
+      "timeFrom": "recorded",
+      "title": "E-557 kept: a keyed persist frame leaves the keys and the seen frames that stand; bunnyMark pre-render 8.24 -> 5.91 ms",
+      "verdict": "kept",
+      "text": "**What it was.** With keyed frames, a persist frame (nothing changed but poses) walked every sprite twice: the second time to write its key, its marks and the frame it was last emitted in (K_CHANGE's third word, N-238).\n\n**Kept (99cab9b5).** A hit's walk finds each of its sprites in the frame before, so after three hits in a row both buffers hold the same sprites, and while the hits go on every sprite was in the frame before. The walk then reads no K_CHANGE, and writes nothing while no sprite carries a flag, the buffer's keys hold no mark and no change is newer than the frame Pixi last drew. The frames left behind are written (persist_seen) before the first full emit.\n\n- **bunnyMark interpolation=0**, 90dc86e3 against bdc27a64 (the same tree as 99cab9b5), 4 pairs, --early: 350 000 sprites, pre-render **8.242 -> 5.909 ms (-27.3 %, 0 of 4 worse)**, renderer **7.830 -> 5.921 (-23.8 %, 0 of 4)**; 250 000, pre-render 5.679 -> 4.535 (under the 6 ms floor). The renderer's gain is not traced: probably lines of the key column Pixi no longer pulls from pre-render's core.\n- **keyedPackStress** n=300000&moving=1&churn=0.01 (90dc86e3 against E-556's revision, 4 pairs): pre-render 6.948 -> 5.459 (-21.6 %, 0 of 4), renderer 3.430 -> 3.319.\n- **Kernel** (preRenderPersistWasmMicrobench --variant keyed, 250 000 rows): 2.34 -> 1.40 ms here, same checksum. On GitHub (commit against parent, which has N-459): Linux x64 5 VMs +74.5 % (4.3; Xeon 6975P, 8573C, EPYC 7763, 9V45), Neoverse N2 3 VMs +61.4 % (0.1), Windows x64 3 VMs +81.1 % (6.7).\n- **Captures** of bunnyMark still, DxCaptureScene and SpriteMapsStressScene: 0 of 921 600 pixels differ.\n- **Test** tests/node/persistKeyedSeen.test.js: 4 random runs of 400 frames (statics, sprites in and out of view, a sprite every other frame, animations, Pixi skipping frames) with the shortcuts and without: the same hits and keys, and Pixi's statics right. Four mutations of the code (no persist_seen, no change frame, no buffer marks, seen after one hit) are each caught; the first version of the test caught two.\n- Tests on GitHub (Linux x64, ARM, Windows): node 3638, demos 149.",
+      "commits": [
+        "90dc86e3",
+        "99cab9b5"
+      ]
+    },
+    {
+      "id": "R-1999",
+      "date": "2026-11-24",
+      "time": "21:31",
+      "timeFrom": "recorded",
+      "title": "E-556 done: renderer.interpolation and the pose batch go; bunnyMark faster without them, one path for the sprites",
+      "verdict": "kept-hygiene",
+      "text": "Owner, 2026-11-24: take the interpolation path out if that is best, measured and tested here and on GitHub. **Taken out (2ca9b64e):** 381 lines less in src/ and the kernel (pack_pose, the pose variants of every sprite program, the 17-float rows, Pixi's blend clock), 922 less in tests, demos and docs. The config check says the key does nothing and names preRender.interpolation, which stays (the physics poses, by entity; Boids uses that one).\n\n**Why.** bunnyMark alone used it. Its pre-render runs at the display's rate, so each new queue was drawn at blend 0: the frame before, a frame of lag and no smoothing. It paired rows by their place in the queue, so with culling a sprite leaving as another entered blended two sprites; the G-buffer's programs were not blended. And it kept E-198's wait for the queue off.\n\n**Ceiling first** (one revision, on against off, 4 pairs): after E-479, WebGL 250 000, renderer 4.228 against 4.247, pre-render 4.662 against 5.836 (E-557 then took that). WebGPU after E-557: renderer 3.943 against 4.337 (+0.39 ms: the keyed pack gathers its poses there, E-558), pre-render 4.506 and 4.471, drawn 38.0 and 37.9 fps.\n\n**After:**\n- bunnyMark 400 000 as it was (interpolation on) against now, full revisions, 4 pairs: renderer **6.864 -> 6.380 ms (-6.8 %, 1 of 4 worse)**, pre-render **7.703 -> 7.000 (-8.7 %, 0 of 4)**.\n- Predator crowd 2.5 (90dc86e3 against this, 8 pairs): renderer 2.413 -> 2.501, pairs of -2 to +9 %; no worker over the bar. An A/A of the same code, 4 pairs: renderer 2.345 and 2.590, pairs of -3 to +31 %. keyedPackStress, the pack's owner scene: renderer 3.430 -> 3.319, 4 of 4 better. boids: 1.646 -> 1.600.\n- Captures, 9 cases (DxCapture, SpriteMaps, FaceLight, FaceLight nearest and keyed, on WebGL and WebGPU; bunnyMark still): 0 of 921 600 pixels differ.\n- GitHub, 36432d79 (the same tree): node 3625 and demos 149 on Linux x64, Linux ARM and Windows ARM; Windows x64 one failure (N-460); 36 of 36 demos boot in Chromium on Linux and on the M1 (Metal). Bundles rebuilt and smoked: the production ESM bundle 3 996 368 -> 3 989 943 bytes since E-479.",
+      "commits": [
+        "2ca9b64e"
+      ]
+    },
+    {
+      "id": "R-2000",
+      "date": "2026-11-24",
+      "time": "21:33",
+      "timeFrom": "recorded",
+      "title": "N-460 fixed: a short try is tried again; the same failure on the parent revision",
+      "verdict": "kept-hygiene",
+      "text": "Windows x64 on GitHub, the whole suite: \"claim wait not metered: 28.76 ms of 29.96\" at E-556's revision, 1 of 5 VMs (0 of 4 in the repeat), and 29.23 of 29.97 at its parent, 1 of 4 VMs: the same test, with and without the change. The test reads the wall clock, then calls the claim, and allowed 0.5 ms between the two; a thread kept off a core there meters less wait. The other tests of that kind (frameChainWait, spatialTailStartOn) try again; this one failed at the first short try. Fixed (8aebd090): it tries again, five times. With the metering line removed it still fails (0.05 ms of 29.97 in five tries).",
+      "commits": [
+        "8aebd090"
+      ]
     }
   ],
   "leads": [
