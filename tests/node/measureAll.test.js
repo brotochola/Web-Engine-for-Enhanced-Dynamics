@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { moved, page, readKernels } from '../../scripts/measureAll.mjs';
+import { readJobs, sceneTable } from '../bench/ci/collect.mjs';
 
 function results(rows) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-measure-'));
@@ -59,6 +60,29 @@ test('a kernel that ran on one VM only has no limit and is not called moved; one
     const { rows, failed } = readKernels(dir);
     assert.equal(moved(rows[0].machines.linux), 0);
     assert.equal(failed.size, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a scene\'s workers: the median of a VM\'s pairs, the VMs\' mean and limit; idle workers and failed scenes apart', () => {
+  const runs = (logic, pixi) => logic.map((v, i) => ({ ms: { logic: v, renderer: pixi[i], particle: 0.02 } }));
+  const scene = (b) => ({ scene: 'boids', query: '', a: runs([2, 2, 2], [1, 1, 1]), b: runs([b, b, 9], [1, 1.01, 0.99]) });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-measure-'));
+  try {
+    for (const [id, rows] of [['s-linux-1', [scene(1.6), { scene: 'gone', a: [], b: [], error: 'a: exit 1' }]], ['s-linux-2', [scene(1.62)]]]) {
+      fs.mkdirSync(path.join(dir, id));
+      fs.writeFileSync(path.join(dir, id, 'job.json'), JSON.stringify({ id, machineKey: 'linux' }));
+      fs.writeFileSync(path.join(dir, id, 'result.json'), JSON.stringify({ kind: 'sceneAb', rows }));
+    }
+    const { rows, failed } = sceneTable(readJobs(dir));
+    const logic = rows.find((r) => r.worker === 'logic');
+    assert.ok(Math.abs(logic.meanPct - -19.5) < 0.3, `${logic.meanPct}`);
+    assert.equal(logic.n, 2);
+    assert.ok(Math.abs(logic.log) > logic.limit);
+    assert.ok(Math.abs(rows.find((r) => r.worker === 'renderer').meanPct) < 0.01);
+    assert.equal(rows.some((r) => r.worker === 'particle'), false, 'idle on both sides');
+    assert.deepEqual(failed, { 'linux|gone': 'a: exit 1' });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -121,6 +121,46 @@ export function sweepTable(jobs) {
   return { rows, failed: Object.fromEntries(failed) };
 }
 
+/**
+ * sceneAb: per machine, scene and worker, each VM's median of ln(B / A) over its pairs (a worker's own time a frame: - is
+ * less), and over the VMs the mean and 2.5 sd / sqrt(VMs). A worker under 0.1 ms on both sides is left out.
+ */
+export function sceneTable(jobs) {
+  const groups = new Map();
+  const failed = new Map();
+  for (const job of jobs) {
+    if (job.result?.kind !== 'sceneAb') continue;
+    for (const row of job.result.rows) {
+      if (row.error) {
+        failed.set(`${job.machineKey}|${row.scene}`, row.error);
+        continue;
+      }
+      const workers = [...new Set([...row.a, ...row.b].flatMap((x) => Object.keys(x.ms)))];
+      for (const worker of workers) {
+        const of = (list) => list.map((x) => x.ms[worker]);
+        const a = of(row.a);
+        const b = of(row.b);
+        if (a.some((v) => !(v > 0)) || b.some((v) => !(v > 0)) || (median(a) < 0.1 && median(b) < 0.1)) continue;
+        const key = `${job.machineKey}|${row.scene}|${worker}`;
+        const g = groups.get(key) || { machine: job.machineKey, scene: row.scene, worker, vms: [] };
+        g.vms.push({ d: median(a.map((v, i) => Math.log(b[i] / v))), a: median(a), b: median(b), cpu: job.machine?.cpu });
+        groups.set(key, g);
+      }
+    }
+  }
+  const rows = [...groups.values()].map((g) => {
+    const d = g.vms.map((v) => v.d);
+    return {
+      machine: g.machine, scene: g.scene, worker: g.worker, n: d.length,
+      aMs: +median(g.vms.map((v) => v.a)).toFixed(2), bMs: +median(g.vms.map((v) => v.b)).toFixed(2),
+      log: mean(d), meanPct: pct(mean(d)), limitPct: d.length > 1 ? pct(2.5 * sd(d) / Math.sqrt(d.length)) : null,
+      limit: d.length > 1 ? 2.5 * sd(d) / Math.sqrt(d.length) : NaN,
+      more: d.filter((x) => x > 0).length,
+    };
+  });
+  return { rows, failed: Object.fromEntries(failed) };
+}
+
 function table(head, rows) {
   return [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.map((c) => String(c ?? '').replace(/\|/g, '/').replace(/\n/g, ' ')).join(' | ')} |`), ''].join('\n');
 }
@@ -179,17 +219,23 @@ export function summarize(dir) {
       kernels.map((k) => [k.label, k.machine, k.id, k.n, k.meanPct, k.sdPct, k.limitPct, k.worstPct, k.n ? `${k.better}/${k.n}` : '',
         k.errors ? `FAILED ${k.errors[0].slice(0, 120)}` : k.runMs])));
   }
+  const sceneAb = sceneTable(jobs);
+  if (sceneAb.rows.length) {
+    md.push('## Scenes, B against A (a worker\'s own ms a frame, nothing drawn)', '', table(['machine', 'scene', 'worker', 'VMs', 'A ms', 'B ms', 'B against A', 'limit', 'VMs with more'],
+      sceneAb.rows.map((r) => [r.machine, r.scene, r.worker, r.n, r.aMs, r.bMs, `${r.meanPct} %`, r.limitPct, `${r.more}/${r.n}`])));
+    for (const [key, error] of Object.entries(sceneAb.failed)) md.push(`- ${key}: ${error.slice(0, 200)}`);
+  }
   const sweep = sweepTable(jobs);
   if (sweep.rows.length) {
     md.push('## Sweep', '', `${sweep.rows.length} rates of ${new Set(sweep.rows.map((r) => `${r.label}|${r.kernel}|${r.commit}`)).size} comparisons; ${Object.keys(sweep.failed).length} failed. All in summary.json.`, '');
   }
-  return { jobs, kernels, sweep, md: md.join('\n') };
+  return { jobs, kernels, sweep, sceneAb, md: md.join('\n') };
 }
 
 const dir = process.argv[2];
 if (dir && process.argv[1]?.endsWith('collect.mjs')) {
   const s = summarize(dir);
-  fs.writeFileSync(path.join(dir, 'summary.json'), `${JSON.stringify({ jobs: s.jobs.map((j) => (j.result?.kind === 'sweep' ? { ...j, result: { kind: 'sweep', rows: j.result.rows.length } } : j)), kernels: s.kernels, sweep: s.sweep }, null, 1)}\n`);
+  fs.writeFileSync(path.join(dir, 'summary.json'), `${JSON.stringify({ jobs: s.jobs.map((j) => (j.result?.kind === 'sweep' ? { ...j, result: { kind: 'sweep', rows: j.result.rows.length } } : j)), kernels: s.kernels, sweep: s.sweep, sceneAb: s.sceneAb }, null, 1)}\n`);
   fs.writeFileSync(path.join(dir, 'summary.md'), `${s.md}\n`);
   console.log(s.md.slice(0, 20000));
 }

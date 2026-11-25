@@ -133,9 +133,13 @@ function buildChromiumLaunchArgs({
   jsFlags,
   userDataDir,
   enableLogging,
+  noDraw = false,
 }) {
   // A scene's sounds stay off the machine's speakers (the audio still renders, so its worker's cost is unchanged).
   const args = ['--mute-audio'];
+  // --no-draw: every WebGL call is taken and nothing is drawn, so a machine without a GPU times what the workers do, Pixi's
+  // calls among it, and not a software rasterizer on the same cores. The canvas stays black.
+  if (noDraw) args.push('--disable-gl-drawing-for-tests', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader');
   if (!allowThrottle) {
     args.push(
       '--disable-background-timer-throttling',
@@ -479,7 +483,9 @@ async function main() {
   // weed-sw.js at the site root, and measures a return visit (the worker registered and active first). The page
   // ignores the parameter; runPredatorAbab can set it on one side (--query-b weedIsolation=sw).
   const isolationSw = new URLSearchParams(extraQuery).get('weedIsolation') === 'sw';
-  const server = await createStaticBenchmarkServer(repoRoot, 0, {
+  // --root <dir>: another tree's files (its scenes, its src/ and its bench page) under this tree's runner.
+  const servedRoot = typeof cliArgs.root === 'string' ? path.resolve(cliArgs.root) : repoRoot;
+  const server = await createStaticBenchmarkServer(servedRoot, 0, {
     ...(stockFirefox ? { routes: stockFirefox.routes } : {}),
     ...(isolationSw ? { isolationHeaders: false, files: { '/weed-sw.js': 'src/workers/isolationServiceWorker.js' } } : {}),
   });
@@ -569,6 +575,7 @@ async function main() {
     jsFlags,
     userDataDir,
     enableLogging: Boolean(jsFlags) || dumpio,
+    noDraw: Boolean(cliArgs['no-draw']),
   });
   // Headed: the window opens where the owner last left one (benchWindow.mjs), not over what they are doing.
   if (headed && !stockFirefox) launchArgs.push(...benchWindowArgs());

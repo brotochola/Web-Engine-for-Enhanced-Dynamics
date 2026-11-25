@@ -119,6 +119,9 @@ function brief(r, exit) {
     const bad = r.rows.filter((x) => x.error);
     return [`${head}\n${r.rows.length - bad.length} of ${r.rows.length} comparisons ran\n${bad.slice(0, 25).map((x) => `${x.label} ${x.kernel}: ${x.error.slice(0, 100)}`).join('\n')}`];
   }
+  if (r.kind === 'sceneAb') {
+    return [`${head}\n${r.rows.map((x) => `${x.scene} ${x.error ? `FAILED ${x.error.slice(0, 120)}` : `${x.a.length} pairs`}`).join('\n')}`];
+  }
   if (r.kind === 'kernelSmoke') {
     const bad = r.rows.filter((x) => x.error);
     return [`${head}\n${r.rows.length - bad.length} of ${r.rows.length} kernels ran\n${bad.map((x) => `${x.kernel}: ${x.error.slice(0, 120)}`).join('\n')}`];

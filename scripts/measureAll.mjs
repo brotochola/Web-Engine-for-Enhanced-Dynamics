@@ -11,10 +11,11 @@
  *   exact    the bundles' and the WASM modules' bytes (raw and gzipped), the lines of code, the test cases: from git, here
  *   kernels  every Node kernel of tests/bench (shipped variants), src/ of a against src/ of b in the same VM, alternating:
  *            VMs differ from each other by 40 %, so a number is only ever a difference inside one
+ *   scenes   eight scenes of each revision in Chromium without drawing (sceneAb.mjs), each worker's own time a frame
  *   health   when b is the commit checked out: the suites, the thread races and the demos in Chromium
  *
  * --vms 4 (a machine), --machines linux,linuxArm,win, --rounds 5, --shards 4 (jobs a VM's work is split over), --only a,b
- * (kernels whose names start so), --no-health, --no-kernels, --minutes 240 (to wait). The page and its numbers go to tests/results/measure-all/<name>/ (git-ignored):
+ * (kernels whose names start so), --no-health, --no-kernels, --no-scenes, --minutes 240 (to wait). The page and its numbers go to tests/results/measure-all/<name>/ (git-ignored):
  * a release's table goes where the release's notes are, by hand.
  *
  * A kernel is a piece of the engine's work in a loop, not a frame: a page of them says what moved and by how much, and the
@@ -27,6 +28,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
+import { readJobs, sceneTable } from '../tests/bench/ci/collect.mjs';
 import { areaOf } from '../tests/bench/ci/shipped.mjs';
 import { countLines } from './codeSize.mjs';
 
@@ -44,11 +46,12 @@ function git(args, opts = {}) {
 }
 
 function parse(argv) {
-  const out = { vms: 4, machines: 'linux,linuxArm,win', rounds: 5, shards: 4, minutes: 240, health: true, kernels: true, report: false };
+  const out = { vms: 4, machines: 'linux,linuxArm,win', rounds: 5, shards: 4, minutes: 240, health: true, kernels: true, scenes: true, report: false };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, '');
     if (key === 'no-health') out.health = false;
     else if (key === 'no-kernels') out.kernels = false;
+    else if (key === 'no-scenes') out.scenes = false;
     else if (key === 'report') out.report = true;
     else if (['a', 'b', 'name', 'machines', 'only'].includes(key)) out[key] = argv[++i];
     else if (['vms', 'rounds', 'shards', 'minutes'].includes(key)) out[key] = Number(argv[++i]);
@@ -120,10 +123,14 @@ function requestOf(o, shaA, shaB, health) {
     jobs.push({ task: 'sweep', label: 'kernels', machines, vms: o.vms, shards: o.shards,
       args: { plan: 'ci-request.json', rounds: o.rounds, ...(o.only ? { only: o.only } : {}) } });
   }
+  if (o.scenes) {
+    const real = machines.filter((m) => m !== 'mac' && m !== 'macIntel');
+    jobs.push({ task: 'sceneAb', label: 'scenes', machines: real, vms: o.vms, args: { a: shaA, b: shaB, pairs: 3 } });
+  }
   if (health) {
     jobs.push({ task: 'tests', machines: ['linux', 'linuxArm', 'win', 'winArm'] });
     jobs.push({ task: 'race', machines: ['linux', 'linuxArm', 'winArm'], args: { seconds: 15, rounds: 2 } });
-    jobs.push({ task: 'scenes', machines: ['linux'], shards: 2, args: { browser: 'chromium', set: 'demos', seconds: 4 } });
+    jobs.push({ task: 'scenes', machines: ['linux'], shards: 2, label: 'demos', args: { browser: 'chromium', set: 'demos', seconds: 4 } });
   }
   return { name: o.name, plan: { revs: { a: shaA, b: shaB } }, jobs };
 }
@@ -200,7 +207,7 @@ const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 const signed = (p, digits = 1) => `${p >= 0 ? '+' : ''}${p.toFixed(digits)} %`;
 const table = (head, rows) => [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.join(' | ')} |`), ''].join('\n');
 
-export function page({ a, b, shaA, shaB, factsA, factsB, kernels, machines, health }) {
+export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null, machines, health }) {
   const out = [`# ${a} against ${b}`, '', `${shaA.slice(0, 8)} (${factsA.version}) and ${shaB.slice(0, 8)} (${factsB.version}).`, '', '## Exact', ''];
   const delta = (x, y) => (x ? signed((100 * (y - x)) / x) : '');
   out.push(table(['', a, b, ''], [
@@ -249,6 +256,22 @@ export function page({ a, b, shaA, shaB, factsA, factsB, kernels, machines, heal
       out.push('### Not comparable', '', ...[...failed].map(([label, error]) => `- ${label}: ${String(error).replace(/\s+/g, ' ').slice(0, 170)}`), '');
     }
   }
+  if (scenes && scenes.rows.length) {
+    const name = (m) => MACHINE_NAMES[m] || m;
+    const ms = [...new Set(scenes.rows.map((r) => r.machine))];
+    out.push('## Scenes', '', `Each worker's own time a frame (STEP_MS less its waits) in Chromium without drawing, ${b} against ${a} in the same VM, the median of its pairs, then the VMs' mean (- is less time). Bold: ${BAR_PCT} % or more, past the limit.`, '');
+    const keys = [...new Set(scenes.rows.map((r) => `${r.scene}|${r.worker}`))];
+    out.push(table(['scene', 'worker', ...ms.map(name)], keys.map((key) => {
+      const [scene, worker] = key.split('|');
+      return [scene, worker, ...ms.map((m) => {
+        const r = scenes.rows.find((x) => x.machine === m && x.scene === scene && x.worker === worker);
+        if (!r) return '';
+        const bold = Math.abs(r.meanPct) >= BAR_PCT && Math.abs(r.log) > r.limit ? '**' : '';
+        return `${r.aMs} > ${r.bMs} ms, ${bold}${signed(r.meanPct)}${bold}${r.limitPct === null ? '' : ` ± ${r.limitPct.toFixed(1)}`}`;
+      })];
+    })));
+    for (const [key, error] of Object.entries(scenes.failed)) out.push(`- ${key}: ${error.slice(0, 160)}`);
+  }
   if (health) out.push(health);
   return out.join('\n');
 }
@@ -277,7 +300,7 @@ function main() {
   const outDir = path.join(root, 'tests/results/measure-all', o.name);
   fs.mkdirSync(outDir, { recursive: true });
   const ciDir = path.join(root, 'tests/results/ci', o.name, 'ci-out');
-  if (!o.report && (o.kernels || health)) {
+  if (!o.report && (o.kernels || o.scenes || health)) {
     const request = path.join(outDir, 'request.json');
     fs.writeFileSync(request, `${JSON.stringify(requestOf(o, shaA, shaB, health), null, 1)}\n`);
     ci(['submit', request]);
@@ -287,11 +310,12 @@ function main() {
   const factsB = factsOf(shaB);
   const have = fs.existsSync(ciDir);
   const kernels = have && o.kernels ? readKernels(ciDir) : null;
+  const scenes = have && o.scenes ? sceneTable(readJobs(ciDir)) : null;
   const machines = o.machines.split(',').filter((m) => !kernels || kernels.rows.some((r) => r.machines[m]));
-  const text = page({ a: o.a, b: o.b, shaA, shaB, factsA, factsB, kernels, machines, health: have ? healthOf(ciDir) : '' });
+  const text = page({ a: o.a, b: o.b, shaA, shaB, factsA, factsB, kernels, scenes, machines, health: have ? healthOf(ciDir) : '' });
   fs.writeFileSync(path.join(outDir, 'page.md'), `${text}\n`);
   fs.writeFileSync(path.join(outDir, 'numbers.json'), `${JSON.stringify({ a: shaA, b: shaB, factsA, factsB,
-    kernels: kernels?.rows ?? null, failed: kernels ? Object.fromEntries(kernels.failed) : null }, null, 1)}\n`);
+    kernels: kernels?.rows ?? null, scenes: scenes?.rows ?? null, failed: kernels ? Object.fromEntries(kernels.failed) : null }, null, 1)}\n`);
   console.log(path.join(outDir, 'page.md'));
 }
 

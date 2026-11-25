@@ -31,7 +31,7 @@ are, and what those numbers may decide. The protocol for speed claims stays [HOW
 | `macIntel` | macos-15-intel | 4 threads of an old Intel CPU |
 
 Linux and Windows VMs have no GPU: a scene there draws in software on the same threads the workers run on, so a scene's
-times mean nothing on them.
+times mean nothing on them, unless it draws nothing (`--no-draw`, what `sceneAb` runs).
 
 ## Tasks
 
@@ -45,6 +45,7 @@ times mean nothing on them.
 | `kernelSmoke` | [`kernelSmoke.mjs`](../../tests/bench/ci/kernelSmoke.mjs) | which of the Node kernels still run |
 | `d8` | [`runD8.mjs`](../../tests/bench/d8/runD8.mjs) | V8's machine code for a kernel (ARM's on `mac`), or its time in d8 |
 | `scenes` | [`sceneSmoke.mjs`](../../tests/bench/ci/sceneSmoke.mjs) | does every demo boot, draw and stay quiet in a browser |
+| `sceneAb` | [`sceneAb.mjs`](../../tests/bench/ci/sceneAb.mjs) | scenes of two revisions, each worker's own time, without drawing |
 | `bench` | `runIntegratedWorkerBenchmark.mjs` | one scene run, where the machine has a GPU |
 
 ## measure:all, two revisions in one page
@@ -57,6 +58,9 @@ page, `tests/results/measure-all/<name>/page.md` (git-ignored), and its numbers 
   ([`shipped.mjs`](../../tests/bench/ci/shipped.mjs)), src/ of one against src/ of the other in the same VM (a sweep of
   `{ "revs": { a, b } }`). A kernel written for the second that does not run on the first is tried as it was then; one that
   runs neither way is listed, not left out. A kernel moved when it did by 3 % or more, past its machine's limit.
+- **Scenes**: eight scenes, each revision with its own, in Chromium with `--disable-gl-drawing-for-tests` (every WebGL call
+  taken, nothing drawn): each worker's own time a frame, Pixi's calls among it, on machines without a GPU
+  ([`sceneAb.mjs`](../../tests/bench/ci/sceneAb.mjs)). What the GPU takes is not in them, nor the frames on the screen.
 - **Health**, when the second is the commit checked out: the suites, the races and the demos.
 
 A kernel that computes something else on each side (its checksums differ) is marked: its speed is read with that. Kernels are
