@@ -82,6 +82,11 @@ async function probe(browser, port, when) {
   await page.route(/\/src\/workers\/pixiWorker\.js/, async (route) => {
     const response = await route.fetch();
     served++;
+    // The first renderer alone: what the engine starts after the loss keeps its context.
+    if (served > 1) {
+      await route.fulfill({ response });
+      return;
+    }
     const body = await response.text();
     await route.fulfill({ response, body: `(${prelude.toString()})(${JSON.stringify({ when, restoreMs, bootMs, lateMs })});\n${body}` });
   });
@@ -108,7 +113,11 @@ async function probe(browser, port, when) {
     } catch {
       // nothing in --wait-ms
     }
-    await page.waitForTimeout(1500);
+    // A context the browser never gives back is fatal 10 s after the load ended.
+    if (restoreMs < 0 && when !== 'none') {
+      await page.waitForFunction(() => document.getElementById('fatal-error-overlay'), undefined, { timeout: 12500, polling: 50 }).catch(() => {});
+    }
+    await page.waitForTimeout(3000);
     const state = await page.evaluate(() => {
       const scene = window.__WEED_BENCHMARK__.getScene?.();
       const overlay = document.getElementById('fatal-error-overlay');
