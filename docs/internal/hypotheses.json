@@ -25714,7 +25714,8 @@
         "R-1996",
         "R-2005",
         "R-2017",
-        "R-2018"
+        "R-2018",
+        "R-2019"
       ],
       "refs": [],
       "id": "DX-CI",
@@ -26072,7 +26073,8 @@
     },
     {
       "records": [
-        "R-2008"
+        "R-2008",
+        "R-2020"
       ],
       "refs": [],
       "id": "DX-MEASURES",
@@ -26080,7 +26082,7 @@
       "status": "open",
       "kind": "tools",
       "area": "tools",
-      "result": "",
+      "result": "Built 2026-11-25: scripts/measures.mjs, docs/internal/measures/, measures.html, the ruler in every CI job; the same code on two days reads 0.7 % apart in the median case",
       "statusText": "Asked by the owner 2026-11-24; not started (held: no new backlog items for now)",
       "next": "A JSON a commit and machine (docs/internal/measures/<commit>/<machine>.json: every kernel, case and scene, its CPU model, the raw values and no baseline) and a page made from them; this PC, the ASUS, GitHub x64, ARM, Windows and the Mac. GitHub's VMs change CPU from one to the next (40 % and more): keep the CPU model, and time a frozen ruler kernel in the same VM so that two days can be compared; this PC and the ASUS with scenes on the GPU too. Compare by medians and by named cases, never by a mean of kernels (R-2005)",
       "aliases": [
@@ -44651,6 +44653,24 @@
       "title": "measure:all of main (0.15.66) against v0.15.0: no kernel slower on two machines, boids' renderer -30 to -42 %, all green",
       "verdict": "note",
       "text": "measure:all of main b7fcccbd (0.15.66) against v0.15.0: 71 jobs, all done; raw in D:/weed-measures/measure-main-b7fcccbd (kept, against no baseline of ours: A is there only for the same VM).\n\n- **Health:** 3 637 engine tests and 149 of the demos pass on Linux x64, Linux ARM, Windows x64 and Windows ARM; the race stress has no bad read in an engine case (the controls read torn on ARM, as they should); 36 of 36 demos start (SwiftShader).\n- **Exact:** production ESM bundle 3 898.8 -> 3 899.0 KB (gzip 1 275.1 -> 1 275.9), engine.wasm 338.0 -> 340.4 KB, lines of code 101 785 -> 101 747.\n- **Kernels:** 123 on both; the geometric mean +0.2 / +0.4 / +0.6 % (x64, ARM, Windows). Faster on two machines or more: keyed persist +68/+53/+61, gpuQueuePack (fillQueueIndices) +5/+7/+7, sortPrefix +4.5/+4/+6, emitGpuCall +5/+5/+3, persist without keys +4/+3/+2 (it was -7/-3/-6 before 77b938df). Slower on two machines or more: none; on one, past its limit: glowSplit on Windows -3.5, setAnimation on Linux x64 -3.0 (±3.0).\n- **Scenes without drawing:** boids renderer -42/-30/-37 %, particles renderer -23/-15/-25 %. bunnyMark renderer +21/+34 and preRender +42/+22 % on Linux: v0.15.0's scene drew through renderer.interpolation, gone since (E-556), so the two sides are different paths, and headless draws about 1 frame a second of it here. In a window at 60 fps here, 60 000 bunnies, 4 runs: renderer 1.63/1.72/1.70/1.64 -> 1.63/1.47/1.58/1.63, preRender 1.71/1.86/1.77/1.83 -> 1.87/1.84/2.05/1.75 ms; E-556's sitting at 400 000: -6.8 and -8.7 %. Windows VMs are useless for scenes (logic of 13 ms)."
+    },
+    {
+      "id": "R-2019",
+      "date": "2026-11-25",
+      "time": "11:55",
+      "timeFrom": "recorded",
+      "title": "Scenes without drawing drew: 2 to 111 frames in 8 s, now 300 to 478",
+      "verdict": "kept",
+      "text": "Scenes on GitHub drew. `--disable-gl-drawing-for-tests` does nothing under SwiftShader on Linux: Pixi's frames in 8 s were 2 (bunnyMark), 21 (predator), 31 (boids), 18 (particles), 111 (balls), and its times and pre-render's were of cold frames on cores a rasterizer held. Draw calls that do nothing, put at the end of the renderer worker's module by the bench server (noDrawSource.mjs), give 316, 478, 306, 303: the same in the headless shell, in Chromium's headless mode and in a window on a virtual screen (frameProbe, Xeon 6975P and Neoverse N2, 2026-11-25), so the shell stays. Every renderer and pre-render number of a scene taken on GitHub before this day (R-2005, R-2017, R-2018) is of those cold frames; logic, spatial, physics and particle ran their 480."
+    },
+    {
+      "id": "R-2020",
+      "date": "2026-11-25",
+      "time": "11:55",
+      "timeFrom": "recorded",
+      "title": "Built: the measures kept, compared by case and CPU; the same code on two days is 0.7 % apart in the median case",
+      "verdict": "kept",
+      "text": "Built (branch scene-sweep): `node scripts/measures.mjs save|list|compare`, docs/internal/measures/ (five measures kept, 2 MB, 190 KB compressed for the largest), measures.html under npm run dev, and the ruler (three loops that never change, timed at the start and the end of every CI job, tests/bench/ci/ruler.mjs). Raw rounds of both sides by VM, with the CPU; nothing averaged.\nHow far two days are apart: v0.15.0's source in the measures of 24 and 25 November, on the CPU models both saw, 1 940 cases by CPU: median 0.7 %, nine in ten within 5.5 %, one in a hundred over 23.8 %. By model (5th to 95th percentile): Neoverse N2 -1.8 to +0.9, Xeon 6975P -2.2 to +1.9, EPYC 7763 -4.4 to +7.9, 9V74 -8.2 to +4.5, 9V45 -10.6 to +7.5, Xeon 8573C -8.7 to +3.7. Before the ruler: those two days have none.\nAlso: each kernel's worst and best case beside its mean, medians of kernels by part (never means: R-2005), frames and changed scenes on the page. Open: this PC's and the ASUS's own measures."
     }
   ],
   "leads": [
