@@ -28,6 +28,16 @@ the instrument: the same bytes of code read 13 % apart in one bench.
 browser is 10 % later in balls and 19 % in Predator, and it is not the bytes: the physics is made before the first step, and
 the light's shader compiles for 650 ms, once (DX-BUNDLE).
 
+**Then all 86 scenes.** The scenes without drawing on GitHub had been drawing: the browser's flag does nothing without a GPU on
+Linux, and a renderer that ran two frames in eight seconds had been read as a number. With draw calls that do nothing it
+runs 300 to 478, and Windows can be read too. Every scene of v0.14.0 and of v0.15.0 then ran against today's, there on x64 and
+ARM, and here in a window. Their workers add up to 16 % less time than v0.14.0's. What grew was read one by one: a scene
+that plays forty times the sounds, neighbour lists the owner asked for, physics that used to miss five sixths of a storm
+of spawns because it ran in the middle of it. One was ours: the fix that stopped houses vanishing at the screen's edge cost
+7 ns a sprite out of the view; the same test in SIMD, without a branch, is 60 % faster than it was (N-140). GitHub and this
+PC moved the same way in 84 workers of 96, the renderer's the least: there they say where to look, and a GPU decides. Every
+measure is kept now, and any two can be compared (DX-MEASURES).
+
 ## Tuesday 24 November 2026: Other People's Computers, and One Path for Every Sprite
 
 **Every number came from one laptop.** The engine's kernels were chosen on a Zen 2 and checked on an old Intel. GitHub runs

@@ -16,6 +16,8 @@ Since v0.15.0:
   The scene restarts when the browser gives the context back; after 10 s without it, the fatal error says so.
 - **Scenes without Y-sort draw with less CPU** (E-448): the renderer built the opaque pass's rows every frame even where
   the pass did not draw. Boids' renderer takes 0.5 ms a frame instead of 1.2 (40 000 boids), 0.8 instead of 2.0 (65 000).
+- **Sprites out of the view are cheaper** (N-140): the cull's test is SIMD and has no branches. A scene of 60 000 sprites
+  with 5 000 in view: pre-render 1.36 to 1.19 ms a frame.
 - **Torn reads on ARM are gone** (N-452): a worker could read half of a camera's or a clock's write on ARM processors
   (phones, ARM laptops). x86 never did.
 

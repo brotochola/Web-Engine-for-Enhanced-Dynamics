@@ -12143,7 +12143,8 @@
         "houses disappear"
       ],
       "records": [
-        "R-0909"
+        "R-0909",
+        "R-2022"
       ]
     },
     {
@@ -25715,7 +25716,8 @@
         "R-2005",
         "R-2017",
         "R-2018",
-        "R-2019"
+        "R-2019",
+        "R-2021"
       ],
       "refs": [],
       "id": "DX-CI",
@@ -44671,6 +44673,24 @@
       "title": "Built: the measures kept, compared by case and CPU; the same code on two days is 0.7 % apart in the median case",
       "verdict": "kept",
       "text": "Built (branch scene-sweep): `node scripts/measures.mjs save|list|compare`, docs/internal/measures/ (five measures kept, 2 MB, 190 KB compressed for the largest), measures.html under npm run dev, and the ruler (three loops that never change, timed at the start and the end of every CI job, tests/bench/ci/ruler.mjs). Raw rounds of both sides by VM, with the CPU; nothing averaged.\nHow far two days are apart: v0.15.0's source in the measures of 24 and 25 November, on the CPU models both saw, 1 940 cases by CPU: median 0.7 %, nine in ten within 5.5 %, one in a hundred over 23.8 %. By model (5th to 95th percentile): Neoverse N2 -1.8 to +0.9, Xeon 6975P -2.2 to +1.9, EPYC 7763 -4.4 to +7.9, 9V74 -8.2 to +4.5, 9V45 -10.6 to +7.5, Xeon 8573C -8.7 to +3.7. Before the ruler: those two days have none.\nAlso: each kernel's worst and best case beside its mean, medians of kernels by part (never means: R-2005), frames and changed scenes on the page. Open: this PC's and the ASUS's own measures."
+    },
+    {
+      "id": "R-2021",
+      "date": "2026-11-25",
+      "time": "13:34",
+      "timeFrom": "recorded",
+      "title": "Every scene of v0.14.0, v0.15.0 and main, on GitHub and here: one regression (N-140's cull, fixed), and GitHub goes the same way as this PC in 84 of 96",
+      "verdict": "note",
+      "text": "Every scene both revisions have, worker by worker, without drawing on GitHub (3 pairs a VM, 3 VMs of Linux x64 and 3 of ARM: v0.14.0 against main 999e614b, 63 scenes; v0.15.0 against main, 78) and here in a window at 60 fps, drawing (v0.14.0 against main, 71 scenes, one pair; three more of four scenes). Eight scenes do not start there (WebGPU by default). 46 of the 63 scenes are not the same on both sides.\n\n**v0.14.0 -> main.** Here the workers' times add up to 322.7 -> 271.1 ms (-16 %): of those of 0.1 ms or more 171 lower by 5 %, 45 level, 43 higher. GitHub: x64 216.2 -> 200.1 (96 lower, 59 higher), ARM 205.7 -> 193.7 (88, 63); most of the higher ones are of hundredths of a ms.\n**v0.15.0 -> main:** 8 workers lower and 1 higher on both machines (bunnyMark's renderer: its scene drew through renderer.interpolation, gone).\n\n**Higher, read one by one:** audioStorm logic 0.46 -> 6.02 ms: its scene plays 48 000 sounds a frame, 1 200 then. movedBodiesMixed spatial 0.51 -> 2.55 (mamushkaDig and others by 0.1 to 0.4): SST-21, the owner's call of 2026-11-19 (a visualRange has its list from the start, read or not). stationarySpatialWide: its entities read their neighbours now. spawnStorm physics 1.88 -> 3.64, bisected to 7fae11ac (E-198, the frame chain): not a regression; before it physics ran inside logic's tick, saw 628 of the 3 600 changes a frame and held 537 of the 2 000 bodies; now it makes all 3 600. spritePack pre-render 1.08 -> 1.50, bisected to N-140's fix: fixed (8c021929). navStress particle +7 % on GitHub and 0 to +8 here: its kernels are level, the bisection fell on a demo's commit; not found. cmdSamePose logic: noise. dxCapture, sunMeshParity, platformerGame, steadyCombat renderers +0.06 to +0.3: scenes that changed; not read further.\n\n**Do GitHub's numbers hold?** Workers of 0.2 ms or more that moved 5 % on both: x64 and ARM went the same way in 82 of 84 (rank correlation 0.88); this PC and x64 in 84 of 96 (0.68): physics 12 of 12, particle 5 of 5, spatial 12 of 13, logic 20 of 22, pre-render 17 of 19, renderer 18 of 25. The size is not the same: the median change is about twice as large here (renderer -27 % against -1 %). So GitHub says which way and where to look; a renderer's number, or a size, wants a window on a GPU.\n**Windows VMs** can be read now that nothing is drawn: predator's logic 0.93 ms and 480 frames (22 ms before).\nKept: docs/internal/measures/2026-11-25-scene-sweep-v14-main.json and -v15-main.json; raw in D:/weed-measures/scene-sweep-1 with this PC's. Not done: the ASUS (it did not answer on the network), the ruler's test (two runs of the same code)."
+    },
+    {
+      "id": "R-2022",
+      "date": "2026-11-25",
+      "time": "13:34",
+      "timeFrom": "recorded",
+      "title": "The cull's test without branches, in SIMD: what its reach cost, and more",
+      "verdict": "kept",
+      "text": "Its cost, found by the scene sweep and bisected to its merge (2726bc31): the reach from the anchor is 7 ns a sprite out of the view (spritePack, 60 000 sprites: pre-render 0.90 -> 1.31 ms). The test is now SIMD and without branches, the reach squared instead of its root (8c021929). preRenderCollectWasmMicrobench, 4 alternated runs, the same checksums: cull 229 -> 375 ops/s (+63 %), turned 248 -> 348 (+40 %), predator 156 -> 185 (+18 %), bunny (no cull) level. The same test with scalar branches: -9 % and -30 %. GTX 1650, window, 4 pairs: spritePack's pre-render 1.34/1.38/1.34/1.40 -> 1.22/1.20/1.15/1.19 (4/4); Predator, 3 pairs: neutral."
     }
   ],
   "leads": [
