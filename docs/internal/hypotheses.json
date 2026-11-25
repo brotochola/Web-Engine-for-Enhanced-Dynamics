@@ -25707,7 +25707,8 @@
       "records": [
         "R-1982",
         "R-1991",
-        "R-1996"
+        "R-1996",
+        "R-2005"
       ],
       "refs": [],
       "id": "DX-CI",
@@ -25716,8 +25717,8 @@
       "kind": "tools",
       "area": "tools",
       "result": "Phases 0 and 1 done: tests on six machines, 42 kernel scripts calibrated (detection limit about 0.4 to 1 % with 4 to 8 VMs), the first runs on ARM, on Metal and in WebKit; found N-451, N-452, N-453, N-454, N-455",
-      "statusText": "Phases 0, 1 and 2 done 2026-11-24, on main (docs/internal/CI_MEASURE.md)",
-      "next": "measure:all for releases (the owner asked 2026-11-24; first table v0.14.0 against v0.15.0), phase 3 (E-346, E-342, E-224), 4 (WebGL against WebGPU on Metal) and 5 (a small nightly)",
+      "statusText": "Phases 0 to 2 and measure:all done 2026-11-24 (branch measure-all); phase 3's kernels dropped (E-342, E-346)",
+      "next": "measure:all: drop Windows from the scenes, Student's t for few VMs, a median beside the mean; v0.15.0 against main (its run was left on GitHub, ci-results/measure-0-15-0-main); phase 4 (WebGL against WebGPU on Metal), 5 (a small nightly)",
       "aliases": [
         "GitHub Actions",
         "CI",
@@ -25772,15 +25773,16 @@
     },
     {
       "records": [
-        "R-1985"
+        "R-1985",
+        "R-2006"
       ],
       "refs": [],
       "id": "N-453",
       "title": "A Windows clone with core.autocrlf=true (the default of Git for Windows) fails 13 node tests: they look for the sources' text by \"\\n\"",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "harness",
-      "result": "",
+      "result": "fixed (ea70ec40): * -text; the 13 tests pass on a clone with core.autocrlf=true",
       "statusText": "Found 2026-11-24 on GitHub's Windows images; with autocrlf=false 3632 of 3632 pass on both",
       "next": "A text rule in .gitattributes for the files those tests read (the repository holds CR LF files too: git ls-files --eol first), or the tests read through a helper that drops CR",
       "aliases": [
@@ -25791,17 +25793,18 @@
     },
     {
       "records": [
-        "R-1986"
+        "R-1986",
+        "R-2007"
       ],
       "refs": [],
       "id": "N-454",
       "title": "Kernels nobody runs had rotted: visPoly, audioStorm and decalPremultiply of the catalog, logPair, stampGridCellCache and parCam outside it",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "harness",
-      "result": "",
-      "statusText": "The catalog's three fixed 2026-11-24 (a1ece0b4), on main; logPair, stampGridCellCache and parCam open",
-      "next": "Merge ci-tools; logPair (an await in a function that is not async), stampGridCellCache (a constant its source no longer has) and parCam: fix or delete; kernelSmoke in a nightly",
+      "result": "closed: three fixed (a1ece0b4), three deleted",
+      "statusText": "Closed 2026-11-24: the catalog's three fixed (a1ece0b4), logPair, parCam and stampGridCellCache deleted",
+      "next": "",
       "aliases": [
         "kernelSmoke",
         "stale kernels"
@@ -26005,6 +26008,56 @@
       "next": "",
       "aliases": [
         "WebGPU poses by row"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-559",
+      "title": "A spawn and its despawn cost 14 to 23 % more at v0.15.0 than at v0.14.0 (spawnPath: 176 -> 213 ns on a Xeon)",
+      "status": "open",
+      "kind": "speed",
+      "area": "logic",
+      "result": "",
+      "statusText": "Found 2026-11-24 by the first measure:all, on three machines",
+      "next": "The drop is in DX-BARRIOS of 2026-11-17 (1ad06d1b, despawn claims its slot with a compare-exchange; 5d48642f, transform.parent and its keys): time each alone on a quiet machine (the same commit read 2.97 and 2.45 M/s here), then what of it a spawn without a parent can skip",
+      "aliases": [
+        "spawnPath",
+        "despawn compare-exchange"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "E-560",
+      "title": "The bundles carry the shaders' comments: about 125 KB of the production bundle (48 KB gzipped), 57 KB at v0.14.0",
+      "status": "open",
+      "kind": "speed",
+      "area": "tools",
+      "result": "",
+      "statusText": "Found 2026-11-24 asking why the bundle grew; the bytes are a regular expression's count",
+      "next": "Strip // and /* */ and the indentation of GLSL and WGSL where the bundle embeds them (the replaceOnce anchors run on the sources: after them, or keep the anchors), check every program still links",
+      "aliases": [
+        "bundle size",
+        "shader comments"
+      ],
+      "date": "2026-11-24"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "id": "N-461",
+      "title": "Two node tests fail now and then on Windows VMs: startupAtlasCache (the entry is being decoded before any source has answered) and adobeAnimStatics (8 288 bytes where 8 192 are allowed)",
+      "status": "open",
+      "kind": "bug",
+      "area": "tests",
+      "result": "",
+      "statusText": "Seen once each, 2026-11-24 (N-453's run, windows-2025 and windows-11-arm); not read further",
+      "next": "startupAtlasCache waits 20 setImmediate turns: wait for the decode with a deadline; adobeAnimStatics reads a sampled profile against a bound 1 % away",
+      "aliases": [
+        "flaky tests"
       ],
       "date": "2026-11-24"
     }
@@ -44421,6 +44474,36 @@
       "title": "E-558 dropped: by queue row on WebGPU ties in bunnyMark and is 6.9 % slower in keyedPackStress",
       "verdict": "dropped",
       "text": "Built on a branch (146cc3c9, 11a05055, not merged): an indexed sprite WGSL turned by queue row after every other edit (spriteByRowWgsl), the queue's pose columns in a storage buffer, the G-buffer's, edge and vertex-depth programs too; 5 captures on WebGPU (bunnyMark still, FaceLight keyed, FaceLight nearest, SpriteMaps, DxCapture) 0 of 921 600 pixels different; node 3635.\n\nAgainst the gathered pose stream (pack_sprites_keyed), WebGPU, 4 pairs, --early, the GTX 1650:\n- bunnyMark 400 000, the four columns in four writeBuffers: renderer 5.173 -> 6.552 ms. CPU profile: the pack 516 -> 255 ms of the window, memory.copy 211 -> 281, Pixi's updateBuffer 249 -> 260 (for 8 bytes a sprite instead of 20), the four writes 494: a byte costs about twice as much in four writes.\n- The columns in one write (where the rows reach three quarters of their blocks): 5.030 -> 5.038, a tie; drawn 23.6 -> 23.4 fps (4 of 4 fewer, 1 %).\n- keyedPackStress n=300000&moving=1&churn=0.01 (the owner scene): renderer 3.401 -> 3.635 ms (+6.9 %).\n\nBy row uploads 24 bytes a sprite (row, key, four pose columns) against 20, and on WebGPU the upload is the larger part: what the gather costs less than the bytes. Not kept: the two backends each keep the form that is faster there. Tried on the way: one texSubImage for WebGL's four pose blocks, bunnyMark 400 000, renderer 6.800 -> 7.016 (+0.5 % paired, 2 of 4 worse, cv 9 to 11 %): a tie, not kept."
+    },
+    {
+      "id": "R-2005",
+      "date": "2026-11-24",
+      "time": "23:21",
+      "timeFrom": "recorded",
+      "title": "measure:all, first page: v0.14.0 against v0.15.0 on three machines; scenes without drawing, their A/A",
+      "verdict": "note",
+      "text": "**measure:all** (`npm run measure:all -- --a v0.14.0 --b v0.15.0`; ec3bd62e, e1d22853): 12 VMs (Linux x64 4, Neoverse N2 4, Windows x64 4; Xeon 6975P and 8573C, EPYC 7763, 9V74, 9V45), 5 rounds a kernel, src/ of one release against the other's in the same VM. 102 kernels run on both, 39 do not (new features, recorded inputs; listed on the page).\n\n- **Faster** by 3 % past the limit on two machines or more: 29; **slower**: 10. The three machines agree on 9 of the 10. The geometric mean of all (+24 to +25 %) is five kernels that went 2 to 300 times faster (attachedDecorationScan, entityInstanceBoot, layerFeed, saveEncode, despawnBatch): the counts and the parts say more. By part: spatial +48 to +50 %, particles and decals +30 to +32 %, physics and rays +8 to +14 %, drawing +2 to +3 %, lights -0.5 to -4 % (5 kernels; most light kernels are new).\n- **Slower, read case by case:** spatialGridMovers (-21 to -27 % as a mean) is its idle case, 0.1 -> 0.5 us a frame; with 35 to 100 % moving it is 12 to 18 % faster. spawnPath -18 to -21 % is real (E-559). spawnCommandRing -10 to -12 % computes other results (its queue's payloads changed). componentGetter -5, atlasPack -4 to -10 (a load), gpuQueuePack's fillQueueIndices -8 to -20, prismaticJoint and liquidFunExtract -4 (Box2D's build), decorationCollect and spawnSoA -3 to -4: not looked into.\n- **Exact:** production ESM bundle 3 156.7 -> 3 898.8 KB (+23.5 %; gzip 1 005.7 -> 1 275.1), engine.wasm 246.6 -> 338.0 KB, lines of code 82 328 -> 101 785, engine tests 2 219 -> 3 440.\n\n**Scenes without drawing** (sceneAb, Chromium's --disable-gl-drawing-for-tests; here bunnyMark's Pixi reads p50 3.98 ms drawing and 4.04 without). A/A of e1d22853, 8 scenes, 3 pairs a VM: Linux x64 (4 VMs) and Neoverse (3): the workers of 1 ms and more within 6 % (limits 0.5 to 8 %), several past the limit of 3 or 4 VMs by chance and none the same way on both; Windows (3) useless (bunnyMark's logic 10 ms against 0.6: overloaded). To read them: a worker of 0.5 ms or more that moved the same way on both.\n\n**Phase 3's kernels on other CPUs:** E-346 (the position slot) -14 to -27 % on Xeons, -22 % on Neoverse, -7 to -30 % on Windows; with the type -18 to -24 %: dropped everywhere. E-342 (blocks of ids) +2.1 % on Neoverse, +4 to +10 % on Xeons, level on EPYC, of an empty tick.\n\n**N-453 checked** (Windows x64 and ARM images, core.autocrlf as they come): the 13 failures are gone; one other a machine, N-461."
+    },
+    {
+      "id": "R-2006",
+      "date": "2026-11-24",
+      "time": "23:21",
+      "timeFrom": "recorded",
+      "title": "N-453 fixed: every file checks out as it is stored",
+      "verdict": "kept-hygiene",
+      "text": "`* -text` in .gitattributes (ea70ec40): a clone holds the repository's bytes whatever core.autocrlf says (the CR LF files stay CR LF). The workflow no longer sets autocrlf; GitHub's windows-2025 and windows-11-arm images, which set it to true, pass the 13 tests that failed (3634 of 3635 each, the other one N-461; Linux 3635 of 3635).",
+      "commits": [
+        "ea70ec40"
+      ]
+    },
+    {
+      "id": "R-2007",
+      "date": "2026-11-24",
+      "time": "23:21",
+      "timeFrom": "recorded",
+      "title": "N-454 closed: the three kernels that no longer ran are deleted",
+      "verdict": "kept-hygiene",
+      "text": "logPair (an await outside async), parCam (its case is too fast for the timer floor) and stampGridCellCache (its constant is gone), of finished campaigns, deleted with their runner and scripts; the catalog's three were fixed in a1ece0b4."
     }
   ],
   "leads": [
