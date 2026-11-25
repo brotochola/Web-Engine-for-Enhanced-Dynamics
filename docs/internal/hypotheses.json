@@ -17593,12 +17593,12 @@
     {
       "id": "E-342",
       "title": "Tick phases id % T put ticking entities in every 64-byte line of every per-entity array each frame, and dirty every ax/ay/aa line physics reads",
-      "status": "open",
+      "status": "dropped",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "result": "Read (R-1104): logic streams whole arrays; (id >> 6) % T would touch 1/T of the lines. The three copies of the phase formula (logicOwner.js, gameObject.js, spatialWorker.js) must agree; load balance for small types. Estimate logic -2 to -5 %.",
+      "result": "dropped on its kernel (tickPhaseBlocksKernel): 2 to 4 % of an empty tick at 24 000 entities, 0.1 to 0.5 % of a Predator tick; small types would tick on one frame",
       "next": "A tickLoopKernel variant with block phases; Predator crowd 2.5 logic and physics.",
       "refs": [
         "EXECUTION_PLAN.md#E-342"
@@ -17609,7 +17609,8 @@
       ],
       "records": [
         "R-1104",
-        "R-1188"
+        "R-1188",
+        "R-2002"
       ]
     },
     {
@@ -17687,12 +17688,12 @@
     {
       "id": "E-346",
       "title": "A neighbour's x and y come from two Transform arrays, two misses on lines physics just rewrote, while spatial's pos slot [x, y, halfExtent, pad] holds both",
-      "status": "open",
+      "status": "dropped",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "result": "Read (R-1104): the pad could hold the type; an accessor over pos would serve the soldiers' scans (findACivilianToShoot 8.1 % of Chrome's instructions at crowd 2.5, R-1100; 9.6 % in R-0997). It is the collider centre, not Transform. Close to E-199.",
+      "result": "dropped on its kernel (neighborPosSlotKernel): the slot 11 % slower a neighbour, 29 % with the type, 16 % at 100 000",
       "next": "neighborAccessMicrobench with a pos-slot accessor; Predator's soldier scan.",
       "refs": [
         "EXECUTION_PLAN.md#E-346"
@@ -17703,7 +17704,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1104"
+        "R-1104",
+        "R-2003"
       ]
     },
     {
@@ -44390,6 +44392,24 @@
       "commits": [
         "2af9f97a"
       ]
+    },
+    {
+      "id": "R-2002",
+      "date": "2026-11-24",
+      "time": "22:07",
+      "timeFrom": "recorded",
+      "title": "E-342 screened out: blocks of ids save 0.4 to 0.9 ns a tick, 0.1 to 0.5 % of Predator's logic",
+      "verdict": "screened",
+      "text": "tickPhaseBlocksKernel: a frame's buckets of four types (T 2, 4, 6, 12), the pose rewritten by another thread before each frame, 16 columns and an object a tick, 4 neighbours' positions; same ticks an entity either way (checksum). Node 22, the Lenovo, alternating, 3 runs at 24 000:\n\n- 24 000 entities (about 6 000 ticks a frame): id % T 22.39, 22.62 and 22.75 ns a tick; blocks of 64 ids 21.95, 21.68, 22.22: 0.4 to 0.9 ns, 2 to 4 % of a tick that does nothing but read and write its columns.\n- 100 000: 34.2 against 31.5 ns (2.8 ns); 8 000: 23.0 against 21.5.\n\nA tick of Predator's takes about 500 ns (logic 4.7 ms on two workers, about 18 000 entities processed a frame at crowd 2.5): the saving is about 0.1 to 0.5 % of logic. The estimate of 2 to 5 % read every line as a miss; the ticks stream whole columns and the prefetchers follow. Against it, a type of under 64 x T entities would tick all on one frame, and three copies of the phase formula would change. Not timed: what physics saves on the ax, ay, aa lines left clean (about 3 750 lines at 20 000 entities). Screened out; no scene run."
+    },
+    {
+      "id": "R-2003",
+      "date": "2026-11-24",
+      "time": "22:07",
+      "timeFrom": "recorded",
+      "title": "E-346 dropped: the position slot is 11 to 29 % slower to scan than Transform's columns",
+      "verdict": "dropped",
+      "text": "neighborPosSlotKernel: a frame's scanners (an eighth of the entities) keep the nearest of 16 neighbours with unrelated ids, two other threads having rewritten Transform's columns and the [x, y, half, pad] slots before each frame; same results (checksum). Node 22, the Lenovo, alternating, 3 runs:\n\n- 24 000 entities: Transform.x and y 4.41 to 4.44 ns a neighbour; the slot 4.90 to 4.93 (11 % slower).\n- With the neighbour's type: x, y and entityType 4.52 to 4.54; the slot with the type in its pad 5.84 to 5.87 (29 % slower).\n- Ids near the scanner's: 4.05 against 4.26. 100 000 entities: 5.32 against 6.16 (16 % slower).\n\nTwo misses the core runs side by side cost what one does, and the slots are twice the bytes of two columns (16 an entity against 8): fewer entities a line and in the caches. Dropped; Predator's scan not changed."
     }
   ],
   "leads": [
