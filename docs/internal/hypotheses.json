@@ -26037,7 +26037,7 @@
       "kind": "speed",
       "area": "tools",
       "result": "",
-      "statusText": "Found 2026-11-24 asking why the bundle grew; the bytes are a regular expression's count",
+      "statusText": "Part of DX-BUNDLE. Found 2026-11-24 asking why the bundle grew; the bytes are a regular expression's count",
       "next": "Strip // and /* */ and the indentation of GLSL and WGSL where the bundle embeds them (the replaceOnce anchors run on the sources: after them, or keep the anchors), check every program still links",
       "aliases": [
         "bundle size",
@@ -26060,6 +26060,44 @@
         "flaky tests"
       ],
       "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-2008"
+      ],
+      "refs": [],
+      "id": "DX-MEASURES",
+      "title": "measure:all of every release and every merged performance commit kept as data, on every machine we reach, to compare any two later",
+      "status": "open",
+      "kind": "tools",
+      "area": "tools",
+      "result": "",
+      "statusText": "Asked by the owner 2026-11-25; not started (held: no new backlog items for now)",
+      "next": "A JSON a commit and machine (docs/internal/measures/<commit>/<machine>.json: every kernel, case and scene, its CPU model, the raw values and no baseline) and a page made from them; this PC, the ASUS, GitHub x64, ARM, Windows and the Mac. GitHub's VMs change CPU from one to the next (40 % and more): keep the CPU model, and time a frozen ruler kernel in the same VM so that two days can be compared; this PC and the ASUS with scenes on the GPU too. Compare by medians and by named cases, never by a mean of kernels (R-2005)",
+      "aliases": [
+        "measures history",
+        "measure:all history"
+      ],
+      "date": "2026-11-25"
+    },
+    {
+      "records": [
+        "R-2009"
+      ],
+      "refs": [],
+      "id": "DX-BUNDLE",
+      "title": "The smallest bundle that works: one JS file, nothing twice, no comments, every name minified, and no scene starting later for it",
+      "status": "open",
+      "kind": "tools",
+      "area": "tools",
+      "result": "",
+      "statusText": "Asked by the owner 2026-11-25; not started (held: no new backlog items for now)",
+      "next": "Numbers of 2026-11-25 (production ESM 3 893 KB, gzip 1 275, brotli 936): shaders' comments and indentation 196 KB (gzip 53: E-560), private names 169 (gzip 17; page and worker messages share some), code that is on the page and in the workers again 663, base64 of the two WASM 82, one backend's shaders 75 to 86. Keep: one file (no wasm apart), every bundle kind (UMD and ESM, debug and production, raw and compressed), class and component names that saves and scenes read. Each step: every kind boots every demo, and a scene's start time is not worse, on this PC, the ASUS and GitHub's machines, against the bundle before",
+      "aliases": [
+        "bundle size",
+        "minify"
+      ],
+      "date": "2026-11-25"
     }
   ],
   "records": [
@@ -44504,6 +44542,24 @@
       "title": "N-454 closed: the three kernels that no longer ran are deleted",
       "verdict": "kept-hygiene",
       "text": "logPair (an await outside async), parCam (its case is too fast for the timer floor) and stampGridCellCache (its constant is gone), of finished campaigns, deleted with their runner and scripts; the catalog's three were fixed in a1ece0b4."
+    },
+    {
+      "id": "R-2008",
+      "date": "2026-11-24",
+      "time": "23:39",
+      "timeFrom": "recorded",
+      "title": "The owner's word: keep every measure:all, against nothing",
+      "verdict": "note",
+      "text": "Owner, 2026-11-25: no fixed baseline (neither an old release nor the one before). The measure:all of each important commit is kept as it came, to have it, and whatever is wanted is compared later. Important: each performance commit that is merged, and each release. Machines: this PC, the ASUS, GitHub's x64, ARM and Windows, the Mac."
+    },
+    {
+      "id": "R-2009",
+      "date": "2026-11-24",
+      "time": "23:39",
+      "timeFrom": "recorded",
+      "title": "The owner's word: one file, everything minified, no slower start",
+      "verdict": "note",
+      "text": "Owner, 2026-11-25: one JS file, no wasm beside it (brotli is the server's business: the bundle itself must be small). Nothing repeated in a bundle makes sense, nor comments; the names of functions and variables minified: it must work, and the code must be the least. At the same time a scene must not take longer to start with the bundles, whichever kind (there are several), and on different machines."
     }
   ],
   "leads": [
