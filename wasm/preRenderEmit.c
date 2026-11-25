@@ -1430,9 +1430,9 @@ INLINE int32_t global_anim(const int32_t *proxy, uint32_t nSheets, uint32_t shee
    Returns PERSIST_MISS or the rows of other types; R_COUNTS gets [play-once ends ([entity, state] pairs in
    R_ENDS), sprites whose frame moved, repairs, whether the keys were written, the rows marked, whether a flag was
    taken]. */
-__attribute__((export_name("persist_frame")))
-uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags,
-                       double deltaSeconds, double band) {
+/* `keyed` a constant, a copy of the walk each: its test in the row loop cost the frames without keys 6 to 16 % (E-557). */
+INLINE uint32_t persist_walk(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags, double deltaSeconds,
+                             double band, const int keyed) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
   const uint8_t *cType = PTR(const uint8_t, C_TYPE);
   const int32_t *cIndex = PTR(const int32_t, C_INDEX);
@@ -1497,7 +1497,6 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   /* E-177: with keyed frames, a repaired or advanced texture flags its sprite (the walk may miss after a repair, and the
      full emit then flags it), and a hit rewrites the sprites' keys below. */
   uint32_t *qKey = PTR(uint32_t, Q_KEY);
-  const int keyed = qKey != 0 && sKeyedDirty != 0;
   /* N-238: a sprite missing from the queue frame before (the other buffer's) enters the view in this one, and its mark
      sends the statics its row holds, which this buffer's last emit may have left unwritten (K_SKIP): a miss, so the full
      emit writes them. */
@@ -1657,6 +1656,15 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   counts[4] = marked;
   counts[5] = taken;
   return others;
+}
+
+__attribute__((export_name("persist_frame")))
+uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags,
+                       double deltaSeconds, double band) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  /* E-177: the queue's keys and the sprites' flags are there. */
+  if (t[Q_KEY] != 0 && t[S_KEYED_DIRTY] != 0) return persist_walk(table, count, maxItems, flags, deltaSeconds, band, 1);
+  return persist_walk(table, count, maxItems, flags, deltaSeconds, band, 0);
 }
 
 /* E-557: the sprites of this buffer's remembered rows (`rows` of them) as emitted in queue frame `frame`: what the persist
