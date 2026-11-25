@@ -6,13 +6,13 @@
  * revision (its scenes too) served by this tree's runner. The loads are small: the machines have 4 threads, and a frame's
  * workers already share them.
  *
- *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--mode window]
- *     [--flags angle] [--warmup-ms 6000] [--duration-ms 8000] [--shard 1/2] --output file.json
+ *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--mode shell]
+ *     [--warmup-ms 6000] [--duration-ms 8000] [--shard 1/2] --output file.json
  *
  * A pair is one observation of a worker's time: ln(B / A). What a scene draws, the GPU's time and the frames on the screen
  * are not here. --set all: every scene both revisions have (sceneList.mjs), instead of the eight below. --mode: how Chromium
- * is started (runScene); the headless shell draws a frame or two a second of some scenes, and their renderer's and
- * pre-render's times are then of cold frames, so each run says the frames each worker ran.
+ * is started (runScene; frameProbe found no difference once nothing is drawn). Each run says the frames each worker ran: a
+ * worker that ran a few, cold, has no time to read.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -35,19 +35,10 @@ export const SCENES = Object.freeze([
   { key: 'decals', path: '/tests/bench/stressScenes/decalStampStressScene.js', exportName: 'DecalStampStressScene', query: '' },
   { key: 'ray', path: '/tests/bench/stressScenes/rayStressScene.js', exportName: 'RayStressScene', query: '' },
 ]);
-/** Chromium's flags a run may add, by name (frameProbe says what each does to the frames). */
-export const CHROMIUM_FLAGS = Object.freeze({
-  scale4: '--force-device-scale-factor=0.25',
-  angle: '--use-gl=angle --use-angle=swiftshader --enable-gpu-rasterization',
-  gpuc: '--use-gl=angle --use-angle=swiftshader-webgl',
-  nolimit: '--disable-gpu-vsync --disable-frame-rate-limit',
-  inproc: '--in-process-gpu',
-  soft: '--disable-gpu-compositing',
-});
 const KINDS = ['logic', 'spatial', 'physics', 'renderer', 'particle', 'preRender'];
 
 /**
- * One run of `scene` of the tree at `root` (o: mode, warmupMs, durationMs, draw, canvas, flags): each worker's own ms a frame and
+ * One run of `scene` of the tree at `root` (o: mode, warmupMs, durationMs, draw): each worker's own ms a frame and
  * the frames it ran. o.mode: shell (Playwright's headless shell), headless (Chromium's own), window (on Linux in a virtual
  * screen).
  */
@@ -55,8 +46,6 @@ export function runScene(root, scene, o, out) {
   fs.rmSync(out, { force: true });
   const argv = [path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs'), '--src', '--root', root, ...(o.draw ? [] : ['--no-draw']),
     '--channel', 'chromium', ...(o.mode === 'window' ? ['--headed'] : o.mode === 'headless' ? ['--new-headless'] : []),
-    ...(o.flags ? ['--chrome-args', o.flags] : []),
-    ...(o.canvas ? ['--canvas-width', o.canvas.split('x')[0], '--canvas-height', o.canvas.split('x')[1]] : []),
     '--no-collect-detailed-stats', '--scene', scene.path, '--scene-export', scene.exportName,
     '--warmup-ms', String(o.warmupMs), '--duration-ms', String(o.durationMs), '--output', out, ...(scene.query ? ['--query', scene.query] : [])];
   const virtual = o.mode === 'window' && process.platform === 'linux' && !process.env.DISPLAY;
@@ -83,7 +72,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const o = {
     pairs: Number(args.pairs ?? 3), warmupMs: Number(args['warmup-ms'] ?? 6000), durationMs: Number(args['duration-ms'] ?? 8000),
-    mode: String(args.mode ?? 'window'), flags: CHROMIUM_FLAGS[args.flags] ?? null,
+    mode: String(args.mode ?? 'shell'),
   };
   const sides = {
     a: ensureRevWorktree(String(args.a ?? 'HEAD'), { tag: 'a', srcOnly: false }),
