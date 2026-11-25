@@ -324,6 +324,37 @@ test('a split batch draws the opaque pass over its binary frames, nearest first,
   assert.equal(batch._opCover[0], want.length * 100);
 });
 
+test('a split batch whose opaque pass does not pay builds its rows once in sixteen frames, though its statics move', async () => {
+  const { q, batch } = await setup();
+  batch.setFrameTexels(new Uint8Array(FRAMES), new Float32Array(FRAMES).fill(100));
+  batch.setOpaqueView(1, 1920 * 1080);
+  const built = [];
+  const frame = () => {
+    // Boids: rows enter and leave the view, so the statics move every frame.
+    q.staticGen[0]++;
+    q.textureId[0] = (q.textureId[0] + 1) % FRAMES;
+    const before = batch._opVersion;
+    assert.equal(batch.upload(q, opts(q)), N);
+    built.push(batch._opVersion - before);
+    return batch.opaqueHost.visible;
+  };
+  for (let f = 0; f < 33; f++) assert.equal(frame(), false, `frame ${f}`);
+  assert.deepEqual(built.map((b, f) => (b > 0 ? f : -1)).filter((f) => f >= 0), [0, 16, 32]);
+  // A zoom where it pays is taken at once, and then the rows follow the statics every frame.
+  batch.setOpaqueView(400, 1920 * 1080);
+  built.length = 0;
+  for (let f = 0; f < 4; f++) assert.equal(frame(), true);
+  assert.deepEqual(built, [1, 1, 1, 1]);
+  // Back out, then the frames' texels change (another atlas): looked at again at once.
+  batch.setOpaqueView(1, 1920 * 1080);
+  built.length = 0;
+  frame();
+  frame();
+  batch.setFrameTexels(new Uint8Array(FRAMES), new Float32Array(FRAMES).fill(4096 * 4096));
+  assert.equal(frame(), true);
+  assert.deepEqual(built, [1, 0, 1]);
+});
+
 test('the opaque pass stays off where it cannot draw the same picture', async () => {
   const base = { capacity: 16, label: 'e448-off', split: true, shaders, opaquePass: recordTextures() };
   assert.equal(new InstancedSpriteBatch({ ...base, useWebGpu: false }).opaqueOn, true);

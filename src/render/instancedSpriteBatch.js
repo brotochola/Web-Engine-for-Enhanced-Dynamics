@@ -103,7 +103,7 @@ const unshadedStencilStep = (mode, reference, colorMask) =>
 /** E-448: what the opaque mesh draws: a split frame's rows (its poses copied each frame), a by-row keyed frame's. */
 const OPAQUE_KIND_POSE = 0;
 const OPAQUE_KIND_KEYED_ROWS = 1;
-/** E-448: frames a by-row batch skips building its opaque rows after a frame where the pass did not pay (a quarter second). */
+/** E-448: frames a batch skips building its opaque rows after a frame where the pass did not pay (a quarter second). */
 const OPAQUE_RECHECK_FRAMES = 15;
 
 // E-177. A keyed frame saves KEYED_SAVED_BYTES a row against a split one (the slot pair instead of the statics) and
@@ -822,11 +822,12 @@ export class InstancedSpriteBatch {
     this._opBuiltStatics = -1;
     this._opBuiltRows = -1;
     this._opAllowed = true;
-    // The by-row pass's frames left to skip its build after a frame where it did not pay, and the view that frame had
-    // (_commitOpaqueRows).
+    // The frames left to skip the rows' build after a frame where the pass did not pay, and the view and the frames' texels
+    // that frame had (_skipOpaqueBuild).
     this._opSkipFrames = 0;
     this._opSkipZoom = NaN;
     this._opSkipScreen = NaN;
+    this._opSkipTexels = -1;
     // E-479: the by-row pass's cover, worked out one frame in OPAQUE_RECHECK_FRAMES: the frames left, and the rows and the
     // frames' texels it was worked out for.
     this._opCoverFrames = 0;
@@ -1675,6 +1676,31 @@ export class InstancedSpriteBatch {
   }
 
   /**
+   * Whether this frame leaves the opaque pass's rows unbuilt (and the pass undrawn). While the pass does not pay at this
+   * view its rows, every drawn one's, are not built every frame: the cover moves slowly, so it is worked out again every
+   * OPAQUE_RECHECK_FRAMES frames, or at once when the zoom, the target or the frames' texels change. Built every frame they
+   * cost Pixi 1.29 -> 1.71 ms a frame in Predator (by queue row) and 0.52 -> 1.21 in boids (the split's statics move every
+   * frame there).
+   * @returns {boolean}
+   */
+  _skipOpaqueBuild() {
+    if (this._opSkipFrames <= 0 || this._opSkipZoom !== this._opZoom || this._opSkipScreen !== this._opScreen
+      || this._opSkipTexels !== this._opTexelsVersion) return false;
+    this._opSkipFrames--;
+    this.dropOpaquePass();
+    return true;
+  }
+
+  /** The opaque pass does not pay (or has no rows): not drawn, nor its rows built, for OPAQUE_RECHECK_FRAMES frames. */
+  _refuseOpaquePass() {
+    this._opSkipFrames = OPAQUE_RECHECK_FRAMES;
+    this._opSkipZoom = this._opZoom;
+    this._opSkipScreen = this._opScreen;
+    this._opSkipTexels = this._opTexelsVersion;
+    this.dropOpaquePass();
+  }
+
+  /**
    * E-448: the opaque pass over the `n` instances the upload just drew from ring slot _lastRing: its rows rebuilt from
    * the statics when they moved since they were built (_staticVersion), the rows did or the frames' texels did, and
    * uploaded into that ring slot's buffer when it holds older ones; the batch's own mesh testing the depth while the pass
@@ -1687,6 +1713,7 @@ export class InstancedSpriteBatch {
       return;
     }
     if (this._opBuiltStatics !== this._staticVersion || this._opBuiltRows !== n || this._opBuiltTexels !== this._opTexelsVersion) {
+      if (this._skipOpaqueBuild()) return;
       this._opCount = buildOpaqueRows(this.staticData, this.staticDataU32, POSE_STATIC_FLOATS, n, this._opTexels, this._opArea,
         this._opRows, this._opRowsU32, this._opCover);
       this._opBuiltStatics = this._staticVersion;
@@ -1696,9 +1723,10 @@ export class InstancedSpriteBatch {
     }
     const m = this._opCount;
     if (m <= 0 || !this._opaquePays(m)) {
-      this.dropOpaquePass();
+      this._refuseOpaquePass();
       return;
     }
+    this._opSkipFrames = 0;
     const ring = this._lastRing;
     if (this._opRingVersion[ring] !== this._opVersion) {
       this._opBuffers[ring].update(m * OPAQUE_ROW_FLOATS * 4);
@@ -1722,14 +1750,7 @@ export class InstancedSpriteBatch {
       this.dropOpaquePass();
       return;
     }
-    // While the pass does not pay at this view, its rows (every draw slot's) are not built every frame: the cover moves
-    // slowly, so it is checked again every OPAQUE_RECHECK_FRAMES frames, or at once when the zoom or the target changes.
-    // Built every frame, they cost Pixi 1.29 -> 1.71 ms a frame in Predator, where the gate keeps the pass off.
-    if (this._opSkipFrames > 0 && this._opSkipZoom === this._opZoom && this._opSkipScreen === this._opScreen) {
-      this._opSkipFrames--;
-      this.dropOpaquePass();
-      return;
-    }
+    if (this._skipOpaqueBuild()) return;
     // The cover moves slowly: worked out again after a while, or when the rows drawn change by more than an eighth.
     const recheck = this._opCoverFrames <= 0 || this._opCoverTexels !== this._opTexelsVersion
       || Math.abs(n - this._opCoverRows) * 8 > this._opCoverRows;
@@ -1743,10 +1764,7 @@ export class InstancedSpriteBatch {
       this._opCoverFrames--;
     }
     if (m <= 0 || !this._opaquePays(m)) {
-      this._opSkipFrames = OPAQUE_RECHECK_FRAMES;
-      this._opSkipZoom = this._opZoom;
-      this._opSkipScreen = this._opScreen;
-      this.dropOpaquePass();
+      this._refuseOpaquePass();
       return;
     }
     this._opSkipFrames = 0;
