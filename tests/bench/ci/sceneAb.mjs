@@ -6,7 +6,7 @@
  * revision (its scenes too) served by this tree's runner. The loads are small: the machines have 4 threads, and a frame's
  * workers already share them.
  *
- *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--mode shell] [--draw]
+ *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--query k=v&k=v] [--mode shell] [--draw]
  *     [--warmup-ms 6000] [--duration-ms 8000] [--shard 1/2] --output file.json
  *
  * A pair is one observation of a worker's time: ln(B / A). What a scene draws, the GPU's time and the frames on the screen
@@ -85,6 +85,7 @@ function main() {
     const want = String(args.scenes).split(',');
     scenes = scenes.filter((s) => want.includes(s.key));
   }
+  if (typeof args.query === 'string') scenes = scenes.map((s) => ({ ...s, query: args.query }));
   if (args.shard) {
     const [k, n] = String(args.shard).split('/').map(Number);
     scenes = scenes.filter((_, i) => i % n === k - 1);
