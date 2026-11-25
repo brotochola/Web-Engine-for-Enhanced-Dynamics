@@ -35,7 +35,7 @@ export const SCENES = Object.freeze([
 const KINDS = ['logic', 'spatial', 'physics', 'renderer', 'particle', 'preRender'];
 
 /**
- * One run of `scene` of the tree at `root` (o: mode, warmupMs, durationMs, draw, canvas): each worker's own ms a frame and
+ * One run of `scene` of the tree at `root` (o: mode, warmupMs, durationMs, draw, canvas, flags): each worker's own ms a frame and
  * the frames it ran. o.mode: shell (Playwright's headless shell), headless (Chromium's own), window (on Linux in a virtual
  * screen).
  */
@@ -43,6 +43,7 @@ export function runScene(root, scene, o, out) {
   fs.rmSync(out, { force: true });
   const argv = [path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs'), '--src', '--root', root, ...(o.draw ? [] : ['--no-draw']),
     '--channel', 'chromium', ...(o.mode === 'window' ? ['--headed'] : o.mode === 'headless' ? ['--new-headless'] : []),
+    ...(o.flags ? ['--chrome-args', o.flags] : []),
     ...(o.canvas ? ['--canvas-width', o.canvas.split('x')[0], '--canvas-height', o.canvas.split('x')[1]] : []),
     '--no-collect-detailed-stats', '--scene', scene.path, '--scene-export', scene.exportName,
     '--warmup-ms', String(o.warmupMs), '--duration-ms', String(o.durationMs), '--output', out, ...(scene.query ? ['--query', scene.query] : [])];

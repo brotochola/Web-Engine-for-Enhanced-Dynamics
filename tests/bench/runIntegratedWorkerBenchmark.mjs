@@ -189,7 +189,7 @@ function parseArgs(argv) {
 
     const key = arg.slice(2);
     const next = argv[i + 1];
-    const flagsThatTakeDashValues = key === 'js-flags' || key === 'channel' || key === 'v8-log-dir';
+    const flagsThatTakeDashValues = key === 'js-flags' || key === 'chrome-args' || key === 'channel' || key === 'v8-log-dir';
 
     if (!next || (next.startsWith('--') && !flagsThatTakeDashValues)) {
       parsed[key] = true;
@@ -577,6 +577,8 @@ async function main() {
     enableLogging: Boolean(jsFlags) || dumpio,
     noDraw: Boolean(cliArgs['no-draw']),
   });
+  // --chrome-args "a b": more of Chromium's own flags.
+  if (typeof cliArgs['chrome-args'] === 'string') launchArgs.push(...cliArgs['chrome-args'].split(' ').filter(Boolean));
   // Headed: the window opens where the owner last left one (benchWindow.mjs), not over what they are doing.
   if (headed && !stockFirefox) launchArgs.push(...benchWindowArgs());
   const launchOptions = {

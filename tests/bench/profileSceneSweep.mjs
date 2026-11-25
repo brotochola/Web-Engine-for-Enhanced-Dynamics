@@ -43,7 +43,7 @@ import { isCli, parseArgs } from './microbenchHelpers.mjs';
 import { repoRoot } from './measureLib.mjs';
 
 /** Demo scenes: every demos/<dir>/ with a scene class. */
-const DEMOS = [
+export const DEMOS = [
   'adobeAnimateScene/adobeAnimateScene.js', 'badPiggiesScene/badPiggiesScene.js', 'ballsScene/ballsScene.js',
   'bichosScene/bichosScene.js', 'boidsScene/boidsScene.js', 'box2dQueryAabbScene/box2dQueryAabbScene.js',
   'bunnyMarkScene/bunnyMarkScene.js', 'burningBoxesScene/burningBoxesScene.js', 'carScene/carScene.js',
@@ -62,7 +62,7 @@ const DEMOS = [
 ].map((p) => `/demos/${p}`);
 
 /** Stress scenes: Q1's own and W8b's 70 000 entities, then the engine processes Q1 did not profile (its gap list). */
-const STRESS = [
+export const STRESS = [
   'visPolyStressScene', 'compoundVisPolyStressScene', 'particleIntegrateStressScene', 'stationarySpatialWideScene',
   'spawnStormScene', 'contactDrainStressScene', 'bulletStressScene', 'bulletStormScene', 'painterSortStressScene',
   'painterMoveStressScene', 'painterAdobeStressScene', 'decalStampStressScene', 'decalBlitStressScene',
@@ -94,7 +94,7 @@ function sceneArgs(name, opts) {
 }
 
 /** Modules that export more than one scene: the one the sweep runs (the heaviest variant). */
-const SCENE_EXPORTS = {
+export const SCENE_EXPORTS = {
   bulletStormScene: 'BulletStormScene3W',
   painterMoveStressScene: 'PainterMoveReinsertScene',
   painterAdobeStressScene: 'PainterAdobe1WReinsertScene',
