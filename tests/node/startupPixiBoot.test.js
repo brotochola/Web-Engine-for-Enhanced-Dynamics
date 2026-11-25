@@ -111,6 +111,26 @@ function initMessage() {
   };
 }
 
+/** The page's canvas: its WebGL2 context, which a test loses and gives back, and the listeners the worker adds. */
+function pageCanvas(label = 'the page canvas') {
+  const listeners = [];
+  return {
+    width: 640,
+    height: 360,
+    label,
+    lost: false,
+    getContext(kind) {
+      return kind === 'webgl2' ? { isContextLost: () => this.lost } : null;
+    },
+    addEventListener: (type, fn) => listeners.push([type, fn]),
+    say(type) {
+      let prevented = false;
+      for (const [t, fn] of listeners) if (t === type) fn({ preventDefault: () => { prevented = true; } });
+      return prevented;
+    },
+  };
+}
+
 /** A renderer of its own: the worker's class, constructed as the worker module constructs it, on a self of its own. */
 async function freshRenderer() {
   const shared = await loadWorker('pixiWorker.js', 'pixiRenderer');
@@ -138,7 +158,7 @@ test("the renderer starts Pixi on the boot's canvas, and an 'init' that comes fi
   const pixi = fakePixiInit();
   try {
     const px = await freshRenderer();
-    const canvas = { width: 640, height: 360, label: 'the page canvas' };
+    const canvas = pageCanvas();
     const start = postedMessages().length;
     // What had started linking when initialize reached the assets (its first step after boot).
     let linkedBeforeAssets = null;
@@ -202,4 +222,83 @@ test("a boot that fails is reported by initialize, as Pixi's init failing was", 
   assert.equal(errors[0][0], 'PIXI Initialization Failed');
   assert.match(errors[0][1], /no canvas/);
   assert.equal(since(start, 'gpuInfo').length, 0, 'no GPU to report');
+});
+
+// N-458: Pixi's start on a context that was lost meanwhile throws (its loop over ever smaller shaders ended: buildPixi.mjs).
+test('N-458: a WebGL context lost while Pixi starts is waited for, and Pixi started again on it', async () => {
+  const calls = [];
+  const saved = Application.prototype.init;
+  const canvas = pageCanvas();
+  Application.prototype.init = async function init(options) {
+    calls.push(options);
+    if (calls.length === 1) {
+      canvas.lost = true;
+      throw new Error('Pixi: no fragment shader compiles (the WebGL context may be lost)');
+    }
+    this.renderer = fakeRenderer(options.width, options.height);
+  };
+  try {
+    const px = await freshRenderer();
+    const start = postedMessages().length;
+    await quietly(async () => {
+      post(px, bootMessage(canvas));
+      post(px, initMessage());
+      await until(() => calls.length === 1, "Pixi's first init");
+      assert.equal(canvas.say('webglcontextlost'), true, 'the default prevented: the browser may restore it');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(calls.length, 1, 'nothing while it is lost');
+      assert.equal(px.pixiApp, null);
+      canvas.lost = false;
+      canvas.say('webglcontextrestored');
+      await until(() => since(start, 'workerReady').length === 1, 'the worker ready');
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].canvas, canvas);
+    assert.ok(px.pixiApp && px.pixiApp.renderer, 'Pixi is up');
+    assert.equal(since(start, 'error').length, 0);
+    assert.equal(since(start, 'gpuLost').length, 0, "boot's own to mend: the page hears nothing");
+    // From here on the page hears of a loss.
+    await quietly(async () => canvas.say('webglcontextlost'));
+    canvas.say('webglcontextrestored');
+    assert.equal(since(start, 'gpuLost').length, 1);
+    assert.equal(since(start, 'gpuRestored').length, 1);
+  } finally {
+    Application.prototype.init = saved;
+  }
+});
+
+test('N-458: a context the browser does not restore ends the boot with an error that says so; another error ends it at once', async (t) => {
+  for (const lost of [true, false]) {
+    const saved = Application.prototype.init;
+    const canvas = pageCanvas();
+    Application.prototype.init = async function init() {
+      canvas.lost = lost;
+      throw new Error('Pixi failed');
+    };
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+      const px = await freshRenderer();
+      px._fetchEngineShaders = async () => {};
+      px.canvasView = canvas;
+      px._useWebGpu = false;
+      let error = null;
+      await quietly(async () => {
+        const started = px._startPixi({ renderer: {} }, 'webgl').catch((e) => { error = e; });
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+        if (lost) {
+          t.mock.timers.tick(9999);
+          for (let i = 0; i < 20; i++) await Promise.resolve();
+          assert.equal(error, null, 'still waiting');
+          t.mock.timers.tick(1);
+        }
+        await started;
+      });
+      assert.match(error.message, lost ? /the WebGL context was lost while the game loaded/ : /Pixi failed/);
+      // The page's 'start' after a boot that failed starts nothing (it threw over the message that says why).
+      px.onCustomSchedulerStart();
+    } finally {
+      t.mock.timers.reset();
+      Application.prototype.init = saved;
+    }
+  }
 });

@@ -302,6 +302,8 @@ const PIXI = Object.freeze({
 
 /** E-475: the longest the worker waits for its programs' links before it reports ready (a driver that never answers). */
 const LINK_AHEAD_WAIT_MS = 20000;
+/** N-458: how long the renderer's boot waits for a WebGL context lost while it ran. */
+const BOOT_RESTORE_WAIT_MS = 10000;
 
 // Make PIXI namespace available globally (renderer-specific)
 self.PIXI = PIXI;
@@ -826,29 +828,37 @@ class PixiRenderer extends AbstractWorker {
 
     const gl = this.pixiApp.renderer.gl;
     this._framePacer.bindGl(gl);
-    if (gl && gl.canvas) {
-      // N-301: the page restarts the scene from a save of the running world once the context is back (the default
-      // prevented, so the browser may restore it); this worker's GPU side is not rebuilt in place.
-      gl.canvas.addEventListener(
-        'webglcontextlost',
-        (e) => {
-          e.preventDefault();
-          this._framePacer.reset();
-          console.warn('[WeedJS] the WebGL context was lost (a driver reset, a GPU switch, too many contexts)');
-          self.postMessage({ msg: 'gpuLost', backend: 'webgl' });
-        },
-        false
-      );
+  }
 
-      gl.canvas.addEventListener(
-        'webglcontextrestored',
-        () => {
-          this._framePacer.reset();
-          self.postMessage({ msg: 'gpuRestored', backend: 'webgl' });
-        },
-        false
-      );
-    }
+  /**
+   * N-301: the page's canvas says when its WebGL context goes and comes back, from before Pixi makes it (N-458). The page
+   * restarts the scene from a save of the running world once the context is back (the default prevented, so the browser may
+   * restore it); this worker's GPU side is not rebuilt in place. A context lost before Pixi is up is boot's to wait for
+   * (_startPixi), and the page hears nothing.
+   */
+  _watchGlContext() {
+    const canvas = this.canvasView;
+    canvas.addEventListener(
+      'webglcontextlost',
+      (e) => {
+        e.preventDefault();
+        if (this.pixiApp === null) return;
+        this._framePacer.reset();
+        console.warn('[WeedJS] the WebGL context was lost (a driver reset, a GPU switch, too many contexts)');
+        self.postMessage({ msg: 'gpuLost', backend: 'webgl' });
+      },
+      false
+    );
+
+    canvas.addEventListener(
+      'webglcontextrestored',
+      () => {
+        if (this.pixiApp === null) return;
+        this._framePacer.reset();
+        self.postMessage({ msg: 'gpuRestored', backend: 'webgl' });
+      },
+      false
+    );
   }
 
   /**
@@ -2771,6 +2781,8 @@ class PixiRenderer extends AbstractWorker {
    * Setup PIXI ticker to call gameLoop (custom scheduler implementation)
    */
   onCustomSchedulerStart() {
+    // A boot that failed said so (initialize): there is nothing to draw.
+    if (this.pixiApp === null) return;
     if (this.fixedFps > 0 || this.noLimitFPS) {
       // Bypass PIXI ticker — use AbstractWorker scheduleNextFrame (interval / uncapped / RAF)
       this.usesCustomScheduler = false;
@@ -3357,7 +3369,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         : RENDERER_DEFAULTS.autoGenerateMipmaps;
 
     const shadersFetched = this._fetchEngineShaders().then(() => loadMark('shaders fetched'));
-    await Promise.all([shadersFetched, this._initPixiApp(config, backend)]);
+    await Promise.all([shadersFetched, this._startPixi(config, backend)]);
 
     // N-271: a nearest atlas snaps each sprite to the pixel grid in its vertex shader (pixelSnap.js), before any sprite
     // program is made from these sources; the packs leave the poses as they are. N-302: an axis-aligned sprite's corners
@@ -3367,6 +3379,46 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // E-475: what boot made links on the driver's threads while the page loads the assets; initialize waits for it.
     this._startLinksAhead();
     loadMark('booted');
+  }
+
+  /**
+   * N-458: Pixi's start, once more when the WebGL context was lost while it ran and the browser gives it back
+   * (BOOT_RESTORE_WAIT_MS at most: a load that cannot start says why instead of waiting for ever).
+   */
+  async _startPixi(config, backend) {
+    if (this._useWebGpu) return this._initPixiApp(config, backend);
+    this._watchGlContext();
+    try {
+      await this._initPixiApp(config, backend);
+    } catch (error) {
+      if (!this._glContextLost()) throw error;
+      console.warn('[WeedJS] the WebGL context was lost while the renderer started: waiting for the browser to restore it');
+      if (!(await this._glContextBack(BOOT_RESTORE_WAIT_MS))) {
+        throw new Error('WeedJS: the WebGL context was lost while the game loaded, and the browser did not restore it.');
+      }
+      await this._initPixiApp(config, backend);
+    }
+  }
+
+  /** N-458: whether the canvas's WebGL context is lost (the context Pixi made there, or asked for). */
+  _glContextLost() {
+    const gl = this.canvasView.getContext('webgl2');
+    return gl !== null && gl.isContextLost();
+  }
+
+  /** N-458: true once the canvas's context is not lost, false when it still is after `ms`. */
+  _glContextBack(ms) {
+    return new Promise((resolve) => {
+      if (!this._glContextLost()) {
+        resolve(true);
+        return;
+      }
+      const timer = setTimeout(() => resolve(false), ms);
+      this.canvasView.addEventListener('webglcontextrestored', () => {
+        clearTimeout(timer);
+        resolve(true);
+      }, { once: true });
+    });
   }
 
   /**
@@ -3395,6 +3447,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!app.renderer) {
       throw new Error('PIXI.Application.init() succeeded but renderer is null');
     }
+    if (!this._useWebGpu && this._glContextLost()) throw new Error('WeedJS: the WebGL context was lost while Pixi started');
     this.pixiApp = app;
     // E-475: every WebGL program made from here to the end of initialize is linked ahead, all together. E-494: not Pixi's
     // own, made inside its init (its default mesh's, its back buffer's): the engine draws with none of them.

@@ -104,6 +104,8 @@ class GameEngine {
     this._gpuLoss = null;
     /** N-301: when the last restart after a GPU loss ended (performance.now()), or -Infinity. */
     this._gpuRestartEnd = -Infinity;
+    // N-458: a GPU lost while a scene loads ({ scene, backend, restored }), taken when the load ends.
+    this._gpuLostInLoad = null;
 
     // The debug overlay loads with the first scene (_loadDebugUI from loadScene): a page that shows no scene yet, a
     // menu, has no debug bar over it and fetches none of the overlay's modules.
@@ -477,6 +479,7 @@ class GameEngine {
       // Create and initialize new scene
       debugWorkerLog(`📥 Loading scene: ${SceneClass.name}`);
       this.currentScene = new SceneClass(this);
+      this._gpuLostInLoad = null;
       this.currentScene.sceneScriptUrl = sceneScriptUrl;
       this.currentScene.data = options.data === undefined ? null : options.data;
       if (typeof options.onProgress === 'function') this.currentScene._onProgressOption = options.onProgress;
@@ -508,6 +511,7 @@ class GameEngine {
       // Scene loaded successfully
       this.state = GameEngine.states.READY;
       if (hotRestore) HotReload.discardSlot();
+      this._takeGpuLostInLoad();
       return true;
     } catch (error) {
       console.error('❌ Error loading scene:', error);
@@ -525,7 +529,13 @@ class GameEngine {
    * @param {'webgl'|'webgpu'} backend
    */
   _onGpuLost(scene, backend) {
-    if (scene !== this.currentScene || this._gpuLoss || this.state !== GameEngine.states.READY) return;
+    if (scene !== this.currentScene) return;
+    if (this.state !== GameEngine.states.READY) {
+      // N-458: while it loads (its workers' GPU side is half made, its world not begun): when the load ends.
+      this._gpuLostInLoad = { scene, backend, restored: false };
+      return;
+    }
+    if (this._gpuLoss) return;
     if (performance.now() - this._gpuRestartEnd < GPU_LOSS_REPEAT_MS) {
       scene._showFatalErrorMessage('renderer', 'GPU lost again', 'The GPU was lost again right after the game restarted.');
       return;
@@ -569,6 +579,10 @@ class GameEngine {
 
   /** N-301: the browser restored the WebGL context: restart the scene from the save taken at the loss. */
   _onGpuRestored(scene) {
+    if (this._gpuLostInLoad?.scene === scene) {
+      this._gpuLostInLoad.restored = true;
+      return;
+    }
     if (this._gpuLoss?.scene !== scene) return;
     clearTimeout(this._gpuLoss.timer);
     this._restartAfterGpuLoss();
@@ -600,7 +614,21 @@ class GameEngine {
     } finally {
       this._gpuLoss = null;
       this._gpuRestartEnd = performance.now();
+      this._takeGpuLostInLoad();
     }
+  }
+
+  /**
+   * N-458: the GPU was lost while the scene loaded: what the scene made on it is gone (a black canvas, without a word), so
+   * it restarts now as after any loss. While a restart runs (its own load lost the GPU) the restart's end takes it: a second
+   * loss that soon is the fatal error.
+   */
+  _takeGpuLostInLoad() {
+    const lost = this._gpuLostInLoad;
+    if (lost === null || this._gpuLoss || this.state !== GameEngine.states.READY) return;
+    this._gpuLostInLoad = null;
+    this._onGpuLost(lost.scene, lost.backend);
+    if (lost.restored) this._onGpuRestored(lost.scene);
   }
 
   // Convenience methods that delegate to current scene

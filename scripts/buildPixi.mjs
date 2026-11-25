@@ -633,6 +633,27 @@ function pipelinesAhead(src, file) {
   return replaceOnce(src, '    const pipeline = device.createRenderPipeline(descriptor);\n    return pipeline;\n  }\n', PIPELINE_AHEAD, file);
 }
 
+/**
+ * N-458: Pixi's boot asks how many ifs a fragment shader takes by compiling ever smaller ones until one compiles. With the
+ * WebGL context lost none does, the count reaches 0 and the loop never ends (a core at 100 %, the load waiting for ever):
+ * it throws there instead, and the renderer's boot waits for the context (pixiWorker._startPixi).
+ */
+function patchPixiLostBoot() {
+  return {
+    name: 'patch-pixi-lost-boot',
+    setup(build) {
+      patchModule(build, /[\\/]rendering[\\/]batcher[\\/]gl[\\/]utils[\\/]checkMaxIfStatementsInShader\.mjs$/, (src, file) =>
+        replaceOnce(
+          src,
+          '        maxIfs = maxIfs / 2 | 0;\n',
+          '        maxIfs = maxIfs / 2 | 0;\n' +
+            '        if (maxIfs === 0) throw new Error("Pixi: no fragment shader compiles (the WebGL context may be lost)");\n',
+          file,
+        ));
+    },
+  };
+}
+
 const result = await esbuild.build({
   absWorkingDir: root,
   entryPoints: [path.join(root, 'scripts', 'buildPixiWorker.js')],
@@ -640,7 +661,7 @@ const result = await esbuild.build({
   format: 'esm',
   minify: true,
   outfile: path.join(root, 'src', 'vendor', 'pixi.min.js'),
-  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiPassGarbage(), patchPixiIntegerFormats(), patchPixiParallelLinks()],
+  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiPassGarbage(), patchPixiIntegerFormats(), patchPixiParallelLinks(), patchPixiLostBoot()],
   logLevel: 'info',
 });
 
