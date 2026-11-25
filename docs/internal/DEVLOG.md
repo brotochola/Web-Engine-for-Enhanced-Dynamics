@@ -6,6 +6,28 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 25 November 2026: What Got Slower
+
+**The owner read "neighbours +48 %" and did not believe it.** He was right: it was the mean of a few kernels that had gone
+300 times faster, and the median had not moved. So the question was turned round: what got slower since the last release?
+Every kernel that read slower was run again, alternating, and read to its cause.
+
+**Four were real mistakes, and are fixed.** A sprite list drawn without Y-sort built the rows of the opaque pass every
+frame, tens of thousands of them in JavaScript, to decide each time that the pass did not pay: the keyed lists already
+waited a quarter of a second after a no, the others did not. Boids' renderer goes from 1.2 to 0.5 ms a frame, and from 2.0
+to 0.8 with 65 000 boids. No kernel saw it; the scenes run without drawing on GitHub did, because everything else in that
+scene had fallen 20 to 40 % (E-448). The persist walk of frames without keys had lost 6 to 16 % to the keyed ones the day
+before (E-557), a light list's sort 10 % to a line removed a week ago (N-157), and an index list's filter 20 % to a call
+that stood before its loop instead of after it (E-456).
+
+**Others are prices.** A spawn and its despawn cost 70 ns more than in v0.14.0: parents, joints that are freed, hooks by
+index, a despawn safe from two threads, each worth less than the noise when it is taken out alone (E-559). And some were
+the instrument: the same bytes of code read 13 % apart in one bench.
+
+**The start, with the bundle that grew 740 KB:** a second visit is 35 to 40 % sooner than v0.14.0's. The first one of a
+browser is 10 to 19 % later in two scenes of four, and it is not the bytes: the physics is made before the first step, and
+the light's shader compiles for 650 ms, once (DX-BUNDLE).
+
 ## Tuesday 24 November 2026: Other People's Computers, and One Path for Every Sprite
 
 **Every number came from one laptop.** The engine's kernels were chosen on a Zen 2 and checked on an old Intel. GitHub runs

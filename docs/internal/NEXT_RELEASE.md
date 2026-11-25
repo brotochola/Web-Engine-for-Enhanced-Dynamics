@@ -14,6 +14,8 @@ Since v0.15.0:
   packs, `preRender.packGpuSprites: 'pixi'`).
 - **A GPU lost while a scene loads is handled** (N-458): the canvas stayed black without a word, or the load waited for ever.
   The scene restarts when the browser gives the context back; after 10 s without it, the fatal error says so.
+- **Scenes without Y-sort draw with less CPU** (E-448): the renderer built the opaque pass's rows every frame even where
+  the pass did not draw. Boids' renderer takes 0.5 ms a frame instead of 1.2 (40 000 boids), 0.8 instead of 2.0 (65 000).
 - **Torn reads on ARM are gone** (N-452): a worker could read half of a camera's or a clock's write on ARM processors
   (phones, ARM laptops). x86 never did.
 

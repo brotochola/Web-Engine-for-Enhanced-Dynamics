@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-24",
+  "updated": "2026-11-25",
   "about": "The register of WeedJS's work, the project's one backlog, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, every bug (kind `bug`, with its review item in REVIEW_PLAN.md) and the approved features and developer-experience todos (kinds `feature`, `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, docs/internal/hypotheses.html, which reads this file itself: `npm run dev`, then `/docs/internal/hypotheses.html` (it reads the file again when it changes). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -12801,7 +12801,8 @@
       ],
       "records": [
         "R-0944",
-        "R-0948"
+        "R-0948",
+        "R-2014"
       ]
     },
     {
@@ -19508,7 +19509,8 @@
         "R-1212",
         "R-1214",
         "R-1234",
-        "R-1274"
+        "R-1274",
+        "R-2013"
       ]
     },
     {
@@ -19763,7 +19765,8 @@
         "R-1444",
         "R-1446",
         "R-1459",
-        "R-1740"
+        "R-1740",
+        "R-2015"
       ]
     },
     {
@@ -24848,7 +24851,8 @@
     },
     {
       "records": [
-        "R-1673"
+        "R-1673",
+        "R-2012"
       ],
       "refs": [],
       "id": "E-538",
@@ -25708,7 +25712,8 @@
         "R-1982",
         "R-1991",
         "R-1996",
-        "R-2005"
+        "R-2005",
+        "R-2017"
       ],
       "refs": [],
       "id": "DX-CI",
@@ -25940,7 +25945,8 @@
     },
     {
       "records": [
-        "R-1998"
+        "R-1998",
+        "R-2010"
       ],
       "refs": [],
       "id": "E-557",
@@ -26012,11 +26018,13 @@
       "date": "2026-11-24"
     },
     {
-      "records": [],
+      "records": [
+        "R-2011"
+      ],
       "refs": [],
       "id": "E-559",
       "title": "A spawn and its despawn cost 14 to 23 % more at v0.15.0 than at v0.14.0 (spawnPath: 176 -> 213 ns on a Xeon)",
-      "status": "open",
+      "status": "dropped",
       "kind": "speed",
       "area": "logic",
       "result": "",
@@ -26082,7 +26090,8 @@
     },
     {
       "records": [
-        "R-2009"
+        "R-2009",
+        "R-2016"
       ],
       "refs": [],
       "id": "DX-BUNDLE",
@@ -44560,6 +44569,78 @@
       "title": "The owner's word: one file, everything minified, no slower start",
       "verdict": "note",
       "text": "Owner, 2026-11-24: one JS file, no wasm beside it (brotli is the server's business: the bundle itself must be small). Nothing repeated in a bundle makes sense, nor comments; the names of functions and variables minified: it must work, and the code must be the least. At the same time a scene must not take longer to start with the bundles, whichever kind (there are several), and on different machines."
+    },
+    {
+      "id": "R-2010",
+      "date": "2026-11-24",
+      "time": "23:44",
+      "timeFrom": "recorded",
+      "title": "Regression of its own fixed: the frame without keys has its own walk",
+      "verdict": "kept",
+      "text": "E-557 (frames in step with keys) put a test of `keyed` in the row loop of `persist_frame`: the frame without keys read -16/-6/-11 % on GitHub's three machines (measure:all, v0.15.0 against main). `persist_walk` is now a copy per mode, chosen once a frame. preRenderPersistWasmMicrobench here, 4 alternated runs: without keys 739/748/748/711 -> 888/879/836/868 ops/s (+18 %, past v0.15.0's 740 to 754), with keys 760/732/742/725 -> 762/719/732/745, same checksums. engine.wasm 346 653 -> 348 528 bytes. Suites green (3636 node, 149 demos). Commit 77b938df."
+    },
+    {
+      "id": "R-2011",
+      "date": "2026-11-24",
+      "time": "23:48",
+      "timeFrom": "recorded",
+      "title": "No one cause: the sum of the features added to a spawn and a despawn, 70 ns, and a kernel that never emptied its lists",
+      "verdict": "dropped",
+      "text": "Where the spawn and despawn got slower than v0.14.0 (GitHub -17 to -23 %). The kernel first: it never emptied the spawn and despawn lists, whose growth was 61 of 384 ns in a profile (the despawn's has four arrays more since v0.14.0); fixed. With the lists emptied, alternated runs here (6 rounds): v0.14.0 301 ns, 350180f2 342, 1ad06d1b (the compare-exchange) 333, v0.15.0 383; a spawn and its despawn cost ~70 to 80 ns more.\nLeave-one-out on today's tree (5 rounds, 370 ns whole): without typePlanOf 393, the spawning stack 377, DX-PARENT's reset and unlinks 383, the G-buffer row's reset 389, the joints' and dev releases 392, the static hooks 394, the compare-exchange 389, noteSpawned 388, the second layers pass 383: none alone comes out of the noise (+-15 ns); all nine out: 333. So no one piece: the sum of what was added (parents, joints freed, static hooks, spawnIndex, a despawn safe from two threads), ~0.07 ms every 1 000 spawns and despawns in a frame. Each is wanted; nothing to take back."
+    },
+    {
+      "id": "R-2012",
+      "date": "2026-11-24",
+      "time": "23:53",
+      "timeFrom": "recorded",
+      "title": "One-particle literal emits read 5 to 15 % slower than v0.14.0: the compile of their row; bursts 60 % faster",
+      "verdict": "note",
+      "text": "measure:all read emit_small (one particle a call, literal configs) -14/-10/-15 % from v0.14.0 to v0.15.0 (GitHub), and the curve named this change. Alone in a process: 416 to 484 ns -> 551 to 579 ns an emit (the compile of the row: ~45 key reads and ~130 slots); as a preset 445 to 453 ns. Inside particleEmitMicrobench, alternated here (4 rounds): emit_small 4490/4876/4654/4771 -> 4541/4444/4583/4377 ops/s (-4.5 %), emitFlat_burst 17.2 k -> 27.6 k (+60 %), emit_zenithal_burst 15.9 k -> 26.1 k (+64 %), emitAlongLine 6.4 k -> 7.0 k (+10 %).\nTried and dropped: compileOp's number and absent cases written straight, one type test instead of three (alone 574 -> 530 ns; inside the kernel, after the other emits' shapes, 4487 -> 4472 ops/s, tie); the preset's row copied by T.set of a view (448 -> 444) or four slots a pass (448 -> 429). A one-particle emit in a loop is a preset's job (emitPreset: 450 ns, no garbage). The change stays."
+    },
+    {
+      "id": "R-2013",
+      "date": "2026-11-25",
+      "time": "00:44",
+      "timeFrom": "recorded",
+      "title": "A split batch built the opaque rows every frame to leave the pass off: boids' Pixi 1.2 -> 0.5 ms",
+      "verdict": "kept",
+      "text": "Found by GitHub's scenes without drawing (v0.14.0 against main, 7 VMs): boids' renderer +45 % (Linux x64, 3/3) and +22 % (ARM, 4/4) while every other worker of the scene fell. A CPU trace here names buildOpaqueRows. Only the by-row path waited after a frame where the pass did not pay (OPAQUE_RECHECK_FRAMES); the split path (no Y-sort, not keyed) built its rows in JS, over every drawn instance, whenever the statics moved, which in boids is every frame, and then left the pass off. Both wait now (`_skipOpaqueBuild`, `_refuseOpaquePass`), and look again at once when the zoom, the target or the frames' texels change (the by-row path did not see the texels). Commit 6010fc9d, with a behavioural test.\nGTX 1650, window, 60 fps, Pixi's own ms a frame, alternated: boids (40 000) v0.14.0 1.22/1.20/0.95, before 1.21/0.81/1.43, now 0.36/0.54/0.52 (3/3); boids=65000 2.02/2.07/1.26/2.13 -> 0.76/0.93/0.81/0.79 (4/4, -57 to -61 % by the medians); bunnyMark, where it pays, 1.77/1.57 -> 1.61/1.57; particleIntegrate 0.78/0.85 -> 0.83/0.89 (tie). A frame in sixteen still builds them (about 1 ms in boids)."
+    },
+    {
+      "id": "R-2014",
+      "date": "2026-11-25",
+      "time": "00:44",
+      "timeFrom": "recorded",
+      "title": "The pooled lists' cost of the native sort's removal: the length is read before the loops again",
+      "verdict": "kept-kernel",
+      "text": "The removal of the native sort took the read of arr.length out of the front of _sortPrefix, and with it the one check of the array before the loops: the pooled lists' cases read -5 to -14 % from v0.14.0 to v0.15.0 (sortPrefixMicrobench). `Math.min(count, arr.length)` puts it back (cdf18c62). Medians of 4 alternated runs, two sittings (v0.14.0 / v0.15.0 / now, M ops/s): n20 sorted 13.06 / 11.74 / 12.33, n46 sorted 5.76 / 5.13 / 5.39, n128 sorted 1.81 / 1.72 / 1.83, n360 sorted 612 / 575 / 606 k; cells +3 to +6 % (n360 +4 and -2 %); random level; full lists keep +100 to +800 %."
+    },
+    {
+      "id": "R-2015",
+      "date": "2026-11-25",
+      "time": "00:44",
+      "timeFrom": "recorded",
+      "title": "fillQueueIndices' filtered fills forget the identity after their loop too",
+      "verdict": "kept-kernel",
+      "text": "fillQueueIndices' three filtered fills still had the WeakMap.delete before their loop that E-456's d8 reading took out of splitGlowQueueIndices: -17 to -20 % from v0.14.0 to v0.15.0 (GitHub -8/-20/-14). Moved after the loops (1acc493e): gpuQueuePackMicrobench, medians of 4 alternated runs, v0.14.0 60 478, v0.15.0 48 088, now 61 847 ops/s of 16 384 rows (20.8 -> 16.2 us). Only the split's fallback calls it (lists of different lengths)."
+    },
+    {
+      "id": "R-2016",
+      "date": "2026-11-25",
+      "time": "00:55",
+      "timeFrom": "recorded",
+      "title": "The starts of v0.14.0's bundle and today's: 35 to 40 % sooner on a return, Predator's first visit 19 % later (the light's shader), balls' 60 ms are the prime",
+      "verdict": "note",
+      "text": "Scene start with the production ESM bundle, v0.14.0 (3 232 KB) against main (3 991 KB): ms from the bench page's prepare to the renderer's first frame, loadWaterfall --t0 prepare --http-cache, a window, GTX 1650.\n- Warm (second load, caches filled; 5 alternated runs, medians): bunnyMark 614 -> 401 (-35 %), boids 630 -> 376 (-40 %), predator crowd 0.4 1148 -> 696 (-39 %), balls 427 -> 452 (+6 %).\n- Cold profile in a browser that already runs (6 runs, the first left out): predator 1196 -> 783 (-35 %), balls 458 -> 520 (+13 %).\n- The first visit of a browser with its GPU process up (a page drew a WebGL and a 2D canvas before; 3 runs): predator 1275/1292/1293 -> 1525/1539/1576 (+19 %), balls 710/724/725 -> 792/793/809 (+10 %). Its very first page (GPU process starting too): predator 1383 -> 1834, balls 1008 -> 1134, boids 1171 -> 1017, bunnyMark 1232 -> 1092.\nWhy: balls' 60 to 80 ms are the prime before the start (SST-15 and SST-21: the bodies and the neighbour lists made before the first step, in exchange for a first step of 197 -> 56 ms then). Predator's first visit waits for its programs, and one is the wait: `lighting-basic` (28.7 KB of GLSL) links in ~650 ms, the other 22 in 256 ms; from the browser's program cache all take 19 ms. Predator now draws the sun, the shadow maps and the relief, which v0.14.0 did not. Its link starts at the init (~700 ms), boot ends at 500 ms; whether it could start at boot was not looked at. The bundle's 742 KB are not what makes a start slower."
+    },
+    {
+      "id": "R-2017",
+      "date": "2026-11-25",
+      "time": "01:09",
+      "timeFrom": "recorded",
+      "title": "The regressions of measure:all, each read: four fixed, four kept, the rest noise or never ran; the scenes of v0.14.0 against main",
+      "verdict": "note",
+      "text": "Every regression measure:all showed from v0.14.0 to v0.15.0 and to main, read one by one (kernels alternated here, 4 to 6 rounds; scenes on GitHub, 8 VMs, and here in a window at 60 fps).\n\n**Fixed (branch regressions):** persist_frame without keys, E-557's own (77b938df, +18 %); fillQueueIndices (1acc493e, 20.8 -> 16.2 us of 16 384 rows); _sortPrefix on pooled lists (cdf18c62, +5 % sorted); boids' opaque rows (6010fc9d, Pixi 1.21 -> 0.52 ms in a window, 2.04 -> 0.80 at 65 000).\n**Real and kept, the price of something wanted:** a spawn and its despawn 301 -> 383 ns (E-559: the sum of parents, joints freed, static hooks, a despawn safe from two threads; nine pieces taken out one by one, none alone out of the noise); one-particle literal emits -5 % in the kernel (E-538; the bursts +60 %); colliderFillPack CLite (E-277: doubles through memory; Node inlines what Chrome does not); chainMass 16 -> 19 ns (N-132).\n**Not regressions:** tickAllInterval (+7 to +450 %, the sweep read a number a visit); jsQueuePayloads -13 % runs byte-identical code, so spawnCommandRing (40 iterations) does not tell less than that; decorationCollect -3 to -5 % runs the same functions (compared one by one); componentGetter +6 % here, prismaticJoint, atlasPack and spawnSoA level here; decalMicrobench times a reference in tests/; decorationVisibility is the path without the grid (with it, 12 times faster); collisionHooks static and movers0 (R-2005).\n\n**Scenes without drawing, v0.14.0 against main, the first time (7 and 8 VMs):** bunnyMark -65 to -80 % in every worker; boids logic -35 to -41 %, spatial -25 to -35 %, physics -13 to -23 %, preRender -15 to -33 %; littleCity logic -59 to -62 %, spatial -5 to -14 %, physics -12 to -14 %; balls physics -9 to -18 %; predator logic -20 to -31 %. Slower on both: the renderer of boids (+45/+22 %, then +1/0 % with 6010fc9d), particles (+31/+26, then +9/+9), predator (+11/+25, then +3/+18); decals' particle worker (+12/+7), decals' logic and ray's renderer (0.02 ms each), littleCity's preRender (0.05 ms).\n**The same in a window at 60 fps here (GTX 1650), v0.14.0 -> main:** none slower: predator renderer 2.0 -> 0.83 ms, preRender 2.0 -> 0.96; decals particle 2.48 -> 2.25, renderer 1.66 -> 1.10; littleCity renderer 0.70 -> 0.29, preRender 0.78 -> 0.41, logic 5.03 -> 2.47; ray renderer 0.35 -> 0.20; particles renderer 1.27 -> 0.89. A headless Chromium draws few frames of these scenes (here 20 in 8 s of particles, 211 of balls, 356 of decals): its renderer and preRender times are of cold frames, and their small differences are not a game's. sceneAb should say how many frames each worker ran.\n**The start:** R-2016 (DX-BUNDLE). Raw results kept in D:/weed-measures (three measures and these two), the GitHub branches removed."
     }
   ],
   "leads": [
