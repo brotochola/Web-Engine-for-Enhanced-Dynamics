@@ -25713,7 +25713,8 @@
         "R-1991",
         "R-1996",
         "R-2005",
-        "R-2017"
+        "R-2017",
+        "R-2018"
       ],
       "refs": [],
       "id": "DX-CI",
@@ -44641,6 +44642,15 @@
       "title": "The regressions of measure:all, each read: four fixed, four kept, the rest noise or never ran; the scenes of v0.14.0 against main",
       "verdict": "note",
       "text": "Every regression measure:all showed from v0.14.0 to v0.15.0 and to main, read one by one (kernels alternated here, 4 to 6 rounds; scenes on GitHub, 8 VMs, and here in a window at 60 fps).\n\n**Fixed (branch regressions):** persist_frame without keys, E-557's own (77b938df, +18 %); fillQueueIndices (1acc493e, 20.8 -> 16.2 us of 16 384 rows); _sortPrefix on pooled lists (cdf18c62, +5 % sorted); boids' opaque rows (6010fc9d, Pixi 1.21 -> 0.52 ms in a window, 2.04 -> 0.80 at 65 000).\n**Real and kept, the price of something wanted:** a spawn and its despawn 301 -> 383 ns (E-559: the sum of parents, joints freed, static hooks, a despawn safe from two threads; nine pieces taken out one by one, none alone out of the noise); one-particle literal emits -5 % in the kernel (E-538; the bursts +60 %); colliderFillPack CLite (E-277: doubles through memory; Node inlines what Chrome does not); chainMass 16 -> 19 ns (N-132).\n**Not regressions:** tickAllInterval (+7 to +450 %, the sweep read a number a visit); jsQueuePayloads -13 % runs byte-identical code, so spawnCommandRing (40 iterations) does not tell less than that; decorationCollect -3 to -5 % runs the same functions (compared one by one); componentGetter +6 % here, prismaticJoint, atlasPack and spawnSoA level here; decalMicrobench times a reference in tests/; decorationVisibility is the path without the grid (with it, 12 times faster); collisionHooks static and movers0 (R-2005).\n\n**Scenes without drawing, v0.14.0 against main, the first time (7 and 8 VMs):** bunnyMark -65 to -80 % in every worker; boids logic -35 to -41 %, spatial -25 to -35 %, physics -13 to -23 %, preRender -15 to -33 %; littleCity logic -59 to -62 %, spatial -5 to -14 %, physics -12 to -14 %; balls physics -9 to -18 %; predator logic -20 to -31 %. Slower on both: the renderer of boids (+45/+22 %, then +1/0 % with 6010fc9d), particles (+31/+26, then +9/+9), predator (+11/+25, then +3/+18); decals' particle worker (+12/+7), decals' logic and ray's renderer (0.02 ms each), littleCity's preRender (0.05 ms).\n**The same in a window at 60 fps here (GTX 1650), v0.14.0 -> main:** none slower: predator renderer 2.0 -> 0.83 ms, preRender 2.0 -> 0.96; decals particle 2.48 -> 2.25, renderer 1.66 -> 1.10; littleCity renderer 0.70 -> 0.29, preRender 0.78 -> 0.41, logic 5.03 -> 2.47; ray renderer 0.35 -> 0.20; particles renderer 1.27 -> 0.89. A headless Chromium draws few frames of these scenes (here 20 in 8 s of particles, 211 of balls, 356 of decals): its renderer and preRender times are of cold frames, and their small differences are not a game's. sceneAb should say how many frames each worker ran.\n**The start:** R-2016 (DX-BUNDLE). Raw results kept in D:/weed-measures (three measures and these two), the GitHub branches removed."
+    },
+    {
+      "id": "R-2018",
+      "date": "2026-11-25",
+      "time": "10:38",
+      "timeFrom": "recorded",
+      "title": "measure:all of main (0.15.66) against v0.15.0: no kernel slower on two machines, boids' renderer -30 to -42 %, all green",
+      "verdict": "note",
+      "text": "measure:all of main b7fcccbd (0.15.66) against v0.15.0: 71 jobs, all done; raw in D:/weed-measures/measure-main-b7fcccbd (kept, against no baseline of ours: A is there only for the same VM).\n\n- **Health:** 3 637 engine tests and 149 of the demos pass on Linux x64, Linux ARM, Windows x64 and Windows ARM; the race stress has no bad read in an engine case (the controls read torn on ARM, as they should); 36 of 36 demos start (SwiftShader).\n- **Exact:** production ESM bundle 3 898.8 -> 3 899.0 KB (gzip 1 275.1 -> 1 275.9), engine.wasm 338.0 -> 340.4 KB, lines of code 101 785 -> 101 747.\n- **Kernels:** 123 on both; the geometric mean +0.2 / +0.4 / +0.6 % (x64, ARM, Windows). Faster on two machines or more: keyed persist +68/+53/+61, gpuQueuePack (fillQueueIndices) +5/+7/+7, sortPrefix +4.5/+4/+6, emitGpuCall +5/+5/+3, persist without keys +4/+3/+2 (it was -7/-3/-6 before 77b938df). Slower on two machines or more: none; on one, past its limit: glowSplit on Windows -3.5, setAnimation on Linux x64 -3.0 (±3.0).\n- **Scenes without drawing:** boids renderer -42/-30/-37 %, particles renderer -23/-15/-25 %. bunnyMark renderer +21/+34 and preRender +42/+22 % on Linux: v0.15.0's scene drew through renderer.interpolation, gone since (E-556), so the two sides are different paths, and headless draws about 1 frame a second of it here. In a window at 60 fps here, 60 000 bunnies, 4 runs: renderer 1.63/1.72/1.70/1.64 -> 1.63/1.47/1.58/1.63, preRender 1.71/1.86/1.77/1.83 -> 1.87/1.84/2.05/1.75 ms; E-556's sitting at 400 000: -6.8 and -8.7 %. Windows VMs are useless for scenes (logic of 13 ms)."
     }
   ],
   "leads": [
