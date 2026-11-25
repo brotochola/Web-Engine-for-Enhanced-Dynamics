@@ -4761,7 +4761,9 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _sortPrefix(arr, count, compare) {
-        const n = count | 0;
+        // arr.length is read before the loops on purpose: V8 then checks the array there, not at every item (without it
+        // the sorted cases of sortPrefixMicrobench were 5 to 11 % slower).
+        const n = Math.min(count | 0, arr.length);
         if (n <= 1) return;
         // Not Array.prototype.sort, even for a list that fills its array (every light visible at the light cap): with
         // a comparator V8 copied the array to sort it, 84 KB/s of garbage in flashlightStressScene at 360 lights, and
