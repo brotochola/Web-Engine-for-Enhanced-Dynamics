@@ -6,7 +6,7 @@
  * the exact numbers (bytes, lines, tests). Anything is compared later.
  *
  *   node scripts/measures.mjs save <name> [--date 2026-11-25] [--from <dir with ci-out>]   a fetched measure:all kept
- *   node scripts/measures.mjs list
+ *   node scripts/measures.mjs list                              (the page: npm run dev, then /docs/internal/measures.html)
  *   node scripts/measures.mjs compare <measure>[:a|:b] <measure>[:a|:b] [--bar 5] [--all]
  *
  * compare: two sides, of the same measure (the same VMs: read it as measure:all's page) or of two. Across measures a case is
@@ -17,13 +17,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { compareKernels, compareScenes, median } from './measuresCompare.mjs';
+
+export { compareKernels, compareScenes };
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const MEASURES_DIR = path.join(root, 'docs/internal/measures');
 
-const median = (v) => {
-  const s = [...v].sort((x, y) => x - y);
-  return s.length % 2 ? s[s.length >> 1] : (s[(s.length >> 1) - 1] + s[s.length >> 1]) / 2;
-};
 const short = (x) => (typeof x === 'number' ? Number(x.toPrecision(4)) : x);
 const read = (f) => {
   try {
@@ -76,58 +76,15 @@ function textOf(m) {
   return `{\n${lines(head, ' ')},\n "vms": {\n${lines(m.vms, '  ')}\n },\n "kernels": {\n${kernels}\n },\n "scenes": {\n${scenes}\n }\n}\n`;
 }
 
+/** The measures' files by name, for the page (docs/internal/measures.html), which cannot list a folder. */
+function writeIndex() {
+  const files = fs.readdirSync(MEASURES_DIR).filter((f) => f.endsWith('.json') && f !== 'index.json').sort();
+  fs.writeFileSync(path.join(MEASURES_DIR, 'index.json'), `[\n${files.map((f) => ` ${JSON.stringify(f)}`).join(',\n')}\n]\n`);
+}
+
 export function listMeasures(dir = MEASURES_DIR) {
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().map((f) => ({ file: f, ...read(path.join(dir, f)) }));
-}
-
-/** A side's value of a case on a VM: the rounds' median, as a rate (more is better) over the ruler's mean rate there. */
-function sideValue(measure, c, vm, side) {
-  const v = median(c.vms[vm][side]);
-  if (!(v > 0)) return null;
-  const rate = c.higher ? v : 1 / v;
-  const ruler = measure.vms[vm]?.ruler;
-  if (!ruler) return { rate, ruled: null };
-  const at = (k) => (ruler.start[k] + (ruler.end?.[k] ?? ruler.start[k])) / 2;
-  return { rate, ruled: rate / Math.cbrt(at('float') * at('memory') * at('branch')) };
-}
-
-/**
- * Side y of one measure against side x of another, case by case and CPU model by CPU model:
- * [{ kernel, case, cpu, log, vms: [x, y], ruled }], log(y / x) of the rates (> 0 is faster). The same measure: by VM.
- */
-export function compareKernels(mx, sx, my, sy) {
-  const rows = [];
-  const same = mx.file !== undefined && mx.file === my.file;
-  for (const [label, kx] of Object.entries(mx.kernels)) {
-    const ky = my.kernels[label];
-    if (!ky) continue;
-    for (const [name, cx] of Object.entries(kx.cases)) {
-      const cy = ky.cases[name];
-      if (!cy) continue;
-      const groups = new Map();
-      const add = (m, c, side, which) => {
-        for (const vm of Object.keys(c.vms)) {
-          const cpu = m.vms[vm]?.cpu ?? '?';
-          const v = sideValue(m, c, vm, side);
-          if (!v) continue;
-          const key = same ? vm : cpu;
-          const g = groups.get(key) ?? { cpu, x: [], y: [] };
-          g[which].push(v);
-          groups.set(key, g);
-        }
-      };
-      add(mx, cx, sx, 'x');
-      add(my, cy, sy, 'y');
-      for (const g of groups.values()) {
-        if (!g.x.length || !g.y.length) continue;
-        const ruled = !same && [...g.x, ...g.y].every((v) => v.ruled !== null);
-        const pick = (list) => median(list.map((v) => (ruled ? v.ruled : v.rate)));
-        rows.push({ kernel: label, case: name, cpu: g.cpu, log: Math.log(pick(g.y) / pick(g.x)), vms: [g.x.length, g.y.length], ruled });
-      }
-    }
-  }
-  return rows;
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'index.json').sort().map((f) => ({ file: f, ...read(path.join(dir, f)) }));
 }
 
 function sideOf(text, all) {
@@ -150,6 +107,7 @@ function main() {
     fs.mkdirSync(MEASURES_DIR, { recursive: true });
     const file = path.join(MEASURES_DIR, `${date}-${name}.json`);
     fs.writeFileSync(file, textOf(m));
+    writeIndex();
     console.log(`${file}: ${Object.keys(m.vms).length} VMs, ${Object.keys(m.kernels).length} kernels, ${Object.keys(m.scenes).length} scenes, ${(fs.statSync(file).size / 1024).toFixed(0)} KB`);
   } else if (cmd === 'list') {
     for (const m of listMeasures()) {

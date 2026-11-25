@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { MEASURES_DIR, compareKernels, listMeasures, measureOf } from '../../scripts/measures.mjs';
+import { MEASURES_DIR, compareKernels, compareScenes, listMeasures, measureOf } from '../../scripts/measures.mjs';
 import { runRuler } from '../bench/ci/ruler.mjs';
 
 function ciOut(jobs) {
@@ -79,4 +79,23 @@ test('the ruler gives three rates', () => {
   const r = runRuler();
   assert.deepEqual(Object.keys(r), ['float', 'memory', 'branch']);
   for (const v of Object.values(r)) assert.ok(v > 0);
+});
+
+test('a scene worker of a measure: its VMs\' own differences, whether they agree, and why it is not to be read', () => {
+  const run = (ms, frames) => ({ ms: { logic: ms }, frames: { logic: frames } });
+  const scene = (a, b, frames) => ({ kind: 'sceneAb', mode: 'shell', rows: [{ scene: 'boids', query: '', changed: ['demos/x.js'], a: [run(a, 480)], b: [run(b, frames)] }] });
+  const one = ciOut([['s-linux-1', 'linux', 'Xeon', null, scene(1, 2, 470)], ['s-linux-2', 'linux', 'EPYC', null, scene(2, 3.8, 470)]]);
+  const two = ciOut([['s-linux-1', 'linux', 'Xeon', null, scene(1, 2, 12)], ['s-linux-2', 'linux', 'EPYC', null, scene(2, 1.5, 12)]]);
+  try {
+    const a = { file: 'a', ...measureOf('a', 'd', one, null) };
+    const [row] = compareScenes(a, 'a', a, 'b');
+    assert.deepEqual([row.x, row.y, row.agree, row.doubt, row.changed, row.vms], [1.5, 2.9, true, null, ['demos/x.js'], [2, 2]]);
+    assert.ok(Math.abs(row.log - (Math.log(2) + Math.log(1.9)) / 2) < 1e-6);
+    const b = { file: 'b', ...measureOf('b', 'd', two, null) };
+    const [cold] = compareScenes(b, 'a', b, 'b');
+    assert.deepEqual([cold.agree, cold.doubt], [false, 'few frames']);
+  } finally {
+    fs.rmSync(one, { recursive: true, force: true });
+    fs.rmSync(two, { recursive: true, force: true });
+  }
 });

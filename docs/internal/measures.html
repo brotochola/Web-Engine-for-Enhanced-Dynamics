@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WeedJS measures</title>
+<!--
+  The measures kept (docs/internal/measures/, scripts/measures.mjs), any two sides against each other: npm run dev, then
+  http://localhost:8000/docs/internal/measures.html. The comparing is scripts/measuresCompare.mjs, the command line's.
+-->
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0c0f14; --panel: #141922; --line: #232b37; --text: #e4e8ef; --muted: #8790a0; --accent: #7ea6ff; --green: #5bd18e; --red: #ff7d7d; --amber: #f3c14f;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+header { position: sticky; top: 0; display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+header b { font-size: 15px; }
+select, input, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; }
+select { max-width: 340px; }
+input[type=number] { width: 70px; }
+button { cursor: pointer; }
+button.on { border-color: var(--accent); color: var(--accent); }
+main { padding: 12px 16px 60px; }
+.note { color: var(--muted); max-width: 1000px; margin: 0 0 12px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+td.n { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+.up { color: var(--green); }
+.down { color: var(--red); }
+.small { color: var(--muted); font-size: 12.5px; }
+.doubt { color: var(--amber); font-size: 12.5px; }
+.scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<header>
+  <b>Measures</b>
+  <label>from <select id="x"></select></label>
+  <label>to <select id="y"></select></label>
+  <button id="tab-kernels" class="on">Kernels</button><button id="tab-scenes">Scenes</button><button id="tab-exact">Exact</button>
+  <input id="find" placeholder="filter" size="16">
+  <label>at least <input id="bar" type="number" value="3" min="0" step="1"> %</label>
+</header>
+<main><p class="note" id="note"></p><div class="scroll" id="out"></div></main>
+<script type="module">
+import { compareKernels, compareScenes, median } from '../../scripts/measuresCompare.mjs';
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, text, cls) => {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+};
+const get = async (f) => (await fetch(`measures/${f}`, { cache: 'no-store' })).json();
+const pct = (log) => `${log >= 0 ? '+' : ''}${(100 * Math.expm1(log)).toFixed(1)} %`;
+
+const files = await get('index.json');
+const all = await Promise.all(files.map(async (file) => ({ file, ...(await get(file)) })));
+const sides = all.flatMap((m, i) => ['a', 'b'].map((side) => ({ i, side, text: `${m.date} ${m.name} · ${m.exact?.[side]?.version ?? ''} ${(m[side] ?? '').slice(0, 8)}` })));
+for (const id of ['x', 'y']) for (const [k, s] of sides.entries()) $(id).append(Object.assign(el('option', s.text), { value: k }));
+const last = all.findLastIndex((m) => Object.keys(m.kernels).length > 0);
+$('x').value = 2 * last;
+$('y').value = 2 * last + 1;
+let tab = 'kernels';
+
+function table(head, rows) {
+  const t = el('table');
+  const tr = el('tr');
+  for (const h of head) tr.append(el('th', h));
+  t.append(tr);
+  for (const r of rows) {
+    const row = el('tr');
+    for (const c of r) row.append(c instanceof Node ? c : el('td', c));
+    t.append(row);
+  }
+  return t;
+}
+const number = (text, good) => el('td', text, `n ${good === null ? '' : good ? 'up' : 'down'}`);
+
+function show() {
+  const [sx, sy] = [sides[$('x').value], sides[$('y').value]];
+  const [mx, my] = [all[sx.i], all[sy.i]];
+  const find = $('find').value.toLowerCase();
+  const bar = Number($('bar').value) || 0;
+  const same = mx === my;
+  $('out').replaceChildren();
+  if (tab === 'kernels') {
+    const by = new Map();
+    for (const r of compareKernels(mx, sx.side, my, sy.side)) {
+      const key = `${r.kernel}|${r.case}`;
+      by.set(key, [...(by.get(key) ?? []), r]);
+    }
+    const list = [...by.values()].map((rows) => ({ rows, log: median(rows.map((r) => r.log)) })).sort((p, q) => p.log - q.log);
+    const shown = list.filter((o) => Math.abs(100 * Math.expm1(o.log)) >= bar && `${o.rows[0].kernel} ${o.rows[0].case}`.toLowerCase().includes(find));
+    $('note').textContent = `${list.length} cases on both; ${shown.length} shown, slowest first. + is faster, the median of the ${same ? 'VMs, both sides in the same one' : 'CPU models both measures saw, each rate over the ruler where both have it: under 10 % is the machines'}. A row's small print is each ${same ? 'VM' : 'CPU model'}.`;
+    $('out').append(table(['change', 'kernel', 'case', 'by CPU'], shown.map((o) => [
+      number(pct(o.log), o.log > 0), o.rows[0].kernel, o.rows[0].case.replace(/^(cases|results)\./, '').replace(/\.opsPerSec$/, ''),
+      el('td', o.rows.map((r) => `${pct(r.log)} ${r.cpu.replace(/\(R\)|\(TM\)|CPU|Processor|AMD |Intel |\d+-Core/g, '').trim()}${same || r.ruled ? '' : ' (no ruler)'}`).join(' · '), 'small'),
+    ])));
+  } else if (tab === 'scenes') {
+    const list = compareScenes(mx, sx.side, my, sy.side).filter((r) => Math.max(r.x, r.y) >= 0.1);
+    const shown = list.filter((r) => Math.abs(100 * Math.expm1(r.log)) >= bar && `${r.scene} ${r.worker} ${r.machine}`.toLowerCase().includes(find)).sort((p, q) => q.log - p.log);
+    $('note').textContent = `${list.length} workers of 0.1 ms or more on both; ${shown.length} shown, the ones that grew most first. ms a frame with nothing drawn; - is less time. In colour where every VM went the same way.${same ? '' : ' Two measures: other VMs, perhaps other CPUs.'}`;
+    $('out').append(table(['change', 'scene', 'worker', 'machine', 'ms', 'VMs', ''], shown.map((r) => [
+      number(pct(r.log), r.doubt || !r.agree ? null : r.log < 0), r.scene, r.worker, r.machine, el('td', `${r.x.toFixed(2)} > ${r.y.toFixed(2)}`, 'n'), el('td', r.vms.join(' / '), 'n'),
+      el('td', [r.doubt, r.changed.length ? `the scene is not the same (${r.changed.length} files)` : null].filter(Boolean).join(', '), 'doubt'),
+    ])));
+  } else {
+    const [ex, ey] = [mx.exact?.[sx.side], my.exact?.[sy.side]];
+    $('note').textContent = ex && ey ? 'From git, exact.' : 'One of the two has no exact numbers.';
+    if (!ex || !ey) return;
+    const rows = [...Object.keys(ey.bytes ?? {}).map((f) => [f, ex.bytes[f]?.raw, ey.bytes[f]?.raw]), ...Object.keys(ey.bytes ?? {}).map((f) => [`${f}, gzip`, ex.bytes[f]?.gzip, ey.bytes[f]?.gzip]),
+      ['lines of code', ex.lines?.code, ey.lines?.code], ['tests, engine', ex.tests?.engine, ey.tests?.engine]];
+    $('out').append(table(['', 'from', 'to', 'change'], rows.filter((r) => r[1] && r[2]).map(([f, x, y]) => [f, el('td', x.toLocaleString('en'), 'n'), el('td', y.toLocaleString('en'), 'n'), number(pct(Math.log(y / x)), x === y ? null : y < x)])));
+  }
+}
+for (const id of ['x', 'y', 'find', 'bar']) $(id).addEventListener('input', show);
+for (const t of ['kernels', 'scenes', 'exact']) {
+  $(`tab-${t}`).addEventListener('click', () => {
+    tab = t;
+    for (const u of ['kernels', 'scenes', 'exact']) $(`tab-${u}`).classList.toggle('on', u === t);
+    show();
+  });
+}
+show();
+</script>
+</body>
+</html>
