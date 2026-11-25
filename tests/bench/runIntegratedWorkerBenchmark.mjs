@@ -12,6 +12,7 @@ import { chromium, firefox } from 'playwright';
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import { createStockFirefox, stockFirefoxExe } from './stockFirefox.mjs';
+import { NO_DRAW_SOURCE } from './noDrawSource.mjs';
 import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
 import { BOOT_FAILURE_EXIT, BOOT_FAILURE_PATTERN } from './bootWatch.mjs';
 import { assertDistFreshForRun } from '../../scripts/distVersion.js';
@@ -137,8 +138,8 @@ function buildChromiumLaunchArgs({
 }) {
   // A scene's sounds stay off the machine's speakers (the audio still renders, so its worker's cost is unchanged).
   const args = ['--mute-audio'];
-  // --no-draw: every WebGL call is taken and nothing is drawn, so a machine without a GPU times what the workers do, Pixi's
-  // calls among it, and not a software rasterizer on the same cores. The canvas stays black.
+  // --no-draw: the renderer's worker draws nothing (noDrawSource.mjs), so a machine without a GPU times what the workers do,
+  // Pixi's uploads and state calls among it, and not a software rasterizer on the same cores. The canvas stays black.
   if (noDraw) args.push('--disable-gl-drawing-for-tests', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader');
   if (!allowThrottle) {
     args.push(
@@ -487,6 +488,7 @@ async function main() {
   const servedRoot = typeof cliArgs.root === 'string' ? path.resolve(cliArgs.root) : repoRoot;
   const server = await createStaticBenchmarkServer(servedRoot, 0, {
     ...(stockFirefox ? { routes: stockFirefox.routes } : {}),
+    ...(cliArgs['no-draw'] ? { append: { '/src/workers/pixiWorker.js': NO_DRAW_SOURCE } } : {}),
     ...(isolationSw ? { isolationHeaders: false, files: { '/weed-sw.js': 'src/workers/isolationServiceWorker.js' } } : {}),
   });
   const qs = [];

@@ -12,17 +12,7 @@ import path from 'node:path';
 
 import { isCli, parseArgs } from '../microbenchHelpers.mjs';
 import { repoRoot } from '../revWorktree.mjs';
-import { SCENES, runScene } from './sceneAb.mjs';
-
-/** Chromium's flags a mode may add: --modes window+scale4+angle. */
-const FLAGS = Object.freeze({
-  scale4: '--force-device-scale-factor=0.25',
-  angle: '--use-gl=angle --use-angle=swiftshader --enable-gpu-rasterization',
-  gpuc: '--use-gl=angle --use-angle=swiftshader-webgl',
-  nolimit: '--disable-gpu-vsync --disable-frame-rate-limit',
-  inproc: '--in-process-gpu',
-  soft: '--disable-gpu-compositing',
-});
+import { CHROMIUM_FLAGS, SCENES, runScene } from './sceneAb.mjs';
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -37,7 +27,7 @@ function main() {
     for (const mode of modes) {
       const [kind, ...more] = mode.split('+');
       const canvas = more.find((x) => /^[0-9]+x[0-9]+$/.test(x)) ?? null;
-      const flags = more.filter((x) => FLAGS[x]).map((x) => FLAGS[x]).join(' ');
+      const flags = more.filter((x) => CHROMIUM_FLAGS[x]).map((x) => CHROMIUM_FLAGS[x]).join(' ');
       for (let r = 0; r < runs; r++) {
         const got = runScene(repoRoot, scene, {
           mode: kind, warmupMs: 6000, durationMs: 8000, draw: Boolean(args.draw), canvas, flags,

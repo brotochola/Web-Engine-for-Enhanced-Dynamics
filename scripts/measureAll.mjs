@@ -144,9 +144,10 @@ const median = (v) => {
 const pct = (log) => 100 * Math.expm1(log);
 
 /**
- * The kernels of a fetched result: { [label]: { area, kernel, machines: { [machine]: { n, log, limit, checksums, cpus } } } },
- * and those that did not run. A VM's number is the mean, over a kernel's rates, of ln(median b / median a): its cases' cost
- * alike. `limit`: 2.5 sd / sqrt(VMs), in the same logarithm.
+ * The kernels of a fetched result: { [label]: { area, kernel, machines: { [machine]: { n, log, limit, checksums, cpus, worst,
+ * best } } } }, and those that did not run. A VM's number is the mean, over a kernel's rates, of ln(median b / median a): its
+ * cases' cost alike. `limit`: 2.5 sd / sqrt(VMs), in the same logarithm. `worst` and `best`: the case that lost and the one
+ * that won most (the VMs' median), as { name, log }: a kernel's mean says nothing of one case ten times another.
  */
 export function readKernels(dir) {
   const rows = new Map();
@@ -169,17 +170,19 @@ export function readKernels(dir) {
         failed.set(row.label, row.error);
         continue;
       }
-      const logs = Object.values(row.metrics).map((m) => {
+      const cases = Object.entries(row.metrics).map(([name, m]) => {
         const d = Math.log(median(m.b) / median(m.a));
-        return m.higher ? d : -d;
+        return [name, m.higher ? d : -d];
       });
+      const logs = cases.map(([, d]) => d);
       if (logs.length === 0) {
         failed.set(row.label, 'no rate in its report');
         continue;
       }
       const kept = rows.get(row.label) || { label: row.label, kernel: row.kernel, area: areaOf(row.kernel), testsAt: row.testsAt, rates: logs.length, machines: {} };
-      const m = (kept.machines[job.machineKey] ??= { vms: [], differ: 0, cpus: new Set() });
+      const m = (kept.machines[job.machineKey] ??= { vms: [], differ: 0, cpus: new Set(), cases: new Map() });
       m.vms.push(mean(logs));
+      for (const [name, d] of cases) m.cases.set(name, [...(m.cases.get(name) ?? []), d]);
       m.cpus.add(job.machine?.cpu);
       if (!row.checksumsAgree) m.differ++;
       rows.set(row.label, kept);
@@ -192,6 +195,10 @@ export function readKernels(dir) {
       m.log = mean(m.vms);
       m.limit = m.n > 1 ? (2.5 * sd(m.vms)) / Math.sqrt(m.n) : NaN;
       m.cpus = [...m.cpus];
+      const cases = [...m.cases].map(([name, d]) => ({ name, log: median(d) })).sort((x, y) => x.log - y.log);
+      m.worst = cases[0];
+      m.best = cases[cases.length - 1];
+      delete m.cases;
     }
   }
   return { rows: [...rows.values()], failed };
@@ -206,6 +213,15 @@ export function moved(m) {
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 const signed = (p, digits = 1) => `${p >= 0 ? '+' : ''}${p.toFixed(digits)} %`;
 const table = (head, rows) => [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.join(' | ')} |`), ''].join('\n');
+
+/** A kernel's worst and best case, on the machine where its worst lost most. */
+function casesText(r, machines) {
+  const own = machines.map((m) => r.machines[m]).filter((x) => x?.worst);
+  if (!own.length) return '';
+  const x = own.reduce((p, c) => (c.worst.log < p.worst.log ? c : p));
+  const text = (c) => `${c.name.replace(/\.opsPerSec$/, '')} ${signed(pct(c.log))}`;
+  return `${text(x.worst)}; ${text(x.best)}`;
+}
 
 export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null, machines, health }) {
   const out = [`# ${a} against ${b}`, '', `${shaA.slice(0, 8)} (${factsA.version}) and ${shaB.slice(0, 8)} (${factsB.version}).`, '', '## Exact', ''];
@@ -225,31 +241,31 @@ export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null,
     const name = (m) => MACHINE_NAMES[m] || m;
     out.push('## Kernels', '', `${rows.length} kernels run on both, each the mean of its cases, ${b}'s speed against ${a}'s in the same VM (+ is faster). `
       + `Moved: ${BAR_PCT} % or more, past the machine's detection limit. ${failed.size} do not run on both (the end of the page).`, '');
-    out.push(table(['machine', 'VMs', 'CPUs', 'kernels', 'faster', 'slower', 'geometric mean of all'], machines.map((m) => {
+    out.push(table(['machine', 'VMs', 'CPUs', 'kernels', 'faster', 'slower', 'median of all'], machines.map((m) => {
       const own = rows.filter((r) => r.machines[m]);
       const cpus = [...new Set(own.flatMap((r) => r.machines[m].cpus))];
       return [name(m), own.length ? Math.max(...own.map((r) => r.machines[m].n)) : 0, cpus.join(', '), own.length,
         own.filter((r) => moved(r.machines[m]) > 0).length, own.filter((r) => moved(r.machines[m]) < 0).length,
-        own.length ? signed(pct(mean(own.map((r) => r.machines[m].log)))) : ''];
+        own.length ? signed(pct(median(own.map((r) => r.machines[m].log)))) : ''];
     })));
     const areas = [...new Set(rows.map((r) => r.area))];
-    out.push('By part of the engine (geometric mean of its kernels):', '', table(['part', 'kernels', ...machines.map(name)], areas.map((area) => {
+    out.push('By part of the engine (the median of its kernels):', '', table(['part', 'kernels', ...machines.map(name)], areas.map((area) => {
       const own = rows.filter((r) => r.area === area);
       return [area, own.length, ...machines.map((m) => {
         const v = own.filter((r) => r.machines[m]).map((r) => r.machines[m].log);
-        return v.length ? signed(pct(mean(v))) : '';
+        return v.length ? signed(pct(median(v))) : '';
       })];
     })));
     const line = (r) => [r.label, r.area, ...machines.map((m) => {
       const x = r.machines[m];
       if (!x) return '';
       return `${moved(x) ? '**' : ''}${signed(pct(x.log))}${moved(x) ? '**' : ''}${Number.isFinite(x.limit) ? ` ± ${(100 * Math.expm1(x.limit)).toFixed(1)}` : ''}`;
-    }), machines.some((m) => r.machines[m]?.differ) ? 'other results' : ''];
+    }), r.rates > 1 ? casesText(r, machines) : '', machines.some((m) => r.machines[m]?.differ) ? 'other results' : ''];
     const wide = (sign) => rows.filter((r) => machines.filter((m) => moved(r.machines[m]) === sign).length >= Math.min(2, machines.length))
       .sort((x, y) => sign * (mean(Object.values(y.machines).map((m) => m.log)) - mean(Object.values(x.machines).map((m) => m.log))));
     for (const [title, sign] of [['Faster on two machines or more', 1], ['Slower on two machines or more', -1]]) {
       const list = wide(sign);
-      out.push(`### ${title} (${list.length})`, '', list.length ? table(['kernel', 'part', ...machines.map(name), 'checksum'], list.map(line)) : 'None.\n');
+      out.push(`### ${title} (${list.length})`, '', list.length ? table(['kernel', 'part', ...machines.map(name), 'its cases, worst and best', 'checksum'], list.map(line)) : 'None.\n');
     }
     out.push('"other results": the kernel computes something else on each side (its checksums differ), so its speed is read with that.', '');
     if (failed.size) {
@@ -259,17 +275,23 @@ export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null,
   if (scenes && scenes.rows.length) {
     const name = (m) => MACHINE_NAMES[m] || m;
     const ms = [...new Set(scenes.rows.map((r) => r.machine))];
-    out.push('## Scenes', '', `Each worker's own time a frame (STEP_MS less its waits) in Chromium without drawing, ${b} against ${a} in the same VM, the median of its pairs, then the VMs' mean (- is less time). Bold: ${BAR_PCT} % or more, past the limit.`, '');
+    out.push('## Scenes', '', `Each worker's own time a frame (STEP_MS less its waits) in Chromium without drawing, ${b} against ${a} in the same VM, the median of its pairs, then the VMs' mean (- is less time). Bold: ${BAR_PCT} % or more, past the limit, of a worker that can be read. "few frames": it ran under 15 a second on a side (cold ones); "other frames": one side ran a quarter more than the other. A scene with a * is not the same on both sides (the list is below).`, '');
     const keys = [...new Set(scenes.rows.map((r) => `${r.scene}|${r.worker}`))];
+    const changedOf = (scene) => scenes.rows.find((r) => r.scene === scene)?.changed ?? [];
     out.push(table(['scene', 'worker', ...ms.map(name)], keys.map((key) => {
       const [scene, worker] = key.split('|');
-      return [scene, worker, ...ms.map((m) => {
+      return [`${scene}${changedOf(scene).length ? ' *' : ''}`, worker, ...ms.map((m) => {
         const r = scenes.rows.find((x) => x.machine === m && x.scene === scene && x.worker === worker);
         if (!r) return '';
-        const bold = Math.abs(r.meanPct) >= BAR_PCT && Math.abs(r.log) > r.limit ? '**' : '';
-        return `${r.aMs} > ${r.bMs} ms, ${bold}${signed(r.meanPct)}${bold}${r.limitPct === null ? '' : ` ± ${r.limitPct.toFixed(1)}`}`;
+        const bold = !r.doubt && Math.abs(r.meanPct) >= BAR_PCT && Math.abs(r.log) > r.limit ? '**' : '';
+        const frames = r.doubt ? ` (${r.doubt}: ${r.framesA} / ${r.framesB})` : '';
+        return `${r.aMs} > ${r.bMs} ms, ${bold}${signed(r.meanPct)}${bold}${r.limitPct === null ? '' : ` ± ${r.limitPct.toFixed(1)}`}${frames}`;
       })];
     })));
+    for (const scene of [...new Set(scenes.rows.map((r) => r.scene))]) {
+      const changed = changedOf(scene);
+      if (changed.length) out.push(`- ${scene} *: ${changed.slice(0, 6).join(', ')}${changed.length > 6 ? ` and ${changed.length - 6} more` : ''}`);
+    }
     for (const [key, error] of Object.entries(scenes.failed)) out.push(`- ${key}: ${error.slice(0, 160)}`);
   }
   if (health) out.push(health);

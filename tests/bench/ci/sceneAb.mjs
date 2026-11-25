@@ -6,11 +6,13 @@
  * revision (its scenes too) served by this tree's runner. The loads are small: the machines have 4 threads, and a frame's
  * workers already share them.
  *
- *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids] [--warmup-ms 6000]
- *     [--duration-ms 8000] [--shard 1/2] --output file.json
+ *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--mode window]
+ *     [--flags angle] [--warmup-ms 6000] [--duration-ms 8000] [--shard 1/2] --output file.json
  *
  * A pair is one observation of a worker's time: ln(B / A). What a scene draws, the GPU's time and the frames on the screen
- * are not here.
+ * are not here. --set all: every scene both revisions have (sceneList.mjs), instead of the eight below. --mode: how Chromium
+ * is started (runScene); the headless shell draws a frame or two a second of some scenes, and their renderer's and
+ * pre-render's times are then of cold frames, so each run says the frames each worker ran.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -18,6 +20,7 @@ import path from 'node:path';
 
 import { isCli, parseArgs } from '../microbenchHelpers.mjs';
 import { ensureRevWorktree, repoRoot } from '../revWorktree.mjs';
+import { scenesOfBoth, changedModules } from './sceneList.mjs';
 import { predatorMetrics } from '../runPredatorAbab.mjs';
 
 const RUN_TIMEOUT_MS = 180000;
@@ -32,6 +35,15 @@ export const SCENES = Object.freeze([
   { key: 'decals', path: '/tests/bench/stressScenes/decalStampStressScene.js', exportName: 'DecalStampStressScene', query: '' },
   { key: 'ray', path: '/tests/bench/stressScenes/rayStressScene.js', exportName: 'RayStressScene', query: '' },
 ]);
+/** Chromium's flags a run may add, by name (frameProbe says what each does to the frames). */
+export const CHROMIUM_FLAGS = Object.freeze({
+  scale4: '--force-device-scale-factor=0.25',
+  angle: '--use-gl=angle --use-angle=swiftshader --enable-gpu-rasterization',
+  gpuc: '--use-gl=angle --use-angle=swiftshader-webgl',
+  nolimit: '--disable-gpu-vsync --disable-frame-rate-limit',
+  inproc: '--in-process-gpu',
+  soft: '--disable-gpu-compositing',
+});
 const KINDS = ['logic', 'spatial', 'physics', 'renderer', 'particle', 'preRender'];
 
 /**
@@ -69,8 +81,17 @@ export function runScene(root, scene, o, out) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const o = { pairs: Number(args.pairs ?? 3), warmupMs: Number(args['warmup-ms'] ?? 6000), durationMs: Number(args['duration-ms'] ?? 8000) };
-  let scenes = [...SCENES];
+  const o = {
+    pairs: Number(args.pairs ?? 3), warmupMs: Number(args['warmup-ms'] ?? 6000), durationMs: Number(args['duration-ms'] ?? 8000),
+    mode: String(args.mode ?? 'window'), flags: CHROMIUM_FLAGS[args.flags] ?? null,
+  };
+  const sides = {
+    a: ensureRevWorktree(String(args.a ?? 'HEAD'), { tag: 'a', srcOnly: false }),
+    b: ensureRevWorktree(String(args.b ?? 'HEAD'), { tag: 'b', srcOnly: false }),
+  };
+  let scenes = args.set === 'all'
+    ? scenesOfBoth(sides.a.root, sides.b.root)
+    : SCENES.map((s) => ({ ...s, changed: changedModules(sides.a.root, sides.b.root, s.path) }));
   if (args.scenes) {
     const want = String(args.scenes).split(',');
     scenes = scenes.filter((s) => want.includes(s.key));
@@ -79,20 +100,17 @@ function main() {
     const [k, n] = String(args.shard).split('/').map(Number);
     scenes = scenes.filter((_, i) => i % n === k - 1);
   }
-  const sides = {
-    a: ensureRevWorktree(String(args.a ?? 'HEAD'), { tag: 'a', srcOnly: false }),
-    b: ensureRevWorktree(String(args.b ?? 'HEAD'), { tag: 'b', srcOnly: false }),
-  };
   const tmp = path.join(repoRoot, 'tests/results/ci-scenes');
   fs.mkdirSync(tmp, { recursive: true });
-  const out = { kind: 'sceneAb', a: sides.a.sha, b: sides.b.sha, pairs: o.pairs, rows: [] };
+  const out = { kind: 'sceneAb', a: sides.a.sha, b: sides.b.sha, pairs: o.pairs, mode: o.mode, durationMs: o.durationMs, rows: [] };
   const write = () => fs.writeFileSync(path.resolve(String(args.output ?? 'scene-ab.json')), `${JSON.stringify(out, null, 1)}\n`);
   const t0 = performance.now();
   for (const scene of scenes) {
-    const row = { scene: scene.key, query: scene.query, a: [], b: [] };
+    const row = { scene: scene.key, query: scene.query, changed: scene.changed, a: [], b: [] };
     for (let p = 0; p < o.pairs && !row.error; p++) {
       for (const label of p % 2 === 0 ? ['a', 'b'] : ['b', 'a']) {
-        const got = runScene(sides[label].root, scene, o, path.join(tmp, `${scene.key}-${label}.json`));
+        const side = label === 'a' && scene.exportNameA ? { ...scene, exportName: scene.exportNameA } : scene;
+        const got = runScene(sides[label].root, side, o, path.join(tmp, `${scene.key}-${label}.json`));
         if (got.error) {
           row.error = `${label}: ${got.error}`;
           break;

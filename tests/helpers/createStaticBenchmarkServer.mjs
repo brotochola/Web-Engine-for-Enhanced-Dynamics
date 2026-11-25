@@ -43,6 +43,8 @@ const ISOLATION_HEADERS = {
  *   (e.g. '/weed-sw.js' → the source of the isolation service worker)
  * @param {Record<string, (body: string) => unknown>} [options.routes] URL path → handler for a POST to it, given the
  *   request body; what it returns (or resolves to) goes back as JSON (stockFirefox.mjs)
+ * @param {Record<string, string>} [options.append] URL path → text served after that file's own (a worker's module with a
+ *   bench's code at its end, noDrawSource.mjs)
  * @param {boolean} [options.httpCache] serve like a static host (Vercel, Netlify): every file revalidates
  *   (Cache-Control: no-cache) with an ETag, and an unchanged one answers 304. A browser then keeps scripts and wasm
  *   between visits, with their compiled code (V8's code cache, wasm's), which the default no-store never allows.
@@ -53,6 +55,7 @@ export async function createStaticBenchmarkServer(rootDirectory, preferredPort =
   const httpCache = options.httpCache === true;
   const files = options.files || {};
   const routes = options.routes || {};
+  const append = options.append || {};
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -113,7 +116,8 @@ export async function createStaticBenchmarkServer(rootDirectory, preferredPort =
         return;
       }
 
-      const content = await fs.readFile(filePath);
+      const own = await fs.readFile(filePath);
+      const content = Object.hasOwn(append, url.pathname) ? Buffer.concat([own, Buffer.from(`\n${append[url.pathname]}\n`)]) : own;
       res.writeHead(200, {
         'Content-Type': contentType,
         ...isolationHeaders,

@@ -125,6 +125,24 @@ export function sweepTable(jobs) {
  * sceneAb: per machine, scene and worker, each VM's median of ln(B / A) over its pairs (a worker's own time a frame: - is
  * less), and over the VMs the mean and 2.5 sd / sqrt(VMs). A worker under 0.1 ms on both sides is left out.
  */
+/** A worker runs at least this many frames a second, or its frames are cold ones and their time is not a game's. */
+const READ_FPS = 15;
+
+/**
+ * Why a worker's time is not to be read, from the frames each side ran in the window (the fewest of a VM's runs): 'few
+ * frames' under READ_FPS a second on either side, 'other frames' when one side ran a quarter more than the other; null when
+ * it can be read.
+ */
+export function framesDoubt(framesA, framesB, windowMs) {
+  const least = (READ_FPS * windowMs) / 1000;
+  if (framesA < least || framesB < least) return 'few frames';
+  return Math.max(framesA, framesB) > 1.25 * Math.min(framesA, framesB) ? 'other frames' : null;
+}
+
+/**
+ * The scenes' workers: per machine, scene and worker, each VM's median pair and the VMs' mean and limit, the frames each side
+ * ran, why the row is not to be read (`doubt`) and the scene's modules that are not the same on both sides (`changed`).
+ */
 export function sceneTable(jobs) {
   const groups = new Map();
   const failed = new Map();
@@ -136,22 +154,30 @@ export function sceneTable(jobs) {
         continue;
       }
       const workers = [...new Set([...row.a, ...row.b].flatMap((x) => Object.keys(x.ms)))];
+      const framesOf = (list, worker) => (list.every((x) => x.frames) ? Math.min(...list.map((x) => x.frames[worker] ?? 0)) : null);
       for (const worker of workers) {
         const of = (list) => list.map((x) => x.ms[worker]);
         const a = of(row.a);
         const b = of(row.b);
         if (a.some((v) => !(v > 0)) || b.some((v) => !(v > 0)) || (median(a) < 0.1 && median(b) < 0.1)) continue;
         const key = `${job.machineKey}|${row.scene}|${worker}`;
-        const g = groups.get(key) || { machine: job.machineKey, scene: row.scene, worker, vms: [] };
-        g.vms.push({ d: median(a.map((v, i) => Math.log(b[i] / v))), a: median(a), b: median(b), cpu: job.machine?.cpu });
+        const g = groups.get(key) || { machine: job.machineKey, scene: row.scene, worker, changed: row.changed ?? null, vms: [] };
+        g.vms.push({
+          d: median(a.map((v, i) => Math.log(b[i] / v))), a: median(a), b: median(b), cpu: job.machine?.cpu,
+          framesA: framesOf(row.a, worker), framesB: framesOf(row.b, worker), windowMs: job.result.durationMs ?? 8000,
+        });
         groups.set(key, g);
       }
     }
   }
   const rows = [...groups.values()].map((g) => {
     const d = g.vms.map((v) => v.d);
+    const frames = g.vms.every((v) => v.framesA !== null && v.framesB !== null);
+    const framesA = frames ? median(g.vms.map((v) => v.framesA)) : null;
+    const framesB = frames ? median(g.vms.map((v) => v.framesB)) : null;
     return {
-      machine: g.machine, scene: g.scene, worker: g.worker, n: d.length,
+      machine: g.machine, scene: g.scene, worker: g.worker, n: d.length, changed: g.changed, framesA, framesB,
+      doubt: frames ? framesDoubt(framesA, framesB, g.vms[0].windowMs) : null,
       aMs: +median(g.vms.map((v) => v.a)).toFixed(2), bMs: +median(g.vms.map((v) => v.b)).toFixed(2),
       log: mean(d), meanPct: pct(mean(d)), limitPct: d.length > 1 ? pct(2.5 * sd(d) / Math.sqrt(d.length)) : null,
       limit: d.length > 1 ? 2.5 * sd(d) / Math.sqrt(d.length) : NaN,
@@ -221,8 +247,9 @@ export function summarize(dir) {
   }
   const sceneAb = sceneTable(jobs);
   if (sceneAb.rows.length) {
-    md.push('## Scenes, B against A (a worker\'s own ms a frame, nothing drawn)', '', table(['machine', 'scene', 'worker', 'VMs', 'A ms', 'B ms', 'B against A', 'limit', 'VMs with more'],
-      sceneAb.rows.map((r) => [r.machine, r.scene, r.worker, r.n, r.aMs, r.bMs, `${r.meanPct} %`, r.limitPct, `${r.more}/${r.n}`])));
+    md.push('## Scenes, B against A (a worker\'s own ms a frame, nothing drawn)', '', table(['machine', 'scene', 'worker', 'VMs', 'A ms', 'B ms', 'B against A', 'limit', 'VMs with more', 'frames', ''],
+      sceneAb.rows.map((r) => [r.machine, r.scene, r.worker, r.n, r.aMs, r.bMs, `${r.meanPct} %`, r.limitPct, `${r.more}/${r.n}`,
+        r.framesA === null ? '' : `${r.framesA} / ${r.framesB}`, [r.doubt, r.changed?.length ? 'scene changed' : null].filter(Boolean).join(', ')])));
     for (const [key, error] of Object.entries(sceneAb.failed)) md.push(`- ${key}: ${error.slice(0, 200)}`);
   }
   const sweep = sweepTable(jobs);
