@@ -6,6 +6,47 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Tuesday 24 November 2026: Other People's Computers, and One Path for Every Sprite
+
+**Every number came from one laptop.** The engine's kernels were chosen on a Zen 2 and checked on an old Intel. GitHub runs
+a public repository's jobs for free, on Xeons, EPYCs, ARM servers and an Apple M1, so a branch pushed there now starts a
+request: tests, kernels of one revision against another, races, demos, V8's machine code. Two revisions are always timed in
+the same machine, alternating, because two virtual machines differ by 40 %. A kernel there is read to about half a percent;
+the M1's times are noise, but its GPU is real Metal (DX-CI).
+
+**ARM reads a lock's word before the data it guards.** The camera, the clocks and physics's lists are published by
+sequence: the writer makes a number odd, writes, makes it even. On x86 the reads happen in order, so it always worked. On
+ARM a test that did nothing else read a torn camera, tens of thousands of times on the worst machine. A fence in six
+places made it zero in billions of reads, and reading the clock by its sequence, when it has not moved, made emitGpu 5 % faster than before the fences
+(N-452).
+
+**Measuring everything again.** 186 commits behind 111 hypotheses, each against its parent, and every case of 136 kernels on
+four families of CPU. Every WASM kernel that ships beats its JavaScript on all of them. No idea that had lost came back; one
+small case of a list kernel turned out slower on x64 (E-554). Where a JavaScript loop seemed to win by its shape, it was
+Node's older V8: in the V8 that Chrome runs, the two tie.
+
+**Safari, opened and closed the same day.** The browser hands a worker a shared memory and its buffer as two objects that
+are not the same one, so no sprite was drawn. It took a packed init message and a copied atlas to fix, and 29 of 36 demos
+came up. Then the owner answered the question that should have come first: Chrome only. The code went out again.
+
+**"Could the GPU interpolate?"** It already did. Pixi could draw each sprite between the last two frames pre-render
+published, through a batch and shaders of its own, and that path had stopped paying: on x64 its WASM packer lost to the
+JavaScript it replaced. Taking it out was the obvious move, and the measurement said no: without it, bunnyMark's 250 000 sprites cost
+Pixi 7.0 ms instead of 3.9. So the question became why the normal path was slow.
+
+**Two loops over sprites that had not changed.** Pixi rebuilt the list of opaque sprites in JavaScript every frame; a kernel
+now writes it, four sprites at a time (6.2 -> 4.1 ms, E-479). And pre-render, on a frame where nothing but poses changed,
+walked every sprite a second time to write keys and stamps that already said the same. After three such frames both buffers
+are known to hold the same sprites, and the walk skips all of it: at 350 000 sprites pre-render 8.2 -> 5.9 ms and Pixi 7.8
+-> 5.9 (E-557). Reading that walk turned up a real bug, older than both: a sprite whose color changed at the wrong
+microsecond could keep the old one until it changed again (N-459).
+
+**Then it could go.** With the two paths level, the interpolation came out: 1 300 lines. Only bunnyMark used it, where it
+drew the frame before and smoothed nothing, and wherever sprites enter and leave the view it blended one with another.
+bunnyMark as it was against now, 400 000 sprites: Pixi 6.9 -> 6.4 ms, pre-render 7.7 -> 7.0, and a frame less of lag. Nine
+captures, WebGL and WebGPU, differ in no pixel (E-556). On WebGPU the keyed sprites still gather their poses one by one,
+0.4 ms at 250 000; that is the next thing to make the same on both (E-558).
+
 ## Monday 23 November 2026 (night): Shadows and Headlights That Belong to the Car
 
 **A taxi with a shadow on the wrong side.** At 18:46 in Buenos Aires the owner saw a parked taxi cast a dark wedge towards

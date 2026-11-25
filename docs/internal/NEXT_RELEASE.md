@@ -3,6 +3,20 @@
 What a game built on the last release may see differently. Whoever writes the release's notes reads this file, then
 empties it.
 
+Since v0.15.0:
+
+- **`renderer.interpolation` is gone** (E-556). It blended the entity sprites between the last two queues pre-render
+  published, and only meant something with `preRender.fixedFps` under the display's rate; at the display's rate it drew the
+  frame before. A scene that still sets it gets a line at load saying that it does nothing. `preRender.interpolation` (the
+  physics poses) is as it was.
+- **A sprite's change is never lost** (N-459). A color, scale, alpha or anchor set just as pre-render walked the
+  sprite, in a frame where nothing else changed, could stay undrawn until the sprite changed again (scenes whose sprites Pixi
+  packs, `preRender.packGpuSprites: 'pixi'`).
+- **Torn reads on ARM are gone** (N-452): a worker could read half of a camera's or a clock's write on ARM processors
+  (phones, ARM laptops). x86 never did.
+
+Before it:
+
 - **Mouse's alias names are gone** (N-303 CR-34): `Mouse.isDown`, `isLeftButtonDown`, `isMiddleButtonDown`,
   `isRightButtonDown`, `clicked`, `isLeftButtonPressed`/`Released`, `isMiddleButtonPressed`/`Released`,
   `isRightButtonPressed`/`Released` and `isInWorld`. Use `isButton0Down` (primary), `isButton1Down` (middle),
