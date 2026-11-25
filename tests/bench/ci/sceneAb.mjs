@@ -94,10 +94,10 @@ function main() {
   const out = { kind: 'sceneAb', a: sides.a.sha, b: sides.b.sha, pairs: o.pairs, mode: o.mode, draw: o.draw, durationMs: o.durationMs, rows: [] };
   const write = () => fs.writeFileSync(path.resolve(String(args.output ?? 'scene-ab.json')), `${JSON.stringify(out, null, 1)}\n`);
   const t0 = performance.now();
-  for (const scene of scenes) {
+  for (const [index, scene] of scenes.entries()) {
     const row = { scene: scene.key, query: scene.query, changed: scene.changed, a: [], b: [] };
     for (let p = 0; p < o.pairs && !row.error; p++) {
-      for (const label of p % 2 === 0 ? ['a', 'b'] : ['b', 'a']) {
+      for (const label of (p + index) % 2 === 0 ? ['a', 'b'] : ['b', 'a']) {
         const side = label === 'a' && scene.exportNameA ? { ...scene, exportName: scene.exportNameA } : scene;
         const got = runScene(sides[label].root, side, o, path.join(tmp, `${scene.key}-${label}.json`));
         if (got.error) {
