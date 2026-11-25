@@ -120,6 +120,10 @@ function makeOp(caseName, lw, fresh) {
       sum += Transform.x[i] + SpriteRenderer.alpha[i];
       Kind.despawn(i);
     }
+    // The frame's end, as logic0's drain leaves it: kept, the lists of the timing's tens of millions of spawns and
+    // despawns grew to its end, and the copies of their growth were a sixth of the op (E-559).
+    lw._spawnN = 0;
+    lw._despawnN = 0;
     return sum;
   };
 }
