@@ -26072,13 +26072,13 @@
       "kind": "tools",
       "area": "tools",
       "result": "",
-      "statusText": "Asked by the owner 2026-11-25; not started (held: no new backlog items for now)",
+      "statusText": "Asked by the owner 2026-11-24; not started (held: no new backlog items for now)",
       "next": "A JSON a commit and machine (docs/internal/measures/<commit>/<machine>.json: every kernel, case and scene, its CPU model, the raw values and no baseline) and a page made from them; this PC, the ASUS, GitHub x64, ARM, Windows and the Mac. GitHub's VMs change CPU from one to the next (40 % and more): keep the CPU model, and time a frozen ruler kernel in the same VM so that two days can be compared; this PC and the ASUS with scenes on the GPU too. Compare by medians and by named cases, never by a mean of kernels (R-2005)",
       "aliases": [
         "measures history",
         "measure:all history"
       ],
-      "date": "2026-11-25"
+      "date": "2026-11-24"
     },
     {
       "records": [
@@ -26091,13 +26091,13 @@
       "kind": "tools",
       "area": "tools",
       "result": "",
-      "statusText": "Asked by the owner 2026-11-25; not started (held: no new backlog items for now)",
-      "next": "Numbers of 2026-11-25 (production ESM 3 893 KB, gzip 1 275, brotli 936): shaders' comments and indentation 196 KB (gzip 53: E-560), private names 169 (gzip 17; page and worker messages share some), code that is on the page and in the workers again 663, base64 of the two WASM 82, one backend's shaders 75 to 86. Keep: one file (no wasm apart), every bundle kind (UMD and ESM, debug and production, raw and compressed), class and component names that saves and scenes read. Each step: every kind boots every demo, and a scene's start time is not worse, on this PC, the ASUS and GitHub's machines, against the bundle before",
+      "statusText": "Asked by the owner 2026-11-24; not started (held: no new backlog items for now)",
+      "next": "Numbers of 2026-11-24 (production ESM 3 893 KB, gzip 1 275, brotli 936): shaders' comments and indentation 196 KB (gzip 53: E-560), private names 169 (gzip 17; page and worker messages share some), code that is on the page and in the workers again 663, base64 of the two WASM 82, one backend's shaders 75 to 86. Keep: one file (no wasm apart), every bundle kind (UMD and ESM, debug and production, raw and compressed), class and component names that saves and scenes read. Each step: every kind boots every demo, and a scene's start time is not worse, on this PC, the ASUS and GitHub's machines, against the bundle before",
       "aliases": [
         "bundle size",
         "minify"
       ],
-      "date": "2026-11-25"
+      "date": "2026-11-24"
     }
   ],
   "records": [
@@ -44550,7 +44550,7 @@
       "timeFrom": "recorded",
       "title": "The owner's word: keep every measure:all, against nothing",
       "verdict": "note",
-      "text": "Owner, 2026-11-25: no fixed baseline (neither an old release nor the one before). The measure:all of each important commit is kept as it came, to have it, and whatever is wanted is compared later. Important: each performance commit that is merged, and each release. Machines: this PC, the ASUS, GitHub's x64, ARM and Windows, the Mac."
+      "text": "Owner, 2026-11-24: no fixed baseline (neither an old release nor the one before). The measure:all of each important commit is kept as it came, to have it, and whatever is wanted is compared later. Important: each performance commit that is merged, and each release. Machines: this PC, the ASUS, GitHub's x64, ARM and Windows, the Mac."
     },
     {
       "id": "R-2009",
@@ -44559,7 +44559,7 @@
       "timeFrom": "recorded",
       "title": "The owner's word: one file, everything minified, no slower start",
       "verdict": "note",
-      "text": "Owner, 2026-11-25: one JS file, no wasm beside it (brotli is the server's business: the bundle itself must be small). Nothing repeated in a bundle makes sense, nor comments; the names of functions and variables minified: it must work, and the code must be the least. At the same time a scene must not take longer to start with the bundles, whichever kind (there are several), and on different machines."
+      "text": "Owner, 2026-11-24: one JS file, no wasm beside it (brotli is the server's business: the bundle itself must be small). Nothing repeated in a bundle makes sense, nor comments; the names of functions and variables minified: it must work, and the code must be the least. At the same time a scene must not take longer to start with the bundles, whichever kind (there are several), and on different machines."
     }
   ],
   "leads": [
