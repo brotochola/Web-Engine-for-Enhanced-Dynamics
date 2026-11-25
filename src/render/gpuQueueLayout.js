@@ -401,6 +401,7 @@ function fillIdentity(outIdx, limit) {
   return limit;
 }
 
+/** The filtered fills forget the identity after their loop, as splitGlowQueueIndices does (why: there). */
 export function fillQueueIndices(typeArr, count, includeType, excludeType, outIdx) {
   const cap = outIdx.length;
   const inc = includeType | 0;
@@ -418,10 +419,10 @@ export function fillQueueIndices(typeArr, count, includeType, excludeType, outId
       if (inc === 0) return fillIdentity(outIdx, limit);
       return 0;
     }
-    _identityRows.delete(outIdx);
     for (let i = 0; i < limit; i++) {
       if (typeArr[i] === inc) outIdx[n++] = i;
     }
+    _identityRows.delete(outIdx);
     return n;
   }
 
@@ -430,10 +431,10 @@ export function fillQueueIndices(typeArr, count, includeType, excludeType, outId
       if (exc !== 0) return fillIdentity(outIdx, limit);
       return 0;
     }
-    _identityRows.delete(outIdx);
     for (let i = 0; i < limit; i++) {
       if (typeArr[i] !== exc) outIdx[n++] = i;
     }
+    _identityRows.delete(outIdx);
     return n;
   }
 
@@ -441,11 +442,11 @@ export function fillQueueIndices(typeArr, count, includeType, excludeType, outId
     if (inc === 0 && exc !== 0) return fillIdentity(outIdx, limit);
     return 0;
   }
-  _identityRows.delete(outIdx);
   for (let i = 0; i < limit; i++) {
     const t = typeArr[i];
     if (t === inc && t !== exc) outIdx[n++] = i;
   }
+  _identityRows.delete(outIdx);
   return n;
 }
 
