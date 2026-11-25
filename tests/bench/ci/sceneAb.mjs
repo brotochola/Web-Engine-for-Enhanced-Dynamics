@@ -6,7 +6,7 @@
  * revision (its scenes too) served by this tree's runner. The loads are small: the machines have 4 threads, and a frame's
  * workers already share them.
  *
- *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--mode shell]
+ *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--mode shell] [--draw]
  *     [--warmup-ms 6000] [--duration-ms 8000] [--shard 1/2] --output file.json
  *
  * A pair is one observation of a worker's time: ln(B / A). What a scene draws, the GPU's time and the frames on the screen
@@ -72,7 +72,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const o = {
     pairs: Number(args.pairs ?? 3), warmupMs: Number(args['warmup-ms'] ?? 6000), durationMs: Number(args['duration-ms'] ?? 8000),
-    mode: String(args.mode ?? 'shell'),
+    mode: String(args.mode ?? 'shell'), draw: Boolean(args.draw),
   };
   const sides = {
     a: ensureRevWorktree(String(args.a ?? 'HEAD'), { tag: 'a', srcOnly: false }),
@@ -91,7 +91,7 @@ function main() {
   }
   const tmp = path.join(repoRoot, 'tests/results/ci-scenes');
   fs.mkdirSync(tmp, { recursive: true });
-  const out = { kind: 'sceneAb', a: sides.a.sha, b: sides.b.sha, pairs: o.pairs, mode: o.mode, durationMs: o.durationMs, rows: [] };
+  const out = { kind: 'sceneAb', a: sides.a.sha, b: sides.b.sha, pairs: o.pairs, mode: o.mode, draw: o.draw, durationMs: o.durationMs, rows: [] };
   const write = () => fs.writeFileSync(path.resolve(String(args.output ?? 'scene-ab.json')), `${JSON.stringify(out, null, 1)}\n`);
   const t0 = performance.now();
   for (const scene of scenes) {
