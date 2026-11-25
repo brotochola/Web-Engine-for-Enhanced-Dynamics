@@ -13,6 +13,7 @@
    a frame that is not resolved yet: the walk stops there and returns its position, the JS collects that one
    sprite and calls again from the next. */
 #include <stdint.h>
+#include <wasm_simd128.h>
 
 #define INLINE static inline __attribute__((always_inline))
 
@@ -128,11 +129,11 @@ INLINE cols_t columns(uint32_t table) {
   return k;
 }
 
-/* The half extent the cull pads the view with (N-140, src/util/spriteCullReach.js): the sprite's reach from its
+/* The square of the half extent the cull pads the view with (N-140, src/util/spriteCullReach.js): the sprite's reach from its
    anchor to its farthest corner, so a turn or a flip stays inside; the cached half bounds are half the drawn size,
    and a sprite anchored at its foot (the default) reaches its whole height above its pose. Without bounds, the
-   collider's visual range. */
-INLINE double half_extent(const cols_t *k, uint32_t i) {
+   collider's visual range. The square: every sprite out of the view takes this test, and its root was most of it. */
+INLINE double half_extent2(const cols_t *k, uint32_t i) {
   float w = 0.0f, h = 0.0f;
   if (k->halfW) {
     w = or0(k->halfW[i]);
@@ -142,7 +143,7 @@ INLINE double half_extent(const cols_t *k, uint32_t i) {
   }
   if (w == 0.0f && h == 0.0f) {
     const float r = k->visualRange ? k->visualRange[i] : 0.0f;
-    return r > 0.0f ? (double)r : 0.0;
+    return r > 0.0f ? (double)r * (double)r : 0.0;
   }
   double ax = k->anchorX ? (double)k->anchorX[i] : 0.5;
   double ay = k->anchorY ? (double)k->anchorY[i] : 0.5;
@@ -152,7 +153,7 @@ INLINE double half_extent(const cols_t *k, uint32_t i) {
   const double my = ay > 1.0 - ay ? ay : 1.0 - ay;
   const double rx = 2.0 * (double)w * mx;
   const double ry = 2.0 * (double)h * my;
-  return __builtin_sqrt(rx * rx + ry * ry);
+  return rx * rx + ry * ry;
 }
 
 /* A pose in double, as _displayPoseOut holds it (a value, so it lives in locals: the kernels have no stack). */
@@ -267,16 +268,23 @@ INLINE uint32_t walk(uint32_t table, uint32_t from, uint32_t count, uint32_t max
                      double maxY, double alpha, double sortK, int bodies, int sortY) {
   const cols_t k = columns(table);
   const float keyY = (float)keyYd;
+  const double zoom2 = zoom * zoom;
+  const v128_t lo = wasm_f64x2_make(minX, minY);
+  const v128_t hi = wasm_f64x2_make(maxX, maxY);
+  const v128_t zero = wasm_f64x2_splat(0.0);
   for (uint32_t idx = from; idx < count; idx++) {
     const uint32_t i = ENTITY(idx);
     if (!k.tActive[i] || !k.sActive[i]) continue;
     if (!skipCull) {
       const double sx = (double)k.x[i] * zoom - offX;
       const double sy = (double)k.y[i] * zoom - offY;
-      /* A pose in the view needs no extent (the same answer, without its four loads). */
-      if (!(sx >= minX && sx <= maxX && sy >= minY && sy <= maxY)) {
-        const double extent = half_extent(&k, i) * zoom;
-        if (!(sx >= minX - extent && sx <= maxX + extent && sy >= minY - extent && sy <= maxY + extent)) continue;
+      /* How far past the view it is on each axis (a NaN stays one, and is in no view). A pose in the view needs no extent
+         (the same answer, without its four loads). */
+      const v128_t v = wasm_f64x2_make(sx, sy);
+      const v128_t d = wasm_f64x2_pmax(wasm_f64x2_pmax(wasm_f64x2_sub(lo, v), wasm_f64x2_sub(v, hi)), zero);
+      if (!wasm_i64x2_all_true(wasm_f64x2_le(d, zero))) {
+        const double extent2 = half_extent2(&k, i) * zoom2;
+        if (!wasm_i64x2_all_true(wasm_f64x2_le(wasm_f64x2_mul(d, d), wasm_f64x2_splat(extent2)))) continue;
       }
     }
     if (!queue_sprite(&k, i, keyY, maxItems, alpha, sortK, bodies, sortY)) return idx;
@@ -292,6 +300,9 @@ INLINE uint32_t walk_turned(uint32_t table, uint32_t from, uint32_t count, uint3
                             int sortY) {
   const cols_t k = columns(table);
   const float keyY = (float)keyYd;
+  const double zoom2 = zoom * zoom;
+  const v128_t lim = wasm_f64x2_make(limW, limH);
+  const v128_t zero = wasm_f64x2_splat(0.0);
   for (uint32_t idx = from; idx < count; idx++) {
     const uint32_t i = ENTITY(idx);
     if (!k.tActive[i] || !k.sActive[i]) continue;
@@ -299,11 +310,11 @@ INLINE uint32_t walk_turned(uint32_t table, uint32_t from, uint32_t count, uint3
     const double dy = (double)k.y[i] * zoom - offY - halfCh;
     const double u = rc * dx - rs * dy;
     const double v = rs * dx + rc * dy;
-    if (u < -limW || u > limW || v < -limH || v > limH) {
-      const double extent = half_extent(&k, i) * zoom;
-      const double w = limW + extent;
-      const double h = limH + extent;
-      if (u < -w || u > w || v < -h || v > h) continue;
+    const v128_t e = wasm_f64x2_sub(wasm_f64x2_abs(wasm_f64x2_make(u, v)), lim);
+    if (wasm_v128_any_true(wasm_f64x2_gt(e, zero))) {
+      const v128_t past = wasm_f64x2_pmax(e, zero);
+      const double extent2 = half_extent2(&k, i) * zoom2;
+      if (wasm_v128_any_true(wasm_f64x2_gt(wasm_f64x2_mul(past, past), wasm_f64x2_splat(extent2)))) continue;
     }
     if (!queue_sprite(&k, i, keyY, maxItems, alpha, sortK, bodies, sortY)) return idx;
   }
