@@ -140,7 +140,7 @@ export function framesDoubt(framesA, framesB, windowMs) {
 }
 
 /**
- * The scenes' workers: per machine, scene and worker, each VM's median pair and the VMs' mean and limit, the frames each side
+ * The scenes' workers: per pair of revisions, machine, scene and worker, each VM's median pair and the VMs' mean and limit, the frames each side
  * ran, why the row is not to be read (`doubt`) and the scene's modules that are not the same on both sides (`changed`).
  */
 export function sceneTable(jobs) {
@@ -160,8 +160,8 @@ export function sceneTable(jobs) {
         const a = of(row.a);
         const b = of(row.b);
         if (a.some((v) => !(v > 0)) || b.some((v) => !(v > 0)) || (median(a) < 0.1 && median(b) < 0.1)) continue;
-        const key = `${job.machineKey}|${row.scene}|${worker}`;
-        const g = groups.get(key) || { machine: job.machineKey, scene: row.scene, worker, changed: row.changed ?? null, vms: [] };
+        const key = `${job.result.a}|${job.result.b}|${job.machineKey}|${row.scene}|${worker}`;
+        const g = groups.get(key) || { a: job.result.a, b: job.result.b, machine: job.machineKey, scene: row.scene, worker, changed: row.changed ?? null, vms: [] };
         g.vms.push({
           d: median(a.map((v, i) => Math.log(b[i] / v))), a: median(a), b: median(b), cpu: job.machine?.cpu,
           framesA: framesOf(row.a, worker), framesB: framesOf(row.b, worker), windowMs: job.result.durationMs ?? 8000,
@@ -176,7 +176,7 @@ export function sceneTable(jobs) {
     const framesA = frames ? median(g.vms.map((v) => v.framesA)) : null;
     const framesB = frames ? median(g.vms.map((v) => v.framesB)) : null;
     return {
-      machine: g.machine, scene: g.scene, worker: g.worker, n: d.length, changed: g.changed, framesA, framesB,
+      a: g.a, b: g.b, machine: g.machine, scene: g.scene, worker: g.worker, n: d.length, changed: g.changed, framesA, framesB,
       doubt: frames ? framesDoubt(framesA, framesB, g.vms[0].windowMs) : null,
       aMs: +median(g.vms.map((v) => v.a)).toFixed(2), bMs: +median(g.vms.map((v) => v.b)).toFixed(2),
       log: mean(d), meanPct: pct(mean(d)), limitPct: d.length > 1 ? pct(2.5 * sd(d) / Math.sqrt(d.length)) : null,
@@ -247,8 +247,8 @@ export function summarize(dir) {
   }
   const sceneAb = sceneTable(jobs);
   if (sceneAb.rows.length) {
-    md.push('## Scenes, B against A (a worker\'s own ms a frame, nothing drawn)', '', table(['machine', 'scene', 'worker', 'VMs', 'A ms', 'B ms', 'B against A', 'limit', 'VMs with more', 'frames', ''],
-      sceneAb.rows.map((r) => [r.machine, r.scene, r.worker, r.n, r.aMs, r.bMs, `${r.meanPct} %`, r.limitPct, `${r.more}/${r.n}`,
+    md.push('## Scenes, B against A (a worker\'s own ms a frame, nothing drawn)', '', table(['A', 'B', 'machine', 'scene', 'worker', 'VMs', 'A ms', 'B ms', 'B against A', 'limit', 'VMs with more', 'frames', ''],
+      sceneAb.rows.map((r) => [r.a?.slice(0, 8), r.b?.slice(0, 8), r.machine, r.scene, r.worker, r.n, r.aMs, r.bMs, `${r.meanPct} %`, r.limitPct, `${r.more}/${r.n}`,
         r.framesA === null ? '' : `${r.framesA} / ${r.framesB}`, [r.doubt, r.changed?.length ? 'scene changed' : null].filter(Boolean).join(', ')])));
     for (const [key, error] of Object.entries(sceneAb.failed)) md.push(`- ${key}: ${error.slice(0, 200)}`);
   }
