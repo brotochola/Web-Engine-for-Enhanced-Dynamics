@@ -25991,16 +25991,18 @@
       "date": "2026-11-24"
     },
     {
-      "records": [],
+      "records": [
+        "R-2004"
+      ],
       "refs": [],
       "id": "E-558",
       "title": "Keyed frames drawn by queue row on WebGPU too (E-201's form there): the pose columns in a storage buffer, and the pose-gathering pack goes",
-      "status": "open",
+      "status": "dropped",
       "kind": "speed",
       "area": "pixi",
-      "result": "",
-      "statusText": "Filed 2026-11-24 from E-556's WebGPU sitting (bunnyMark 250 000: the gathered poses 3.943 -> 4.337 ms against the pose batch that went); E-201's own next step",
-      "next": "Four writeBuffers of the pose columns and the by-row vertex entry in WGSL against pack_sprites_keyed and its 16-byte stream; owners bunnyMark and keyedPackStress with backend=webgpu. If it is no worse, pack_sprites_keyed and the stream go: one keyed path on both backends",
+      "result": "dropped: renderer 3.401 -> 3.635 ms in keyedPackStress (WebGPU), a tie in bunnyMark; the upload's bytes outweigh the gather there",
+      "statusText": "Built, measured and dropped 2026-11-24",
+      "next": "",
       "aliases": [
         "WebGPU poses by row"
       ],
@@ -44410,6 +44412,15 @@
       "title": "E-346 dropped: the position slot is 11 to 29 % slower to scan than Transform's columns",
       "verdict": "dropped",
       "text": "neighborPosSlotKernel: a frame's scanners (an eighth of the entities) keep the nearest of 16 neighbours with unrelated ids, two other threads having rewritten Transform's columns and the [x, y, half, pad] slots before each frame; same results (checksum). Node 22, the Lenovo, alternating, 3 runs:\n\n- 24 000 entities: Transform.x and y 4.41 to 4.44 ns a neighbour; the slot 4.90 to 4.93 (11 % slower).\n- With the neighbour's type: x, y and entityType 4.52 to 4.54; the slot with the type in its pad 5.84 to 5.87 (29 % slower).\n- Ids near the scanner's: 4.05 against 4.26. 100 000 entities: 5.32 against 6.16 (16 % slower).\n\nTwo misses the core runs side by side cost what one does, and the slots are twice the bytes of two columns (16 an entity against 8): fewer entities a line and in the caches. Dropped; Predator's scan not changed."
+    },
+    {
+      "id": "R-2004",
+      "date": "2026-11-24",
+      "time": "22:28",
+      "timeFrom": "recorded",
+      "title": "E-558 dropped: by queue row on WebGPU ties in bunnyMark and is 6.9 % slower in keyedPackStress",
+      "verdict": "dropped",
+      "text": "Built on a branch (146cc3c9, 11a05055, not merged): an indexed sprite WGSL turned by queue row after every other edit (spriteByRowWgsl), the queue's pose columns in a storage buffer, the G-buffer's, edge and vertex-depth programs too; 5 captures on WebGPU (bunnyMark still, FaceLight keyed, FaceLight nearest, SpriteMaps, DxCapture) 0 of 921 600 pixels different; node 3635.\n\nAgainst the gathered pose stream (pack_sprites_keyed), WebGPU, 4 pairs, --early, the GTX 1650:\n- bunnyMark 400 000, the four columns in four writeBuffers: renderer 5.173 -> 6.552 ms. CPU profile: the pack 516 -> 255 ms of the window, memory.copy 211 -> 281, Pixi's updateBuffer 249 -> 260 (for 8 bytes a sprite instead of 20), the four writes 494: a byte costs about twice as much in four writes.\n- The columns in one write (where the rows reach three quarters of their blocks): 5.030 -> 5.038, a tie; drawn 23.6 -> 23.4 fps (4 of 4 fewer, 1 %).\n- keyedPackStress n=300000&moving=1&churn=0.01 (the owner scene): renderer 3.401 -> 3.635 ms (+6.9 %).\n\nBy row uploads 24 bytes a sprite (row, key, four pose columns) against 20, and on WebGPU the upload is the larger part: what the gather costs less than the bytes. Not kept: the two backends each keep the form that is faster there. Tried on the way: one texSubImage for WebGL's four pose blocks, bunnyMark 400 000, renderer 6.800 -> 7.016 (+0.5 % paired, 2 of 4 worse, cv 9 to 11 %): a tie, not kept."
     }
   ],
   "leads": [
