@@ -34,12 +34,22 @@ export const SCENES = Object.freeze([
 ]);
 const KINDS = ['logic', 'spatial', 'physics', 'renderer', 'particle', 'preRender'];
 
-function runOnce(root, scene, o, out) {
+/**
+ * One run of `scene` of the tree at `root` (o: mode, warmupMs, durationMs, draw, canvas): each worker's own ms a frame and
+ * the frames it ran. o.mode: shell (Playwright's headless shell), headless (Chromium's own), window (on Linux in a virtual
+ * screen).
+ */
+export function runScene(root, scene, o, out) {
   fs.rmSync(out, { force: true });
-  const argv = [path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs'), '--src', '--root', root, '--no-draw',
-    '--channel', 'chromium', '--no-collect-detailed-stats', '--scene', scene.path, '--scene-export', scene.exportName,
+  const argv = [path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs'), '--src', '--root', root, ...(o.draw ? [] : ['--no-draw']),
+    '--channel', 'chromium', ...(o.mode === 'window' ? ['--headed'] : o.mode === 'headless' ? ['--new-headless'] : []),
+    ...(o.canvas ? ['--canvas-width', o.canvas.split('x')[0], '--canvas-height', o.canvas.split('x')[1]] : []),
+    '--no-collect-detailed-stats', '--scene', scene.path, '--scene-export', scene.exportName,
     '--warmup-ms', String(o.warmupMs), '--duration-ms', String(o.durationMs), '--output', out, ...(scene.query ? ['--query', scene.query] : [])];
-  const r = spawnSync(process.execPath, argv, { cwd: repoRoot, encoding: 'utf8', timeout: RUN_TIMEOUT_MS, maxBuffer: 64 << 20 });
+  const virtual = o.mode === 'window' && process.platform === 'linux' && !process.env.DISPLAY;
+  const command = virtual ? 'xvfb-run' : process.execPath;
+  const full = virtual ? ['-a', '--server-args=-screen 0 2048x1280x24', process.execPath, ...argv] : argv;
+  const r = spawnSync(command, full, { cwd: repoRoot, encoding: 'utf8', timeout: RUN_TIMEOUT_MS, maxBuffer: 64 << 20 });
   if (r.error || r.status !== 0 || !fs.existsSync(out)) {
     const text = `${r.stderr || ''}\n${r.stdout || ''}`;
     const line = /^.*(?:Error|error:|failed).*$/m.exec(text)?.[0] || text.trim().split('\n').slice(-1)[0] || '';
@@ -47,11 +57,13 @@ function runOnce(root, scene, o, out) {
   }
   const m = predatorMetrics(JSON.parse(fs.readFileSync(out, 'utf8')));
   const ms = {};
+  const frames = {};
   for (const kind of KINDS) {
     const v = m[`${kind}_STEP_MS_EXACT`];
     if (v > 0) ms[kind] = +v.toPrecision(5);
+    if (m[`${kind}_FRAMES`] > 0) frames[kind] = m[`${kind}_FRAMES`];
   }
-  return { ms, entities: m.VISIBLE_ENTITIES ?? null, queue: m.RENDER_QUEUE_SIZE ?? null, particles: m.ACTIVE_PARTICLES ?? null };
+  return { ms, frames, entities: m.VISIBLE_ENTITIES ?? null, queue: m.RENDER_QUEUE_SIZE ?? null, particles: m.ACTIVE_PARTICLES ?? null };
 }
 
 function main() {
@@ -79,7 +91,7 @@ function main() {
     const row = { scene: scene.key, query: scene.query, a: [], b: [] };
     for (let p = 0; p < o.pairs && !row.error; p++) {
       for (const label of p % 2 === 0 ? ['a', 'b'] : ['b', 'a']) {
-        const got = runOnce(sides[label].root, scene, o, path.join(tmp, `${scene.key}-${label}.json`));
+        const got = runScene(sides[label].root, scene, o, path.join(tmp, `${scene.key}-${label}.json`));
         if (got.error) {
           row.error = `${label}: ${got.error}`;
           break;

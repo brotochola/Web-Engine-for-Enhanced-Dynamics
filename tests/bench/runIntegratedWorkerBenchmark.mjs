@@ -611,7 +611,8 @@ async function main() {
       browser = await firefox.launch({ headless: !headed });
     } else if (requestedChannel === 'chromium') {
       browserChannel = 'chromium';
-      browser = await chromium.launch(launchOptions);
+      // --new-headless: Chromium itself without a window; without it a headless run is Playwright's headless shell.
+      browser = await chromium.launch(cliArgs['new-headless'] ? { ...launchOptions, channel: 'chromium' } : launchOptions);
     } else {
       browser = await chromium.launch({
         ...launchOptions,
