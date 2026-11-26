@@ -11423,7 +11423,8 @@
         "R-1174",
         "R-1428",
         "R-1700",
-        "R-2033"
+        "R-2033",
+        "R-2034"
       ]
     },
     {
@@ -44805,6 +44806,19 @@
       "title": "Atlas mip levels: Predator's people draw -30 % (zoom 0.3) and -49 % (crowd 2.5) on the Radeon",
       "verdict": "note",
       "text": "Predator ?mipmaps=1 (renderer.autoGenerateMipmaps on the atlas), Radeon iGPU, glFrameRecorder --gpu-draws, one run a side: the people's draw 1.07 -> 0.75 ms a frame at zoom 0.3 by day, 2.48 -> 1.26 at crowd 2.5 zoom 0.216 (what a single texel read gave: the atlas's level-0 reads were that half); all draws at crowd 2.5 8.89 -> 6.09 ms (the shadow, lamp-tile and G-buffer passes read the atlas too). The picture zoomed out is smoother (less sparkle on the trees), nothing of the neighbouring frames seen in a crop; the atlas has 2 px between frames, so a far zoom-out could bleed. The default is still off: the owner's call (memory +33 % for the atlas, a softer look)."
+    },
+    {
+      "id": "R-2034",
+      "date": "2026-11-26",
+      "time": "11:58",
+      "timeFrom": "recorded",
+      "title": "Kept: atlas mip levels by default (linear atlases), read one level sharper; R-2033's picture was wrong",
+      "verdict": "kept",
+      "text": "Correction of R-2033: Predator's config had its own `autoGenerateMipmaps: false` after the ?mipmaps knob, so ?mipmaps=1 never gave the atlas mip levels. R-2033's timings stand (they came from a run with the atlas source's mip levels forced in assets.js), but its picture did not: both captures had none, taken at two moments. With the override gone (e2db8626), Predator crowd 2.5 zoom 0.216 by day on the Radeon iGPU, one run each: no mip levels, the people's draw 3.73 and 3.07 ms a frame; mip levels at the GPU's own level 1.26 ms, visibly blurred (the trees' leaves soft); at bias -1 1.94 and 1.73 ms, close to the picture without them. Kept (68010d9e): mip levels by default with a linear atlas (off with a nearest one), the atlas's colour reads biased by renderer.mipmapBias, default -1; all draws 9.47 -> 6.47 ms (-32 %). WebGPU boots and runs at 60 fps. The owner saw the blurred picture and asked for less; the bias -1 picture is in front of him.",
+      "commits": [
+        "e2db8626",
+        "68010d9e"
+      ]
     }
   ],
   "leads": [
