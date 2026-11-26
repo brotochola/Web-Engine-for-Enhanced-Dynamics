@@ -45,6 +45,7 @@ import {
 } from '../util/configDefaults.js';
 import { Layer } from '../core/layer.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
+import { applyMipmapBias } from '../render/mipmapBias.js';
 import { applyPixelSnap } from '../render/pixelSnap.js';
 import { gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { unshadedQuadPositions } from '../render/unshadedComposite.js';
@@ -426,8 +427,8 @@ class PixiRenderer extends AbstractWorker {
     // N-256 PW-5: the scenery layers (static, cover, tiling, tilemap) and their camera (src/render/pixi/scenery.js).
     this.scenery = new PixiScenery(this);
 
-    /** From renderer.autoGenerateMipmaps (default false) — applied at ImageSource create */
-    this.autoGenerateMipmaps = RENDERER_DEFAULTS.autoGenerateMipmaps;
+    /** From renderer.autoGenerateMipmaps at boot (null: on with a linear atlas) — applied at ImageSource create */
+    this.autoGenerateMipmaps = false;
     /** From renderer.atlasScaleMode. bigAtlas + loose textures. Both sprite passes share it. */
     this.atlasScaleMode = RENDERER_DEFAULTS.atlasScaleMode;
     /** From renderer.pixelSnapCorners (N-302): with a nearest atlas, an axis-aligned sprite's corners on the pixel grid. */
@@ -3365,10 +3366,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       atlasScaleMode === 'nearest' || atlasScaleMode === 'linear' ? atlasScaleMode : RENDERER_DEFAULTS.atlasScaleMode;
     this.pixelSnapCorners = rendererConfig.pixelSnapCorners !== false;
     // At boot too: the atlas's source may be made before the init (SST-19).
-    this.autoGenerateMipmaps =
-      rendererConfig.autoGenerateMipmaps !== undefined
-        ? !!rendererConfig.autoGenerateMipmaps
-        : RENDERER_DEFAULTS.autoGenerateMipmaps;
+    // E-204: null (the default) is on with a linear atlas, off with a nearest one.
+    const mipmaps = rendererConfig.autoGenerateMipmaps ?? RENDERER_DEFAULTS.autoGenerateMipmaps;
+    this.autoGenerateMipmaps = mipmaps === null ? this.atlasScaleMode === 'linear' : !!mipmaps;
 
     const shadersFetched = this._fetchEngineShaders().then(() => loadMark('shaders fetched'));
     await Promise.all([shadersFetched, this._startPixi(config, backend)]);
@@ -3377,6 +3377,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // program is made from these sources; the packs leave the poses as they are. N-302: an axis-aligned sprite's corners
     // (renderer.pixelSnapCorners, default) or its origin.
     if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu, this.pixelSnapCorners);
+    // E-204: with mip levels, the atlas read sharper than the GPU's own level (renderer.mipmapBias, default -1).
+    if (this.autoGenerateMipmaps) {
+      const bias = config.renderer?.mipmapBias ?? RENDERER_DEFAULTS.mipmapBias;
+      applyMipmapBias(this._engineShaders, Number(bias));
+    }
     this.scenery.initTilemapGidProgram();
     // E-475: what boot made links on the driver's threads while the page loads the assets; initialize waits for it.
     this._startLinksAhead();

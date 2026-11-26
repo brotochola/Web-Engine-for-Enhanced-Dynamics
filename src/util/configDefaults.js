@@ -663,8 +663,19 @@ export const RENDERER_DEFAULTS = Object.freeze({
    */
   pixelDepth: null,
   maxDecalTileUploadsPerFrame: 32,
-  /** Pixi ImageSource mip chain for atlases/textures/tilesets. Off by default (VRAM + atlas bleed risk; STEP flat in benches). */
-  autoGenerateMipmaps: false,
+  /**
+   * Pixi ImageSource mip chain for atlases/textures/tilesets. null: on with a linear atlas (E-204: zoomed out, a sprite
+   * reads a small level, not level 0 scattered; Predator's people drew in half the GPU time at crowd 2.5, 2.48 -> 1.26 ms on
+   * a Radeon iGPU), off with a nearest one (pixel art stays crisp and keeps its plain edges, E-378). true or false forces
+   * it. The atlas takes a third more memory.
+   */
+  autoGenerateMipmaps: null,
+  /**
+   * E-204: with mip levels, the level the atlas is read at, against the one the GPU picks: -1 reads one level sharper
+   * (Predator's people at crowd 2.5 on a Radeon iGPU: 3.73 ms of GPU a frame without mip levels, 1.26 at the GPU's own
+   * level and blurred, 1.94 at -1 and close to the picture without them). 0 is the GPU's own level; -2 sharper still.
+   */
+  mipmapBias: -1,
   /** Sampler for the big atlas and loose textures. 'nearest' keeps binary PNG alpha. */
   atlasScaleMode: 'linear',
   /**
