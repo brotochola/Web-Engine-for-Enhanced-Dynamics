@@ -24,7 +24,8 @@
  *
  *   node tests/bench/glFrameRecorder.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
  *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--gpu-passes | --gpu-draws [--probe-scissor re]]
- *     [--output gl.json]
+ *     [--output gl.json] [--channel chrome|chromium] (chrome: the installed Chrome, the discrete GPU here; chromium:
+ *     Playwright's, the integrated one)
  * From Git Bash set MSYS_NO_PATHCONV=1. Headed Chrome (a headless one draws on a software path). The wrappers add a
  * little time to each call, so the scene's speed during the window is not a measurement; the counts are. The WebGPU
  * backend's side is webgpuFrameRecorder.mjs.
@@ -440,7 +441,7 @@ function summariseClocks(text) {
 
 export async function recordGlFrames(opts) {
   const server = await createStaticBenchmarkServer(repoRoot);
-  const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--mute-audio', ...benchWindowArgs()] });
+  const browser = await chromium.launch({ headless: false, channel: opts.channel ?? 'chrome', args: ['--mute-audio', ...benchWindowArgs()] });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on('pageerror', (e) => console.error('[page error]', e.message));
@@ -471,6 +472,7 @@ async function main() {
   const r = await recordGlFrames({
     scene: String(args.scene),
     sceneExport: String(args['scene-export']),
+    channel: typeof args.channel === 'string' ? args.channel : 'chrome',
     query: typeof args.query === 'string' ? args.query.replace(/^\?/, '') : '',
     warmupMs: Number(args['warmup-ms'] ?? 12000),
     recordMs: Number(args['record-ms'] ?? 3000),

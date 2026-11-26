@@ -4,6 +4,14 @@ import { TilemapStressQuerier } from './tilemapStress/tilemapStressQuerier.js';
 const { Scene, Camera } = WEED;
 
 const SEED = 0x711e;
+/** ?backend=webgpu: the same map on WebGPU (E-400's captures of the cached tilemap). */
+const BACKEND = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+  } catch {
+    return 'webgl';
+  }
+})();
 const QUERIERS = 64;
 
 /** Bench scene: seeded getTileId at a fixed rate. Kernel-only tilemap is not enough. */
@@ -26,7 +34,7 @@ export class TilemapStressScene extends Scene {
     },
     particle: { maxParticles: 0, decals: false },
     renderer: {
-      backend: 'webgl',
+      backend: BACKEND,
       noLimitFPS: false,
     },
     lighting: { enabled: false },
