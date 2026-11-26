@@ -11422,7 +11422,8 @@
         "R-0854",
         "R-1174",
         "R-1428",
-        "R-1700"
+        "R-1700",
+        "R-2033"
       ]
     },
     {
@@ -18432,7 +18433,8 @@
       "records": [
         "R-1174",
         "R-1236",
-        "R-1954"
+        "R-1954",
+        "R-2032"
       ],
       "rank": 14
     },
@@ -44782,6 +44784,27 @@
       "title": "measure:all of main with E-466 kept: 6 kernels faster, none slower; tests green but N-461",
       "verdict": "note",
       "text": "measure:all of main 5d3ad489 (0.15.90, with E-466) against v0.15.0 on GitHub, 2026-11-26 08:48 to 09:36, kept as docs/internal/measures/2026-11-26-measure-main-e466.json (60 VMs).\n- Kernels: 123 on both; faster on two machines or more 6 (preRenderPersistWasm keyed +52 to +73 %, preRenderCollectWasm +10 to +32 % (the SIMD cull), gpuQueuePack +5 to +9 %, sortPrefix +4 to +7 %, emitGpuCall +4 to +5 %, preRenderPersistWasm +3 to +5 %), slower 0; median of all -0.0 to +0.1 %.\n- Scenes without drawing: boids renderer -40 to -57 %, particles renderer -21 to -27 %, littleCity pre-render -9 to -22 %, balls pre-render -5 to -13 %. More time: bunnyMark renderer +12 to +30 % (the scene changed: E-556, read on 2026-11-25), predator spatial +5 % on Linux x64 only (ARM +0.3, Windows -2.2), decals pre-render +9 % on one machine at 0.1 ms.\n- Tests: 3645 of 3645 on three machines, 3644 on Linux x64 (N-461's startupAtlasCache, R-2030); demos 149 of 149 everywhere. Race stress: every engine case 0 bad. E-466 itself does not show here: GitHub's Chromium draws nothing."
+    },
+    {
+      "id": "R-2032",
+      "date": "2026-11-26",
+      "time": "10:30",
+      "timeFrom": "recorded",
+      "title": "The screen's pass on the Radeon: the floor cached while the camera holds (1.15 -> 0.33 ms); the people's draw is half atlas reads",
+      "verdict": "kept",
+      "text": "Step 0 on this PC (glFrameRecorder --gpu-draws, Predator, 4 s after 15 s, one run a side):\n- The GTX 1650 is not the place to judge it: it ran 25 to 39 % busy and the driver dropped it to P3 (480 to 750 MHz) or P8, so its ms are of a slow clock. Radeon iGPU (Playwright's Chromium, glFrameRecorder --channel chromium since 8ba66490): all draws 6.48 ms a frame at zoom 0.3 by day, 10.74 at crowd 2.5 zoom 0.216; the screen's pass 3.02 and 5.93.\n- In that pass: the floor (one tilemap draw over the canvas) 1.15 and 1.19 ms; the people (one draw of 13 000 and 35 000 instances) 1.05 and 3.41; the light layer's composite 0.38 and 0.64; the unshaded one 0.19; decal tiles 0.22.\n- The people's draw under a 1 px scissor: 0.08 and 0.29 ms, so about 90 % of it is pixels. With the fragment reading one fixed texel (a diagnostic, not kept): 1.07 -> 0.68 and 2.48 -> 1.26 ms, so the atlas's reads at zoom-out are about half of it (no mip levels: each pixel reads level 0, scattered). E-204 has the mip levels.\n- Kept (bfac3e26): a tilemap painted into a canvas-sized target while the camera holds (E-504's policy). The floor's draw on the Radeon 1.15 -> 0.33 ms, at crowd 2.5 1.19 -> 0.35; GTX 0.40 ms at 1785 MHz -> 0.23 at 480 (-84 % in cycles). All draws, Radeon, zoom 0.3: 6.48 -> 5.67 ms. tilemapStressScene's captures 0 pixels apart on WebGL and WebGPU. Workers in a window (sceneAb --draw --channel chromium, 4 pairs, medians): renderer predator 0.80 -> 0.78, boids 0.57 -> 0.55, littleCity 0.29 -> 0.29 ms; no worker worse.",
+      "commits": [
+        "bfac3e26"
+      ]
+    },
+    {
+      "id": "R-2033",
+      "date": "2026-11-26",
+      "time": "10:30",
+      "timeFrom": "recorded",
+      "title": "Atlas mip levels: Predator's people draw -30 % (zoom 0.3) and -49 % (crowd 2.5) on the Radeon",
+      "verdict": "note",
+      "text": "Predator ?mipmaps=1 (renderer.autoGenerateMipmaps on the atlas), Radeon iGPU, glFrameRecorder --gpu-draws, one run a side: the people's draw 1.07 -> 0.75 ms a frame at zoom 0.3 by day, 2.48 -> 1.26 at crowd 2.5 zoom 0.216 (what a single texel read gave: the atlas's level-0 reads were that half); all draws at crowd 2.5 8.89 -> 6.09 ms (the shadow, lamp-tile and G-buffer passes read the atlas too). The picture zoomed out is smoother (less sparkle on the trees), nothing of the neighbouring frames seen in a crop; the atlas has 2 px between frames, so a far zoom-out could bleed. The default is still off: the owner's call (memory +33 % for the atlas, a softer look)."
     }
   ],
   "leads": [
