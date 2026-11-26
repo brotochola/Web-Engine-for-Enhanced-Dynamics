@@ -38,6 +38,13 @@ of spawns because it ran in the middle of it. One was ours: the fix that stopped
 PC moved the same way in 84 workers of 96, the renderer's the least: there they say where to look, and a GPU decides. Every
 measure is kept now, and any two can be compared (DX-MEASURES).
 
+**In the evening, a town that could not keep up.** On WebGL, the meshes of 38 000 houses drew at 40 frames a second while
+WebGPU held 60. The cause was in ANGLE, the layer that turns WebGL into Direct3D: it binds a buffer straight to the GPU
+only if the program said the buffer is static, and copies any other whole at every draw. Ours were 37 MB that change by a
+few hundred KB a frame. Two lines saying static, and Chrome's GPU process does a fifth of the work: 60 frames on both
+GPUs of this laptop (E-466). The same evening showed that this week's window runs had used the integrated Radeon, not the
+GTX 1650 they were credited to; the GTX, run again, tells the same story.
+
 ## Tuesday 24 November 2026: Other People's Computers, and One Path for Every Sprite
 
 **Every number came from one laptop.** The engine's kernels were chosen on a Zen 2 and checked on an old Intel. GitHub runs

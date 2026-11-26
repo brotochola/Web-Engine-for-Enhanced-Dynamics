@@ -16146,7 +16146,8 @@
         "R-1174",
         "R-1559",
         "R-1591",
-        "R-1566"
+        "R-1566",
+        "R-2026"
       ]
     },
     {
@@ -20075,12 +20076,12 @@
     {
       "id": "E-466",
       "title": "volumeStressScene's mesh draw takes 7.45 ms a drawn frame on WebGL against 2.27 on WebGPU for about 500 000 instances, and WebGL draws the scene's passes in only 60 to 70 % of frames",
-      "status": "open",
+      "status": "kept",
       "statusText": "cause found 2026-11-23 (R-1961), not decided",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "WebGL 5.35 ms a recorded frame (7.6 a drawn frame) at 1785 MHz; WebGPU 2.72 at 1635 MHz, every frame drawn. E-419 cut the GL draw from 1.88 to 0.83 ms in meshFillGpuBench; E-453 (indexed rows) is being built.",
+      "result": "Kept 2026-11-25 (c2b59135): STATIC buffers on WebGL; Chrome's GPU process in volumeStress 619 -> 134 ms/s, frames drawn at 38 000 houses 320 -> 480 (GTX) and 325 -> 480 (Radeon); the GPU copy (about 3 ms) left",
       "next": "Decide perf/e466-static (R-1961): the mesh draw's GPU time (glFrameRecorder), captures, 4 pairs of volumeStressScene and of a scene whose mesh buffers change whole each frame, the HD 620. If the staging copy costs there: vertices in a texture (partial uploads), the index buffer STATIC and sent only when an index changes.",
       "refs": [],
       "aliases": [
@@ -20089,7 +20090,8 @@
       "records": [
         "R-1215",
         "R-1960",
-        "R-1961"
+        "R-1961",
+        "R-2025"
       ]
     },
     {
@@ -25718,7 +25720,8 @@
         "R-2018",
         "R-2019",
         "R-2021",
-        "R-2023"
+        "R-2023",
+        "R-2028"
       ],
       "refs": [],
       "id": "DX-CI",
@@ -25931,7 +25934,8 @@
     },
     {
       "records": [
-        "R-1999"
+        "R-1999",
+        "R-2027"
       ],
       "refs": [],
       "id": "E-556",
@@ -44711,6 +44715,42 @@
       "title": "The ruler dropped: 0.56 % apart without it, 5.5 % with it",
       "verdict": "dropped",
       "text": "The ruler (three loops that never change, at the start and the end of every job) dropped on its first measure. The same code on two VMs of one CPU model, case by case (14 194 pairs of measure-main-769644ee): as they came 0.56 % apart in the median (nine in ten within 4.5 %); over the mean of the three 5.5 % (22 %); over each alone float 1.2 (20), memory 9.3 (75), branch 1.4 (5.8). 12 247 pairs ended further apart. Its own rates move more than a kernel's: a job's start and end differ by 12, 8 and 7 % in the median, and the memory walk by up to 198 % between VMs of one model. v0.15.0 measured this morning and this afternoon, on the CPU models both saw: 0.5 % apart in the median case, nine in ten within 5 % (Neoverse and Xeon 6975P within 2 %). So the CPU model alone; the loops are gone from the jobs, the tool and the files."
+    },
+    {
+      "id": "R-2025",
+      "date": "2026-11-25",
+      "time": "22:27",
+      "timeFrom": "recorded",
+      "title": "Kept: the mesh batch's buffers STATIC on WebGL; volumeStress at 38 000 houses 40 -> 60 fps on both GPUs",
+      "verdict": "kept",
+      "text": "ANGLE's own source settles the cause (Buffer11::supportsDirectBinding: only a STATIC buffer is bound directly; BufferD3D::promoteStaticUsage promotes a DYNAMIC one only after three unmodified uses, so a buffer that changes a little each frame is streamed whole at every draw). Commit c2b59135, two lines and a comment.\n- Chrome's GPU process (gpuProcessTrace, GTX 1650, ABBA): volumeStressScene 619/533 -> 134/84 ms a second; n=30000 754 -> 84; meshApiStressScene (every mesh rewritten) 169/161 -> 122/121; destructibleTerrain 154 -> 133; planetPhysics 138/159 -> 169/138 (noise); the volume API with 24 lamps 79/77 -> 79/79.\n- Frames drawn in 8 s, window: GTX 1650, 3 pairs, n=38000 320/316/319 -> 481/479/480, n=45000 286/286/286 -> 479/480/480, default 480 both; Radeon iGPU, 2 pairs, n=38000 322/328 -> 480/480, n=45000 294/272 -> 480/479.\n- The mesh draw's GPU time (glFrameRecorder --gpu-draws, ABBA): 4.83/4.94 -> 4.53/5.03 ms: the copy moved to the GPU (a STATIC buffer's change goes through a staging copy of the whole buffer). That 3 ms against WebGPU's 1.9 is what is left: mesh chunks of their own, or vertices in a texture, would send only what changed.\n- Renderer STEP_MS level everywhere (meshApi 2.10 -> 2.10; planetPhysics, landing, destructibleTerrain, meshGallery on both GPUs within noise).\n- Captures: dxCaptureScene with volumes and sunMeshParity 0 pixels apart; volumeStressScene's stills are not deterministic (main against main: 165 and 875 444 pixels apart)."
+    },
+    {
+      "id": "R-2026",
+      "date": "2026-11-25",
+      "time": "22:27",
+      "timeFrom": "recorded",
+      "title": "Measured again: the pixel depth costs the colour pass +62 % on WebGL now (0.997 -> 1.620 ms)",
+      "verdict": "note",
+      "text": "gpuPassBench --suite tournament, GTX 1650, 2026-11-25 19:58: colour 0.997 ms, colorDepth 1.620 (+62 %; +30 % on 2026-11-15). Predator light3d by night (glFrameRecorder --gpu-draws, 19:57): 5.68 ms of draws a frame; the screen's pass 2.43 ms, of it the people's two draws 0.82 + 0.73 ms; the 3D light pass 1.21, the lamps' map 0.78, the G-buffer 0.50 + 0.56. By day 5.39 ms, the people 1.06 + 0.95. Plain Predator 3.32 ms, crowd 2.5 zoomed out 5.02."
+    },
+    {
+      "id": "R-2027",
+      "date": "2026-11-25",
+      "time": "22:27",
+      "timeFrom": "recorded",
+      "title": "bunnyMark since v0.15.0 read: the same path is 36 % faster; the renderer.interpolation path read faster on server CPUs without a GPU only",
+      "verdict": "note",
+      "text": "GitHub (bunny-arm-1, v0.15.0 against main 999e614b, 5 pairs a VM): with ?interpolation=0 on v0.15.0 (the keyed path, today's only one) the renderer is -30 to -37 % on Neoverse N2 and EPYC 7763, pre-render -13 to -18 %. As shipped (v0.15.0 through renderer.interpolation): Neoverse +25 to +31 % (0.74 -> 0.91 ms), x64 +9 to +21 %, 250 000 bunnies on Neoverse +24 %; but on the Mac M1 (ARM with a GPU, drawing) -8 and -21 % (0.79 -> 0.63 ms). Here (GTX 1650, window, drawing): 60 000 bunnies 1.58 -> 1.28 ms (-19 %, 4/4); 250 000 3.94/3.94/3.98 -> 4.11/4.11/4.06 (+4 %, 3/3), pre-render 4.64 -> 4.59. So nothing to undo; the 250 000 case is 0.16 ms."
+    },
+    {
+      "id": "R-2028",
+      "date": "2026-11-25",
+      "time": "22:27",
+      "timeFrom": "recorded",
+      "title": "Correction: the scenes said to run on the GTX 1650 here ran on the Radeon iGPU; on the GTX the verdicts hold",
+      "verdict": "note",
+      "text": "Playwright's Chromium (channel chromium, what sceneAb and its callers ran) takes this laptop's Radeon (Vega) iGPU; the installed Chrome takes the GTX 1650 (checked 2026-11-25 19:18 with WEBGL_debug_renderer_info). So the window runs of 2026-11-25 written as \"GTX 1650\" ran on the Radeon: commits 6010fc9d and 8c021929, records R-2013, R-2021 and R-2022. glFrameRecorder, gpuProcessTrace and gpuPassBench use the installed Chrome: their GTX numbers stand. sceneAb has --channel chrome since. Again on the GTX (installed Chrome, window, drawing, 2026-11-25 evening):\n- boids 40 000 renderer v0.14.0 1.17/1.05/1.03, before the opaque gate (cdf18c62) 0.66/1.25/0.64, main 0.53/0.56/0.55; 65 000: 1.94/1.94/1.90 -> 1.00/0.93/0.54 ms.\n- spritePack pre-render 1.46/1.44/1.43/1.46 -> 1.30/1.20/1.28/1.25 ms (the SIMD cull, 4/4).\n- particleIntegrate renderer v0.14.0 1.08, v0.15.0 0.89, main 0.76 ms.\n- Every scene, v0.14.0 against main, twice: the workers add up to 308.0 -> 257.5 and 304.9 -> 255.2 ms (-16 %), the same list of what grew as on the Radeon (audioStorm's load, SST-21's lists, spawnStorm's bodies, stationarySpatialWide, the cull before 8c021929 was in main's side), plus textureUploadStress renderer +6 % and decalBlit's particle +6 to +11 %. v0.15.0 against main: 307.7 -> 301.4 ms; its eight that grew in one pair were level in three (landing, painterSort and painterMove, liquidFunDemo, orientedBox, decalBlit, bunnyMarkStress). One textureUploadStress run of three on main read 40.6 ms against 12.2 to 12.7: N-292's stall again? Not looked into.\n- Kept as measures: docs/internal/measures/2026-11-25-pc-*.json."
     }
   ],
   "leads": [

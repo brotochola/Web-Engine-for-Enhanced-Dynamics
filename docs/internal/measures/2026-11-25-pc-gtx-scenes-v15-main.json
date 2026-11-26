@@ -1,0 +1,670 @@
+{
+ "name": "pc-gtx-scenes-v15-main",
+ "date": "2026-11-25",
+ "a": "2f0773874373fe33e31e762ac7db156687e3340f",
+ "b": "a7be974a9a8a1629bef188a9d686afc3fd7ddf9c",
+ "mode": "window",
+ "exact": {},
+ "vms": {
+  "pc-1": {"machine":"pc","cpu":"AMD Ryzen 7 4800H, GeForce GTX 1650 (window, drawing)","threads":16,"started":"2026-11-25"}
+ },
+ "kernels": {
+
+ },
+ "scenes": {
+  "adobeAnimateScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.8185],"b":[0.8381],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.243],"b":[0.26],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.36],"b":[1.373],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2958],"b":[0.248],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0204],"b":[0.02265],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.852],"b":[0.8687],"framesA":[480],"framesB":[480]}}
+  }},
+  "badPiggiesScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.0464],"b":[0.04243],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.05043],"b":[0.05293],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.1256],"b":[0.1293],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.5885],"b":[0.5756],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.06496],"b":[0.0698],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.2271],"b":[0.2191],"framesA":[480],"framesB":[481]}}
+  }},
+  "ballsScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.2727],"b":[0.2762],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.7459],"b":[0.7571],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[4.851],"b":[4.811],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2606],"b":[0.2276],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0212],"b":[0.02234],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.5118],"b":[0.3705],"framesA":[480],"framesB":[480]}}
+  }},
+  "bichosScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.6966],"b":[0.7411],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.1302],"b":[0.1424],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.312],"b":[0.3263],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.4652],"b":[0.4037],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.3731],"b":[0.3928],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.9615],"b":[0.7469],"framesA":[480],"framesB":[480]}}
+  }},
+  "boidsScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[1.126],"b":[1.134],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[3.843],"b":[3.832],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[3.574],"b":[3.458],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.098],"b":[0.5574],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.3352],"b":[0.3461],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.528],"b":[1.528],"framesA":[480],"framesB":[480]}}
+  }},
+  "box2dQueryAabbScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04331],"b":[0.04805],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03513],"b":[0.0362],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.07898],"b":[0.08872],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2385],"b":[0.2664],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01912],"b":[0.02194],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.178],"b":[0.1884],"framesA":[480],"framesB":[480]}}
+  }},
+  "bunnyMarkScene": {"query": "bunnies=60000", "changed": ["demos/bunnyMarkScene/bunnyMarkScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.7889],"b":[0.7948],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.631],"b":[1.244],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02044],"b":[0.01985],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.597],"b":[1.547],"framesA":[481],"framesB":[480]}}
+  }},
+  "burningBoxesScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.05887],"b":[0.06117],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.07283],"b":[0.07359],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1737],"b":[0.1561],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.8467],"b":[0.8435],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.05547],"b":[0.06227],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3345],"b":[0.3187],"framesA":[480],"framesB":[480]}}
+  }},
+  "carScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.403],"b":[0.3689],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[1.196],"b":[1.181],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.2905],"b":[0.283],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3231],"b":[0.3126],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.1697],"b":[0.1578],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2472],"b":[0.186],"framesA":[480],"framesB":[480]}}
+  }},
+  "constraintBoxScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.3164],"b":[0.3067],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.2363],"b":[0.2336],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[2.123],"b":[2.037],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1997],"b":[0.1982],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02057],"b":[0.02067],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1401],"b":[0.1443],"framesA":[480],"framesB":[480]}}
+  }},
+  "constraintsTestScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.09562],"b":[0.07588],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.09288],"b":[0.07796],"framesA":[481],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.7817],"b":[0.7591],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2566],"b":[0.2298],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02551],"b":[0.02088],"framesA":[481],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.1976],"b":[0.188],"framesA":[480],"framesB":[481]}}
+  }},
+  "destructibleTerrainScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1429],"b":[0.1705],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.07183],"b":[0.07031],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1355],"b":[0.1406],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.7992],"b":[0.8538],"framesA":[481],"framesB":[479]}},
+   "particle": {"pc-1":{"a":[0.1063],"b":[0.1021],"framesA":[481],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.2475],"b":[0.2947],"framesA":[480],"framesB":[480]}}
+  }},
+  "gearChainScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.3836],"b":[0.3051],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[3.079],"b":[3.112],"framesA":[481],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.3439],"b":[0.3563],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02068],"b":[0.02042],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2754],"b":[0.3072],"framesA":[481],"framesB":[481]}}
+  }},
+  "gpuGalaxyScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.8323],"b":[0.7807],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.691],"b":[1.67],"framesA":[478],"framesB":[479]}},
+   "particle": {"pc-1":{"a":[0.02395],"b":[0.02233],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1065],"b":[0.0967],"framesA":[479],"framesB":[479]}}
+  }},
+  "headlightsScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.08833],"b":[0.08548],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.09806],"b":[0.09315],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1115],"b":[0.1047],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.698],"b":[0.6736],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02133],"b":[0.01985],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.4291],"b":[0.4191],"framesA":[480],"framesB":[480]}}
+  }},
+  "landingScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.2835],"b":[0.3267],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[2.568],"b":[2.714],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.072],"b":[1.048],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.02304],"b":[0.02319],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3919],"b":[0.548],"framesA":[480],"framesB":[481]}}
+  }},
+  "lightBenchScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.09023],"b":[0.08668],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.05173],"b":[0.0496],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08801],"b":[0.09817],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.6916],"b":[0.694],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0212],"b":[0.02044],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2637],"b":[0.3042],"framesA":[480],"framesB":[480]}}
+  }},
+  "liquidFunDemoScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.05255],"b":[0.05322],"framesA":[480],"framesB":[482]}},
+   "spatial": {"pc-1":{"a":[0.05245],"b":[0.05481],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[1.233],"b":[1.185],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.2622],"b":[0.3661],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.02064],"b":[0.02293],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.1499],"b":[0.2043],"framesA":[480],"framesB":[481]}}
+  }},
+  "liquidFunQueryScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04708],"b":[0.04383],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03356],"b":[0.03526],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1429],"b":[0.1607],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2673],"b":[0.2604],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02091],"b":[0.02054],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1889],"b":[0.1939],"framesA":[480],"framesB":[480]}}
+  }},
+  "littleCityScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[2.334],"b":[2.257],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[3.719],"b":[3.639],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[2.701],"b":[2.662],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2916],"b":[0.301],"framesA":[480],"framesB":[479]}},
+   "particle": {"pc-1":{"a":[0.2219],"b":[0.2178],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.4005],"b":[0.3444],"framesA":[480],"framesB":[480]}}
+  }},
+  "mamushkaDigScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.09929],"b":[0.09008],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.4286],"b":[0.4109],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.2783],"b":[0.2342],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.5583],"b":[0.5722],"framesA":[478],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.06366],"b":[0.06292],"framesA":[481],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.3542],"b":[0.3385],"framesA":[479],"framesB":[481]}}
+  }},
+  "meshGalleryScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.07862],"b":[0.08598],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04157],"b":[0.04211],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08633],"b":[0.08548],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.384],"b":[0.4185],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02135],"b":[0.02251],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1032],"b":[0.1086],"framesA":[480],"framesB":[480]}}
+  }},
+  "orientedBoxScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04255],"b":[0.04637],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.2079],"b":[0.2225],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.187],"b":[1.24],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2459],"b":[0.3064],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02044],"b":[0.02407],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2296],"b":[0.245],"framesA":[480],"framesB":[480]}}
+  }},
+  "particleLabScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.0436],"b":[0.04446],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03404],"b":[0.04631],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09049],"b":[0.09793],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1976],"b":[0.2085],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0578],"b":[0.06344],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1095],"b":[0.118],"framesA":[481],"framesB":[480]}}
+  }},
+  "planetPhysicsScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.3589],"b":[0.3718],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.08434],"b":[0.08416],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.3534],"b":[0.3736],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.7137],"b":[0.6829],"framesA":[481],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.07111],"b":[0.07353],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3791],"b":[0.3915],"framesA":[480],"framesB":[481]}}
+  }},
+  "planetScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1561],"b":[0.1657],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.3755],"b":[0.3809],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3732],"b":[0.3695],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02],"b":[0.02035],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2297],"b":[0.2414],"framesA":[480],"framesB":[480]}}
+  }},
+  "platformerGameScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.08012],"b":[0.07633],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04027],"b":[0.04151],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.1292],"b":[0.1268],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.573],"b":[0.5855],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.06247],"b":[0.0606],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.2752],"b":[0.2874],"framesA":[480],"framesB":[480]}}
+  }},
+  "predatorScene": {"query": "crowd=0.4", "changed": ["demos/predatorScene/predatorScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[1.201],"b":[1.012],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[1.732],"b":[1.585],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.331],"b":[1.095],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.8302],"b":[0.8313],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.4426],"b":[0.4083],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.8748],"b":[0.8611],"framesA":[481],"framesB":[480]}}
+  }},
+  "proceduralTreeScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1471],"b":[0.1491],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.2176],"b":[0.1968],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3423],"b":[0.3255],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.08398],"b":[0.09054],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2096],"b":[0.2092],"framesA":[480],"framesB":[480]}}
+  }},
+  "sunStreetScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1092],"b":[0.09953],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.119],"b":[0.1121],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1195],"b":[0.1211],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.8867],"b":[0.9146],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.05817],"b":[0.05731],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.5477],"b":[0.575],"framesA":[480],"framesB":[480]}}
+  }},
+  "uChainScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.05177],"b":[0.04654],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03805],"b":[0.03643],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09752],"b":[0.0928],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3139],"b":[0.2944],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.04414],"b":[0.04629],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1121],"b":[0.1137],"framesA":[480],"framesB":[480]}}
+  }},
+  "waterAndBoxesScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.3788],"b":[0.2987],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.3798],"b":[0.3719],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.921],"b":[2.007],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3073],"b":[0.3028],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0737],"b":[0.07144],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.419],"b":[0.4207],"framesA":[481],"framesB":[480]}}
+  }},
+  "weldBreakScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.05867],"b":[0.05576],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04614],"b":[0.04572],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.2239],"b":[0.2245],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2722],"b":[0.2769],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.06126],"b":[0.06078],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1928],"b":[0.1982],"framesA":[480],"framesB":[480]}}
+  }},
+  "zenithalParticleTestScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04392],"b":[0.04059],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.06733],"b":[0.06044],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.2143],"b":[0.2043],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5071],"b":[0.4957],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0598],"b":[0.05746],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2478],"b":[0.2524],"framesA":[480],"framesB":[479]}}
+  }},
+  "visPolyStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04951],"b":[0.05067],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[1.514],"b":[1.481],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1312],"b":[0.1158],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5047],"b":[0.5456],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02071],"b":[0.01994],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.779],"b":[1.726],"framesA":[480],"framesB":[480]}}
+  }},
+  "compoundVisPolyStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.05416],"b":[0.04935],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.1405],"b":[0.1365],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.634],"b":[0.624],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5205],"b":[0.4395],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02079],"b":[0.02054],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.493],"b":[1.402],"framesA":[480],"framesB":[480]}}
+  }},
+  "particleIntegrateStressScene": {"query": "tween=1", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.4744],"b":[0.3937],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.03509],"b":[0.03343],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.07908],"b":[0.07209],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[1.096],"b":[0.6398],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[2.277],"b":[2.215],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[2.636],"b":[2.412],"framesA":[480],"framesB":[481]}}
+  }},
+  "stationarySpatialWideScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[2.4],"b":[2.263],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[4.378],"b":[4.239],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2797],"b":[0.2923],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02224],"b":[0.02177],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.63],"b":[1.488],"framesA":[481],"framesB":[480]}}
+  }},
+  "spawnStormScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[2.262],"b":[2.347],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.185],"b":[0.1681],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[3.856],"b":[4.237],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.217],"b":[0.2139],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01973],"b":[0.02043],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2608],"b":[0.2615],"framesA":[481],"framesB":[480]}}
+  }},
+  "contactDrainStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.4077],"b":[0.409],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.1694],"b":[0.1637],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[1.08],"b":[1.063],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2383],"b":[0.2289],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02119],"b":[0.02166],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.1944],"b":[0.207],"framesA":[480],"framesB":[480]}}
+  }},
+  "bulletStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.4255],"b":[0.4286],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.0442],"b":[0.04078],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.09328],"b":[0.09263],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.9047],"b":[0.7578],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[3.373],"b":[3.327],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.745],"b":[1.699],"framesA":[480],"framesB":[480]}}
+  }},
+  "bulletStormScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1171],"b":[0.119],"framesA":[481],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.03925],"b":[0.04072],"framesA":[481],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.1027],"b":[0.1032],"framesA":[481],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.3772],"b":[0.3577],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.9876],"b":[1.036],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.6872],"b":[0.659],"framesA":[480],"framesB":[480]}}
+  }},
+  "painterSortStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.03723],"b":[0.03808],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.277],"b":[1.412],"framesA":[481],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01649],"b":[0.01613],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[10.85],"b":[10.88],"framesA":[481],"framesB":[481]}}
+  }},
+  "painterMoveStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[5.266],"b":[5.229],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[2.018],"b":[2.14],"framesA":[481],"framesB":[479]}},
+   "particle": {"pc-1":{"a":[0.01726],"b":[0.01832],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[14.71],"b":[14.34],"framesA":[467],"framesB":[470]}}
+  }},
+  "painterAdobeStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1435],"b":[0.1459],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3548],"b":[0.3226],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01885],"b":[0.01994],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.5405],"b":[0.5595],"framesA":[480],"framesB":[480]}}
+  }},
+  "decalStampStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.2983],"b":[0.3195],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03566],"b":[0.03703],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.07236],"b":[0.07322],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.9771],"b":[0.8917],"framesA":[479],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[1.921],"b":[1.908],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1037],"b":[0.1022],"framesA":[480],"framesB":[480]}}
+  }},
+  "decalBlitStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.3334],"b":[0.3309],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.03424],"b":[0.03853],"framesA":[481],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.06822],"b":[0.07258],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.8821],"b":[0.9119],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[1.864],"b":[1.875],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.09145],"b":[0.1006],"framesA":[480],"framesB":[481]}}
+  }},
+  "meshApiStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[2.549],"b":[2.443],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.08179],"b":[0.0872],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1113],"b":[0.1196],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[2.124],"b":[2.076],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02017],"b":[0.02116],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.08083],"b":[0.07512],"framesA":[480],"framesB":[480]}}
+  }},
+  "decorationSwayStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04179],"b":[0.04526],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03126],"b":[0.03379],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1955],"b":[0.2043],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.4755],"b":[0.5182],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.09241],"b":[0.1041],"framesA":[480],"framesB":[480]}}
+  }},
+  "decoChurnStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1681],"b":[0.1363],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.04555],"b":[0.03678],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.1155],"b":[0.08589],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.434],"b":[0.3314],"framesA":[481],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.3121],"b":[0.2388],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.7113],"b":[0.5299],"framesA":[479],"framesB":[480]}}
+  }},
+  "liquidFunStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.074],"b":[0.06491],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.05865],"b":[0.04679],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[8.133],"b":[6.584],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.9616],"b":[0.6358],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.03615],"b":[0.02784],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[2.07],"b":[1.74],"framesA":[479],"framesB":[481]}}
+  }},
+  "liquidFunManyShapesStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04634],"b":[0.04861],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.03998],"b":[0.04175],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[5.47],"b":[5.497],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.3961],"b":[0.3968],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02138],"b":[0.02272],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.031],"b":[1.097],"framesA":[480],"framesB":[480]}}
+  }},
+  "tilemapStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[8.547],"b":[8.544],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04252],"b":[0.04232],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.114],"b":[0.1119],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2277],"b":[0.2288],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02338],"b":[0.02275],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.123],"b":[0.1252],"framesA":[480],"framesB":[480]}}
+  }},
+  "tilemapCullStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.06277],"b":[0.06115],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03821],"b":[0.03647],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08796],"b":[0.08651],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2634],"b":[0.2524],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02193],"b":[0.02153],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1077],"b":[0.1087],"framesA":[481],"framesB":[480]}}
+  }},
+  "navStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.3332],"b":[0.326],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04946],"b":[0.04742],"framesA":[481],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.08915],"b":[0.07612],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2097],"b":[0.1998],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[4.303],"b":[4.243],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1127],"b":[0.1033],"framesA":[481],"framesB":[480]}}
+  }},
+  "rayStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[2.838],"b":[2.951],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.06159],"b":[0.05842],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09834],"b":[0.08857],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1991],"b":[0.19],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02098],"b":[0.0196],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.169],"b":[0.1811],"framesA":[480],"framesB":[480]}}
+  }},
+  "queryAabbStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.06848],"b":[0.06795],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03779],"b":[0.03862],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08374],"b":[0.08494],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2572],"b":[0.2608],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02066],"b":[0.02101],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1809],"b":[0.1829],"framesA":[480],"framesB":[480]}}
+  }},
+  "renderQueueStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04537],"b":[0.04258],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[1.081],"b":[1.095],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.1631],"b":[0.1558],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.5027],"b":[0.4813],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.02256],"b":[0.0211],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[1.601],"b":[1.385],"framesA":[480],"framesB":[481]}}
+  }},
+  "spritePackStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04059],"b":[0.04198],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2543],"b":[0.2531],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.02],"b":[0.01965],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.431],"b":[1.272],"framesA":[480],"framesB":[480]}}
+  }},
+  "bunnyMarkStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.275],"b":[0.2715],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09893],"b":[0.08958],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3588],"b":[0.3599],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02058],"b":[0.01887],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.678],"b":[0.7363],"framesA":[480],"framesB":[480]}}
+  }},
+  "ballsHeavyStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.5774],"b":[0.5431],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.8801],"b":[0.8347],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[6.441],"b":[6.457],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2512],"b":[0.2406],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.02085],"b":[0.02058],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.5439],"b":[0.495],"framesA":[480],"framesB":[481]}}
+  }},
+  "tweenStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[2.033],"b":[1.911],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1814],"b":[0.1682],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.02026],"b":[0.01964],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.8486],"b":[0.8681],"framesA":[480],"framesB":[481]}}
+  }},
+  "audioStormScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[5.519],"b":[6.088],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04466],"b":[0.04288],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09076],"b":[0.09599],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1984],"b":[0.1927],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02026],"b":[0.01998],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1097],"b":[0.1078],"framesA":[480],"framesB":[480]}}
+  }},
+  "steadyCombatScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1693],"b":[0.1678],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.05599],"b":[0.05807],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1313],"b":[0.1272],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3337],"b":[0.3172],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.1963],"b":[0.1917],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1929],"b":[0.1805],"framesA":[480],"framesB":[480]}}
+  }},
+  "textureUploadStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.06247],"b":[0.05916],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.02688],"b":[0.02731],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[12.25],"b":[12.61],"framesA":[474],"framesB":[475]}},
+   "particle": {"pc-1":{"a":[0.01687],"b":[0.01643],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.08517],"b":[0.0808],"framesA":[475],"framesB":[474]}}
+  }},
+  "sceneryCamStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.05892],"b":[0.053],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03749],"b":[0.0356],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09112],"b":[0.09037],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3255],"b":[0.3071],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02262],"b":[0.01987],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.11],"b":[0.1087],"framesA":[480],"framesB":[480]}}
+  }},
+  "particleEmitStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1172],"b":[0.1134],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03825],"b":[0.0373],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08117],"b":[0.08595],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2901],"b":[0.2932],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.1686],"b":[0.1649],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3454],"b":[0.3448],"framesA":[480],"framesB":[480]}}
+  }},
+  "movedBodiesMixedScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.9612],"b":[0.9264],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[2.545],"b":[2.423],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.89],"b":[1.877],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1871],"b":[0.1867],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02174],"b":[0.02074],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3407],"b":[0.3162],"framesA":[480],"framesB":[480]}}
+  }},
+  "computeStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04088],"b":[0.04105],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03777],"b":[0.03846],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1035],"b":[0.09934],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5133],"b":[0.4939],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02048],"b":[0.0195],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2156],"b":[0.213],"framesA":[480],"framesB":[480]}}
+  }},
+  "cmdSamePoseStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.6135],"b":[0.6245],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.1745],"b":[0.1779],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.2066],"b":[0.1973],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.1573],"b":[0.1797],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02148],"b":[0.02265],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.1031],"b":[0.1251],"framesA":[480],"framesB":[481]}}
+  }},
+  "lampShadowStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.4539],"b":[0.4632],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.204],"b":[0.1844],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.09819],"b":[0.0906],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.6053],"b":[0.5636],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02208],"b":[0.02097],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.6465],"b":[0.6355],"framesA":[480],"framesB":[480]}}
+  }},
+  "sunShadowMapStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.3638],"b":[0.3587],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.9016],"b":[0.9245],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01654],"b":[0.01652],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.9056],"b":[0.8915],"framesA":[480],"framesB":[480]}}
+  }},
+  "selfShadowStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1402],"b":[0.1475],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.6365],"b":[0.6251],"framesA":[481],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01901],"b":[0.02055],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.4129],"b":[0.4541],"framesA":[480],"framesB":[481]}}
+  }},
+  "depthSortStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.7137],"b":[0.6958],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3543],"b":[0.3607],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01953],"b":[0.02032],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.7259],"b":[0.7385],"framesA":[480],"framesB":[480]}}
+  }},
+  "unshadedStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.5693],"b":[0.5719],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5286],"b":[0.5273],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01848],"b":[0.0197],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.7043],"b":[0.7201],"framesA":[480],"framesB":[480]}}
+  }},
+  "spriteMapsStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1218],"b":[0.1306],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.06623],"b":[0.0678],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.1196],"b":[0.1147],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.6116],"b":[0.6202],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.05815],"b":[0.06225],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.4157],"b":[0.4186],"framesA":[480],"framesB":[480]}}
+  }},
+  "directionalSpriteStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[3.043],"b":[3.152],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.153],"b":[0.6502],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02034],"b":[0.01954],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[1.525],"b":[1.566],"framesA":[480],"framesB":[480]}}
+  }},
+  "volumeStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1956],"b":[0.2045],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.3347],"b":[0.3415],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09781],"b":[0.1036],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.706],"b":[1.771],"framesA":[479],"framesB":[478]}},
+   "particle": {"pc-1":{"a":[0.01899],"b":[0.02014],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.1478],"b":[0.1532],"framesA":[480],"framesB":[478]}}
+  }},
+  "flashlightStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.0626],"b":[0.06132],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.3386],"b":[0.3427],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09641],"b":[0.117],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.7895],"b":[0.7108],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02222],"b":[0.02258],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[3.886],"b":[3.891],"framesA":[480],"framesB":[480]}}
+  }},
+  "spotLightStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.07321],"b":[0.07427],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.06175],"b":[0.06964],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1104],"b":[0.12],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5199],"b":[0.5511],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01968],"b":[0.02221],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2549],"b":[0.2716],"framesA":[480],"framesB":[480]}}
+  }},
+  "lightGalleryScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.05871],"b":[0.05432],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.05445],"b":[0.05817],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1093],"b":[0.11],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.7944],"b":[0.784],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.02192],"b":[0.02224],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2781],"b":[0.2837],"framesA":[480],"framesB":[480]}}
+  }},
+  "lightMotionScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.0651],"b":[0.06134],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.05859],"b":[0.05421],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08248],"b":[0.09885],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5481],"b":[0.5548],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02048],"b":[0.02103],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2366],"b":[0.2557],"framesA":[481],"framesB":[480]}}
+  }},
+  "sunMeshParityScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.0465],"b":[0.04295],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04023],"b":[0.03681],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09723],"b":[0.09643],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5859],"b":[0.5537],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02235],"b":[0.02005],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2254],"b":[0.2107],"framesA":[481],"framesB":[480]}}
+  }},
+  "dxCaptureScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.04677],"b":[0.04531],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.05866],"b":[0.05069],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1069],"b":[0.09438],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.8085],"b":[0.8167],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.04384],"b":[0.04205],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2512],"b":[0.2387],"framesA":[480],"framesB":[481]}}
+  }},
+  "light3dCompareScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[1.52],"b":[1.58],"framesA":[481],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.2205],"b":[0.2243],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.06893],"b":[0.07099],"framesA":[481],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.6769],"b":[0.6302],"framesA":[481],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01998],"b":[0.0204],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.7502],"b":[0.785],"framesA":[481],"framesB":[481]}}
+  }},
+  "keyedPackStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[1.829],"b":[1.851],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[2.067],"b":[2.021],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01702],"b":[0.01865],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[5.433],"b":[5.438],"framesA":[480],"framesB":[480]}}
+  }}
+ }
+}

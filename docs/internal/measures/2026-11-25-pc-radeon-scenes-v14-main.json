@@ -1,0 +1,563 @@
+{
+ "name": "pc-radeon-scenes-v14-main",
+ "date": "2026-11-25",
+ "a": "7f7b5f000157659d9645642e9dd025feeef112b2",
+ "b": "999e614b1b74fb2c80763f6efb15f0547a4fb035",
+ "mode": "window",
+ "exact": {},
+ "vms": {
+  "pc-1": {"machine":"pc","cpu":"AMD Ryzen 7 4800H, Radeon (Vega) iGPU (window, drawing)","threads":16,"started":"2026-11-25"}
+ },
+ "kernels": {
+
+ },
+ "scenes": {
+  "adobeAnimateScene": {"query": "", "changed": ["demos/adobeAnimateScene/adobeAnimateScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[1.472],"b":[1.048],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.2119],"b":[0.3091],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[2.391],"b":[1.684],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5086],"b":[0.3007],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01293],"b":[0.02642],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.871],"b":[0.9414],"framesA":[480],"framesB":[480]}}
+  }},
+  "badPiggiesScene": {"query": "", "changed": ["demos/badPiggiesScene/badPiggiesScene.js","demos/badPiggiesScene/gameObjects/machineBox.js","demos/badPiggiesScene/gameObjects/machineRocket.js","demos/badPiggiesScene/gameObjects/machineWheel.js","demos/ballsScene/gameObjects/floor.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.07874],"b":[0.04484],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03899],"b":[0.05362],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1655],"b":[0.13],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.667],"b":[0.607],"framesA":[481],"framesB":[479]}},
+   "particle": {"pc-1":{"a":[0.05344],"b":[0.06978],"framesA":[481],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.2265],"b":[0.2112],"framesA":[481],"framesB":[480]}}
+  }},
+  "ballsScene": {"query": "", "changed": ["demos/ballsScene/ballsScene.js","demos/ballsScene/gameObjects/ball.js","demos/ballsScene/gameObjects/floor.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.7385],"b":[0.2756],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.9534],"b":[0.7442],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[6.317],"b":[4.635],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.4128],"b":[0.2243],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01522],"b":[0.02202],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.7671],"b":[0.3922],"framesA":[480],"framesB":[480]}}
+  }},
+  "bichosScene": {"query": "", "changed": ["demos/bichosScene/bichosScene.js","demos/bichosScene/gameObjects/bug.js","demos/lightBenchScene/assets/index.js","demos/predatorScene/components/dropComponent.js","demos/predatorScene/components/personComponent.js","demos/predatorScene/effectPresets.js","demos/predatorScene/fsm/civilianBehaviorFsm.js","demos/predatorScene/fsm/personAnimationFsm.js","demos/predatorScene/fsm/soldierBehaviorFsm.js","demos/predatorScene/gameObjects/barrel.js","demos/predatorScene/gameObjects/civilian.js","demos/predatorScene/gameObjects/destination.js","demos/predatorScene/gameObjects/drop.js","demos/predatorScene/gameObjects/dropAk47.js","demos/predatorScene/gameObjects/dropMoney.js","demos/predatorScene/gameObjects/dropPistol.js","demos/predatorScene/gameObjects/dropShotgun.js","demos/predatorScene/gameObjects/explosion.js","demos/predatorScene/gameObjects/fire.js","demos/predatorScene/gameObjects/house.js","demos/predatorScene/gameObjects/lootable.js","demos/predatorScene/gameObjects/mySoldier.js","demos/predatorScene/gameObjects/person.js","demos/predatorScene/gameObjects/player.js","demos/predatorScene/gameObjects/rock.js","demos/predatorScene/gameObjects/tallLight.js","demos/predatorScene/gameObjects/trash.js","demos/predatorScene/gameObjects/tree.js","demos/predatorScene/light3d.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.8157],"b":[0.6084],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.7065],"b":[0.1517],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.6473],"b":[0.3301],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.9329],"b":[0.4702],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.5186],"b":[0.4039],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[1.413],"b":[0.8281],"framesA":[480],"framesB":[481]}}
+  }},
+  "boidsScene": {"query": "", "changed": ["demos/boidsScene/boidsScene.js","demos/predatorScene/gameObjects/boid.js"], "workers": {
+   "logic": {"pc-1":{"a":[2.124],"b":[1.317],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[7.24],"b":[4.605],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[6.962],"b":[3.923],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.037],"b":[0.5651],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.3716],"b":[0.3655],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[3.115],"b":[1.551],"framesA":[480],"framesB":[480]}}
+  }},
+  "box2dQueryAabbScene": {"query": "", "changed": ["demos/box2dQueryAabbScene/gameObjects/box2dQueryAabbProbe.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.0288],"b":[0.05835],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01924],"b":[0.04111],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1064],"b":[0.1032],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3519],"b":[0.3555],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01401],"b":[0.02457],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2267],"b":[0.2377],"framesA":[480],"framesB":[480]}}
+  }},
+  "bunnyMarkScene": {"query": "bunnies=60000", "changed": ["demos/bunnyMarkScene/bunnyMarkScene.js","demos/bunnyMarkScene/gameObjects/bunny.js"], "workers": {
+   "logic": {"pc-1":{"a":[4.18],"b":[1.023],"framesA":[248],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[8.997],"b":[1.93],"framesA":[98],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.02706],"b":[0.02323],"framesA":[248],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[9.492],"b":[2.081],"framesA":[98],"framesB":[481]}}
+  }},
+  "burningBoxesScene": {"query": "", "changed": ["demos/burningBoxesScene/burningBoxesScene.js","demos/burningBoxesScene/gameObjects/blower.js","demos/burningBoxesScene/gameObjects/burningBox.js","demos/burningBoxesScene/gameObjects/occludingFloor.js","demos/burningBoxesScene/gameObjects/rocketBox.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.04657],"b":[0.06435],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.05457],"b":[0.07412],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.2369],"b":[0.2031],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.022],"b":[0.9743],"framesA":[479],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.04432],"b":[0.0573],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3994],"b":[0.408],"framesA":[478],"framesB":[480]}}
+  }},
+  "carScene": {"query": "", "changed": ["demos/carScene/carScene.js","demos/carScene/gameObjects/car.js","demos/carScene/gameObjects/personThatFollowsAFlowfield.js","demos/img/autos/index.js","demos/lightBenchScene/assets/index.js","demos/predatorScene/components/personComponent.js","demos/predatorScene/effectPresets.js","demos/predatorScene/fsm/personAnimationFsm.js","demos/predatorScene/gameObjects/rock.js","demos/predatorScene/light3d.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.7608],"b":[0.4063],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[1.213],"b":[1.254],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.3791],"b":[0.2867],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.7124],"b":[0.3022],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.1425],"b":[0.1654],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2634],"b":[0.2205],"framesA":[480],"framesB":[480]}}
+  }},
+  "constraintBoxScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/floor.js","demos/constraintBoxScene/constraintBoxScene.js","demos/constraintBoxScene/gameObjects/boxPart.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.4506],"b":[0.4129],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.2964],"b":[0.2846],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[2.797],"b":[2.404],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2812],"b":[0.2318],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01277],"b":[0.024],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1946],"b":[0.148],"framesA":[480],"framesB":[480]}}
+  }},
+  "constraintsTestScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/ball.js","demos/ballsScene/gameObjects/floor.js","demos/constraintsTestScene/constraintsTestScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.1193],"b":[0.08586],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.1038],"b":[0.08194],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.955],"b":[0.793],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3214],"b":[0.2337],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01335],"b":[0.02208],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2217],"b":[0.1774],"framesA":[480],"framesB":[480]}}
+  }},
+  "destructibleTerrainScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/floor.js","demos/destructibleTerrainScene/destructibleTerrainScene.js","demos/destructibleTerrainScene/gameObjects/ship.js","demos/destructibleTerrainScene/gameObjects/terrainIsland.js","demos/destructibleTerrainScene/gameObjects/worldGridManager.js","demos/destructibleTerrainScene/terrainSceneParts.js","demos/destructibleTerrainScene/worldGrid.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.1669],"b":[0.157],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.05453],"b":[0.06157],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1568],"b":[0.116],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.887],"b":[0.8448],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.09466],"b":[0.1029],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2967],"b":[0.271],"framesA":[480],"framesB":[480]}}
+  }},
+  "gearChainScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/ball.js","demos/gearChainScene/gearChainScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.2792],"b":[0.4295],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.3785],"b":[null],"framesA":[480],"framesB":[null]}},
+   "physics": {"pc-1":{"a":[4.593],"b":[3.092],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5757],"b":[0.3038],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01416],"b":[0.02218],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.5626],"b":[0.2889],"framesA":[480],"framesB":[480]}}
+  }},
+  "gpuGalaxyScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[1.357],"b":[1.381],"framesA":[392],"framesB":[336]}},
+   "renderer": {"pc-1":{"a":[2.09],"b":[2.055],"framesA":[188],"framesB":[167]}},
+   "particle": {"pc-1":{"a":[0.01914],"b":[0.03079],"framesA":[392],"framesB":[336]}},
+   "preRender": {"pc-1":{"a":[0.1539],"b":[0.1605],"framesA":[188],"framesB":[169]}}
+  }},
+  "landingScene": {"query": "", "changed": ["demos/landingScene/camp.js","demos/landingScene/landingScene.js","demos/landingScene/ropes.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.3491],"b":[0.3524],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[3.178],"b":[2.615],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.333],"b":[1.019],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01216],"b":[0.0311],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.6768],"b":[0.3782],"framesA":[481],"framesB":[480]}}
+  }},
+  "liquidFunDemoScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/box.js","demos/ballsScene/gameObjects/floor.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.03167],"b":[0.05829],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.0484],"b":[0.05807],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.296],"b":[1.174],"framesA":[481],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.4743],"b":[0.4577],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0145],"b":[0.02615],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2371],"b":[0.2336],"framesA":[480],"framesB":[480]}}
+  }},
+  "liquidFunQueryScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/floor.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.02376],"b":[0.04954],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.0168],"b":[0.03936],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1811],"b":[0.1622],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3086],"b":[0.2868],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01466],"b":[0.02395],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2236],"b":[0.2065],"framesA":[480],"framesB":[480]}}
+  }},
+  "littleCityScene": {"query": "", "changed": ["demos/carScene/gameObjects/car.js","demos/img/autos/index.js","demos/littleCity/gameObjects/cityHouse.js","demos/littleCity/gameObjects/cityPerson.js","demos/littleCity/gameObjects/cityTree.js","demos/littleCity/gameObjects/trafficCar.js","demos/littleCity/littleCityScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[4.851],"b":[2.313],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[4.911],"b":[3.719],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[4.699],"b":[2.73],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.6101],"b":[0.3002],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.1985],"b":[0.2216],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.7104],"b":[0.4049],"framesA":[481],"framesB":[480]}}
+  }},
+  "mamushkaDigScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/floor.js","demos/mamushkaDigScene/gameObjects/digger.js","demos/mamushkaDigScene/gameObjects/lamp.js","demos/mamushkaDigScene/gameObjects/mamushkaBox.js","demos/mamushkaDigScene/mamushkaDigScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.09322],"b":[0.1177],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.06979],"b":[0.4598],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.3346],"b":[0.2616],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.6287],"b":[0.611],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.05038],"b":[0.06763],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.4291],"b":[0.3785],"framesA":[480],"framesB":[480]}}
+  }},
+  "meshGalleryScene": {"query": "", "changed": ["demos/meshGalleryScene/gameObjects/meshExhibits.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.068],"b":[0.09658],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.01983],"b":[0.0545],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.09906],"b":[0.1029],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.4386],"b":[0.4955],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.0137],"b":[0.02684],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.09569],"b":[0.1204],"framesA":[480],"framesB":[481]}}
+  }},
+  "orientedBoxScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/ball.js","demos/ballsScene/gameObjects/floor.js","demos/orientedBoxScene/gameObjects/orientedBox.js","demos/orientedBoxScene/orientedBoxScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.134],"b":[0.05083],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.3141],"b":[0.2412],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.503],"b":[1.375],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3687],"b":[0.2462],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01483],"b":[0.02468],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2718],"b":[0.1978],"framesA":[480],"framesB":[480]}}
+  }},
+  "particleLabScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.02172],"b":[0.05013],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01643],"b":[0.04333],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09262],"b":[0.1078],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.202],"b":[0.245],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.04681],"b":[0.07378],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.09634],"b":[0.1366],"framesA":[480],"framesB":[479]}}
+  }},
+  "planetPhysicsScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/floor.js","demos/destructibleTerrainScene/gameObjects/ship.js","demos/destructibleTerrainScene/gameObjects/terrainIsland.js","demos/destructibleTerrainScene/gameObjects/worldGridManager.js","demos/destructibleTerrainScene/terrainSceneParts.js","demos/destructibleTerrainScene/worldGrid.js","demos/planetPhysicsScene/gameObjects/planetLamp.js","demos/planetPhysicsScene/gameObjects/planetShip.js","demos/planetPhysicsScene/planetPhysicsScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.4765],"b":[0.43],"framesA":[481],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.06203],"b":[0.1141],"framesA":[481],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.5427],"b":[0.4483],"framesA":[481],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.9969],"b":[0.7502],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.07257],"b":[0.08649],"framesA":[481],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.4909],"b":[0.4497],"framesA":[481],"framesB":[481]}}
+  }},
+  "planetScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1785],"b":[0.183],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[1.054],"b":[0.4095],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5026],"b":[0.4477],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0139],"b":[0.02419],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.2852],"b":[0.2742],"framesA":[480],"framesB":[480]}}
+  }},
+  "platformerGameScene": {"query": "", "changed": ["demos/platformerGameScene/gameObjects/bluePlatformerPlayer.js","demos/platformerGameScene/gameObjects/platform.js","demos/platformerGameScene/platformerGameScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.05472],"b":[0.08264],"framesA":[470],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.03031],"b":[0.04238],"framesA":[470],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1627],"b":[0.1247],"framesA":[469],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.5006],"b":[0.6132],"framesA":[227],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.03777],"b":[0.06795],"framesA":[470],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3425],"b":[0.2818],"framesA":[227],"framesB":[481]}}
+  }},
+  "predatorScene": {"query": "crowd=0.4", "changed": ["demos/lightBenchScene/assets/index.js","demos/predatorScene/components/dropComponent.js","demos/predatorScene/components/personComponent.js","demos/predatorScene/effectPresets.js","demos/predatorScene/fsm/civilianBehaviorFsm.js","demos/predatorScene/fsm/personAnimationFsm.js","demos/predatorScene/fsm/soldierBehaviorFsm.js","demos/predatorScene/gameObjects/barrel.js","demos/predatorScene/gameObjects/bonfire.js","demos/predatorScene/gameObjects/cameraController.js","demos/predatorScene/gameObjects/civilian.js","demos/predatorScene/gameObjects/destination.js","demos/predatorScene/gameObjects/drop.js","demos/predatorScene/gameObjects/dropAk47.js","demos/predatorScene/gameObjects/dropMoney.js","demos/predatorScene/gameObjects/dropPistol.js","demos/predatorScene/gameObjects/dropShotgun.js","demos/predatorScene/gameObjects/explosion.js","demos/predatorScene/gameObjects/fire.js","demos/predatorScene/gameObjects/house.js","demos/predatorScene/gameObjects/lootable.js","demos/predatorScene/gameObjects/mySoldier.js","demos/predatorScene/gameObjects/person.js","demos/predatorScene/gameObjects/player.js","demos/predatorScene/gameObjects/rock.js","demos/predatorScene/gameObjects/tallLight.js","demos/predatorScene/gameObjects/trash.js","demos/predatorScene/gameObjects/tree.js","demos/predatorScene/light3d.js","demos/predatorScene/predatorScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[1.753],"b":[1.102],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[2.396],"b":[1.753],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[2.282],"b":[1.1],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[2.032],"b":[0.7605],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.5978],"b":[0.4999],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[2.142],"b":[0.8602],"framesA":[480],"framesB":[480]}}
+  }},
+  "proceduralTreeScene": {"query": "", "changed": ["demos/proceduralTreeScene/gameObjects/ground.js","demos/proceduralTreeScene/gameObjects/proceduralTree.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.1419],"b":[0.1593],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.2873],"b":[0.2149],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.4031],"b":[0.369],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.06792],"b":[0.09538],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.235],"b":[0.2215],"framesA":[480],"framesB":[480]}}
+  }},
+  "sunStreetScene": {"query": "", "changed": ["demos/img/autos/index.js","demos/sunStreetScene/gameObjects/streetSprites.js","demos/sunStreetScene/streetCars.js","demos/sunStreetScene/sunStreetScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.08991],"b":[0.1208],"framesA":[481],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.07018],"b":[0.125],"framesA":[481],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.153],"b":[0.1285],"framesA":[481],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[1.907],"b":[0.9301],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.04532],"b":[0.06082],"framesA":[481],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.6295],"b":[0.625],"framesA":[481],"framesB":[481]}}
+  }},
+  "uChainScene": {"query": "", "changed": ["demos/uChainScene/uChainScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.03344],"b":[0.05283],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.01923],"b":[0.037],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.1134],"b":[0.08278],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.3574],"b":[0.306],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.03585],"b":[0.04447],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.1197],"b":[0.1031],"framesA":[480],"framesB":[481]}}
+  }},
+  "waterAndBoxesScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/box.js","demos/ballsScene/gameObjects/floor.js","demos/waterAndBoxesScene/gameObjects/waterBall.js","demos/waterAndBoxesScene/waterAndBoxesScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[1.317],"b":[0.2954],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.7],"b":[0.4021],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[3.302],"b":[2.005],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.8533],"b":[0.3112],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.04906],"b":[0.06604],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[1.62],"b":[0.4359],"framesA":[480],"framesB":[480]}}
+  }},
+  "weldBreakScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/floor.js","demos/weldBreakScene/gameObjects/weldBreakBox.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.02487],"b":[0.05139],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.03094],"b":[0.04512],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.2261],"b":[0.2232],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2603],"b":[0.274],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.03585],"b":[0.05701],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1722],"b":[0.1924],"framesA":[481],"framesB":[480]}}
+  }},
+  "zenithalParticleTestScene": {"query": "", "changed": ["demos/zenithalParticleTestScene/gameObjects/zenithalCar.js","demos/zenithalParticleTestScene/gameObjects/zenithalLight.js","demos/zenithalParticleTestScene/zenithalParticleTestScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.02362],"b":[0.04347],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04512],"b":[0.06661],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.2498],"b":[0.2073],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.638],"b":[0.5308],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.04352],"b":[0.05997],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3067],"b":[0.278],"framesA":[480],"framesB":[480]}}
+  }},
+  "visPolyStressScene": {"query": "", "changed": ["tests/bench/stressScenes/visPoly/visPolyAlbedo.js","tests/bench/stressScenes/visPoly/visPolyLight.js","tests/bench/stressScenes/visPoly/visPolyOccluder.js","tests/bench/stressScenes/visPolyStressScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.02254],"b":[0.0536],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[1.525],"b":[1.593],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1462],"b":[0.1224],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.011],"b":[0.611],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01271],"b":[0.02088],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[3.201],"b":[1.779],"framesA":[481],"framesB":[480]}}
+  }},
+  "compoundVisPolyStressScene": {"query": "", "changed": ["tests/bench/stressScenes/compoundVisPoly/compoundVisIsland.js","tests/bench/stressScenes/compoundVisPoly/compoundVisLight.js","tests/bench/stressScenes/compoundVisPolyStressScene.js","tests/bench/stressScenes/visPoly/visPolyAlbedo.js","tests/bench/stressScenes/visPoly/visPolyOccluder.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.03307],"b":[0.05119],"framesA":[481],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.06846],"b":[0.1263],"framesA":[481],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.6662],"b":[0.5585],"framesA":[481],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[1.21],"b":[0.4165],"framesA":[481],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01286],"b":[0.02108],"framesA":[481],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[1.433],"b":[1.351],"framesA":[481],"framesB":[481]}}
+  }},
+  "particleIntegrateStressScene": {"query": "tween=1", "changed": ["tests/bench/stressScenes/particles/particleIntegrateDriver.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.9005],"b":[0.3961],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01946],"b":[0.03209],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09601],"b":[0.07449],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.042],"b":[0.7453],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[2.467],"b":[2.118],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[3.216],"b":[2.418],"framesA":[480],"framesB":[479]}}
+  }},
+  "stationarySpatialWideScene": {"query": "", "changed": ["tests/bench/stressScenes/stationary/stationarySpatialEntity.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.8366],"b":[1.898],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[3.761],"b":[4.139],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3191],"b":[0.3019],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01217],"b":[0.02164],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.203],"b":[1.548],"framesA":[480],"framesB":[480]}}
+  }},
+  "spawnStormScene": {"query": "", "changed": ["tests/bench/stressScenes/spawnStorm/spawnStormEntity.js","tests/bench/stressScenes/spawnStormScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[2.911],"b":[2.109],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.2223],"b":[0.1327],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.69],"b":[3.718],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3243],"b":[0.203],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01317],"b":[0.01736],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.3576],"b":[0.2472],"framesA":[480],"framesB":[480]}}
+  }},
+  "contactDrainStressScene": {"query": "", "changed": ["tests/bench/stressScenes/contactDrain/contactDrainBody.js","tests/bench/stressScenes/contactDrainStressScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.5854],"b":[0.3519],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.1381],"b":[0.1492],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[1.361],"b":[1.051],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.2417],"b":[0.2376],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01065],"b":[0.02238],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2527],"b":[0.1936],"framesA":[480],"framesB":[481]}}
+  }},
+  "bulletStressScene": {"query": "", "changed": ["tests/bench/stressScenes/ray/rayStressEntity.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.459],"b":[0.3585],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.02],"b":[0.03503],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09573],"b":[0.08583],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.018],"b":[0.8549],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[3.207],"b":[3.19],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[2.098],"b":[1.589],"framesA":[480],"framesB":[480]}}
+  }},
+  "bulletStormScene": {"query": "", "changed": ["tests/bench/stressScenes/ray/rayStressEntity.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.09874],"b":[0.093],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01938],"b":[0.03221],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08985],"b":[0.07562],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3541],"b":[0.3039],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.8803],"b":[0.8379],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.6679],"b":[0.5218],"framesA":[481],"framesB":[480]}}
+  }},
+  "painterSortStressScene": {"query": "", "changed": ["tests/bench/stressScenes/renderQueue/renderQueueStressEntity.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.8828],"b":[0.03594],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.383],"b":[1.194],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.009688],"b":[0.0172],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[12.21],"b":[10.44],"framesA":[479],"framesB":[480]}}
+  }},
+  "painterMoveStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[6.487],"b":[4.847],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[1.964],"b":[1.778],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01109],"b":[0.01608],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[16.63],"b":[13.5],"framesA":[467],"framesB":[479]}}
+  }},
+  "painterAdobeStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1025],"b":[0.1204],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.2893],"b":[0.2851],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.0106],"b":[0.01726],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.4381],"b":[0.469],"framesA":[480],"framesB":[481]}}
+  }},
+  "decalStampStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.2894],"b":[0.2058],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01683],"b":[0.02909],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.07948],"b":[0.05893],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[1.576],"b":[0.908],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[2.448],"b":[1.897],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.08546],"b":[0.07978],"framesA":[481],"framesB":[480]}}
+  }},
+  "decalBlitStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.3696],"b":[0.3644],"framesA":[479],"framesB":[426]}},
+   "spatial": {"pc-1":{"a":[0.01718],"b":[0.03873],"framesA":[479],"framesB":[426]}},
+   "physics": {"pc-1":{"a":[0.08846],"b":[0.09171],"framesA":[479],"framesB":[426]}},
+   "renderer": {"pc-1":{"a":[8.23],"b":[1.373],"framesA":[398],"framesB":[298]}},
+   "particle": {"pc-1":{"a":[2.024],"b":[2.082],"framesA":[479],"framesB":[426]}},
+   "preRender": {"pc-1":{"a":[0.1056],"b":[0.1402],"framesA":[398],"framesB":[307]}}
+  }},
+  "meshApiStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[2.605],"b":[2.545],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.06236],"b":[0.084],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1549],"b":[0.109],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[4.208],"b":[2.1],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01042],"b":[0.02115],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.08221],"b":[0.07947],"framesA":[480],"framesB":[480]}}
+  }},
+  "decorationSwayStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.02254],"b":[0.04412],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.02704],"b":[0.03295],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1683],"b":[0.1928],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.498],"b":[0.4282],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.08823],"b":[0.09477],"framesA":[480],"framesB":[480]}}
+  }},
+  "decoChurnStressScene": {"query": "", "changed": ["tests/bench/stressScenes/decoChurnStressScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.3518],"b":[0.1161],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01746],"b":[0.03957],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.07938],"b":[0.07638],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3166],"b":[0.2989],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.2832],"b":[0.2195],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.541],"b":[0.4851],"framesA":[480],"framesB":[480]}}
+  }},
+  "liquidFunStressScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/floor.js","tests/bench/stressScenes/liquidFunStressScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.02528],"b":[0.04497],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01757],"b":[0.03716],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[4.962],"b":[4.843],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5936],"b":[0.4029],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01487],"b":[0.02322],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.449],"b":[1.275],"framesA":[480],"framesB":[480]}}
+  }},
+  "liquidFunManyShapesStressScene": {"query": "", "changed": ["demos/ballsScene/gameObjects/floor.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.03574],"b":[0.04401],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01998],"b":[0.04619],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[5.343],"b":[5.306],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5014],"b":[0.3267],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01387],"b":[0.02367],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.274],"b":[0.8448],"framesA":[481],"framesB":[480]}}
+  }},
+  "tilemapStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[8.36],"b":[8.349],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.01734],"b":[0.0364],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.07617],"b":[0.09034],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1524],"b":[0.1899],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01057],"b":[0.02167],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.076],"b":[0.09798],"framesA":[480],"framesB":[480]}}
+  }},
+  "tilemapCullStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.03105],"b":[0.05231],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.0165],"b":[0.03914],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08852],"b":[0.09156],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2318],"b":[0.2631],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01229],"b":[0.02362],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.09258],"b":[0.1112],"framesA":[481],"framesB":[480]}}
+  }},
+  "navStressScene": {"query": "", "changed": ["tests/bench/stressScenes/navStressScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.7423],"b":[0.2892],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.02547],"b":[0.04231],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.08412],"b":[0.06653],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.169],"b":[0.167],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[4.003],"b":[4.332],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.0852],"b":[0.0844],"framesA":[481],"framesB":[480]}}
+  }},
+  "rayStressScene": {"query": "", "changed": ["tests/bench/stressScenes/ray/rayStressEntity.js"], "workers": {
+   "logic": {"pc-1":{"a":[2.888],"b":[2.875],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.03977],"b":[0.06507],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1484],"b":[0.1103],"framesA":[480],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.2511],"b":[0.2267],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01109],"b":[0.02179],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2402],"b":[0.2245],"framesA":[480],"framesB":[481]}}
+  }},
+  "queryAabbStressScene": {"query": "", "changed": ["demos/box2dQueryAabbScene/gameObjects/box2dQueryAabbProbe.js","tests/bench/stressScenes/queryAabb/queryAabbChurnProbe.js","tests/bench/stressScenes/queryAabbStressScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.06878],"b":[0.07108],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.02154],"b":[0.04049],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1499],"b":[0.08689],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.2997],"b":[0.2591],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01344],"b":[0.02242],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2114],"b":[0.1802],"framesA":[480],"framesB":[480]}}
+  }},
+  "renderQueueStressScene": {"query": "", "changed": ["tests/bench/stressScenes/renderQueue/renderQueueStressEntity.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.1777],"b":[0.04387],"framesA":[481],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[1.169],"b":[1.087],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1774],"b":[0.1501],"framesA":[481],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.9878],"b":[0.4844],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01316],"b":[0.02114],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.5],"b":[1.508],"framesA":[480],"framesB":[480]}}
+  }},
+  "spritePackStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.02522],"b":[0.0437],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3079],"b":[0.2472],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01277],"b":[0.02134],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.015],"b":[1.451],"framesA":[480],"framesB":[480]}}
+  }},
+  "bunnyMarkStressScene": {"query": "", "changed": ["demos/bunnyMarkScene/gameObjects/bunny.js","tests/bench/stressScenes/bunnyMark/bunnySolver.js","tests/bench/stressScenes/bunnyMark/toyWorldBounce.js","tests/bench/stressScenes/bunnyMarkStressScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.3548],"b":[0.2405],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.116],"b":[0.0831],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3554],"b":[0.3257],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01241],"b":[0.01696],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[1.025],"b":[0.6593],"framesA":[480],"framesB":[480]}}
+  }},
+  "ballsHeavyStressScene": {"query": "", "changed": ["demos/ballsScene/ballsScene.js","demos/ballsScene/gameObjects/ball.js","demos/ballsScene/gameObjects/floor.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.6837],"b":[0.4212],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[1.121],"b":[0.9342],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[8.719],"b":[6.87],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.4019],"b":[0.252],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01499],"b":[0.02345],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.8557],"b":[0.5754],"framesA":[480],"framesB":[480]}}
+  }},
+  "tweenStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[2.071],"b":[2.003],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1926],"b":[0.184],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01266],"b":[0.02371],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.9528],"b":[0.9265],"framesA":[480],"framesB":[481]}}
+  }},
+  "audioStormScene": {"query": "", "changed": ["tests/bench/stressScenes/audio/audioStormDriver.js","tests/bench/stressScenes/audioStormScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.4589],"b":[6.023],"framesA":[480],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.01854],"b":[0.03753],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09752],"b":[0.08055],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1935],"b":[0.1715],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01308],"b":[0.01767],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.1018],"b":[0.08669],"framesA":[480],"framesB":[480]}}
+  }},
+  "steadyCombatScene": {"query": "", "changed": ["tests/bench/stressScenes/ray/rayStressEntity.js","tests/bench/stressScenes/steadyCombat/steadyMover.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.2608],"b":[0.1822],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.04318],"b":[0.07025],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1769],"b":[0.1688],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3508],"b":[0.3909],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.2006],"b":[0.206],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2225],"b":[0.2246],"framesA":[480],"framesB":[480]}}
+  }},
+  "textureUploadStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.05392],"b":[0.07703],"framesA":[480],"framesB":[478]}},
+   "spatial": {"pc-1":{"a":[0.01892],"b":[0.0362],"framesA":[480],"framesB":[478]}},
+   "renderer": {"pc-1":{"a":[29.99],"b":[30.09],"framesA":[264],"framesB":[262]}},
+   "particle": {"pc-1":{"a":[0.01347],"b":[0.02321],"framesA":[480],"framesB":[478]}},
+   "preRender": {"pc-1":{"a":[0.1381],"b":[0.158],"framesA":[264],"framesB":[262]}}
+  }},
+  "sceneryCamStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.03063],"b":[0.05552],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01807],"b":[0.03951],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.08779],"b":[0.09551],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3302],"b":[0.351],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.01299],"b":[0.02325],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.09062],"b":[0.1124],"framesA":[480],"framesB":[481]}}
+  }},
+  "particleEmitStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.1479],"b":[0.1272],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.0193],"b":[0.04091],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09881],"b":[0.08454],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3442],"b":[0.311],"framesA":[480],"framesB":[481]}},
+   "particle": {"pc-1":{"a":[0.1505],"b":[0.1848],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.4045],"b":[0.369],"framesA":[480],"framesB":[480]}}
+  }},
+  "movedBodiesMixedScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[1.39],"b":[0.8833],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.5085],"b":[2.547],"framesA":[481],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[2.59],"b":[1.995],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.3083],"b":[0.1834],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01359],"b":[0.0247],"framesA":[481],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.5595],"b":[0.3697],"framesA":[481],"framesB":[480]}}
+  }},
+  "computeStressScene": {"query": "", "changed": ["tests/bench/stressScenes/compute/computeStressBox.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.03798],"b":[0.04472],"framesA":[481],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.02193],"b":[0.04352],"framesA":[481],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.116],"b":[0.1126],"framesA":[481],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[0.6117],"b":[0.5167],"framesA":[481],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01388],"b":[0.02201],"framesA":[481],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.2397],"b":[0.246],"framesA":[481],"framesB":[481]}}
+  }},
+  "cmdSamePoseStressScene": {"query": "", "changed": [], "workers": {
+   "logic": {"pc-1":{"a":[0.4931],"b":[0.6177],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.1546],"b":[0.1839],"framesA":[480],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.4336],"b":[0.2096],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.1827],"b":[0.1566],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01212],"b":[0.02289],"framesA":[480],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.1313],"b":[0.1009],"framesA":[480],"framesB":[480]}}
+  }},
+  "volumeStressScene": {"query": "", "changed": ["tests/bench/stressScenes/volumeStressScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.1497],"b":[0.1949],"framesA":[384],"framesB":[481]}},
+   "spatial": {"pc-1":{"a":[0.3511],"b":[0.3786],"framesA":[384],"framesB":[481]}},
+   "physics": {"pc-1":{"a":[0.1254],"b":[0.0932],"framesA":[384],"framesB":[481]}},
+   "renderer": {"pc-1":{"a":[3.252],"b":[1.641],"framesA":[192],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01327],"b":[0.01874],"framesA":[384],"framesB":[481]}},
+   "preRender": {"pc-1":{"a":[0.2292],"b":[0.1663],"framesA":[192],"framesB":[481]}}
+  }},
+  "sunMeshParityScene": {"query": "", "changed": ["tests/bench/stressScenes/sunMeshParityScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.0233],"b":[0.04607],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.01735],"b":[0.04068],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.09765],"b":[0.08787],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.4884],"b":[0.6104],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.01348],"b":[0.02275],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2207],"b":[0.2151],"framesA":[480],"framesB":[480]}}
+  }},
+  "dxCaptureScene": {"query": "", "changed": ["tests/bench/stressScenes/dxCapture/dxCaptureEntities.js","tests/bench/stressScenes/dxCaptureScene.js"], "workers": {
+   "logic": {"pc-1":{"a":[0.02297],"b":[0.04577],"framesA":[480],"framesB":[480]}},
+   "spatial": {"pc-1":{"a":[0.02837],"b":[0.05663],"framesA":[480],"framesB":[480]}},
+   "physics": {"pc-1":{"a":[0.1002],"b":[0.09328],"framesA":[480],"framesB":[480]}},
+   "renderer": {"pc-1":{"a":[0.5752],"b":[0.8803],"framesA":[480],"framesB":[480]}},
+   "particle": {"pc-1":{"a":[0.02906],"b":[0.04516],"framesA":[480],"framesB":[480]}},
+   "preRender": {"pc-1":{"a":[0.2838],"b":[0.2394],"framesA":[480],"framesB":[480]}}
+  }}
+ }
+}
