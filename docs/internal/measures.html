@@ -97,22 +97,22 @@ function show() {
     }
     const list = [...by.values()].map((rows) => ({ rows, log: median(rows.map((r) => r.log)) })).sort((p, q) => p.log - q.log);
     const shown = list.filter((o) => Math.abs(100 * Math.expm1(o.log)) >= bar && `${o.rows[0].kernel} ${o.rows[0].case}`.toLowerCase().includes(find));
-    $('note').textContent = `${list.length} cases on both; ${shown.length} shown, slowest first. + is faster, the median of the ${same ? 'VMs, both sides in the same one' : 'CPU models both measures saw: under 10 % is the machines'}. A row's small print is each ${same ? 'VM' : 'CPU model'}.`;
-    $('out').append(table(['change', 'kernel', 'case', 'by CPU'], shown.map((o) => [
+    $('note').textContent = `${list.length} cases on both; ${shown.length} shown, slowest first. Unit: operations a second (ops/s); + is better, - is worse. The median of the ${same ? 'VMs, both sides in the same one' : 'CPU models both measures saw: under 10 % is the machines'}. A row's small print is each ${same ? 'VM' : 'CPU model'}.`;
+    $('out').append(table(['change, ops/s (+ better)', 'kernel', 'case', 'by CPU'], shown.map((o) => [
       number(pct(o.log), o.log > 0), o.rows[0].kernel, o.rows[0].case.replace(/^(cases|results)\./, '').replace(/\.opsPerSec$/, ''),
       el('td', o.rows.map((r) => `${pct(r.log)} ${r.cpu.replace(/\(R\)|\(TM\)|CPU|Processor|AMD |Intel |\d+-Core/g, '').trim()}`).join(' · '), 'small'),
     ])));
   } else if (tab === 'scenes') {
     const list = compareScenes(mx, sx.side, my, sy.side).filter((r) => Math.max(r.x, r.y) >= 0.1);
     const shown = list.filter((r) => Math.abs(100 * Math.expm1(r.log)) >= bar && `${r.scene} ${r.worker} ${r.machine}`.toLowerCase().includes(find)).sort((p, q) => q.log - p.log);
-    $('note').textContent = `${list.length} workers of 0.1 ms or more on both; ${shown.length} shown, the ones that grew most first. ms a frame with nothing drawn; - is less time. In colour where every VM went the same way.${same ? '' : ' Two measures: other VMs, perhaps other CPUs.'}`;
-    $('out').append(table(['change', 'scene', 'worker', 'machine', 'ms', 'VMs', ''], shown.map((r) => [
+    $('note').textContent = `${list.length} workers of 0.1 ms or more on both; ${shown.length} shown, the ones that grew most first. Unit: STEP_MS less WAIT_MS, each worker's own ms a frame, nothing drawn; - is better (less time), + is worse. In colour where every VM went the same way.${same ? '' : ' Two measures: other VMs, perhaps other CPUs.'}`;
+    $('out').append(table(['change, STEP_MS (- better)', 'scene', 'worker', 'machine', 'STEP_MS, ms a frame', 'VMs', ''], shown.map((r) => [
       number(pct(r.log), r.doubt || !r.agree ? null : r.log < 0), r.scene, r.worker, r.machine, el('td', `${r.x.toFixed(2)} > ${r.y.toFixed(2)}`, 'n'), el('td', r.vms.join(' / '), 'n'),
       el('td', [r.doubt, r.changed.length ? `the scene is not the same (${r.changed.length} files)` : null].filter(Boolean).join(', '), 'doubt'),
     ])));
   } else {
     const [ex, ey] = [mx.exact?.[sx.side], my.exact?.[sy.side]];
-    $('note').textContent = ex && ey ? 'From git, exact.' : 'One of the two has no exact numbers.';
+    $('note').textContent = ex && ey ? 'From git, exact: bytes, lines and test cases; fewer bytes is better.' : 'One of the two has no exact numbers.';
     if (!ex || !ey) return;
     const rows = [...Object.keys(ey.bytes ?? {}).map((f) => [f, ex.bytes[f]?.raw, ey.bytes[f]?.raw]), ...Object.keys(ey.bytes ?? {}).map((f) => [`${f}, gzip`, ex.bytes[f]?.gzip, ey.bytes[f]?.gzip]),
       ['lines of code', ex.lines?.code, ey.lines?.code], ['tests, engine', ex.tests?.engine, ey.tests?.engine]];

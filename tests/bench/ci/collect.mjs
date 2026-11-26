@@ -241,13 +241,13 @@ export function summarize(dir) {
     })])));
   }
   if (kernels.length) {
-    md.push('## Kernels (B against A, percent, + is faster)', '', table(['label', 'machine', 'kernel', 'VMs', 'mean', 'sd', 'limit', 'worst', 'better', 'ms'],
+    md.push('## Kernels (B against A, ops/s in percent, + is better)', '', table(['label', 'machine', 'kernel', 'VMs', 'mean', 'sd', 'limit', 'worst', 'better', 'ms'],
       kernels.map((k) => [k.label, k.machine, k.id, k.n, k.meanPct, k.sdPct, k.limitPct, k.worstPct, k.n ? `${k.better}/${k.n}` : '',
         k.errors ? `FAILED ${k.errors[0].slice(0, 120)}` : k.runMs])));
   }
   const sceneAb = sceneTable(jobs);
   if (sceneAb.rows.length) {
-    md.push('## Scenes, B against A (a worker\'s own ms a frame, nothing drawn)', '', table(['A', 'B', 'machine', 'scene', 'worker', 'VMs', 'A ms', 'B ms', 'B against A', 'limit', 'VMs with more', 'frames', ''],
+    md.push('## Scenes, B against A (STEP_MS less WAIT_MS, a worker\'s own ms a frame, nothing drawn; - is better)', '', table(['A', 'B', 'machine', 'scene', 'worker', 'VMs', 'A ms', 'B ms', 'B against A', 'limit', 'VMs with more', 'frames', ''],
       sceneAb.rows.map((r) => [r.a?.slice(0, 8), r.b?.slice(0, 8), r.machine, r.scene, r.worker, r.n, r.aMs, r.bMs, `${r.meanPct} %`, r.limitPct, `${r.more}/${r.n}`,
         r.framesA === null ? '' : `${r.framesA} / ${r.framesB}`, [r.doubt, r.changed?.length ? 'scene changed' : null].filter(Boolean).join(', ')])));
     for (const [key, error] of Object.entries(sceneAb.failed)) md.push(`- ${key}: ${error.slice(0, 200)}`);

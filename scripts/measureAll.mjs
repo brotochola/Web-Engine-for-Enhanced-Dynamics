@@ -214,13 +214,14 @@ const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 const signed = (p, digits = 1) => `${p >= 0 ? '+' : ''}${p.toFixed(digits)} %`;
 const table = (head, rows) => [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.join(' | ')} |`), ''].join('\n');
 
-/** A kernel's worst and best case, on the machine where its worst lost most. */
+/** A kernel's worst and best case, on the machine where its worst lost most (named). */
 function casesText(r, machines) {
   const own = machines.map((m) => r.machines[m]).filter((x) => x?.worst);
   if (!own.length) return '';
   const x = own.reduce((p, c) => (c.worst.log < p.worst.log ? c : p));
   const text = (c) => `${c.name.replace(/\.opsPerSec$/, '')} ${signed(pct(c.log))}`;
-  return `${text(x.worst)}; ${text(x.best)}`;
+  const where = Object.entries(r.machines).find(([, m]) => m === x)?.[0];
+  return `${MACHINE_NAMES[where] || where}: ${text(x.worst)}; ${text(x.best)}`;
 }
 
 export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null, machines, health }) {
@@ -239,9 +240,10 @@ export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null,
   if (kernels) {
     const { rows, failed } = kernels;
     const name = (m) => MACHINE_NAMES[m] || m;
-    out.push('## Kernels', '', `${rows.length} kernels run on both, each the mean of its cases, ${b}'s speed against ${a}'s in the same VM (+ is faster). `
+    out.push('## Kernels', '', `Unit: operations a second (ops/s; a kernel that reports a time per call is read as its inverse). + is better: more operations a second; - is worse. `
+      + `${rows.length} kernels run on both, each the mean of its cases, ${b} against ${a} in the same VM. `
       + `Moved: ${BAR_PCT} % or more, past the machine's detection limit. ${failed.size} do not run on both (the end of the page).`, '');
-    out.push(table(['machine', 'VMs', 'CPUs', 'kernels', 'faster', 'slower', 'median of all'], machines.map((m) => {
+    out.push(table(['machine', 'VMs', 'CPUs', 'kernels', 'faster', 'slower', 'median of all, ops/s (+ better)'], machines.map((m) => {
       const own = rows.filter((r) => r.machines[m]);
       const cpus = [...new Set(own.flatMap((r) => r.machines[m].cpus))];
       return [name(m), own.length ? Math.max(...own.map((r) => r.machines[m].n)) : 0, cpus.join(', '), own.length,
@@ -249,7 +251,7 @@ export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null,
         own.length ? signed(pct(median(own.map((r) => r.machines[m].log)))) : ''];
     })));
     const areas = [...new Set(rows.map((r) => r.area))];
-    out.push('By part of the engine (the median of its kernels):', '', table(['part', 'kernels', ...machines.map(name)], areas.map((area) => {
+    out.push('By part of the engine (the median of its kernels, ops/s, + is better):', '', table(['part', 'kernels', ...machines.map((m) => `${name(m)}, ops/s (+ better)`)], areas.map((area) => {
       const own = rows.filter((r) => r.area === area);
       return [area, own.length, ...machines.map((m) => {
         const v = own.filter((r) => r.machines[m]).map((r) => r.machines[m].log);
@@ -265,7 +267,7 @@ export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null,
       .sort((x, y) => sign * (mean(Object.values(y.machines).map((m) => m.log)) - mean(Object.values(x.machines).map((m) => m.log))));
     for (const [title, sign] of [['Faster on two machines or more', 1], ['Slower on two machines or more', -1]]) {
       const list = wide(sign);
-      out.push(`### ${title} (${list.length})`, '', list.length ? table(['kernel', 'part', ...machines.map(name), 'its cases, worst and best', 'checksum'], list.map(line)) : 'None.\n');
+      out.push(`### ${title} (${list.length})`, '', list.length ? table(['kernel', 'part', ...machines.map((m) => `${name(m)}, ops/s (+ better)`), 'its cases, worst and best (ops/s)', 'checksum'], list.map(line)) : 'None.\n');
     }
     out.push('"other results": the kernel computes something else on each side (its checksums differ), so its speed is read with that.', '');
     if (failed.size) {
@@ -275,10 +277,10 @@ export function page({ a, b, shaA, shaB, factsA, factsB, kernels, scenes = null,
   if (scenes && scenes.rows.length) {
     const name = (m) => MACHINE_NAMES[m] || m;
     const ms = [...new Set(scenes.rows.map((r) => r.machine))];
-    out.push('## Scenes', '', `Each worker's own time a frame (STEP_MS less its waits) in Chromium without drawing, ${b} against ${a} in the same VM, the median of its pairs, then the VMs' mean (- is less time). Bold: ${BAR_PCT} % or more, past the limit, of a worker that can be read. "few frames": it ran under 15 a second on a side (cold ones); "other frames": one side ran a quarter more than the other. A scene with a * is not the same on both sides (the list is below).`, '');
+    out.push('## Scenes', '', `Unit: STEP_MS less WAIT_MS, each worker's own ms a frame. - is better: less time a frame; + is worse. In Chromium without drawing, ${b} against ${a} in the same VM, the median of its pairs, then the VMs' mean (the ms shown are the VMs' median of each side, so a small change can read the other way in them). Bold: ${BAR_PCT} % or more, past the limit, of a worker that can be read. "few frames": it ran under 15 a second on a side (cold ones); "other frames": one side ran a quarter more than the other. A scene with a * is not the same on both sides (the list is below).`, '');
     const keys = [...new Set(scenes.rows.map((r) => `${r.scene}|${r.worker}`))];
     const changedOf = (scene) => scenes.rows.find((r) => r.scene === scene)?.changed ?? [];
-    out.push(table(['scene', 'worker', ...ms.map(name)], keys.map((key) => {
+    out.push(table(['scene', 'worker', ...ms.map((m) => `${name(m)}, STEP_MS (- better)`)], keys.map((key) => {
       const [scene, worker] = key.split('|');
       return [`${scene}${changedOf(scene).length ? ' *' : ''}`, worker, ...ms.map((m) => {
         const r = scenes.rows.find((x) => x.machine === m && x.scene === scene && x.worker === worker);

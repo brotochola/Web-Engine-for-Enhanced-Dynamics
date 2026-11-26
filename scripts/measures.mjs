@@ -123,7 +123,7 @@ function main() {
     for (const r of rows) byCase.set(`${r.kernel} | ${r.case}`, [...(byCase.get(`${r.kernel} | ${r.case}`) ?? []), r]);
     const out = [...byCase].map(([key, list]) => ({ key, list, log: median(list.map((r) => r.log)) })).sort((p, q) => p.log - q.log);
     const pct = (log) => `${log >= 0 ? '+' : ''}${(100 * Math.expm1(log)).toFixed(1)} %`;
-    console.log(`${my.name}:${sy} (${my[sy]?.slice(0, 8)}) against ${mx.name}:${sx} (${mx[sx]?.slice(0, 8)}): ${out.length} cases; + is faster`);
+    console.log(`${my.name}:${sy} (${my[sy]?.slice(0, 8)}) against ${mx.name}:${sx} (${mx[sx]?.slice(0, 8)}): ${out.length} cases; ops/s, + is better`);
     for (const o of out) {
       if (!rest.includes('--all') && Math.abs(100 * Math.expm1(o.log)) < bar) continue;
       console.log(`${pct(o.log).padStart(9)}  ${o.key}  [${o.list.map((r) => `${pct(r.log)} ${r.cpu}`).slice(0, 5).join('; ')}]`);
