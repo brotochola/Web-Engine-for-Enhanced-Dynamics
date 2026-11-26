@@ -3405,6 +3405,8 @@ export interface LayerBuiltInConfigEntry {
   scale?: number | { x?: number; y?: number };
   layers?: string[];
   parallax?: number | { x?: number; y?: number };
+  /** A tilemap: false draws its pages every frame. Default: painted into a canvas-sized picture while the camera holds (E-400). */
+  cache?: boolean;
 }
 
 export interface LayerUniformMapEntry {
@@ -3546,6 +3548,8 @@ export declare class Layer {
       scale?: number | { x: number; y?: number };
       layers?: string[];
       parallax?: number | { x?: number; y?: number };
+      /** false: the pages draw every frame. Default: painted into a canvas-sized picture while the camera holds (E-400). */
+      cache?: boolean;
     }
   ): Promise<void>;
   setTilemapBackground(tilemapId: string, options?: Record<string, unknown>): Promise<void>;

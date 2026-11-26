@@ -569,7 +569,8 @@ export class Layer {
     /**
      * Tiled map (native GPU GID pages). Resolves after the pixi worker uploads pages.
      * @param {string} tilemapId
-     * @param {object} [options={}] scale, layers, parallax
+     * @param {object} [options={}] scale, layers, parallax; cache: false draws the pages every frame (E-400: by default they are
+     *   painted into a canvas-sized picture while the camera holds)
      * @returns {Promise<void>}
      */
     setTilemap(tilemapId, options = {}) {
@@ -753,6 +754,7 @@ export class Layer {
                     scale: content.scale,
                     layers: content.layers,
                     parallax: content.parallax,
+                    cache: content.cache,
                 }));
             }
         }
