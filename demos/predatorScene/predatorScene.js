@@ -244,6 +244,8 @@ export class PredatorScene extends WEED.Scene {
     renderer: {
       // E-187: `?backend=webgpu` draws on WebGPU (the scene's own backend is WebGL).
       backend: predatorSearchParam('backend') === 'webgpu' ? 'webgpu' : 'webgl',
+      // E-204: `?mipmaps=1` gives the atlas its mip levels (the people zoomed out read a smaller level).
+      autoGenerateMipmaps: predatorSearchParam('mipmaps') === '1',
       noLimitFPS: predatorNoLimitFPS,
       ySort: true,
       autoGenerateMipmaps: false,
