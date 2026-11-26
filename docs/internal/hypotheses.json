@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-25",
+  "updated": "2026-11-26",
   "about": "The register of WeedJS's work, the project's one backlog, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, every bug (kind `bug`, with its review item in REVIEW_PLAN.md) and the approved features and developer-experience todos (kinds `feature`, `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, docs/internal/hypotheses.html, which reads this file itself: `npm run dev`, then `/docs/internal/hypotheses.html` (it reads the file again when it changes). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -23576,7 +23576,8 @@
         "R-1472",
         "R-1492",
         "R-1546",
-        "R-1493"
+        "R-1493",
+        "R-2029"
       ],
       "result": "Fixed 2026-11-18 (7a4cdafe, R-1453): bisected to E-504 (d9bf2261); painting a just-uploaded picture into the cache's target slowed its later uploads for good; renderer 40.3 -> 12.7 ms, the barrio's cached floor kept.",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -26063,7 +26064,9 @@
       "date": "2026-11-24"
     },
     {
-      "records": [],
+      "records": [
+        "R-2030"
+      ],
       "refs": [],
       "id": "N-461",
       "title": "Two node tests fail now and then on Windows VMs: startupAtlasCache (the entry is being decoded before any source has answered) and adobeAnimStatics (8 288 bytes where 8 192 are allowed)",
@@ -26082,7 +26085,8 @@
       "records": [
         "R-2008",
         "R-2020",
-        "R-2024"
+        "R-2024",
+        "R-2031"
       ],
       "refs": [],
       "id": "DX-MEASURES",
@@ -44751,6 +44755,33 @@
       "title": "Correction: the scenes said to run on the GTX 1650 here ran on the Radeon iGPU; on the GTX the verdicts hold",
       "verdict": "note",
       "text": "Playwright's Chromium (channel chromium, what sceneAb and its callers ran) takes this laptop's Radeon (Vega) iGPU; the installed Chrome takes the GTX 1650 (checked 2026-11-25 19:18 with WEBGL_debug_renderer_info). So the window runs of 2026-11-25 written as \"GTX 1650\" ran on the Radeon: commits 6010fc9d and 8c021929, records R-2013, R-2021 and R-2022. glFrameRecorder, gpuProcessTrace and gpuPassBench use the installed Chrome: their GTX numbers stand. sceneAb has --channel chrome since. Again on the GTX (installed Chrome, window, drawing, 2026-11-25 evening):\n- boids 40 000 renderer v0.14.0 1.17/1.05/1.03, before the opaque gate (cdf18c62) 0.66/1.25/0.64, main 0.53/0.56/0.55; 65 000: 1.94/1.94/1.90 -> 1.00/0.93/0.54 ms.\n- spritePack pre-render 1.46/1.44/1.43/1.46 -> 1.30/1.20/1.28/1.25 ms (the SIMD cull, 4/4).\n- particleIntegrate renderer v0.14.0 1.08, v0.15.0 0.89, main 0.76 ms.\n- Every scene, v0.14.0 against main, twice: the workers add up to 308.0 -> 257.5 and 304.9 -> 255.2 ms (-16 %), the same list of what grew as on the Radeon (audioStorm's load, SST-21's lists, spawnStorm's bodies, stationarySpatialWide, the cull before 8c021929 was in main's side), plus textureUploadStress renderer +6 % and decalBlit's particle +6 to +11 %. v0.15.0 against main: 307.7 -> 301.4 ms; its eight that grew in one pair were level in three (landing, painterSort and painterMove, liquidFunDemo, orientedBox, decalBlit, bunnyMarkStress). One textureUploadStress run of three on main read 40.6 ms against 12.2 to 12.7: N-292's stall again? Not looked into.\n- Kept as measures: docs/internal/measures/2026-11-25-pc-*.json."
+    },
+    {
+      "id": "R-2029",
+      "date": "2026-11-26",
+      "time": "08:57",
+      "timeFrom": "recorded",
+      "title": "The 40 ms textureUpload run did not come back in 30 more (main and v0.15.0 alike)",
+      "verdict": "note",
+      "text": "The 40.6 ms run of 2026-11-25 (one of three on main, R-2028) did not come back: textureUploadStressScene on the GTX 1650 (installed Chrome, window, drawing), 10 runs of main 12.8 to 15.4 ms (the first 15.4 while the machine warmed), then 20 alternated with v0.15.0: main 11.7 to 13.5 (median 13.2), v0.15.0 12.8 to 13.8 (median 13.1), 451 to 470 frames drawn each. One run in 33 of main: not N-292's stall, which held every later upload slow for the rest of a run. Nothing to do."
+    },
+    {
+      "id": "R-2030",
+      "date": "2026-11-26",
+      "time": "08:57",
+      "timeFrom": "recorded",
+      "title": "startupAtlasCache failed once on Linux x64 too",
+      "verdict": "note",
+      "text": "Seen again on Linux x64 (measure-main-e466, tests-linux-1, AMD EPYC 7763): startupAtlasCache.test.js:235 \"a hit decodes the slot's entry while the key hashes the sources (SST-16)\": \"the entry is being decoded before any source has answered\", expected true, actual false; 3644 of 3645, the rest green. So not Windows alone: the test waits a fixed number of event-loop turns for the decode to start."
+    },
+    {
+      "id": "R-2031",
+      "date": "2026-11-26",
+      "time": "09:37",
+      "timeFrom": "recorded",
+      "title": "measure:all of main with E-466 kept: 6 kernels faster, none slower; tests green but N-461",
+      "verdict": "note",
+      "text": "measure:all of main 5d3ad489 (0.15.90, with E-466) against v0.15.0 on GitHub, 2026-11-26 08:48 to 09:36, kept as docs/internal/measures/2026-11-26-measure-main-e466.json (60 VMs).\n- Kernels: 123 on both; faster on two machines or more 6 (preRenderPersistWasm keyed +52 to +73 %, preRenderCollectWasm +10 to +32 % (the SIMD cull), gpuQueuePack +5 to +9 %, sortPrefix +4 to +7 %, emitGpuCall +4 to +5 %, preRenderPersistWasm +3 to +5 %), slower 0; median of all -0.0 to +0.1 %.\n- Scenes without drawing: boids renderer -40 to -57 %, particles renderer -21 to -27 %, littleCity pre-render -9 to -22 %, balls pre-render -5 to -13 %. More time: bunnyMark renderer +12 to +30 % (the scene changed: E-556, read on 2026-11-25), predator spatial +5 % on Linux x64 only (ARM +0.3, Windows -2.2), decals pre-render +9 % on one machine at 0.1 ms.\n- Tests: 3645 of 3645 on three machines, 3644 on Linux x64 (N-461's startupAtlasCache, R-2030); demos 149 of 149 everywhere. Race stress: every engine case 0 bad. E-466 itself does not show here: GitHub's Chromium draws nothing."
     }
   ],
   "leads": [
