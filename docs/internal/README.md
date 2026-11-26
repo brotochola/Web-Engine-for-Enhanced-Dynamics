@@ -21,6 +21,7 @@ tried, what is planned, and the journal of building the engine. They are not the
 | [`CI_MEASURE.md`](./CI_MEASURE.md) | Tests, kernels and scenes on GitHub's machines (Linux, Windows, macOS, ARM): how a request runs, where its results are, what they may decide. |
 | [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) | What can be measured: the feature catalog, the kernels, every stress scene by area, the gameplay scenes. |
 | [`V8_JIT_GUIDE.md`](./V8_JIT_GUIDE.md) | Writing JavaScript that V8's JIT handles well, and when to leave it for WebAssembly. |
+| [`ENGINE_CODE_RULES.md`](./ENGINE_CODE_RULES.md) | The rules for code in `src/` (shapes, hot loops, doubles across calls, waits between workers, tests), each with the measurement behind it; CLAUDE.md keeps one line of each. |
 | [`../../tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md) | The scene runner's and the gate's options. |
 
 ## Plans

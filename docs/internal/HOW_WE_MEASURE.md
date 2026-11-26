@@ -38,6 +38,41 @@ the incident that paid for it and the rule it replaces.
 
 ## The rules on one page
 
+### In brief
+
+- How much, by size: a big plain change (a trace shows it, ≥ 10 % expected) runs `--early` on its owner
+  scene; one near the bar (3–10 %) runs everything below; a fix off the hot path needs only the suites
+  (HOW_WE_MEASURE "Judgment first").
+- Lowest layer that can see the change: kernel → stress scene → gameplay scene (Predator).
+- Kernel: calls the shipped function, never writes `src/`, reports ops/s with a checksum, warms up
+  through short calls so the timed code is a normal compile, not OSR (say which tier it timed;
+  `warmNormalCompile` in `microbenchHelpers.mjs`, and `tests/bench/kernelTierAudit.mjs` checks).
+- Scene pair: ABAB with both sides from worktrees (`runPredatorAbab.mjs --vs <base> --hyp-rev <rev>`,
+  never the main folder: M13), `--src`, detailed stats off, the window visible. Primary = the owning
+  worker's `STEP_MS − WAIT_MS`; baseline ≥ 6 ms or the row fails (raise the scene's own load knob; 3 ms until 2026-11-13).
+  Speed keep: ≥ 3 % and ≥ 75 % of pairs, load keys within 5 %. A kernel claim needs the kernel win and
+  the scene must not get 3 % worse. Predator is a regression guard (8–13 % run to run per worker), not
+  the ruler for a 3 % claim: that is the owner scene's job.
+- Hygiene keep (bug fix, dead code): stays unless a primary worker is ≥ 3 % worse.
+- A worker the change cannot reach "regresses": run an A/A, and in emergent scenes fit its time
+  against its own load key before calling it (review E-50: physics vs `BODY_MOVED_COUNT`). When every
+  unreachable worker moved the same way, that is drift: read the owner against it.
+- Spend the machine's time: pairs start at 4 and grow by 4 (`--append`) only when they do not
+  decide; Predator gates only changes on its hot path or shared infrastructure, and one gate can
+  cover a batch of kept changes; one A/A per session is the noise reference and gives each scene its
+  detection limit (it replaced the old 8 ms floor); quiet machine, one benchmark at a time.
+- WASM kernels: Node screens, Chrome decides between variants; time TurboFan, not Liftoff; one
+  boundary call per batch; every kernel gets the flags/SIMD/float32 pass (HOW_WE_MEASURE).
+- A total is measured, not added: a campaign's gain or a README number comes from one sitting that runs
+  the changes together (scoreboard, multi-arm, leave-one-out), since a keep near 3 % reads high. Every
+  verdict carries its sitting's detection limit.
+- After measuring, write the record (`node scripts/hypotheses.mjs record …`) with the numbers that
+  decided it, and update `EXECUTION_PLAN.md` when the plan changes. Raw results under `tests/results/`
+  are not kept: never link them. A report (full prose, `docs/internal/reports/`) only when the sitting
+  needs the story.
+
+### In full
+
 1. **Climb only as far as the claim needs:** kernel, then the owner scene (a seeded stress scene that runs
    the code in the regime the hypothesis names), then the Predator gate when the change is on Predator's
    hot path or on shared infrastructure. A kernel that loses ends the hypothesis.
