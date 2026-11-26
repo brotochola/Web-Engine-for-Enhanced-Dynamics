@@ -5,6 +5,14 @@ empties it.
 
 Since v0.15.0:
 
+- **The atlas has mip levels by default** (E-204): `renderer.autoGenerateMipmaps` is null, which is on with a linear atlas
+  and off with a nearest one (pixel art stays as it was). Zoomed out, sprites read a small copy of the atlas: Predator's
+  people at a crowd of 35 000 drew in 1.73 ms instead of 3.07 on an integrated Radeon. They are read one level sharper than
+  the GPU's own choice (`renderer.mipmapBias`, default -1; 0 is softer, -2 sharper). The atlas takes a third more video
+  memory. `autoGenerateMipmaps: false` gives the old look.
+- **A tilemap is drawn once while the camera holds** (E-400): its pages are painted into a picture the canvas's size and
+  shown from it. Predator's floor: 1.15 to 0.33 ms of GPU a frame on an integrated Radeon. A moving camera draws as before;
+  `cache: false` in the tilemap layer's options keeps the old way.
 - **`renderer.interpolation` is gone** (E-556). It blended the entity sprites between the last two queues pre-render
   published, and only meant something with `preRender.fixedFps` under the display's rate; at the display's rate it drew the
   frame before. A scene that still sets it gets a line at load saying that it does nothing. `preRender.interpolation` (the

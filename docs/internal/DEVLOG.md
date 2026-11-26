@@ -6,7 +6,30 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
-## Wednesday 25 November 2026: What Got Slower
+## Thursday 26 November 2026: A Floor Painted Once, and Sprites That Read Less
+
+**The colour pass to the screen is the GPU's largest, and the GTX 1650 hides why.** It ran a quarter to a third busy, so
+the driver dropped it to a third of its clock and every draw read slow for the wrong reason. On the laptop's integrated
+Radeon the pass took 3.0 of 6.5 ms a frame in Predator, and two draws were most of it: the floor, 1.15 ms, and the people,
+1.05 (3.4 with a crowd of 35 000).
+
+**The floor did not need drawing.** A tilemap's pages covered the whole canvas every frame, though nothing in them moves.
+Now they are painted into a picture the canvas's size when the camera or the canvas changes, and that picture is shown
+while the camera holds, as the barrio's procedural floor already was (E-504). A camera that keeps moving draws the pages as
+before. The floor's draw went from 1.15 to 0.33 ms on the Radeon and lost 84 % of its cycles on the GTX; the picture is the
+same to the pixel on WebGL and WebGPU (E-400).
+
+**Half of the people's cost was reading the atlas.** Under a one-pixel scissor their draw kept a tenth of its time, so it
+was pixels; with one texel read for all of them it halved, so it was the reads. Zoomed out, every pixel read the atlas at
+full size, at scattered places. Mip levels let it read a small copy instead: 3.07 to 1.26 ms. But the level the GPU picks
+blurred the trees, and the owner saw it at once; one level sharper keeps the picture close to what it was and still takes
+the draw to 1.73 ms, the frame's GPU time from 9.5 to 6.5. So the atlas has mip levels by default now, read one level sharp
+(`renderer.mipmapBias`), except a pixel-art atlas, which stays crisp (E-204). The first picture shown of it was wrong: the
+demo had its own line turning mip levels off, and both sides of the comparison had none.
+
+**And the notes got shorter.** The page of every measure says its unit and which way is better, and CLAUDE.md keeps the
+rules most tasks need, pointing to the rest.
+
 
 **The owner read "neighbours +48 %" and did not believe it.** Rightly: it was the mean of a few kernels that had gone
 300 times faster, and the median was +7 to +9 %. So the question was turned round: what got slower since the last release?
