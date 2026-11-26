@@ -855,6 +855,7 @@ class PixiRenderer extends AbstractWorker {
       () => {
         if (this.pixiApp === null) return;
         this._framePacer.reset();
+        this.scenery.invalidateTilemapCaches();
         self.postMessage({ msg: 'gpuRestored', backend: 'webgl' });
       },
       false
@@ -1151,6 +1152,7 @@ class PixiRenderer extends AbstractWorker {
     }
 
     this.scenery.applyCamera(zoom, cameraX, cameraY, rot);
+    this.scenery.stepTilemapCaches(zoom, cameraX, cameraY, rot);
 
     if (this.decalTileContainer) {
       this._placeWorldCamera(this.decalTileContainer, zoom, cameraX, cameraY, rot);

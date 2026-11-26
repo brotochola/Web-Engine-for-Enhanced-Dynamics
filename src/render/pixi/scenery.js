@@ -11,7 +11,7 @@
 
 import { Layer } from '../../core/layer.js';
 import { TileMap } from '../../core/tileMap.js';
-import { Container, Geometry, GlProgram, GpuProgram, Mesh, Shader, Sprite, TextureSource, TilingSprite } from '../../vendor/pixi.min.js';
+import { Container, Geometry, GlProgram, GpuProgram, Mesh, RenderTexture, Shader, Sprite, TextureSource, TilingSprite } from '../../vendor/pixi.min.js';
 import { coverBackgroundTransform } from '../coverBackground.js';
 import {
   gidLayersPerDraw,
@@ -22,6 +22,7 @@ import {
   packGidStacksRgba8,
 } from '../tilemapGid.js';
 import { gpuProgramFromWgsl } from '../webgpu/pixiMeshWgsl.js';
+import { createWorldRectCache, WORLD_RECT_DIRECT, WORLD_RECT_SHOW, worldRectCacheStep } from '../worldRectCache.js';
 
 // The Pixi classes the moved bodies name as PIXI.X, as pixiWorker.js's namespace does.
 const PIXI = Object.freeze({ Container, Sprite, TilingSprite });
@@ -47,12 +48,17 @@ export class PixiScenery {
     this.camRot = NaN;
     this.coverBgArgs = null;
     this.coverBgOut = null;
+    /** E-400: cached tilemaps painted into their targets, since the start (tests read it). */
+    this.tilemapCachePaints = 0;
   }
 
   destroy(layerId) {
     const s = this.layers[layerId];
     if (!s) return;
-    if (s.tilemap) this._destroyTilemapPages(s.tilemap);
+    if (s.tilemap) {
+      this._destroyTilemapCache(s.tilemap);
+      this._destroyTilemapPages(s.tilemap);
+    }
     if (s.displayObject) {
       if (s.displayObject.parent) s.displayObject.parent.removeChild(s.displayObject);
       s.displayObject.destroy({ children: true });
@@ -163,17 +169,19 @@ export class PixiScenery {
         this._applyCoverTransform(s);
         continue;
       }
+      // A cached tilemap's layer is its holder; the camera moves the tilemap's own container in it.
+      const o = s.tilemap && s.tilemap.holder ? s.tilemap.container : s.displayObject;
       if (rot) {
-        this.worker._placeWorldCamera(s.displayObject, zoom * (s.sx || 1), cameraX, cameraY, rot);
+        this.worker._placeWorldCamera(o, zoom * (s.sx || 1), cameraX, cameraY, rot);
         continue;
       }
-      if (s.displayObject.rotation) s.displayObject.rotation = 0;
-      if (s.displayObject.pivot && (s.displayObject.pivot.x || s.displayObject.pivot.y)) {
-        s.displayObject.pivot.set(0, 0);
+      if (o.rotation) o.rotation = 0;
+      if (o.pivot && (o.pivot.x || o.pivot.y)) {
+        o.pivot.set(0, 0);
       }
-      s.displayObject.scale.set(zoom * s.sx, zoom * s.sy);
-      s.displayObject.x = -cameraX * zoom * s.px;
-      s.displayObject.y = -cameraY * zoom * s.py;
+      o.scale.set(zoom * s.sx, zoom * s.sy);
+      o.x = -cameraX * zoom * s.px;
+      o.y = -cameraY * zoom * s.py;
     }
   }
 
@@ -231,7 +239,114 @@ export class PixiScenery {
       tilesetTexture: null,
       pages: [],
       scale: { x: 1, y: 1 },
+      // E-400: the cache (_buildTilemapCache), null without one.
+      holder: null,
+      cache: null,
+      cacheRt: null,
+      cacheSprite: null,
+      paintRoot: null,
+      paintCamera: null,
     };
+  }
+
+  /**
+   * E-400: a tilemap's pages painted into a target the canvas' size by meshes on the same geometry and shaders, shown 1:1
+   * by a sprite while the camera holds; the pages draw on the stage while it keeps moving (worldRectCacheStep, as E-504's
+   * worldRect layers). Its holder is the layer. Predator's floor (one draw over the whole canvas, every frame) cost 1.15 ms
+   * of the screen's 3.0 ms a frame on the Radeon iGPU. Tiles do not change after the pages are built, so only the view
+   * repaints.
+   */
+  _buildTilemapCache(tm) {
+    tm.cacheRt = RenderTexture.create({ width: Math.max(1, this.worker.canvasWidth | 0), height: Math.max(1, this.worker.canvasHeight | 0) });
+    tm.paintRoot = new Container();
+    tm.paintCamera = new Container();
+    tm.paintRoot.addChild(tm.paintCamera);
+    for (let i = 0; i < tm.pages.length; i++) {
+      const page = tm.pages[i].mesh;
+      const paint = new Mesh({ geometry: page.geometry, shader: page.shader });
+      paint.eventMode = 'none';
+      paint.cullable = false;
+      tm.paintCamera.addChild(paint);
+    }
+    tm.cacheSprite = new Sprite(tm.cacheRt);
+    tm.cacheSprite.anchor.set(0, 0);
+    tm.cacheSprite.position.set(0, 0);
+    tm.cacheSprite.visible = false;
+    tm.holder.addChild(tm.cacheSprite);
+    tm.cache = createWorldRectCache();
+  }
+
+  /** E-400: the cache's target, its sprite and the paint meshes (not their geometry and shaders: the pages'). */
+  _destroyTilemapCache(tm) {
+    if (!tm.cache) return;
+    const paints = tm.paintCamera.children.slice();
+    for (let i = 0; i < paints.length; i++) paints[i].destroy(false);
+    tm.paintRoot.destroy({ children: true });
+    tm.cacheSprite.destroy();
+    tm.cacheRt.destroy(true);
+    tm.cache = null;
+    tm.cacheRt = null;
+    tm.cacheSprite = null;
+    tm.paintRoot = null;
+    tm.paintCamera = null;
+  }
+
+  /**
+   * E-400: each cached tilemap this frame, after applyCamera: its target shown as painted, painted again when the camera
+   * or the canvas changed, or (a view that keeps changing) its pages drawn on the stage.
+   */
+  stepTilemapCaches(zoom, cameraX, cameraY, rot) {
+    for (let i = 0; i < this.layers.length; i++) {
+      const s = this.layers[i];
+      if (s && s.tilemap && s.tilemap.cache) this._stepTilemapCache(s.tilemap, zoom, cameraX, cameraY, rot || 0);
+    }
+  }
+
+  _stepTilemapCache(tm, zoom, x, y, rot) {
+    const w = Math.max(1, this.worker.canvasWidth | 0);
+    const h = Math.max(1, this.worker.canvasHeight | 0);
+    const step = worldRectCacheStep(tm.cache, zoom, x, y, rot, w, h, false);
+    if (step === WORLD_RECT_SHOW) return;
+    if (step === WORLD_RECT_DIRECT) {
+      if (!tm.container.visible || tm.cacheSprite.visible) {
+        tm.container.visible = true;
+        tm.cacheSprite.visible = false;
+      }
+      return;
+    }
+    if (tm.container.visible || !tm.cacheSprite.visible) {
+      tm.container.visible = false;
+      tm.cacheSprite.visible = true;
+    }
+    if (tm.cacheRt.width !== w || tm.cacheRt.height !== h) {
+      const old = tm.cacheRt;
+      tm.cacheRt = RenderTexture.create({ width: w, height: h });
+      tm.cacheSprite.texture = tm.cacheRt;
+      old.destroy(true);
+    }
+    const c = tm.container;
+    const p = tm.paintCamera;
+    p.position.set(c.position.x, c.position.y);
+    p.scale.set(c.scale.x, c.scale.y);
+    p.pivot.set(c.pivot.x, c.pivot.y);
+    p.rotation = c.rotation;
+    const o = this.worker._rtRenderOpts;
+    o.container = tm.paintRoot;
+    o.target = tm.cacheRt;
+    o.clear = true;
+    o.clearColor = this.worker._clearTransparent;
+    o.transform = null;
+    // No GPU (lost): nothing went into the target, so the next frame paints again.
+    if (!this.worker._submitRender(o)) tm.cache.drawn = false;
+    else this.tilemapCachePaints++;
+  }
+
+  /** E-400: every cached tilemap painted again at its next frame (a restored context lost the targets' pixels). */
+  invalidateTilemapCaches() {
+    for (let i = 0; i < this.layers.length; i++) {
+      const s = this.layers[i];
+      if (s && s.tilemap && s.tilemap.cache) s.tilemap.cache.drawn = false;
+    }
   }
 
   _destroyTilemapPages(tm) {
@@ -392,6 +507,11 @@ export class PixiScenery {
 
     const tm = this._createTilemapRuntime();
     tm.container = new PIXI.Container();
+    // E-400: cached unless the layer says cache: false.
+    if (options && options.cache !== false) {
+      tm.holder = new PIXI.Container();
+      tm.holder.addChild(tm.container);
+    }
     tm.tilemapId = tilemapId;
     tm.buildOptions = options || {};
     tm.tilesetTexture = texEntry.tilesetTexture;
@@ -410,7 +530,7 @@ export class PixiScenery {
 
     this._bind(layerId, layerName, {
       kind: 'tilemap',
-      displayObject: tm.container,
+      displayObject: tm.holder || tm.container,
       parallaxX: Number.isFinite(parallaxX) ? parallaxX : 1,
       parallaxY: Number.isFinite(parallaxY) ? parallaxY : 1,
       tilemap: tm,
@@ -419,5 +539,6 @@ export class PixiScenery {
     const zoom = this.worker.cameraData ? this.worker.cameraData[0] : 1;
     tm.container.scale.set(zoom * tm.scale.x, zoom * tm.scale.y);
     this._fillTilemapPages(tm, tileMapData);
+    if (tm.holder) this._buildTilemapCache(tm);
   }
 }
