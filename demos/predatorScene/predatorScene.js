@@ -244,11 +244,10 @@ export class PredatorScene extends WEED.Scene {
     renderer: {
       // E-187: `?backend=webgpu` draws on WebGPU (the scene's own backend is WebGL).
       backend: predatorSearchParam('backend') === 'webgpu' ? 'webgpu' : 'webgl',
-      // E-204: `?mipmaps=1` gives the atlas its mip levels (the people zoomed out read a smaller level).
-      autoGenerateMipmaps: predatorSearchParam('mipmaps') === '1',
+      // E-204: `?mipmaps=0` takes the atlas's mip levels away (the engine's default gives them to a linear atlas).
+      autoGenerateMipmaps: predatorSearchParam('mipmaps') === '0' ? false : null,
       noLimitFPS: predatorNoLimitFPS,
       ySort: true,
-      autoGenerateMipmaps: false,
       // E-177: `?indexedSprites=0` draws the entities as split frames, without E-162's indexed and E-177's keyed ones.
       ...(predatorSearchParam('indexedSprites') === '0' ? { indexedSprites: false } : {}),
       // E-201: `?posesByRow=0` draws the keyed frames from a pose stream instead of by queue row (renderer.keyedPosesByRow).
