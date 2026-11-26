@@ -81,9 +81,12 @@ export class MeshUvFillBatch extends FillBatchBase {
       ? indices
       : new Uint32Array(this.indexCapacity);
     this.indexSpan = indexSpan instanceof Uint32Array ? indexSpan : new Uint32Array(Math.max(0, entities | 0) * 2);
+    // E-466: STATIC on WebGL. ANGLE (Direct3D 11) binds only a STATIC buffer directly; a DYNAMIC one it copies whole into a
+    // streaming buffer at every draw (Buffer11::supportsDirectBinding), and these hold tens of MB of which a frame changes
+    // a few hundred KB. A STATIC one is copied on the GPU when it changes.
     this.buffer = new Buffer({
       data: this.data,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST | (useWebGpu ? 0 : BufferUsage.STATIC),
       label: label || 'mesh-uv-fill',
     });
     // The index buffer's own array. Pixi draws data.length indices, so the buffer's data is a view of the first
@@ -92,7 +95,7 @@ export class MeshUvFillBatch extends FillBatchBase {
     this._indexView = this.indexData;
     this.indexBuffer = new Buffer({
       data: this.indexData,
-      usage: BufferUsage.INDEX | BufferUsage.COPY_DST,
+      usage: BufferUsage.INDEX | BufferUsage.COPY_DST | (useWebGpu ? 0 : BufferUsage.STATIC),
       label: `${label || 'mesh-uv-fill'}-indices`,
       shrinkToFit: false,
     });
