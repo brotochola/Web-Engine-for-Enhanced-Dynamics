@@ -15628,7 +15628,8 @@
         "selfShadow pass ms"
       ],
       "records": [
-        "R-1125"
+        "R-1125",
+        "R-2038"
       ]
     },
     {
@@ -44849,6 +44850,15 @@
       "title": "Measured on the Radeon: the G-buffer's pixels 0.9 ms (crowd 2.5) and 1.36 ms (zoom 1); pixel depth's gl_FragDepth blocks E-448's rejection",
       "verdict": "note",
       "text": "Measured 2026-11-27 on the Radeon iGPU (glFrameRecorder --gpu-draws, Predator ?light3d=1 by night, one run each, --probe-scissor on the G-buffer's draws): crowd 2.5 zoom 0.216, all draws 15.8 ms a frame: the screen's pass 6.79, the light pass (960 x 540) 3.25, the lamps' map 2.72, pixel depth (1920 x 1080) 1.64, the G-buffer (958 x 538, 26 000 instances) 1.28, of it 0.37 under a 1 px scissor (0.9 ms pixels; the people cover under one screen there, so little to reject). Zoom 1 (8 000 instances), all draws 15.5 ms: the G-buffer 1.44, 0.08 under the scissor (1.36 ms pixels, the people about 4.7 screens deep: the regime where E-448's rejection paid for the colour pass), the light pass 4.23 (1.67 with the G-buffer scissored: its cost follows what the G-buffer holds). The catch: with light3d the G-buffer tests and writes pixel depth (N-274), a per-pixel gl_FragDepth, which turns early depth rejection off; Predator's people carry height maps, so their depth stays per pixel. E-448's front-to-back draw would need EXT_conservative_depth (depth_greater) or a flat depth for sprites without maps."
+    },
+    {
+      "id": "R-2038",
+      "date": "2026-11-27",
+      "time": "20:21",
+      "timeFrom": "recorded",
+      "title": "Not kept: the self-shadow's ids read only where the height shades was 4 % slower (ANGLE flattens the branch); what each light knob weighs",
+      "verdict": "dropped",
+      "text": "Tried 2026-11-27 and not kept: in selfShadowToward, the ids map read only where the height test would shade (the same result, half the fetches on paper). Radeon iGPU, Predator ?light3d=1 by night, glFrameRecorder --gpu-draws, the light pass, before/after alternating twice: zoom 1 4.318/4.173 -> 4.481/4.338 ms, crowd 2.5 zoom 0.216 2.913/2.779 -> 3.008/3.000 ms: 4 % slower, 4/4. As E-365 found, ANGLE flattens the branches, so both fetches run anyway and the second now waits on the test. What the light pass weighs by knob at zoom 1 by night (one run each): 4.24 ms; selfShadow=0 3.16 (the lamps' self-shadow steps, about 1.1 ms); shadowSamples=1 3.60, =9 4.99 (the default 5 taps: about 0.6 ms over one); lightCullingTileSize=32 3.91; and the lamps' map 1.27 ms, 0.54 with lampTile=128. What is left there trades the picture for time."
     }
   ],
   "leads": [
