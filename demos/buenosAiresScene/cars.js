@@ -60,12 +60,12 @@ const DARKNESS_SPREAD = 0.3;
 // turn; on each lamp a spark and a flash round it, as its beam comes round to the camera. The beams light only at night (by
 // day their light would wash out the sun's shadows) and cast no shadows (cheaper). 80° wide, 560 px, 5 bright (at 2,
 // coloured light on dark asphalt hardly showed), from the light bar's height.
-const BEACON_RADIUS = 560;
+const BEACON_RADIUS = 260;
 const BEACON_CONE = 80 * DEG;
 const BEACON_SOFTNESS = 0.6;
 const BEACON_BRIGHTNESS = 5;
 /** How fast the beams turn: a real beacon does between one and three turns a second. */
-const BEACON_TURNS_PER_S = 1.2;
+const BEACON_TURNS_PER_S = 2;
 const BEACON_RED = 0xff2a2a;
 const BEACON_BLUE = 0x2f5bff;
 /** Where its lamps are on the light bar: this share of the car's half width, to each side. */
@@ -442,7 +442,6 @@ function setLocalOffset(index, localX, localY) {
   Transform.localX[index] = localX;
   Transform.localY[index] = localY;
 }
-
 
 function fadeDecoration(index, alpha) {
   if (index >= 0) DecorationComponent.alpha[index] = alpha;

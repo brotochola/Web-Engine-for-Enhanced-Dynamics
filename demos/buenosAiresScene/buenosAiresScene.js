@@ -133,7 +133,7 @@ const DECORATIONS = Math.min(
   (Number.isFinite(META.nDecoraciones)
     ? META.nDecoraciones
     : count('nTiles') + count('nPiezasArboles') + count('nDecoProps') + count('nCables') + count('nGrafitis') +
-      count('nLineas') + count('nVentanas')) + 4 * POLICE_CARS + 2 * DRIVING_CARS + 4096,
+    count('nLineas') + count('nVentanas')) + 4 * POLICE_CARS + 2 * DRIVING_CARS + 4096,
 );
 
 // ---- the assets ----
@@ -185,7 +185,7 @@ export const DECORATION_CLASSES = {
 };
 
 /** The floor's baked data (piso.bin.gz), for the floor layer's textures. */
-export class FloorData extends SharedResource {}
+export class FloorData extends SharedResource { }
 
 const f32 = (value) => ({ value, type: 'f32' });
 const _floor = { x: 0, y: 0 };
@@ -247,11 +247,12 @@ export class BuenosAiresScene extends Scene {
       shadowsEnabled: true,
       ...(LAMP_CACHE ? {} : { lampMapCache: false }),
       selfShadow: SELF_SHADOW,
-      maxShadowCastingLights: 16,
+      maxShadowCastingLights: 32,
       maxShadowsPerLight: 64,
-      maxShadowsPerEntity: 2,
+      maxShadowsPerEntity: 3,
       resolution: RESOLUTION,
       shadowResolution: RESOLUTION,
+
       // The sun on the camera's side (shadowAngleOffset 0), or every wall the camera sees would be against the light, and
       // no higher than 60°, or at noon it would reach no wall. skyLight 0.5: a wall in the shade keeps half its light,
       // as the editor lit it.
