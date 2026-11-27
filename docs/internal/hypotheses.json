@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-26",
+  "updated": "2026-11-27",
   "about": "The register of WeedJS's work, the project's one backlog, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, every bug (kind `bug`, with its review item in REVIEW_PLAN.md) and the approved features and developer-experience todos (kinds `feature`, `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, docs/internal/hypotheses.html, which reads this file itself: `npm run dev`, then `/docs/internal/hypotheses.html` (it reads the file again when it changes). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -18124,7 +18124,7 @@
     {
       "id": "E-362",
       "title": "The pose rotation as one u32 (2 x snorm16, scaled so the skew value 1.5 fits): E-201's per-frame pose copy and upload drop from 16 to 12 bytes a row",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested; approved 2026-11-23 (owner): the ~6e-5 rad rotation error is accepted; after E-392, kept only if it measures (3 % bar)",
       "date": "2026-11-15",
       "area": "pixi",
@@ -18141,7 +18141,8 @@
       "records": [
         "R-1102",
         "R-1100",
-        "R-1890"
+        "R-1890",
+        "R-2036"
       ]
     },
     {
@@ -18218,12 +18219,12 @@
     {
       "id": "E-392",
       "title": "E-201's pose texture takes every queue row's pose every frame: four column copies and four texSubImage2D of 1024 x rows RGBA32UI (640 KB a frame at Predator crowd 2.5), however few poses moved",
-      "status": "open",
+      "status": "dropped",
       "statusText": "proposed 2026-11-16 from glFrameRecorder and instancedSpriteBatch.js _uploadPoseRows",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "glFrameRecorder: 4 texSubImage2D a frame of 1024 x 4 texels (Predator crowd 1) and 1024 x 10 (crowd 2.5), RGBA32UI: 256 and 640 KB a frame; _uploadPoseRows copies x, y, rotC and rotS of the first n rows into blocks first.",
+      "result": "Dropped 2026-11-27: 90-98 % of Predator's pose rows change every frame (rows reassigned), nothing to skip; the direct upload did not pay (445 -> 325-485 us at crowd 2.5)",
       "next": "Upload the rows whose pose changed (a dirty range from the emit), or the rotation as one u32 (E-362); a scene that stands still must stop uploading. A static stress scene, Pixi STEP_MS over 6 ms.",
       "refs": [],
       "aliases": [
@@ -18232,7 +18233,8 @@
       ],
       "records": [
         "R-1173",
-        "R-1807"
+        "R-1807",
+        "R-2035"
       ]
     },
     {
@@ -20014,7 +20016,8 @@
       ],
       "records": [
         "R-1212",
-        "R-1214"
+        "R-1214",
+        "R-2037"
       ]
     },
     {
@@ -44819,6 +44822,33 @@
         "e2db8626",
         "68010d9e"
       ]
+    },
+    {
+      "id": "R-2035",
+      "date": "2026-11-27",
+      "time": "20:01",
+      "timeFrom": "recorded",
+      "title": "Dropped: 90 to 98 % of the pose rows change every frame (rows are reassigned), and the upload straight from the queue did not pay",
+      "verdict": "dropped",
+      "text": "Measured 2026-11-27 on the Radeon iGPU (Predator, window, a temporary timer around _uploadPoseRows, medians of 600 calls): crowd 2.5 zoom 0.216 (35 500 rows) the copy into the blocks 265 us and the upload 270 us a frame, the call 445 us (mean 717); zoom 1 (8 100 rows) 65 us (mean 144). The premise does not hold: counted against the last frame's copy, 90.3 % of the rows and 96 % of the 4096-row texture rows change every frame at crowd 2.5 (91.7 % with battle=0), 97.9 % and 100 % at zoom 1: the queue gives each sprite another row from a frame to the next, so the trees' rows change too, and there is nothing to skip. Uploading each column straight from the queue (no copy) was tried and not kept: 325 to 485 us against 445 at crowd 2.5, 65 to 70 against 65 at zoom 1 (reading the queue's memory, just written by another core, costs the same copied or uploaded). Freezing the upload altogether (a hack, the picture wrong) moved neither the renderer's STEP_MS nor Chrome's GPU process past the noise (3 pairs). What would make it pay: rows that keep their sprite from a frame to the next."
+    },
+    {
+      "id": "R-2036",
+      "date": "2026-11-27",
+      "time": "20:01",
+      "timeFrom": "recorded",
+      "title": "Parked: a quarter of an upload worth about 0.1 ms of Pixi at crowd 2.5",
+      "verdict": "note",
+      "text": "Its ceiling from E-392's measurement (R-2035): the pose upload costs the Pixi worker about 0.45 ms a frame at Predator crowd 2.5 (0.07 at zoom 1), and one column of four is a quarter of its bytes: about 0.1 ms, 1 to 2 % of the renderer, for a change that touches the queue's layout, the emit (C) and the pose reads of the sprite, shadow and caster programs. Parked until rows keep their sprite from frame to frame or the upload weighs more."
+    },
+    {
+      "id": "R-2037",
+      "date": "2026-11-27",
+      "time": "20:04",
+      "timeFrom": "recorded",
+      "title": "Measured on the Radeon: the G-buffer's pixels 0.9 ms (crowd 2.5) and 1.36 ms (zoom 1); pixel depth's gl_FragDepth blocks E-448's rejection",
+      "verdict": "note",
+      "text": "Measured 2026-11-27 on the Radeon iGPU (glFrameRecorder --gpu-draws, Predator ?light3d=1 by night, one run each, --probe-scissor on the G-buffer's draws): crowd 2.5 zoom 0.216, all draws 15.8 ms a frame: the screen's pass 6.79, the light pass (960 x 540) 3.25, the lamps' map 2.72, pixel depth (1920 x 1080) 1.64, the G-buffer (958 x 538, 26 000 instances) 1.28, of it 0.37 under a 1 px scissor (0.9 ms pixels; the people cover under one screen there, so little to reject). Zoom 1 (8 000 instances), all draws 15.5 ms: the G-buffer 1.44, 0.08 under the scissor (1.36 ms pixels, the people about 4.7 screens deep: the regime where E-448's rejection paid for the colour pass), the light pass 4.23 (1.67 with the G-buffer scissored: its cost follows what the G-buffer holds). The catch: with light3d the G-buffer tests and writes pixel depth (N-274), a per-pixel gl_FragDepth, which turns early depth rejection off; Predator's people carry height maps, so their depth stays per pixel. E-448's front-to-back draw would need EXT_conservative_depth (depth_greater) or a flat depth for sprites without maps."
     }
   ],
   "leads": [
