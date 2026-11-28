@@ -16152,7 +16152,8 @@
         "R-1559",
         "R-1591",
         "R-1566",
-        "R-2026"
+        "R-2026",
+        "R-2067"
       ]
     },
     {
@@ -45428,6 +45429,21 @@
         "a4fdf8b5",
         "74607b67",
         "285b8f82"
+      ]
+    },
+    {
+      "id": "R-2067",
+      "date": "2026-11-28",
+      "time": "08:47",
+      "timeFrom": "recorded",
+      "title": "Next step: the built-ins' texels kept (the barrio's faces on _white reach the binary-frame passes, its edge pass -12 % on the Radeon); the nearest-first opaque draw built and parked (strict identity keeps it off in the barrio; chunkFacesScene -32/-38 %)",
+      "verdict": "kept",
+      "text": "An agent built E-378's next step on opt/e378 (aedcbc5b Pixi's State bit for a depth test passing on equal, buildPixi.mjs and the vendor rebuilt, pixiDepthLessEqual.test.js; fd13f9e2 houseLightScene ?nearest=1; 49fd4a17 the nearest-first draw; 9c09ecb3 the built-ins' texels).\n- **The nearest-first draw:** on a qualifying frame the faces' vertex-depth twin draws its instances without heights nearest first instead of in painter order, from a per-frame order stream built in JS (last painter slot first; each row the twin geometry's instance data for that slot plus the slot as aInstPainter, so pixelDepthSlotVertex / pixelDepthSlotWgsl at @location(10) compute the same z the painter-order draw does); a depth test less-or-equal (STATE_DEPTH_LESS_EQUAL: depthFunc on WebGL, depthCompare and the pipeline key on WebGPU) gives ties to the painter's first instance. No scene-graph change (the twin's shader, geometry and state swapped per frame, restored at the next upload). Strict identity: it runs only where every opaque pixel of an instance without heights has alpha exactly 1 (a nearest atlas without mipmaps; no drawn instance without heights with an alpha byte 128 or more that is under 255 or on a frame with half texels, never scanned, or additive). Covers keyed by row (WebGL), keyed by pose (WebGPU), indexed and split. Tests: instancedSpriteFrontToBack.test.js on real batches.\n- **Where it runs:** chunkFacesScene group=0 on both backends (captures 0 pixels); not in houseLight nearest=1 (a face frame with half texels), faceLight (no height frames, no twin), Predator (a linear atlas), nor the barrio: of its 11 660 rows, 447 graffiti draw at tint alpha 181-224 and about 300 use frames with half texels. An upper bound letting those through (not kept): the barrio's twin draw 0.829 -> 0.640 ms on the Radeon (Vega, Ryzen 7 4800H), level on the GTX 1650: worth at most about 0.2 ms there.\n- **GPU** (glFrameRecorder --gpu-draws, one round a side, main a8dde874 against the branch): chunkFacesScene group=0 all draws GTX 1650 (360 MHz both) 1.474 -> 1.006 ms (-32 %), Radeon 0.717 -> 0.442 (-38 %), the edge pass 0.476 -> 0.005 and 0.227 -> 0.008; the barrio by night on the Radeon all draws 6.353 -> 6.061, the edge pass 0.214 -> 0.189 (the built-ins' fix); guards on the GTX 1650 neutral: Predator crowd 2.5 5.660 -> 5.561, Predator light3d crowd 2.5 hour 22 5.730 -> 5.792, boids 0.718 -> 0.738, bunnyMark 5.017 -> 5.008.\n- **Kept now: the built-ins' texels alone** (cherry-picked as 2905b701): the atlas packs its built-ins without a scan, so _white and _empty read as never scanned, and the barrio's 5 474 faces on _white were left out of every binary-frame pass (the edge pass's plain cull and early discard, E-448). frameBase.js BUILTIN_FRAME_TEXELS gives their bases the texels a scan would (_white 64 solid of 8 x 8, _empty none); the gradients and circles stay unscanned. Pictures against main before it (25cac518), headless, WebGL and WebGPU: houseLightScene (default, hour=22), faceLightScene, dxCaptureScene hour=22, chunkFacesScene group=0, depthPairScene: 0 of 921 600 pixels in all 12. Test tests/node/builtinFrameTexels.test.js; node 3723/0, demos 149/0, bundles 372/0 each.\n- **Parked on opt/e378 (worktree weed-e378):** the State bit and the nearest-first draw: much code for scenes with all-binary faces; the barrio needs the owner's word on a relaxed rule (opaque nearest first, then the translucent rows in painter order: a translucent pixel in front of a solid one the painter draws later would show the solid one instead of the layer before it, fixing an artifact; about 0.2 ms on the Radeon).\n- Plan left by the agent: rows built in wasm (like opaque_keyed_rows); E-500's partition through the same order stream; E-463's G-buffer pass (unblended, so its order never changes its pixels) nearest first with no per-frame check; faces with no height frames (no twin); the new WebGPU pipelines in weedPipelineAhead.",
+      "commits": [
+        "9c09ecb3",
+        "2905b701",
+        "aedcbc5b",
+        "49fd4a17"
       ]
     }
   ],
