@@ -1677,6 +1677,8 @@ class PixiRenderer extends AbstractWorker {
       // E-549: which frames a keyed row's columns can come from (the keyed statics' copy keeps only those slots).
       const columns = keyedColumnTextures(this.assets.texLut, TEX_LUT_FLOATS);
       this.entitiesBatch.setColumnTextures(columns.flags, columns.count);
+      // E-500: whether some frame has heights (the opaque pass with faces in one program or two; a twin made now placed).
+      if (this.entitiesBatch.setHeightFrames(this.assets.mapsTableHeights)) this._placeDepthMeshes();
     }
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setAtlasSource(src);
@@ -2106,6 +2108,8 @@ class PixiRenderer extends AbstractWorker {
       depthFaces: facesDepth,
       // E-496: each frame's window in the twin page, for every program of the batch that reads it.
       mapsTable: this.assets.mapsTableSourceOrEmpty(),
+      // E-500: whether some frame of that table has heights (after it, which builds the table).
+      heightFrames: this.assets.mapsTableHeights,
       // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), where the G-buffer pass runs (faces, a sheet
       // with maps, a shadow map: gbufWanted, as pre-render decides it).
       gbuf: gbufWanted(this.config, { maps: this.assets.atlasMapsSource !== null, unshaded: this.assets.atlasUnshaded }),

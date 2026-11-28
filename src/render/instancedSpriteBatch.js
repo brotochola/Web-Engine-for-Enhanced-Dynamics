@@ -399,6 +399,7 @@ export class InstancedSpriteBatch {
    * @param {import('../vendor/pixi.min.js').TextureSource|null} [opts.mapsTable] - E-496: the maps table (mapsTable.js),
    *   each frame's window in the twin page, which every program that reads the twin page reads (pixel depth, the passes
    *   for the light); setMapsTable changes it
+   * @param {boolean} [opts.heightFrames=true] - E-500: whether some frame of the maps table has heights (setHeightFrames)
    */
   constructor({
     capacity,
@@ -424,6 +425,7 @@ export class InstancedSpriteBatch {
     opaquePass = null,
     mapsTable = null,
     depthFaces = false,
+    heightFrames = true,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this._vertexUsage = BufferUsage.VERTEX | BufferUsage.COPY_DST;
@@ -661,6 +663,9 @@ export class InstancedSpriteBatch {
     // depth continuous, and the opaque pass in two programs (E-378): the frames with heights write gl_FragDepth, the
     // vertex-depth twins (plain, indexed, by row) and their mesh (vdepthMesh, right before the batch's own) the others.
     this._depthFaces = depthFaces === true && this._pixelDepth !== null;
+    // E-500: whether some frame has heights (setHeightFrames). With faces and none, every instance is the vertex-depth
+    // program's: the batch's own program is that one, over every instance, and there is no twin (one walk, not two).
+    this._heightFrames = heightFrames !== false;
     this._vdepthShader = null;
     this._vdepthIndexedShader = null;
     this._vdepthRowShader = null;
@@ -1080,12 +1085,12 @@ export class InstancedSpriteBatch {
     }
     const shaders = this._engineShaders;
     const rowSource = spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock });
-    const rowBase = this._depthVertex(rowSource, 'flat');
+    const rowBase = this._opaqueVertex(rowSource);
     // E-448: with the opaque pass, at the painter's depth (its own draw slot), which the pass's twin writes.
     this._colorRowVertex = this._opWanted && rowBase ? rowBase : '';
     const rowVertex = this._colorRowVertex !== '' ? opaqueRowVertex(rowBase, false) : rowBase;
     const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, shaders);
-    const glProgram = glProgramFrom(GlProgram, rowVertex, this._depthFragment(color), `${name}-rows`);
+    const glProgram = glProgramFrom(GlProgram, rowVertex, this._opaqueFragment(color), `${name}-rows`);
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -1137,12 +1142,33 @@ export class InstancedSpriteBatch {
   }
 
   /**
+   * E-500: whether the opaque pass is the batch's own program alone, the vertex-depth one (pixel depth with faces, and no
+   * frame with heights: the program for the frames with heights would send every instance away).
+   */
+  _vertexDepthOnly() {
+    return this._pixelDepth !== null && this._depthFaces && !this._heightFrames;
+  }
+
+  /**
+   * The batch's own colour program's vertex shader (WebGL; `source` before the depth): with faces, the frames with heights'
+   * (cull 'flat', its vertex-depth twin drawing the others), or E-500's vertex-depth one where no frame has heights.
+   */
+  _opaqueVertex(source) {
+    return this._depthVertex(source, this._vertexDepthOnly() ? 'heights' : 'flat');
+  }
+
+  /** _opaqueVertex's fragment shader: the depth written per pixel, or E-500's vertex-depth one (the twin's). */
+  _opaqueFragment(color) {
+    return this._vertexDepthOnly() && color ? pixelDepthFragment(color, { gbuf: this.gbuf, vertexDepth: true }) : this._depthFragment(color);
+  }
+
+  /**
    * DX-FACEDEPTH (E-378, WebGL): the opaque pass's vertex-depth twin of a colour program (its vertex shader before the
    * depth's `base`, its colour fragment), the instances without heights, over the colour program's resources; null
-   * without faces.
+   * without faces, and (E-500) where no frame has heights: the colour program is that one then.
    */
   _vdepthTwin(base, color, shader, statics, name) {
-    if (!this._depthFaces || !base || !color) return null;
+    if (!this._depthFaces || this._vertexDepthOnly() || !base || !color) return null;
     return new Shader({
       glProgram: glProgramFrom(
         GlProgram,
@@ -1164,6 +1190,24 @@ export class InstancedSpriteBatch {
     const want = on === true;
     if (this._pixelDepth === null || want === this._depthFaces) return false;
     this._depthFaces = want;
+    this._rebuildDepthPrograms();
+    return true;
+  }
+
+  /**
+   * E-500: whether some frame of the atlas has heights (its maps table's MAPS_HEIGHTS: mapsTable.js packMapsTable). With
+   * faces the opaque pass is two programs over every instance, each sending the other's kind away (the frames with heights
+   * write their pixels' depth, the others their vertices'); with no such frame the first would draw nothing, so the
+   * batch's own program is the vertex-depth one and the twin goes (pixelDepthMeshes' `before` stays hidden). The programs
+   * are made again when that changes with faces on. Returns whether they were (the caller places a twin made now:
+   * pixiWorker._placeDepthMeshes).
+   * @param {boolean} present
+   */
+  setHeightFrames(present) {
+    const want = present !== false;
+    if (want === this._heightFrames) return false;
+    this._heightFrames = want;
+    if (this._pixelDepth === null || !this._depthFaces) return false;
     this._rebuildDepthPrograms();
     return true;
   }
@@ -1339,7 +1383,9 @@ export class InstancedSpriteBatch {
       // E-378: the edge program's module of its own when its vertex culls (a nearest atlas) or runs over every instance.
       const plainEdge = this._pixelDepth?.plainEdge === true;
       const depthOf = (cull, edge = false) => pixelDepthWgsl(source, { gbuf: this.gbuf, faces, cull, plainEdge: edge && plainEdge });
-      const program = depth ? depthOf(faces ? 'flat' : 'none') : source;
+      // E-500: with faces, the frames with heights' program, or the vertex-depth one where no frame has heights.
+      const vertexDepthOnly = this._vertexDepthOnly();
+      const program = depth ? depthOf(!faces ? 'none' : vertexDepthOnly ? 'heights' : 'flat') : source;
       const gpuProgram = instancedSpriteGpuProgram(GpuProgram, program, fragEntry, name, { maps: depth });
       const shader = new Shader({ gpuProgram, resources });
       if (depth) {
@@ -1349,8 +1395,8 @@ export class InstancedSpriteBatch {
           gpuProgram: instancedSpriteGpuProgram(GpuProgram, faces || plainEdge ? depthOf('none', true) : program, `${fragEntry}Edge`, `${name}-edge`, { maps: true }),
           resources: this._edgeResources(shader, null),
         });
-        // DX-FACEDEPTH (E-378): the opaque pass's vertex-depth twin.
-        this._vdepthShader = faces
+        // DX-FACEDEPTH (E-378): the opaque pass's vertex-depth twin (E-500: none where the colour program is that one).
+        this._vdepthShader = faces && !vertexDepthOnly
           ? new Shader({
               gpuProgram: instancedSpriteGpuProgram(GpuProgram, depthOf('heights'), fragEntry, `${name}-vdepth`, { maps: true }),
               resources: this._edgeResources(shader, null),
@@ -1375,8 +1421,8 @@ export class InstancedSpriteBatch {
     if (!depth && this.gbuf && vert) vert = gbufAttributeGlsl(vert);
     const baseVert = vert;
     if (depth) {
-      vert = this._depthVertex(baseVert, this._depthFaces ? 'flat' : 'none');
-      frag = this._depthFragment(frag);
+      vert = this._opaqueVertex(baseVert);
+      frag = this._opaqueFragment(frag);
     }
     this._colorVertex = vert || '';
     this._colorFragment = frag || '';
@@ -1433,9 +1479,9 @@ export class InstancedSpriteBatch {
     if (this._staticsSource === null) this._staticsSource = this._statics.make(this._rowStaticsU32, width, height, `${name}-statics`);
     const shaders = this._engineShaders;
     const indexedBase = shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null;
-    const indexedVertex = this._depthVertex(indexedBase, 'flat');
+    const indexedVertex = this._opaqueVertex(indexedBase);
     const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, shaders);
-    const glProgram = glProgramFrom(GlProgram, indexedVertex, this._depthFragment(color), `${name}-indexed`);
+    const glProgram = glProgramFrom(GlProgram, indexedVertex, this._opaqueFragment(color), `${name}-indexed`);
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -1489,7 +1535,9 @@ export class InstancedSpriteBatch {
     const plainEdge = this._pixelDepth?.plainEdge === true;
     const depthOf = (cull, edge = false) =>
       pixelDepthWgsl(indexedSource, { gbuf: this.gbuf, faces, cull, plainEdge: edge && plainEdge });
-    const program = depth ? depthOf(faces ? 'flat' : 'none') : indexedSource;
+    // E-500: as the plain program's (_makeSpriteShader).
+    const vertexDepthOnly = this._vertexDepthOnly();
+    const program = depth ? depthOf(!faces ? 'none' : vertexDepthOnly ? 'heights' : 'flat') : indexedSource;
     const entry = this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd';
     const gpuProgram = instancedSpriteIndexedGpuProgram(GpuProgram, program, entry, `${name}-indexed`, { maps: depth });
     const r = this.shader.resources;
@@ -1510,7 +1558,7 @@ export class InstancedSpriteBatch {
         gpuProgram: instancedSpriteIndexedGpuProgram(GpuProgram, faces || plainEdge ? depthOf('none', true) : program, `${entry}Edge`, `${name}-indexed-edge`, { maps: true }),
         resources: this._edgeResources(shader, this._staticsSource),
       });
-      this._vdepthIndexedShader = faces
+      this._vdepthIndexedShader = faces && !vertexDepthOnly
         ? new Shader({
             gpuProgram: instancedSpriteIndexedGpuProgram(GpuProgram, depthOf('heights'), entry, `${name}-indexed-vdepth`, { maps: true }),
             resources: this._edgeResources(shader, this._staticsSource),
