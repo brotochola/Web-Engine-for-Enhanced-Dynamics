@@ -16,7 +16,7 @@ import { debugWorkerLog } from '../../util/debugLog.js';
 import { loadMark } from '../../util/loadMarks.js';
 import { ImageSource, Rectangle, Texture, TextureSource } from '../../vendor/pixi.min.js';
 import { proxyTexturesByPrefix } from '../atlasProxyTextures.js';
-import { FOOTPRINT_TEXELS, foreignArtFloor, writeFootprintRow } from '../frameBase.js';
+import { FOOTPRINT_TEXELS, foreignArtFloor, frameBaseWithBuiltinTexels, writeFootprintRow } from '../frameBase.js';
 import { packAnimStartLookup } from '../gpuParticleBatch.js';
 import { TEX_LUT_RGBA_WIDTH, buildTextureLut, lutFlagTexels, packTextureLutRgba, textureLutLayout } from '../instancedSpriteBatch.js';
 import { cameraFloorScaleY } from '../../util/cameraView.js';
@@ -165,7 +165,9 @@ export class PixiAssets {
 
           const texture = new PIXI.Texture(textureOptions);
           // DX-SHADOW3D: where the frame stands (frameBase.js); writeLutSlot puts it in the texture table's spare floats.
-          if (frameData.base) texture.weedBase = frameData.base;
+          // E-378: a built-in drawn solid or empty with its texels, which no scan writes (frameBase.js BUILTIN_FRAME_TEXELS).
+          const base = frameBaseWithBuiltinTexels(frameName, frameData.base);
+          if (base) texture.weedBase = base;
           // A render drawn for another camera than the scene's: the floor its card's shadow is worked out on.
           texture.weedArtFloor = foreignArtFloor(frameData.base?.artFloor, this.worker.config, cameraFloorScaleY(this.worker.config));
           // E-496: its window in the twin page (the maps table, _buildMapsTable); DX-UNSHADED: its sheet's mark.

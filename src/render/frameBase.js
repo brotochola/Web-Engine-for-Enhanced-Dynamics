@@ -35,6 +35,29 @@ export const FRAME_GLOW = 4;
 export const FRAME_UNSCANNED = 8;
 
 /**
+ * E-378: what the engine's own built-ins hold where they are drawn solid or empty (atlasBuiltins.js drawBuiltin: _white an
+ * 8 x 8 white square, _empty a clear pixel), as a frame's base gives a scanned frame's: the atlas packs them without a
+ * scan, so they read as FRAME_UNSCANNED, and the barrio's faces on _white kept every pass that wants binary frames away
+ * (the edge pass's plain cull, the opaque passes). The gradients and circles are left unscanned (their edges are soft).
+ */
+export const BUILTIN_FRAME_TEXELS = Object.freeze({
+  _empty: Object.freeze({ texels: 0, solidTexels: 0 }),
+  _white: Object.freeze({ texels: 0, solidTexels: 64 }),
+});
+
+/**
+ * E-378: a frame's base with its texels where the atlas has none for it and it is a built-in that BUILTIN_FRAME_TEXELS
+ * knows (its json base otherwise, or undefined).
+ * @param {string} name the frame's name in the atlas
+ * @param {object|undefined} base its json base
+ * @returns {object|undefined}
+ */
+export function frameBaseWithBuiltinTexels(name, base) {
+  if (typeof base?.texels === 'number' || !Object.hasOwn(BUILTIN_FRAME_TEXELS, name)) return base;
+  return { ...(base || {}), ...BUILTIN_FRAME_TEXELS[name] };
+}
+
+/**
  * H-EDGE: the texture table's soft-or-glow bit (instancedSpriteBatch.js packTextureLutRgba), set for a frame that has a
  * texel of alpha 1 to 127 or a glowing one (or was not scanned): the frames whose pixels DX-DEPTH's edge pass may draw
  * with an opaque tint besides the soft edges linear filtering makes. A bit a frame, at its slot in its row (t % perRow),
