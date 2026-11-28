@@ -20022,7 +20022,8 @@
       "records": [
         "R-1212",
         "R-1214",
-        "R-2037"
+        "R-2037",
+        "R-2051"
       ]
     },
     {
@@ -21947,9 +21948,10 @@
       "records": [
         "R-1287",
         "R-1291",
-        "R-1301"
+        "R-1301",
+        "R-2050"
       ],
-      "result": "",
+      "result": "Partly kept 2026-11-28 (0fed1cbe): one opaque program when no frame has heights; the by-kind partition needs a painter-slot order stream (E-378's mechanism), 1-2 days for 0.1-0.3 ms in the barrio",
       "next": "R-1291: the vertex-depth draw is the flat instances' colour, not an extra pass; what costs is both draws running the vertex shader over every instance (faceLightScene town=80000: +2.1 ms of GPU). Partition the instances by kind when packed (flat, then heights), each draw over its own range (an instance offset per draw); byte-identical pictures; glFrameRecorder on faceLightScene town=80000 and the barrio.",
       "id": "E-500",
       "kind": "gpu",
@@ -23866,10 +23868,10 @@
     {
       "id": "E-525",
       "title": "Every look shader layer keeps a pass-1 target and an rtOut of its own at canvas x resolution (8.3 MB each at 1080p, resolution 1), and every SCREEN pass a target of its own: share the pass-1 targets of sprite and density look layers of one size, and run the SCREEN chain over two targets a resolution",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-18 from Phaser 4's DrawingContextPool and three.js's EffectComposer (R-1429); not measured; a memory change, speed judged as hygiene",
       "date": "2026-11-18",
-      "result": "",
+      "result": "Kept 2026-11-28: shared look and SCREEN targets, 5 targets fewer in dxCaptureScene's mix (156 -> 117 MiB at 1080p on WebGL), post=6 47 -> 16 MiB; Predator unaffected (no look layer)",
       "next": "Count the targets and their bytes in Predator, Sun Street and a three-pass SCREEN stack (a probe over pixiWorker's RenderTexture.create calls). What can be shared: a sprite or density look layer's cl.rt is cleared and consumed by its look in the same pass, so layers of one size can take turns on one; rtOut must persist (frames with no new queue present it again); a MESH layer's cl.rt is a cache, redrawn only when it changed, and stays its own; SCREEN passes run in zIndex order, each reading the one before, so two targets a resolution suffice (the last pass draws onto the canvas, as now). Judged by VRAM and the pictures byte-identical on both backends; speed as hygiene (no worker 3 % worse). Phaser 3.86 hit out-of-memory errors on phones with full-canvas effect buffers (509de6ae); its docs count 4 MB a megapixel a target.",
       "area": "pixi",
       "kind": "gpu",
@@ -23882,7 +23884,8 @@
       ],
       "records": [
         "R-1422",
-        "R-1429"
+        "R-1429",
+        "R-2049"
       ]
     },
     {
@@ -45046,6 +45049,45 @@
       "title": "Last esbuild trial: classic whole workers are as fast as webpack (the slowdown was the ES module workers' shared chunks) but the bundle nearly doubles (2.4 MB gzip against 1.3); closed, webpack stays",
       "verdict": "dropped",
       "text": "The last N-172 trial (owner, 2026-11-28: one more test, then close it). On build/rollup-esbuild (ab247001) every worker built whole by esbuild as a classic script (format iife, no shared chunks, createWorker without type 'module'), Terser after esbuild as before; the trial's edit stayed in a scratch worktree, not committed.\n- Speed, Predator crowd 2.5, window, Radeon integrated GPU (Vega, Ryzen 7 4800H), 4 pairs alternating against v0.16.0's webpack bundle, each side's dist/.build-version stamped (2026-11-28 01:20 to 01:26, by the files): medians webpack -> esbuild classic: logic 6.89 -> 6.57 ms (-4.6 %), spatial 8.14 -> 8.30 (+2.0 %), physics 14.94 -> 14.70 (-1.6 %), renderer 4.71 -> 4.65 (-1.4 %), particle 1.18 -> 1.08 (-9.0 %), pre-render 7.34 -> 7.13 (-2.9 %). Pair 3 ran loaded on both sides (agents' builds and suites on the machine), pairs 1 and 2 had esbuild 12-19 % higher in logic and pair 0 lower: level within the noise, where the module-worker build read +26 to +58 % in every sitting.\n- So the cause was the ES module workers with esbuild's shared chunks (code reached across modules through import bindings), not esbuild's code itself.\n- But whole classic workers carry the common code once each: the production ESM bundle 6 688 KB raw, 2 395 KB gzip, 1 031 KB brotli, against webpack's 3 898 / 1 275 / 936. esbuild has no shared chunk for classic scripts (webpack's workers share worker_common through importScripts), so a build that is both as small and as fast would need that sharing made by hand.\nClosed: webpack stays. Main ships three bundles since 406b4c69 (production ESM and UMD, debug ESM)."
+    },
+    {
+      "id": "R-2049",
+      "date": "2026-11-28",
+      "time": "01:36",
+      "timeFrom": "recorded",
+      "title": "Kept: look layers of one size share their targets and the SCREEN chain draws into two a size; dxCaptureScene mix 156 -> 117 MiB (WebGL), a three-pass SCREEN stack 23.7 -> 15.8 MiB; pictures identical",
+      "verdict": "kept-hygiene",
+      "text": "An agent built it on opt/e525 (b31f2cc3 the probe, ddc9a758 the change), merged 3d957760.\n- **How:** lookPasses.takeTarget / giveTarget hand out one target per size and slot, counted by holders (the last holder destroys it). Slot 0: a sprite, density or GPU-particle look layer's picture (cl.rt) and the SCREEN chain's first output; 1 and 2 in turn: earlier passes; 3: the chain's second output. Own targets as before: every rtOut, a MESH layer's rt and earlier passes (read later in the frame), a picture a layer shows directly (no look). SCREEN passes before the last alternate between two targets a size; with no pass reading uScene and no depth attachment on the frame target, the frame target is one of the two. A canvas resize or Layer.resolution change re-takes at the new size (resizeRTs; the chain at its next present). A GPU loss restarts the scene (N-301), so nothing is rebuilt in place.\n- **Probe** (tests/bench/renderTargetProbe.mjs, every surface Pixi's RenderTargetSystem drew into, canvas excluded), 1920 x 1080, before -> after: screenPassStressScene post=3 3 -> 2 targets, 23.73 -> 15.82 MiB (after a resize to 1280 x 720 10.55 -> 7.03); post=6 (WebGL) 6 -> 2, 47.46 -> 15.82; dxCaptureScene mix (deco, decoLook, lookPasses=3, shade, shadeLook, screen, postVignette=3) WebGL 19 -> 14 targets, 156.10 -> 116.55 MiB, WebGPU 20 -> 15, 164.01 -> 124.46; Blastforge (WebGL) 7 -> 5, 19.78 -> 15.82. Predator (with and without light3d) and Sun Street unchanged: no look layer, and Sun Street's pointwise SCREEN layers already draw as one pass.\n- **Captures** (compareCaptures --vs e6db68a6, headless): 0 of 921 600 pixels differ in 8 cases, WebGL and WebGPU (dxCaptureScene deco/decoLook, the mix, postVignette=4, lookPasses=3 passScale=0.5 lookLast=source postVignette=2).\n- **Tests:** node 3663/0 on the branch; tests/node/sharedLookTargets.test.js (9 tests: counting, the chain with and without uScene, show/hide, slots, resize, the scene's end, picture ownership through a swap to no look, per-layer scale mode).\n- Speed: hygiene, Predator unaffected (no look layer); the batched sitting after the merges covers it.\n- Found: N-465 (a world-rect layer's cache keeps its size after a resize; customLayers.initialize run again leaks rt/rtOut).",
+      "commits": [
+        "b31f2cc3",
+        "ddc9a758",
+        "3d957760"
+      ]
+    },
+    {
+      "id": "R-2050",
+      "date": "2026-11-28",
+      "time": "01:36",
+      "timeFrom": "recorded",
+      "title": "Partly kept: with faces and no frame with heights the opaque pass is one program (faceLightScene town=80000 all draws 11.1 -> 10.6 ms GTX 1650, 16.8 -> 15.9 Radeon); the full partition cannot keep pictures (painter order of the blended passes)",
+      "verdict": "kept",
+      "text": "An agent on opt/e500 (bb1898da), merged 0fed1cbe; the second commit (E-463, e73e2757) not merged (its own record).\n- **Not the partition the row asked for:** reordering the instance stream by kind changes the picture. The edge pass and the blended passes blend the same instances in painter order (flat ones first swaps overlapping soft edges), and the painter step comes from gl_InstanceID / instance_index. A picture-identical partition needs an order stream for the two opaque draws (each kind's painter slots, the instance data fetched by slot: E-448's pose texture on WebGL, storage buffers on WebGPU): 1-2 days for 0.1-0.3 ms where both kinds are present (R-1301), the same mechanism E-378's front-to-back step needs.\n- **Built instead:** the maps table counts the frames marked MAPS_HEIGHTS (packMapsTable().heights); with faces and no frame with heights the batch's own program is the vertex-depth one and there is no twin: one walk over the instances instead of two (WebGL and WebGPU; plain, indexed and by row). An atlas with height maps (the barrio) keeps both programs.\n- **GPU** (glFrameRecorder --gpu-draws, faceLightScene town=80000): GTX 1650 at 1770-1785 MHz, 2 rounds a side: the heights-only draw 0.427 / 0.427 ms -> gone, all draws 11.109 / 11.163 -> 10.610 / 10.569 ms; Radeon (Vega, Ryzen 7 4800H), 1 round: 0.624 -> gone, all draws 16.775 -> 15.896. The row's \"+2.1 ms\" is out of date: the wasted draw costs 0.43 ms today; the edge pass (2.8 ms) and the unshaded pass's three draws (1.05 ms) also walk all 79 564 instances.\n- **Captures** (--vs main, headless): 0 of 921 600 pixels in 14 cases (faceLightScene default, hour=13, town=80000 at 22 and 13 h, houseLightScene, dxCaptureScene, depthPairScene; WebGL and WebGPU). Tests: node 3657/0, demos 149/0; tests/node/instancedSpriteHeightFrames.test.js (real batches on both backends: which instances each draw keeps, each drawn once, depth per pixel or from the vertex, order, rebuild on an atlas change).\n- Found: N-463 (an entities batch drawn in chunks may lose the flat instances with faces and height frames).",
+      "commits": [
+        "bb1898da",
+        "0fed1cbe"
+      ]
+    },
+    {
+      "id": "R-2051",
+      "date": "2026-11-28",
+      "time": "01:36",
+      "timeFrom": "recorded",
+      "title": "Not kept: the G-buffer pass with vertex depth for the flat instances wins in houseLightScene (-12/-15 %) and loses in the barrio (medians 0.730 -> 1.097 ms on the Radeon)",
+      "verdict": "dropped",
+      "text": "The G-buffer pass split (from R-2046's reading), built by the E-500 agent on opt/e500 (e73e2757), not merged.\n- **What it did:** faces on with some frame that has heights: AUX_GBUF_VDEPTH draws the instances without heights first, depth written in the vertex, no frag depth, then AUX_GBUF the ones with heights at their texels' depth (gbufMesh a host Container of both). With faces and no height frames, the vertex-depth program alone. Without faces nothing changes (the stepped depth formula is not linear across floor sprites). Captures 0 of 921 600 pixels in 16 cases on both backends; node 3659/0, demos 149/0.\n- **houseLightScene bench=faces hour=15** (agent, 1 round): Radeon 1.766 -> 1.558 ms (-12 %), GTX 1650 at about 900 MHz 0.891 -> 0.755 (-15 %).\n- **The barrio** (demos/buenosAiresScene hour=22 dayMinutes=0, walkers moving), my alternating sitting 2026-11-28 by the files, Radeon, glFrameRecorder --gpu-draws, the G-buffer passes (the 958 x 538 target) a frame, main against e73e2757, 3 pairs: base 0.968 / 0.730 / 0.730 ms, new 1.169 / 1.097 / 0.737 (medians 0.730 -> 1.097); the agent's own: Radeon 0.742 -> 1.021 then 0.818 -> 0.777, GTX 1650 at 600-660 MHz 0.361 -> 0.381. The second walk over about 11 600 instances outweighs the early depth it buys there.\nNot kept: the game scene is the barrio. Left as E-463's notes; the binary-frames-front-to-back idea in its row stays the open direction.",
+      "commits": [
+        "e73e2757"
+      ]
     }
   ],
   "leads": [
