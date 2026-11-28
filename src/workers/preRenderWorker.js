@@ -1385,6 +1385,9 @@ const COLLECT_FOOT = new Float64Array(1);
 // N-110: the key an attached decoration's parent sorts at, from _storeAttachedParentKey (a store, not a returned
 // double, which a call TurboFan does not inline boxes); N-450: [1] its sort line, unrounded, outside its zIndex band.
 const PARENT_SORT_KEY = new Float64Array(2);
+// E-520: the parent whose key PARENT_SORT_KEY holds while the decoration collect's kernel path hands decorations back
+// (-1: none yet), kept here rather than on the worker so its shape is the one it had.
+const DECO_LAST_PARENT = new Float64Array(1);
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *
@@ -1644,8 +1647,6 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuSunScanXY = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
-        /** E-520: the parent whose key PARENT_SORT_KEY holds in the decoration collect's kernel path (-1: none yet). */
-        this._decoLastParent = -1;
         /** N-138: per queue buffer, the poses of the sprites whose entity has a mesh (empty when no class has both). */
         this._meshPoseLists = [];
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
@@ -3374,10 +3375,11 @@ class PreRenderWorker extends AbstractWorker {
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
-        // E-520: through the collect kernel where it can take the frame (every column in the render-queue memory); the
-        // loops below otherwise (a scene without the kernel's regions, a test on plain arrays) and as its reference.
+        // E-520: through the collect kernel where it can take the frame (every column in the render-queue memory) and
+        // enough of the pool is world-owned; the loops below otherwise (mostly attached decorations, a scene without the
+        // kernel's regions, a test on plain arrays) and as its reference.
         const b = this._collectWasm;
-        if (b !== null && visibleCount > 0 && this.renderQueueEnabled
+        if (b !== null && visibleCount > 0 && this.renderQueueEnabled && this._decorationKernelPays()
             && writeDecorationCollect(b, this, DecorationComponent, visibleData, visibleCount)) {
             this._collectDecorationsWasm(b, visibleData, visibleCount, Layer.anyYSorting());
             return;
@@ -3444,7 +3446,7 @@ class PreRenderWorker extends AbstractWorker {
         // The sprite-queue layers that take a decoration elsewhere than the main collector (collectRenderable).
         const elsewhere = (Layer._spriteQueueBits & ~Layer.entitiesMask()) >>> 0;
         // The parent whose key PARENT_SORT_KEY holds, as the loop keeps it (attached decorations come in runs).
-        this._decoLastParent = -1;
+        DECO_LAST_PARENT[0] = -1;
         res[2] = 0;
         let from = 0;
         for (;;) {
@@ -3469,6 +3471,18 @@ class PreRenderWorker extends AbstractWorker {
         this.visibleDecorationsCount += count;
     }
 
+    /**
+     * E-520. Whether the decoration collect kernel can take enough of the pool to pay for the list's copy and its
+     * hand-backs: a quarter of the active decorations or more world-owned (from the pool's attached count, kept as they
+     * spawn and go), or the count unknown. Below that the loops run alone, as they did before the kernel.
+     */
+    _decorationKernelPays() {
+        const attached = DecorationPool.attachedCount();
+        if (attached <= 0) return true;
+        const active = DecorationPool.getActiveCount();
+        return (active - attached) * 4 >= active;
+    }
+
     /** E-520. A decoration the kernel handed back (attached, or a custom layer's), collected as the loops collect it. */
     _collectDecorationJs(i, ySort) {
         if (!ySort) {
@@ -3480,9 +3494,9 @@ class PreRenderWorker extends AbstractWorker {
         const p = DecorationComponent.parentEntityIndex[i];
         const sortOffsetY = DecorationComponent.sortOffsetY[i];
         if (p !== this._noParent && Transform.active[p]) {
-            if (p !== this._decoLastParent) {
+            if (p !== DECO_LAST_PARENT[0]) {
                 this._storeAttachedParentKey(p, PARENT_SORT_KEY);
-                this._decoLastParent = p;
+                DECO_LAST_PARENT[0] = p;
             }
             COLLECT_Y[0] = PARENT_SORT_KEY[0] + sortOffsetY * Y_SORT_K + DecorationComponent.innerZ[i];
             COLLECT_FOOT[0] = PARENT_SORT_KEY[1] + sortOffsetY;

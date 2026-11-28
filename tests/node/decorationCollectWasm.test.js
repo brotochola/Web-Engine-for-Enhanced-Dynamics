@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { Transform } from '../../src/components/transform.js';
+import { DecorationPool } from '../../src/core/decorationPool.js';
 import { Layer } from '../../src/core/layer.js';
 import { bindEntityIdWidth, entityIdNone } from '../../src/util/entityIdWidth.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
@@ -181,6 +182,39 @@ test('without room for the list, or with a column outside the memory, the collec
     assert.equal(pre._renderableCount, withKernel.rows);
     assert.deepEqual(Array.from(new Uint32Array(outside.buffer, 0, withKernel.rows)), withKernel.x, 'the same poses');
   } finally {
+    Layer.reset();
+  }
+});
+
+test('a pool of mostly attached decorations runs the JS loops alone; a quarter world-owned takes the kernel', async () => {
+  const s = await setupDecorationCollect({ n: 2000, ySort: true, seed: 9 });
+  const { pre, n } = s;
+  const kernel = pre._collectWasm;
+  let calls = 0;
+  const collect = kernel.collectDecorations;
+  kernel.collectDecorations = (...a) => {
+    calls++;
+    return collect(...a);
+  };
+  const { attachedCount, getActiveCount } = DecorationPool;
+  try {
+    clear(pre, n);
+    s.frame();
+    const withKernel = snapshot(pre, n);
+    assert.ok(calls > 0, 'the pool\'s counts unknown: the kernel');
+
+    DecorationPool.getActiveCount = () => 1000;
+    for (const [attached, used] of [[1000, false], [751, false], [750, true], [0, true]]) {
+      DecorationPool.attachedCount = () => attached;
+      calls = 0;
+      clear(pre, n);
+      s.frame();
+      assert.equal(calls > 0, used, `${attached} of 1000 attached`);
+      assert.deepEqual(snapshot(pre, n), withKernel);
+    }
+  } finally {
+    DecorationPool.attachedCount = attachedCount;
+    DecorationPool.getActiveCount = getActiveCount;
     Layer.reset();
   }
 });
