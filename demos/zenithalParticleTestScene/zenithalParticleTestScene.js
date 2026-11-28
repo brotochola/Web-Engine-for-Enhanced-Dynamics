@@ -26,7 +26,10 @@ export class ZenithalParticleTestScene extends Scene {
 
     logic: { noLimitFPS: false },
     physics: { gravity: { x: 0, y: 0 }, noLimitFPS: false },
-    spatial: { noLimitFPS: false, cellSize: 128, maxNeighbors: 64 },
+    // maxEntitiesPerCell 128: createNewGame spawns its 100 cars on a diagonal that leaves the 1920 x 1080 world (about
+    // 80 of them stand outside it), where the grid keeps them in its edge cells: 64 left one of them out of every list
+    // (N-331). 128 holds all 100 even in one cell.
+    spatial: { noLimitFPS: false, cellSize: 128, maxNeighbors: 64, maxEntitiesPerCell: 128 },
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
