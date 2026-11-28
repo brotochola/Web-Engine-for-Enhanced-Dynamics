@@ -131,6 +131,13 @@ async function bytesAllocatedIn(file, fn) {
   }
 }
 
+// What a sampling heap profile may attribute to adobeAnimComponent.js here without a per-read object. The profile is
+// a sample (64-byte interval) and a slow VM adds a little of its own (a feedback vector, a closure, tier-up work charged
+// to the file): 8 288 bytes were seen against an 8 192 bound. The regression this guards allocates per read: 258 KB for
+// the cold 4000 reads (about 130 bytes each), and at least 16 bytes x 200 000 = 3 MB for the warm ones. 32 KB is four
+// times the noise seen and still eight times under the smallest regression.
+const ALLOWED_BYTES = 32 * 1024;
+
 test('E-537: frameCount and currentFrame make no object per read, as statics and as getters', async () => {
   bind();
   for (const i of [5, 6]) {
@@ -148,7 +155,7 @@ test('E-537: frameCount and currentFrame make no object per read, as statics and
     for (let k = 0; k < READS; k++) counted += A.frameCount(5) + clip.frameCount;
   });
   assert.equal(counted, READS * 20);
-  assert.ok(cold < 8 * 1024, `cold: ${cold} bytes allocated by ${2 * READS} frameCount reads`);
+  assert.ok(cold < ALLOWED_BYTES, `cold: ${cold} bytes allocated by ${2 * READS} frameCount reads (${ALLOWED_BYTES} allowed)`);
 
   // Warm (TurboFan): no read of either kind allocates. (The old getters' object was taken out here by escape analysis
   // once they were inlined; Chrome's Maglev, which runs much code before TurboFan, did not.)
@@ -164,5 +171,5 @@ test('E-537: frameCount and currentFrame make no object per read, as statics and
     sum = reads(50_000);
   });
   assert.equal(sum, 50_000 * (10 + 8 + 10 + 8));
-  assert.ok(warm < 8 * 1024, `warm: ${warm} bytes allocated by 200 000 reads`);
+  assert.ok(warm < ALLOWED_BYTES, `warm: ${warm} bytes allocated by 200 000 reads (${ALLOWED_BYTES} allowed)`);
 });
