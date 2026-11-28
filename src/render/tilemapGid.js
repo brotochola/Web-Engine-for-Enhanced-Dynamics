@@ -239,31 +239,42 @@ export function packGidStacksRgba8(layers, mapW, pageRect) {
   const minY = pageRect.minY | 0;
   const { pageW, pageH } = gidPageSize(pageRect);
   if (pageW <= 0 || pageH <= 0) return { depth: 0, bytes: new Uint8Array(0) };
+  const plane = pageW * pageH;
+  const layerCount = layers.length;
+  // N-466: one loop over the page's tiles (x wraps to the next row), not one over columns inside one over rows: Chrome
+  // OSR'd the column loop with Maglev, which deopts on leaving an OSR'd inner loop, so each pass deopted once a row
+  // (Predator's map: 153 and 155 deopts at load).
+  const rowSkip = mw - pageW;
   let depth = 0;
-  for (let y = 0; y < pageH; y++) {
-    const row = (minY + y) * mw + minX;
-    for (let x = 0; x < pageW; x++) {
-      let n = 0;
-      for (let l = 0; l < layers.length; l++) if (layers[l][row + x]) n++;
-      if (n > depth) depth = n;
+  let src = minY * mw + minX;
+  for (let tile = 0, x = 0; tile < plane; tile++) {
+    let n = 0;
+    for (let l = 0; l < layerCount; l++) if (layers[l][src]) n++;
+    if (n > depth) depth = n;
+    src++;
+    if (++x === pageW) {
+      x = 0;
+      src += rowSkip;
     }
   }
-  const out = new Uint32Array(pageW * pageH * depth);
-  const plane = pageW * pageH;
-  for (let y = 0; y < pageH; y++) {
-    const row = (minY + y) * mw + minX;
-    for (let x = 0; x < pageW; x++) {
-      let at = y * pageW + x;
-      for (let l = layers.length - 1; l >= 0; l--) {
-        const raw = layers[l][row + x] >>> 0;
-        if (raw === 0) continue;
-        const gid = raw & TILED_GID_MASK;
-        if (gid > TILEMAP_GID_STACK_GID_MAX) {
-          throw new Error(`WeedJS: tilemap GID ${gid} is over ${TILEMAP_GID_STACK_GID_MAX}, the most a tilemap layer can hold`);
-        }
-        out[at] = ((raw & ~TILED_GID_MASK) | gid | (l << TILEMAP_GID_STACK_LAYER_SHIFT)) >>> 0;
-        at += plane;
+  const out = new Uint32Array(plane * depth);
+  src = minY * mw + minX;
+  for (let tile = 0, x = 0; tile < plane; tile++) {
+    let at = tile;
+    for (let l = layerCount - 1; l >= 0; l--) {
+      const raw = layers[l][src] >>> 0;
+      if (raw === 0) continue;
+      const gid = raw & TILED_GID_MASK;
+      if (gid > TILEMAP_GID_STACK_GID_MAX) {
+        throw new Error(`WeedJS: tilemap GID ${gid} is over ${TILEMAP_GID_STACK_GID_MAX}, the most a tilemap layer can hold`);
       }
+      out[at] = ((raw & ~TILED_GID_MASK) | gid | (l << TILEMAP_GID_STACK_LAYER_SHIFT)) >>> 0;
+      at += plane;
+    }
+    src++;
+    if (++x === pageW) {
+      x = 0;
+      src += rowSkip;
     }
   }
   return { depth, bytes: new Uint8Array(out.buffer) };
