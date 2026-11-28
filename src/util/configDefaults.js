@@ -882,7 +882,10 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * steps of 4 px from 8 px on (an edge thinner than a step can fall between two, the first 8 px are not read); 'dda' reads
    * every cell the ray crosses, in order, its own skipped (Pixel Art Parallax's walk): a world px of the picture plane, or a
    * light texel where that is coarser (lighting.resolution under 1 at zoom 1), so its reads grow with the resolution
-   * (about 9 at 0.25, 17 at 0.5, 34 at 1). Read when the scene starts (selfShadowMarchOf).
+   * (about 9 at 0.25, 17 at 0.5, 34 at 1); two cells under the ray in a row shade, so a lone spike casts no freckle. It
+   * costs those reads: gpuPassBench's self-shadow pass on a GTX 1650 (32 lamps) took 1.96 -> 5.71 ms at resolution 1 and
+   * 0.64 -> 1.15 at 0.5 on WebGL (WebGPU 2.49 -> 6.57 and 0.76 -> 1.22), so 'steps' stays the default. Read when the scene
+   * starts (selfShadowMarchOf).
    */
   selfShadowMarch: 'steps',
   /**
