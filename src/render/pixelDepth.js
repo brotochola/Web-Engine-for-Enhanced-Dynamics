@@ -89,6 +89,24 @@ const DEPTH_FORMULA = `((${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOO
  * DX-FACEDEPTH: DEPTH_FORMULA without the floor() of the floor place, where faces are on: a face's depth comes from its
  * vertices, interpolated, so every depth is on that one continuous scale.
  */
+/**
+ * N-462: an unshaded pixel (a lamp's halo, a fire), which the edge pass draws testing the depth, goes in front of anything
+ * at its own floor place: one floor step nearer, at the last painter step. Its painter step is the instance's low bits,
+ * which wrap every PIXEL_DEPTH_PAINTER_STEPS, so a halo drawn a few instances after its own lamp post landed behind it
+ * whenever the post's step was near the wrap, and the queue's rows move every frame: the post went dark now and then
+ * (Predator by night, light3d, zoom 1: 59 frames of 600).
+ */
+const GLOW_IN_FRONT_GLSL = `    if (glow) {
+      u = min(u + 1.0 / ${PIXEL_DEPTH_FLOOR_STEPS - 1}.0, 1.0);
+      painter = ${PIXEL_DEPTH_PAINTER_STEPS - 1}.0;
+    }
+`;
+const GLOW_IN_FRONT_WGSL = `  if (glow) {
+    u = min(u + 1.0 / ${PIXEL_DEPTH_FLOOR_STEPS - 1}.0, 1.0);
+    painter = ${PIXEL_DEPTH_PAINTER_STEPS - 1}.0;
+  }
+`;
+
 const DEPTH_FORMULA_FACES = `((${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0
       + (${PIXEL_DEPTH_FLOOR_STEPS - 1}.0 - u * ${PIXEL_DEPTH_FLOOR_STEPS - 1}.0) * ${PIXEL_DEPTH_PAINTER_STEPS}.0
       + (${PIXEL_DEPTH_PAINTER_STEPS - 1}.0 - painter)) / ${PIXEL_DEPTH_BANDS * PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0`;
@@ -284,7 +302,7 @@ ${surface}`
     }
     float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
     float painter = vPainter.x;
-    gl_FragDepth = (${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA});
+${GLOW_IN_FRONT_GLSL}    gl_FragDepth = (${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA});
     // F5 v2: only opaque pixels write depth; the edge pass draws the soft and the unshaded ones, testing it.
     bool solid = ad >= 0.5 && !glow;
     if (${edge ? 'solid' : '!solid'}) discard;
@@ -365,9 +383,9 @@ ${faces ? '' : '  if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) { floorY 
     // N-262: within its feet's footprint (the GLSL's twin).
     if (in.vDepthFoot.w > 0.0) { floorY = clamp(floorY, in.vDepthFoot.x - in.vDepthFoot.w, in.vDepthFoot.x + in.vDepthFoot.w); }
   }
-  let u = clamp((floorY - uniforms.uDepth.z) * uniforms.uDepth.w, 0.0, 1.0);
-  let painter = in.vDepthFoot.y;
-  let depth = (${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA});
+  var u = clamp((floorY - uniforms.uDepth.z) * uniforms.uDepth.w, 0.0, 1.0);
+  var painter = in.vDepthFoot.y;
+${GLOW_IN_FRONT_WGSL}  let depth = (${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA});
   return vec2<f32>(depth, select(0.0, 1.0, ad >= 0.5 && !glow));
 }
 
