@@ -4,8 +4,8 @@
  * Emits 3 artifacts (N-172): the production build as ESM and UMD, the debug build as ESM:
  *   weed.prod.bundle.esm.min.js / weed.prod.bundle.min.js
  *   weed.bundle.esm.min.js
- * The variants with gzip-embedded workers are gone (a server compresses the file; inflating them cost every start),
- * and so is the debug UMD.
+ * Each one gzips its workers, Box2D, the shaders and the debug CSS inside, base64-embedded, inflated once at the first
+ * scene (DecompressionStream): the file itself small, as the owner asked (2026-11-24, 11-28). The debug UMD is gone.
  *
  * Workers share one worker_common chunk (AbstractWorker graph). Box2D WASM is
  * gzip'd then base64-embedded in every artifact.
@@ -110,12 +110,12 @@ export function listBox2dSiblingNames(weedPostSource) {
     return [...new Set([...BOX2D_ALWAYS_SIBLINGS, ...extractImportScriptNames(weedPostSource)])];
 }
 
-export function bundleFileName({ prod, esm, compressed }) {
+/** A bundle's file name. Every bundle gzips its workers inside (N-172), so the name says nothing about compression. */
+export function bundleFileName({ prod, esm }) {
     const parts = ['weed'];
     if (prod) parts.push('prod');
     parts.push('bundle');
     if (esm) parts.push('esm');
-    if (compressed) parts.push('compressed');
     parts.push('min.js');
     return parts.join('.');
 }
@@ -427,17 +427,32 @@ export function writeBundleEntry({
     compressed,
     prod,
 }) {
+    // N-172: compressed, every payload goes into one gzip stream, sliced back by its lengths at run time: one base64
+    // decode, one DecompressionStream and one TextDecoder instead of one each for every worker and shader (a page's
+    // repeat visit started 25-30 ms later with them inflated one by one). Uncompressed, the strings sit in the entry.
+    const css = prod ? '' : debugUICSS;
+    const parts = [
+        ...WORKER_NAMES.map((name) => [`w:${name}`, workers[name]]),
+        ['common', workerCommon],
+        ['box2d', box2dWorkerSource],
+        ['audio', audioWorkletSource],
+        ['css', css],
+        ...Object.entries(engineShaders).map(([shaderPath, source]) => [`s:${shaderPath}`, source]),
+    ];
+    const packed = compressed ? embedPayload(parts.map(([, text]) => text).join(''), true) : '';
+    const packedIndex = compressed ? parts.map(([key, text]) => [key, text.length]) : [];
+    const inline = (text) => (compressed ? '' : text);
     const embeddedWorkers = {};
     for (const name of WORKER_NAMES) {
-        embeddedWorkers[name] = embedPayload(workers[name], compressed);
+        embeddedWorkers[name] = inline(workers[name]);
     }
-    const embeddedCommon = embedPayload(workerCommon, compressed);
-    const embeddedBox2d = embedPayload(box2dWorkerSource, compressed);
-    const embeddedAudio = embedPayload(audioWorkletSource, compressed);
-    const embeddedCss = prod ? '' : embedPayload(debugUICSS, compressed);
+    const embeddedCommon = inline(workerCommon);
+    const embeddedBox2d = inline(box2dWorkerSource);
+    const embeddedAudio = inline(audioWorkletSource);
+    const embeddedCss = inline(css);
     const embeddedShaders = {};
     for (const [shaderPath, source] of Object.entries(engineShaders)) {
-        embeddedShaders[shaderPath] = embedPayload(source, compressed);
+        embeddedShaders[shaderPath] = inline(source);
     }
 
     const workerSourceLines = WORKER_NAMES.map(
@@ -467,6 +482,9 @@ const ENGINE_WASM_URL_AT = ${engineWasmSpan.at};
 const ENGINE_WASM_URL_LENGTH = ${engineWasmSpan.length};
 
 const EMBED_COMPRESSED = ${compressed ? 'true' : 'false'};
+// Every payload in one gzip stream (base64), and each one's [key, length] in the order they were joined.
+const EMBED_PACKED = ${JSON.stringify(packed)};
+const EMBED_INDEX = ${JSON.stringify(packedIndex)};
 let embedReady = !EMBED_COMPRESSED;
 let embedPromise = null;
 let box2dWorkerBlobUrl = null;
@@ -475,6 +493,7 @@ let workerCommonBlobUrl = null;
 ${rewriteWorkerCommonImportScripts.toString()}
 
 function weedB64ToU8(b64) {
+  if (typeof Uint8Array.fromBase64 === 'function') return Uint8Array.fromBase64(b64);
   var binary = atob(b64);
   var bytes = new Uint8Array(binary.length);
   for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -496,23 +515,22 @@ function ensureEmbeddedSources() {
   if (embedReady) return Promise.resolve();
   if (embedPromise) return embedPromise;
   embedPromise = (async function () {
-    var names = Object.keys(workerSources);
-    var values = await Promise.all(names.map(function (name) {
-      return weedGunzipUtf8(workerSources[name]);
-    }));
-    var inflated = {};
-    for (var i = 0; i < names.length; i++) inflated[names[i]] = values[i];
-    workerSources = Object.freeze(inflated);
-    workerCommonSource = await weedGunzipUtf8(workerCommonSource);
-    box2dWorkerSource = await weedGunzipUtf8(box2dWorkerSource);
-    audioWorkletSource = await weedGunzipUtf8(audioWorkletSource);
-    debugUICSS = await weedGunzipUtf8(debugUICSS);
-    var shaderPaths = Object.keys(engineShaders);
-    var shaderValues = await Promise.all(shaderPaths.map(function (p) {
-      return weedGunzipUtf8(engineShaders[p]);
-    }));
+    var text = await weedGunzipUtf8(EMBED_PACKED);
+    var workers = {};
     var shaders = {};
-    for (var j = 0; j < shaderPaths.length; j++) shaders[shaderPaths[j]] = shaderValues[j];
+    var at = 0;
+    for (var i = 0; i < EMBED_INDEX.length; i++) {
+      var key = EMBED_INDEX[i][0];
+      var value = text.slice(at, at + EMBED_INDEX[i][1]);
+      at += EMBED_INDEX[i][1];
+      if (key.slice(0, 2) === 'w:') workers[key.slice(2)] = value;
+      else if (key.slice(0, 2) === 's:') shaders[key.slice(2)] = value;
+      else if (key === 'common') workerCommonSource = value;
+      else if (key === 'box2d') box2dWorkerSource = value;
+      else if (key === 'audio') audioWorkletSource = value;
+      else if (key === 'css') debugUICSS = value;
+    }
+    workerSources = Object.freeze(workers);
     engineShaders = Object.freeze(shaders);
     embedReady = true;
   })();
@@ -574,6 +592,10 @@ const WEED = Object.freeze({
 if (typeof window !== 'undefined') {
   window.WEED = WEED;
 }
+
+// N-172: the inflation starts as the bundle loads, so the first scene finds it done (or nearly): a failure is seen by
+// whoever awaits ensureEmbeddedSources(), not left unhandled here.
+if (EMBED_COMPRESSED) ensureEmbeddedSources().catch(function () {});
 
 export default WEED;
 `;
@@ -849,9 +871,11 @@ function buildProdAxis({ prod, box2dWorkerSource, box2dFileSource, audioWorkletS
 
     printSizeBreakdown(label, sizes, Buffer.byteLength(box2dWorkerSource, 'utf8'));
 
+    // N-172 (owner, 2026-11-24 and 11-28): the bundle file itself small, so its workers, glue, CSS and shaders go in
+    // gzipped and inflate once at the first scene (ensureEmbeddedSources), as engine.wasm and Box2D always did.
     const names = webpackBundle({
         prod,
-        compressed: false,
+        compressed: true,
         workers,
         workerCommon,
         engineWasmSpan,
