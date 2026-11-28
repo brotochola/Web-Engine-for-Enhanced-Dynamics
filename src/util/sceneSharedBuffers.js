@@ -638,6 +638,8 @@ export function renderQueueMemorySpec(scene) {
         rigidBodyBytes: physics ? RigidBody.getBufferSize(n) : 0,
         bullets,
         visibility,
+        // E-520: the decoration collect's list, where DecorationComponent is among the emit's blocks.
+        decorations: emit && emit.decorationBytes > 0 ? config.decoration?.maxDecorations | 0 : 0,
       }
     : null;
   // W10: the painter sort's state for the worker that sorts the main queue (preRender.sortSprites, which the

@@ -50,6 +50,24 @@ function withSunFrameRegions(map, emit) {
 }
 
 /**
+ * E-520: with collect.decorations (the decoration pool's size), the layout `map` (withSunFrameRegions') and after every
+ * region of it the decoration collect's copy of the visible decorations' list (collectDecoList, 4 bytes an id: room for
+ * either slot width), so no region of a scene without it moves (none of it is in the map's bytes). An empty region at the
+ * map's end otherwise.
+ * @param {{ regions: Record<string, { byte: number, bytes: number, owner: string }>, bytes: number, pages: number }} map
+ */
+function withDecorationListRegion(map, collect) {
+  const bytes = collect ? (collect.decorations | 0) * 4 : 0;
+  const byte = alignToLine(map.bytes);
+  const end = bytes > 0 ? alignToLine(byte + bytes) : map.bytes;
+  return {
+    regions: { ...map.regions, collectDecoList: { byte, bytes, owner: 'pre-render' } },
+    bytes: end,
+    pages: Math.max(1, Math.ceil(end / WASM_PAGE_BYTES)),
+  };
+}
+
+/**
  * @param {number} maxItems the render queue's rows
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
@@ -77,7 +95,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiRows = pixiPack ? n : 0;
   const pixiExtra = pixiExtraSpec(emit, n);
-  const map = withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiExtra), emit);
+  const map = withDecorationListRegion(withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiExtra), emit), collect);
   const base = place ? place.baseByte | 0 : 0;
   if (place) {
     if ((base & 63) !== 0 || base + map.bytes > place.memory.buffer.byteLength) return null;
@@ -256,6 +274,9 @@ function collectLayout(r, collect) {
     listByte: r.collectList.byte,
     tableByte: r.collectTable.byte,
     resultsByte: r.collectResults.byte,
+    // E-520: the decoration collect's list, room for `decorations` ids (0 and -1: none).
+    decorations: r.collectDecoList.bytes > 0 ? collect.decorations | 0 : 0,
+    decoListByte: block(r.collectDecoList),
     // W19: the bullet tick's regions (bindBulletTick's layout), or null.
     bullets: collect.bullets
       ? {
@@ -292,7 +313,7 @@ export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit
   const n = maxItems | 0;
   if (n <= 0) return 0;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
-  return withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0, collect, painter, pixiExtraSpec(emit, n)), emit).bytes;
+  return withDecorationListRegion(withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0, collect, painter, pixiExtraSpec(emit, n)), emit), collect).bytes;
 }
 
 function stampLayout(r, stamp) {
