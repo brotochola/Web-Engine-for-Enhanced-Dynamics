@@ -164,6 +164,82 @@ With Verlet alone, dense scenes can already show ~90% `NEIGHBORS_REUSED` (cell w
 
 ---
 
+## Neighbour aggregates
+
+Code that walks its neighbours only to sum them (a separation push, a flock's centre and heading, the nearest enemy)
+reads `Transform.x[j]` and `y[j]` for every neighbour, scattered over memory: a few ns a read, hundreds of reads in a
+crowd. The spatial publish already has each neighbour's squared distance when it writes the list, so a type can ask it
+for the sums instead, and read one row a tick:
+
+```js
+const { GameObject, RigidBody, Collider, SpriteRenderer, Transform, NeighborAggregates } = WEED;
+
+class Fish extends GameObject {
+  static components = [RigidBody, Collider, SpriteRenderer];
+  static get neighborAggregates() { // a getter: Shark is declared after Fish
+    return {
+      separation: { radius: 20, falloff: 'linear', ofType: Fish },
+      cohesion: { minDistance: 20, velocity: true, ofType: Fish },
+      nearest: { ofType: Shark, count: 1 },
+    };
+  }
+
+  onSpawned() {
+    this.collider.visualRange = 60; // the list the aggregates sum: no visualRange, no list, no aggregates
+  }
+
+  tick() {
+    const i = this.index;
+    const A = NeighborAggregates;
+    let ax = A.separationX[i] * 3000;
+    let ay = A.separationY[i] * 3000;
+    if (A.cohesionCount[i] > 0) {
+      ax += (A.centroidX[i] - Transform.x[i]) * 2 + (A.averageVelocityX[i] - RigidBody.vx[i]) * 1.5;
+      ay += (A.centroidY[i] - Transform.y[i]) * 2 + (A.averageVelocityY[i] - RigidBody.vy[i]) * 1.5;
+    }
+    if (A.nearestCount[i] > 0) {
+      const shark = A.nearestIndex[A.nearestOffset(i)]; // flee it
+      const d2 = A.nearestDistanceSq[A.nearestOffset(i)] + 100;
+      ax += ((Transform.x[i] - Transform.x[shark]) / d2) * 60000;
+      ay += ((Transform.y[i] - Transform.y[shark]) / d2) * 60000;
+    }
+    this.addAcceleration(ax, ay);
+  }
+}
+```
+
+The whole scene, fish and sharks, runs: [neighbor-aggregates/](./neighbor-aggregates/schoolScene.js)
+(`npm run dev`, then `/docs/guide/neighbor-aggregates/`).
+
+**What a type can ask for** (`static neighborAggregates`, every key optional; `ofType` is an entity class of the scene,
+and only neighbours of that type count; without it, every neighbour):
+
+| Key | Options | Writes, per entity index |
+|-----|---------|--------------------------|
+| `separation` | `radius` (px, default the whole list), `floor` (px, default 0), `falloff` (`'none'` or `'linear'`), `ofType` | `separationX/Y`: the sum over the neighbours within `radius` of (entity − neighbour) / max(d², floor²), times 1 − d²/radius² with `'linear'`; `separationCount` |
+| `cohesion` | `minDistance` (px, default 0), `velocity` (needs physics), `ofType` | `centroidX/Y` of the neighbours at `minDistance` or more, `cohesionCount`; with `velocity`, their average RigidBody velocity `averageVelocityX/Y` |
+| `nearest` | `count` (1 to 16, default 1), `ofType` | `nearestCount`, and from `nearestOffset(i)` the entity indices `nearestIndex` and squared distances `nearestDistanceSq`, nearest first |
+
+**What they are, exactly.**
+
+- Each aggregate is over the entity's neighbour list as published (the same list `Grid.getNeighbor` reads), with the
+  positions the spatial worker searched with: each collider's centre (`Transform` plus its offset), float32, on the
+  frame it published the list. They are as old as the list: with `neighborTickInterval` or a `tickInterval`, a list (and
+  its aggregates) can stand for several frames. Where freshness matters, use the aggregate to pick and read the few
+  entities it names now (a shark chases its nearest fish's `Transform.x`, not where the fish was).
+- A neighbour within 1 px has no direction and pushes nothing (it still counts for cohesion and nearest).
+- Ties in `nearest` keep the list's order. `nearestSlots` is the largest `count` of the scene's types; slots past an
+  entity's `nearestCount` hold old values.
+- A row cleared (the entity lost its visualRange) takes its counts to 0. An entity spawned this frame has its first
+  aggregates with its first list.
+- An output no type of the scene asks for is an empty array; a scene where no type asks runs the plain publish.
+
+**Cost.** The publish of a type with aggregates does the sums in the same pass over the candidates, in its own copy of
+the loop for each mix of aggregates; the other types' rows and scenes without aggregates are published as before. The
+memory is one value per entity per output asked for (8 bytes a slot for `nearest`).
+
+---
+
 ## Sleeping bodies (visual neighbors)
 
 Spatial neighbor lists are **visual-range only**. Static/sleeping pairs are not filtered out of `neighborData` for collision anymore — Box2D owns contacts and sleep.

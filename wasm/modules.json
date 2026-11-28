@@ -37,6 +37,8 @@
       "exports": [
         "publish_batch",
         "publish_batch_u32",
+        "publish_batch_agg",
+        "publish_batch_agg_u32",
         "gather_batch",
         "order_batch_by_cell",
         "gather_batch_u32",
@@ -131,7 +133,9 @@
       "output": "tests/fixtures/wasm/spatialPublish.wasm",
       "exports": [
         "publish_batch",
-        "publish_batch_u32"
+        "publish_batch_u32",
+        "publish_batch_agg",
+        "publish_batch_agg_u32"
       ],
       "maxMemoryPages": 32768,
       "test": true,

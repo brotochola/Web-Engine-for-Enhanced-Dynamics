@@ -13,20 +13,8 @@ import { BindGroup as BundledBindGroup } from '../../src/vendor/pixi.min.js';
 
 // The Pixi bundle's WebGL shader sync (scripts/pixi-stubs/shaderSyncPolyfill.mjs, swapped in by scripts/buildPixi.mjs)
 // walks a per-shader plan instead of for…in over integer-keyed objects. It must make the calls Pixi's polyfill makes,
-// in the same order, and follow a shader whose groups or resource slots change.
-
-/** BindGroup as the bundle patches it: `_weedKeys` counts the resource slots it gains. */
-class PatchedBindGroup extends UpstreamBindGroup {
-  constructor(resources) {
-    super(resources);
-    if (this._weedKeys === undefined) this._weedKeys = Object.keys(this.resources).length;
-  }
-
-  setResource(resource, index) {
-    if (this.resources && !(index in this.resources)) this._weedKeys = (this._weedKeys | 0) + 1;
-    super.setResource(resource, index);
-  }
-}
+// in the same order, and follow a shader whose groups or bindings change. Pixi 8.23: a BindGroup is keyed by number
+// or by name (its `layout`), and a uniform block is bound by name to the slot its program fixed at link.
 
 const MAX_COMBINED = 0x8b4d;
 
@@ -54,21 +42,24 @@ function recorder() {
     texture: textureSystem(calls),
     shader: {
       _getProgramData: () => ({ uniformData: { uA: { location: 'locA', value: -1 }, uB: { location: 'locB', value: -1 } } }),
-      bindUniformBlock: (resource, name, index) => calls.push(['block', name, index]),
+      bindUniformBlock: (resource, name) => calls.push(['block', name, resource.uid]),
       updateUniformGroup: (group) => calls.push(['uniforms', group.uniformStructures.uValue.value]),
     },
   };
   return { calls, renderer };
 }
 
+/** The uniform blocks the program linked (Pixi's getUboData): uTwo, uBuffer and uNamed; uThree is not in it. */
+const BLOCKS = { uTwo: { index: 0, binding: 0 }, uBuffer: { index: 1, binding: 1 }, uNamed: { index: 2, binding: 2 } };
+
 function shaderOf(groups, bindMap) {
-  return { glProgram: {}, groups, _uniformBindMap: bindMap };
+  return { glProgram: { _uniformBlockData: BLOCKS }, groups, _uniformBindMap: bindMap };
 }
 
 /** The calls with their units left out (E-417 picks other units than upstream's count from 0; the tests below say which). */
 function run(sync, shader) {
   const { calls, renderer } = recorder();
-  sync(renderer, shader, { textureCount: 0, blockIndex: 0 });
+  sync(renderer, shader, { textureCount: 0 });
   return calls.map((c) => (c[0] === 'texture' || c[0] === 'uniform1i' ? c.slice(0, 2) : c));
 }
 
@@ -82,30 +73,39 @@ const uniforms = (value, ubo = false) => new UniformGroup({ uValue: { value, typ
 test('the plan makes the calls Pixi\'s polyfill makes, in its order', () => {
   const upstream = generateShaderSyncPolyfill();
   const groups = {
-    0: new PatchedBindGroup({ a: uniforms(1), b: uniforms(2, true) }),
-    1: new PatchedBindGroup({ t: texture('A'), u: texture('B') }),
-    100: new PatchedBindGroup({ buf: new BufferResource({ buffer: new Buffer({ data: new Float32Array(4) }) }) }),
+    0: new UpstreamBindGroup({ 0: uniforms(1), 1: uniforms(2, true), 2: uniforms(3, true) }),
+    1: new UpstreamBindGroup({ 0: texture('A'), 1: texture('B') }),
+    // Keyed by name: each resource binds under its layout name, whatever the shader's bind map says.
+    2: new UpstreamBindGroup({ uB: texture('C'), uNamed: uniforms(4, true), uLater: null }),
+    100: new UpstreamBindGroup({ 0: new BufferResource({ buffer: new Buffer({ data: new Float32Array(4) }) }) }),
   };
-  const bindMap = { 0: { 0: 'uOne', 1: 'uTwo' }, 1: { 0: 'uA', 1: 'uB' }, 100: { 0: 'uBuffer' } };
+  const bindMap = {
+    0: { 0: 'uOne', 1: 'uTwo', 2: 'uThree' },
+    1: { 0: 'uA', 1: 'uB' },
+    2: { 0: 'uOther', 1: 'uOther2' },
+    100: { 0: 'uBuffer' },
+  };
   const shader = shaderOf(groups, bindMap);
   const expected = run(upstream, shader);
-  assert.ok(expected.length >= 6, JSON.stringify(expected));
+  assert.ok(expected.length >= 8, JSON.stringify(expected));
+  assert.ok(!expected.some((c) => c[1] === 'uThree'), 'a block the program does not have is not bound');
+  assert.ok(expected.some((c) => c[0] === 'block' && c[1] === 'uNamed'), 'a named group binds by its names');
   assert.deepEqual(run(syncShader, shader), expected, 'first bind');
   assert.deepEqual(run(syncShader, shader), expected, 'from the plan');
 });
 
-test('a BindGroup swapped into a slot, or a resource slot added, rebuilds the plan', () => {
+test('a BindGroup swapped into a slot, or a binding added, rebuilds the plan', () => {
   const upstream = generateShaderSyncPolyfill();
-  const groups = { 0: new PatchedBindGroup({ a: uniforms(1) }), 1: new PatchedBindGroup({ t: texture('A') }) };
+  const groups = { 0: new UpstreamBindGroup({ 0: uniforms(1) }), 1: new UpstreamBindGroup({ 0: texture('A') }) };
   const bindMap = { 0: { 0: 'uOne', 1: 'uTwo' }, 1: { 0: 'uA', 1: 'uB' } };
   const shader = shaderOf(groups, bindMap);
   run(syncShader, shader);
-  groups[1] = new PatchedBindGroup({ t: texture('C'), u: texture('D') });
+  groups[1] = new UpstreamBindGroup({ 0: texture('C'), 1: texture('D') });
   assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'swapped group');
-  groups[0].setResource(uniforms(7), 1);
-  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'new slot');
-  groups[0].setResource(uniforms(9), 1);
-  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a slot replaced');
+  groups[0].setResource(uniforms(7, true), 1);
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'new binding');
+  groups[0].setResource(uniforms(9, true), 1);
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a binding replaced');
 });
 
 // E-236: Pixi's batcher, meshes and graphics put another BindGroup in a slot at each batch or draw, with the same keys
@@ -137,12 +137,47 @@ test('E-236: a BindGroup with other keys, or the same keys in another order, reb
   run(syncShader, shader);
   groups[1] = new BundledBindGroup({ 0: texture('C'), 1: texture('D'), 2: texture('E') });
   assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a key more');
-  groups[1] = new BundledBindGroup({ 1: texture('F') });
+  const one = new BundledBindGroup();
+  one.setResource(texture('F'), 1);
+  groups[1] = one;
   assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a key less');
-  const reordered = new BundledBindGroup({ 5: uniforms(3) });
+  const reordered = new BundledBindGroup();
+  reordered.setResource(uniforms(3), 5);
   reordered.setResource(uniforms(4), 0);
   groups[0] = reordered;
   assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'other keys in the globals slot');
+});
+
+test('groups keyed by name: the same layout takes turns on the plan, another layout or a group by number rebuilds it', () => {
+  const upstream = generateShaderSyncPolyfill();
+  const named = (a, b) => new BundledBindGroup({ uA: texture(a), uB: texture(b) });
+  const groups = { 0: new BundledBindGroup({ 0: uniforms(1) }), 1: named('A', 'B') };
+  const bindMap = { 0: { 0: 'uOne' }, 1: { 0: 'uB', 1: 'uA' } };
+  const shader = shaderOf(groups, bindMap);
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'first bind');
+  groups[1] = named('C', 'D');
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'the same layout');
+  groups[1] = new BundledBindGroup({ uB: texture('E'), uA: texture('F') });
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'the names in another order');
+  groups[1] = new BundledBindGroup({ 0: texture('G'), 1: texture('H') });
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'keyed by number: the bind map names them');
+  groups[1] = named('I', 'J');
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'by name again');
+});
+
+test('a destroyed BindGroup in a slot binds nothing, as Pixi\'s polyfill; a live one put back is bound again', () => {
+  const upstream = generateShaderSyncPolyfill();
+  const live = new BundledBindGroup({ 0: texture('A'), 1: texture('B') });
+  const groups = { 0: new BundledBindGroup({ 0: uniforms(1) }), 1: live };
+  const shader = shaderOf(groups, { 0: { 0: 'uOne' }, 1: { 0: 'uA', 1: 'uB' } });
+  run(syncShader, shader);
+  const dead = new BundledBindGroup({ 0: texture('C'), 1: texture('D') });
+  dead.destroy();
+  groups[1] = dead;
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'destroyed');
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'still destroyed, from the plan');
+  groups[1] = live;
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a live group back');
 });
 
 // N-109: Pixi's batcher declares sixteen float samplers and binds only the units its batch uses; WebGL2 drops a draw
@@ -166,11 +201,11 @@ test('integer textures take the top texture units, float ones the units past the
   const integerView = new TextureView(new TextureSource({ width: 1, height: 1, format: 'r8uint' }), {});
   integerView.label = 'C';
   const groups = {
-    1: new PatchedBindGroup({
-      a: texture('A'),
-      b: Object.assign(new TextureSource({ width: 1, height: 1, format: 'rgba32uint' }), { label: 'B' }),
-      c: integerView,
-      d: texture('D'),
+    1: new UpstreamBindGroup({
+      0: texture('A'),
+      1: Object.assign(new TextureSource({ width: 1, height: 1, format: 'rgba32uint' }), { label: 'B' }),
+      2: integerView,
+      3: texture('D'),
     }),
   };
   const shader = shaderOf(groups, { 1: { 0: 'uA', 1: 'uB', 2: 'uC', 3: 'uD' } });
@@ -182,21 +217,25 @@ test('integer textures take the top texture units, float ones the units past the
   ];
   for (const bind of ['first bind', 'from the plan']) {
     calls.length = 0;
-    const syncData = { textureCount: 0, blockIndex: 0 };
+    const syncData = { textureCount: 0 };
     syncShader(renderer, shader, syncData);
     assert.deepEqual(calls, expected, bind);
     assert.equal(syncData.textureCount, 2, 'the float textures counted');
   }
 });
 
-test('the bundled BindGroup counts the resource slots it gains, not the ones it replaces', () => {
+test('the bundled BindGroup lists a new _resourceKeys when it gains a binding, the same one when one is replaced', () => {
   const group = new BundledBindGroup();
-  assert.equal(group._weedKeys, 0);
-  group.setResource({ on() {}, off() {} }, 0);
-  group.setResource({ on() {}, off() {} }, 2);
-  assert.equal(group._weedKeys, 2);
-  group.setResource({ on() {}, off() {} }, 0);
-  assert.equal(group._weedKeys, 2, 'replacing slot 0 adds nothing');
+  const resource = () => ({ _resourceId: 1, on() {}, off() {} });
+  group.setResource(resource(), 0);
+  group.setResource(resource(), 2);
+  const keys = group._resourceKeys;
+  assert.deepEqual(keys, [0, 2]);
+  group.setResource(resource(), 0);
+  assert.equal(group._resourceKeys, keys, 'replacing binding 0 keeps the list');
+  group.setResource(resource(), 1);
+  assert.notEqual(group._resourceKeys, keys, 'a binding more, a new list');
+  assert.deepEqual(group._resourceKeys, [0, 1, 2]);
 });
 
 // E-417: a float texture keeps the unit it sits on across programs, a new one takes the unit past the batcher's sixteen
@@ -226,16 +265,16 @@ test('E-417: a texture already on a unit stays there for the next program, which
   const p1 = {};
   const p2 = {};
   const renderer = sharedRenderer(calls, new Map([[p1, program(['uA', 'uB'])], [p2, program(['uC', 'uD'])]]));
-  const first = { glProgram: p1, groups: { 1: new PatchedBindGroup({ a: atlas, b: lut }) }, _uniformBindMap: { 1: { 0: 'uA', 1: 'uB' } } };
-  const second = { glProgram: p2, groups: { 1: new PatchedBindGroup({ c: maps, d: atlas }) }, _uniformBindMap: { 1: { 0: 'uC', 1: 'uD' } } };
-  syncShader(renderer, first, { textureCount: 0, blockIndex: 0 });
+  const first = { glProgram: p1, groups: { 1: new UpstreamBindGroup({ 0: atlas, 1: lut }) }, _uniformBindMap: { 1: { 0: 'uA', 1: 'uB' } } };
+  const second = { glProgram: p2, groups: { 1: new UpstreamBindGroup({ 0: maps, 1: atlas }) }, _uniformBindMap: { 1: { 0: 'uC', 1: 'uD' } } };
+  syncShader(renderer, first, { textureCount: 0 });
   assert.deepEqual(calls, [['texture', 'atlas', 16], ['uniform1i', 'locA', 16], ['texture', 'lut', 17], ['uniform1i', 'locB', 17]]);
   calls.length = 0;
-  syncShader(renderer, second, { textureCount: 0, blockIndex: 0 });
+  syncShader(renderer, second, { textureCount: 0 });
   assert.deepEqual(calls, [['texture', 'maps', 18], ['uniform1i', 'locC', 18], ['texture', 'atlas', 16], ['uniform1i', 'locD', 16]],
     'the atlas stays on 16');
   calls.length = 0;
-  syncShader(renderer, first, { textureCount: 0, blockIndex: 0 });
+  syncShader(renderer, first, { textureCount: 0 });
   assert.deepEqual(calls, [['texture', 'atlas', 16], ['texture', 'lut', 17]], 'nothing moves, no uniform1i (E-389)');
 });
 
@@ -246,9 +285,9 @@ test('E-417: with every float unit held, a new texture takes the one used longes
   const syncOne = (label) => {
     const glProgram = {};
     programs.set(glProgram, program(['uA']));
-    const shader = { glProgram, groups: { 0: new PatchedBindGroup({ a: texture(label) }) }, _uniformBindMap: { 0: { 0: 'uA' } } };
+    const shader = { glProgram, groups: { 0: new UpstreamBindGroup({ 0: texture(label) }) }, _uniformBindMap: { 0: { 0: 'uA' } } };
     calls.length = 0;
-    syncShader(renderer, shader, { textureCount: 0, blockIndex: 0 });
+    syncShader(renderer, shader, { textureCount: 0 });
     return calls.find((c) => c[0] === 'texture')[2];
   };
   // 32 units: the batcher's 0 to 15, the top 4 the integer textures': 16 to 27 filled in order.
@@ -260,8 +299,8 @@ test('E-417: with every float unit held, a new texture takes the one used longes
   const glProgram = {};
   programs.set(glProgram, program(['uA', 'uB']));
   calls.length = 0;
-  syncShader(renderer, { glProgram, groups: { 0: new PatchedBindGroup({ a: texture('x'), b: texture('y') }) }, _uniformBindMap: { 0: { 0: 'uA', 1: 'uB' } } },
-    { textureCount: 0, blockIndex: 0 });
+  syncShader(renderer, { glProgram, groups: { 0: new UpstreamBindGroup({ 0: texture('x'), 1: texture('y') }) }, _uniformBindMap: { 0: { 0: 'uA', 1: 'uB' } } },
+    { textureCount: 0 });
   assert.deepEqual(calls.filter((c) => c[0] === 'texture').map((c) => c[2]), [18, 19]);
   assert.ok(renderer.texture._boundTextures.slice(28).every((t) => t === undefined), 'the integer units untouched');
   // A program of thirteen new textures: twelve past the batcher's units, the thirteenth on the batcher's oldest.
@@ -269,8 +308,8 @@ test('E-417: with every float unit held, a new texture takes the one used longes
   programs.set(many, program(Array.from({ length: 13 }, (_, k) => 'u' + k)));
   calls.length = 0;
   const resources = Object.fromEntries(Array.from({ length: 13 }, (_, k) => [k, texture('m' + k)]));
-  syncShader(renderer, { glProgram: many, groups: { 0: new PatchedBindGroup(resources) }, _uniformBindMap: { 0: Object.fromEntries(Array.from({ length: 13 }, (_, k) => [k, 'u' + k])) } },
-    { textureCount: 0, blockIndex: 0 });
+  syncShader(renderer, { glProgram: many, groups: { 0: new UpstreamBindGroup(resources) }, _uniformBindMap: { 0: Object.fromEntries(Array.from({ length: 13 }, (_, k) => [k, 'u' + k])) } },
+    { textureCount: 0 });
   const units = calls.filter((c) => c[0] === 'texture').map((c) => c[2]);
   assert.deepEqual(units.slice(0, 12).sort((a, b) => a - b), Array.from({ length: 12 }, (_, k) => 16 + k));
   assert.equal(units[12], 0);
@@ -287,8 +326,8 @@ test('E-417: integer textures of two programs keep their own top units instead o
     const glProgram = {};
     programs.set(glProgram, program(['uA']));
     calls.length = 0;
-    syncShader(renderer, { glProgram, groups: { 0: new PatchedBindGroup({ a: source }) }, _uniformBindMap: { 0: { 0: 'uA' } } },
-      { textureCount: 0, blockIndex: 0 });
+    syncShader(renderer, { glProgram, groups: { 0: new UpstreamBindGroup({ 0: source }) }, _uniformBindMap: { 0: { 0: 'uA' } } },
+      { textureCount: 0 });
     return calls.find((c) => c[0] === 'texture')[2];
   };
   assert.equal(sync(statics), 31, 'the last unit first');

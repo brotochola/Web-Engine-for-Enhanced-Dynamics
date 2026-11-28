@@ -223,12 +223,16 @@ function patchPixiPassGarbage() {
 /**
  * Pixi's per-draw paths without garbage. Each draw walked integer-keyed objects with for…in (V8 builds a key array
  * for every such loop), built a string key, or made an options object.
- * - WebGL: the shader sync walks a per-shader plan (scripts/pixi-stubs/shaderSyncPolyfill.mjs). BindGroup counts the
- *   resource slots it gains in `_weedKeys`, which tells the plan to rebuild.
- * - WebGPU: BindGroup keeps its keys in for…in order (`_weedKeyList`) for the loops that walked its resources (the
- *   encoder's sync, `_touch`, `_key`); the encoder walks its bind groups and vertex buffers by index; a BindGroup keeps
- *   its GPU bind groups per layout, for its key; the mesh adapter draws with one options object; a Geometry keeps its
- *   last pipeline, for its cache and key.
+ * - WebGL: the shader sync walks a per-shader plan (scripts/pixi-stubs/shaderSyncPolyfill.mjs), checked by each
+ *   BindGroup's `_resourceKeys`.
+ * - WebGPU: the mesh adapter draws with one options object; a Geometry keeps its last pipeline, for its cache and key;
+ *   BindGroup's `_touchKeys` (read at every bind group switch, by `_touch`) holds no arrow over `this`, which made V8
+ *   allocate a context at each call, cached or not (pixijs issue #12391, PR #12460: drop this once it is released).
+ *   Pixi 8.23 does the rest upstream, as this build patched it before (E-152): BindGroup lists its binding numbers in
+ *   `_resourceKeys` for the loops that walked its resources and keys itself by two numbers (#12229, #12278), the
+ *   encoder walks its bind groups and vertex buffers by index (#12229), a BindGroup keeps its cache entry, for its
+ *   layout and system (#12278), and no sampler is stamped on rebind (#12288). E-464's uniform copy without a submit of
+ *   its own is upstream's too (#12345).
  */
 function patchPixiDrawGarbage() {
   return {
@@ -241,131 +245,25 @@ function patchPixiDrawGarbage() {
         src = replaceOnce(
           src,
           'class BindGroup {\n',
-          '/** WeedJS: a new resource key into `list`, in for…in order (integer keys ascending, then the others as added). */\n' +
-            'function weedInsertKey(list, key) {\n' +
-            '  const n = typeof key === "number" ? key : /^(0|[1-9]\\d*)$/.test(key) ? +key : -1;\n' +
-            '  let at = list.length;\n' +
-            '  if (n >= 0) {\n' +
-            '    at = 0;\n' +
-            '    for (; at < list.length; at++) {\n' +
-            '      const k = list[at];\n' +
-            '      const m = typeof k === "number" ? k : /^(0|[1-9]\\d*)$/.test(k) ? +k : -1;\n' +
-            '      if (m < 0 || m > n) break;\n' +
-            '    }\n' +
+          '/** WeedJS (#12391): the binding numbers `_touch` stamps, every one but the samplers; no closure over the group. */\n' +
+            'function weedTouchKeys(group) {\n' +
+            '  const keys = group._resourceKeys;\n' +
+            '  const out = [];\n' +
+            '  for (let i = 0; i < keys.length; i++) {\n' +
+            '    if (group.resources[keys[i]]?._resourceType !== "textureSampler") out.push(keys[i]);\n' +
             '  }\n' +
-            '  list.splice(at, 0, key);\n' +
+            '  return out;\n' +
             '}\n' +
             'class BindGroup {\n',
           file,
         );
-        src = replaceOnce(
-          src,
-          '    this.resources = /* @__PURE__ */ Object.create(null);\n    this._dirty = true;\n',
-          '    this.resources = /* @__PURE__ */ Object.create(null);\n    this._dirty = true;\n' +
-            '    this._weedKeys = 0;\n    this._weedKeyList = [];\n' +
-            '    this._weedGpuOwner = null;\n    this._weedGpuKey = "";\n    this._weedGpuByLayout = null;\n',
-          file,
-        );
-        src = replaceOnce(
-          src,
-          '    this.resources[index] = resource;\n',
-          '    if (!(index in this.resources)) {\n      this._weedKeys++;\n      weedInsertKey(this._weedKeyList, index);\n    }\n' +
-            '    this.resources[index] = resource;\n',
-          file,
-        );
-        src = replaceOnce(
-          src,
-          '      for (const i in this.resources) {\n        keyParts[index++] = this.resources[i] ? this.resources[i]._resourceId : -1;\n      }\n',
-          '      const keys = this._weedKeyList;\n      for (let k = 0; k < keys.length; k++) {\n' +
-            '        const resource = this.resources[keys[k]];\n        keyParts[index++] = resource ? resource._resourceId : -1;\n      }\n',
-          file,
-        );
         return replaceOnce(
           src,
-          '    const resources = this.resources;\n    for (const i in resources) {\n      const resource = resources[i];\n' +
-            '      if (!resource) continue;\n      resource._gcLastUsed = now;\n',
-          '    const resources = this.resources;\n    const keys = this._weedKeyList;\n    for (let k = 0; k < keys.length; k++) {\n' +
-            '      const resource = resources[keys[k]];\n      if (!resource) continue;\n      resource._gcLastUsed = now;\n',
+          '    this._touchKeysValue ?? (this._touchKeysValue = this._resourceKeys.filter((index) => this.resources[index]?._resourceType !== "textureSampler"));\n',
+          '    this._touchKeysValue ?? (this._touchKeysValue = weedTouchKeys(this));\n',
           file,
         );
       });
-      // E-464: each render call's uniforms go to two buffers, the second shifted by 128 bytes. Pixi copied them in an
-      // encoder of its own and submitted it, a second submit a render call (12.7 submits a frame at Predator crowd 2.5,
-      // each a flush in Chrome's GPU process: 40 % more of it than WebGL's). Upstream writes the shifted one with
-      // queue.writeBuffer since 8.23 (#12345): the same bytes, no submit. Both run before the render call's own submit
-      // (postrender), which reads them.
-      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gpu[\\/]GpuUniformBatchPipe\.mjs$/, (src, file) =>
-        replaceOnce(
-          src,
-          '    const commandEncoder = this._renderer.gpu.device.createCommandEncoder();\n' +
-            '    for (let i = 1; i < this._buffers.length; i++) {\n' +
-            '      const buffer = this._buffers[i];\n' +
-            '      commandEncoder.copyBufferToBuffer(\n' +
-            '        bufferSystem.getGPUBuffer(firstBuffer),\n' +
-            '        minUniformOffsetAlignment,\n' +
-            '        bufferSystem.getGPUBuffer(buffer),\n' +
-            '        0,\n' +
-            '        this._batchBuffer.byteIndex\n' +
-            '      );\n' +
-            '    }\n' +
-            '    this._renderer.gpu.device.queue.submit([commandEncoder.finish()]);\n',
-          '    const byteIndex = this._batchBuffer.byteIndex;\n' +
-            '    const data = this._batchBuffer.data;\n' +
-            '    const queue = this._renderer.gpu.device.queue;\n' +
-            '    for (let i = 1; i < this._buffers.length; i++) {\n' +
-            '      const size = byteIndex - minUniformOffsetAlignment * i;\n' +
-            '      if (size > 0) {\n' +
-            '        queue.writeBuffer(bufferSystem.getGPUBuffer(this._buffers[i]), 0, data.buffer,\n' +
-            '          data.byteOffset + minUniformOffsetAlignment * i, size);\n' +
-            '      }\n' +
-            '    }\n',
-          file,
-        ),
-      );
-      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gpu[\\/]GpuEncoderSystem\.mjs$/, (src, file) => {
-        // The cached name map's keys run from 0 to at most the geometry's buffer count - 1 (one layout per buffer).
-        src = replaceOnce(
-          src,
-          '    for (const i in buffersToBind) {\n      this._setVertexBuffer(parseInt(i, 10), geometry.attributes[buffersToBind[i]].buffer);\n    }\n',
-          '    for (let i = 0, n = geometry.buffers.length; i < n; i++) {\n      const name = buffersToBind[i];\n' +
-            '      if (name !== void 0) this._setVertexBuffer(i, geometry.attributes[name].buffer);\n    }\n',
-          file,
-        );
-        // Bind group indices, as the encoder's 16 slots (_boundBindGroup).
-        src = replaceOnce(
-          src,
-          '    for (const i in shader.groups) {\n      if (!program.layout[i]) continue;\n      const bindGroup = shader.groups[i];\n',
-          '    const groups = shader.groups;\n    for (let i = 0; i < 16; i++) {\n      const bindGroup = groups[i];\n' +
-            '      if (bindGroup === void 0 || !program.layout[i]) continue;\n',
-          file,
-        );
-        return replaceOnce(
-          src,
-          '    for (const j in bindGroup.resources) {\n      const resource = bindGroup.resources[j];\n',
-          '    const keys = bindGroup._weedKeyList;\n    for (let k = 0; k < keys.length; k++) {\n' +
-            '      const resource = bindGroup.resources[keys[k]];\n',
-          file,
-        );
-      });
-      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gpu[\\/]BindGroupSystem\.mjs$/, (src, file) =>
-        replaceOnce(
-          src,
-          '    const key = `${bindGroup._key}:${program._layoutKey << 4 | groupIndex}`;\n' +
-            '    const gpuBindGroup = this._hash[key] || this._createBindGroup(key, bindGroup, program, groupIndex);\n' +
-            '    return gpuBindGroup;\n',
-          '    const groupKey = bindGroup._key;\n    const layoutKey = program._layoutKey << 4 | groupIndex;\n' +
-            '    let byLayout = bindGroup._weedGpuByLayout;\n' +
-            '    if (byLayout === null || bindGroup._weedGpuOwner !== this || bindGroup._weedGpuKey !== groupKey) {\n' +
-            '      if (byLayout === null) byLayout = bindGroup._weedGpuByLayout = /* @__PURE__ */ new Map();\n' +
-            '      else byLayout.clear();\n' +
-            '      bindGroup._weedGpuOwner = this;\n      bindGroup._weedGpuKey = groupKey;\n' +
-            '    } else {\n      const known = byLayout.get(layoutKey);\n      if (known !== void 0) return known;\n    }\n' +
-            '    const key = `${groupKey}:${layoutKey}`;\n' +
-            '    const gpuBindGroup = this._hash[key] || this._createBindGroup(key, bindGroup, program, groupIndex);\n' +
-            '    byLayout.set(layoutKey, gpuBindGroup);\n    return gpuBindGroup;\n',
-          file,
-        ),
-      );
       patchModule(build, /[\\/]scene[\\/]mesh[\\/]gpu[\\/]GpuMeshAdapter\.mjs$/, (src, file) => {
         // firstInstance is there from the start: instanceRangeDraw.js sets it around a ranged draw and puts it back.
         src = replaceOnce(
@@ -414,33 +312,6 @@ function patchPixiDrawGarbage() {
 }
 
 /**
- * Pixi's WebGL format map gives the integer formats RED, RG or RGBA; WebGL 2 wants RED_INTEGER, RG_INTEGER or
- * RGBA_INTEGER with an integer internal format. Pixi allocated each texture of such a source (the GPU particle record
- * textures, rgba32uint) with an invalid texImage2D, a GL_INVALID_OPERATION in the console, before the engine's own
- * upload reallocated it.
- */
-function patchPixiIntegerFormats() {
-  const formats = [
-    ['r8uint', 'RED'], ['r8sint', 'RED'], ['r16uint', 'RED'], ['r16sint', 'RED'],
-    ['rg8uint', 'RG'], ['rg8sint', 'RG'], ['r32uint', 'RED'], ['r32sint', 'RED'],
-    ['rg16uint', 'RG'], ['rg16sint', 'RG'], ['rgba8uint', 'RGBA'], ['rgba8sint', 'RGBA'],
-    ['rg32uint', 'RG'], ['rg32sint', 'RG'], ['rgba16uint', 'RGBA'], ['rgba16sint', 'RGBA'],
-    ['rgba32uint', 'RGBA'], ['rgba32sint', 'RGBA'],
-  ];
-  return {
-    name: 'patch-pixi-integer-formats',
-    setup(build) {
-      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gl[\\/]texture[\\/]utils[\\/]mapFormatToGlFormat\.mjs$/, (src, file) => {
-        for (const [name, base] of formats) {
-          src = replaceOnce(src, `    ${name}: gl.${base},\n`, `    ${name}: gl.${base}_INTEGER,\n`, file);
-        }
-        return src;
-      });
-    },
-  };
-}
-
-/**
  * E-475: Pixi links a WebGL program the first time it binds it and waits for the link (generateProgram reads
  * LINK_STATUS right after linkProgram): Predator by night waited 2.1 s in its first frames, 1.3 s of it for the light
  * pass. With KHR_parallel_shader_compile the driver links on threads of its own, and nothing waits until something is
@@ -464,7 +335,9 @@ function patchPixiParallelLinks() {
           '  gl.linkProgram(webGLProgram);\n' +
             '  return { webGLProgram, glVertShader, glFragShader, done: false };\n' +
             '}\n' +
-            'function weedFinishProgram(gl, program, { webGLProgram, glVertShader, glFragShader }) {\n',
+            'function weedFinishProgram(gl, program, { webGLProgram, glVertShader, glFragShader }) {\n' +
+            // Pixi 8.23 reads it after the link too: the uniform blocks' fixed slots start past a feedback buffer (#12307).
+            '  const transformFeedbackVaryings = program.transformFeedbackVaryings;\n',
           file,
         );
         return replaceOnce(
@@ -576,8 +449,10 @@ const PIPELINE_AHEAD = `    return descriptor;
   }
   /** WeedJS (SST-7): getPipeline's pipeline for this draw into renderTarget, built ahead, asynchronously; null if it has one. */
   weedPipelineAhead(geometry, program, state, topology, renderTarget) {
-    const saved = [this._multisampleCount, this._colorTargetCount, this._colorFormat, this._colorFormatId,
-      this._depthStencilFormat, this._depthStencilFormatData, this._depthReadOnly, this._invertFrontFace];
+    const saved = [this._multisampleCount, this._colorFormatId, this._depthStencilFormat, this._depthStencilFormatData,
+      this._depthReadOnly, this._stencilReadOnly, this._invertFrontFace];
+    // setRenderTarget writes the target's formats into the system's own list (_setColorFormats): kept to put back.
+    const colorFormats = this._colorFormats.slice();
     const colorMask = this._colorMask;
     const stencilMode = this._stencilMode;
     this._colorMask = 15;
@@ -609,8 +484,11 @@ const PIPELINE_AHEAD = `    return descriptor;
         });
       }
     } finally {
-      [this._multisampleCount, this._colorTargetCount, this._colorFormat, this._colorFormatId,
-        this._depthStencilFormat, this._depthStencilFormatData, this._depthReadOnly, this._invertFrontFace] = saved;
+      [this._multisampleCount, this._colorFormatId, this._depthStencilFormat, this._depthStencilFormatData,
+        this._depthReadOnly, this._stencilReadOnly, this._invertFrontFace] = saved;
+      const formats = this._colorFormats;
+      formats.length = colorFormats.length;
+      for (let i = 0; i < colorFormats.length; i++) formats[i] = colorFormats[i];
       this._colorMask = colorMask;
       this.setStencilMode(stencilMode);
       this._updatePipeHash();
@@ -661,7 +539,7 @@ const result = await esbuild.build({
   format: 'esm',
   minify: true,
   outfile: path.join(root, 'src', 'vendor', 'pixi.min.js'),
-  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiPassGarbage(), patchPixiIntegerFormats(), patchPixiParallelLinks(), patchPixiLostBoot()],
+  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiPassGarbage(), patchPixiParallelLinks(), patchPixiLostBoot()],
   logLevel: 'info',
 });
 

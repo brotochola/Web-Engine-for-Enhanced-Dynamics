@@ -20,6 +20,7 @@ import {
 } from '../../src/render/gpuParticleBatch.js';
 import { installInstanceRangeDraw } from '../../src/render/instanceRangeDraw.js';
 import { Texture, TextureSource } from '../../src/vendor/pixi.min.js';
+import { GlBufferSystem } from '../../node_modules/pixi.js/lib/rendering/renderers/gl/buffer/GlBufferSystem.mjs';
 import { readEngineShader } from './engineShaderSources.mjs';
 
 // The renderer's side of a GPU particle layer, without a GPU: what it uploads each frame (only what was published,
@@ -92,64 +93,68 @@ test('a frame uploads only the records published since the last one, out of a pr
 });
 
 /**
- * Pixi's WebGL buffer upload (GlBufferSystem.updateBuffer in src/vendor/pixi.min.js): the whole array the first
- * time, then only the buffer's last pending range, and nothing when that range already went up.
+ * Pixi's WebGL buffer system (8.23's GlBufferSystem, the bundle's, unpatched) over a fake context that keeps what the GPU
+ * holds: the whole array when a draw first binds the buffer, then each Buffer.update at the call (#12316). `ranges`: the
+ * [first slot, slots] of each update sent after the first upload.
  */
-function glBufferModel() {
-  const gl = { data: null, updateID: -1 };
-  const upload = (buffer) => {
-    if (gl.data === null) {
-      gl.data = Float32Array.from(buffer.data);
-      gl.updateID = buffer._updateID;
-      return;
-    }
-    if (buffer._updateID === gl.updateID) return;
-    gl.updateID = buffer._updateID;
-    const off = buffer._updateOffset / 4;
-    const len = (buffer._updateSize || buffer.data.byteLength) / 4;
-    gl.data.set(buffer.data.subarray(off, off + len), off);
+function glBuffers() {
+  const gpu = { data: null, ranges: [] };
+  const gl = {
+    STATIC_DRAW: 0x88e4,
+    DYNAMIC_DRAW: 0x88e8,
+    createBuffer: () => ({}),
+    bindBuffer() {},
+    deleteBuffer() {},
+    bufferData(target, data) {
+      gpu.data = Float32Array.from(data);
+    },
+    bufferSubData(target, offset, data, start, length) {
+      gpu.data.set(data.subarray(start, start + length), offset / 4);
+      gpu.ranges.push([offset / GPU_RECORD_BYTES, (length * 4) / GPU_RECORD_BYTES]);
+    },
   };
-  return { gl, upload };
+  const system = new GlBufferSystem({ uid: 1, gl, gc: { now: 0, addResourceHash() {} }, context: { webGLVersion: 2 } });
+  system.contextChange();
+  return { gpu, draw: (buffer) => system.updateBuffer(buffer), destroy: () => system.destroy() };
 }
 
-test('every published range reaches the GPU, in a frame that draws nothing of the ring too', { concurrency: false }, () => {
-  const { gl, upload } = glBufferModel();
-  const { batch, draw, restore } = setup(64 * 3, { flush: upload });
+test('every published range reaches the GPU at once, in a frame that draws nothing of the ring too', { concurrency: false }, () => {
+  const gl = glBuffers();
+  const { batch, draw, restore } = setup(64 * 3);
   try {
     emit(8, 1000);
     batch.update(clockNow());
-    upload(draw.buffer); // drawn
+    gl.draw(draw.buffer); // drawn: the buffer is made on the GPU, the whole array
     emit(10, 1000);
     batch.update(clockNow()); // nothing of this ring drawn: a hidden layer, or groups all off-screen
     emit(5, 1000);
     batch.update(clockNow());
-    upload(draw.buffer); // drawn
     const floats = (23 * GPU_RECORD_BYTES) / 4;
-    assert.deepEqual(Array.from(gl.data.subarray(0, floats)), Array.from(draw.ring.records.subarray(0, floats)));
+    assert.deepEqual(Array.from(gl.gpu.data.subarray(0, floats)), Array.from(draw.ring.records.subarray(0, floats)),
+      'before the next draw');
+    assert.deepEqual(gl.gpu.ranges, [[8, 10], [18, 5]]);
+    gl.draw(draw.buffer);
+    assert.equal(gl.gpu.ranges.length, 2, 'the draw sends nothing again');
   } finally {
+    gl.destroy();
     restore();
   }
 });
 
 test('a range across the ring end goes up as its two pieces, not the whole ring', { concurrency: false }, () => {
-  const { gl, upload } = glBufferModel();
-  const ranges = []; // [first slot, slots] of each range that went up after the first upload
-  const flush = (buffer) => {
-    if (gl.data !== null && buffer._updateID !== gl.updateID) {
-      ranges.push([buffer._updateOffset / GPU_RECORD_BYTES, buffer._updateSize / GPU_RECORD_BYTES]);
-    }
-    upload(buffer);
-  };
-  const { batch, draw, restore } = setup(64 * 3, { flush });
+  const gl = glBuffers();
+  const { batch, draw, restore } = setup(64 * 3);
   try {
     emit(50, 5000);
     batch.update(clockNow());
+    gl.draw(draw.buffer);
     emit(30, 5000); // slots 50..79 of a 64-slot ring: wraps
     batch.update(clockNow());
-    assert.deepEqual(ranges, [[50, 14], [0, 16]], 'the head up to the ring end, then the rest from slot 0');
+    assert.deepEqual(gl.gpu.ranges, [[50, 14], [0, 16]], 'the head up to the ring end, then the rest from slot 0');
     const floats = (64 * GPU_RECORD_BYTES) / 4;
-    assert.deepEqual(Array.from(gl.data.subarray(0, floats)), Array.from(draw.ring.records.subarray(0, floats)));
+    assert.deepEqual(Array.from(gl.gpu.data.subarray(0, floats)), Array.from(draw.ring.records.subarray(0, floats)));
   } finally {
+    gl.destroy();
     restore();
   }
 });
@@ -177,7 +182,8 @@ test('the live window starts at the oldest group still alive, and wraps the ring
     assert.equal(b.visible, true);
     assert.equal(b.geometry.weedFirstInstance, 0);
     assert.equal(b.geometry.instanceCount, 16, 'the rest from slot 0');
-    assert.equal(draw.buffer._updateSize, 64 * GPU_RECORD_BYTES, 'without a flush, a range across the ring end uploads the whole array');
+    assert.deepEqual([draw.buffer._updateOffset, draw.buffer._updateSize], [0, 16 * GPU_RECORD_BYTES],
+      'across the ring end the last update is the tail, from slot 0');
     Time._advanceSimNow(6000);
     batch.update(clockNow());
     assert.equal(a.visible || b.visible, false, 'all ended');

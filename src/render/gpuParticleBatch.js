@@ -4,9 +4,9 @@
 //
 // Each frame, per ring: copy what was published since the last frame out of the shared memory into the ring's own
 // array and upload that range (uploading from the shared memory itself slows the other workers: E-123); a range
-// that wraps the ring end goes up as its two pieces, the first sent before the second replaces it, since Pixi keeps
-// one pending range per buffer (without a flush, the whole array). Then draw only the live window: from the first
-// record of the oldest group that may still be alive to the last published one.
+// that wraps the ring end goes up as its two pieces (Pixi 8.23 sends each Buffer.update at the call, on both backends,
+// #12316). Then draw only the live window: from the first record of the oldest group that may still be alive to the
+// last published one.
 // A window that wraps the ring is two draws. Unborn and dead records inside it cost four vertex invocations each.
 //
 // WebGL reads the records from a texture instead (`recordTexture`, E-157): seven texels a record, fetched by
@@ -166,11 +166,10 @@ class RingDraw {
    * @param {Shader} shader the ring's shader; with `records`, only the program and resources the meshes' copy
    * @param {State} state
    * @param {string} label
-   * @param {((buffer: Buffer) => void)|null} flush
    * @param {object|null} records WebGL's record texture (GpuParticleLayerBatch's `recordTexture`): `make` and
    *   `upload`, and `resources`, the ring's shader resources every mesh's shader shares
    */
-  constructor(ring, shader, state, label, flush, records) {
+  constructor(ring, shader, state, label, records) {
     this.ring = ring;
     this.shader = shader;
     this.mirror = new Float32Array(ring.records.length);
@@ -203,8 +202,6 @@ class RingDraw {
       this.texHeight = size.height;
       this.recordSource = this.records.make(this.mirrorBits, size.width, size.height, `${label}-records`);
     }
-    // Sends the buffer's pending range to the GPU now (GpuParticleLayerBatch's `flush`), or null.
-    this.flush = flush || null;
     this.quad = new Buffer({ data: QUAD, usage: BufferUsage.VERTEX });
     this.index = new Buffer({ data: QUAD_INDEX, usage: BufferUsage.INDEX });
     // Two meshes: a live window that wraps the ring end is drawn as two ranges.
@@ -327,25 +324,17 @@ class RingDraw {
     const tail = fresh - head;
     if (tail > 0) this._copy(0, tail);
     if (this.records !== null) {
-      // The texture takes both pieces at once; sent now, as the buffer's flush does.
+      // The texture takes both pieces at once, sent now, as the buffer's updates are.
       this._sendRows(from, head);
       if (tail > 0) this._sendRows(0, tail);
       this.uploaded = published >>> 0;
       return;
     }
-    // A buffer keeps one pending range; the next update replaces it. Across the ring end the head is sent before the
-    // tail's range replaces it; without a flush, the whole array goes.
-    if (tail > 0 && this.flush === null) {
-      this.buffer.update(cap * GPU_RECORD_BYTES, 0);
-    } else {
-      this.buffer.update(head * GPU_RECORD_BYTES, from * GPU_RECORD_BYTES);
-      if (tail > 0) {
-        this.flush(this.buffer);
-        this.buffer.update(tail * GPU_RECORD_BYTES, 0);
-      }
-    }
-    // Sent now, a frame that draws nothing of this ring cannot lose what it published.
-    if (this.flush !== null) this.flush(this.buffer);
+    // Pixi 8.23 sends each update at the call, on both backends (#12316): across the ring end the head goes up, then
+    // the tail, and a frame that draws nothing of this ring loses nothing it published. Before the buffer's first
+    // draw there is nothing to send to: that draw uploads the whole array.
+    this.buffer.update(head * GPU_RECORD_BYTES, from * GPU_RECORD_BYTES);
+    if (tail > 0) this.buffer.update(tail * GPU_RECORD_BYTES, 0);
     this.uploaded = published >>> 0;
   }
 
@@ -448,10 +437,6 @@ export class GpuParticleLayerBatch {
    *   layer's zIndex; a look layer still draws its rings into its density target
    * @param {boolean} [opts.look] the layer has a look shader
    * @param {string} [opts.label]
-   * @param {(buffer: Buffer) => void} [opts.flush] uploads a ring's newly published range at once (the Pixi
-   *   worker passes its renderer's `buffer.updateBuffer`). Pixi's WebGL buffers upload their last range only when
-   *   next drawn, so without it a ring that draws nothing in a frame (a hidden layer; with `sorted`, groups that
-   *   are all off-screen) loses that frame's records.
    * @param {object|null} [opts.recordTexture] WebGL: the rings' records as textures (E-157), made and filled
    *   where the GL context is: `make(bits, width, height, label)` returns a TextureSource holding `bits` (the
    *   ring's Uint32Array, RGBA32UI, already on the GPU); `upload(source, bits, width, height, y0, rows)` sends
@@ -492,7 +477,7 @@ export class GpuParticleLayerBatch {
       const resources = this._resources(opts, textured);
       const shader = this._makeShader(shaders, opts, name, resources, textured);
       const records = textured ? { make: opts.recordTexture.make, upload: opts.recordTexture.upload, resources } : null;
-      const draw = new RingDraw(this.info.rings[r], shader, this.state, name, opts.flush, records);
+      const draw = new RingDraw(this.info.rings[r], shader, this.state, name, records);
       for (const m of draw.meshes) {
         m.blendMode = this.state.blendMode;
         this.container.addChild(m);

@@ -5,6 +5,19 @@ empties it.
 
 Since v0.16.0:
 
+- **Neighbour aggregates from the spatial grid** (E-199): a class sets `static neighborAggregates` (`separation`,
+  `cohesion` with an optional average velocity, `nearest` up to 16, each filtered by `ofType`) and reads the results as
+  columns on `NeighborAggregates` (separation, centroid, average velocity, the nearest neighbours and their distances),
+  computed in the same pass that builds the neighbour lists. Boids uses it: at 100 000 boids each logic worker takes
+  0.87 ms a frame instead of 4.5. Guide: SPATIAL_HASHING.md, "Neighbour aggregates".
+- **`RigidBody.speed` comes from Box2D** (E-353): the physics step writes it with the velocity (the length Box2D already
+  computed), instead of the particle worker deriving it a frame later. It is read-only; when any type sets `deriveSpeed`
+  every body gets a speed; it follows each physics step. The config key moved from `particle.deriveSpeed` to
+  `physics.deriveSpeed` (set for you when a type asks). Speed is no longer saved (it is recomputed), so a save made
+  with an earlier version does not load.
+- **Look layers and screen passes use less video memory** (E-525): look layers of one size take turns on one render
+  target, and a chain of screen passes draws into two targets instead of one each: a six-pass screen stack at 1080p
+  holds 16 MB instead of 47. Pictures are the same.
 - **Three bundles instead of eight** (N-172): `weed.prod.bundle.esm.min.js` and `weed.prod.bundle.min.js` (production,
   ESM and UMD) and `weed.bundle.esm.min.js` (debug, ESM). The `.compressed` variants are gone (they gzipped their workers
   inside the file and inflated them at every start; a server compresses the file better), and so is the debug UMD
