@@ -1655,8 +1655,8 @@ export declare class GameObject {
   /** Optional per-entity filter on a serializable class: false leaves that entity out of a save. */
   static shouldSaveEntity?(entityIndex: number): boolean;
   /**
-   * Particle worker fills RigidBody.speed for this entityType when true.
-   * Scene gate skips the hypot loop if no registered type opts in.
+   * The scene needs RigidBody.speed when true: if any registered type sets it, Box2D writes every body's speed
+   * (sqrt(vx² + vy²), 0 once asleep) with its velocities; if none does, RigidBody.speed stays 0.
    */
   static deriveSpeed: boolean;
   /**

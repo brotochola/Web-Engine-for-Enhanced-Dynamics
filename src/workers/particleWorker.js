@@ -601,15 +601,9 @@ class ParticleWorker extends AbstractWorker {
     // GC OPTIMIZATION: Pre-allocated DataView for nav header reads (avoids creating Uint32Array views)
     this._navDataView = null;
 
-    // Derived properties
+    // Cell sleeping (RigidBody.speed is Box2D's to write: E-353)
     this.globalEntityCount = 0;
-    this._queryRigidBody = null;
-    this.deriveSpeed = false;
     this.cellSleeping = false;
-    this.deriveSpeedByType = null;
-    // E-178: the active lists of the types that set deriveSpeed (built at the first pass, once the lists are bound).
-    this._deriveSpeedLists = [];
-    this._deriveSpeedListsBuilt = false;
 
     this._rbActive = null;
 
@@ -920,24 +914,9 @@ class ParticleWorker extends AbstractWorker {
       // console.log(`[PARTICLE WORKER] Navigation initialized: ${this.gridWidth}x${this.gridHeight} grid`);
     }
 
-    // ========================================
-    // DERIVED PROPERTIES - Initialize
-    // ========================================
-    if (data.buffers?.componentData?.RigidBody && data.componentPools?.RigidBody) {
-      this._queryRigidBody = [RigidBody];
-    }
-
     // Sway decimation config
     this.swayDecimation = data.config?.decoration?.swayDecimation ?? DECORATION_DEFAULTS.swayDecimation;
-    this.deriveSpeed = data.config?.particle?.deriveSpeed === true;
     this.cellSleeping = data.config?.spatial?.cellSleeping === true;
-    const registered = this.registeredClasses || [];
-    this.deriveSpeedByType = new Uint8Array(registered.length);
-    for (const classInfo of registered) {
-      if (classInfo.deriveSpeed === true) this.deriveSpeedByType[classInfo.entityType] = 1;
-    }
-    this._deriveSpeedLists = [];
-    this._deriveSpeedListsBuilt = false;
 
     // Screen visibility config
     this.canvasWidth = this.config.canvasWidth || 800;
@@ -1049,9 +1028,7 @@ class ParticleWorker extends AbstractWorker {
     // Process navigation requests
     this.processNavigationRequests();
 
-    // Update derived properties (speed). Sleeping: Box2D → RigidBody.sleeping
-    this.updateDerivedProperties();
-
+    // RigidBody.speed and sleeping come from Box2D's exports (E-353).
     if (this.cellSleeping) this.updateCellSleepingStates();
   }
 
@@ -2129,50 +2106,6 @@ class ParticleWorker extends AbstractWorker {
 
     this.cachedFlowfieldsCount = 0;
     this.cachedPathsCount = 0;
-  }
-
-  // ========================================
-  // DERIVED PROPERTIES
-  // ========================================
-
-  updateDerivedProperties() {
-    if (!this.deriveSpeed) return;
-    if (this.globalEntityCount === 0 || !RigidBody.vx || !this._queryRigidBody) return;
-    if (!this._deriveSpeedListsBuilt) this._buildDeriveSpeedLists();
-
-    const rigidBodyActive = RigidBody.active;
-    const vx = RigidBody.vx;
-    const vy = RigidBody.vy;
-    const speed = RigidBody.speed;
-    const isStatic = RigidBody.static;
-    const lists = this._deriveSpeedLists;
-
-    // E-178: the opted-in types' own active lists, not every body's query with a type test each (which also visited
-    // the bodies of every type that does not opt in).
-    for (let t = 0; t < lists.length; t++) {
-      const list = lists[t];
-      const n = list[0];
-      for (let k = 1; k <= n; k++) {
-        const i = list[k];
-        if (!rigidBodyActive[i] || isStatic[i]) continue;
-        const a = vx[i];
-        const b = vy[i];
-        // speed only — facing/cardinals use getDirectionFromVector(vx,vy); no per-body atan2
-        speed[i] = Math.sqrt(a * a + b * b);
-      }
-    }
-  }
-
-  /** E-178: the active lists of the registered types that set deriveSpeed, as abstractWorker binds them. */
-  _buildDeriveSpeedLists() {
-    const lists = [];
-    for (const classInfo of this.registeredClasses || []) {
-      if (classInfo.deriveSpeed !== true) continue;
-      const list = self[classInfo.name]?._activeList;
-      if (list) lists.push(list);
-    }
-    this._deriveSpeedLists = lists;
-    this._deriveSpeedListsBuilt = true;
   }
 
   // ========================================

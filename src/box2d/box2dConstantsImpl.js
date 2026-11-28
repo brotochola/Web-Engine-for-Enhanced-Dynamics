@@ -38,9 +38,12 @@
     ANG_VEL: 5,
     ROT_C: 6,
     ROT_S: 7,
+    // E-353: RigidBody.speed, sqrt(vx * vx + vy * vy), which Box2D writes with the velocities when the scene asks
+    // (physics.deriveSpeed: a registered type sets deriveSpeed).
+    SPEED: 8,
   });
 
-  var STATE_CHANNEL_COUNT = 8;
+  var STATE_CHANNEL_COUNT = 9;
 
   var JOINT_TYPE = Object.freeze({
     DISTANCE: 0,

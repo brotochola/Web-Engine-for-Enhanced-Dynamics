@@ -9,6 +9,7 @@ function createPhysicsApi(Module) {
   const worldEnableSleeping = wrap("world_enable_sleeping");
   const worldSetStepSpin = wrap("world_set_step_spin");
   const worldSetAwakeReorderInterval = wrap("world_set_awake_reorder_interval");
+  const setBodySpeedExport = wrap("set_body_speed_export");
   const bindGameBuffers = wrap("bind_game_buffers");
   const createBodyBox = wrap("create_body_box");
   const createBodyCircle = wrap("create_body_circle");
@@ -311,6 +312,15 @@ function createPhysicsApi(Module) {
      */
     setAwakeReorderInterval(steps) {
       worldSetAwakeReorderInterval(this.worldId, steps | 0);
+    }
+
+    /**
+     * E-353: each export of a body's velocities also writes its speed channel (STATE_CHANNELS.SPEED, RigidBody.speed):
+     * sqrt(vx * vx + vy * vy), the length the finalize computes for its sleep test, 0 once the body sleeps. Off: the
+     * channel keeps what it holds (0). Set before the bodies are made.
+     */
+    setBodySpeedExport(enable) {
+      setBodySpeedExport(enable ? 1 : 0);
     }
 
     /**

@@ -10,7 +10,8 @@ import { entityTable, tableField } from '../helpers/saveTable.mjs';
 // The bytes a fixed population saves to: a change that means to keep the format must keep them.
 // E-539 (format 6) saves the entities by columns, one table per type: the 24 entities' body went from 55 388 bytes
 // (format 5: every value an f64 behind its field's name, entity by entity) to 16 988; size and hash re-taken. N-303
-// CR-33 (format 9) dropped META's layout hint nothing read: 16 988 -> 16 982; size and hash re-taken.
+// CR-33 (format 9) dropped META's layout hint nothing read: 16 988 -> 16 982; size and hash re-taken. E-353:
+// RigidBody.speed left ARRAY_SCHEMA (Box2D's state channel, derived, not saved): 16 982 -> 16 822; size and hash re-taken.
 
 function payloadOf(entities) {
   return {
@@ -26,10 +27,10 @@ function payloadOf(entities) {
 test('a fixed population saves to the same bytes as before', () => {
   const entities = collectSerializableEntities(savePopulation(24, 0x5a7e));
   const bytes = encodeBinarySaveBody(payloadOf(entities));
-  assert.equal(bytes.length, 16982);
+  assert.equal(bytes.length, 16822);
   assert.equal(
     createHash('sha256').update(bytes).digest('hex'),
-    'e72d92a110c304f313a6f7bb210900f25b3ec36b92712f3897ed63ca0cb6b5c5',
+    'f45dbe7cceb81e0fb41a159105b5d5f0b36f51148e88227f6458ba6887dec6db',
   );
 });
 

@@ -847,8 +847,8 @@ export class GameObject {
   static ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT = 256;
 
   /**
-   * Particle worker fills `RigidBody.speed` for this entityType when true.
-   * Scene gate: if no registered type opts in, the hypot loop does not run.
+   * The scene needs `RigidBody.speed` when true. If any registered type sets it, Box2D writes the speed of every body
+   * with its velocities (E-353); if none does, Box2D writes no speed and RigidBody.speed stays 0.
    */
   static deriveSpeed = false;
 
@@ -1742,8 +1742,8 @@ export class GameObject {
   }
 
   /**
-   * Speed (px/s). Particle worker writes `RigidBody.speed` for types that set
-   * `static deriveSpeed = true`. Other types in the same scene stay 0/stale.
+   * Speed (px/s): sqrt(vx² + vy²), which Box2D writes with the velocities after each step (0 once the body sleeps)
+   * when a registered type sets `static deriveSpeed = true`; 0 in a scene where none does, or without physics.
    */
   get speed() {
     if (!this._hasComponents.RigidBody) return 0;
@@ -3297,14 +3297,19 @@ export class GameObject {
       RigidBody.static[i] = 0;
       RigidBody.ax[i] = 0;
       RigidBody.ay[i] = 0;
-      // vx, vy, angularVelocity and sleeping are views of Box2D's heap (bindBox2dHotFields): without physics they are
-      // not bound, and a spawn that wrote them threw, so a scene with physics off could not spawn a RigidBody type.
+      // vx, vy, angularVelocity, sleeping and speed are views of Box2D's heap (bindBox2dHotFields): without physics
+      // they are not bound, and a spawn that wrote them threw, so a scene with physics off could not spawn a RigidBody
+      // type (speed is then zeros of each worker's own, which nothing writes).
       if (RigidBody.vx) {
         RigidBody.vx[i] = 0;
         RigidBody.vy[i] = 0;
         RigidBody.angularVelocity[i] = 0;
         // Reset sleeping state (entity must start awake for physics to work)
         RigidBody.sleeping[i] = 0;
+        // E-353: Box2D writes it from the body's velocities once physics makes the body; until then 0, not the speed
+        // of the slot's last body. (Bound with vx by bindBox2dHotFields; a harness may bind the velocities alone.)
+        const speed = RigidBody.speed;
+        if (speed) speed[i] = 0;
       }
       RigidBody.angularAccel[i] = 0;
       RigidBody.mass[i] = 0;
@@ -3314,7 +3319,6 @@ export class GameObject {
       RigidBody.invInertia[i] = 0;
       RigidBody.linearDamping[i] = 0;
       RigidBody.angularDamping[i] = 0;
-      RigidBody.speed[i] = 0;
       RigidBody.fixedRotation[i] = 0;
       RigidBody.sleepThreshold[i] = 0;
     }

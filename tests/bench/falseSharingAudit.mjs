@@ -105,6 +105,7 @@ export const WRITERS = {
     r: [c('particle', 'entity', 'src/workers/particleWorker.js:1777', 'speed = sqrt(vx² + vy²)'), c('logic', 'tick', 'demos/predatorScene/gameObjects/person.js:184')],
   },
   'box2d.vy': { same: 'box2d.vx', what: 'RigidBody.vy (state channel)' },
+  'box2d.speed': { what: 'RigidBody.speed (state channel, E-353)', w: [c('pool', 'entity', 'tests/node/bodySpeedExport.wasm.test.js:2', 'the finalize writes it with the velocities, only when it changed')], r: [c('logic', 'tick', 'demos/predatorScene/gameObjects/person.js:187')] },
   'box2d.angularVelocity': { same: 'box2d.vx', what: 'RigidBody.angularVelocity (state channel)' },
   'box2d.sleeping': {
     what: 'RigidBody.sleeping (u8 per body)',
@@ -537,10 +538,11 @@ async function box2dHeapLayout(src, scene) {
   if (fn('bind_game_buffers')(scene.totalEntityCount) !== 1) throw new Error('bind_game_buffers failed in the Node Box2D');
   const cap = fn('get_body_capacity')();
   const stateByte = fn('get_state_byte_offset')();
-  const names = ['x', 'y', 'rotation', 'vx', 'vy', 'angularVelocity', 'rotC', 'rotS']; // box2dConstantsImpl.js:35-44
+  const names = ['x', 'y', 'rotation', 'vx', 'vy', 'angularVelocity', 'rotC', 'rotS', 'speed']; // box2dConstantsImpl.js STATE_CHANNELS
+  const channels = fn('get_state_region_bytes')() / (cap * 4);
   const regions = [];
   regions.push({ name: 'eventHeader', byte: fn('get_event_header_byte_offset')(), bytes: fn('get_event_header_int_count')() * 4, type: 'i32' });
-  for (let ch = 0; ch < 8; ch++) regions.push({ name: names[ch], byte: stateByte + fn('get_state_channel_offset')(ch) * 4, bytes: cap * 4, type: 'f32' });
+  for (let ch = 0; ch < channels; ch++) regions.push({ name: names[ch], byte: stateByte + fn('get_state_channel_offset')(ch) * 4, bytes: cap * 4, type: 'f32' });
   regions.push({ name: 'sleeping', byte: fn('get_sleeping_byte_offset')(), bytes: cap, type: 'u8' });
   regions.push({ name: 'meta', byte: fn('get_meta_byte_offset')(), bytes: fn('get_meta_region_bytes')(), type: 'f32' });
   return { cap, stateByte, regions, workers: p.numberOfPhysicsWorkers ?? 4 };
