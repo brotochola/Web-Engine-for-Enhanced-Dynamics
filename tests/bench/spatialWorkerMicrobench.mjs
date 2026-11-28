@@ -24,6 +24,9 @@
  * stationarySpatialWideScene's and WaterAndBoxes' regime (until SST-21 their types had a visualRange no code read).
  *   node tests/bench/spatialWorkerMicrobench.mjs --still --skin 0.04 --max-frames 15 --tick 1
  *   node tests/bench/spatialWorkerMicrobench.mjs --types boids
+ * `--aggregates` (E-199, with --types): the classes also ask for the neighbour aggregates their demo code reads
+ * (AGGREGATE_PRESETS), so the publish is publish_batch_agg: the same frame with and without them.
+ *   node tests/bench/spatialWorkerMicrobench.mjs --types predator --aggregates
  */
 import assert from 'node:assert/strict';
 
@@ -101,6 +104,20 @@ export function kernelClasses(name, n) {
   }
   return out;
 }
+
+/**
+ * E-199 (`--aggregates`): per TYPE_PRESETS entry, the aggregates its classes' demo code reads (the Boid's separation and
+ * cohesion, the civilian's soldiers to flee, the soldier's civilians to shoot). No velocity: in Node RigidBody's
+ * columns are not in the publish memory, so the kernel would average none.
+ */
+const AGGREGATE_PRESETS = {
+  boids: () => ({ Boid: { separation: { radius: 75, falloff: 'linear' }, cohesion: { minDistance: 75 } } }),
+  predator: (c) => ({
+    Civilian: { separation: { ofType: c.Soldier, floor: 10 }, nearest: { ofType: c.Soldier, count: 4 } },
+    Soldier: { nearest: { ofType: c.Civilian, count: 8 } },
+    Boid: { separation: { radius: 75, falloff: 'linear' }, cohesion: { minDistance: 75 } },
+  }),
+};
 
 /**
  * E-199: the neighbour aggregates for kernelClasses' entries, resolved as a scene resolves them. `configsOf` gets
@@ -363,7 +380,11 @@ async function main() {
   if (args.tick !== undefined) spatial.neighborTickInterval = Number(args.tick);
   const types = args.types !== undefined ? String(args.types) : null;
   const unread = Boolean(args.unread);
-  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial, types, unread });
+  // E-199: --aggregates (with --types) gives the preset's classes the neighbour aggregates their demo code reads.
+  const withAggregates = Boolean(args.aggregates);
+  if (withAggregates && !AGGREGATE_PRESETS[types]) throw new Error('--aggregates needs --types boids or predator');
+  const aggregates = withAggregates ? AGGREGATE_PRESETS[types] : null;
+  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial, types, unread, aggregates });
   // 45 frames: every entity passes a full rebuild and the stagger at least twice.
   for (let f = 0; f < 45; f++) k.frame();
   const checksum = k.checksum();
@@ -374,7 +395,7 @@ async function main() {
   // 60 frames: a whole number of every preset's periods (4, 6, 15, 30, and their multiples up to 30).
   const rates = k.listRates(60);
 
-  const label = `spatial frame ${variant}${still ? ' still' : ''}${types ? ` types=${types}` : ''}${unread ? ' unread' : ''}`;
+  const label = `spatial frame ${variant}${still ? ' still' : ''}${types ? ` types=${types}` : ''}${unread ? ' unread' : ''}${withAggregates ? ' aggregates' : ''}`;
   const cases = {
     frame: timeIt(`${label} (${k.workers.length} workers, n=${k.n})`, () => k.frame(), { iterations: 20, warmup: 30 }),
   };
@@ -383,6 +404,7 @@ async function main() {
     variant,
     still,
     types,
+    aggregates: withAggregates,
     rates,
     spatial: k.cfg,
     functions: ['SpatialWorker.rebuildOwnedRows', 'SpatialWorker._findNeighbors (spatialGather, spatialPublish)'],
