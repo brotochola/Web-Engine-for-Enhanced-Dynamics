@@ -17768,7 +17768,8 @@
         "R-1890",
         "R-2043",
         "R-2044",
-        "R-2048"
+        "R-2048",
+        "R-2056"
       ]
     },
     {
@@ -22358,10 +22359,10 @@
     {
       "id": "DX-PIXI823",
       "title": "Pixi 8.20.1 to 8.23: four build patches become upstream code, the WebGL sync stub moves to fixed uniform-block slots, WebGPU loses a submit per render call (nice to have)",
-      "status": "open",
+      "status": "kept",
       "statusText": "Nice to have, no rush (owner, 2026-11-17); a pseudo-plan in PIXI_823_PLAN.md; E-464's patch (R-1952) goes with the upgrade to 8.23",
       "date": "2026-11-17",
-      "result": "buildPixi.mjs's plugins against 8.23.0's lib: 12 of 16 patches apply; E-152's BindGroup, GpuEncoderSystem and BindGroupSystem and N-95's mapFormatToGlFormat lose their anchors (upstream #12229, #12278, #12288, #12230). The engine's Pixi bundle without patches: 446 335 -> 482 366 bytes minified, 129 684 -> 140 146 gzip.",
+      "result": "Kept 2026-11-28 (f18ffda2): Pixi 8.23.0; Predator light3d crowd 2.5 WebGPU renderer -9.1 %, WebGL neutral; pixi.min.js gzip +10.5 KB",
       "next": "If scheduled: pixi.js 8.23.0, drop the four patches and check the garbage again (E-152's scene on WebGPU); port the WebGL sync stub (E-148) to fixed block slots and _resourceKeys; drop gpuParticleBatch's hand flush; captures on both backends (N-270), webgpuFrameRecorder submits (E-464), Pixi STEP_MS ABAB on WebGL and WebGPU.",
       "area": "pixi",
       "kind": "dx",
@@ -22380,7 +22381,8 @@
       "records": [
         "R-1315",
         "R-1952",
-        "R-2047"
+        "R-2047",
+        "R-2055"
       ]
     },
     {
@@ -23711,14 +23713,15 @@
         "face batching"
       ],
       "records": [
-        "R-1360"
+        "R-1360",
+        "R-2057"
       ],
-      "result": "",
+      "result": "Kept 2026-11-28 (8306af79): collect_decorations kernel, pre-render 10.45 -> 8.65 ms at faceLightScene town=80000; the GPU merge not doable identically and worth under 0.3 ms",
       "next": "Design the merged form (one mesh of the house's face quads, its texture ids and normals per vertex or per face; or the faces packed as one instance with a face table), keep the picture identical (compareCaptures), then measure on the main PC: the barrio's pre-render STEP_MS and GPU per pass, houseLightScene ?bench=faces.",
       "id": "E-520",
       "kind": "speed",
       "area": "render",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-18",
       "title": "A house's faces drawn as one instance (or one mesh) instead of one decoration each: fewer rows for pre-render's collect, emit and sort, and fewer instances for the GPU",
       "statusText": "proposed 2026-11-18 and chosen by the owner, from the ASUS's faces-against-maps sitting: the faces' cost is the count of pieces (pre-render, Intel by day), not the format"
@@ -26128,7 +26131,8 @@
     {
       "records": [
         "R-2009",
-        "R-2016"
+        "R-2016",
+        "R-2056"
       ],
       "refs": [],
       "id": "DX-BUNDLE",
@@ -26214,6 +26218,77 @@
       "aliases": [
         "worldRt resize",
         "customLayers leak"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-466",
+      "title": "Steady deopts in Predator light3d crowd 2.5, every run, both Pixi versions: spatialWorker.js:2319 (264 to 561 a run), tilemapGid.js:243 and :253, particleWorker.js:1417, gameObjectActiveState.js:189",
+      "status": "open",
+      "kind": "bug",
+      "area": "workers",
+      "statusText": "Found 2026-11-28 in the Pixi 8.23 deopt logs (summarizeV8Deopt --tail-ms 8000, p823 v8-* logs): the same sites before and after the upgrade",
+      "next": "Read each site's deopt reason (the logs say it: wrong map, not a Smi, out of bounds), fix the shape or type it trips on, then the same log shows the count gone; the worker's STEP_MS on Predator light3d.",
+      "aliases": [
+        "steady deopts",
+        "spatialWorker deopt"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "E-562",
+      "title": "On WebGPU Pixi's updateBuffer (the engine's instance buffers written to the GPU) takes 2.9 ms a frame in Predator light3d crowd 2.5, most of the Pixi library's 3.7 ms there; on WebGL Pixi's whole share is 0.74 ms",
+      "status": "open",
+      "kind": "speed",
+      "area": "pixi",
+      "statusText": "Found 2026-11-28 in the CPU trace after Pixi 8.23 (cpu-webgpu, R-2055)",
+      "next": "Which buffers go up whole each frame (statics, poses, the G-buffer words, the lamp tiles): write only the changed ranges (Buffer.update(start, end) or writeBuffer with an offset), or keep static ones static; Pixi STEP_MS on WebGPU, Predator light3d. Goes with E-492.",
+      "aliases": [
+        "webgpu updateBuffer",
+        "writeBuffer ranges"
+      ]
+    },
+    {
+      "refs": [
+        "LIGHTING_WORKER_PLAN.md"
+      ],
+      "aliases": [
+        "lighting worker",
+        "light worker",
+        "lighting.ownWorker"
+      ],
+      "records": [],
+      "result": "",
+      "next": "LW-0 before any code: Predator crowd 2.5 light3d by night and by day, and plain, with detailed stats (pre-render's COLLECT_MS, EMIT_MS, SPRITE_PACK_MS, SHADOW_Q_MS, VISIBILITY_MS, VISIBLE_LIGHTS_MS; Pixi's LIGHTS_MS, SHADOWS_MS, QUEUE_MS, WAIT_MS), a CPU trace of the light functions in both workers, runFramePhase, and one run of each light stress scene. Build when the work the worker would take is at least 2 ms a frame or Pixi often draws the previous vsync's queue; else park it with the numbers.",
+      "id": "E-563",
+      "kind": "speed",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-28",
+      "title": "The CPU light and shadow work in a lighting worker of its own, beside pre-render: pre-render's shadow rows, stamp, lamp frames and walls' sweep, and Pixi's light data, light tiles, lamps' map layout and light splats; half of it can start with the frame, the shadows wait only for pre-render's emit, and Pixi draws its sprites while the worker finishes",
+      "statusText": "proposed 2026-11-28 by the owner (a worker of its own, in parallel with pre-render, taking work off both); the plan is a reading of the code and the register, nothing measured for it yet"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "E-564",
+      "title": "Neighbour aggregates (E-199) computed in each logic worker for its own entities, not in the spatial publish: Boids' spatial worker is 17 to 24 % slower since E-199 (measure:all, v0.16.0 against faaec883) while logic fell 73 %",
+      "status": "open",
+      "kind": "speed",
+      "area": "logic",
+      "statusText": "Proposed 2026-11-28 (the owner: keep the API, compute it in the logic workers; after the lights, shading and shadows)",
+      "next": "Run the same kernel (wasm/spatialPublish.c's aggregate loops) in each logic worker over the entities it ticks, from the published lists and the frame's positions, before the ticks; the API (static neighborAggregates, NeighborAggregates columns) and Boids unchanged; parity tests kept. Measure: the kernel microbench, Boids ABAB (spatial and logic), measure:all's boids rows. Also publish_row_agg's separation: one division per pushing neighbour (q = w/dd) instead of two.",
+      "aliases": [
+        "aggregates in logic",
+        "E-199 spatial regression"
       ]
     }
   ],
@@ -45134,6 +45209,49 @@
         "532b917b",
         "4996aa6f",
         "500c33d2"
+      ]
+    },
+    {
+      "id": "R-2055",
+      "date": "2026-11-28",
+      "time": "03:40",
+      "timeFrom": "recorded",
+      "title": "Kept: Pixi 8.23.0 (five patches upstream, the sync stub ported, three engine fixes); pictures identical; WebGPU Pixi worker 7.89 -> 6.78 ms, WebGL neutral; garbage and deopts unchanged; measure:all clean; Pixi's own code under 1 ms a frame",
+      "verdict": "kept",
+      "text": "An agent did the upgrade on dx/pixi823 (9c1135f1 package, 15fde065 buildPixi on 8.23 with vendor rebuilt, 574eed83 pinGpuTexture, 3591b98f the particle ring's hand flush gone, c4799ef1 WebGPU layouts as arrays, 06103b41 the plan), merged f18ffda2, dist faaec883.\n- **Patches:** five dropped as upstream code (E-152's BindGroup, GpuEncoderSystem, BindGroupSystem: #12229 #12278 #12288; N-95: #12230; E-464: #12345); kept: GpuMeshAdapter, PipelineSystem's cache, Geometry, the six pass-garbage patches, N-458's lost-boot guard; new: BindGroup._touchKeys without an arrow over `this` (until pixijs #12460); SST-7's weedPipelineAhead saves _colorFormats (copied) and _stencilReadOnly; E-475's parallel links: 8.23's finish half read transformFeedbackVaryings only the start half declared (every WebGL link threw; pixiParallelLinks.test.js caught it). The WebGL sync stub (E-148) ported to the groups' _resourceKeys identity and 8.23's fixed uniform-block slots (#12307).\n- **Engine fixes 8.23 needed:** WebGPU program layouts as arrays (pixiMeshWgsl.js pixiGroupsLayout, lightTiles.js): 8.23's encoder loops over layout.length, so objects bound no group and every WebGPU picture was blank; pinGpuTexture gives the bind-group cache a new id (8.23 keeps a group's GPU bind group on the group).\n- **Pictures** (compareCaptures --vs main): 0 of 921 600 pixels in dxCaptureScene (and hour=22), faceLightScene, light3dCompareScene still=1, tilemapStressScene, volumeStressScene still=1, roofDecorationScene, WebGL and WebGPU; sunStreetScene differs only in moving things; GPU particles equal in lockstep frames. Tests: node 3653/0 and demos 149/0 on the branch, 3675/0 and 149/0 on main after the merge; bundles 372/0 each.\n- **Size:** src/vendor/pixi.min.js 451 009 -> 487 011 bytes, gzip 130 820 -> 141 325; the production bundle 3 920.9 -> 3 955.0 KB (gzip 1 284.3 -> 1 294.8).\n- **Speed**, my sittings 2026-11-28 (Predator light3d=1 crowd=2.5, runPredatorAbab, dd23b646 against faaec883, 4 pairs): WebGL NEUTRAL (renderer 3.141 -> 3.000 ms); WebGPU NEUTRAL, renderer 7.890 -> 6.784 (paired -9.1 %, worse 0/4), spatial, physics and pre-render lower too.\n- **Garbage** (heapSampleWorkers, Pixi worker, same scene, one run a side): Pixi's own sites in the top list WebGL 336 -> 338 KB/s, WebGPU 520 -> 526: unchanged (the agent's 310 -> 101 KB/s was gpuParticlesStressScene); the WebGPU total 960 -> 1 107 KB/s came from the engine's decal upload and light tiles, which vary with the explosions.\n- **Deopts** (--log-deopt --log-ic, summarizeV8Deopt --tail-ms 8000): none from Pixi; the steady ones are the engine's on both sides (filed N-466).\n- **measure:all measure-pixi823** (dd23b646 against faaec883 on GitHub): kernels 0 faster / 0 slower on two machines or more; scenes within the noise; tests 3675/0 and demos 149/0 on Linux x64, Linux ARM, Windows x64 and Windows ARM; 18 of 18 demos boot.\n- **The Pixi worker's time by code** (CPU trace, same scene, after; self time without the queue wait): WebGL pixi.min.js 0.74 ms a frame (10.8 %), the engine's wasm 53 %, its JS 31 %; WebGPU pixi.min.js 3.74 ms a frame (33 %), of which updateBuffer (writing the engine's instance buffers to the GPU) 2.9 ms. Pixi's own overhead is under 1 ms a frame on both backends: an engine-owned GPU layer would gain little; the WebGPU buffer writes are the target (filed E-562).",
+      "commits": [
+        "9c1135f1",
+        "15fde065",
+        "574eed83",
+        "3591b98f",
+        "c4799ef1",
+        "06103b41",
+        "f18ffda2",
+        "faaec883"
+      ]
+    },
+    {
+      "id": "R-2056",
+      "date": "2026-11-28",
+      "time": "03:56",
+      "timeFrom": "recorded",
+      "title": "Every bundle compressed inside again, by default: one gzip stream started as the bundle loads; production ESM 3 955 -> 2 238 KB; first visits as fast or faster, repeat visits 7 to 24 ms later",
+      "verdict": "kept",
+      "text": "The owner, 2026-11-28 (after seeing 4 MB bundles): the workers and wasm compressed inside, by default (as R-2009 asked on 2026-11-24: the file itself small, brotli is the server's; I had dropped the .compressed kinds that morning, the opposite of his words).\n- **Built** (10029ba2, dist 246df504): every bundle gzips its workers, Box2D glue, shaders and debug CSS inside, as engine.wasm and Box2D's wasm always were; one gzip stream (base64) with each payload's [key, length], sliced back at run time (one base64 decode with Uint8Array.fromBase64, one DecompressionStream, one TextDecoder), started as the bundle loads (ensureEmbeddedSources() at module evaluation, awaited before the first Worker()). Names unchanged (three bundles). Production ESM 3 955 -> 2 238 KB raw (gzip 1 295 -> 1 299, brotli 951 -> 1 249).\n- **Start** (loadWaterfall --t0 prepare --http-cache, production ESM, headed Chrome on this PC (GTX 1650), visits cold then warm in a fresh browser each run, 5 alternated runs a side, balls 10; ms from the bench page's prepare to the first drawn frame, medians; 2026-11-28 03:28 to 03:40 by the files):\n  - first version (each payload inflated alone, at the first scene): cold equal (Predator crowd 0.4 1993 -> 1979, Boids 1086 -> 1092, balls 1231 -> 1215), warm +24 to +30 ms (734 -> 758, 398 -> 428, 456 -> 484);\n  - kept version (one stream, started at load): cold Predator 1978 -> 1968, Boids 1142 -> 1109, balls 1219 -> 1197 (a smaller file to parse); warm Predator 707 -> 714 (+7 ms), Boids 391 -> 399 (+8), balls 476 -> 500 (+24, 10 pairs, noisy). The inflate itself, timed in Node: base64 1.1 ms, gunzip of 1.06 MB into 3.1 MB 21 ms, TextDecoder 5 ms; it hides behind the rest of the start except where a scene starts very fast (balls).\n  - Not in this measure: the download. A server that sends brotli sends 298 KB more (about +240 ms at 10 Mbit/s, +24 ms at 100); with gzip the same; with no server compression (file://, simple hosts) 1.7 MB less.\n- Tests: node 3675/0, the three bundles' smokes and node-on-bundle 372/0 each; prodBundleDevChecks inflates the payloads to find the guards' texts; smokeBundleEmbed expects every bundle compressed.\n- Left: the workers could start from the inflated bytes without TextDecoder (Blob of a byte range) to save about 5 ms more."
+    },
+    {
+      "id": "R-2057",
+      "date": "2026-11-28",
+      "time": "04:20",
+      "timeFrom": "recorded",
+      "title": "Pre-render half kept: world-owned decorations collected in a wasm kernel (faceLightScene town=80000 pre-render -15 to -18 %); no merged GPU form keeps the pictures (painter steps, blend order, faces not consecutive)",
+      "verdict": "kept",
+      "text": "An agent read E-520 and built its pre-render half instead (opt/e520: 9e8f7b59 the microbench's faces case, bcb41864 the kernel, 35749632 the fix), merged to main.\n- **Why no merged form keeps the pictures:** a non-face sprite's painter step is its instance index (gl_InstanceID & 127), so removing instances moves every later sprite's step and flips ties; the edge pass and the half texels blend in instance order (R-2046); a house's faces are not consecutive in painter order (each has its own sortOffsetY: runs of 4.0 to 4.5 rows in parquechas.scene.json), and an instanced draw needs a fixed vertex count. And the GPU side is small: a full instance walk costs the Radeon (Vega, Ryzen 7 4800H) 0.02 to 0.04 ms (the unshaded mask walks 11 613 barrio instances in 0.037 ms; GTX 1650 0.018), under about 0.3 ms over the roughly 7 walks.\n- **Where the cost is:** pre-render's per-row cost on main: collect 37-48 ns, emit 28-41, pack 35-39, sort 5-7; the collect was the last phase in JS.\n- **Built:** collect_decorations (wasm/preRenderCollect.c) collects every decoration with no parent that goes only to the main collector (a spawned decoration's mask is the entities' bit: faces qualify), from a copy of the particle worker's visible list in a render-queue region (collectDecoList, laid after every other region so no region moves); attached ones and those a custom layer takes go back to the JS a run at a time; the JS loops stay for frames the kernel cannot take, and run alone while under a quarter of the pool is world-owned (DecorationPool's attached count). Generic, on by itself, no API change.\n- **Rows and instances unchanged** (barrio 11 665 / 11 662; houseLightScene bench=faces 6 817 / 6 779); the queue's bytes identical, so the GPU passes are as before.\n- **Speed** (runPredatorAbab, 4 pairs, 2026-11-28 by the files): faceLightScene town=80000 pre-render 8.606 -> 7.190 ms (-15.4 %, 4/4; f18ffda2 against bcb41864) and after the fix 10.453 -> 8.648 (-17.9 %, 2/2, stopped early; against 35749632). Predator: bcb41864 read pre-render 5.020 -> 5.458 at crowd 2.5 (+8.7 %, below the floor) and about +10 % with light3d, though Predator collects no decoration (its 20 000 are grass faded out by the zoom: VISIBLE_DECORATIONS 0): the moved memory regions, a new worker field and the module's code layout; after the fix crowd 2.5 6.701 -> 5.933 (-11.7 %, KEPT, noise the other way) and light3d 5.781 -> 5.490 (NEUTRAL).\n- **Kernel** (runKernelsVsRev, 40 000 visible): faces 680 -> 2 756 ops/s (+305 %), ysort 545 -> 751 (+38 %), collect with half attached 526 -> 567 (+7.8 %, a tie).\n- **Pictures** --vs main: 0 of 921 600 pixels on WebGL and WebGPU in houseLightScene (default; bench=faces at 22 and 15 h), faceLightScene (default; town=80000), dxCaptureScene (default; hour=22 deco=1); the barrio is not still even with people=0, so the kernel was run against the JS loops on its 254 000 real decorations: bit-identical. Tests: decorationCollectWasm.test.js 12/12 (y-sort on and off, attached in runs and shuffled, custom layers, inactive parents, a full collector, 32-bit ids, the quarter rule); node 3686/0, demos 149/0.\n- Next for faces: the emit (EMIT_MS 2.1 ms at town=80000, decoration rows rewritten in full each frame) and the pack (SPRITE_PACK_MS 2.9 ms). Left: the ASan harness tests/asan/kernels/preRenderCollect.mjs does not cover collect_decorations.",
+      "commits": [
+        "9e8f7b59",
+        "bcb41864",
+        "35749632",
+        "8306af79"
       ]
     }
   ],

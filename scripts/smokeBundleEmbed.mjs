@@ -114,7 +114,8 @@ assert(siblingNames.includes('liquidFunQueryImpl.js'), 'weedjs_post missing liqu
 for (const name of BUNDLE_ARTIFACTS) {
   const filePath = path.join(dist, name);
   const s = fs.readFileSync(filePath, 'utf8');
-  const compressed = name.includes('.compressed.');
+  // N-172: every bundle gzips its workers inside.
+  const compressed = true;
 
   assert(s.includes('BUNDLE_MODE'), `${name}: missing BUNDLE_MODE`);
   assert(s.includes('DecompressionStream'), `${name}: missing DecompressionStream`);

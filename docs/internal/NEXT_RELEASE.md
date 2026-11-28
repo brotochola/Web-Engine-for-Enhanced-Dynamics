@@ -18,11 +18,12 @@ Since v0.16.0:
 - **Look layers and screen passes use less video memory** (E-525): look layers of one size take turns on one render
   target, and a chain of screen passes draws into two targets instead of one each: a six-pass screen stack at 1080p
   holds 16 MB instead of 47. Pictures are the same.
-- **Three bundles instead of eight** (N-172): `weed.prod.bundle.esm.min.js` and `weed.prod.bundle.min.js` (production,
-  ESM and UMD) and `weed.bundle.esm.min.js` (debug, ESM). The `.compressed` variants are gone (they gzipped their workers
-  inside the file and inflated them at every start; a server compresses the file better), and so is the debug UMD
-  `weed.bundle.min.js`: `@weed.js/engine/debug` is ESM only. A page that loads one of the removed files loads
-  `weed.prod.bundle.min.js` (or the debug ESM) instead.
+- **Three bundles instead of eight, all compressed inside** (N-172, DX-BUNDLE): `weed.prod.bundle.esm.min.js` and
+  `weed.prod.bundle.min.js` (production, ESM and UMD) and `weed.bundle.esm.min.js` (debug, ESM). Each carries its workers,
+  shaders and WASM gzipped in one stream that starts inflating as the bundle loads: the production bundle is 2.3 MB
+  instead of 4.0. A first visit starts as soon as before; a repeat visit 7 to 24 ms later (the inflate). The
+  `.compressed` names and the debug UMD `weed.bundle.min.js` are gone (`@weed.js/engine/debug` is ESM only): a page that
+  loads one of them loads `weed.prod.bundle.min.js` (or the debug ESM) instead.
 - **A decoration stands where the painter puts it** (N-450): with pixel depth on, a decoration that was not a face (a
   sprite on a roof, a flag on a pole) took its depth from its own position, while the painter ordered it by its foot
   (`sortOffsetY`, or its parent's line when it is attached). A tank on a roof or a flag above a wall could vanish behind

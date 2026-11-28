@@ -249,3 +249,25 @@ test('a shared picture is sampled as each layer samples it', async () => {
   custom._sharedRtMode(soft);
   assert.equal(soft.rt.source.scaleMode, 'linear');
 });
+
+test('N-465: initialize run again lets go of every layer target, shared or own, and the layers\' sprites', async () => {
+  const { px, released } = await pixiWith({}, {});
+  px._proxyLayers = [];
+  const custom = px.customLayers;
+  const look = layerRecord(10);
+  const mesh = layerRecord(11, { fillBatch: {}, sharesTargets: false });
+  custom._ensureDensityRT(look);
+  custom._ensureDensityRT(mesh);
+  let destroyed = 0;
+  const sprites = [look, mesh].filter((cl) => cl.displaySprite !== null);
+  for (const cl of sprites) cl.displaySprite.destroy = () => { destroyed++; };
+  custom.list = [look, mesh];
+  const own = [look.rtOut, mesh.rt];
+  Layer.reset();
+  Layer.initializeFromConfig({}, BUILT_IN);
+  await quietly(() => custom.initialize({ config: px.config, layerData: Layer.getSerializableData(), customLayerRenderQueues: {} }));
+  for (const rt of own) assert.ok(released.includes(rt), 'a layer\'s own target is destroyed');
+  assert.equal(px.lookPasses.shared.length, 0, 'the shared picture target given back');
+  assert.ok(sprites.length > 0);
+  assert.equal(destroyed, sprites.length, 'each layer\'s sprite destroyed');
+});

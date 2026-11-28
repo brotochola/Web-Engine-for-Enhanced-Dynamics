@@ -30,14 +30,11 @@ const TERSER_PARALLEL = Math.max(
 
 // Production mode: swap debug modules with no-op stubs
 const isProd = process.env.WEED_PROD === 'true';
-const isCompressed = process.env.WEED_COMPRESSED === 'true';
-
 function bundleFileName(esm) {
     const parts = ['weed'];
     if (isProd) parts.push('prod');
     parts.push('bundle');
     if (esm) parts.push('esm');
-    if (isCompressed) parts.push('compressed');
     parts.push('min.js');
     return parts.join('.');
 }

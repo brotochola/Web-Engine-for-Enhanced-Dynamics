@@ -54,6 +54,7 @@ const REQUIRED = [
   'swayBuckets',
   'decorationCollect',
   'decorationCollectYSort',
+  'decorationCollectFaces',
   'attachedSway',
   'attachedWalls',
   'attachedScanNone',

@@ -28,7 +28,8 @@ Classic physics worker for **Box2D 3.2.0 WASM** (pthread + SharedArrayBuffer). S
 | `weed.prod.bundle.esm.min.js` / `.prod.bundle.min.js` | Debug stubs, ESM and UMD (`main` / `module` / `exports["."]`)     |
 | `weed.bundle.esm.min.js`                          | Debug UI, ESM only (`exports["./debug"]`)                             |
 
-WASM is gzip-embedded in all 3; worker strings are plain (a server compresses the file).
+WASM is gzip-embedded in all 3, and so are the workers, the glue, the shaders and the debug CSS: one gzip stream (base64)
+that the bundle starts inflating as it loads (`WEED.ensureEmbeddedSources()`, awaited before the first `Worker()`).
 
 At runtime `getBox2dWorkerUrl()` creates one blob URL; that blob **is** the physics worker. Pthreads re-fetch the same worker URL via `_scriptName`. Smoke: `dist/index.html` (`?bundle=` to pick an artifact).
 

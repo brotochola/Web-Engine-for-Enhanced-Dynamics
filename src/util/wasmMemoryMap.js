@@ -141,7 +141,8 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * @param {null | { decorations: number, buckets: number }} [sway]
  * @param {number} [pixiRows] rows of Pixi's plain sprite batch when Pixi packs it with gpuPack.wasm (W9d), else 0
  * @param {null | { entities: number, transformBytes: number, colliderBytes: number }} [collect] the sprite collect's
- *   blocks (W4b, a scene without physics); a component with 0 bytes gets no block
+ *   blocks (W4b, a scene without physics); a component with 0 bytes gets no block (E-520: the decoration collect's list,
+ *   collect.decorations, is laid after every region: renderQueueMemory.js withDecorationListRegion)
  * @param {null | { preRender: boolean, pixi: boolean }} [painter] the painter sort's state (W10
  *   `painterRadix.wasm`) for each worker that sorts the main queue, one set each (painterStateRegions):
  *   `preRenderPainter*` owned by pre-render, `pixiPainter*` by Pixi, so the kernel reads the sort keys where
