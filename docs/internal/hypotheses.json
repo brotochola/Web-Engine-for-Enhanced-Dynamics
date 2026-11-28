@@ -20444,12 +20444,12 @@
     {
       "id": "E-477",
       "title": "Scene mesh-fill draws cost several times what meshFillGpuBench pays a row at the same clock, even with no uploads: meshFillPanScene spends about 4.3 ms on 296 400 rows at about 1 GHz (mostly still under a 1 px scissor), the upload scene 6.3 ms for 400 000 at 1785 MHz, against 0.86 ms for 486 408 in the bench",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "E-452/E-453 agent, 17:13 to 17:38; the diagnostic runs (movers=other, volumeStressScene still=1) were stopped when the owner started playing.",
+      "result": "Fixed 2026-11-28 (285b8f82): ANGLE promotes DYNAMIC buffers by vertices a draw, not instances; STATIC hint + buffers sized to use",
       "next": "Find what the scene adds over the bench (state changes, the depth or blend state, the target, interleaved draws, per-draw uniform uploads): per draw with and without each, at matched clocks.",
       "refs": [],
       "aliases": [
@@ -20457,7 +20457,8 @@
       ],
       "records": [
         "R-1228",
-        "R-1961"
+        "R-1961",
+        "R-2066"
       ]
     },
     {
@@ -26322,6 +26323,23 @@
       "aliases": [
         "vdepthMesh blend",
         "setLayerBlend faces"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "E-565",
+      "title": "Instanced buffers with Pixi's DYNAMIC hint are streamed whole by ANGLE at every draw on WebGL (it promotes a DYNAMIC buffer by the vertices a draw reads, 3 or 4 for instanced quads): the sprite batch's keyed and statics rows, the GPU particle batch, the shadow maps' column slots, the decal tiles",
+      "status": "open",
+      "kind": "speed",
+      "area": "render",
+      "statusText": "Found 2026-11-28 by the E-477 agent (the collider fill: 1.7 -> 0.94 ms a draw on the Radeon with STATIC, R-2066)",
+      "next": "Per buffer: the STATIC hint where the rows stay (Pixi's BufferUsage.STATIC on WebGL), sized to what is drawn; measure each draw with glFrameRecorder --gpu-draws and Chrome's GPU process ms/s (Radeon and GTX 1650 with clocks), and the case where every row changes each frame (STATIC copies a changed buffer whole). src/render/instancedSpriteBatch.js (likely the biggest), src/render/gpuParticleBatch.js, src/render/pixi/shadowMaps.js (columns slots), src/render/pixi/decalTiles.js.",
+      "aliases": [
+        "ANGLE dynamic buffers",
+        "STATIC hint instanced"
       ]
     }
   ],
@@ -45395,6 +45413,21 @@
         "bede663c",
         "2296a124",
         "7861b26b"
+      ]
+    },
+    {
+      "id": "R-2066",
+      "date": "2026-11-28",
+      "time": "07:22",
+      "timeFrom": "recorded",
+      "title": "Found and fixed: ANGLE streamed the collider fill's DYNAMIC buffer whole at every draw; STATIC and sized to what is drawn: meshFillPanScene Radeon 1.7 -> 0.94 ms a draw, Chrome's GPU process 438 -> 66 ms/s; a scene row costs the bench's",
+      "verdict": "kept",
+      "text": "An agent found it on opt/e477 (876b86f2 the tools: meshFillGpuBench ways colIdx and colDyn and --channel, glFrameRecorder's vao# and indices a draw, meshFillPanScene ?repaint=, meshUploadStressScene reading its query on the page; a4fdf8b5 vertex buffers sized to what is drawn; 74607b67 the collider fill's STATIC hint on WebGL), merged to main.\n- **What the scene added was ANGLE (Direct3D 11) buffer handling the bench never triggered, not a state change.** ANGLE binds only STATIC buffers directly; it promotes a DYNAMIC one by the vertices a draw reads (VertexDataManager::PromoteDynamicAttribs counts vertices, not instances): 3 for these instanced triangles, so the collider fill's buffer was never promoted and every row was streamed at every draw, also with no upload. The bench reproduces it: colDyn against col 5.298 against 0.701 ms (GTX 1650 at 1785 MHz), 2.236 median (up to 7.4) against 1.455 (Radeon (Vega, Ryzen 7 4800H)). An index buffer [0, 1, 2] changes nothing (colIdx 0.701 / 1.410).\n- **meshFillPanScene, 312 000 still rows** (glFrameRecorder --gpu-draws): Radeon 1.726, 1.635 -> 0.945, 0.923 ms (under a 1 px scissor 1.362 -> 0.814: vertex work); GTX 1650 4.066, 4.230 at 1020/900 MHz -> 2.822, 2.844 at 555/480 MHz (it drops to P8); Chrome's GPU process 438.6, 405.4 -> 65.9, 73.2 ms/s. A scene row now costs the bench's on the Radeon: 3.0 ns (0.94 ms for 312 000 against 1.455 for 486 408). meshFillMovingScene Radeon 1.375 -> 1.258; GTX 4.067 at 930 MHz -> 2.363 at 360. meshApiStressScene's fill GTX 0.130 -> 0.073-0.099.\n- **A STATIC buffer's change is copied whole, at the layer's capacity** (every layer's batch was sized to the whole mesh budget): buffers sized to the records in use (grow by half, never shrink): meshUploadStressScene's movers draw GTX 2.822, 2.585 -> 0.051, 0.057 ms; its still-layer draw on the Radeon 1.150, 1.123 -> 0.599, 0.685.\n- **Trade-off:** a layer whose rows all go up every frame (meshFillPanScene ?repaint=100, 18 MB a frame): the draw Radeon 1.673 -> 1.982 (+18 %), GTX 4.296 -> 4.438 (+3 %), Chrome's GPU process 552.5, 489.2 -> 208.1, 197.7 ms/s (-60 %). Kept: still rows win, the cost is only in that case. WebGL only; WebGPU unchanged. The renderer's STEP_MS not measured (the saving is GPU and Chrome's GPU process; the CPU change is a buffer view).\n- **Pictures** --vs main: meshFillStaticScene, meshLayerOrderScene tris=20000 (WebGL and WebGPU), volumeStressScene still=1 dayMinutes=0 (deterministic this way), dxCaptureScene, sunMeshParityScene: 0 pixels. Tests: node 3719/0, demos 149/0; tests/node/meshUploadRanges.test.js (the view length, the hint per backend).\n- Open (filed E-565): other instanced buffers with the DYNAMIC hint, streamed by ANGLE at every draw: instancedSpriteBatch.js (keyed and statics rows drawn in several passes, likely the biggest), gpuParticleBatch.js, shadowMaps.js columns slots, decalTiles.js; E-466's remainder (a partial change to a full STATIC buffer copied whole: meshUploadStressScene movers=one about 3.3 ms GTX, 0.7 Radeon); a paint change re-uploads every row of the layer (customLayers.js); many stress scenes read location.search in workers.",
+      "commits": [
+        "876b86f2",
+        "a4fdf8b5",
+        "74607b67",
+        "285b8f82"
       ]
     }
   ],
