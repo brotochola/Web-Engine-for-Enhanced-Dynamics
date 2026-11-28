@@ -6,7 +6,8 @@ import { bindBox2dHotFields } from '../../src/box2d/box2dHotFields.js';
 import { Transform } from '../../src/components/transform.js';
 
 test('STATE_CHANNELS includes ROT_C / ROT_S as channels 6 and 7', () => {
-  assert.equal(STATE_CHANNEL_COUNT, 8);
+  assert.equal(STATE_CHANNEL_COUNT, 9);
+  assert.equal(STATE_CHANNELS.SPEED, 8);
   assert.equal(STATE_CHANNELS.ROTATION, 2);
   assert.equal(STATE_CHANNELS.ROT_C, 6);
   assert.equal(STATE_CHANNELS.ROT_S, 7);

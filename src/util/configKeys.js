@@ -63,14 +63,14 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
   ...keys(SCENE_DEFAULTS, ['canvasWidth', 'canvasHeight']),
   gravity: XY,
   physics: {
-    ...keys(PHYSICS_DEFAULTS, ['publishContactRing', 'box2dWorkerCount']),
+    ...keys(PHYSICS_DEFAULTS, ['publishContactRing', 'deriveSpeed', 'box2dWorkerCount']),
     gravity: XY,
     liquidFun: keys(PHYSICS_DEFAULTS.liquidFun),
   },
   spatial: keys(SPATIAL_DEFAULTS),
   // The kernel switches have their own warning (Scene._applyConfigDefaults).
   wasm: ANY,
-  particle: keys(PARTICLE_DEFAULTS, ['deriveSpeed', 'decalsTilePixelSize']),
+  particle: keys(PARTICLE_DEFAULTS, ['decalsTilePixelSize']),
   decoration: keys(DECORATION_DEFAULTS),
   bullet: keys(BULLET_DEFAULTS),
   tween: keys(TWEEN_DEFAULTS),

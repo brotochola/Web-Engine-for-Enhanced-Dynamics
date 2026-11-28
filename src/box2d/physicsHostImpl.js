@@ -121,7 +121,7 @@
     Atomics.add(i32, seq, 1);
   }
 
-  // Mirrors Transform / RigidBody ARRAY_SCHEMA (pose/vel/sleeping = HEAP only).
+  // Mirrors Transform / RigidBody ARRAY_SCHEMA (pose/vel/sleeping/speed = HEAP only).
   var TRANSFORM_SCHEMA = {
     active: Uint8Array,
     entityType: Uint8Array,
@@ -192,7 +192,7 @@
     linearDamping: Float32Array,
     angularDamping: Float32Array,
     fixedRotation: Uint8Array,
-    speed: Float32Array,
+    // E-353: no speed column: RigidBody.speed is Box2D's state channel (STATE_CHANNELS.SPEED).
     sleepThreshold: Float32Array,
   };
 
@@ -802,6 +802,8 @@
         ),
       // E-322: Box2D's awake bodies back in body id order every this many steps (0: never).
       awakeReorderInterval: s.awakeReorderInterval,
+      // E-353: Box2D writes RigidBody.speed with the velocities (a registered type sets deriveSpeed).
+      deriveSpeed: (state.config.physics || {}).deriveSpeed === true,
       maxBodies: maxBodies,
       entityCount: entityCount,
       subSteps: s.subStepCount,

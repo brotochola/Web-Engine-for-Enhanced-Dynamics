@@ -48,7 +48,7 @@ function bind(n) {
   RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(n)), n);
   Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(n)), n);
   for (const k of ['x', 'y', 'rotC', 'rotS']) Transform[k] = new Float32Array(n);
-  for (const k of ['vx', 'vy']) RigidBody[k] = new Float32Array(n);
+  for (const k of ['vx', 'vy', 'speed']) RigidBody[k] = new Float32Array(n);
   LightEmitter.clearArrays();
   DirectionalSprite._tables = [];
 }

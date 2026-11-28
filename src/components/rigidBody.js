@@ -53,9 +53,11 @@ let massByHand = new Uint8Array(0);
 export const RIGID_BODY_CHAIN_STATIC = 2;
 
 export class RigidBody extends Component {
-  // SoA fields only. vx/vy/angularVelocity/sleeping live on Box2D HEAP
-  // (bindBox2dHotFields after box2dReady). Stay null if physics.enabled === false —
-  // do not read this.vx on that path (a null-check here would tax the default).
+  // SoA fields only. vx/vy/angularVelocity/sleeping/speed live on Box2D HEAP
+  // (bindBox2dHotFields after box2dReady). vx/vy/angularVelocity/sleeping stay null if physics.enabled === false —
+  // do not read this.vx on that path (a null-check here would tax the default); speed is zeros there
+  // (bindWeedPoseFields). speed (px/s) is sqrt(vx² + vy²), which Box2D writes with the velocities when a registered
+  // type sets deriveSpeed (E-353), and 0 otherwise.
   static ARRAY_SCHEMA = {
     active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
     static: Uint8Array, // 0 = dynamic, 1 = static, 2 = static because the collider is a chain
@@ -85,9 +87,6 @@ export class RigidBody extends Component {
     /** 1 = lock Box2D angular DOF (motionLocks.angularZ); sprite stays upright */
     fixedRotation: Uint8Array,
 
-    // Computed values
-    speed: Float32Array,
-
     // Linear sleep speed (length units/s ≈ px/s). 0 = Box2D default
     sleepThreshold: Float32Array,
   };
@@ -98,6 +97,7 @@ export class RigidBody extends Component {
     RigidBody.vy = null;
     RigidBody.angularVelocity = null;
     RigidBody.sleeping = null;
+    RigidBody.speed = null;
   }
 
   // HEAP-bound (not in ARRAY_SCHEMA)
@@ -124,6 +124,10 @@ export class RigidBody extends Component {
   }
   set sleeping(value) {
     RigidBody.sleeping[this.index] = value;
+  }
+  /** px/s. Read only: Box2D writes it with the velocities (E-353). */
+  get speed() {
+    return RigidBody.speed[this.index];
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

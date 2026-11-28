@@ -1,6 +1,6 @@
 // Bind Transform / RigidBody hot views. Two boot paths, one loop:
-//   physics on  — bindBox2dHotFields (HEAP after box2dReady); also vx/vy/ω/sleeping
-//   physics off — bindWeedPoseFields (Weed SAB at init); pose only, no vel
+//   physics on  — bindBox2dHotFields (HEAP after box2dReady); also vx/vy/ω/sleeping and speed (E-353)
+//   physics off — bindWeedPoseFields (Weed SAB at init); pose only, no vel, a speed of 0
 // After bind, Transform.x is a Float32Array. Hot loops do not branch on which SAB.
 // Units: px, px/s, rad, rad/s.
 
@@ -43,6 +43,8 @@ export function bindBox2dHotFields(payload) {
     off[STATE_CHANNELS.ANG_VEL] << 2,
     n,
   );
+  // E-353: Box2D writes each body's speed with its velocities (physics.deriveSpeed), so no worker derives it.
+  RigidBody.speed = new Float32Array(sab, off[STATE_CHANNELS.SPEED] << 2, n);
 
   if (payload.sleepingByteOffset >= 0) {
     RigidBody.sleeping = new Uint8Array(sab, payload.sleepingByteOffset, n);
@@ -86,6 +88,8 @@ export function bindWeedPoseFields(payload) {
   Transform.rotation = new Float32Array(sab, off[2] << 2, n);
   Transform.rotC = new Float32Array(sab, off[3] << 2, n);
   Transform.rotS = new Float32Array(sab, off[4] << 2, n);
+  // E-353: without physics no body moves, and RigidBody.speed (Box2D's channel with physics) reads 0.
+  RigidBody.speed = new Float32Array(n);
 }
 
 export function initWeedPoseDefaults(payload) {
