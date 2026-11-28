@@ -26073,15 +26073,16 @@
     },
     {
       "records": [
-        "R-2030"
+        "R-2030",
+        "R-2041"
       ],
       "refs": [],
       "id": "N-461",
       "title": "Two node tests fail now and then on Windows VMs: startupAtlasCache (the entry is being decoded before any source has answered) and adobeAnimStatics (8 288 bytes where 8 192 are allowed)",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "tests",
-      "result": "",
+      "result": "Fixed 2026-11-27 (f83f30a7, 47db59f9): a deadline instead of 20 turns; 32 KB of sampled bytes instead of 8 192; 0/100 runs each",
       "statusText": "Seen once each, 2026-11-24 (N-453's run, windows-2025 and windows-11-arm); not read further",
       "next": "startupAtlasCache waits 20 setImmediate turns: wait for the decode with a deadline; adobeAnimStatics reads a sampled profile against a bound 1 % away",
       "aliases": [
@@ -44900,6 +44901,19 @@
       "text": "The owner saw a TallLight near the screen's right edge flicker dark (Predator ?hour=22&light3d=1, zoom 1 and 1.5). Filmed (filmScene, 10 s) and read frame by frame, the post's square was lit (about 62) or dark (about 54): in the dark frames the post had no red halo over it. Not N-187 (the queue never had rows past the collector's in 1 800 frames). With ?lightGlow=add (halos drawn last) the owner saw none and the films counted 0 and 0; ?pixelDepth=0 0. Cause: the edge pass draws unshaded pixels testing the depth, and two pixels at one floor place are ordered by the painter step, the instance's low 7 bits, which wrap; the halo follows its post by a few instances, and the queue's rows move every frame. Fix: an unshaded pixel takes one floor step nearer and the last painter step (pixelDepth.js GLOW_IN_FRONT, GLSL and WGSL). Films after it: 0, 0 and 0 dark frames (before: 59, 0, 2).",
       "commits": [
         "31a67dee"
+      ]
+    },
+    {
+      "id": "R-2041",
+      "date": "2026-11-27",
+      "time": "23:43",
+      "timeFrom": "recorded",
+      "title": "Fixed: the atlas cache test waits by a deadline, the AdobeAnim heap test allows sampling noise",
+      "verdict": "kept-hygiene",
+      "text": "Fixed on fix/n461 (an agent, reviewed), merged: startupAtlasCache waits for the decode by a 10 s deadline instead of 20 setImmediate turns (the fetch gate still holds every source unanswered, so the assertion keeps its meaning); adobeAnimStatics allows 32 KB of sampled bytes instead of 8 192 (a slow VM read 8 288 from sampling and tier-up noise; the regression it guards allocates per read: 258 KB for the cold 4 000 reads). Each file ran 100 times in a row here: 0 failures; the suite 3647/3647.",
+      "commits": [
+        "f83f30a7",
+        "47db59f9"
       ]
     }
   ],
