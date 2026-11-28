@@ -335,6 +335,11 @@
         ? (spatialStartOnKey.includes(',') ? spatialStartOnKey.split(',') : spatialStartOnKey)
         : null;
       const spatialRefreshSpread = new URLSearchParams(location.search).get('spatialRefreshSpread');
+      // ?selfShadowMarch=steps|dda sets lighting.selfShadowMarch (E-423) and ?lightResolution=N lighting.resolution, in any
+      // scene that has lighting (over a scene's own resolution knob), to capture or time a scene both ways.
+      const selfShadowMarch = new URLSearchParams(location.search).get('selfShadowMarch');
+      const lightResolutionKey = Number(new URLSearchParams(location.search).get('lightResolution'));
+      const lightResolution = lightResolutionKey > 0 ? lightResolutionKey : null;
 
       // Override scene debug flags before Scene applies defaults / boots workers
       SceneClass.config = {
@@ -368,6 +373,15 @@
                 ...(SceneClass.config.spatial || {}),
                 ...(spatialStartOn ? { startOn: spatialStartOn } : {}),
                 ...(spatialRefreshSpread ? { neighborRefreshSpread: spatialRefreshSpread } : {}),
+              },
+            }
+          : {}),
+        ...((selfShadowMarch || lightResolution !== null) && SceneClass.config.lighting
+          ? {
+              lighting: {
+                ...SceneClass.config.lighting,
+                ...(selfShadowMarch ? { selfShadowMarch } : {}),
+                ...(lightResolution !== null ? { resolution: lightResolution } : {}),
               },
             }
           : {}),

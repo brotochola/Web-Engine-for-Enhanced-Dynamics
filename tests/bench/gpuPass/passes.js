@@ -17,7 +17,7 @@
  *                E-205's src/render/lightTiles.js, binned here for the bench's camera)
  *   light3d      the light pass with the G-buffer, the sun's map and the lamps' map (FACES, SUNMAP, LAMPMAP)
  *   selfShadow   light3d with SELFSHADOW: `steps` steps, `rays` rays (1, 2 or 4; 2 and 4 are the bench's transform
- *                when the shader has one ray: raysSource below)
+ *                when the shader has one ray: raysSource below); `march` the walk (E-423: steps, or dda)
  *   multiply     today's composition of the light layer: the light texture over the colour, MULTIPLY
  *   compose      DX-UNSHADED's composition (§6.9, was DX-EMISSIVE): lit colour x light + own colour, one full-resolution pass reading
  *                three textures (the bench's shader: the engine has none yet)
@@ -555,8 +555,9 @@ export function buildFrame(p, sh, sc, backend) {
   add('selfShadow', () =>
     lightPass(
       'selfShadow',
-      { faces: true, sunMap: true, lampMap: true, selfShadow: true },
-      `light3d with self-shadow, ${p.rays} ray(s), ${p.steps} steps, ${p.lights} lights, ${lw}x${lh}${how}`,
+      // E-423: march=dda walks every cell the ray crosses (lighting.selfShadowMarch), the steps' reach.
+      { faces: true, sunMap: true, lampMap: true, selfShadow: true, selfShadowMarch: p.march },
+      `light3d with self-shadow (${p.march}), ${p.rays} ray(s), ${p.steps} steps, ${p.lights} lights, ${lw}x${lh}${how}`,
     ),
   );
   add('multiply', () => ({
