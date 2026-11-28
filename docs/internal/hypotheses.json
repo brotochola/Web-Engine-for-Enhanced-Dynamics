@@ -22358,10 +22358,10 @@
     {
       "id": "DX-PIXI823",
       "title": "Pixi 8.20.1 to 8.23: four build patches become upstream code, the WebGL sync stub moves to fixed uniform-block slots, WebGPU loses a submit per render call (nice to have)",
-      "status": "open",
+      "status": "kept",
       "statusText": "Nice to have, no rush (owner, 2026-11-17); a pseudo-plan in PIXI_823_PLAN.md; E-464's patch (R-1952) goes with the upgrade to 8.23",
       "date": "2026-11-17",
-      "result": "buildPixi.mjs's plugins against 8.23.0's lib: 12 of 16 patches apply; E-152's BindGroup, GpuEncoderSystem and BindGroupSystem and N-95's mapFormatToGlFormat lose their anchors (upstream #12229, #12278, #12288, #12230). The engine's Pixi bundle without patches: 446 335 -> 482 366 bytes minified, 129 684 -> 140 146 gzip.",
+      "result": "Kept 2026-11-28 (f18ffda2): Pixi 8.23.0; Predator light3d crowd 2.5 WebGPU renderer -9.1 %, WebGL neutral; pixi.min.js gzip +10.5 KB",
       "next": "If scheduled: pixi.js 8.23.0, drop the four patches and check the garbage again (E-152's scene on WebGPU); port the WebGL sync stub (E-148) to fixed block slots and _resourceKeys; drop gpuParticleBatch's hand flush; captures on both backends (N-270), webgpuFrameRecorder submits (E-464), Pixi STEP_MS ABAB on WebGL and WebGPU.",
       "area": "pixi",
       "kind": "dx",
@@ -22380,7 +22380,8 @@
       "records": [
         "R-1315",
         "R-1952",
-        "R-2047"
+        "R-2047",
+        "R-2055"
       ]
     },
     {
@@ -26214,6 +26215,40 @@
       "aliases": [
         "worldRt resize",
         "customLayers leak"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-466",
+      "title": "Steady deopts in Predator light3d crowd 2.5, every run, both Pixi versions: spatialWorker.js:2319 (264 to 561 a run), tilemapGid.js:243 and :253, particleWorker.js:1417, gameObjectActiveState.js:189",
+      "status": "open",
+      "kind": "bug",
+      "area": "workers",
+      "statusText": "Found 2026-11-28 in the Pixi 8.23 deopt logs (summarizeV8Deopt --tail-ms 8000, p823 v8-* logs): the same sites before and after the upgrade",
+      "next": "Read each site's deopt reason (the logs say it: wrong map, not a Smi, out of bounds), fix the shape or type it trips on, then the same log shows the count gone; the worker's STEP_MS on Predator light3d.",
+      "aliases": [
+        "steady deopts",
+        "spatialWorker deopt"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "E-562",
+      "title": "On WebGPU Pixi's updateBuffer (the engine's instance buffers written to the GPU) takes 2.9 ms a frame in Predator light3d crowd 2.5, most of the Pixi library's 3.7 ms there; on WebGL Pixi's whole share is 0.74 ms",
+      "status": "open",
+      "kind": "speed",
+      "area": "pixi",
+      "statusText": "Found 2026-11-28 in the CPU trace after Pixi 8.23 (cpu-webgpu, R-2055)",
+      "next": "Which buffers go up whole each frame (statics, poses, the G-buffer words, the lamp tiles): write only the changed ranges (Buffer.update(start, end) or writeBuffer with an offset), or keep static ones static; Pixi STEP_MS on WebGPU, Predator light3d. Goes with E-492.",
+      "aliases": [
+        "webgpu updateBuffer",
+        "writeBuffer ranges"
       ]
     }
   ],
@@ -45134,6 +45169,25 @@
         "532b917b",
         "4996aa6f",
         "500c33d2"
+      ]
+    },
+    {
+      "id": "R-2055",
+      "date": "2026-11-28",
+      "time": "03:40",
+      "timeFrom": "recorded",
+      "title": "Kept: Pixi 8.23.0 (five patches upstream, the sync stub ported, three engine fixes); pictures identical; WebGPU Pixi worker 7.89 -> 6.78 ms, WebGL neutral; garbage and deopts unchanged; measure:all clean; Pixi's own code under 1 ms a frame",
+      "verdict": "kept",
+      "text": "An agent did the upgrade on dx/pixi823 (9c1135f1 package, 15fde065 buildPixi on 8.23 with vendor rebuilt, 574eed83 pinGpuTexture, 3591b98f the particle ring's hand flush gone, c4799ef1 WebGPU layouts as arrays, 06103b41 the plan), merged f18ffda2, dist faaec883.\n- **Patches:** five dropped as upstream code (E-152's BindGroup, GpuEncoderSystem, BindGroupSystem: #12229 #12278 #12288; N-95: #12230; E-464: #12345); kept: GpuMeshAdapter, PipelineSystem's cache, Geometry, the six pass-garbage patches, N-458's lost-boot guard; new: BindGroup._touchKeys without an arrow over `this` (until pixijs #12460); SST-7's weedPipelineAhead saves _colorFormats (copied) and _stencilReadOnly; E-475's parallel links: 8.23's finish half read transformFeedbackVaryings only the start half declared (every WebGL link threw; pixiParallelLinks.test.js caught it). The WebGL sync stub (E-148) ported to the groups' _resourceKeys identity and 8.23's fixed uniform-block slots (#12307).\n- **Engine fixes 8.23 needed:** WebGPU program layouts as arrays (pixiMeshWgsl.js pixiGroupsLayout, lightTiles.js): 8.23's encoder loops over layout.length, so objects bound no group and every WebGPU picture was blank; pinGpuTexture gives the bind-group cache a new id (8.23 keeps a group's GPU bind group on the group).\n- **Pictures** (compareCaptures --vs main): 0 of 921 600 pixels in dxCaptureScene (and hour=22), faceLightScene, light3dCompareScene still=1, tilemapStressScene, volumeStressScene still=1, roofDecorationScene, WebGL and WebGPU; sunStreetScene differs only in moving things; GPU particles equal in lockstep frames. Tests: node 3653/0 and demos 149/0 on the branch, 3675/0 and 149/0 on main after the merge; bundles 372/0 each.\n- **Size:** src/vendor/pixi.min.js 451 009 -> 487 011 bytes, gzip 130 820 -> 141 325; the production bundle 3 920.9 -> 3 955.0 KB (gzip 1 284.3 -> 1 294.8).\n- **Speed**, my sittings 2026-11-28 (Predator light3d=1 crowd=2.5, runPredatorAbab, dd23b646 against faaec883, 4 pairs): WebGL NEUTRAL (renderer 3.141 -> 3.000 ms); WebGPU NEUTRAL, renderer 7.890 -> 6.784 (paired -9.1 %, worse 0/4), spatial, physics and pre-render lower too.\n- **Garbage** (heapSampleWorkers, Pixi worker, same scene, one run a side): Pixi's own sites in the top list WebGL 336 -> 338 KB/s, WebGPU 520 -> 526: unchanged (the agent's 310 -> 101 KB/s was gpuParticlesStressScene); the WebGPU total 960 -> 1 107 KB/s came from the engine's decal upload and light tiles, which vary with the explosions.\n- **Deopts** (--log-deopt --log-ic, summarizeV8Deopt --tail-ms 8000): none from Pixi; the steady ones are the engine's on both sides (filed N-466).\n- **measure:all measure-pixi823** (dd23b646 against faaec883 on GitHub): kernels 0 faster / 0 slower on two machines or more; scenes within the noise; tests 3675/0 and demos 149/0 on Linux x64, Linux ARM, Windows x64 and Windows ARM; 18 of 18 demos boot.\n- **The Pixi worker's time by code** (CPU trace, same scene, after; self time without the queue wait): WebGL pixi.min.js 0.74 ms a frame (10.8 %), the engine's wasm 53 %, its JS 31 %; WebGPU pixi.min.js 3.74 ms a frame (33 %), of which updateBuffer (writing the engine's instance buffers to the GPU) 2.9 ms. Pixi's own overhead is under 1 ms a frame on both backends: an engine-owned GPU layer would gain little; the WebGPU buffer writes are the target (filed E-562).",
+      "commits": [
+        "9c1135f1",
+        "15fde065",
+        "574eed83",
+        "3591b98f",
+        "c4799ef1",
+        "06103b41",
+        "f18ffda2",
+        "faaec883"
       ]
     }
   ],
