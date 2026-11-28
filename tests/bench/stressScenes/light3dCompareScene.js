@@ -18,6 +18,7 @@ const { Scene, Camera, LAYER_KIND, Sun } = WEED;
  * people through DirectionalSprite), `?all=1` (all of them, pitch 47). `?backend=webgpu`.
  * `?staticProps=1`: the props declare isStatic (static scenery, E-127; the lamps' map caches their shadows, E-418).
  * `?still=1`: the walkers stand where their loops start, not animated, for byte-for-byte captures (compareCaptures.mjs).
+ * `?mipmaps=0`: the atlas without mip levels (E-204's default is on).
  */
 const P = WEED.params;
 function num(key, fallback) {
@@ -86,6 +87,8 @@ export class Light3dCompareScene extends Scene {
       ySort: true,
       maxVisibleRenderables: Math.max(4000, WALKERS + PROPS + 512),
       ...(DEPTH ? { pixelDepth: true } : {}),
+      // E-204: `?mipmaps=0` takes the atlas's mip levels away (the default gives them to a linear atlas).
+      ...(P?.get('mipmaps') === '0' ? { autoGenerateMipmaps: false } : {}),
     },
     preRender: { packGpuSprites: 'pixi', sortSprites: 'pixi' },
     ...(PITCH > 0 ? { camera: { pitch: PITCH } } : {}),
