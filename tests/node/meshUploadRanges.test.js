@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { BufferUsage } from '../../src/vendor/pixi.min.js';
 import { ColliderFillBatch } from '../../src/render/colliderFillBatch.js';
 import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
 import { readEngineShader } from './engineShaderSources.mjs';
@@ -119,4 +120,14 @@ test("on WebGL a UV batch's vertex buffer holds the records drawn; its index buf
 
   const gpu = new MeshUvFillBatch({ capacity: CAP, indexCapacity: 30, useWebGpu: true, shaders });
   assert.deepEqual(fitTrace(gpu, [6, 7]), [CAP, CAP]);
+});
+
+// E-466, E-477: ANGLE binds only a STATIC buffer directly; it streamed a DYNAMIC one's rows at every draw. The hint is
+// WebGL's: WebGPU's buffers take none.
+test("on WebGL both fill batches' vertex buffers are STATIC; on WebGPU neither", () => {
+  const isStatic = (batch) => (batch.buffer.descriptor.usage & BufferUsage.STATIC) !== 0;
+  assert.equal(isStatic(new ColliderFillBatch({ capacity: CAP, useWebGpu: false, shaders: glsl })), true);
+  assert.equal(isStatic(new MeshUvFillBatch({ capacity: CAP, useWebGpu: false, shaders: glsl })), true);
+  assert.equal(isStatic(new ColliderFillBatch({ capacity: CAP, useWebGpu: true, shaders })), false);
+  assert.equal(isStatic(new MeshUvFillBatch({ capacity: CAP, useWebGpu: true, shaders })), false);
 });

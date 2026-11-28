@@ -1496,11 +1496,14 @@ export class ColliderFillBatch extends FillBatchBase {
     const shared = data instanceof Float32Array && data.length === floats ? data : null;
     this.rows = shared || this.data;
     this.rowsU32 = shared ? new Uint32Array(shared.buffer, shared.byteOffset, shared.length) : this.dataU32;
-    // E-477: on WebGL the Buffer's data is a view over the rows in use (_fitBuffer); shrinkToFit off keeps a shorter view
-    // from making a new buffer.
+    // E-477: STATIC on WebGL, as MeshUvFillBatch's (E-466). ANGLE (Direct3D 11) binds only a STATIC buffer directly, and
+    // promotes a DYNAMIC one by the vertices its draws read (VertexDataManager::PromoteDynamicAttribs): 3 for these
+    // instanced triangles, so it never did, and streamed every row at every draw, still rows too. The Buffer's data is a
+    // view over the rows in use (_fitBuffer), since a STATIC buffer's change is copied whole; shrinkToFit off keeps a
+    // shorter view from making a new buffer.
     this.buffer = new Buffer({
       data: this.data,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST | (useWebGpu ? 0 : BufferUsage.STATIC),
       label: label || 'collider-fill',
       shrinkToFit: false,
     });
