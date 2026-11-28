@@ -26171,13 +26171,15 @@
       "date": "2026-11-27"
     },
     {
-      "records": [],
+      "records": [
+        "R-2059"
+      ],
       "refs": [],
-      "result": "",
+      "result": "Fixed 2026-11-28 (6448a409): chunks draw with the batch's programs and a vertex-depth twin each; requestWeedGpu asks maxBufferSize and maxStorageBufferBindingSize",
       "date": "2026-11-28",
       "id": "N-463",
       "title": "An entities batch drawn in chunks (GPU particle groups or look-layer regions sorted among the entities) with faces and some frame with heights may lose the instances without heights",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "statusText": "Found reading the code 2026-11-28 by the E-500 agent, not seen in a browser",
@@ -26188,13 +26190,15 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-2059"
+      ],
       "refs": [],
-      "result": "",
+      "result": "Fixed 2026-11-28 (6448a409): chunks draw with the batch's programs and a vertex-depth twin each; requestWeedGpu asks maxBufferSize and maxStorageBufferBindingSize",
       "date": "2026-11-28",
       "id": "N-464",
       "title": "The engine's WebGPU device asks only the two sampler limits: buffers stay at the 128 MiB default, the cap of the indexed sprites' statics on WebGPU",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "statusText": "Found 2026-11-28 reading Pixi after 8.23 (upstream 8ee5e44 asks the adapter for them in its own requestDevice)",
@@ -26290,6 +26294,23 @@
       "aliases": [
         "aggregates in logic",
         "E-199 spatial regression"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-467",
+      "title": "InstancedSpriteBatch.setLayerBlend updates the blend of mesh and edgeMesh but not vdepthMesh: after a run-time blend change on the entities layer the flat face instances keep the old blend",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "statusText": "Found reading the code 2026-11-28 (the N-463 agent), not seen in a browser",
+      "next": "setLayerBlend sets vdepthMesh too (and the chunks' twins follow the entities root); a capture of a scene with faces after Layer.blendMode changes at run time, before and after.",
+      "aliases": [
+        "vdepthMesh blend",
+        "setLayerBlend faces"
       ]
     }
   ],
@@ -45269,6 +45290,21 @@
         "ff535ad6",
         "f822e609",
         "f1c20c39"
+      ]
+    },
+    {
+      "id": "R-2059",
+      "date": "2026-11-28",
+      "time": "05:01",
+      "timeFrom": "recorded",
+      "title": "Fixed: a chunked entities batch with faces and height frames drew only its height-mapped instances (chunkFacesScene 891 922 of 921 600 pixels off, now 0); the WebGPU device asks the adapter's buffer limits (2 GiB on the GTX 1650)",
+      "verdict": "kept-hygiene",
+      "text": "An agent fixed both on fix/n463 (31a01fe4 the repro scene, e60718e3 N-463 and its test, b6b02629 N-464 and its test, 52a19dc5 main merged), merged to main.\n- **N-463 reproduced.** tests/bench/stressScenes/chunkFacesScene.js (ChunkFacesScene): wall faces, green posts and a grey floor (no maps) among LPC people with height maps, the barrio's oblique camera, a nearest atlas, no lighting; ?group=1 (default) a GPU particle group sorted among the entities, never born, so it splits the batch into chunks without a pixel of its own; ?group=0 no group (the batch unchunked); ?group=show a red puff. On main (6269ab9a, headless, --query-a group=1 --query-b group=0) 891 922 of 921 600 pixels differed on WebGL and WebGPU alike: chunked, floor 0 pixels (unchunked 769 862), posts 0 (19 460), walls 0 (102 600): only the people remained. Captures kept: tests/results/n463-captures/antes-en-pedazos.png (main, group=show) and despues-igual-que-entero.png.\n- **Fix** (src/render/gpuParticleChunks.js): each chunk has its own copy of the batch's vertex-depth program over its range, drawn right before it (idle while the batch has none); the drawn chunk and its edge and vertex-depth twins take the batch's programs every frame, so programs remade by setDepthFaces, setHeightFrames or enablePixelDepth reach them (a chunk kept its first frame's program, and its edge twin fell back to the plain edge program even over an indexed geometry); the chunks stop the batch's own vdepthMesh rendering instead of hiding it every frame (which rebuilt instructions each upload). A second bug, on main even without faces: after the chunks stop, clear() left the batch's meshes in the order mesh, edge, twin, so the edge pass drew before the opaque one; clear() restores twin, mesh, edge.\n- **Test:** tests/node/entityChunksDepthPrograms.test.js, 12 tests on real batches (WebGL and WebGPU, plain and indexed, through the Pixi worker's _placeDepthMeshes): every instance kind drawn once per chunk with the right depth source, the batch's programs in the batch's order, rebuilt programs reaching the chunks, a still stage across chunked frames; all 12 fail on main's chunk code.\n- **Captures after:** group=1 against group=0: 0 pixels on both backends, also indexed=0 and nearest=0 (a linear atlas, soft edges); group=0 --vs main 0 (the unchunked drawing unchanged). Off the hot path (at most 32 chunks a frame): not timed.\n- **N-464** (src/render/webgpu/requestGpuDevice.js): requestWeedGpu asks four limits at the adapter's own values, only those it reports: the two sampler limits, maxBufferSize and maxStorageBufferBindingSize. Chrome on the GTX 1650: maxBufferSize 256 MiB -> 2 147 483 648, maxStorageBufferBindingSize 128 MiB -> 2 147 483 644. instancedSpriteBatch's _makeIndexedGpuShader reads device.limits (follows); rendererBackend.js's INDEXED_SPRITES_MAX_WEBGPU does not (the queue's layout is decided on the main thread before a device exists): the indexed statics stay capped at 2.8 M rows on WebGPU; compute storage buffers and big vertex buffers gain. tests/node/gpuDeviceLimits.test.js (a stubbed adapter with getter limits) fails on the old request.\n- Tests: node 3705/0, demos 149/0 on the merged branch. Found: N-467 (setLayerBlend misses vdepthMesh).",
+      "commits": [
+        "31a01fe4",
+        "e60718e3",
+        "b6b02629",
+        "6448a409"
       ]
     }
   ],
