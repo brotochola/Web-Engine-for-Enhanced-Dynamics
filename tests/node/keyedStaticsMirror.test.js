@@ -78,6 +78,26 @@ test('with the table, only the slots that show a texture that casts columns, or 
   assert.deepEqual(slotOf(b, 4), [3, 3, 4]);
 });
 
+// E-492: the keyed pack sends a slot's statics again only when they change, so a render copied before the atlas's table
+// is never sent again to flag its slot: the table flags the slots from the copy, and the render's next frame, a plain one,
+// goes in.
+test('a render copied before the table: its slot is flagged by the table, and its turn to a plain frame copied', () => {
+  const lut = new Float32Array(4 * TEX_LUT_FLOATS);
+  lut[2 * TEX_LUT_FLOATS + 10] = -2.25;
+  const b = batch(null);
+  update(b, 0, 4, 2, 3, 4);
+  update(b, 1, 5, 1, 1, 1);
+  b._mirrorKeyedStatics(2, 0);
+  const columns = keyedColumnTextures(lut, TEX_LUT_FLOATS);
+  b.setColumnTextures(columns.flags, columns.count);
+  assert.deepEqual(Array.from(b._columnSlot.subarray(0, 6)), [0, 0, 0, 0, 1, 0], 'the render\'s slot flagged, the plain one not');
+  texUpdate(b, 0, 4, 3);
+  texUpdate(b, 1, 5, 0);
+  b._mirrorKeyedStatics(0, 2);
+  assert.deepEqual(slotOf(b, 4), [3, 3, 4], 'the render\'s slot now shows a plain frame');
+  assert.deepEqual(slotOf(b, 5), [1, 1, 1], 'a plain slot is not copied again');
+});
+
 test('an atlas without a texture that casts columns copies nothing', () => {
   const b = batch(keyedColumnTextures(new Float32Array(4 * TEX_LUT_FLOATS), TEX_LUT_FLOATS));
   assert.equal(b.columnTextureCount, 0);

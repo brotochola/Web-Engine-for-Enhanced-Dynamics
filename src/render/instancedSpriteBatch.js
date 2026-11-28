@@ -2495,13 +2495,24 @@ export class InstancedSpriteBatch {
   /**
    * E-549: the textures that can cast columns from a keyed row (keyedColumnTextures), after the atlas's table is built:
    * the copy then keeps only the slots that hold one or held one (a slot's texture, scale and all), none in an atlas
-   * without one. Set before the keyed frames start, as the atlas loads.
+   * without one. Set as the atlas loads, which may come after the first keyed frames. E-492: each slot's flag is then
+   * taken from the texture its copy holds (every update before went in): the keyed pack sends a slot's statics again
+   * only when they change, so no update that the frames before would have repeated comes to flag it, and the slot's next
+   * change, to a frame that casts none, would be left out of the copy.
    * @param {Uint8Array} flags a flag a textureId
    * @param {number} count how many are set
    */
   setColumnTextures(flags, count) {
     this._columnTex = flags;
     this._columnTexCount = count | 0;
+    const M = this._staticsMirror;
+    const S = this._columnSlot;
+    const n = S.length < M.length / 3 ? S.length : (M.length / 3) | 0;
+    const ids = flags.length;
+    for (let s = 0; s < n; s++) {
+      const t = M[s * 3] | 0;
+      S[s] = t >= 0 && t < ids ? flags[t] : 0;
+    }
   }
 
   /** E-549: how many textures can cast columns from a keyed row (-1 before setColumnTextures). */
