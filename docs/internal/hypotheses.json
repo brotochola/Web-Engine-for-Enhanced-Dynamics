@@ -26211,13 +26211,15 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-2064"
+      ],
       "refs": [],
-      "result": "",
+      "result": "Fixed 2026-11-28 (4fe40578)",
       "date": "2026-11-28",
       "id": "N-465",
       "title": "A world-rect layer's cache target keeps its size after a canvas resize (Blastforge: 1920 x 1080 after a resize to 1280 x 720); customLayers.initialize run again does not destroy a layer's own rt and rtOut",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "statusText": "Found 2026-11-28 by the E-525 agent's render-target probe (tests/bench/renderTargetProbe.mjs --resize)",
@@ -26247,13 +26249,15 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-2063"
+      ],
       "refs": [],
-      "result": "",
+      "result": "Kept 2026-11-28 (01b13def): WebGPU batches make the statics mirror, keyed caster rows on; bytes up 4 379 -> 1 906 KB a frame",
       "date": "2026-11-28",
       "id": "E-562",
       "title": "On WebGPU Pixi's updateBuffer (the engine's instance buffers written to the GPU) takes 2.9 ms a frame in Predator light3d crowd 2.5, most of the Pixi library's 3.7 ms there; on WebGL Pixi's whole share is 0.74 ms",
-      "status": "open",
+      "status": "kept",
       "kind": "speed",
       "area": "pixi",
       "statusText": "Found 2026-11-28 in the CPU trace after Pixi 8.23 (cpu-webgpu, R-2055)",
@@ -45350,6 +45354,32 @@
         "8df18fb3",
         "3aa003d6",
         "d63fd227"
+      ]
+    },
+    {
+      "id": "R-2063",
+      "date": "2026-11-28",
+      "time": "06:12",
+      "timeFrom": "recorded",
+      "title": "Kept: the keyed statics' copy on WebGPU too, so caster rows go keyed there; Predator light3d crowd 2.5 WebGPU renderer 6.96 -> 4.35 ms (-34.8 %), pre-render 6.94 -> 4.40 (-36.7 %); WebGL neutral",
+      "verdict": "kept",
+      "text": "An agent found the cause on opt/e562 (fa208c51 tests/bench/bufferUploadProbe.mjs, 5ac3fb36 the fix), merged to main.\n- **Probe:** hooks queue.writeBuffer and writeTexture (WebGPU) or bufferSubData/bufferData (WebGL) in the Pixi worker; names each GPU buffer by where it hangs from self.pixiRenderer; per buffer and frame the calls, bytes written, bytes changed against the last write, and the span of the changed words; count or time mode.\n- **Cause:** E-395's staticsMirror (the keyed statics' CPU copy) was made only alongside a WebGL statics texture, so a WebGPU batch had none, and with maps in the atlas shadowMaps._ensureKeyedCasters kept keyed caster rows off: on WebGPU pre-render sent the sun's and the lamps' casters as full 88-byte rows every frame instead of 28 and 44 for keyed rows. Writing changed ranges only would not have helped: in every large buffer the changes spread over the whole buffer.\n- **Fix:** the copy made on WebGPU too, one slot per statics row (instancedSpriteBatch.js; enableStaticsMirror no longer needs a statics texture); a test in tests/node/gpuPackKeyedPixi.test.js fails on WebGPU without it.\n- **Bytes a drawn frame** (Predator light3d=1 crowd=2.5, count mode): WebGPU all writes 4 379 KB (1 029 changed) -> 1 906 (723 changed); sun rows 2 971 -> 912 KB; lamp rows 604 -> 238; poses and slots 293/147 -> 284/142; writeBuffer's own time 1.27 -> 0.62 ms; WebGL (code unchanged) 1 639 -> 1 457 KB (scene noise). light3dCompare still=1 all=1 hour=22 WebGPU caster rows 710 -> 355 KB.\n- **CPU trace** (one run a side): WebGPU updateBuffer 164.9 -> 78.4 ms/s (2.81 -> 1.31 ms a frame), compactColumnRows 68.8 -> compactKeyedColumnRows 36.7 ms/s, pixi.min.js 218 -> 135 ms/s, the worker busy 778 -> 627 ms/s.\n- **ABAB** (runPredatorAbab, Predator light3d=1 crowd=2.5, a9e8409b against 5ac3fb36, 4 pairs, 2026-11-28 06:00 to 06:08 by the files): WebGPU KEPT, renderer 6.961 -> 4.353 ms (paired -34.8 %, worse 0/4), pre-render 6.935 -> 4.403 (-36.7 %, 0/4), logic, spatial and physics lower too; WebGL NEUTRAL (below floor), renderer 2.921 -> 2.872.\n- **Pictures** (against a9e8409b, headless, both backends): dxCaptureScene (and hour=22), faceLightScene, light3dCompareScene still=1 (plus all=1, all=1 hour=22, maps=1 hour=22), particleCaptureScene: 0 pixels. Tests: node 3693/0, demos 149/0 on the branch.\n- Open: the sun's keyed rows are 912 KB a frame with 138 KB changed among about 32 000 casters (a separate buffer for static casters would cut it: commitKeyedCasterRows); the decal tiles' writeTexture about 485 KB and 0.5 ms a frame on WebGPU; with sun and lamp rows each frame the caster ring flips twice, so on WebGL each slot is overwritten every frame.",
+      "commits": [
+        "fa208c51",
+        "5ac3fb36",
+        "01b13def"
+      ]
+    },
+    {
+      "id": "R-2064",
+      "date": "2026-11-28",
+      "time": "06:12",
+      "timeFrom": "recorded",
+      "title": "Fixed: initialize run again lets go of each layer's own targets and sprite; the world-rect cache's size was repainted lazily, not a bug",
+      "verdict": "kept-hygiene",
+      "text": "Read and fixed 2026-11-28 (4fe40578).\n- **The world-rect cache keeping its size** after a canvas resize (the E-525 agent's probe read Blastforge's worldRt at 1920 x 1080 after a resize to 1280 x 720): not a bug. customLayers' paint recreates the target at the new size on its next paint (worldRectCacheStep keys on the canvas size, so a resize draws live for the held frames, then paints into a new target); the probe read it during the live phase.\n- **customLayers.initialize run again** gave back the shared picture target (E-525) but left each layer's own rt and rtOut and its sprite: today initialize runs once per worker (a scene change makes new workers), so it leaked nothing yet; with workers kept across scenes (SST-9) it would. Now it lets go of every layer target (a shared one given back, its own picture target and look output destroyed) and destroys the layer's sprite. Test in tests/node/sharedLookTargets.test.js (initialize run again: the own targets released, no shared target held, the sprites destroyed), which fails without the fix; node 3675/0, demos 149/0 with Pixi 8.23's merge.",
+      "commits": [
+        "4fe40578"
       ]
     }
   ],
