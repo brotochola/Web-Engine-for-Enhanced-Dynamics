@@ -26,6 +26,10 @@ export class BoidsScene extends Scene {
     //   collectDetailedStats: true,
     // },
     spatial: {
+      // The caps stay at 128 and 20 on purpose (N-331): the flock packs into knots, and a few lists (1 to 4 a frame of 40 000)
+      // and cell entries (2 to 12) still pass any cap tried (256 and 32, 512 and 64, 1024 and 128: still 2 to 4 lists
+      // and 1 to 12 entries over 30 to 90 s), while the caps are what bound spatial's cost, the load this scene sets.
+      // So the debug checks warn once here: it is not a misconfiguration.
       cellSize: 20,
       maxNeighbors: 128,
       maxEntitiesPerCell: 20,
