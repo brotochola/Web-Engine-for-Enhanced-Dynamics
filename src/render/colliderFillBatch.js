@@ -1386,6 +1386,9 @@ export class FillBatchBase {
     this._poseDirty = false;
     this.shader = null;
     this.mesh = null;
+    // E-477 (_fitBuffer): whether the vertex Buffer's data is a view over the records in use (WebGL), and its length.
+    this._fitGl = false;
+    this._fitFloats = 0;
   }
 
   /**
@@ -1422,6 +1425,22 @@ export class FillBatchBase {
    */
   _send() {
     if (this._bufferSystem) this._bufferSystem.updateBuffer(this.buffer);
+  }
+
+  /**
+   * E-477, WebGL: the vertex Buffer's data becomes a view of this.data over at least `floats` (grown by half again, never
+   * shrunk), so the GL buffer is as big as the records drawn, not the batch's capacity (every layer's is the renderer's
+   * whole mesh budget). ANGLE (Direct3D 11) copies a STATIC buffer whole from its staging copy when it changed
+   * (Buffer11::updateBufferStorage), so a layer that changed a few records a frame copied its capacity. The upload that
+   * follows sends the view whole (bufferData) when it grew past the GL buffer.
+   * @param {number} floats the floats the upload sends, from 0
+   */
+  _fitBuffer(floats) {
+    if (!this._fitGl || floats <= this._fitFloats) return;
+    const cap = this.data.length;
+    const grown = Math.min(cap, Math.max(floats, this._fitFloats + (this._fitFloats >> 1)));
+    this._fitFloats = grown;
+    this.buffer.setDataWithSize(grown === cap ? this.data : this.data.subarray(0, grown), grown, false);
   }
 
   /**
@@ -1477,11 +1496,18 @@ export class ColliderFillBatch extends FillBatchBase {
     const shared = data instanceof Float32Array && data.length === floats ? data : null;
     this.rows = shared || this.data;
     this.rowsU32 = shared ? new Uint32Array(shared.buffer, shared.byteOffset, shared.length) : this.dataU32;
+    // E-477: STATIC on WebGL, as MeshUvFillBatch's (E-466). ANGLE (Direct3D 11) binds only a STATIC buffer directly, and
+    // promotes a DYNAMIC one by the vertices its draws read (VertexDataManager::PromoteDynamicAttribs): 3 for these
+    // instanced triangles, so it never did, and streamed every row at every draw, still rows too. The Buffer's data is a
+    // view over the rows in use (_fitBuffer), since a STATIC buffer's change is copied whole; shrinkToFit off keeps a
+    // shorter view from making a new buffer.
     this.buffer = new Buffer({
       data: this.data,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST | (useWebGpu ? 0 : BufferUsage.STATIC),
       label: label || 'collider-fill',
+      shrinkToFit: false,
     });
+    this._fitGl = !useWebGpu;
 
     const stride = COLLIDER_FILL_STRIDE;
     const buf = this.buffer;
@@ -1534,6 +1560,7 @@ export class ColliderFillBatch extends FillBatchBase {
     this.mesh.visible = true;
     // E-123: the rows this upload sends, out of the mesh memory into the Buffer's own array.
     if (this.rows !== this.data) this.data.set(this.rows.subarray(0, n * COLLIDER_FILL_FLOATS));
+    this._fitBuffer(n * COLLIDER_FILL_FLOATS);
     this.buffer.update(n * COLLIDER_FILL_STRIDE);
     this._send();
     this.geometry.instanceCount = n;

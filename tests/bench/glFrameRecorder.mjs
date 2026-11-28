@@ -126,20 +126,21 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
   const rawIsEnabled = raw('isEnabled');
   const rawScissor = raw('scissor');
   let probeSaved = null;
-  const beginDraw = (n) => {
+  const beginDraw = (n, elements) => {
     if (!perDraw || !seg) return;
     const q = free.pop() || qCreate.call(gl);
     // The draw's own program (the pass's label names its first one): what a costly draw in a pass of many programs is.
+    // E-477: and its vertex array, which names the geometry (a batch) where one program draws several.
     const pass = segLabel(seg);
     const p = bound.program;
-    let label = `${pass} draw ${seg.draws}: prog#${idOf(p)} [${signature(p)}]`;
+    let label = `${pass} draw ${seg.draws}: prog#${idOf(p)} [${signature(p)}] vao#${idOf(bound.vao)}`;
     if (probeRe && probeRe.test(label)) {
       probeSaved = { on: rawIsEnabled.call(gl, gl.SCISSOR_TEST), box: qParamGl.call(gl, gl.SCISSOR_BOX) };
       rawEnable.call(gl, gl.SCISSOR_TEST);
       rawScissor.call(gl, 0, 0, 1, 1);
       label += ' (scissor 1 px)';
     }
-    drawQ = { q, label: `${label}${texNames()}`, pass, draws: 1, instances: n };
+    drawQ = { q, label: `${label}${texNames()}`, pass, draws: 1, instances: n, elements };
     qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
   };
   // gpuDraws: a clear or a blit timed like a draw (E-402: what the passes with no draw spend).
@@ -152,7 +153,7 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
     }
     const q = free.pop() || qCreate.call(gl);
     const pass = segLabel(seg);
-    drawQ = { q, label: `${pass} ${name}`, pass, draws: 0, instances: 0 };
+    drawQ = { q, label: `${pass} ${name}`, pass, draws: 0, instances: 0, elements: 0 };
     qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
   };
   const endDraw = () => {
@@ -175,11 +176,12 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
       if (qParamGl.call(gl, timerExt.GPU_DISJOINT_EXT)) disjoint++;
       else {
         const k = s.label || segLabel(s);
-        const p = passes.get(k) || { label: k, ns: 0, segments: 0, draws: 0, instances: 0 };
+        const p = passes.get(k) || { label: k, ns: 0, segments: 0, draws: 0, instances: 0, elements: 0 };
         p.ns += ns;
         p.segments++;
         p.draws += s.draws;
         p.instances += s.instances;
+        p.elements += s.elements || 0;
         passes.set(k, p);
         if (s.pass) {
           const t = drawPasses.get(s.pass) || { label: s.pass, ns: 0, draws: 0, instances: 0 };
@@ -264,9 +266,11 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
       }
     };
     let after = null;
-    if (name === 'drawElements' || name === 'drawArrays') hook = () => { draws++; instances++; segDraw(1); beginDraw(1); };
-    else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; segDraw(a[4] | 0); beginDraw(a[4] | 0); };
-    else if (name === 'drawArraysInstanced') hook = (a) => { draws++; instances += a[3] | 0; segDraw(a[3] | 0); beginDraw(a[3] | 0); };
+    // beginDraw's second argument: the draw's count (indices or vertices an instance).
+    if (name === 'drawElements') hook = (a) => { draws++; instances++; segDraw(1); beginDraw(1, a[1] | 0); };
+    else if (name === 'drawArrays') hook = (a) => { draws++; instances++; segDraw(1); beginDraw(1, a[2] | 0); };
+    else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; segDraw(a[4] | 0); beginDraw(a[4] | 0, a[1] | 0); };
+    else if (name === 'drawArraysInstanced') hook = (a) => { draws++; instances += a[3] | 0; segDraw(a[3] | 0); beginDraw(a[3] | 0, a[2] | 0); };
     else if (perDraw && (name === 'clear' || name.startsWith('clearBuffer') || name === 'blitFramebuffer')) hook = () => beginOp(name);
     else if (name === 'getParameter' || name === 'isEnabled') hook = (a) => note(`${name} 0x${(a[0] >>> 0).toString(16)}`, 0);
     else if (name === 'useProgram') {
@@ -366,7 +370,8 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
     const rate = (n) => n / Math.max(1, frames);
     const rows = [...passes.values()].sort((x, y) => y.ns - x.ns).map((p) => ({
       label: p.label, msPerFrame: perMs(p.ns), segmentsPerFrame: rate(p.segments), drawsPerFrame: rate(p.draws),
-      instancesPerFrame: rate(p.instances), ns: p.ns, segments: p.segments, draws: p.draws, instances: p.instances,
+      instancesPerFrame: rate(p.instances), elementsPerDraw: p.draws > 0 ? p.elements / p.draws : 0, ns: p.ns,
+      segments: p.segments, draws: p.draws, instances: p.instances,
     }));
     gpu = { msPerFrame: perMs([...passes.values()].reduce((s, p) => s + p.ns, 0)), disjoint, lost: pending.length, passes: rows, perDraw };
     // gpuDraws: each pass's draws summed (the pass's busy time, without the gaps between its draws).
@@ -498,7 +503,8 @@ async function main() {
     }
     console.log('the costliest draws:');
     for (const row of r.gpu.passes.slice(0, 30)) {
-      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${row.segmentsPerFrame.toFixed(1).padStart(4)} ${String(Math.round(row.instancesPerFrame)).padStart(7)} inst  ${row.label}`);
+      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${row.segmentsPerFrame.toFixed(1).padStart(4)} ${String(Math.round(row.instancesPerFrame)).padStart(7)} inst ` +
+        `${String(Math.round(row.elementsPerDraw)).padStart(8)} el  ${row.label}`);
     }
   } else if (r.gpu) {
     console.log(`GPU time by pass (timer queries, ${r.gpu.disjoint} disjoint, ${r.gpu.lost} unread): ${r.gpu.msPerFrame.toFixed(3)} ms a frame`);

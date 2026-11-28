@@ -3,12 +3,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { BufferUsage } from '../../src/vendor/pixi.min.js';
 import { ColliderFillBatch } from '../../src/render/colliderFillBatch.js';
 import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
 import { readEngineShader } from './engineShaderSources.mjs';
 
 const wgsl = (name) => readEngineShader(`${name}.wgsl`);
 const shaders = { colliderFill: wgsl('colliderFill'), meshUvFill: wgsl('meshUvFill') };
+const glsl = {
+  colliderFillVert: readEngineShader('colliderFill.vert.glsl'),
+  colliderFillFrag: readEngineShader('colliderFill.frag.glsl'),
+  meshUvFillVert: readEngineShader('meshUvFill.vert.glsl'),
+  meshUvFillFrag: readEngineShader('meshUvFill.frag.glsl'),
+};
+// GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
+globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
 const ROWS = 8;
 
 test("a MESH layer's fill batch sends each range as it writes it", () => {
@@ -73,4 +82,52 @@ test('an empty UV upload sends nothing, and a batch with no renderer still works
   const alone = new MeshUvFillBatch({ capacity: ROWS, useWebGpu: true, shaders });
   alone.indices.set([0, 1, 2, 0, 2, 3]);
   assert.equal(alone.upload(ROWS, 6), 6);
+});
+
+// E-477: ANGLE copies a STATIC buffer whole when it changed, so on WebGL the vertex buffer is as long as what is drawn,
+// not the batch's capacity (the renderer's whole mesh budget): a view of the batch's array, grown by half again and never
+// shrunk. WebGPU writes only the range sent, and keeps the whole array.
+const CAP = 100;
+
+function fitTrace(batch, uploads) {
+  const lengths = [];
+  for (const n of uploads) {
+    if (batch instanceof MeshUvFillBatch) batch.upload(n, 3);
+    else batch.upload(n);
+    lengths.push(batch.buffer.data.length / (batch.data.length / CAP));
+  }
+  return lengths;
+}
+
+test("on WebGL a fill batch's vertex buffer holds the rows drawn, grown by half again, never shrunk", () => {
+  const sent = [];
+  const bufferSystem = { updateBuffer: (b) => sent.push([b.data.length, b._updateOffset, b._updateSize]) };
+  const gl = new ColliderFillBatch({ capacity: CAP, useWebGpu: false, shaders: glsl, bufferSystem });
+  assert.deepEqual(fitTrace(gl, [10, 11, 4, 90, 95]), [10, 15, 15, 90, CAP]);
+  assert.equal(gl.buffer.data, gl.data);
+  const floats = gl.data.length / CAP;
+  gl.uploadRange(3, 5);
+  assert.deepEqual(sent.at(-1), [CAP * floats, 3 * floats * 4, 2 * floats * 4]);
+
+  const gpu = new ColliderFillBatch({ capacity: CAP, useWebGpu: true, shaders });
+  assert.deepEqual(fitTrace(gpu, [10, 11]), [CAP, CAP]);
+});
+
+test("on WebGL a UV batch's vertex buffer holds the records drawn; its index buffer the indices drawn", () => {
+  const gl = new MeshUvFillBatch({ capacity: CAP, indexCapacity: 30, useWebGpu: false, shaders: glsl });
+  assert.deepEqual(fitTrace(gl, [6, 7, 2, CAP]), [6, 9, 9, CAP]);
+  assert.equal(gl.indexBuffer.data.length, 3);
+
+  const gpu = new MeshUvFillBatch({ capacity: CAP, indexCapacity: 30, useWebGpu: true, shaders });
+  assert.deepEqual(fitTrace(gpu, [6, 7]), [CAP, CAP]);
+});
+
+// E-466, E-477: ANGLE binds only a STATIC buffer directly; it streamed a DYNAMIC one's rows at every draw. The hint is
+// WebGL's: WebGPU's buffers take none.
+test("on WebGL both fill batches' vertex buffers are STATIC; on WebGPU neither", () => {
+  const isStatic = (batch) => (batch.buffer.descriptor.usage & BufferUsage.STATIC) !== 0;
+  assert.equal(isStatic(new ColliderFillBatch({ capacity: CAP, useWebGpu: false, shaders: glsl })), true);
+  assert.equal(isStatic(new MeshUvFillBatch({ capacity: CAP, useWebGpu: false, shaders: glsl })), true);
+  assert.equal(isStatic(new ColliderFillBatch({ capacity: CAP, useWebGpu: true, shaders })), false);
+  assert.equal(isStatic(new MeshUvFillBatch({ capacity: CAP, useWebGpu: true, shaders })), false);
 });

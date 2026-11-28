@@ -23,11 +23,17 @@
  *   col       E-452: ColliderFillBatch as shipped, the same triangles as its 18-float rows (no UVs, so no sun shift),
  *             colliderFill.*.glsl
  *   colVs     the collider batch as the --vs tree ships it
+ *   colIdx    col as Pixi draws it in a scene: through the index buffer [0, 1, 2] (drawElementsInstanced) (E-477)
+ *   colDyn    colIdx with the rows and the indices in DYNAMIC_DRAW buffers, the hint Pixi gives a Buffer without
+ *             BufferUsage.STATIC: ANGLE (Direct3D 11) binds only a STATIC buffer directly, and promotes a DYNAMIC one by
+ *             the vertices a draw reads (3 for an instanced triangle), so it streams the instances whole at every draw
  * Every way but instMin runs meshUvFill.vert.glsl's body on the same row values, so the picture is the same; the page
  * checks it (a read back of each way's target against inst's; colVs's against col's, which has no sun shift).
  *
  *   node tests/bench/meshFillGpuBench.mjs [--n 20000] [--zoom 0.5] [--ways inst,flat] [--scissor] [--draws 40]
- *     [--rounds 3] [--root <tree>] [--vs <tree>] [--output path]
+ *     [--rounds 3] [--root <tree>] [--vs <tree>] [--channel chrome|chromium] [--output path]
+ * --channel: chrome (the installed Chrome, the discrete GPU here; the default) or chromium (Playwright's, the integrated
+ *   one). The clock printed is nvidia-smi's, so the discrete GPU's only.
  * --root: meshUvFill.*.glsl and colliderFill.*.glsl from that tree's src/shaders (default this one), to time another
  *   revision's shaders.
  * --vs: the ways instVs and colVs, the batches as that tree ships them, timed in the same page as inst and col (the GPU's
@@ -308,10 +314,10 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
 
   // ---- geometry per way ----
   const STRIDE = ROW * 4;
-  function buffer(target, data) {
+  function buffer(target, data, usage = gl.STATIC_DRAW) {
     const b = gl.createBuffer();
     gl.bindBuffer(target, b);
-    gl.bufferData(target, data, gl.STATIC_DRAW);
+    gl.bufferData(target, data, usage);
     return b;
   }
   const triBuf = buffer(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1]));
@@ -322,6 +328,11 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
   const colRows = new Float32Array(triCount * COL_ROW);
   for (let k = 0; k < triCount; k++) colRows.set(rows.subarray(k * ROW, k * ROW + COL_ROW), k * COL_ROW);
   const colBuf = buffer(gl.ARRAY_BUFFER, colRows);
+  // colIdx and colDyn (E-477): the batch's index buffer [0, 1, 2]; colDyn's rows and indices with Pixi's DYNAMIC hint.
+  const colTriIndex = new Uint32Array([0, 1, 2]);
+  const colIdxBuf = buffer(gl.ELEMENT_ARRAY_BUFFER, colTriIndex);
+  const colDynBuf = buffer(gl.ARRAY_BUFFER, colRows, gl.DYNAMIC_DRAW);
+  const colDynIdxBuf = buffer(gl.ELEMENT_ARRAY_BUFFER, colTriIndex, gl.DYNAMIC_DRAW);
   // flat: 3 vertices a row; indexed: each mesh's vertices once.
   const VERT = 16;
   function vertexRecord(out, o, x, y, u, row) {
@@ -380,13 +391,14 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     ? () => gl.drawElements(gl.TRIANGLES, triCount * 3, gl.UNSIGNED_INT, 0)
     : () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount));
   // The collider batch's attributes in either form: its 11 fields, or its 18 floats as 4 vec4 and a vec2 (E-452).
-  const colAttribs = (p) => {
+  const colAttribs = (p, rowsBuf = colBuf) => {
     attrib(p, 'aTri', triBuf, 2, 0, 0, 0);
     for (const [name, off] of Object.entries(OFFSETS)) {
-      if (off < COL_ROW) attrib(p, name, colBuf, TYPES[name] ? 1 : 2, COL_ROW * 4, off * 4, 1);
+      if (off < COL_ROW) attrib(p, name, rowsBuf, TYPES[name] ? 1 : 2, COL_ROW * 4, off * 4, 1);
     }
-    for (let r = 0; r < 5; r++) attrib(p, `aRow${r}`, colBuf, r < 4 ? 4 : 2, COL_ROW * 4, r * 16, 1);
+    for (let r = 0; r < 5; r++) attrib(p, `aRow${r}`, rowsBuf, r < 4 ? 4 : 2, COL_ROW * 4, r * 16, 1);
   };
+  const colIndexedDraw = () => gl.drawElementsInstanced(gl.TRIANGLES, 3, gl.UNSIGNED_INT, 0, triCount);
   const WAYS = {
     inst: { vs: () => vert, fs: () => frag, bind: shippedAttribs, drawFor: shippedDraw },
     // The batch as another tree (--vs) ships it, timed in the same page as inst.
@@ -457,9 +469,28 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
       bind: colAttribs,
       draw: () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount),
     },
+    colIdx: {
+      vs: () => colVert,
+      fs: () => colFrag,
+      bind: (p) => {
+        colAttribs(p);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, colIdxBuf);
+      },
+      draw: colIndexedDraw,
+    },
+    colDyn: {
+      vs: () => colVert,
+      fs: () => colFrag,
+      bind: (p) => {
+        colAttribs(p, colDynBuf);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, colDynIdxBuf);
+      },
+      draw: colIndexedDraw,
+    },
   };
   // The picture each way is checked against: the collider batch draws no sun shift.
-  const referenceOf = (name) => (name === 'col' || name === 'colVs' ? 'col' : 'inst');
+  const colWay = (name) => name === 'col' || name === 'colVs' || name === 'colIdx' || name === 'colDyn';
+  const referenceOf = (name) => (colWay(name) ? 'col' : 'inst');
 
   const built = {};
   const skipped = {};
@@ -617,7 +648,7 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
 }
 
 export async function runMeshFillGpuBench(opts) {
-  const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--mute-audio'] });
+  const browser = await chromium.launch({ headless: false, channel: opts.channel || 'chrome', args: ['--mute-audio'] });
   try {
     const page = await browser.newPage({ viewport: { width: 320, height: 200 } });
     page.on('pageerror', (e) => console.error('[page error]', e.message));
@@ -681,6 +712,7 @@ async function main() {
     height: Number(args.height ?? 1080),
     root: typeof args.root === 'string' ? path.resolve(args.root) : repoRoot,
     vs: typeof args.vs === 'string' ? path.resolve(args.vs) : null,
+    channel: typeof args.channel === 'string' ? args.channel : 'chrome',
   };
   const { result: r, clocks } = await withGpuClock(() => runMeshFillGpuBench(opts));
   if (r.error) {
@@ -696,7 +728,7 @@ async function main() {
   }
   for (const [name, why] of Object.entries(r.skipped || {})) console.log(`  skipped ${name}: ${why.split('\n')[0]}`);
   for (const [name, p] of Object.entries(r.parity)) {
-    const ref = name === 'colVs' ? 'col' : 'inst';
+    const ref = name.startsWith('col') ? 'col' : 'inst';
     console.log(`  parity ${name}: ${p.bytesDiffering} bytes differ from ${ref} (max ${p.maxDelta})`);
   }
   if (args.output) fs.writeFileSync(String(args.output), JSON.stringify({ opts, ...r, clocks }, null, 1));
