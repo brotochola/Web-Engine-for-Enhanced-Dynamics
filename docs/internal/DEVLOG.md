@@ -6,6 +6,42 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 28 November 2026 — WebGPU Stops Sending What It Already Has
+
+**On WebGPU the renderer spent a third of its frame telling the GPU things it already knew.** A CPU trace of Predator with
+the 3D light put 2.9 ms a frame in Pixi's buffer writes. The guess was that whole buffers went up where a few bytes had
+changed; a probe that watched every write said otherwise: the changed bytes were spread over the whole buffer, so ranges
+would not have helped. The real cause was older. The copy of the sprites' statics that lets a sun or lamp shadow row be
+sent short and keyed was only made beside WebGL's statics texture, so on WebGPU every caster went up whole, 88 bytes a row,
+every frame, and pre-render built those rows for nothing. Making the copy on both backends took the bytes per frame from
+4.4 MB to 1.9, the renderer from 6.96 to 4.35 ms (-35 %) and pre-render from 6.94 to 4.40 (-37 %), with the pictures the
+same to the pixel (E-562).
+
+**Pixi 8.23, and how much of the renderer is Pixi.** The upgrade dropped five of our patches that Pixi now does itself,
+ported the WebGL uniform stub, and found three bugs no anchor caught: every WebGPU program bound no group at all (our
+layouts were objects, 8.23 loops over arrays: every WebGPU picture was blank until fixed), a pinned texture kept its old
+view, and every parallel shader link threw. The question underneath was whether to keep Pixi or write our own GPU layer.
+The trace answered it: Pixi's own code is 0.74 ms a frame on WebGL and under one on WebGPU once the buffer writes (ours)
+are counted out. Not worth a rewrite (DX-PIXI823).
+
+**Things that were drawn and should not have been, and things that were not drawn and should have.** A batch split into
+pieces by a GPU particle group, with faces and height maps, drew only its people: the floor, the posts and the walls were
+gone (N-463). A decoration on a roof sank behind the roof it stood on (N-450). The renderer sent nine thousand sprite rows
+a keyed frame when a few hundred had changed; most were particles that had only moved in the list (E-492). The houses'
+faces cannot become one piece without moving every later sprite's painter step, but their collection could leave
+JavaScript: a wasm kernel took the town of 80 000 faces' pre-render from 10.5 to 8.6 ms (E-520).
+
+**The bundle is small again.** The workers, shaders and wasm go inside gzipped, in one stream that starts inflating as the
+file loads: 4.0 MB to 2.3. A first visit starts as fast or faster; a repeat visit 7 to 24 ms later, the inflate, which the
+rest of the start hides in the bigger scenes. esbuild got its last chance: classic workers made it as fast as webpack, at
+twice the size, so webpack stays (N-172).
+
+**Elsewhere:** Box2D now hands over each body's speed, the length its sleep test already computed, so the particle worker
+stopped deriving it (E-353); the spatial grid computes separation, centroid and nearest-of-a-type for the types that ask,
+which took Boids' logic to a fifth, though the spatial worker paid for it and the sums will move to the logic workers
+(E-199, E-564); look layers share their render targets, up to 32 MB less video memory (E-525); and a self-shadow that walks
+the face map texel by texel exists, cleaner and two to three times dearer, as an option (E-423).
+
 ## Saturday 28 November 2026 (small hours) — The Rules Catch Up With the Work
 
 **The owner asked for a second outside look at how the engine is measured, tested and optimized,** twelve days after the
