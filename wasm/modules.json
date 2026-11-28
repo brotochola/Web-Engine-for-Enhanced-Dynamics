@@ -108,6 +108,7 @@
         "astar_path",
         "collect_sprites",
         "collect_sprites_turned",
+        "collect_decorations",
         "bullet_tick_lean",
         "bullet_tick_lean_ids32",
         "bullet_tick_lean_slots32",
@@ -359,7 +360,8 @@
       "output": "tests/fixtures/wasm/preRenderCollect.wasm",
       "exports": [
         "collect_sprites",
-        "collect_sprites_turned"
+        "collect_sprites_turned",
+        "collect_decorations"
       ],
       "maxMemoryPages": 32768,
       "test": true,

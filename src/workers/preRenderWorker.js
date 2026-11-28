@@ -96,7 +96,7 @@ import {
 } from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm, stampScanTarget } from '../render/shadowStampClient.js';
-import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
+import { bindPreRenderCollect, writeCollectColumns, writeCollectList, writeDecorationCollect } from './preRenderCollectClient.js';
 import {
     bindEmitAdobe,
     bindPreRenderEmit,
@@ -1644,6 +1644,8 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuSunScanXY = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
+        /** E-520: the parent whose key PARENT_SORT_KEY holds in the decoration collect's kernel path (-1: none yet). */
+        this._decoLastParent = -1;
         /** N-138: per queue buffer, the poses of the sprites whose entity has a mesh (empty when no class has both). */
         this._meshPoseLists = [];
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
@@ -3372,6 +3374,14 @@ class PreRenderWorker extends AbstractWorker {
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
+        // E-520: through the collect kernel where it can take the frame (every column in the render-queue memory); the
+        // loops below otherwise (a scene without the kernel's regions, a test on plain arrays) and as its reference.
+        const b = this._collectWasm;
+        if (b !== null && visibleCount > 0 && this.renderQueueEnabled
+            && writeDecorationCollect(b, this, DecorationComponent, visibleData, visibleCount)) {
+            this._collectDecorationsWasm(b, visibleData, visibleCount, Layer.anyYSorting());
+            return;
+        }
         if (!Layer.anyYSorting()) {
             // A key orders a decoration only in a layer that y-sorts (the emit writes none otherwise): with none this
             // frame they all take one key and none is made, in a loop of its own, as the particles do. N-450: nor a
@@ -3414,6 +3424,74 @@ class PreRenderWorker extends AbstractWorker {
             this.collectRenderable(2, i);
             this.visibleDecorationsCount++;
         }
+    }
+
+    /**
+     * E-520. collectVisibleDecorations through preRenderCollect.wasm (collect_decorations, on the list's copy
+     * writeDecorationCollect made): the walk writes the rows of the decorations with no parent that collectRenderable
+     * sends to the main collector alone (their layer mask holds no sprite-queue bit but the entities': a spawned one's is
+     * that bit), as the loops do (R-1360: a barrio's house faces, whose cost is the count of pieces; the JS loop took
+     * ~40 ns each); each one it hands back (attached, or taken by a custom layer) goes through _collectDecorationJs at its
+     * place in the walk, so the collectors fill in the list's order. `ySort`: Layer.anyYSorting().
+     */
+    _collectDecorationsWasm(b, visibleData, count, ySort) {
+        const res = b.results;
+        const maxItems = this.renderQueueMaxItems;
+        const ySortFlag = ySort ? 1 : 0;
+        const parent = DecorationComponent.parentEntityIndex;
+        const mask = DecorationComponent.layerMask;
+        const noParent = this._noParent;
+        // The sprite-queue layers that take a decoration elsewhere than the main collector (collectRenderable).
+        const elsewhere = (Layer._spriteQueueBits & ~Layer.entitiesMask()) >>> 0;
+        // The parent whose key PARENT_SORT_KEY holds, as the loop keeps it (attached decorations come in runs).
+        this._decoLastParent = -1;
+        res[2] = 0;
+        let from = 0;
+        for (;;) {
+            res[0] = this._renderableCount;
+            const stop = b.collectDecorations(b.tableByte, from, count, maxItems, ySortFlag, Y_SORT_K, noParent, elsewhere);
+            this._renderableCount = res[0];
+            if (stop >= count) break;
+            // The run handed back, here: an entity's attached decorations come together (it spawned them so), and a
+            // call into the kernel for each cost the y-sorted microbench what the kernel saved on the others.
+            let k = stop;
+            let i = visibleData[1 + k];
+            do {
+                this._collectDecorationJs(i, ySort);
+                k++;
+                if (k >= count) break;
+                i = visibleData[1 + k];
+            } while (parent[i] !== noParent || (mask[i] & elsewhere) !== 0);
+            from = k;
+            if (from >= count) break;
+        }
+        if (res[2] !== 0) this._collectorFull();
+        this.visibleDecorationsCount += count;
+    }
+
+    /** E-520. A decoration the kernel handed back (attached, or a custom layer's), collected as the loops collect it. */
+    _collectDecorationJs(i, ySort) {
+        if (!ySort) {
+            COLLECT_Y[0] = 0;
+            COLLECT_FOOT[0] = NaN;
+            this.collectRenderable(2, i);
+            return;
+        }
+        const p = DecorationComponent.parentEntityIndex[i];
+        const sortOffsetY = DecorationComponent.sortOffsetY[i];
+        if (p !== this._noParent && Transform.active[p]) {
+            if (p !== this._decoLastParent) {
+                this._storeAttachedParentKey(p, PARENT_SORT_KEY);
+                this._decoLastParent = p;
+            }
+            COLLECT_Y[0] = PARENT_SORT_KEY[0] + sortOffsetY * Y_SORT_K + DecorationComponent.innerZ[i];
+            COLLECT_FOOT[0] = PARENT_SORT_KEY[1] + sortOffsetY;
+        } else {
+            const y = DecorationComponent.y[i];
+            COLLECT_Y[0] = (y + sortOffsetY) * Y_SORT_K + DecorationComponent.innerZ[i];
+            COLLECT_FOOT[0] = y + sortOffsetY;
+        }
+        this.collectRenderable(2, i);
     }
 
     /**

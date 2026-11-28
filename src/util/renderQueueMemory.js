@@ -256,6 +256,9 @@ function collectLayout(r, collect) {
     listByte: r.collectList.byte,
     tableByte: r.collectTable.byte,
     resultsByte: r.collectResults.byte,
+    // E-520: the decoration collect's list, room for `decorations` ids (0 and -1: none).
+    decorations: r.collectDecoList.bytes > 0 ? collect.decorations | 0 : 0,
+    decoListByte: block(r.collectDecoList),
     // W19: the bullet tick's regions (bindBulletTick's layout), or null.
     bullets: collect.bullets
       ? {

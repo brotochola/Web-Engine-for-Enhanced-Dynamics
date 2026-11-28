@@ -140,8 +140,9 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp]
  * @param {null | { decorations: number, buckets: number }} [sway]
  * @param {number} [pixiRows] rows of Pixi's plain sprite batch when Pixi packs it with gpuPack.wasm (W9d), else 0
- * @param {null | { entities: number, transformBytes: number, colliderBytes: number }} [collect] the sprite collect's
- *   blocks (W4b, a scene without physics); a component with 0 bytes gets no block
+ * @param {null | { entities: number, transformBytes: number, colliderBytes: number, decorations?: number }} [collect] the
+ *   sprite collect's blocks (W4b, a scene without physics); a component with 0 bytes gets no block; with `decorations`
+ *   (the pool's size) the decoration collect's list too (E-520)
  * @param {null | { preRender: boolean, pixi: boolean }} [painter] the painter sort's state (W10
  *   `painterRadix.wasm`) for each worker that sorts the main queue, one set each (painterStateRegions):
  *   `preRenderPainter*` owned by pre-render, `pixiPainter*` by Pixi, so the kernel reads the sort keys where
@@ -356,6 +357,9 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
         { name: 'gatherEvents', owner: 'pre-render', bytes: (v.events | 0) * GATHER_EVENT_BYTES },
       );
     }
+    // E-520: the decoration collect's copy of the visible decorations' list, one id a decoration (16 or 32 bits, the
+    // pool's slot width: room for 32).
+    regions.push({ name: 'collectDecoList', owner: 'pre-render', bytes: (collect.decorations | 0) * 4 });
   }
   if (painter) {
     // W10: a painter state per worker that sorts; Pixi's and pre-render's are apart, they may sort at once.

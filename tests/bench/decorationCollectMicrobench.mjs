@@ -3,7 +3,9 @@
  * Kernel: pre-render's decoration collect (PreRenderWorker.collectVisibleDecorations) on a real worker: each visible
  * decoration's sort key, and its row through collectRenderable into the main collector with the pose the emit reads.
  * Half the decorations are world-owned, half attached to one of PARENTS entities (stand-in Transform columns, as the
- * E-179c test gives the particle worker). Three cases, one process:
+ * E-179c test gives the particle worker). E-520: the decorations and the collector lie in a WebAssembly memory with the
+ * collect kernel bound, as in a scene, so the world-owned ones go through preRenderCollect.wasm's collect_decorations
+ * and the attached ones through the JS. Three cases, one process:
  *
  *   collect  no layer y-sorts; attached ones spread over the parents and the visible list in no order, as Predator's
  *            grass is against the camera.
@@ -26,6 +28,8 @@ import { Transform } from '../../src/components/transform.js';
 import { Layer } from '../../src/core/layer.js';
 import { PoolSlotArray } from '../../src/util/poolSlotWidth.js';
 import { zSortBand } from '../../src/util/sortIndexByKey.js';
+import { COLLECT_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
+import { bindPreRenderCollect } from '../../src/workers/preRenderCollectClient.js';
 import { checksumFloats, isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { loadWorker } from './workerHarness.mjs';
 
@@ -74,28 +78,76 @@ function bindParentSprites(pre, parents) {
 }
 
 /**
+ * E-520: one shared memory with DecorationComponent's block for `n` decorations, a main collector of `maxItems` rows and
+ * the collect kernel's table, results and list, as the render-queue memory's emit and collect regions hold them; the
+ * columns bound on the component and on `pre`, and the worker's collect kernel bound there (pre._collectWasm), so the
+ * shipped collect takes it.
+ */
+async function decorationCollectMemory(pre, n, maxItems) {
+  let top = 64;
+  const region = (bytes) => {
+    const byte = (top + 63) & ~63;
+    top = byte + bytes;
+    return byte;
+  };
+  const decorationByte = region(DecorationComponent.getBufferSize(n));
+  const columns = [
+    ['_renderableY', Float32Array], ['_renderableType', Uint8Array], ['_renderableIndex', Int32Array],
+    ['_collectPx', Float32Array], ['_collectPy', Float32Array], ['_collectRotC', Float32Array], ['_collectRotS', Float32Array],
+  ].map(([name, Ctor]) => [name, Ctor, region(maxItems * Ctor.BYTES_PER_ELEMENT)]);
+  const tableByte = region(COLLECT_TABLE_SLOTS * 4);
+  const resultsByte = region(16);
+  const listByte = region(4);
+  const decoListByte = region(n * 4);
+  const pages = Math.ceil(top / 65536) + 1;
+  const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+  DecorationComponent.initializeArrays(memory.buffer, n, decorationByte);
+  for (const [name, Ctor, byte] of columns) pre[name] = new Ctor(memory.buffer, byte, maxItems);
+  pre._collectWasm = await bindPreRenderCollect(memory, { tableByte, resultsByte, listByte, entities: 0, decorations: n, decoListByte });
+}
+
+/**
  * A pre-render worker with `n` visible decorations, half of them attached, and an empty main collector of `n` rows.
  * `frame()` runs one collect from an empty collector and returns how many rows it wrote. `sortOffset`: the world-owned
- * ones get a sortOffsetY (0 to 160 px) and an innerZ of 0 to 7, as a house's faces have them.
- * @param {{ n?: number, parents?: number, attachedShare?: number, seed?: number, ySort?: boolean, sortOffset?: boolean }} [opts]
+ * ones get a sortOffsetY (0 to 160 px) and an innerZ of 0 to 7, as a house's faces have them. E-520: the decorations and
+ * the collector are in a WebAssembly memory with the collect kernel bound (decorationCollectMemory), as in a scene;
+ * `kernel: false` keeps plain arrays and no kernel (the JS loops). `maxItems`: the collector's rows (default `n`);
+ * `customLayers`: Layer.initializeFromConfig's custom layers.
+ * @param {{ n?: number, parents?: number, attachedShare?: number, seed?: number, ySort?: boolean, sortOffset?: boolean,
+ *   kernel?: boolean, maxItems?: number, customLayers?: object }} [opts]
  */
 export async function setupDecorationCollect(opts = {}) {
   const n = opts.n ?? DECOS;
   const parents = opts.parents ?? PARENTS;
   const attached = Math.round(n * (opts.attachedShare ?? 0.5));
   const ySort = Boolean(opts.ySort);
+  const kernel = opts.kernel !== false;
+  const maxItems = opts.maxItems ?? n;
   const rng = mulberry32(opts.seed ?? 0xdec0c0);
 
   Layer.reset();
-  Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: { ySorting: ySort }, lighting: {} }, true);
+  Layer.initializeFromConfig(opts.customLayers ?? {}, { decals: {}, castedShadows: {}, entities: { ySorting: ySort }, lighting: {} }, true);
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
 
-  DecorationComponent.initializeArrays(new SharedArrayBuffer(DecorationComponent.getBufferSize(n)), n);
+  if (kernel) {
+    await decorationCollectMemory(pre, n, maxItems);
+  } else {
+    DecorationComponent.initializeArrays(new SharedArrayBuffer(DecorationComponent.getBufferSize(n)), n);
+    pre._renderableY = new Float32Array(maxItems);
+    pre._renderableType = new Uint8Array(maxItems);
+    pre._renderableIndex = new Int32Array(maxItems);
+    pre._collectPx = new Float32Array(maxItems);
+    pre._collectPy = new Float32Array(maxItems);
+    pre._collectRotC = new Float32Array(maxItems);
+    pre._collectRotS = new Float32Array(maxItems);
+  }
   bindParents(parents, rng);
   if (ySort) bindParentSprites(pre, parents);
   const dc = DecorationComponent;
   for (let d = 0; d < n; d++) {
     dc.active[d] = 1;
+    // The mask a spawn gives a decoration with no layer named (Layer.resolveSubscriptions): the entities' bit.
+    dc.layerMask[d] = Layer.entitiesMask();
     dc.innerZ[d] = Math.floor(rng() * 17) - 8;
     if (d < attached) {
       // y-sort: each parent's decorations in a run, as addDecoration spawns them; else spread over the parents.
@@ -136,14 +188,7 @@ export async function setupDecorationCollect(opts = {}) {
   pre.renderQueueEnabled = true;
   pre._decorationZoomAlpha = 1;
   pre._customLayerCollectors = null;
-  pre.renderQueueMaxItems = n;
-  pre._renderableY = new Float32Array(n);
-  pre._renderableType = new Uint8Array(n);
-  pre._renderableIndex = new Int32Array(n);
-  pre._collectPx = new Float32Array(n);
-  pre._collectPy = new Float32Array(n);
-  pre._collectRotC = new Float32Array(n);
-  pre._collectRotS = new Float32Array(n);
+  pre.renderQueueMaxItems = maxItems;
   pre._renderableCount = 0;
 
   const frame = () => {
@@ -194,7 +239,8 @@ async function main() {
   const faces = await timeCase('faces', facesOpts);
   const report = {
     feature: 'decoration-collect',
-    functions: ['PreRenderWorker.collectVisibleDecorations', 'PreRenderWorker.collectRenderable', 'PreRenderWorker._writeRenderable'],
+    functions: ['PreRenderWorker.collectVisibleDecorations', 'PreRenderWorker.collectRenderable', 'PreRenderWorker._writeRenderable',
+      'preRenderCollect.collect_decorations'],
     decorations: n,
     attached: plain.s.attached,
     checksum: (plain.checksum ^ ysort.checksum ^ faces.checksum) >>> 0,
