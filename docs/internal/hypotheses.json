@@ -25623,16 +25623,17 @@
     },
     {
       "records": [
-        "R-1980"
+        "R-1980",
+        "R-2045"
       ],
       "refs": [],
       "id": "N-450",
       "title": "With pixel depth on, a sprite without a normal takes its drawn y as its depth foot, without its sortOffsetY: a world decoration hung at roof height is hidden by its own house",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "date": "2026-11-23",
-      "result": "",
+      "result": "Fixed 2026-11-28 (f59f2216): the painter's foot carried in the V tile offset; roofDecorationScene shows the tank and flag on six paths; pre-render +1.5 % at Predator light3d crowd 2.5",
       "statusText": "Found 2026-11-23 in the Buenos Aires package: water tanks, air conditioners, antennas and roof pots (class Accesorio) did not show since faces write their plane depth; worked around in the Editor de Barrios (each accessory is an upright face)",
       "next": "depthFloor of a sprite that is no face (pixelDepth.js, GLSL and WGSL) reads aInstXY.y, the drawn place; the painter's key reads y + sortOffsetY (preRenderWorker.js). Carry the foot (y + sortOffsetY) to the depth programs, for world-owned and attached decorations, with a parity test of the two orders",
       "aliases": [
@@ -44950,6 +44951,20 @@
       "title": "GitHub confirms: Predator crowd 2.5's logic 18-24 % slower from the esbuild bundle, level from the sources",
       "verdict": "note",
       "text": "GitHub confirms it (measure:all measure-esbuild-n172, v0.16.0 against the esbuild-only branch, kept as docs/internal/measures/2026-11-28-measure-esbuild-n172.json; the first measure:all with the scenes from each side's production bundle). Predator at crowd 2.5 from the bundles: logic +18.1 % on Linux x64 (7.23 -> 8.90 ms), +23.9 % on Linux ARM (5.40 -> 6.57, past its limit); from the sources level (-2.2 to +3.8 %): the build, not the code. Windows VMs ran crowd 2.5 at under 15 frames a second (few frames), unreadable there. Predator at crowd 0.4 and Boids from the bundles level."
+    },
+    {
+      "id": "R-2045",
+      "date": "2026-11-28",
+      "time": "00:36",
+      "timeFrom": "recorded",
+      "title": "Fixed: a decoration's depth foot is the painter's (sortOffsetY, the parent's line), on every draw path",
+      "verdict": "kept-hygiene",
+      "text": "Fixed by an agent on fix/n450 (e9047dab the repro scene roofDecorationScene, f59f2216 the fix), reviewed and merged (9c444974). A decoration that is no face now carries \"painter foot minus drawn y\" (world-owned: y + sortOffsetY; attached: the parent's unrounded sort line + sortOffsetY) as a 24-bit code in its row's V tile offset, the route faces already use, so no pack or queue layout changed; the depth programs (colour pass with and without faces, the G-buffer; GLSL and WGSL) add it to aInstXY.y. Covered on every layout: 15-float rows, split, indexed, Pixi keyed frames by row (WebGL) and from the pose stream (WebGPU). Not covered by design: faces keep their plane depth; a decoration with its own height map keeps its pixels' heights (the N-262 clamp's centre moves); no y-sorting layer, no painter foot. Gap noted: entity sprites that are not feet-anchored still stand at their pose y.\n- Captures (compareCaptures --vs main): roofDecorationScene 5 432 pixels apart on six paths (default, indexed=0, nearest=1, pack=pixi, WebGPU, WebGPU + pack=pixi), the tank and the flag visible after; dxCaptureScene (and hour=22), depthPairScene, faceLightScene 0 pixels apart, WebGL and WebGPU.\n- Tests: decorationDepthFoot.test.js (the real collect: painter order = depth order for world-owned and attached decorations on feet-anchored, centred and turned parents), preRenderEmitWasm parity with feet on, gbufDepth; node 3653/0, demos 149/0.\n- Speed: Predator light3d crowd 2.5, Radeon integrated GPU, window, 4 pairs against 6b160313: pre-render 11.01 -> 11.18 ms (+1.5 %), logic 10.86 -> 10.49, renderer 10.02 -> 9.77, physics 17.26 -> 17.30.",
+      "commits": [
+        "e9047dab",
+        "f59f2216",
+        "9c444974"
+      ]
     }
   ],
   "leads": [
