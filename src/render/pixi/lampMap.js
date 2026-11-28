@@ -131,7 +131,8 @@ export class PixiLampMap {
     // The frames in a row another layout than the map's has been asked for (LAMP_MAP_SETTLE_FRAMES).
     this.settleFrames = 0;
     this.mesh = null;
-    // E-395: the lamps' map over keyed stamp rows (WebGL): its two halves' meshes and host, and a strip a ring geometry.
+    // E-395: the lamps' map over keyed stamp rows (either backend): its two halves' meshes and host, and a strip a ring
+    // geometry.
     this.keyedMesh = null;
     this.keyedMeshCeil = null;
     this.keyedHost = null;
@@ -648,7 +649,7 @@ export class PixiLampMap {
   }
 
   /**
-   * E-395: draw for keyed stamp rows (WebGL): their light's z the tile + 1 (commitKeyedCasterRows), the cards'
+   * E-395: draw for keyed stamp rows (either backend): their light's z the tile + 1 (commitKeyedCasterRows), the cards'
    * strip over the caster batch's keyed ring geometry (one a ring slot, made once), the two halves' keyed programs
    * (lampMapVertex over spriteIndexedVertex's keyed stamp rows) sharing the full cards' uniform groups, then the volumes.
    * No columns: keyed rows are sent only while no render casts them (_ensureKeyedCasters).

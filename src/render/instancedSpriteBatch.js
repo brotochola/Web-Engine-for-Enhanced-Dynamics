@@ -708,8 +708,8 @@ export class InstancedSpriteBatch {
     this._staticsSource = null;
     this._staticsHeight = 0;
     // E-395: the keyed slots' texture and scale (three floats a slot), copied from the keyed updates (the renders' columns
-    // over keyed rows pick their rows by them). N-417: a keyed WebGL batch keeps it from its first frame (made below with
-    // the statics texture), so it sees every update the statics took: begun when something asked, it waited for updates
+    // over keyed rows pick their rows by them). N-417: a keyed batch keeps it from its first frame (made below with the
+    // statics), so it sees every update the statics took: begun when something asked, it waited for updates
     // that never came for a slot that did not change again (FULL has pre-render write every row's statics into the queue,
     // not send them). And it read the updates through their float views (above), which were set to empty arrays here after
     // them: every value it copied was NaN, so the renders' columns over keyed rows found no render (texture 0).
@@ -722,9 +722,15 @@ export class InstancedSpriteBatch {
     this._columnTexCount = -1;
     this._columnSlot = new Uint8Array(0);
     this._indexedShader = this.indexed ? this._makeIndexedShader(labelName) : null;
-    if (this.keyed && this._staticsHeight > 0) {
-      this._staticsMirror = new Float32Array(this._staticsHeight * STATICS_TEX_ROW * 3);
-      this._columnSlot = new Uint8Array(this._staticsHeight * STATICS_TEX_ROW);
+    // E-562: a slot a statics row on either backend (the texture's rows on WebGL, the storage buffer's on WebGPU). A
+    // WebGPU batch kept none, so in an atlas with maps its shadow maps took pre-render's full caster rows
+    // (shadowMaps._ensureKeyedCasters): 88 bytes a caster up each frame against a keyed row's 28 (a lamp's 44).
+    const mirrorSlots = !this.keyed || this._staticsSource === null ? 0
+      : this._staticsHeight > 0 ? this._staticsHeight * STATICS_TEX_ROW
+        : (this._rowStatics.length / GPU_INDEXED_STATIC_FLOATS) | 0;
+    if (mirrorSlots > 0) {
+      this._staticsMirror = new Float32Array(mirrorSlots * 3);
+      this._columnSlot = new Uint8Array(mirrorSlots);
     }
     this._rowShader = this.posesByRow ? this._makeRowShader(labelName) : null;
     this.shadowShader = null;
@@ -2482,11 +2488,11 @@ export class InstancedSpriteBatch {
 
   /**
    * E-395: whether the batch keeps a CPU copy of each keyed slot's texture and scale (staticsMirror), for the renders'
-   * columns over keyed caster rows: a keyed batch with a statics texture (WebGL) does, from its first frame (N-417).
+   * columns over keyed caster rows: a keyed batch does, from its first frame (N-417), on either backend (E-562).
    * @returns {boolean}
    */
   enableStaticsMirror() {
-    return this.keyed && this._staticsHeight > 0 && this._staticsMirror.length > 0;
+    return this.keyed && this._staticsMirror.length > 0;
   }
 
   /** E-395: the keyed slots' texture and scale (textureId, scaleX, scaleY a slot), or null without the copy. */

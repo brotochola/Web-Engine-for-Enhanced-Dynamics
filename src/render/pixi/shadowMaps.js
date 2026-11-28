@@ -440,9 +440,9 @@ export class PixiShadowMaps {
   }
 
   /**
-   * E-395: the sun map's mesh over keyed caster rows (WebGL), made on first use: sunMapVertex over spriteIndexedVertex's
-   * keyed rows (the statics by key from the entity batch's texture; the caster's entity from its key, casterEntityId), the
-   * map's fragment program, uniforms and depth state. Null where the entity batch keeps no keyed frames.
+   * E-395: the sun map's mesh over keyed caster rows (either backend), made on first use: sunMapVertex over
+   * spriteIndexedVertex's keyed rows (the statics by key from the entity batch's statics; the caster's entity from its key,
+   * casterEntityId), the map's fragment program, uniforms and depth state. Null where the entity batch keeps no keyed frames.
    */
   _sunMapKeyedMeshFor(batch) {
     if (this.sunMapKeyedMesh !== null) return this.sunMapKeyedMesh;

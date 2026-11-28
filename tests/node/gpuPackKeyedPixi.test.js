@@ -332,3 +332,35 @@ test('a scene whose renderer turns indexed sprites off keeps split frames on eit
     assert.equal(px.entitiesBatch.split, true, backend);
   }
 });
+
+// E-562: the keyed statics' CPU copy (E-395's staticsMirror) on either backend, a slot for every key, filled from the keyed
+// updates. The maps draw pre-render's keyed caster rows only with it in an atlas with maps (shadowMaps._ensureKeyedCasters):
+// a WebGPU batch kept none, so its sun and lamp rows went up whole, 88 bytes a caster against a keyed row's 28 and 44.
+for (const backend of ['webgl', 'webgpu']) test(`a keyed batch keeps the statics' CPU copy (${backend}): a slot a key, its texture and scale`, async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const scene = await quietly(() => pixiScene(backend));
+  const layout = scene.renderQueueMemory.layout;
+  await quietly(() => bindPixi(px, scene, backend === 'webgpu'));
+  const batch = px.entitiesBatch;
+  assert.equal(batch.keyed, true);
+  assert.equal(batch.enableStaticsMirror(), true, 'the copy is kept');
+  assert.ok(batch.staticsMirror.length >= layout.pixiKeyRows * 3, 'three floats for every key');
+  const r = rng(562);
+  const world = makeWorld(r);
+  const changedAt = new Uint32Array(MAX).fill(1);
+  const b = emitFrame(px, scene.renderQueueMemory, world, changedAt, 1, MAX - 100, r);
+  px.lastReadFrame = 1;
+  px._setReadBuffer(b);
+  px.updateSpritesFromRenderQueue();
+  const q = px.renderQueueBuffers[b];
+  const M = batch.staticsMirror;
+  let checked = 0;
+  for (let i = 0; i < MAX - 100; i++) {
+    if (q.key[i] === KEY_NONE) continue;
+    const key = (q.key[i] & ~GPU_KEYED_CHANGED) >>> 0;
+    const want = [q.textureId[i], Math.fround(q.scaleX[i]), Math.fround(q.scaleY[i])];
+    assert.deepEqual(Array.from(M.subarray(key * 3, key * 3 + 3)), want, `row ${i}: key ${key}'s copy`);
+    checked++;
+  }
+  assert.ok(checked > MAX / 2, `${checked} keys checked`);
+});

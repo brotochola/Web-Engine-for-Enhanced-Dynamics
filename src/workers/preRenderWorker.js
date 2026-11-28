@@ -4935,7 +4935,7 @@ class PreRenderWorker extends AbstractWorker {
     /**
      * E-191 step 2: whether Pixi's statics texture holds a queue frame near enough to the one being written
      * (KEYED_CASTERS_LAG) for keyed caster rows: Pixi stores the frame of each keyed upload in the keyed header's LIVE
-     * word once it draws such rows. A pause, WebGPU or a scene not keyed leaves the word stale or zero.
+     * word once it draws such rows. A pause or a scene not keyed leaves the word stale or zero.
      */
     _keyedCastersLive() {
         if (!this._keyedFrames || this._keyedKeyBase <= 0 || !this._keyedCastersAllowed || this._shadowFramesOn) return false;
