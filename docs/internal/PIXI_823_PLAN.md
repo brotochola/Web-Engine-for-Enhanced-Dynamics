@@ -1,6 +1,7 @@
 # Pixi 8.23, and what PixiJS 3D's code suggests: a pseudo-plan (nice to have)
 
-Status: backlog, no rush (owner, 2026-11-17), not scheduled. Written from a review of PixiJS 3D's open beta and of
+Status: §2 done on branch `dx/pixi823` (2026-11-28): Pixi 8.23.0 vendored, see "Done" at the end of §2; the Pixi
+worker's STEP_MS on both backends is measured after the merge. Written from a review of PixiJS 3D's open beta and of
 Pixi 8.20.1 → 8.23.0 against `main` at `ef81812d` (0.14.0). Register rows: DX-PIXI823 (`REVIEW_PLAN.md#DX-PIXI823`),
 N-270, E-516, E-517; it adds to E-464, N-185, E-148, E-152, N-95 and E-460. Record: R-1315. Test items from the
 commits' lessons (§4): `REVIEW_PLAN.md` M14 to M16.
@@ -115,6 +116,69 @@ polyfill); the WebGL upload changes measured ABAB (updates land at the call now,
    (E-464); the Pixi worker's STEP_MS ABAB on WebGL and WebGPU in the owner scenes (gpuParticlesStress,
    keyedPackStress, Predator `?light3d=1`); Android WebGPU if a phone is at hand.
 5. `dist/` only through the release flow.
+
+### Done (2026-11-28, branch `dx/pixi823`)
+
+Four commits after `pixi.js` 8.23.0 in `package.json`: the vendored Pixi built from 8.23's `lib/` with its patches
+ported, then three engine fixes 8.23 needed, each with its test.
+
+**The build's patches.** Five lose their anchors because 8.23 does the same, read in its `lib/`: E-152's `BindGroup`
+(8.23 keeps `_resourceKeys` and two numeric keys, #12229, #12278), `GpuEncoderSystem` (bind groups, vertex buffers and a
+group's resources by index, #12229) and `BindGroupSystem` (a group keeps its cache entry, #12278, #12288); N-95's
+integer formats (#12230); E-464's uniform copy (`queue.writeBuffer`, no submit of its own, #12345). Kept as they were:
+`GpuMeshAdapter`, `PipelineSystem`'s pipeline per geometry, `Geometry`, the six pass-garbage patches, E-475's parallel
+links, N-458's lost boot. Changed or new:
+
+- **The WebGL sync stub (E-148)** checks each group slot by its `_resourceKeys` array (a new one when a binding is
+  added) instead of `_weedKeys`; a group keyed by name (8.23's `layout`, #12293) binds under its layout names, one keyed
+  by number under the shader's `_uniformBindMap`; a uniform block is bound by name to the slot its program fixed at link
+  (#12307), only when the program has it; a destroyed group binds nothing, as upstream. Its test keeps the GL calls equal
+  to 8.23's polyfill, by number and by name.
+- **`BindGroup._touchKeys`** without the arrow over `this` that made V8 allocate a context at every call, cached or not
+  (pixijs issue #12391, PR #12460 open): drop the patch once it ships.
+- **SST-7's `weedPipelineAhead`** saves 8.23's `_colorFormats` (rewritten in place by `setRenderTarget`) and
+  `_stencilReadOnly`; it saved `_colorTargetCount` and `_colorFormat`, which 8.23 no longer has. The anchors matched, so
+  the build did not catch it.
+- **E-475's split of `generateProgram`**: 8.23's finish half reads `transformFeedbackVaryings` (the blocks' first slot,
+  #12307), declared in the start half, so every WebGL link threw a ReferenceError. Found by `pixiParallelLinks.test.js`;
+  ESLint's `no-undef` over the whole bundle now finds only browser globals.
+
+**Engine fixes 8.23 needed.**
+
+- **WebGPU programs' layouts as arrays** (`pixiGroupsLayout`, `lightTilesGpuProgram`). Pixi types a `ProgramLayout` as
+  an array; 8.23's encoder sets groups 0 to `layout.length`, so with the engine's objects no group was set ("No bind
+  group set at group index 0", every WebGPU capture blank). `wgslLayoutDeclares.test.js` runs 8.23's encoder on the
+  engine's programs.
+- **`pinGpuTexture`** gives Pixi's bind group cache a new id after a pin: 8.23 keeps a group's GPU bind group on the
+  group (`_gpuEntry`), under resource ids a pin of the same size does not change, so emptying the hash no longer made
+  it look up a bind group with the new view.
+- **`gpuParticleBatch.js`** drops the hand flush: 8.23 sends each `Buffer.update` at the call on WebGL as on WebGPU
+  (#12316); a wrap across the ring end is two updates. Its test runs 8.23's own `GlBufferSystem`.
+
+**Checks.** `test:node` 3653/3653 (each commit green but the package bump alone, whose six red tests compared the
+8.20.1 bundle with 8.23's modules). Captures against `main` (`compareCaptures.mjs --vs main --headless`), 921 600
+pixels each, WebGL and WebGPU: dxCaptureScene by day and at hour 22, faceLightScene, light3dCompareScene (`still=1`),
+tilemapStressScene, volumeStressScene (`still=1`), roofDecorationScene (the attached decorations): 0 pixels on both
+backends. N-270's additive alpha (#12290) changes nothing on the canvas, as R-1759 found. sunStreetScene (`paused=1`,
+`cars=0`) differs only where things move (the clouds, eight pedestrians and their shadows, the panel's millisecond
+digits). GPU particles move with the clock (gpuGalaxyScene: the branch against itself differs as much as against
+main, about 185 000 pixels), so they were compared in lockstep (`lockstepVisual.html`, the same injected steps on both
+sides, as R-0658): gpuParticlesStressScene `sort=1` and `sort=0` (150 steps) and gpuGalaxyScene (262 144 particles, 90
+steps), 0 pixels and equal poses on both backends. `test:demos` 149/149; the bundles built from the branch:
+`test:bundle` OK on all 8, `test:node:bundle` 374/374 on each (`dist/` is rebuilt at the merge).
+
+**Garbage** (E-152's probe: `heapSampleWorkers.mjs`, gpuParticlesStressScene `columns=30`, the Pixi worker, 20 s
+warm-up, 8 s sample, main's `src/` against the branch, two runs a side, 2026-11-28 02:14 to 02:18): WebGPU main 310 and
+309 KB/s (5 291 and 5 263 bytes a frame, 213 KB/s of them in `_setShaderBindGroups`), branch 101 and 104 KB/s (1 727
+and 1 762 bytes a frame), no bind group site left. WebGL main 48.8 and 43.6 KB/s, branch 49.9 and 53.4: the same
+sites, none in the shader sync.
+
+**Size.** `src/vendor/pixi.min.js` 451 009 → 487 011 bytes (+8.0 %), gzip 130 820 → 141 325.
+
+**Left open.** The Pixi worker's STEP_MS ABAB on WebGL and WebGPU (owner, after the merge); `webgpuFrameRecorder`
+submits (E-464's are upstream now); the engine's own WebGPU device asks only the two sampler limits
+(`requestGpuDevice.js`), where upstream's `requestDevice` asks `maxBufferSize` and `maxStorageBufferBindingSize` too
+(8ee5e44): the indexed sprites' statics stay at the 128 MiB default.
 
 ## 3. Ideas from PixiJS 3D's code
 
