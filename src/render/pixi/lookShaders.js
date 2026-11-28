@@ -186,7 +186,8 @@ export class PixiLookShaders {
 
     // (none): keep density RT, skip fullscreen frag, show raw cl.rt
     if (!fragmentSource) {
-      if (!cl.compute && !cl.rt) this.worker.customLayers._ensureDensityRT(cl);
+      // E-525: the sprite shows rt from now on: one of the layer's own in place of a look's shared one.
+      if (!cl.compute && (!cl.rt || cl.rtShared)) this.worker.customLayers._ensureDensityRT(cl, true);
       this._destroyPostProcess(cl);
       cl.shaderBypass = true;
       if (cl.fillBatch && cl.rt && !cl.displaySprite) {

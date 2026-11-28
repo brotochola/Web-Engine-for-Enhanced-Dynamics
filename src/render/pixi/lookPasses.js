@@ -6,7 +6,18 @@
  * the layer's own picture, or the frame under a SCREEN layer. Every target is laid out as that picture (no V flip).
  *
  * The owner of the passes is a custom layer's record (customLayers.js) or a SCREEN layer's (screenLayers.js): it carries
- * `earlierPasses` (null: a one-pass look, whose draw is untouched), `shader` (the last pass's) and `scaleMode`.
+ * `earlierPasses` (null: a one-pass look, whose draw is untouched), `shader` (the last pass's), `scaleMode` and
+ * `sharesTargets`.
+ *
+ * E-525: the targets look draws take turns on (takeTarget, giveTarget). A sprite or density look layer's picture
+ * (customLayers.js, cl.rt) is cleared and read by its look in the pass that draws it, an earlier pass's target by the pass
+ * after it, a SCREEN pass's output by the next SCREEN pass: layers of one size draw one after the other into one target
+ * where each had its own (8.3 MB a target at 1920 x 1080). A slot says which of the targets of a size a draw takes, so
+ * that a draw never reads what it draws into: 0 a layer's picture and the SCREEN chain's first output, 1 and 2 the
+ * earlier passes in turn, 3 the SCREEN chain's second output. An owner whose passes' targets are read later in the frame
+ * (a MESH layer's look on the stage) keeps targets of its own (`sharesTargets` false). A canvas resize gives the old
+ * size's back and takes the new one's (customLayers.resizeRTs; the SCREEN chain at its next present). A lost WebGL context
+ * or WebGPU device restarts the scene with new workers (N-301): the shared targets go with the old renderer.
  */
 import { Layer } from '../../core/layer.js';
 import { RenderTexture, Texture } from '../../vendor/pixi.min.js';
@@ -46,6 +57,45 @@ export class PixiLookPasses {
   /** @param {object} worker the PixiRenderer that owns this (its renderer and look shaders) */
   constructor(worker) {
     this.worker = worker;
+    // E-525: the shared targets, each { rt, width, height, slot, holders }: made on the first take, destroyed when the last
+    // holder gives it back.
+    this.shared = [];
+  }
+
+  /**
+   * E-525: the shared target of width x height in `slot`, made if there is none; the caller holds it until giveTarget.
+   * width and height are compared as given: a caller asks for the size it would have made.
+   * @returns {RenderTexture}
+   */
+  takeTarget(width, height, slot) {
+    const shared = this.shared;
+    for (let i = 0; i < shared.length; i++) {
+      const e = shared[i];
+      if (e.slot === slot && e.width === width && e.height === height) {
+        e.holders++;
+        return e.rt;
+      }
+    }
+    const rt = RenderTexture.create({ width, height });
+    shared.push({ rt, width, height, slot, holders: 1 });
+    return rt;
+  }
+
+  /**
+   * E-525: a shared target given back by one holder; the last one's destroys it. Each holder takes its own draws off it
+   * first (unbind); a SCREEN pass that read it without holding it is unbound by its chain (screenLayers.js).
+   */
+  giveTarget(rt) {
+    const shared = this.shared;
+    for (let i = 0; i < shared.length; i++) {
+      const e = shared[i];
+      if (e.rt !== rt) continue;
+      if (--e.holders > 0) return;
+      shared.splice(i, 1);
+      this.worker._releaseTextureBindGroups(rt);
+      rt.destroy(true);
+      return;
+    }
   }
 
   /**
@@ -106,7 +156,7 @@ export class PixiLookPasses {
     let input = source;
     for (let i = 0; i < passes.length; i++) {
       const pass = passes[i];
-      pass.target = this._target(owner, pass, rtPixelSize(width, pass.resolution), rtPixelSize(height, pass.resolution));
+      pass.target = this._target(owner, pass, i, rtPixelSize(width, pass.resolution), rtPixelSize(height, pass.resolution));
       const out = pass.target.source;
       if (out.scaleMode !== mode) out.scaleMode = mode;
       this.bind(pass.shader, input, pass.reads.source ? source : null);
@@ -156,24 +206,34 @@ export class PixiLookPasses {
     if (passes === null) return;
     this.unbind(owner);
     for (let i = 0; i < passes.length; i++) {
-      if (passes[i].target) {
-        this.worker._releaseTextureBindGroups(passes[i].target);
-        passes[i].target.destroy(true);
-      }
+      if (passes[i].target) this._letGo(owner, passes[i].target);
       passes[i].mesh.destroy(true);
     }
     owner.earlierPasses = null;
   }
 
-  /** A pass's target of width x height: the one it has when it is that size, else a new one (the old unbound first). */
-  _target(owner, pass, width, height) {
+  /**
+   * The `index`th pass's target of width x height: the one it has when it is that size, else another (the old one unbound
+   * first). E-525: one of the shared ones, slots 1 and 2 in turn (each pass reads the one before it and the owner's
+   * picture, slot 0), when the owner's look reads them in the pass that draws them.
+   */
+  _target(owner, pass, index, width, height) {
     const rt = pass.target;
     if (rt && rt.width === width && rt.height === height) return rt;
     if (rt) {
       this.unbind(owner);
-      this.worker._releaseTextureBindGroups(rt);
-      rt.destroy(true);
+      this._letGo(owner, rt);
     }
-    return RenderTexture.create({ width, height });
+    return owner.sharesTargets ? this.takeTarget(width, height, 1 + (index & 1)) : RenderTexture.create({ width, height });
+  }
+
+  /** A pass's target let go of: a shared one given back, one of the owner's own destroyed. */
+  _letGo(owner, rt) {
+    if (owner.sharesTargets) {
+      this.giveTarget(rt);
+      return;
+    }
+    this.worker._releaseTextureBindGroups(rt);
+    rt.destroy(true);
   }
 }
