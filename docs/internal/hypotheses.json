@@ -20872,19 +20872,20 @@
     {
       "id": "E-492",
       "title": "At Predator crowd 2.5 zoom 1 Pixi scatters about 9 500 statics updates a keyed frame while pre-render full-marks only about 1 500 sprites: most scatters may be redundant (texture-only or animation updates, or decorations and particles counted in)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-16 by the N-238 agent (probe3: every sprite's enter, leave and mark frames, and Pixi's keyed draws)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "N-238 agent's probe, crowd 2.5, zoom 1, hour 22.",
+      "result": "Kept 2026-11-28: held-copy compare in pack_keyed and particles keyed by slot; keyed upload 2.07 -> 0.84 ms on WebGL in a probe run; ABAB neutral",
       "next": "Break the 9 500 down by kind (full statics, texture word, decorations, particles, GPU-particle proxies) with the probe; then send each only when its words changed; Pixi's scatter time and the GPU's scatter draw before and after.",
       "refs": [],
       "aliases": [
         "statics scatter count"
       ],
       "records": [
-        "R-1232"
+        "R-1232",
+        "R-2058"
       ]
     },
     {
@@ -45252,6 +45253,22 @@
         "bcb41864",
         "35749632",
         "8306af79"
+      ]
+    },
+    {
+      "id": "R-2058",
+      "date": "2026-11-28",
+      "time": "04:51",
+      "timeFrom": "recorded",
+      "title": "Kept as hygiene: the keyed pack sends only rows whose words the texture does not hold, CPU particles keyed by slot; statics updates 5 200-6 200 -> about 1 260 a keyed frame at Predator crowd 2.5 zoom 1; ABAB neutral on both backends",
+      "verdict": "kept-hygiene",
+      "text": "An agent built it on opt/e492 (d274361a keyedScatterProbe, efa0bde7 particleCaptureScene, ff535ad6 the held compare, f822e609 particles keyed by slot, f1c20c39 the column copy's flags, 5ebd2cd2 main merged), merged to main.\n- **The premise was off:** the \"about 9 500 statics updates\" matched the drawn count (9 100 to 14 900 instances a keyed frame). Real updates (keyedScatterProbe, Predator crowd=2.5 zoom=1 hour=22, headed, 8 to 16 s): 5 200 to 6 200 a keyed frame in the opening particle burst, about 270 to 340 later. By kind before: keyless CPU particles 4 660 sent (4 641 changed their slot's words, 3 625 carried words another keyless row sent the frame before: their draw slot moved, the particle did not change); sprite full updates 833 (485 changed, all in the texture word only; 348 the texture already held, 335 of them resends of the previous keyed frame's marks); sprite texture updates 463 (226 already held); glows, bullets, trails, decorations about 10; GPU-particle proxies never reach the scatter. WebGPU the same (6 204 full updates, particles 5 282).\n- **Built:** Pixi's keyed pack (wasm/gpuPack.c pack_keyed, every form) compares each row it would send with a copy of what the texture holds for that key (a pixiKeyHeld region, 48 bytes a key, zeroed with the texture): all words equal, nothing sent; only the texture word differs, an 8-byte texture update instead of 64; the copy follows the renderer's order (rows, then texture words); keyedPack declines a frame without the copy. In keyed scenes CPU particle rows take key P_KEY_BASE + slot, always marked, so the compare drops the unchanged ones (Predator's keyBase 77 633 -> 87 633). setColumnTextures flags E-549's column copy from the held copy (repeated updates no longer come).\n- **After** (merged tree): WebGL 668 full and 590 texture updates a keyed frame (655 keyed particles, all changed; sprite full updates 0.2; none the texture already held); WebGPU 732 and 634. Probe timing (one run a side, noisy): WebGL scatter call 0.296 -> 0.074 ms a frame, GPU scatter draw 0.099 -> 0.059, keyed upload 2.07 -> 0.84; WebGPU scatter call 0.290 -> 0.197, keyed upload 1.98 -> 2.52 in time mode (5.03 -> 1.81 in count mode).\n- **ABAB** (runPredatorAbab, Predator crowd=2.5 zoom=1 hour=22, 28b14357 against 5ebd2cd2, 4 pairs, 2026-11-28 04:35 to 04:43 by the files): WebGL NEUTRAL (below floor), renderer 0.827 -> 0.794 ms, no worker worse; WebGPU NEUTRAL (below floor), renderer 1.185 -> 1.203. Kept as hygiene: fewer bytes up each keyed frame, no worker worse.\n- **Pictures** --vs main, both backends: dxCaptureScene (and hour=22), depthPairScene, faceLightScene pack=pixi, particleCaptureScene: 0 pixels. Tests: node 3691/0, demos 149/0 on the branch; keyedStaticsMirror.test.js's new case fails without f1c20c39.\n- Left: the ASan harness tests/asan/kernels/gpuPack.mjs has the held region but was not run.",
+      "commits": [
+        "d274361a",
+        "efa0bde7",
+        "ff535ad6",
+        "f822e609",
+        "f1c20c39"
       ]
     }
   ],
