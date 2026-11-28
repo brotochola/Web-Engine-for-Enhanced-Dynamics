@@ -260,3 +260,69 @@ test('E-432: each tile\'s stack holds the layers with a tile there, top first, t
   assert.equal(quadsOf([bottom, top]), 2);
   assert.equal(quadsOf([middle, top]), 1);
 });
+
+/** N-466: the stack packer as it was (a loop over rows around one over columns), the parity reference. */
+function packGidStacksNested(layers, mapW, pageRect) {
+  const { pageW, pageH } = gidPageSize(pageRect);
+  let depth = 0;
+  for (let y = 0; y < pageH; y++) {
+    const row = (pageRect.minY + y) * mapW + pageRect.minX;
+    for (let x = 0; x < pageW; x++) {
+      let n = 0;
+      for (let l = 0; l < layers.length; l++) if (layers[l][row + x]) n++;
+      if (n > depth) depth = n;
+    }
+  }
+  const out = new Uint32Array(pageW * pageH * depth);
+  const plane = pageW * pageH;
+  for (let y = 0; y < pageH; y++) {
+    const row = (pageRect.minY + y) * mapW + pageRect.minX;
+    for (let x = 0; x < pageW; x++) {
+      let at = y * pageW + x;
+      for (let l = layers.length - 1; l >= 0; l--) {
+        const raw = layers[l][row + x] >>> 0;
+        if (raw === 0) continue;
+        out[at] = ((raw & ~TILED_GID_MASK) | (raw & TILED_GID_MASK) | (l << TILEMAP_GID_STACK_LAYER_SHIFT)) >>> 0;
+        at += plane;
+      }
+    }
+  }
+  return { depth, bytes: new Uint8Array(out.buffer) };
+}
+
+test('N-466: the stack packer\'s one loop over the page\'s tiles packs what the loops over rows and columns did', async () => {
+  const assertSame = (layers, mapW, page) => {
+    const got = packGidStacksRgba8(layers, mapW, page);
+    const want = packGidStacksNested(layers, mapW, page);
+    assert.equal(got.depth, want.depth);
+    assert.deepEqual(got.bytes, want.bytes);
+  };
+  // Predator's map: 416 x 208, 7 layers, one page.
+  const { readFile } = await import('node:fs/promises');
+  const json = JSON.parse(await readFile(new URL('../../demos/img/tilemap/2.json', import.meta.url), 'utf8'));
+  const predatorLayers = json.layers.filter((l) => l.type === 'tilelayer').map((l) => Int32Array.from(l.data));
+  for (const page of listGidPages(json.width, json.height)) assertSame(predatorLayers, json.width, page);
+  // Random sparse layers with flip flags; pages inside the map (each edge off the map's), one tile wide or high, whole.
+  let seed = 12345;
+  const rand = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+  const w = 37;
+  const h = 23;
+  const layers = [];
+  for (let l = 0; l < 5; l++) {
+    const data = new Int32Array(w * h);
+    for (let i = 0; i < data.length; i++) {
+      if (rand() < 0.4) data[i] = ((1 + ((rand() * 900) | 0)) | (rand() < 0.3 ? TILED_FLIP_H : 0) | (rand() < 0.2 ? TILED_FLIP_D : 0)) | 0;
+    }
+    layers.push(data);
+  }
+  for (const page of [
+    { minX: 3, minY: 2, maxX: 30, maxY: 19 },
+    { minX: 5, minY: 0, maxX: 6, maxY: 23 },
+    { minX: 0, minY: 7, maxX: 37, maxY: 8 },
+    { minX: 0, minY: 0, maxX: 37, maxY: 23 },
+    ...listGidPages(w, h, 10),
+  ]) {
+    assertSame(layers, w, page);
+    assertSame(layers.slice(0, 1), w, page);
+  }
+});

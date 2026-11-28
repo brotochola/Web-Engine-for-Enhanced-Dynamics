@@ -236,8 +236,8 @@ test('fetch failure message names the asset and HTTP status', () => {
 });
 
 test('E-177: keyed sprite frames where Pixi packs, unless indexedSprites is off', async () => {
-  const { keyedSpritesEnabled, keyedStaticsMax, keyedDecorationsFit, keyedLiquidFunFit, INDEXED_SPRITES_MAX_WEBGL,
-    INDEXED_SPRITES_MAX_WEBGPU } = await import('../../src/render/rendererBackend.js');
+  const { keyedSpritesEnabled, keyedStaticsMax, keyedDecorationsFit, keyedLiquidFunFit, keyedParticlesFit,
+    INDEXED_SPRITES_MAX_WEBGL, INDEXED_SPRITES_MAX_WEBGPU } = await import('../../src/render/rendererBackend.js');
   const config = (renderer, packGpuSprites = 'pixi') => ({ renderer, preRender: { packGpuSprites } });
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }), 40000, 20000), true);
   // E-187: on WebGPU too, the scatter a compute pass over the statics storage buffer.
@@ -252,6 +252,12 @@ test('E-177: keyed sprite frames where Pixi packs, unless indexedSprites is off'
   assert.equal(keyedDecorationsFit(INDEXED_SPRITES_MAX_WEBGPU, 10, 1, INDEXED_SPRITES_MAX_WEBGPU), false, 'the backend\'s');
   assert.equal(keyedLiquidFunFit(INDEXED_SPRITES_MAX_WEBGPU, 0, 10, 1), true);
   assert.equal(keyedLiquidFunFit(INDEXED_SPRITES_MAX_WEBGPU, 0, 10, 1, INDEXED_SPRITES_MAX_WEBGPU), false);
+  // E-492: the particle slots past the keyed decorations and LiquidFun particles, when the backend's keys hold them all.
+  assert.equal(keyedParticlesFit(INDEXED_SPRITES_MAX_WEBGPU, 0, 10, 1), true);
+  assert.equal(keyedParticlesFit(INDEXED_SPRITES_MAX_WEBGPU, 0, 10, 1, INDEXED_SPRITES_MAX_WEBGPU), false);
+  assert.equal(keyedParticlesFit(1000, 500, 0, 1), false, 'no particles, none keyed');
+  assert.equal(keyedParticlesFit(1000, 500, 100, INDEXED_SPRITES_MAX_WEBGL - 1600), true, 'up to the keys');
+  assert.equal(keyedParticlesFit(1000, 500, 100, INDEXED_SPRITES_MAX_WEBGL - 1599), false, 'one past them');
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }, 'prerender'), 40000, 20000), false, 'pre-render packs');
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl', indexedSprites: false }), 40000, 20000), false, 'switched off');
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }), INDEXED_SPRITES_MAX_WEBGL, 1), false, 'past the texture');

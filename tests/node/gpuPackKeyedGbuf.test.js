@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import { GPU_GBUF_FLOATS, GPU_INDEXED_SLOT_FLOATS, GPU_POSE_FLOATS, GPU_SPACE_WORLD, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import {
-  GPU_KEYED_CHANGED, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_ONLY, GPU_KEYED_TEX_WORDS, bindGpuPack, packKeyedRowsByRowWasm,
-  packKeyedRowsWasm,
+  GPU_KEYED_CHANGED, GPU_KEYED_HELD_WORDS, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_ONLY, GPU_KEYED_TEX_WORDS, bindGpuPack,
+  packKeyedRowsByRowWasm as packByRowHeld, packKeyedRowsWasm as packHeld, resetKeyedHeld,
 } from '../../src/render/gpuPackClient.js';
 import { GBUF_MAX_BANDS, writeGbufWords } from '../../src/render/gbufWord.js';
 import { run as runKeyedMicrobench } from '../bench/gpuPackKeyedMicrobench.mjs';
@@ -25,6 +25,15 @@ const KEY_BASE = ENTITIES + DECORATIONS;
 const KEY_NONE = 0xffffffff;
 const KEY_FLAGS = (GPU_KEYED_CHANGED | GPU_KEYED_TEX_ONLY) >>> 0;
 const Z_VALUES = [-32768, -5, 0, 0, 0, 3, 7, 32767];
+// E-492: the held words' keys (keyBase and a slot a row). Every pack here starts from held words no row matches
+// (resetKeyedHeld's unknown), so each sends what it would without them: what these tests compare is the words.
+const HELD_KEYS = KEY_BASE + N;
+const fromUnknown = (pack) => (b, q, ctx, at, slots, keyed, cap) => {
+  resetKeyedHeld(b.buffer, keyed, true);
+  return pack(b, q, ctx, at, slots, keyed, cap);
+};
+const packKeyedRowsWasm = fromUnknown(packHeld);
+const packKeyedRowsByRowWasm = fromUnknown(packByRowHeld);
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -117,6 +126,7 @@ async function setup(seed) {
   const updates = alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS);
   const texUpdates = alloc(Uint32Array, N * GPU_KEYED_TEX_WORDS);
   const gbufOut = alloc(Float32Array, N * GPU_GBUF_FLOATS);
+  const held = alloc(Uint32Array, HELD_KEYS * GPU_KEYED_HELD_WORDS);
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
   const indexByte = (top = (top + 63) & ~63);
@@ -125,7 +135,10 @@ async function setup(seed) {
   top += 16 + 16 * 8;
   if (top > buf.byteLength) throw new Error('the test memory is too small');
   const b = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
-  return { rng, q, b, order, zOrder, flags, selfShadow, zIndex, pose, rows, slots, updates, texUpdates, gbufOut };
+  return {
+    rng, q, b, order, zOrder, flags, selfShadow, zIndex, pose, rows, slots, updates, texUpdates, gbufOut,
+    held: { heldByte: held.byteOffset, heldKeys: HELD_KEYS },
+  };
 }
 
 const u32 = (a, n) => new Uint32Array(a.buffer, a.byteOffset, n);
@@ -149,7 +162,7 @@ function packOutput(s, n, byRow, keyed) {
 function checkWords(s, label, { opts, cap = N, byRow = false, texUpdates = false, self, z, kernelZ = z }) {
   const keyed = {
     keyBase: KEY_BASE, updatesByte: s.updates.byteOffset, updates: 0,
-    texUpdatesByte: texUpdates ? s.texUpdates.byteOffset : 0, texUpdates: 0,
+    texUpdatesByte: texUpdates ? s.texUpdates.byteOffset : 0, texUpdates: 0, ...s.held,
   };
   const pack = byRow ? packKeyedRowsByRowWasm : packKeyedRowsWasm;
   const first = byRow ? s.rows : s.pose;
@@ -262,7 +275,7 @@ test('the keyed pack writes writeGbufWords\' words and bands, bit for bit, on bo
 test('a G-buffer column the pack cannot read declines the words, not the frame', async () => {
   const s = await setup(389);
   const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N, type: s.q.type };
-  const base = { keyBase: KEY_BASE, updatesByte: s.updates.byteOffset, updates: 0 };
+  const base = { keyBase: KEY_BASE, updatesByte: s.updates.byteOffset, updates: 0, ...s.held };
   const pack = (cols) => {
     const keyed = { ...base, ...cols };
     s.gbufOut.fill(-7);
@@ -313,7 +326,10 @@ test('the words in the statics: each sent slot carries its word, no drawn instan
   for (const byRow of [false, true]) {
     const pack = byRow ? packKeyedRowsByRowWasm : packKeyedRowsWasm;
     const first = byRow ? s.rows : s.pose;
-    const base = { keyBase: KEY_BASE, updatesByte: s.updates.byteOffset, updates: 0, texUpdatesByte: s.texUpdates.byteOffset, texUpdates: 0 };
+    const base = {
+      keyBase: KEY_BASE, updatesByte: s.updates.byteOffset, updates: 0, texUpdatesByte: s.texUpdates.byteOffset, texUpdates: 0,
+      ...s.held,
+    };
     const plainKeyed = { ...base };
     const n = pack(s.b, s.q, makePackContext(s.q, opts, N, {}), first, s.slots, plainKeyed, N);
     const plain = packOutput(s, n, byRow, plainKeyed);

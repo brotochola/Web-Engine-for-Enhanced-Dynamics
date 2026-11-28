@@ -2047,6 +2047,8 @@ class PixiRenderer extends AbstractWorker {
           updatesByte: layout.pixiKeyUpdatesByte,
           headerByte: layout.pixiKeyHeaderByte,
           texUpdatesByte: layout.pixiKeyTexUpdatesByte ?? -1,
+          // E-492: the words the statics hold, which the keyed pack compares each row with (keyRows keys).
+          heldByte: layout.pixiKeyHeldByte ?? -1,
         }
       : null;
   }

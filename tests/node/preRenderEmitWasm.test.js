@@ -124,7 +124,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, keyedLiquidFun = false, faces = false, feet = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, keyedLiquidFun = false, keyedParticles = false, faces = false, feet = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -153,6 +153,8 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     keyedDecorations: keyed && keyedDecorations ? DECOS : 0,
     // E-194: with `keyedLiquidFun` too, the LiquidFun particles' records (keyed by index past the decorations).
     keyedLiquidFun: keyed && liquidFun && keyedLiquidFun ? LFN : 0,
+    // E-492: with `keyedParticles` too, the particle slots (keyed by slot past the LiquidFun particles, no records).
+    keyedParticles: keyed && particles && keyedParticles ? POOL : 0,
   }, null, null, false, collect);
   const e = m.layout.emit;
   // With `particles`, the particle memory in its region of this one, as the scene places it.
@@ -2035,6 +2037,37 @@ test('E-194: the emit keys a LiquidFun particle by its index past the keyed deco
   announce();
   assert.ok(all(frame()), 'read again once physics announces a change');
   recs.set(saved);
+});
+
+// E-492: with the keyed particle slots laid out, a particle row's key is its slot past the keyed LiquidFun particles,
+// marked on every row (Pixi's keyed pack sends its statics only where its texture does not hold them); without them, and
+// past them, the row has no key.
+test('E-492: the emit keys a particle by its slot past the keyed LiquidFun particles, every row marked', async () => {
+  for (const keyedParticles of [true, false]) {
+    const k = await setup({ ySort: true, keyed: true, keyedDecorations: true, particles: true, keyedParticles });
+    const { worker: w, b, source, count, maxItems } = k;
+    assert.equal(b.pKeyedCount, keyedParticles ? POOL : 0, 'the keyed slots');
+    assert.equal(b.pKeyBase, N + DECOS, 'past the keyed decorations (no LiquidFun particles here)');
+    const n = Math.min(count, maxItems);
+    const kernelSource = { ...source, persist: true };
+    SpriteRenderer.keyedDirty.fill(1);
+    for (let f = 0; f < 3; f++) {
+      assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+      assert.ok(writeEmitParticleColumns(b, ParticleComponent, w._resolveBuiltinTextureId('_whiteCircle'),
+        w.zenithalMaxHeight, w.zenithalScaleFactor, w.zenithalAlphaFade));
+      const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+      assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+      let rows = 0;
+      for (let r = 0; r < n; r++) {
+        if (w._renderableType[r] !== 1) continue;
+        rows++;
+        const p = w._renderableIndex[r];
+        const want = keyedParticles ? ((N + DECOS + p) | KEY_CHANGED) >>> 0 : 0xffffffff;
+        if (w.renderQueueKey[r] !== want) assert.fail(`frame ${f} row ${r}: particle ${p}'s key ${w.renderQueueKey[r]}, not ${want}`);
+      }
+      assert.ok(rows > 20, `frame ${f}: particle rows drawn (${rows})`);
+    }
+  }
 });
 
 // N-220: the gate slots of the bullets, glows, particles and LiquidFun (bActive, lColor, pcX, lfX) were written only by

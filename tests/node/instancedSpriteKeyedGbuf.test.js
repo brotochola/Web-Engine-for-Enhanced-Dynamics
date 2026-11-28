@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { TextureSource } from '../../src/vendor/pixi.min.js';
 import { BATCH_SPACE, INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch } from '../../src/render/instancedSpriteBatch.js';
 import { GPU_GBUF_FLOATS, gpuIndexedStaticRows } from '../../src/render/gpuQueueLayout.js';
-import { GPU_KEYED_CHANGED, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, bindGpuPack } from '../../src/render/gpuPackClient.js';
+import { GPU_KEYED_CHANGED, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, bindGpuPack, resetKeyedHeld } from '../../src/render/gpuPackClient.js';
 import { writeGbufWords } from '../../src/render/gbufWord.js';
 import { spriteGlslShaders } from './engineShaderSources.mjs';
 import { GBUF_STATICS_MARK } from '../../src/render/spriteIndexed.js';
@@ -81,6 +81,8 @@ async function setup(seed) {
     keyBase: ENTITIES + DECORATIONS,
     keyRows: gpuIndexedStaticRows(ENTITIES + DECORATIONS + N),
     updatesByte: alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS).byteOffset,
+    // E-492: the words the statics hold (12 u32 a key).
+    heldByte: alloc(Uint32Array, gpuIndexedStaticRows(ENTITIES + DECORATIONS + N) * 12).byteOffset,
     headerByte: header.byteOffset,
     shadowByte: -1,
     texUpdatesByte: alloc(Uint32Array, N * GPU_KEYED_TEX_WORDS).byteOffset,
@@ -111,6 +113,13 @@ async function setup(seed) {
     for (const x of [...b._buffers, ...(b._staticBuffers || []), ...(b._slotBuffers || []), ...(b._gbufBuffers || [])]) {
       x.update = () => {};
     }
+    // E-492: each upload from held words no row matches, so every marked and keyless row goes up as it did before them
+    // (the random queue repeats keys with other textures: those would go up as texture updates alone).
+    const upload = b.upload.bind(b);
+    b.upload = (queue, o) => {
+      resetKeyedHeld(buf, { heldByte: keyed.heldByte, heldKeys: keyed.keyRows }, true);
+      return upload(queue, o);
+    };
     // Queue frame 1, buffer 0, whose marks count from no frame (the header's SINCE0 is 0): drawn keyed.
     b.keyedFrame = 1;
     b.keyedBuffer = 0;

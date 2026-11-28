@@ -246,6 +246,9 @@ function scanTarget(session, n, cap) {
 
 const nOf = (opts, rows, cap) => Math.min(opts.indices ? opts.indexCount : rows, cap);
 
+/** E-492: the keyed pack's held words for `keys` keys (gpuPackClient.js GPU_KEYED_HELD_WORDS u32 each; 12 before it). */
+const heldWords = (session, S, keys) => session.alloc(Uint32Array, keys * (S.client.GPU_KEYED_HELD_WORDS ?? 12), 'held words');
+
 // --- gpuPackKeyed.test.js: the keyed pack ----------------------------------------------------------------------------
 
 function keyedCase(S, seed, variant, { tex, byRow }) {
@@ -272,12 +275,15 @@ function keyedCase(S, seed, variant, { tex, byRow }) {
     const slots = session.alloc(Float32Array, n * G.GPU_INDEXED_SLOT_FLOATS, 'slots');
     const updates = session.alloc(Uint32Array, n * S.client.GPU_KEYED_ROW_WORDS, 'updates');
     const texUpdates = tex ? session.alloc(Uint32Array, n * S.client.GPU_KEYED_TEX_WORDS, 'texture updates') : null;
-    const outs = [[byRow ? 'rows' : 'pose', first], ['slots', slots], ['updates', updates]];
+    // E-492: the held words, keyBase and a slot a row (each call starts from the fill dual writes: no row's words).
+    const held = heldWords(session, S, ENTITIES + n);
+    const outs = [[byRow ? 'rows' : 'pose', first], ['slots', slots], ['updates', updates], ['held words', held]];
     if (texUpdates) outs.push(['texture updates', texUpdates]);
     const m2 = dual(session, P, outs, () => {
       const keyed = {
         keyBase: ENTITIES, updatesByte: updates.byteOffset, updates: 0,
         texUpdatesByte: texUpdates ? texUpdates.byteOffset : 0, texUpdates: 0,
+        heldByte: held.byteOffset, heldKeys: ENTITIES + n,
       };
       const c = G.makePackContext(q, opts, cap, {});
       const pack = byRow ? S.client.packKeyedRowsByRowWasm : S.client.packKeyedRowsWasm;
@@ -361,12 +367,16 @@ function gbufCase(S, seed, byRow, variant) {
     const updates = session.alloc(Uint32Array, n * S.client.GPU_KEYED_ROW_WORDS, 'updates');
     const texUpdates = v.texUpdates ? session.alloc(Uint32Array, n * S.client.GPU_KEYED_TEX_WORDS, 'texture updates') : null;
     const gbufOut = session.alloc(Float32Array, n * G.GPU_GBUF_FLOATS, 'G-buffer words');
-    const outs = [[byRow ? 'rows' : 'pose', first], ['slots', slots], ['updates', updates], ['G-buffer words', gbufOut]];
+    // E-492: the held words, as keyedCase's.
+    const held = heldWords(session, S, KEY_BASE + n);
+    const outs = [[byRow ? 'rows' : 'pose', first], ['slots', slots], ['updates', updates], ['G-buffer words', gbufOut],
+      ['held words', held]];
     if (texUpdates) outs.push(['texture updates', texUpdates]);
     let mismatch = dual(session, P, outs, () => {
       const keyed = {
         keyBase: KEY_BASE, updatesByte: updates.byteOffset, updates: 0,
         texUpdatesByte: texUpdates ? texUpdates.byteOffset : 0, texUpdates: 0,
+        heldByte: held.byteOffset, heldKeys: KEY_BASE + n,
         gbufOut, gbufFlags: flags, gbufSelf: v.self, gbufZ: v.z,
       };
       const c = G.makePackContext(q, v.opts, cap, {});

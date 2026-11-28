@@ -6,6 +6,9 @@ Predator now holds 0 entity instances in every realm (`DEVLOG.md`, "A Whole Game
 of that day left four items in the register; this plan finishes them. Approved by the owner on 2026-11-21 ("me cierra
 este orden, dale").
 
+**Status (2026-11-28):** done on 2026-11-21. E-537, E-540, E-538, E-539 and N-314 are kept in the register (R-1670
+to R-1674, R-1680).
+
 ## The rule every item follows (E-533's pattern)
 
 - **Same work, two forms.** What an entity can do through its instance, ECS code does by index, through a static. The

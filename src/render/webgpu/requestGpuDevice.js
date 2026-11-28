@@ -11,6 +11,26 @@ const EXTRA_FEATURES = [
 ];
 
 /**
+ * N-464: the limits the device asks, each at the adapter's own value (never more than it offers; one it does not report
+ * is not asked): the samplers' two, and the buffers' size and storage binding size, which a device otherwise keeps at
+ * WebGPU's defaults (256 MiB and 128 MiB) whatever the GPU holds. The buffers' two bound the indexed sprites' statics (a
+ * storage buffer the entities batch checks against device.limits.maxStorageBufferBindingSize), a compute layer's storage
+ * buffers and every vertex buffer. Pixi's own requestDevice asks them too after 8.23 (upstream 8ee5e44).
+ */
+const ADAPTER_LIMITS = ['maxSampledTexturesPerShaderStage', 'maxSamplersPerShaderStage', 'maxBufferSize', 'maxStorageBufferBindingSize'];
+
+/** The device's requiredLimits: each of ADAPTER_LIMITS the adapter's limits report, at its value. */
+function requiredLimitsOf(limits) {
+  const out = {};
+  for (let i = 0; i < ADAPTER_LIMITS.length; i++) {
+    const name = ADAPTER_LIMITS[i];
+    const value = limits[name];
+    if (typeof value === 'number' && value > 0) out[name] = value;
+  }
+  return out;
+}
+
+/**
  * Chrome's feature for writeTimestamp inside a pass. Experimental: Chrome exposes it behind flags (157 does not with
  * --enable-webgpu-developer-features alone, which only turns the timestamps' quantization off).
  */
@@ -39,13 +59,7 @@ export async function requestWeedGpu(powerPreference = 'high-performance') {
   const wanted = ['timestamp-query', ...EXTRA_FEATURES];
   if (timestampsInsidePasses) wanted.push(TIMESTAMPS_INSIDE_PASSES);
   const requiredFeatures = wanted.filter((name) => adapter.features.has(name));
-  const device = await adapter.requestDevice({
-    requiredFeatures,
-    requiredLimits: {
-      maxSampledTexturesPerShaderStage: adapter.limits.maxSampledTexturesPerShaderStage,
-      maxSamplersPerShaderStage: adapter.limits.maxSamplersPerShaderStage,
-    },
-  });
+  const device = await adapter.requestDevice({ requiredFeatures, requiredLimits: requiredLimitsOf(adapter.limits) });
   return {
     adapter,
     device,

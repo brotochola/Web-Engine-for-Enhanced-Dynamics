@@ -255,6 +255,11 @@ export class EntityChunks {
     // DX-DEPTH (F5 v2): with pixel depth the batch draws an edge pass after its opaque one (its edgeMesh): chunk j's edge
     // twin, over the chunk's own range geometry with the batch's edge program for that base, drawn right after it.
     this.edges = [[], [], [], []];
+    // N-463: with faces and some frame with heights the batch's opaque pass is two programs over the same instances
+    // (E-378, E-500): its own keeps the frames with heights, its vertex-depth twin (vdepthMesh, drawn right before it) the
+    // others. Chunk j's vertex-depth twin, over the chunk's own range geometry, drawn right before it; idle (alpha 0) on
+    // the frames the batch has no such twin.
+    this.vdepths = [[], [], [], []];
     // The frame's draw order, [0, count). The array keeps its length (resetting it would free its storage and
     // every frame would grow it again).
     this.children = [];
@@ -308,27 +313,69 @@ export class EntityChunks {
   }
 
   /**
+   * N-463: chunk j's vertex-depth twin over base `slot` (made on first use, over the chunk's range geometry), or none
+   * while the batch's program has no such twin (no faces, or no frame with heights: E-500).
+   */
+  _vdepthChunk(slot, j) {
+    const batch = this.batch;
+    const own = batch.vdepthMesh;
+    if (own === null || own === undefined) return;
+    const list = this.vdepths[slot];
+    if (list[j] !== undefined) return;
+    const shader = batch.vdepthShaderFor(batch.mesh.shader);
+    if (shader === null) return;
+    const chunk = this.chunks[slot][j];
+    const mesh = new Mesh({ geometry: chunk.geometry, shader, state: own.state, label: `entities-chunk-vdepth-${j}-${slot}` });
+    mesh.cullable = false;
+    list[j] = mesh;
+  }
+
+  /**
    * Chunk j draws instances [first, first + count) with the mesh over the live geometry; its twins over the other
    * bases, those made yet, stay next to it, idle. Writes them at order[n…] in base order, returns the next free index.
-   * DX-DEPTH (F5 v2): each one's edge twin right after it, as idle as it.
+   * DX-DEPTH (F5 v2): each one's edge twin right after it, as idle as it. N-463: its vertex-depth twin right before it.
+   * The live ones draw with the batch's programs of this frame (setDepthFaces, setHeightFrames and enablePixelDepth make
+   * them again; an idle one takes them when its base is live again).
    */
   _pushChunk(order, n, live, j, first, count) {
+    const batch = this.batch;
     const m = this._chunk(live, j);
     m.geometry.weedFirstInstance = first;
     m.geometry.instanceCount = count;
     m.alpha = 1;
+    const shader = batch.mesh.shader;
+    if (m.shader !== shader) m.shader = shader;
     this._edgeChunk(live, j);
+    this._vdepthChunk(live, j);
     const chunks = this.chunks;
     const edges = this.edges;
+    const vdepths = this.vdepths;
+    const edgeShader = edges[live][j] !== undefined ? batch.edgeShaderFor(shader) : null;
+    const vdepthShader = vdepths[live][j] !== undefined ? batch.vdepthShaderFor(shader) : null;
     // In index order: a write past the end would leave a hole, and the array would stay holey.
     for (let s = 0; s < chunks.length; s++) {
       const twin = chunks[s][j];
       if (twin === undefined) continue;
+      const vdepth = vdepths[s][j];
+      if (vdepth !== undefined) {
+        if (s === live && vdepthShader !== null) {
+          if (vdepth.shader !== vdepthShader) vdepth.shader = vdepthShader;
+          vdepth.alpha = 1;
+        } else {
+          vdepth.alpha = 0;
+        }
+        order[n++] = vdepth;
+      }
       if (s !== live) twin.alpha = 0;
       order[n++] = twin;
       const edge = edges[s][j];
       if (edge !== undefined) {
-        edge.alpha = s === live ? 1 : 0;
+        if (s === live && edgeShader !== null) {
+          if (edge.shader !== edgeShader) edge.shader = edgeShader;
+          edge.alpha = 1;
+        } else {
+          edge.alpha = 0;
+        }
         order[n++] = edge;
       }
     }
@@ -369,18 +416,38 @@ export class EntityChunks {
     this.active = true;
   }
 
-  /** Back to the batch's own mesh: the chunks and proxies are hidden, the batch draws itself. */
+  /**
+   * Back to the batch's own mesh: the chunks and proxies are hidden, the batch draws itself. N-463: its pixel depth
+   * meshes too (the edge pass, the vertex-depth twin), which the batch shows and hides itself (visible) as its programs
+   * ask: the chunks only stop and start their rendering. The swaps of _show moved the three: they go back to their draw
+   * order, the twin right before the batch's mesh and the edge pass right after it.
+   */
   clear() {
     if (!this.active) return;
-    const kids = this.root.children;
+    const root = this.root;
+    const kids = root.children;
     const own = this.batch.mesh;
     const ownEdge = this.batch.edgeMesh || null;
+    const ownVdepth = this.batch.vdepthMesh || null;
     for (let i = 0; i < kids.length; i++) {
       const m = kids[i];
-      if (m !== own && m !== ownEdge && m.visible) m.visible = false;
+      if (m !== own && m !== ownEdge && m !== ownVdepth && m.visible) m.visible = false;
+    }
+    if (own.parent === root) {
+      if (ownVdepth !== null && ownVdepth.parent === root) {
+        const at = root.getChildIndex(own);
+        const v = root.getChildIndex(ownVdepth);
+        if (v !== at - 1) root.setChildIndex(ownVdepth, v < at ? at - 1 : at);
+      }
+      if (ownEdge !== null && ownEdge.parent === root) {
+        const at = root.getChildIndex(own);
+        const e = root.getChildIndex(ownEdge);
+        if (e !== at + 1) root.setChildIndex(ownEdge, e < at ? at : at + 1);
+      }
     }
     own.renderable = true;
     if (ownEdge !== null) ownEdge.renderable = true;
+    if (ownVdepth !== null) ownVdepth.renderable = true;
     this.count = 0;
     this.active = false;
   }
@@ -389,14 +456,16 @@ export class EntityChunks {
    * The root draws order[0, n) in that order, and nothing else. Every mesh it ever drew stays its child: a first
    * use appends it, swaps put it in place, and the ones not in this frame are hidden. Adding and removing children
    * each frame made garbage (removeChildren's array, Pixi's bookkeeping); a swap writes two slots. The batch's own
-   * mesh stays a child too, not rendered while the chunks draw its instances.
+   * mesh stays a child too, not rendered while the chunks draw its instances, and so do its pixel depth meshes.
    */
   _show(order, n) {
     const root = this.root;
     const own = this.batch.mesh;
     const ownEdge = this.batch.edgeMesh || null;
+    const ownVdepth = this.batch.vdepthMesh || null;
     if (own.renderable) own.renderable = false;
     if (ownEdge !== null && ownEdge.renderable) ownEdge.renderable = false;
+    if (ownVdepth !== null && ownVdepth.renderable) ownVdepth.renderable = false;
     for (let i = 0; i < n; i++) {
       const m = order[i];
       if (m.parent !== root) root.addChild(m);
@@ -408,13 +477,17 @@ export class EntityChunks {
     }
     for (let i = n; i < kids.length; i++) {
       const m = kids[i];
-      if (m !== own && m !== ownEdge && m.visible) m.visible = false;
+      if (m !== own && m !== ownEdge && m !== ownVdepth && m.visible) m.visible = false;
     }
   }
 
   destroy() {
-    // The edge twins first: they share their chunk's geometry.
+    // The edge and vertex-depth twins first: they share their chunk's geometry.
     for (const list of this.edges) {
+      for (const m of list) m.destroy();
+      list.length = 0;
+    }
+    for (const list of this.vdepths) {
       for (const m of list) m.destroy();
       list.length = 0;
     }

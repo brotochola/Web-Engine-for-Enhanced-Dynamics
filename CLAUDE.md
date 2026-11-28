@@ -25,7 +25,8 @@ is in the files it points to (`docs/internal/README.md` indexes them all).
   Messages between agents may use bare ids.
 - **Plans and open items:** `docs/internal/EXECUTION_PLAN.md` (speed, E-xx), `WASM_HYPOTHESES.md`,
   `REVIEW_PLAN.md` (review items B/M/D/R/G/V/N/DOC). New findings go there; finished campaigns are in
-  `docs/internal/reports/`.
+  `docs/internal/reports/`. A row's status and the order of the open work (`rank`) are the register's: a
+  plan's heading can be behind.
 
 ## Commands
 
@@ -70,13 +71,19 @@ is in the files it points to (`docs/internal/README.md` indexes them all).
 
 ## Measuring (the full rules: `docs/internal/HOW_WE_MEASURE.md`)
 
+- Premise first: a number that shows the cost (a trace share, a counter), a production caller and the gain
+  expected, in the row before any code.
 - Effort by size: a big plain change runs `--early` on its owner scene; one near the bar (3–10 %) runs
   the whole protocol; a fix off the hot path needs only the suites.
 - Lowest layer that can see the change: kernel → stress scene → gameplay scene (Predator).
 - Scene pairs: ABAB, both sides from worktrees (`runPredatorAbab.mjs --vs <base> --hyp-rev <rev>`), `--src`.
   Primary = the owning worker's `STEP_MS − WAIT_MS`, baseline ≥ 6 ms. Keep: ≥ 3 % and ≥ 75 % of pairs,
-  load keys within 5 %; a hygiene change stays unless a primary worker is ≥ 3 % worse. Predator is a
+  load keys within 5 %, and clear (past the session's A/A limit, 7 pairs of 8 or better; 6 of 8 is more pairs
+  or a tie); a hygiene change stays unless a primary worker is ≥ 3 % worse. Predator is a
   regression guard, not the ruler for a 3 % claim.
+- GPU work: no `STEP_MS` sees it. `glFrameRecorder.mjs --gpu-draws` (WebGL), `webgpuFrameRecorder.mjs`,
+  `gpuPassAbab.mjs`; every number names its GPU (the installed Chrome draws on the GTX 1650, Playwright's
+  Chromium on the Radeon) and its backend; the pictures are compared on both (`compareCaptures.mjs`).
 - After measuring, write the record with the numbers that decided it. Raw results under `tests/results/`
   are not kept: never link them.
 

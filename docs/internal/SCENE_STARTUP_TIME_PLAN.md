@@ -1,9 +1,10 @@
 # Scene start up time (plan)
 
-**Opened:** 2026-11-17, planned in a chat session with the owner. **Status:** a plan, not started;
-nothing in it is measured yet. **Estimate:** about 9 to 10 hours of work in a row for everything but
+**Opened:** 2026-11-17, planned in a chat session with the owner. **Status (2026-11-28):** done: the
+campaign closed on 2026-11-19 with its total measured (R-1517, section 7). Left, each a row of the register: SST-9,
+SST-10, SST-14 and SST-20. The sections before 7 are the plan as written, before anything was measured. **Estimate:** about 9 to 10 hours of work in a row for everything but
 SST-9, 4 to 5 hours with agents in parallel; SST-9 another 3 to 5 hours, in a session of its own
-(section 4). **Registry:** `DX-STARTUP` and its items `SST-0` to `SST-10` in
+(section 4). **Registry:** `DX-STARTUP` and its items `SST-0` to `SST-21` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: every scene starts sooner, for the player opening a game and for the developer reloading

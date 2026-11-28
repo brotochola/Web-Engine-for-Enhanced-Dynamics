@@ -20872,19 +20872,20 @@
     {
       "id": "E-492",
       "title": "At Predator crowd 2.5 zoom 1 Pixi scatters about 9 500 statics updates a keyed frame while pre-render full-marks only about 1 500 sprites: most scatters may be redundant (texture-only or animation updates, or decorations and particles counted in)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-16 by the N-238 agent (probe3: every sprite's enter, leave and mark frames, and Pixi's keyed draws)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "N-238 agent's probe, crowd 2.5, zoom 1, hour 22.",
+      "result": "Kept 2026-11-28: held-copy compare in pack_keyed and particles keyed by slot; keyed upload 2.07 -> 0.84 ms on WebGL in a probe run; ABAB neutral",
       "next": "Break the 9 500 down by kind (full statics, texture word, decorations, particles, GPU-particle proxies) with the probe; then send each only when its words changed; Pixi's scatter time and the GPU's scatter draw before and after.",
       "refs": [],
       "aliases": [
         "statics scatter count"
       ],
       "records": [
-        "R-1232"
+        "R-1232",
+        "R-2058"
       ]
     },
     {
@@ -23713,14 +23714,15 @@
         "face batching"
       ],
       "records": [
-        "R-1360"
+        "R-1360",
+        "R-2057"
       ],
-      "result": "",
+      "result": "Kept 2026-11-28 (8306af79): collect_decorations kernel, pre-render 10.45 -> 8.65 ms at faceLightScene town=80000; the GPU merge not doable identically and worth under 0.3 ms",
       "next": "Design the merged form (one mesh of the house's face quads, its texture ids and normals per vertex or per face; or the faces packed as one instance with a face table), keep the picture identical (compareCaptures), then measure on the main PC: the barrio's pre-render STEP_MS and GPU per pass, houseLightScene ?bench=faces.",
       "id": "E-520",
       "kind": "speed",
       "area": "render",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-18",
       "title": "A house's faces drawn as one instance (or one mesh) instead of one decoration each: fewer rows for pre-render's collect, emit and sort, and fewer instances for the GPU",
       "statusText": "proposed 2026-11-18 and chosen by the owner, from the ASUS's faces-against-maps sitting: the faces' cost is the count of pieces (pre-render, Intel by day), not the format"
@@ -26169,13 +26171,15 @@
       "date": "2026-11-27"
     },
     {
-      "records": [],
+      "records": [
+        "R-2059"
+      ],
       "refs": [],
-      "result": "",
+      "result": "Fixed 2026-11-28 (6448a409): chunks draw with the batch's programs and a vertex-depth twin each; requestWeedGpu asks maxBufferSize and maxStorageBufferBindingSize",
       "date": "2026-11-28",
       "id": "N-463",
       "title": "An entities batch drawn in chunks (GPU particle groups or look-layer regions sorted among the entities) with faces and some frame with heights may lose the instances without heights",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "statusText": "Found reading the code 2026-11-28 by the E-500 agent, not seen in a browser",
@@ -26186,13 +26190,15 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-2059"
+      ],
       "refs": [],
-      "result": "",
+      "result": "Fixed 2026-11-28 (6448a409): chunks draw with the batch's programs and a vertex-depth twin each; requestWeedGpu asks maxBufferSize and maxStorageBufferBindingSize",
       "date": "2026-11-28",
       "id": "N-464",
       "title": "The engine's WebGPU device asks only the two sampler limits: buffers stay at the 128 MiB default, the cap of the indexed sprites' statics on WebGPU",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "statusText": "Found 2026-11-28 reading Pixi after 8.23 (upstream 8ee5e44 asks the adapter for them in its own requestDevice)",
@@ -26220,7 +26226,9 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-2060"
+      ],
       "refs": [],
       "result": "",
       "date": "2026-11-28",
@@ -26288,6 +26296,25 @@
       "aliases": [
         "aggregates in logic",
         "E-199 spatial regression"
+      ]
+    },
+    {
+      "records": [
+        "R-2061"
+      ],
+      "refs": [],
+      "result": "Fixed 2026-11-28: vdepthMesh takes the layer's run-time blend",
+      "date": "2026-11-28",
+      "id": "N-467",
+      "title": "InstancedSpriteBatch.setLayerBlend updates the blend of mesh and edgeMesh but not vdepthMesh: after a run-time blend change on the entities layer the flat face instances keep the old blend",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "render",
+      "statusText": "Found reading the code 2026-11-28 (the N-463 agent), not seen in a browser",
+      "next": "setLayerBlend sets vdepthMesh too (and the chunks' twins follow the entities root); a capture of a scene with faces after Layer.blendMode changes at run time, before and after.",
+      "aliases": [
+        "vdepthMesh blend",
+        "setLayerBlend faces"
       ]
     }
   ],
@@ -45237,6 +45264,76 @@
       "title": "Every bundle compressed inside again, by default: one gzip stream started as the bundle loads; production ESM 3 955 -> 2 238 KB; first visits as fast or faster, repeat visits 7 to 24 ms later",
       "verdict": "kept",
       "text": "The owner, 2026-11-28 (after seeing 4 MB bundles): the workers and wasm compressed inside, by default (as R-2009 asked on 2026-11-24: the file itself small, brotli is the server's; I had dropped the .compressed kinds that morning, the opposite of his words).\n- **Built** (10029ba2, dist 246df504): every bundle gzips its workers, Box2D glue, shaders and debug CSS inside, as engine.wasm and Box2D's wasm always were; one gzip stream (base64) with each payload's [key, length], sliced back at run time (one base64 decode with Uint8Array.fromBase64, one DecompressionStream, one TextDecoder), started as the bundle loads (ensureEmbeddedSources() at module evaluation, awaited before the first Worker()). Names unchanged (three bundles). Production ESM 3 955 -> 2 238 KB raw (gzip 1 295 -> 1 299, brotli 951 -> 1 249).\n- **Start** (loadWaterfall --t0 prepare --http-cache, production ESM, headed Chrome on this PC (GTX 1650), visits cold then warm in a fresh browser each run, 5 alternated runs a side, balls 10; ms from the bench page's prepare to the first drawn frame, medians; 2026-11-28 03:28 to 03:40 by the files):\n  - first version (each payload inflated alone, at the first scene): cold equal (Predator crowd 0.4 1993 -> 1979, Boids 1086 -> 1092, balls 1231 -> 1215), warm +24 to +30 ms (734 -> 758, 398 -> 428, 456 -> 484);\n  - kept version (one stream, started at load): cold Predator 1978 -> 1968, Boids 1142 -> 1109, balls 1219 -> 1197 (a smaller file to parse); warm Predator 707 -> 714 (+7 ms), Boids 391 -> 399 (+8), balls 476 -> 500 (+24, 10 pairs, noisy). The inflate itself, timed in Node: base64 1.1 ms, gunzip of 1.06 MB into 3.1 MB 21 ms, TextDecoder 5 ms; it hides behind the rest of the start except where a scene starts very fast (balls).\n  - Not in this measure: the download. A server that sends brotli sends 298 KB more (about +240 ms at 10 Mbit/s, +24 ms at 100); with gzip the same; with no server compression (file://, simple hosts) 1.7 MB less.\n- Tests: node 3675/0, the three bundles' smokes and node-on-bundle 372/0 each; prodBundleDevChecks inflates the payloads to find the guards' texts; smokeBundleEmbed expects every bundle compressed.\n- Left: the workers could start from the inflated bytes without TextDecoder (Blob of a byte range) to save about 5 ms more."
+    },
+    {
+      "id": "R-2057",
+      "date": "2026-11-28",
+      "time": "04:20",
+      "timeFrom": "recorded",
+      "title": "Pre-render half kept: world-owned decorations collected in a wasm kernel (faceLightScene town=80000 pre-render -15 to -18 %); no merged GPU form keeps the pictures (painter steps, blend order, faces not consecutive)",
+      "verdict": "kept",
+      "text": "An agent read E-520 and built its pre-render half instead (opt/e520: 9e8f7b59 the microbench's faces case, bcb41864 the kernel, 35749632 the fix), merged to main.\n- **Why no merged form keeps the pictures:** a non-face sprite's painter step is its instance index (gl_InstanceID & 127), so removing instances moves every later sprite's step and flips ties; the edge pass and the half texels blend in instance order (R-2046); a house's faces are not consecutive in painter order (each has its own sortOffsetY: runs of 4.0 to 4.5 rows in parquechas.scene.json), and an instanced draw needs a fixed vertex count. And the GPU side is small: a full instance walk costs the Radeon (Vega, Ryzen 7 4800H) 0.02 to 0.04 ms (the unshaded mask walks 11 613 barrio instances in 0.037 ms; GTX 1650 0.018), under about 0.3 ms over the roughly 7 walks.\n- **Where the cost is:** pre-render's per-row cost on main: collect 37-48 ns, emit 28-41, pack 35-39, sort 5-7; the collect was the last phase in JS.\n- **Built:** collect_decorations (wasm/preRenderCollect.c) collects every decoration with no parent that goes only to the main collector (a spawned decoration's mask is the entities' bit: faces qualify), from a copy of the particle worker's visible list in a render-queue region (collectDecoList, laid after every other region so no region moves); attached ones and those a custom layer takes go back to the JS a run at a time; the JS loops stay for frames the kernel cannot take, and run alone while under a quarter of the pool is world-owned (DecorationPool's attached count). Generic, on by itself, no API change.\n- **Rows and instances unchanged** (barrio 11 665 / 11 662; houseLightScene bench=faces 6 817 / 6 779); the queue's bytes identical, so the GPU passes are as before.\n- **Speed** (runPredatorAbab, 4 pairs, 2026-11-28 by the files): faceLightScene town=80000 pre-render 8.606 -> 7.190 ms (-15.4 %, 4/4; f18ffda2 against bcb41864) and after the fix 10.453 -> 8.648 (-17.9 %, 2/2, stopped early; against 35749632). Predator: bcb41864 read pre-render 5.020 -> 5.458 at crowd 2.5 (+8.7 %, below the floor) and about +10 % with light3d, though Predator collects no decoration (its 20 000 are grass faded out by the zoom: VISIBLE_DECORATIONS 0): the moved memory regions, a new worker field and the module's code layout; after the fix crowd 2.5 6.701 -> 5.933 (-11.7 %, KEPT, noise the other way) and light3d 5.781 -> 5.490 (NEUTRAL).\n- **Kernel** (runKernelsVsRev, 40 000 visible): faces 680 -> 2 756 ops/s (+305 %), ysort 545 -> 751 (+38 %), collect with half attached 526 -> 567 (+7.8 %, a tie).\n- **Pictures** --vs main: 0 of 921 600 pixels on WebGL and WebGPU in houseLightScene (default; bench=faces at 22 and 15 h), faceLightScene (default; town=80000), dxCaptureScene (default; hour=22 deco=1); the barrio is not still even with people=0, so the kernel was run against the JS loops on its 254 000 real decorations: bit-identical. Tests: decorationCollectWasm.test.js 12/12 (y-sort on and off, attached in runs and shuffled, custom layers, inactive parents, a full collector, 32-bit ids, the quarter rule); node 3686/0, demos 149/0.\n- Next for faces: the emit (EMIT_MS 2.1 ms at town=80000, decoration rows rewritten in full each frame) and the pack (SPRITE_PACK_MS 2.9 ms). Left: the ASan harness tests/asan/kernels/preRenderCollect.mjs does not cover collect_decorations.",
+      "commits": [
+        "9e8f7b59",
+        "bcb41864",
+        "35749632",
+        "8306af79"
+      ]
+    },
+    {
+      "id": "R-2058",
+      "date": "2026-11-28",
+      "time": "04:51",
+      "timeFrom": "recorded",
+      "title": "Kept as hygiene: the keyed pack sends only rows whose words the texture does not hold, CPU particles keyed by slot; statics updates 5 200-6 200 -> about 1 260 a keyed frame at Predator crowd 2.5 zoom 1; ABAB neutral on both backends",
+      "verdict": "kept-hygiene",
+      "text": "An agent built it on opt/e492 (d274361a keyedScatterProbe, efa0bde7 particleCaptureScene, ff535ad6 the held compare, f822e609 particles keyed by slot, f1c20c39 the column copy's flags, 5ebd2cd2 main merged), merged to main.\n- **The premise was off:** the \"about 9 500 statics updates\" matched the drawn count (9 100 to 14 900 instances a keyed frame). Real updates (keyedScatterProbe, Predator crowd=2.5 zoom=1 hour=22, headed, 8 to 16 s): 5 200 to 6 200 a keyed frame in the opening particle burst, about 270 to 340 later. By kind before: keyless CPU particles 4 660 sent (4 641 changed their slot's words, 3 625 carried words another keyless row sent the frame before: their draw slot moved, the particle did not change); sprite full updates 833 (485 changed, all in the texture word only; 348 the texture already held, 335 of them resends of the previous keyed frame's marks); sprite texture updates 463 (226 already held); glows, bullets, trails, decorations about 10; GPU-particle proxies never reach the scatter. WebGPU the same (6 204 full updates, particles 5 282).\n- **Built:** Pixi's keyed pack (wasm/gpuPack.c pack_keyed, every form) compares each row it would send with a copy of what the texture holds for that key (a pixiKeyHeld region, 48 bytes a key, zeroed with the texture): all words equal, nothing sent; only the texture word differs, an 8-byte texture update instead of 64; the copy follows the renderer's order (rows, then texture words); keyedPack declines a frame without the copy. In keyed scenes CPU particle rows take key P_KEY_BASE + slot, always marked, so the compare drops the unchanged ones (Predator's keyBase 77 633 -> 87 633). setColumnTextures flags E-549's column copy from the held copy (repeated updates no longer come).\n- **After** (merged tree): WebGL 668 full and 590 texture updates a keyed frame (655 keyed particles, all changed; sprite full updates 0.2; none the texture already held); WebGPU 732 and 634. Probe timing (one run a side, noisy): WebGL scatter call 0.296 -> 0.074 ms a frame, GPU scatter draw 0.099 -> 0.059, keyed upload 2.07 -> 0.84; WebGPU scatter call 0.290 -> 0.197, keyed upload 1.98 -> 2.52 in time mode (5.03 -> 1.81 in count mode).\n- **ABAB** (runPredatorAbab, Predator crowd=2.5 zoom=1 hour=22, 28b14357 against 5ebd2cd2, 4 pairs, 2026-11-28 04:35 to 04:43 by the files): WebGL NEUTRAL (below floor), renderer 0.827 -> 0.794 ms, no worker worse; WebGPU NEUTRAL (below floor), renderer 1.185 -> 1.203. Kept as hygiene: fewer bytes up each keyed frame, no worker worse.\n- **Pictures** --vs main, both backends: dxCaptureScene (and hour=22), depthPairScene, faceLightScene pack=pixi, particleCaptureScene: 0 pixels. Tests: node 3691/0, demos 149/0 on the branch; keyedStaticsMirror.test.js's new case fails without f1c20c39.\n- Left: the ASan harness tests/asan/kernels/gpuPack.mjs has the held region but was not run.",
+      "commits": [
+        "d274361a",
+        "efa0bde7",
+        "ff535ad6",
+        "f822e609",
+        "f1c20c39"
+      ]
+    },
+    {
+      "id": "R-2059",
+      "date": "2026-11-28",
+      "time": "05:01",
+      "timeFrom": "recorded",
+      "title": "Fixed: a chunked entities batch with faces and height frames drew only its height-mapped instances (chunkFacesScene 891 922 of 921 600 pixels off, now 0); the WebGPU device asks the adapter's buffer limits (2 GiB on the GTX 1650)",
+      "verdict": "kept-hygiene",
+      "text": "An agent fixed both on fix/n463 (31a01fe4 the repro scene, e60718e3 N-463 and its test, b6b02629 N-464 and its test, 52a19dc5 main merged), merged to main.\n- **N-463 reproduced.** tests/bench/stressScenes/chunkFacesScene.js (ChunkFacesScene): wall faces, green posts and a grey floor (no maps) among LPC people with height maps, the barrio's oblique camera, a nearest atlas, no lighting; ?group=1 (default) a GPU particle group sorted among the entities, never born, so it splits the batch into chunks without a pixel of its own; ?group=0 no group (the batch unchunked); ?group=show a red puff. On main (6269ab9a, headless, --query-a group=1 --query-b group=0) 891 922 of 921 600 pixels differed on WebGL and WebGPU alike: chunked, floor 0 pixels (unchunked 769 862), posts 0 (19 460), walls 0 (102 600): only the people remained. Captures kept: tests/results/n463-captures/antes-en-pedazos.png (main, group=show) and despues-igual-que-entero.png.\n- **Fix** (src/render/gpuParticleChunks.js): each chunk has its own copy of the batch's vertex-depth program over its range, drawn right before it (idle while the batch has none); the drawn chunk and its edge and vertex-depth twins take the batch's programs every frame, so programs remade by setDepthFaces, setHeightFrames or enablePixelDepth reach them (a chunk kept its first frame's program, and its edge twin fell back to the plain edge program even over an indexed geometry); the chunks stop the batch's own vdepthMesh rendering instead of hiding it every frame (which rebuilt instructions each upload). A second bug, on main even without faces: after the chunks stop, clear() left the batch's meshes in the order mesh, edge, twin, so the edge pass drew before the opaque one; clear() restores twin, mesh, edge.\n- **Test:** tests/node/entityChunksDepthPrograms.test.js, 12 tests on real batches (WebGL and WebGPU, plain and indexed, through the Pixi worker's _placeDepthMeshes): every instance kind drawn once per chunk with the right depth source, the batch's programs in the batch's order, rebuilt programs reaching the chunks, a still stage across chunked frames; all 12 fail on main's chunk code.\n- **Captures after:** group=1 against group=0: 0 pixels on both backends, also indexed=0 and nearest=0 (a linear atlas, soft edges); group=0 --vs main 0 (the unchunked drawing unchanged). Off the hot path (at most 32 chunks a frame): not timed.\n- **N-464** (src/render/webgpu/requestGpuDevice.js): requestWeedGpu asks four limits at the adapter's own values, only those it reports: the two sampler limits, maxBufferSize and maxStorageBufferBindingSize. Chrome on the GTX 1650: maxBufferSize 256 MiB -> 2 147 483 648, maxStorageBufferBindingSize 128 MiB -> 2 147 483 644. instancedSpriteBatch's _makeIndexedGpuShader reads device.limits (follows); rendererBackend.js's INDEXED_SPRITES_MAX_WEBGPU does not (the queue's layout is decided on the main thread before a device exists): the indexed statics stay capped at 2.8 M rows on WebGPU; compute storage buffers and big vertex buffers gain. tests/node/gpuDeviceLimits.test.js (a stubbed adapter with getter limits) fails on the old request.\n- Tests: node 3705/0, demos 149/0 on the merged branch. Found: N-467 (setLayerBlend misses vdepthMesh).",
+      "commits": [
+        "31a01fe4",
+        "e60718e3",
+        "b6b02629",
+        "6448a409"
+      ]
+    },
+    {
+      "id": "R-2060",
+      "date": "2026-11-28",
+      "time": "05:20",
+      "timeFrom": "recorded",
+      "title": "Not steady: the five sites deopt at load and in warm-up only (the summary's location table counts the whole log); tilemapGid's OSR exits fixed (312 -> 2, Predator's floor pack 11.9 -> 9.5 ms at load); spatial and active-list fixes left for the CPU lane",
+      "verdict": "kept-hygiene",
+      "text": "An agent read the five sites on fix/n466 (48617309, 8802e396, 2e78b61c).\n- **None is steady.** summarizeV8Deopt's \"Deopts by location\" table counts the whole log; its \"Steady deopts (the last 8000 ms)\" lists none of the five sites in any of the four p823 logs (R-2055's \"steady\" was my misreading). Raw times in logs of about 22 s: tilemapGid one 9 ms burst at 3.3-4.1 s; spatialWorker:2319 3.9-9.3 s; particleWorker:1417 3.8-7.5 s; gameObjectActiveState 3.6-16.4 s. No worker's STEP_MS can move from them.\n- **tilemapGid.js:243/253, packGidStacksRgba8:** \"exit from OSR'd inner loop\": Maglev compiled the column loop as OSR code and deopted on leaving it once a row of the 416 x 208 map. Both passes are now one loop over the page's tiles (x wraps to the next row; the layer loop inside stays). Deopts WebGL 312 -> 2, WebGPU 161 -> 7; d8 16.0, one call on Predator's map: 171-348 OSR exits -> 0, 11.9 -> 9.5 ms (load time). A parity test against the old nested loops on Predator's real map and random pages (offset, one tile wide or high, split); tilemapStressScene 0 of 921 600 pixels on both backends. Kept (a46291ed on main, with N-467).\n- **spatialWorker.js:2319, _finishRebuiltRows:** \"insufficient type feedback for generic named access\" on the store after the loop, on OSR code made before that store ever ran: about 4 s of warm-up. The count set before the loop, the capped rows returned; deopts WebGL 315 -> 6, WebGPU 567 -> 6. Left on fix/n466 for the CPU lane (a per-frame method: a Predator guard first).\n- **gameObjectActiveState.js:189, mergeSortedIntoActiveList:** the same mechanism; the merge, the copy back and the empty-list copy each a function returning after its loop; deopts WebGL 60 -> 9, WebGPU 116 -> 9; a random test against the sorted union and 20 000 random merges equal. Left on fix/n466 for the CPU lane (per-frame logic: a guard first).\n- **particleWorker.js:1417:** not changed: E-179/E-183/R-0776 measured that moving this loop into a function cost 3-5 % in a grid scene.\n- Left: tilemapGid.js:110 (gidPageQuads, 4-5 deopts at load), tileMap.js:337 (5 at load), the Predator demo's cameraController.js:60 (255 in warm-up on WebGPU).",
+      "commits": [
+        "48617309",
+        "a46291ed",
+        "8802e396",
+        "2e78b61c"
+      ]
+    },
+    {
+      "id": "R-2061",
+      "date": "2026-11-28",
+      "time": "05:20",
+      "timeFrom": "recorded",
+      "title": "Fixed: setLayerBlend reaches the vertex-depth twin",
+      "verdict": "kept-hygiene",
+      "text": "N-467 fixed: setLayerBlend sets vdepthMesh's blend too (the flat face instances' opaque draw took its blend once, when made). A test in tests/node/instancedSpriteHeightFrames.test.js on real batches (WebGL and WebGPU, faces with height frames): after setLayerBlend('add') the mesh, the edge pass and the vertex-depth twin all draw 'add'; it fails without the fix. Suites with a46291ed: node 3707/0, demos 149/0, bundles 372/0 each. Off the hot path: not timed."
     }
   ],
   "leads": [

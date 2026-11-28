@@ -6,6 +6,35 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 28 November 2026 (small hours) — The Rules Catch Up With the Work
+
+**The owner asked for a second outside look at how the engine is measured, tested and optimized,** twelve days after the
+first. Every internal document was read, the big ones by six readers, and the register was counted by a script. The way a
+sitting is run held up: of the speed ideas closed with a verdict, 51 in a hundred won in September, 73 in October and 79 in
+November, and about three keeps in four now read 10 % or more. What had fallen behind was everything around the sitting.
+
+**The protocol was about CPU workers, and the work is on the GPU.** HOW_WE_MEASURE named a GPU metric the engine no longer
+writes (its GPU clock went when it wedged Chrome's GPU process), while the recorder that reads the GPU today is in 107
+records since 13 November and was in no rule. A day of runs had carried the wrong GPU's name, because Playwright's Chromium
+draws on the Radeon here, and the GTX 1650's clock falls under a light load. The document has a GPU chapter now: the tools,
+which GPU ran a number, the clock, how a GPU claim decides, and the picture as part of the measurement.
+
+**Rules that lived in old reports moved into the protocol.** The premise before any code (a number that shows the cost, a
+caller, the ceiling, the gain expected): October's reports say most losses were premises nobody had checked, and the word
+was not in the protocol. The owner's clear-win rule of 17 November (7 pairs of 8 or better; 6 of 8 is more pairs or a tie).
+And a look that side B ran the change, since four sittings had compared code with itself and read a tie.
+
+**The documents said things that were no longer so.** The floor read 3 ms in the runner's manual and 6 in the code.
+Multi-arm sittings, the capacity search, the replay and the input stamp were listed as planned and had been built. Five
+plans said "not started" with their work done; the split of `pixiWorker.js` said so with the file at 4 413 lines of
+11 481. The execution plan showed five rows open that the register had closed. A row's status lives in the register alone
+from now on, and the plan says so at its top.
+
+**What the look found and a document cannot fix:** 163 rows pending in the register and one with a rank; almost a commit a
+record (620 in two weeks for 853), and records of 200 words where the rule asks for a few lines; no runner that refuses a
+busy machine; nothing that runs by itself on a push; and the bugs that optimizations brought in found by the day's review,
+by pictures and by games, rarely by the suite. Those are tools and habits to build, in the order the owner gives.
+
 ## Thursday 26 November 2026: A Floor Painted Once, and Sprites That Read Less
 
 **The colour pass to the screen is the GPU's largest, and the GTX 1650 hides why.** It ran a quarter to a third busy, so

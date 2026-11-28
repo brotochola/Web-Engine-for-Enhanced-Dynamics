@@ -116,6 +116,8 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
   const keyed = {
     tableByte: s.keyTable.byteOffset, stampByte: s.stamps.byteOffset, keyBase: entities, epoch: 0,
     updatesByte: s.updates.byteOffset, updates: 0,
+    // E-492: the held words (gpuPackKeyedMicrobench's setup), for a tree whose pack compares with them.
+    heldByte: s.held ? s.held.byteOffset : 0, heldKeys: s.keyRows | 0,
   };
   const keyCol = s.q.key;
   const rowPoses = packKind === 'rows' ? new Float32Array(rows * 4) : null; // four column blocks

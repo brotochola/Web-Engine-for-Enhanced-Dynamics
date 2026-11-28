@@ -11,7 +11,10 @@
      sizes and the last texture each sprite drew with.
    A sprite with a layer mask goes through collectRenderable, which stays JS, and so does one whose sort line needs
    a frame that is not resolved yet: the walk stops there and returns its position, the JS collects that one
-   sprite and calls again from the next. */
+   sprite and calls again from the next.
+   E-520: collect_decorations is collectVisibleDecorations' loop the same way, for the decorations with no parent that go
+   to the main collector alone (a barrio's house faces: R-1360 found their cost is the count of pieces, and the JS collect
+   was ~40 ns a decoration); an attached one, or one a custom layer takes, is handed back. */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -32,6 +35,12 @@ enum {
   S_ANCHOR_X, S_ANCHOR_Y, S_SCALE_X, S_SCALE_Y, S_INHERIT, S_FACE_C, S_FACE_S,
   E_LAST_TEXTURE, E_FRAME_W, E_FRAME_H,
   E_FRAMES,    /* a value: the frame sizes' length */
+  /* E-520, collect_decorations: the visible decorations' ids (a copy of the particle worker's published list), a value 1
+     when they are 32-bit, DecorationComponent.parentEntityIndex and a value 1 when it is 32-bit, then the columns the
+     collect reads (layerMask, x, y, offsetX, offsetY, sortOffsetY, innerZ, rotC, rotS) and depthFootDy, which it writes.
+     The collector is the O_* columns, its count R_RESULTS[0]. */
+  D_LIST, D_LIST_U32, D_PARENT, D_PARENT_U32,
+  D_MASK, D_X, D_Y, D_OFF_X, D_OFF_Y, D_SORT_OFF_Y, D_INNER_Z, D_ROT_C, D_ROT_S, D_FOOT,
   SLOT_COUNT
 };
 
@@ -353,4 +362,113 @@ uint32_t collect_sprites_turned(uint32_t table, uint32_t from, uint32_t count, u
     default: return WALK(0, 0);
   }
 #undef WALK
+}
+
+/* E-520: the decoration collect's columns (collect_decorations): the visible list's copy, DecorationComponent's columns
+   the collect reads, its depthFootDy (written), and the main collector's columns (the table's O_* slots). */
+typedef struct {
+  const uint16_t *list16;
+  const uint32_t *list32;
+  uint32_t wide;
+  const uint16_t *parent16;
+  const uint32_t *parent32;
+  uint32_t parentWide;
+  const uint16_t *mask;
+  const float *x, *y, *offX, *offY, *sortOffY;
+  const int8_t *innerZ;
+  const float *rotC, *rotS;
+  float *foot;
+  float *oY;
+  uint8_t *oType;
+  int32_t *oIndex;
+  float *oX, *oPy, *oRc, *oRs;
+  int32_t *res;
+} deco_cols_t;
+
+INLINE deco_cols_t deco_columns(uint32_t table) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  deco_cols_t k;
+  k.list16 = PTR(const uint16_t, D_LIST);
+  k.list32 = PTR(const uint32_t, D_LIST);
+  k.wide = t[D_LIST_U32];
+  k.parent16 = PTR(const uint16_t, D_PARENT);
+  k.parent32 = PTR(const uint32_t, D_PARENT);
+  k.parentWide = t[D_PARENT_U32];
+  k.mask = PTR(const uint16_t, D_MASK);
+  k.x = PTR(const float, D_X);
+  k.y = PTR(const float, D_Y);
+  k.offX = PTR(const float, D_OFF_X);
+  k.offY = PTR(const float, D_OFF_Y);
+  k.sortOffY = PTR(const float, D_SORT_OFF_Y);
+  k.innerZ = PTR(const int8_t, D_INNER_Z);
+  k.rotC = PTR(const float, D_ROT_C);
+  k.rotS = PTR(const float, D_ROT_S);
+  k.foot = PTR(float, D_FOOT);
+  k.oY = PTR(float, O_Y);
+  k.oType = PTR(uint8_t, O_TYPE);
+  k.oIndex = PTR(int32_t, O_INDEX);
+  k.oX = PTR(float, O_X);
+  k.oPy = PTR(float, O_PY);
+  k.oRc = PTR(float, O_ROT_C);
+  k.oRs = PTR(float, O_ROT_S);
+  k.res = PTR(int32_t, R_RESULTS);
+  return k;
+}
+
+/* collectVisibleDecorations' loop over the visible list from `from` to `count`, for the decorations with no parent whose
+   layer mask sends them to the main collector alone (no bit of `elsewhere`, the sprite-queue layers but the entities':
+   a spawned decoration's mask is the entities' bit, collectRenderable's one row there): the main collector's row as
+   _writeRenderable writes it (the key, type 2, the slot, the drawn pose: the position plus the draw offset, the facing)
+   and the slot's depthFootDy (the painter's foot less the drawn y, N-450). With `ySort` (a constant) the key is
+   (y + sortOffsetY) · sortK + innerZ and the foot y + sortOffsetY, in double from the float32 columns as the JS computes
+   them; without, the key 0 and the foot NaN. A full collector takes no row and sets results[2]. Returns `count`, or the
+   position of a decoration with a parent or a mask bit of `elsewhere`, which the JS collects. */
+INLINE uint32_t deco_walk(uint32_t table, uint32_t from, uint32_t count, uint32_t maxItems, int ySort, double sortK,
+                          uint32_t noParent, uint32_t elsewhere) {
+  const deco_cols_t k = deco_columns(table);
+  int32_t *res = k.res;
+  int32_t n = res[0];
+  for (uint32_t idx = from; idx < count; idx++) {
+    const uint32_t i = k.wide ? k.list32[idx] : (uint32_t)k.list16[idx];
+    const uint32_t p = k.parentWide ? k.parent32[i] : (uint32_t)k.parent16[i];
+    if (p != noParent || ((uint32_t)k.mask[i] & elsewhere) != 0u) {
+      res[0] = n;
+      return idx;
+    }
+    if ((uint32_t)n >= maxItems) {
+      res[2] = 1;
+      continue;
+    }
+    const double py = (double)k.y[i] + (double)k.offY[i];
+    float key = 0.0f;
+    float footDy = __builtin_nanf("");
+    if (ySort) {
+      const double sortY = (double)k.y[i] + (double)k.sortOffY[i];
+      key = (float)(sortY * sortK + (double)k.innerZ[i]);
+      footDy = (float)(sortY - py);
+    }
+    k.oY[n] = key;
+    k.oType[n] = 2;
+    k.oIndex[n] = (int32_t)i;
+    k.oX[n] = (float)((double)k.x[i] + (double)k.offX[i]);
+    k.oPy[n] = (float)py;
+    k.oRc[n] = k.rotC[i];
+    k.oRs[n] = k.rotS[i];
+    k.foot[i] = footDy;
+    n++;
+  }
+  res[0] = n;
+  return count;
+}
+
+/* E-520: from list position `from` to `count` of the visible decorations' copy (D_LIST); returns `count` when it walked
+   them all, or the position of one the JS must collect. ySort: some layer y-sorts (Layer.anyYSorting); sortK the key's
+   scale (DECORATION_Y_SORT_SCALE); noParent DecorationComponent.parentEntityIndex's "none"; elsewhere the layer bits
+   that take a decoration to another collector (Layer._spriteQueueBits but the entities' bit). results[0] is the main
+   collector's count, in and out. */
+__attribute__((export_name("collect_decorations")))
+uint32_t collect_decorations(uint32_t table, uint32_t from, uint32_t count, uint32_t maxItems, uint32_t ySort,
+                             double sortK, uint32_t noParent, uint32_t elsewhere) {
+  if (ySort) return deco_walk(table, from, count, maxItems, 1, sortK, noParent, elsewhere);
+  return deco_walk(table, from, count, maxItems, 0, sortK, noParent, elsewhere);
 }

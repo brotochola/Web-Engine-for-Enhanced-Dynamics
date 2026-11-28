@@ -50,13 +50,31 @@ function withSunFrameRegions(map, emit) {
 }
 
 /**
+ * E-520: with collect.decorations (the decoration pool's size), the layout `map` (withSunFrameRegions') and after every
+ * region of it the decoration collect's copy of the visible decorations' list (collectDecoList, 4 bytes an id: room for
+ * either slot width), so no region of a scene without it moves (none of it is in the map's bytes). An empty region at the
+ * map's end otherwise.
+ * @param {{ regions: Record<string, { byte: number, bytes: number, owner: string }>, bytes: number, pages: number }} map
+ */
+function withDecorationListRegion(map, collect) {
+  const bytes = collect ? (collect.decorations | 0) * 4 : 0;
+  const byte = alignToLine(map.bytes);
+  const end = bytes > 0 ? alignToLine(byte + bytes) : map.bytes;
+  return {
+    regions: { ...map.regions, collectDecoList: { byte, bytes, owner: 'pre-render' } },
+    bytes: end,
+    pages: Math.max(1, Math.ceil(end / WASM_PAGE_BYTES)),
+  };
+}
+
+/**
  * @param {number} maxItems the render queue's rows
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
  *   lightBytes?: number, particleBytes?: number, liquidFun?: null | { maxCount: number, renderBytes: number },
  *   customLayers?: Array<{ layerId: number, maxItems: number, queueBytes: number, ySort?: boolean }>, bulletBytes?: number,
- *   adobe?: null | { animBytes: number, tableBytes: number }, directionalBytes?: number }} [emit]
+ *   adobe?: null | { animBytes: number, tableBytes: number }, directionalBytes?: number, keyedParticles?: number }} [emit]
  *   the emit's regions too (renderQueueMemoryRegions; DirectionalSprite's and the sun frames', withSunFrameRegions); a
  *   component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
@@ -77,7 +95,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiRows = pixiPack ? n : 0;
   const pixiExtra = pixiExtraSpec(emit, n);
-  const map = withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiExtra), emit);
+  const map = withDecorationListRegion(withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiExtra), emit), collect);
   const base = place ? place.baseByte | 0 : 0;
   if (place) {
     if ((base & 63) !== 0 || base + map.bytes > place.memory.buffer.byteLength) return null;
@@ -107,7 +125,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         particlesByte: r.packResults.byte,
         // Phase 4: the regions are a block of Box2D's memory, so Transform's pose in Box2D's heap is in it too.
         inBox2dBlock: Boolean(place),
-        emit: emit ? emitLayout(r, emit.entities | 0, n, emit.customLayers) : null,
+        emit: emit ? emitLayout(r, emit.entities | 0, n, emit.customLayers, keyed ? emit.keyedParticles | 0 : 0) : null,
         stamp: stamp ? stampLayout(r, stamp) : null,
         sway: sway ? swayLayout(r, sway) : null,
         collect: collect ? collectLayout(r, collect) : null,
@@ -125,13 +143,16 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         // E-177: the entity batch's keyed frames (0 rows: none): the statics texture's rows (the keys past keyBase, the
         // scene's entities, are the slots of rows without one), its updates (a row each) and the resync header.
         pixiKeyRows: keyed ? pixiExtra.keyRows : 0,
-        // E-188: past the entities, the keyed decorations' slots; E-194: then the keyed LiquidFun particles'.
-        pixiKeyBase: keyed ? (emit.entities | 0) + (emit.keyedDecorations | 0) + (emit.keyedLiquidFun | 0) : 0,
+        // E-188: past the entities, the keyed decorations' slots; E-194: then the keyed LiquidFun particles'; E-492: then
+        // the keyed particle slots'.
+        pixiKeyBase: keyed ? keyedKeys(emit) : 0,
         pixiKeyUpdatesByte: keyed ? r.pixiKeyUpdates.byte : -1,
         pixiKeyHeaderByte: keyed ? r.emitKeyHeader.byte : -1,
         // E-191: the keyed frames' shadow stream, -1 without keyed frames.
         // E-189: the keyed frames' texture updates, -1 without keyed frames.
         pixiKeyTexUpdatesByte: keyed && r.pixiKeyTexUpdates && r.pixiKeyTexUpdates.bytes > 0 ? r.pixiKeyTexUpdates.byte : -1,
+        // E-492: the words its statics hold, a key's each (pixiKeyRows keys), -1 without keyed frames.
+        pixiKeyHeldByte: keyed && r.pixiKeyHeld && r.pixiKeyHeld.bytes > 0 ? r.pixiKeyHeld.byte : -1,
         // E-372: pre-render's sun frames' region (gpuPackClient.js keyedSunViews), -1 without DirectionalSprite.
         keyedSunByte: r.keyedSun ? r.keyedSun.byte : -1,
         // W10: each sorting worker's painter state (null: that worker sorts in JS on arrays of its own).
@@ -153,14 +174,23 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
 function pixiExtraSpec(emit, maxItems) {
   if (!emit) return null;
   const tableSlots = GPU_PACK_TABLE_SLOTS + 2 * ((emit.customLayers && emit.customLayers.length) | 0);
-  const keyRows = emit.pixiKeyed
-    ? gpuIndexedStaticRows((emit.entities | 0) + (emit.keyedDecorations | 0) + (emit.keyedLiquidFun | 0) + (maxItems | 0))
-    : 0;
+  const keyRows = emit.pixiKeyed ? gpuIndexedStaticRows(keyedKeys(emit) + (maxItems | 0)) : 0;
   return { glowRows: emit.pixiGlowRows | 0, tableSlots, tableBytes: tableSlots * GPU_PACK_COLUMNS.length * 4, keyRows };
 }
 
-/** Byte offsets of the emit's regions; -1 for a component block the scene does not have. */
-function emitLayout(r, entities, rows, customLayers) {
+/**
+ * The keys before the slots of the rows without one: the scene's entities, then the keyed decorations' slots (E-188),
+ * the keyed LiquidFun particles' (E-194) and the keyed particle slots' (E-492).
+ */
+function keyedKeys(emit) {
+  return (emit.entities | 0) + (emit.keyedDecorations | 0) + (emit.keyedLiquidFun | 0) + (emit.keyedParticles | 0);
+}
+
+/**
+ * Byte offsets of the emit's regions; -1 for a component block the scene does not have. `keyedParticles` (E-492): the
+ * particle slots keyed past the keyed LiquidFun particles (0: particle rows keyless).
+ */
+function emitLayout(r, entities, rows, customLayers, keyedParticles) {
   const block = (region) => (region.bytes > 0 ? region.byte : -1);
   return {
     // Each custom sprite layer's queue buffers and collector (CUSTOM_COLLECTOR_ROW_BYTES a row).
@@ -224,6 +254,8 @@ function emitLayout(r, entities, rows, customLayers) {
     // E-194: the keyed LiquidFun particles' records and how many (-1 and 0: LiquidFun rows keyless).
     lfKeyedByte: r.emitLfKeyed.bytes > 0 ? r.emitLfKeyed.byte : -1,
     keyedLiquidFun: r.emitLfKeyed.bytes / EMIT_DECO_KEYED_BYTES,
+    // E-492: the keyed particle slots (0: particle rows keyless), keyed past the LiquidFun particles; no records.
+    keyedParticles: keyedParticles | 0,
     lfCheckedByte: r.emitLfChecked.bytes > 0 ? r.emitLfChecked.byte : -1,
     // E-312: the change frames of the entities, keyed decorations and LiquidFun particles (-1: none).
     keyChangeByte: r.emitKeyChange.bytes > 0 ? r.emitKeyChange.byte : -1,
@@ -256,6 +288,9 @@ function collectLayout(r, collect) {
     listByte: r.collectList.byte,
     tableByte: r.collectTable.byte,
     resultsByte: r.collectResults.byte,
+    // E-520: the decoration collect's list, room for `decorations` ids (0 and -1: none).
+    decorations: r.collectDecoList.bytes > 0 ? collect.decorations | 0 : 0,
+    decoListByte: block(r.collectDecoList),
     // W19: the bullet tick's regions (bindBulletTick's layout), or null.
     bullets: collect.bullets
       ? {
@@ -292,7 +327,7 @@ export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit
   const n = maxItems | 0;
   if (n <= 0) return 0;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
-  return withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0, collect, painter, pixiExtraSpec(emit, n)), emit).bytes;
+  return withDecorationListRegion(withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0, collect, painter, pixiExtraSpec(emit, n)), emit), collect).bytes;
 }
 
 function stampLayout(r, stamp) {

@@ -58,7 +58,8 @@ function mulberry32(seed) {
 
 export async function setup(rows, entities, orderKind) {
   const keyRows = entities + rows;
-  const bytes = rows * 160 + keyRows * ROW_WORDS * 4 + rows * ROW_WORDS * 4 + entities * 4 + rows * 8 + (2 << 20);
+  // E-492: and the held words (keyRows * 48 bytes).
+  const bytes = rows * 160 + keyRows * ROW_WORDS * 4 + rows * ROW_WORDS * 4 + entities * 4 + rows * 8 + keyRows * 48 + (2 << 20);
   const memory = new WebAssembly.Memory({ initial: Math.ceil(bytes / 65536) + 16, maximum: 32768, shared: true });
   const buf = memory.buffer;
   let top = 64;
@@ -155,6 +156,9 @@ export async function setup(rows, entities, orderKind) {
   }
   const gbufOut = alloc(Float32Array, rows * 3);
   const gbufData = new Float32Array(rows * 3);
+  // E-492: the held words (gpuPack.c KEYED_HELD_WORDS a key), what the renderer's statics hold, for a tree whose pack
+  // compares with them; after the rest, whose places stay as they were.
+  const held = alloc(Uint32Array, keyRows * 12);
   if (top > buf.byteLength) throw new Error('gpuPackKeyedMicrobench: the memory is too small');
   // Pixi's binding: no inverse, so every pack gathers in the painter's order.
   const b = await client.bindGpuPack(memory, {
@@ -162,7 +166,7 @@ export async function setup(rows, entities, orderKind) {
   });
   return {
     q, b, order, splitPose, splitStat, pose, slots, keyTable, stamps, updates, texUpdates, shadow, rng, gbufFlags, selfShadow,
-    zIndex, gbufOut, gbufData,
+    zIndex, gbufOut, gbufData, held, keyRows,
   };
 }
 
@@ -224,6 +228,7 @@ export async function run({
       tableByte: s.keyTable.byteOffset, stampByte: s.stamps.byteOffset, keyBase: entities, epoch: 0,
       updatesByte: s.updates.byteOffset, updates: 0,
       texUpdatesByte: marked === 'texture' ? s.texUpdates.byteOffset : 0, texUpdates: 0,
+      heldByte: s.held.byteOffset, heldKeys: s.keyRows,
     };
     let updates = 0;
     let texUpdates = 0;

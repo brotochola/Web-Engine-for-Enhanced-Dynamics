@@ -328,6 +328,7 @@ test("E-177: with emit.pixiKeyed, the keyed frames' resync header and Pixi's upd
   assert.equal(plain.pixiKeyRows, 0);
   assert.equal(plain.pixiKeyUpdatesByte, -1);
   assert.equal(plain.pixiKeyHeaderByte, -1);
+  assert.equal(plain.pixiKeyHeldByte, -1);
   assert.equal(plain.emit.keyHeaderByte, -1);
   const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(true), null, null, true);
   const L = m.layout;
@@ -342,6 +343,8 @@ test("E-177: with emit.pixiKeyed, the keyed frames' resync header and Pixi's upd
     ['pixiTables', L.pixiTableByte, L.pixiTableSlots * GPU_PACK_COLUMNS.length * 4],
     ['keyHeader', L.pixiKeyHeaderByte, 64],
     ['keyUpdates', L.pixiKeyUpdatesByte, MAX * 64],
+    // E-492: the words the statics hold, a key's (48 bytes) for every key the texture has.
+    ['keyHeld', L.pixiKeyHeldByte, L.pixiKeyRows * 48],
   ].sort((a, b) => a[1] - b[1]);
   for (let k = 0; k < spans.length; k++) {
     const [name, at, bytes] = spans[k];
@@ -405,4 +408,32 @@ test('E-194: keyed LiquidFun particles take the keys past the keyed decorations 
   const deco = L.emit.decoKeyedByte;
   assert.ok(records >= deco + decorations * 32 || records + particles * 32 <= deco, 'apart from the decorations\' records');
   assert.ok(new Uint32Array(m.buffer, records, particles * 8).every((x) => x === 0), 'stale from the start (epoch 0)');
+});
+
+// E-492: with emit.keyedParticles the particle slots' keys follow the keyed LiquidFun particles (the slots of rows without
+// a key after them); they keep no records (Pixi's keyed pack compares each row with what its statics hold).
+test('E-492: keyed particle slots take the keys past the keyed LiquidFun particles, without records', () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const entities = 3000;
+  const decorations = 2000;
+  const liquidFun = 5000;
+  const particles = 4000;
+  const spec = (pixiKeyed, keyedParticles) => ({
+    entities, spriteBytes: SpriteRenderer.getBufferSize(entities), casterBytes: 0,
+    decorationBytes: DecorationComponent.getBufferSize(decorations), pixiKeyed, keyedDecorations: pixiKeyed ? decorations : 0,
+    keyedLiquidFun: pixiKeyed ? liquidFun : 0, keyedParticles,
+  });
+  const without = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(true, 0), null, null, true);
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(true, particles), null, null, true);
+  const L = m.layout;
+  assert.equal(without.layout.emit.keyedParticles, 0);
+  assert.equal(L.emit.keyedParticles, particles);
+  assert.equal(L.pixiKeyBase, entities + decorations + liquidFun + particles, 'the slots\' keys past the LiquidFun particles\'');
+  assert.equal(L.pixiKeyRows, Math.ceil((entities + decorations + liquidFun + particles + MAX) / 1024) * 1024);
+  assert.ok(L.pixiKeyHeldByte + L.pixiKeyRows * 48 <= m.buffer.byteLength, 'the held words hold every key');
+  const unkeyed = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(false, particles), null, null, true).layout;
+  assert.equal(unkeyed.pixiKeyBase, 0, 'no keyed frames, no keys');
+  assert.equal(unkeyed.emit.keyedParticles, 0);
 });

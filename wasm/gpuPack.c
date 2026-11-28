@@ -400,13 +400,31 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
    update of KEYED_ROW_WORDS u32 (the statics, then the key). results[0] is 0 (the split packs' particle count; N-414:
    the keyed pack's went with E-191's shadow terms), results[1] the update count. E-189: a key with KEY_TEX_ONLY too changed its texture alone (an animation's frame): with texUpdates it
    goes up as a texture update of KEYED_TEX_WORDS (its row, then the texture as the float bits the statics hold), the
-   count at results[2]; without, as an update like any other. */
+   count at results[2]; without, as an update like any other.
+   E-492: `held` (KEYED_HELD_WORDS u32 a key, for every key a frame can write: keyBase + its rows) holds the words the
+   renderer's statics hold, as the updates the renderer took left them: rows first, then texture words, in their order
+   (staticsScatterGl.js and staticsScatterGpu.js land them so). A row that would go up is compared with its key's words
+   there: none differs, and nothing goes up (a mark the renderer already took: pre-render marks a change until the
+   renderer draws past its frame, so most go up in two frames; a keyless slot whose row holds what it held); only the
+   texture word, and with texUpdates it goes up as a texture update; else as an update. A texture-only row goes up only
+   when its word differs. The caller zeroes `held` with the statics (both start at zeros). */
 #define KEYED_ROW_WORDS 16
 #define KEYED_TEX_WORDS 2
+#define KEYED_HELD_WORDS 12
 #define KEY_NONE 0xffffffffu
 #define KEY_CHANGED 0x80000000u
 #define KEY_TEX_ONLY 0x40000000u
 #define KEY_FLAGS (KEY_CHANGED | KEY_TEX_ONLY)
+/* E-514: the word of an indexed statics row that holds its texture (sprite_static's d[6]); E-492: a keyed update's too. */
+#define INDEXED_TEX_WORD 6
+
+/* E-514: which of a statics row's 12 words (s0, s1, s2) differ from the row at b, a bit a word. */
+INLINE uint32_t statics_diff(const v128_t s0, const v128_t s1, const v128_t s2, const uint32_t *b) {
+  const uint32_t m0 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s0, wasm_v128_load(b)));
+  const uint32_t m1 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s1, wasm_v128_load(b + 4)));
+  const uint32_t m2 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s2, wasm_v128_load(b + 8)));
+  return m0 | (m1 << 4) | (m2 << 8);
+}
 
 /* E-387: with withGbuf, each drawn instance's G-buffer words from the key column and the block at G (GB_*, defined with
    the split pack above, whose E-444 forms write the same words from the collector's columns). E-455: results[3] says
@@ -417,8 +435,8 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
    of its pose: the shader fetches the pose from the queue's own pose columns by that row. */
 INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count, uint32_t cap,
                            double invDepthDenom, float *pose, float *slots, uint32_t keyBase, uint32_t *updates,
-                           uint32_t *results, uint32_t *texUpdates, float *rows, const int byRow, const uint32_t *G, const int withGbuf,
-                           const int withBands, const int gbufStatics) {
+                           uint32_t *results, uint32_t *texUpdates, uint32_t *held, float *rows, const int byRow,
+                           const uint32_t *G, const int withGbuf, const int withBands, const int gbufStatics) {
   float *GW = withGbuf ? (float *)(uintptr_t)G[GB_DST] : 0;
   const uint8_t *GF = withGbuf ? (const uint8_t *)(uintptr_t)G[GB_FLAGS] : 0;
   const uint8_t *GS = withGbuf ? (const uint8_t *)(uintptr_t)G[GB_SELF] : 0;
@@ -448,18 +466,22 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
       s = keyBase + k;
       send = 1;
     } else if (send && texUpdates && (raw & KEY_TEX_ONLY)) {
-      uint32_t *tx = texUpdates + tu * KEYED_TEX_WORDS;
+      /* E-492: only a texture the statics do not hold. The held words take it after the loop, as the renderer does. */
       const float texF = (float)TEX[i];
-      tx[0] = s;
-      __builtin_memcpy(tx + 1, &texF, 4);
-      tu++;
+      uint32_t texW;
+      __builtin_memcpy(&texW, &texF, 4);
+      if (held[s * KEYED_HELD_WORDS + INDEXED_TEX_WORD] != texW) {
+        uint32_t *tx = texUpdates + tu * KEYED_TEX_WORDS;
+        tx[0] = s;
+        tx[1] = texW;
+        tu++;
+      }
       send = 0;
     }
     if (send) {
       /* sprite_static's words in the indexed order: scale, anchor; the depth term 0, the packed tint, the texture, the
          tile multiplier's x; its y, the tile offsets, and (E-455 step 3) with the words the slot's G-buffer word, in
          every form that has them, so the texture holds each slot's current word whatever form drew it last; else a zero. */
-      uint32_t *up = updates + u * KEYED_ROW_WORDS;
       float slotWord = 0.0f;
       if (withGbuf) {
         const uint32_t e = raw & ~KEY_FLAGS;
@@ -467,12 +489,29 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
           slotWord = (float)(e % 65535u + 1u + ((uint32_t)(GF[e] & 63u) << 16) + (e < selfN ? (uint32_t)(GS[e] & 3u) << 22 : 0u));
         }
       }
-      wasm_v128_store(up, wasm_f32x4_make(SX[i], SY[i], AX[i], AY[i]));
-      wasm_v128_store(up + 4, wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)TEX[i], TMX[i]), 1,
-                                                       (int32_t)packed_tint((double)A[i], TINT[i])));
-      wasm_v128_store(up + 8, wasm_f32x4_make(TMY[i], (float)((double)TOU[i] * TILE_OFF_SCALE), (float)((double)TOV[i] * TILE_OFF_SCALE), slotWord));
-      wasm_v128_store(up + 12, wasm_i32x4_make((int32_t)s, 0, 0, 0));
-      u++;
+      const v128_t s0 = wasm_f32x4_make(SX[i], SY[i], AX[i], AY[i]);
+      const v128_t s1 = wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)TEX[i], TMX[i]), 1,
+                                                (int32_t)packed_tint((double)A[i], TINT[i]));
+      const v128_t s2 = wasm_f32x4_make(TMY[i], (float)((double)TOU[i] * TILE_OFF_SCALE), (float)((double)TOV[i] * TILE_OFF_SCALE), slotWord);
+      /* E-492: what the statics hold for this key decides what goes up. */
+      uint32_t *h = held + s * KEYED_HELD_WORDS;
+      const uint32_t diff = statics_diff(s0, s1, s2, h);
+      if (texUpdates && diff == (1u << INDEXED_TEX_WORD)) {
+        uint32_t *tx = texUpdates + tu * KEYED_TEX_WORDS;
+        tx[0] = s;
+        tx[1] = (uint32_t)wasm_i32x4_extract_lane(s1, 2);
+        tu++;
+      } else if (diff) {
+        uint32_t *up = updates + u * KEYED_ROW_WORDS;
+        wasm_v128_store(up, s0);
+        wasm_v128_store(up + 4, s1);
+        wasm_v128_store(up + 8, s2);
+        wasm_v128_store(up + 12, wasm_i32x4_make((int32_t)s, 0, 0, 0));
+        wasm_v128_store(h, s0);
+        wasm_v128_store(h + 4, s1);
+        wasm_v128_store(h + 8, s2);
+        u++;
+      }
     }
     slots[k * SLOT_FLOATS] = (float)s;
     if (withGbuf && !gbufStatics) {
@@ -498,6 +537,12 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
       gw[2] = GBUF_FOOT_NONE;
     }
   }
+  /* E-492: the renderer lands the texture words after the rows (staticsScatterGl.js's second draw, staticsScatterGpu.js's
+     second dispatch), and so do the held words. A key's rows in a frame carry the same statics (it has one row of them),
+     so a later row of a key whose texture word went up sends that word again at most. */
+  for (uint32_t j = 0; j < tu; j++) {
+    held[texUpdates[j * KEYED_TEX_WORDS] * KEYED_HELD_WORDS + INDEXED_TEX_WORD] = texUpdates[j * KEYED_TEX_WORDS + 1];
+  }
   results[0] = 0;
   results[1] = u;
   results[2] = tu;
@@ -509,9 +554,9 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
    this one's code stays its own copy (with the words' forms in the same export, the plain pack ran 7.8 % slower). */
 INLINE uint32_t pack_keyed_forms(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count, uint32_t cap,
                                  double invDepthDenom, float *pose, float *slots, uint32_t keyBase, uint32_t *updates,
-                                 uint32_t *results, uint32_t *texUpdates, float *rows, const int byRow) {
-  return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, results, texUpdates, rows,
-                    byRow, 0, 0, 0, 0);
+                                 uint32_t *results, uint32_t *texUpdates, uint32_t *held, float *rows, const int byRow) {
+  return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, results, texUpdates, held,
+                    rows, byRow, 0, 0, 0, 0);
 }
 
 /* E-387: the keyed pack's forms with the G-buffer words (the block at G), each a copy of its own: with the words' bands
@@ -519,14 +564,14 @@ INLINE uint32_t pack_keyed_forms(const uint32_t *t, const uint32_t *key, uint32_
    statics update instead of each drawn instance's words; with bands it is ignored. */
 INLINE uint32_t pack_keyed_gbuf_forms(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count,
                                       uint32_t cap, double invDepthDenom, float *pose, float *slots, uint32_t keyBase,
-                                      uint32_t *updates, uint32_t *results, uint32_t *texUpdates, float *rows,
-                                      const int byRow, const uint32_t *G, const int gbufStatics) {
+                                      uint32_t *updates, uint32_t *results, uint32_t *texUpdates, uint32_t *held,
+                                      float *rows, const int byRow, const uint32_t *G, const int gbufStatics) {
   if (G[GB_ZINDEX]) {
     return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, results, texUpdates,
-                      rows, byRow, G, 1, 1, 0);
+                      held, rows, byRow, G, 1, 1, 0);
   }
-  return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, results, texUpdates, rows,
-                    byRow, G, 1, 0, gbufStatics);
+  return pack_keyed(t, key, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, results, texUpdates, held,
+                    rows, byRow, G, 1, 0, gbufStatics);
 }
 
 __attribute__((export_name("pack_sprites")))
@@ -665,17 +710,6 @@ uint32_t pack_sprites_indexed_scatter_gbuf(uint32_t table, uint32_t indices, uin
                               rowCount, 0, G, 1, 0);
 }
 
-/* E-514: the word of an indexed statics row that holds its texture (sprite_static's d[6]). */
-#define INDEXED_TEX_WORD 6
-
-/* E-514: which of a statics row's 12 words (s0, s1, s2) differ from the row at b, a bit a word. */
-INLINE uint32_t statics_diff(const v128_t s0, const v128_t s1, const v128_t s2, const uint32_t *b) {
-  const uint32_t m0 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s0, wasm_v128_load(b)));
-  const uint32_t m1 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s1, wasm_v128_load(b + 4)));
-  const uint32_t m2 = (uint32_t)wasm_i32x4_bitmask(wasm_i32x4_ne(s2, wasm_v128_load(b + 8)));
-  return m0 | (m1 << 4) | (m2 << 8);
-}
-
 /* E-514: an indexed frame's statics at dstStatic, every row as pack_indexed_scatter writes them, and the rows that differ
    from what the renderer's copy may hold, as keyed updates, so it sends those alone instead of every row. The copy holds
    one of two bases: this buffer's own statics before this call (selfBase: its first selfRows rows), or the other buffer's
@@ -742,27 +776,28 @@ uint32_t diff_indexed_statics(uint32_t table, uint32_t rowCount, uint32_t dstSta
 }
 
 /* E-177: the pose and slot streams at dstPose and dstSlots, the updates at updatesByte (room for cap), the results at
-   resultsByte; the queue's key column at keyByte. E-189: the texture updates at texUpdatesByte (room for cap; 0: none). */
+   resultsByte; the queue's key column at keyByte. E-189: the texture updates at texUpdatesByte (room for cap; 0: none).
+   E-492: the words the renderer's statics hold at heldByte (KEYED_HELD_WORDS u32 a key, keyBase + cap keys). */
 __attribute__((export_name("pack_sprites_keyed")))
 uint32_t pack_sprites_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                             double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
-                            uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte) {
+                            uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte, uint32_t heldByte) {
   return pack_keyed_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count, cap,
                           invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots, keyBase,
                           (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
-                          (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0);
+                          (uint32_t *)(uintptr_t)texUpdatesByte, (uint32_t *)(uintptr_t)heldByte, 0, 0);
 }
 
 /* E-387: pack_sprites_keyed with each drawn instance's G-buffer words too, the block at gbufByte (GB_WORDS u32). */
 __attribute__((export_name("pack_sprites_keyed_gbuf")))
 uint32_t pack_sprites_keyed_gbuf(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                                  double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
-                                 uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte,
+                                 uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte, uint32_t heldByte,
                                  uint32_t gbufByte) {
   return pack_keyed_gbuf_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count,
                                cap, invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots, keyBase,
                                (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
-                               (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0,
+                               (uint32_t *)(uintptr_t)texUpdatesByte, (uint32_t *)(uintptr_t)heldByte, 0, 0,
                                (const uint32_t *)(uintptr_t)gbufByte, 0);
 }
 
@@ -770,11 +805,11 @@ uint32_t pack_sprites_keyed_gbuf(uint32_t table, uint32_t keyByte, uint32_t indi
 __attribute__((export_name("pack_sprites_keyed_rows")))
 uint32_t pack_sprites_keyed_rows(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                                  double invDepthDenom, uint32_t dstRows, uint32_t dstSlots, uint32_t keyBase,
-                                 uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte) {
+                                 uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte, uint32_t heldByte) {
   return pack_keyed_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count, cap,
                           invDepthDenom, 0, (float *)(uintptr_t)dstSlots, keyBase, (uint32_t *)(uintptr_t)updatesByte,
                           (uint32_t *)(uintptr_t)resultsByte, (uint32_t *)(uintptr_t)texUpdatesByte,
-                          (float *)(uintptr_t)dstRows, 1);
+                          (uint32_t *)(uintptr_t)heldByte, (float *)(uintptr_t)dstRows, 1);
 }
 
 /* E-387: pack_sprites_keyed_rows with each drawn instance's G-buffer words too, the block at gbufByte. */
@@ -782,11 +817,12 @@ __attribute__((export_name("pack_sprites_keyed_rows_gbuf")))
 uint32_t pack_sprites_keyed_rows_gbuf(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                                       double invDepthDenom, uint32_t dstRows, uint32_t dstSlots, uint32_t keyBase,
                                       uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte,
-                                      uint32_t gbufByte) {
+                                      uint32_t heldByte, uint32_t gbufByte) {
   return pack_keyed_gbuf_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count,
                                cap, invDepthDenom, 0, (float *)(uintptr_t)dstSlots, keyBase,
                                (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
-                               (uint32_t *)(uintptr_t)texUpdatesByte, (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 0);
+                               (uint32_t *)(uintptr_t)texUpdatesByte, (uint32_t *)(uintptr_t)heldByte,
+                               (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 0);
 }
 
 /* E-455 step 3: pack_sprites_keyed_gbuf with each slot's word in its statics update (the third texel's last lane) and
@@ -795,11 +831,11 @@ __attribute__((export_name("pack_sprites_keyed_gbuf_statics")))
 uint32_t pack_sprites_keyed_gbuf_statics(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                                          double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
                                          uint32_t updatesByte, uint32_t resultsByte, uint32_t texUpdatesByte,
-                                         uint32_t gbufByte) {
+                                         uint32_t heldByte, uint32_t gbufByte) {
   return pack_keyed_gbuf_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count,
                                cap, invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots, keyBase,
                                (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
-                               (uint32_t *)(uintptr_t)texUpdatesByte, 0, 0,
+                               (uint32_t *)(uintptr_t)texUpdatesByte, (uint32_t *)(uintptr_t)heldByte, 0, 0,
                                (const uint32_t *)(uintptr_t)gbufByte, 1);
 }
 
@@ -809,11 +845,12 @@ __attribute__((export_name("pack_sprites_keyed_rows_gbuf_statics")))
 uint32_t pack_sprites_keyed_rows_gbuf_statics(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count,
                                               uint32_t cap, double invDepthDenom, uint32_t dstRows, uint32_t dstSlots,
                                               uint32_t keyBase, uint32_t updatesByte, uint32_t resultsByte,
-                                              uint32_t texUpdatesByte, uint32_t gbufByte) {
+                                              uint32_t texUpdatesByte, uint32_t heldByte, uint32_t gbufByte) {
   return pack_keyed_gbuf_forms((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count,
                                cap, invDepthDenom, 0, (float *)(uintptr_t)dstSlots, keyBase,
                                (uint32_t *)(uintptr_t)updatesByte, (uint32_t *)(uintptr_t)resultsByte,
-                               (uint32_t *)(uintptr_t)texUpdatesByte, (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 1);
+                               (uint32_t *)(uintptr_t)texUpdatesByte, (uint32_t *)(uintptr_t)heldByte,
+                               (float *)(uintptr_t)dstRows, 1, (const uint32_t *)(uintptr_t)gbufByte, 1);
 }
 
 /* E-479: the opaque pass's rows of a by-row keyed frame (opaquePass.js), nearest first: of its n draw slots, from the last,
