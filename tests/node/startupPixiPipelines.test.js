@@ -36,17 +36,18 @@ function fakeDevice() {
 }
 
 /** A render target as Pixi's RenderTarget gives it to the pipeline system: its colour formats, depth, flip. */
-function target(format, depthFormat = null) {
+function target(format, depthFormat = null, depthReadOnly = false) {
   return {
     colorAttachments: [{ texture: { format, source: { antialias: false } } }],
-    depthStencilAttachment: depthFormat ? { texture: { format: depthFormat }, depthReadOnly: false } : undefined,
+    depthStencilAttachment: depthFormat ? { texture: { format: depthFormat }, depthReadOnly } : undefined,
     flipY: false,
   };
 }
 
 function pipelineSystem(device) {
   const renderer = {
-    state: { getColorTargets: (state, count, format) => Array.from({ length: count }, () => ({ format })) },
+    state: { getColorTargets: (state, formats) => formats.map((format) => ({ format })) },
+    renderTarget: { isFrontFaceInverted: (renderTarget, flipY) => !!flipY },
     shader: { getProgramData: () => ({ pipeline: 'layout' }) },
     limits: { supportsOverrideConstants: true },
   };
@@ -70,9 +71,13 @@ test("a pipeline built ahead for a target is the one Pixi's draw into it finds; 
 
   // The system is drawing into the canvas when the worker builds the light pass's pipeline ahead.
   system.setRenderTarget(canvas);
+  const formatsBefore = system._colorFormats;
+  const stateBefore = [system._colorFormatId, system._stencilReadOnly, system.bundleStateKey];
   const built = system.weedPipelineAhead(geometry, program, state, undefined, light);
   assert.ok(built instanceof Promise, 'built asynchronously');
-  assert.equal(system._colorFormat, 'bgra8unorm', "the system's target state as it was");
+  assert.deepEqual(system._colorFormats, ['bgra8unorm'], "the system's target state as it was");
+  assert.equal(system._colorFormats, formatsBefore, 'its own list, put back in place');
+  assert.deepEqual([system._colorFormatId, system._stencilReadOnly, system.bundleStateKey], stateBefore);
   assert.equal(system._depthStencilFormat, 'depth24plus-stencil8');
   assert.equal(system.weedPipelineAhead(geometry, program, state, undefined, light), null, 'one build a pipeline');
   await built;
@@ -89,4 +94,13 @@ test("a pipeline built ahead for a target is the one Pixi's draw into it finds; 
   const onCanvas = system.getPipeline(geometry, program, state);
   assert.deepEqual([onCanvas.how, onCanvas.format, onCanvas.depth], ['sync', 'bgra8unorm', 'depth24plus-stencil8']);
   assert.equal(system.weedPipelineAhead(geometry, program, state, undefined, canvas), null, 'nothing to build: it has one');
+
+  // Bound to a read-only depth (its stencil read-only with it), two colour targets: all of it comes back after a build.
+  const readOnly = target('rgba16float', 'depth24plus-stencil8', true);
+  readOnly.colorAttachments.push({ texture: { format: 'r32uint', source: { antialias: false } } });
+  system.setRenderTarget(readOnly);
+  const keyBefore = system.bundleStateKey;
+  system.weedPipelineAhead(geometry, program, state, undefined, target('rgba8unorm', null, false));
+  assert.deepEqual([system._colorFormats, system._depthReadOnly, system._stencilReadOnly], [['rgba16float', 'r32uint'], true, true]);
+  assert.equal(system.bundleStateKey, keyBefore);
 });
