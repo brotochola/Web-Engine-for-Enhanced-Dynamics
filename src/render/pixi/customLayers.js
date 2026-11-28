@@ -277,8 +277,6 @@ export class PixiCustomLayers {
           pixelSnap: !!config.gpuParticles?.pixelSnap,
           look: looks,
           label: `gpu-particles-${layerName}`,
-          // New records go up as they are published, drawn this frame or not (WebGL uploads only at the next draw).
-          flush: (buffer) => this.worker.pixiApp.renderer.buffer.updateBuffer(buffer),
           recordTexture: this.worker._useWebGpu ? null : this.worker._gpuRecordTexture(),
         });
         gpuBatch.container.blendMode = blend;
