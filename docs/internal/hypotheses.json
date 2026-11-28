@@ -20744,19 +20744,20 @@
     {
       "id": "E-488",
       "title": "gpuGalaxy's Pixi spends 12.6 % of itself (16.5 ms/s) in GpuParticleBatch._copy gpuParticleBatch.js:308-309, a TypedArray.set from the shared ring; W30's memory.copy (sharedCopy.js) would do it if the ring lived in a WebAssembly.Memory",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "CPU pass on the demos.",
+      "result": "Kept 2026-11-28 (7861b26b): renderer 1.536 -> 0.942 ms WebGL, 1.561 -> 0.982 WebGPU in gpuGalaxyScene",
       "next": "Put the ring in a shared WebAssembly.Memory (or the queue memory) and copy with the arena; Pixi CPU per function before and after.",
       "refs": [],
       "aliases": [
         "gpu particle ring copy"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-2065"
       ]
     },
     {
@@ -45380,6 +45381,20 @@
       "text": "Read and fixed 2026-11-28 (4fe40578).\n- **The world-rect cache keeping its size** after a canvas resize (the E-525 agent's probe read Blastforge's worldRt at 1920 x 1080 after a resize to 1280 x 720): not a bug. customLayers' paint recreates the target at the new size on its next paint (worldRectCacheStep keys on the canvas size, so a resize draws live for the held frames, then paints into a new target); the probe read it during the live phase.\n- **customLayers.initialize run again** gave back the shared picture target (E-525) but left each layer's own rt and rtOut and its sprite: today initialize runs once per worker (a scene change makes new workers), so it leaked nothing yet; with workers kept across scenes (SST-9) it would. Now it lets go of every layer target (a shared one given back, its own picture target and look output destroyed) and destroys the layer's sprite. Test in tests/node/sharedLookTargets.test.js (initialize run again: the own targets released, no shared target held, the sprites destroyed), which fails without the fix; node 3675/0, demos 149/0 with Pixi 8.23's merge.",
       "commits": [
         "4fe40578"
+      ]
+    },
+    {
+      "id": "R-2065",
+      "date": "2026-11-28",
+      "time": "07:07",
+      "timeFrom": "recorded",
+      "title": "Kept: GPU particle rings upload straight from the shared memory with no copy of their own; gpuGalaxyScene renderer -39 % WebGL, -37 % WebGPU (logic, the writers, +0.02 to +0.07 ms); 448 MiB less",
+      "verdict": "kept",
+      "text": "An agent built it on opt/e488 (bede663c the tools: tests/bench/chrome/gpuRingUploadKernel.mjs and tests/bench/gpuParticleLockstepCompare.mjs; 2296a124 the change), merged to main.\n- **Where the time went** (gpuGalaxyScene defaults, 4 194 304 particles, headed Chrome 158, GTX 1650, --src, one trace): WebGPU Pixi busy 121.0 ms/s, of it the ring 66.1 (updateBuffer, Chrome's writeBuffer, 44.8; _copy 19.0; _copyWords 2.3); WebGL 76.8 ms/s, the ring 29.0 (_gpuRecordRowsGl 14.7, _copy 10.0, _copyWords 4.3).\n- **Routes** (the kernel, 4 writer workers, 1.52 MB a frame, ms a frame, WebGPU / WebGL): copy into the ring's own array then upload 0.811 / 0.469; memory.copy into a private memory (W30) 0.809 / 0.461 (dropped); straight from the shared memory 0.609 / 0.271; staging buffers mapped ahead then copyBufferToBuffer (WebGPU) 0.270. Chrome 158 accepts views of shared memory in writeBuffer, texSubImage2D, bufferData and bufferSubData; read-back 0 of 29 360 128 words differ. A GPU-side ring is not possible (the writers have no device).\n- **Chosen:** the ring has no copy of its own (448 MiB less in gpuGalaxy's Pixi worker). WebGL fills the record texture straight from the ring, each range only its own texels (texRecordRangeGl: a partial first row, whole rows, a partial last row: the rest of a row may hold unpublished records). WebGPU stages ranges of 1 024 records or more through up to three MAP_WRITE buffers mapped ahead (src/render/webgpu/ringStaging.js), only the range's bytes copied to the ring buffer; small ranges and frames with no mapped buffer go by Buffer.update from the shared memory.\n- **Agent's trace after:** WebGPU Pixi 121.0 -> 93.7 ms/s (-22.6 %), the ring 66.1 -> 29.3; WebGL 76.8 -> 60.4 (-21.4 %), the ring 29.0 -> 9.6.\n- **ABAB** (runPredatorAbab, gpuGalaxyScene, 01b13def against 2296a124, 4 pairs, 2026-11-28 06:55 to 07:02 by the files): WebGL NEUTRAL (below floor), renderer 1.536 -> 0.942 ms, logic 0.707 -> 0.773; WebGPU NEUTRAL (below floor), renderer 1.561 -> 0.982, logic 0.706 -> 0.723. The logic workers (the rings' writers) pay about 0.02 to 0.07 ms (E-123: the GPU process reading the shared memory they write); the renderer saves about 0.6 ms. Kept on judgment.\n- **Pictures:** lockstep frames, 01b13def against the change: GPU Galaxy (120 steps), gpuParticlesStressScene sort=1 and sort=0 (150 steps), WebGL and WebGPU: 0 pixels in all six (two base runs also 0 apart). Tests: node 3719/0, demos 149/0; tests/node/gpuParticleBatch.test.js covers the ranges' texels and the WebGPU layer over Pixi 8.23's real GpuBufferSystem.\n- Open: the copy into the mapped range (ringStaging.js stage, 20.7 ms/s; flush 5.2) on WebGPU; Chrome's texSubImage2D copy on WebGL (9.2 ms/s); the WebGL instance-attribute fallback not exercised in a scene.",
+      "commits": [
+        "bede663c",
+        "2296a124",
+        "7861b26b"
       ]
     }
   ],
