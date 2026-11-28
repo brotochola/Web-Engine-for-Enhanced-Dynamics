@@ -124,8 +124,13 @@ export class PixiCustomLayers {
       }
       if (old && old.gpu) old.gpu.destroy();
       if (old && old.earlierPasses) this.worker.lookPasses.destroy(old);
-      // E-525: the shared picture target given back (the layer's own targets are left as they were).
-      if (old && old.rtShared) this.worker.lookPasses.giveTarget(old.rt);
+      // N-465: the layer's targets let go of too (a shared picture target given back, E-525; its own picture target and
+      // its look's output destroyed), and its sprite off the stage. Workers kept across scenes (SST-9) run this again.
+      if (old && (old.rt || old.rtOut)) {
+        if (old.displaySprite && !old.worldRt) old.displaySprite.destroy();
+        if (old.rt) this._letGoRT(old.rt, old.rtShared);
+        if (old.rtOut) this._letGoRT(old.rtOut, false);
+      }
       const sources = old && old.sharedSources;
       if (!sources) continue;
       const keys = Object.keys(sources);
