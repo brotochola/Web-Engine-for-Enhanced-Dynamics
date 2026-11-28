@@ -381,8 +381,10 @@ fn faceHeight(face: vec4<f32>) -> f32 {
   return ((floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) % 32768.0) / 8.0;
 }
 
-// Towards unit direction l, no further than reach (a lamp's distance; the sun's is unbounded). DX-GBUF: with the ids
-// map, only the heights of the pixel's own entity (selfId) count; a pixel of no entity counts every height.
+// #if !SELFSHADOW_DDA
+// lighting.selfShadowMarch 'steps'. Towards unit direction l, no further than reach (a lamp's distance; the sun's is
+// unbounded). DX-GBUF: with the ids map, only the heights of the pixel's own entity (selfId) count; a pixel of no entity
+// counts every height.
 fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32, selfId: f32) -> f32 {
   let s = 1.0 / uniforms.uGroundInvScaleY;
   let size = vec2<f32>(textureDimensions(uFaceMap, 0));
@@ -413,6 +415,57 @@ fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32, selfId: f32) -> f32 
   }
   return 1.0;
 }
+// #endif !SELFSHADOW_DDA
+// #if SELFSHADOW_DDA
+// E-423 (lighting.selfShadowMarch 'dda'): every cell the ray crosses on the picture plane, in order (lightingBasic.frag.glsl
+// says how): a world px, or a face map texel where that is coarser; the steps' reach and bias; two cells under the ray in a
+// row shade, a lone one (a one-texel spike) does not.
+const SELF_DDA_CELLS: i32 = 48;
+fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32, selfId: f32) -> f32 {
+  let s = 1.0 / uniforms.uGroundInvScaleY;
+  let size = vec2<f32>(textureDimensions(uFaceMap, 0));
+  let cell = max(1.0, uniforms.uFullCanvasSize.x / (uniforms.uZoom * size.x));
+  let a = vec2<f32>(p.x, p.y * s - p.z * uniforms.uFaceLight.x) / cell;
+  let d = vec2<f32>(l.x, l.y * s - l.z * uniforms.uFaceLight.x) / cell;
+  let c0 = floor(a);
+  let sgn = select(vec2<f32>(1.0), vec2<f32>(-1.0), d < vec2<f32>(0.0));
+  let inv = 1.0 / max(abs(d), vec2<f32>(1e-6));
+  var tNext = (0.5 + sgn * (c0 + 0.5 - a)) * inv;
+  let n0 = weedWorldToNorm((c0 + 0.5) * cell);
+  let flip = uniforms.uFlipY > 0.5;
+  let fy = select(1.0, -1.0, flip);
+  let g = (uniforms.uZoom * cell) * size / uniforms.uFullCanvasSize;
+  let rot = uniforms.uCameraRot;
+  let stepX = vec2<f32>(rot.x, rot.y * fy) * g * sgn.x;
+  let stepY = vec2<f32>(-rot.y, rot.x * fy) * g * sgn.y;
+  var texel = vec2<f32>(n0.x, select(n0.y, 1.0 - n0.y, flip)) * size;
+  let last = size - 1.0;
+  let tFar = min(reach, uniforms.uSelfShadow.x * (uniforms.uSelfShadow.y + 1.0));
+  let rise = l.z + 0.25;
+  let base = p.z + uniforms.uSelfShadow.z;
+  // Cells under the ray in a row (another entity's cell, skipped, neither counts nor breaks it).
+  var run = 0.0;
+  for (var i = 0; i < SELF_DDA_CELLS; i++) {
+    let tIn = min(tNext.x, tNext.y);
+    if (tIn >= tFar) { break; }
+    let m = step(tNext, tNext.yx);
+    tNext += m * inv;
+    texel += m.x * stepX + m.y * stepY;
+    let tOut = min(min(tNext.x, tNext.y), tFar);
+    let tc = vec2<i32>(clamp(texel, vec2<f32>(0.0), last));
+    let f = textureLoad(uFaceMap, tc, 0);
+// #if IDS
+    if (selfId > 0.5) {
+      let gi = textureLoad(uFaceIds, tc, 0);
+      if (abs(floor(gi.r * 255.0 + 0.5) * 256.0 + floor(gi.g * 255.0 + 0.5) - selfId) > 0.5) { continue; }
+    }
+// #endif IDS
+    run = select(0.0, run + 1.0, f.r > 0.0 && faceHeight(f) > base + rise * select(tIn, tOut, rise < 0.0));
+    if (run > 1.5) { return 0.0; }
+  }
+  return 1.0;
+}
+// #endif SELFSHADOW_DDA
 
 fn selfShadow(p: vec3<f32>, selfId: f32) -> f32 {
   return selfShadowToward(p, normalize(uniforms.uFaceSun.xyz), 1e9, selfId);

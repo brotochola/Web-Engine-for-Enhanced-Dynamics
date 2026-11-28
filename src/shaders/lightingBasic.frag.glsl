@@ -383,8 +383,10 @@ float faceHeight(vec4 face) {
   return mod(floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5), 32768.0) / 8.0;
 }
 
-// The first step skips the pixel's own neighbours, and the bias grows with the distance: the map is at the light pass's
-// resolution, so a steep surface's own texels next door read a few px higher (the bench's freckles).
+// #if !SELFSHADOW_DDA
+// lighting.selfShadowMarch 'steps': the first step skips the pixel's own neighbours, and the bias grows with the distance:
+// the map is at the light pass's resolution, so a steep surface's own texels next door read a few px higher (the bench's
+// freckles).
 // Towards unit direction l, no further than reach (a lamp's distance; the sun's is unbounded). DX-GBUF: with the ids
 // map, only the heights of the pixel's own entity (selfId) count; a pixel of no entity counts every height.
 float selfShadowToward(vec3 p, vec3 l, float reach, float selfId) {
@@ -413,6 +415,65 @@ float selfShadowToward(vec3 p, vec3 l, float reach, float selfId) {
   }
   return 1.0;
 }
+// #endif !SELFSHADOW_DDA
+// #if SELFSHADOW_DDA
+// E-423 (lighting.selfShadowMarch 'dda'): a 2D DDA, as Pixel Art Parallax walks its height map: every cell the ray crosses
+// on the picture plane, in order, the pixel's own skipped, out to the steps' reach (uSelfShadow.x times y + 1: 28 floor px),
+// so an edge thinner than a step is not lost and the first 8 px are read. A cell is a world px of the picture plane (the
+// oblique projection's, where the sprites' art lies: with pixelArt the light's own grid), or a face map texel where that is
+// coarser (the light at a share of the canvas, a far zoom), read at its centre. A cell is under the ray when its height
+// passes the ray's lowest point in it (where it enters, rising; where it leaves, falling) with the steps' bias, 3 px and a
+// quarter of the distance; two such cells in a row shade. A lone one does not: a sprite drawn smaller than its height map
+// shows it in one-texel spikes, which the steps hit as freckles and every cell's read turned into streaks along the light
+// (selfShadowStressScene). A fixed bound with a break (ANGLE): 48 cells hold the reach at any light.
+const int SELF_DDA_CELLS = 48;
+float selfShadowToward(vec3 p, vec3 l, float reach, float selfId) {
+  float s = 1.0 / uGroundInvScaleY;
+  vec2 size = vec2(textureSize(uFaceMap, 0));
+  float cell = max(1.0, uFullCanvasSize.x / (uZoom * size.x));
+  // The ray on the picture plane, in cells: where it starts and how far it runs a floor px along it.
+  vec2 a = vec2(p.x, p.y * s - p.z * uFaceLight.x) / cell;
+  vec2 d = vec2(l.x, l.y * s - l.z * uFaceLight.x) / cell;
+  vec2 c0 = floor(a);
+  vec2 sgn = vec2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);
+  vec2 inv = 1.0 / max(abs(d), vec2(1e-6));
+  // The distance to the first edge on each axis, then a cell's.
+  vec2 tNext = (0.5 + sgn * (c0 + 0.5 - a)) * inv;
+  // A cell's centre in the face map's texels is affine in the cell (weedWorldToNorm's zoom and turn, the flip): the first
+  // cell's, and a cell's step along x and along y.
+  vec2 n0 = weedWorldToNorm((c0 + 0.5) * cell);
+  float fy = uFlipY > 0.5 ? -1.0 : 1.0;
+  vec2 g = (uZoom * cell) * size / uFullCanvasSize;
+  vec2 stepX = vec2(uCameraRot.x, uCameraRot.y * fy) * g * sgn.x;
+  vec2 stepY = vec2(-uCameraRot.y, uCameraRot.x * fy) * g * sgn.y;
+  vec2 texel = vec2(n0.x, uFlipY > 0.5 ? 1.0 - n0.y : n0.y) * size;
+  vec2 last = size - 1.0;
+  float tFar = min(reach, uSelfShadow.x * (uSelfShadow.y + 1.0));
+  float rise = l.z + 0.25;
+  float base = p.z + uSelfShadow.z;
+  // Cells under the ray in a row (another entity's cell, skipped, neither counts nor breaks it).
+  float run = 0.0;
+  for (int i = 0; i < SELF_DDA_CELLS; i++) {
+    float tIn = min(tNext.x, tNext.y);
+    if (tIn >= tFar) break;
+    vec2 m = step(tNext, tNext.yx);
+    tNext += m * inv;
+    texel += m.x * stepX + m.y * stepY;
+    float tOut = min(min(tNext.x, tNext.y), tFar);
+    ivec2 tc = ivec2(clamp(texel, vec2(0.0), last));
+    vec4 f = texelFetch(uFaceMap, tc, 0);
+// #if IDS
+    if (selfId > 0.5) {
+      vec4 gi = texelFetch(uFaceIds, tc, 0);
+      if (abs(floor(gi.r * 255.0 + 0.5) * 256.0 + floor(gi.g * 255.0 + 0.5) - selfId) > 0.5) continue;
+    }
+// #endif IDS
+    run = f.r > 0.0 && faceHeight(f) > base + rise * (rise < 0.0 ? tOut : tIn) ? run + 1.0 : 0.0;
+    if (run > 1.5) return 0.0;
+  }
+  return 1.0;
+}
+// #endif SELFSHADOW_DDA
 
 float selfShadow(vec3 p, float selfId) {
   return selfShadowToward(p, normalize(uFaceSun.xyz), 1e9, selfId);

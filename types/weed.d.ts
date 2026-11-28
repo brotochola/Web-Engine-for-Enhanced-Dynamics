@@ -380,6 +380,15 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   selfShadow?: boolean;
   /**
+   * How the self-shadow walks towards a light over the heights, out to 28 floor px. 'steps' (the default) reads them at 6
+   * fixed steps of 4 px from 8 px on; 'dda' reads every cell the ray crosses, in order (a world px, or a light texel where
+   * that is coarser), and two cells in a row above the ray shade: the first 8 px are read, a thin edge is not stepped over
+   * and a lone spike leaves no freckle. Its reads grow with `resolution` (about 9 at 0.25, 17 at 0.5, 34 at 1): on a
+   * GTX 1650 the self-shadow pass took about 2.9 times the steps' time at resolution 1 and 1.8 times at 0.5. Read when the
+   * scene starts.
+   */
+  selfShadowMarch?: 'steps' | 'dda';
+  /**
    * The shading a sprite's own normals cause (its normal map's, or the ones its height map gives), for the sun and for
    * the lamps apart. A light's shading on a pixel is what the normal takes from it (0: lit as drawn; 1: no light).
    * `subtract` comes off it first (what falls under 0 stays 0, so a face shaded less than that is lit as drawn), then

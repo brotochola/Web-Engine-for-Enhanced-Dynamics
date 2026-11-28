@@ -11,7 +11,8 @@
  *   0.5)  shadowRes (sun map, 1)  lights (32)  cones (the first lights made cones, 0)  maxLights (MAX_LIGHTS and the light texture's width, 256)
  *   silhouettes (sprites and sun cards, 2000)  renders (sun columns casters, 200)  cards (card rows among the columns'
  *   instances, which cast none: 0)  lamps (48)  casters (a lamp, 64)
- *   tile (a lamp's tile texels, 256)  steps (self-shadow steps, 6)  rays (1)  format (the shadow maps' target: rgba8,
+ *   tile (a lamp's tile texels, 256)  steps (self-shadow steps, 6)  rays (1)  march (the self-shadow's walk, E-423:
+ *   steps or dda; steps)  format (the shadow maps' target: rgba8,
  *   r16f, r32f, rgba16f; rgba8)  mapDepth (the maps' depth buffer: 24, as Pixi's depth-stencil, or 16)  night (1: no sun term)  intBits (WebGPU i32 uniforms: 'exact', as the vendored
  *   Pixi writes them, or 'float', a float's bits: then an i32 uniform reads huge)  samples (12)  targetMs (25)  maxK (512)  warmupMs (300)  hangMs (10000)  capacity (0)
  *   floorScaleY, heightScaleY (the light bench's camera: 0.736, 0.752)  lightTile (E-205: the light passes' tiles, px of
@@ -56,6 +57,8 @@ export function readParams(search) {
     tile: int('tile', 256, 8),
     steps: int('steps', 6, 1),
     rays: int('rays', 1, 1),
+    // E-423: the self-shadow's walk (lighting.selfShadowMarch): 'steps' (fixed steps) or 'dda' (every cell the ray crosses).
+    march: q.get('march') === 'dda' ? 'dda' : 'steps',
     format,
     night: q.get('night') === '1',
     intBits: q.get('intBits') === 'float' ? 'float' : 'exact',

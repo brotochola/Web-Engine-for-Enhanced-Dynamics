@@ -40,7 +40,9 @@ import {
   LIGHT_CULLING_TILE_SIZE_MAX,
   LIGHT_CULLING_TILE_SIZE_MIN,
   SHADOW_SAMPLES_MAX,
+  SELF_SHADOW_MARCHES,
   lightCullingTileSizeOf,
+  selfShadowMarchOf,
   shadowSamplesOf,
 } from '../util/configDefaults.js';
 import { Layer } from '../core/layer.js';
@@ -623,6 +625,8 @@ class PixiRenderer extends AbstractWorker {
     /** DX-PIXELSHADOW: lighting.pixelArt (each world pixel lit whole, the maps read with one tap). */
     this._pixelArtLight = false;
     this._selfShadowOn = false; // DX-SELFSHADOW: lighting.selfShadow, WebGL for now
+    /** E-423: lighting.selfShadowMarch, the self-shadow's walk: 'steps' or 'dda' (selfShadowMarchOf). */
+    this._selfShadowMarch = LIGHTING_DEFAULTS.selfShadowMarch;
     this.sunMapRT = null;
     // N-317: the sun map reaches past the screen so a pixel near its edge finds its ray's landing (sunMapMargins): the
     // margins it was made with (texels: left, top, right, bottom), the ones this frame needs, the light pass's uv into it
@@ -4180,6 +4184,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (shadowsOn) this._sunMapOn = true;
       // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
+      // E-423: its walk, fixed steps or every cell the ray crosses; anything else takes the default and says so once.
+      this._selfShadowMarch = selfShadowMarchOf(lightingConfig);
+      if (lightingConfig.selfShadowMarch !== undefined && lightingConfig.selfShadowMarch !== this._selfShadowMarch) {
+        console.warn(`WeedJS: lighting.selfShadowMarch is ${SELF_SHADOW_MARCHES.map((m) => `'${m}'`).join(' or ')}, not ${JSON.stringify(lightingConfig.selfShadowMarch)}: the self-shadow takes '${this._selfShadowMarch}'`);
+      }
       // DX-PIXELSHADOW: each world pixel lit whole, the maps read with one tap (lighting.pixelArt).
       this._pixelArtLight = lightingConfig.pixelArt === true;
       // lighting.shadowSamples and lighting.lightCullingTileSize: a number outside their range is clamped, anything else
