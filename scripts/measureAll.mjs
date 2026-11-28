@@ -11,11 +11,11 @@
  *   exact    the bundles' and the WASM modules' bytes (raw and gzipped), the lines of code, the test cases: from git, here
  *   kernels  every Node kernel of tests/bench (shipped variants), src/ of a against src/ of b in the same VM, alternating:
  *            VMs differ from each other by 40 %, so a number is only ever a difference inside one
- *   scenes   eight scenes of each revision in Chromium without drawing (sceneAb.mjs), each worker's own time a frame
+ *   scenes   nine scenes of each revision in Chromium without drawing (sceneAb.mjs), each worker's own time a frame, from its sources and again from its production bundle
  *   health   when b is the commit checked out: the suites, the thread races and the demos in Chromium
  *
  * --vms 4 (a machine), --machines linux,linuxArm,win, --rounds 5, --shards 4 (jobs a VM's work is split over), --only a,b
- * (kernels whose names start so), --no-health, --no-kernels, --no-scenes, --minutes 240 (to wait). The page and its numbers go to tests/results/measure-all/<name>/ (git-ignored):
+ * (kernels whose names start so), --no-health, --no-kernels, --no-scenes, --no-bundle (the scenes from each side's production bundle too, by default), --minutes 240 (to wait). The page and its numbers go to tests/results/measure-all/<name>/ (git-ignored):
  * a release's table goes where the release's notes are, by hand.
  *
  * A kernel is a piece of the engine's work in a loop, not a frame: a page of them says what moved and by how much, and the
@@ -46,12 +46,13 @@ function git(args, opts = {}) {
 }
 
 function parse(argv) {
-  const out = { vms: 4, machines: 'linux,linuxArm,win', rounds: 5, shards: 4, minutes: 240, health: true, kernels: true, scenes: true, report: false };
+  const out = { vms: 4, machines: 'linux,linuxArm,win', rounds: 5, shards: 4, minutes: 240, health: true, kernels: true, scenes: true, bundle: true, report: false };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, '');
     if (key === 'no-health') out.health = false;
     else if (key === 'no-kernels') out.kernels = false;
     else if (key === 'no-scenes') out.scenes = false;
+    else if (key === 'no-bundle') out.bundle = false;
     else if (key === 'report') out.report = true;
     else if (['a', 'b', 'name', 'machines', 'only'].includes(key)) out[key] = argv[++i];
     else if (['vms', 'rounds', 'shards', 'minutes'].includes(key)) out[key] = Number(argv[++i]);
@@ -126,6 +127,11 @@ function requestOf(o, shaA, shaB, health) {
   if (o.scenes) {
     const real = machines.filter((m) => m !== 'mac' && m !== 'macIntel');
     jobs.push({ task: 'sceneAb', label: 'scenes', machines: real, vms: o.vms, args: { a: shaA, b: shaB, pairs: 3 } });
+    // The same scenes from each revision's production bundle (N-172: the build is part of what ships).
+    if (o.bundle) {
+      jobs.push({ task: 'sceneAb', label: 'scenes-bundle', machines: real, vms: o.vms,
+        args: { a: shaA, b: shaB, pairs: 3, bundle: 'weed.prod.bundle.esm.min.js' } });
+    }
   }
   if (health) {
     jobs.push({ task: 'tests', machines: ['linux', 'linuxArm', 'win', 'winArm'] });

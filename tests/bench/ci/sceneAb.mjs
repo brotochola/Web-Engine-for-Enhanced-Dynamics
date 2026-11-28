@@ -7,13 +7,16 @@
  * workers already share them.
  *
  *   node tests/bench/ci/sceneAb.mjs --a <rev> --b <rev> [--pairs 3] [--scenes predator,boids | --set all] [--query k=v&k=v] [--mode shell] [--draw] [--channel chrome]
+ *     [--bundle weed.prod.bundle.esm.min.js]
  *     [--warmup-ms 6000] [--duration-ms 8000] [--shard 1/2] --output file.json
  *
  * A pair is one observation of a worker's time: ln(B / A). What a scene draws, the GPU's time and the frames on the screen
  * are not here. --set all: every scene both revisions have (sceneList.mjs), instead of the eight below. --mode: how Chromium
  * is started (runScene; frameProbe found no difference once nothing is drawn). --channel chrome: the installed Chrome (on a
  * laptop with two GPUs Playwright's Chromium may take the integrated one). Each run says the frames each worker ran: a
- * worker that ran a few, cold, has no time to read.
+ * worker that ran a few, cold, has no time to read. --bundle <file>: each side runs its own revision's dist/<file> (what
+ * it shipped) instead of its sources, its rows named <scene>@bundle (N-172: a bundle's build can cost what its sources do
+ * not).
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -29,6 +32,9 @@ const RUN_TIMEOUT_MS = 180000;
 export const SCENES = Object.freeze([
   { key: 'bunnyMark', path: '/demos/bunnyMarkScene/bunnyMarkScene.js', exportName: 'BunnyMarkScene', query: 'bunnies=60000' },
   { key: 'predator', path: '/demos/predatorScene/predatorScene.js', exportName: 'PredatorScene', query: 'crowd=0.4' },
+  // A crowd (about 57 000 entities): where the logic, spatial and particle workers' per-entity code is most of the frame
+  // (N-172's esbuild bundle read 26 % more logic there and level at crowd 0.4).
+  { key: 'predatorCrowd', path: '/demos/predatorScene/predatorScene.js', exportName: 'PredatorScene', query: 'crowd=2.5' },
   { key: 'boids', path: '/demos/boidsScene/boidsScene.js', exportName: 'BoidsScene', query: '' },
   { key: 'balls', path: '/demos/ballsScene/ballsScene.js', exportName: 'BallsScene', query: '' },
   { key: 'littleCity', path: '/demos/littleCity/littleCityScene.js', exportName: 'LittleCityScene', query: '' },
@@ -87,6 +93,10 @@ function main() {
     scenes = scenes.filter((s) => want.includes(s.key));
   }
   if (typeof args.query === 'string') scenes = scenes.map((s) => ({ ...s, query: args.query }));
+  if (typeof args.bundle === 'string') {
+    const bundle = `weedBundle=${args.bundle}`;
+    scenes = scenes.map((s) => ({ ...s, key: `${s.key}@bundle`, query: s.query ? `${s.query}&${bundle}` : bundle }));
+  }
   if (args.shard) {
     const [k, n] = String(args.shard).split('/').map(Number);
     scenes = scenes.filter((_, i) => i % n === k - 1);
