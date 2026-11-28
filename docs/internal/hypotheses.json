@@ -26226,7 +26226,9 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-2060"
+      ],
       "refs": [],
       "result": "",
       "date": "2026-11-28",
@@ -26297,13 +26299,15 @@
       ]
     },
     {
-      "records": [],
+      "records": [
+        "R-2061"
+      ],
       "refs": [],
-      "result": "",
+      "result": "Fixed 2026-11-28: vdepthMesh takes the layer's run-time blend",
       "date": "2026-11-28",
       "id": "N-467",
       "title": "InstancedSpriteBatch.setLayerBlend updates the blend of mesh and edgeMesh but not vdepthMesh: after a run-time blend change on the entities layer the flat face instances keep the old blend",
-      "status": "open",
+      "status": "kept-hygiene",
       "kind": "bug",
       "area": "render",
       "statusText": "Found reading the code 2026-11-28 (the N-463 agent), not seen in a browser",
@@ -45306,6 +45310,30 @@
         "b6b02629",
         "6448a409"
       ]
+    },
+    {
+      "id": "R-2060",
+      "date": "2026-11-28",
+      "time": "05:20",
+      "timeFrom": "recorded",
+      "title": "Not steady: the five sites deopt at load and in warm-up only (the summary's location table counts the whole log); tilemapGid's OSR exits fixed (312 -> 2, Predator's floor pack 11.9 -> 9.5 ms at load); spatial and active-list fixes left for the CPU lane",
+      "verdict": "kept-hygiene",
+      "text": "An agent read the five sites on fix/n466 (48617309, 8802e396, 2e78b61c).\n- **None is steady.** summarizeV8Deopt's \"Deopts by location\" table counts the whole log; its \"Steady deopts (the last 8000 ms)\" lists none of the five sites in any of the four p823 logs (R-2055's \"steady\" was my misreading). Raw times in logs of about 22 s: tilemapGid one 9 ms burst at 3.3-4.1 s; spatialWorker:2319 3.9-9.3 s; particleWorker:1417 3.8-7.5 s; gameObjectActiveState 3.6-16.4 s. No worker's STEP_MS can move from them.\n- **tilemapGid.js:243/253, packGidStacksRgba8:** \"exit from OSR'd inner loop\": Maglev compiled the column loop as OSR code and deopted on leaving it once a row of the 416 x 208 map. Both passes are now one loop over the page's tiles (x wraps to the next row; the layer loop inside stays). Deopts WebGL 312 -> 2, WebGPU 161 -> 7; d8 16.0, one call on Predator's map: 171-348 OSR exits -> 0, 11.9 -> 9.5 ms (load time). A parity test against the old nested loops on Predator's real map and random pages (offset, one tile wide or high, split); tilemapStressScene 0 of 921 600 pixels on both backends. Kept (a46291ed on main, with N-467).\n- **spatialWorker.js:2319, _finishRebuiltRows:** \"insufficient type feedback for generic named access\" on the store after the loop, on OSR code made before that store ever ran: about 4 s of warm-up. The count set before the loop, the capped rows returned; deopts WebGL 315 -> 6, WebGPU 567 -> 6. Left on fix/n466 for the CPU lane (a per-frame method: a Predator guard first).\n- **gameObjectActiveState.js:189, mergeSortedIntoActiveList:** the same mechanism; the merge, the copy back and the empty-list copy each a function returning after its loop; deopts WebGL 60 -> 9, WebGPU 116 -> 9; a random test against the sorted union and 20 000 random merges equal. Left on fix/n466 for the CPU lane (per-frame logic: a guard first).\n- **particleWorker.js:1417:** not changed: E-179/E-183/R-0776 measured that moving this loop into a function cost 3-5 % in a grid scene.\n- Left: tilemapGid.js:110 (gidPageQuads, 4-5 deopts at load), tileMap.js:337 (5 at load), the Predator demo's cameraController.js:60 (255 in warm-up on WebGPU).",
+      "commits": [
+        "48617309",
+        "a46291ed",
+        "8802e396",
+        "2e78b61c"
+      ]
+    },
+    {
+      "id": "R-2061",
+      "date": "2026-11-28",
+      "time": "05:20",
+      "timeFrom": "recorded",
+      "title": "Fixed: setLayerBlend reaches the vertex-depth twin",
+      "verdict": "kept-hygiene",
+      "text": "N-467 fixed: setLayerBlend sets vdepthMesh's blend too (the flat face instances' opaque draw took its blend once, when made). A test in tests/node/instancedSpriteHeightFrames.test.js on real batches (WebGL and WebGPU, faces with height frames): after setLayerBlend('add') the mesh, the edge pass and the vertex-depth twin all draw 'add'; it fails without the fix. Suites with a46291ed: node 3707/0, demos 149/0, bundles 372/0 each. Off the hot path: not timed."
     }
   ],
   "leads": [
