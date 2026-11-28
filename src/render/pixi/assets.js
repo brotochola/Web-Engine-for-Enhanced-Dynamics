@@ -52,6 +52,8 @@ export class PixiAssets {
     this.mapsTableRgba = new Float32Array(0);
     this.mapsTableWidth = 1;
     this.mapsTableHeight = 1;
+    // E-500: whether some frame of the table has heights (MAPS_HEIGHTS); none: the entities' opaque pass is one program.
+    this.mapsTableHeights = false;
     // A baked atlas from before E-496: its twin page has the atlas's layout, so every frame reads at its atlas texel.
     this.mapsAtlasLayout = false;
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): animation index -> atlas lookup id, as RGBA32F (red).
@@ -549,6 +551,7 @@ export class PixiAssets {
   _buildMapsTable() {
     const packed = packMapsTable(this.flatTextures || [], this.mapsAtlasLayout && this.atlasMapsSource !== null);
     this.mapsTableRgba = packed.data;
+    this.mapsTableHeights = packed.heights > 0;
     this.texLutNeedsGpuUpload = true;
     if (this.mapsTableSource !== null && this.mapsTableWidth === packed.width && this.mapsTableHeight === packed.height) return;
     this.mapsTableWidth = packed.width;
