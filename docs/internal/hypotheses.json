@@ -22373,7 +22373,8 @@
       ],
       "records": [
         "R-1315",
-        "R-1952"
+        "R-1952",
+        "R-2047"
       ]
     },
     {
@@ -26156,6 +26157,57 @@
         "painter step wrap"
       ],
       "date": "2026-11-27"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-463",
+      "title": "An entities batch drawn in chunks (GPU particle groups or look-layer regions sorted among the entities) with faces and some frame with heights may lose the instances without heights",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "statusText": "Found reading the code 2026-11-28 by the E-500 agent, not seen in a browser",
+      "next": "src/render/gpuParticleChunks.js builds its chunk meshes from batch.mesh.shader (with faces and height frames, the heights-only program) and hides vdepthMesh, so the flat instances may go undrawn; chunk meshes also keep the program of their first use after setDepthFaces or setHeightFrames rebuild the programs. A scene with faces, height maps and a GPU particle group between the entities (capture), then the chunks given both programs.",
+      "aliases": [
+        "chunks faces heights",
+        "gpuParticleChunks vdepth"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-464",
+      "title": "The engine's WebGPU device asks only the two sampler limits: buffers stay at the 128 MiB default, the cap of the indexed sprites' statics on WebGPU",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "statusText": "Found 2026-11-28 reading Pixi after 8.23 (upstream 8ee5e44 asks the adapter for them in its own requestDevice)",
+      "next": "Ask the adapter's maxBufferSize and maxStorageBufferBindingSize in requestWeedGpu (src/render/webgpu/requestGpuDevice.js); the cap read in rendererBackend.js follows.",
+      "aliases": [
+        "webgpu buffer limits",
+        "maxStorageBufferBindingSize"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-465",
+      "title": "A world-rect layer's cache target keeps its size after a canvas resize (Blastforge: 1920 x 1080 after a resize to 1280 x 720); customLayers.initialize run again does not destroy a layer's own rt and rtOut",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "statusText": "Found 2026-11-28 by the E-525 agent's render-target probe (tests/bench/renderTargetProbe.mjs --resize)",
+      "next": "customLayers.js makes worldRt at the canvas size: check whether it is redrawn at the new size or only lazily; destroy the old rt/rtOut in initialize. Probe before and after.",
+      "aliases": [
+        "worldRt resize",
+        "customLayers leak"
+      ]
     }
   ],
   "records": [
@@ -44975,6 +45027,15 @@
       "title": "Read, not built: a houses cache cannot keep the barrio's soft and half face texels identical; about 0.6 ms on the Radeon, none on the GTX 1650, for two days; the G-buffer pass's gl_FragDepth is the cheaper exact target (E-463)",
       "verdict": "parked",
       "text": "An agent read the frame for E-521 (2026-11-28, main e6db68a6) and stopped before building, as briefed for a design that cannot keep every picture.\n- **Design read:** one queue, a uniform per batch program choosing all / cached only / uncached only (each instance keeps its index, so painter steps and depth stay bit-identical); cached = face instances with no heights, no soft, half or glow texels, tint alpha 1, a nearest atlas without mip levels; the cache holds colour + depth, the G-buffer + depth and the unshaded pass's depth (depth as colour: WebGPU cannot copy depth24plus), copied back each frame with gl_FragDepth / frag_depth before the live rows.\n- **Why not identical:** the barrio's face sheets are full of soft and half texels (caras0 165 of 226 frames binary, 70 % of the area; caras1 603 of 1 031, 44 %; caras2 59 of 108, 57 %). A person behind a soft roof edge shows through it today (the edge pass draws soft face pixels after every opaque one, without depth); from a cache the person would draw over it. A half pixel in front of a person the painter drew first blends over the person today and over the floor from a cache. houseLightScene uses a linear atlas with mip levels, so even its binary frames have fractional edges. Only the G-buffer half is order-independent (unblended writes, coverage at alpha 0.5).\n- **Size:** cull and paint variants in every program of the batch (colour vertex-depth, frag-depth, edge; G-buffer MRT or face + ids; unshaded mask, mesh, edge), plain, indexed and by row, GLSL and WGSL, plus copy programs and invalidation: about 2 days, and pre-render's ~2 ms for faces (R-1360) unchanged.\n- **GPU before, still camera, glFrameRecorder --gpu-draws.** Barrio hour=22 (11 675 instances): all draws Radeon (Vega, Ryzen 7 4800H) 7.35 ms, GTX 1650 3.43 (855 MHz median); colour vertex-depth / frag-depth / edge 1.16 / 0.19 / 0.29 (GTX 0.44 / 0.05 / 0.10); G-buffer 958 x 538 1.04 (0.29); unshaded 1080p 0.62 (0.25); floor cache copy 0.36 (0.18); light pass 1.66 (0.96). houseLightScene bench=faces hour=15 (6 800 instances, lighting resolution 1): all 6.57 / 4.18; G-buffer 1.73 / 1.15; colour vertex-depth / edge 0.93 / 0.58 (0.71 / 0.57); light pass 1.83 / 0.73.\n- **Expected net of the full design in the barrio:** about 0.6 ms on the Radeon (about 1.5 saved by cacheable faces, about 0.9 of copies), about zero on the GTX 1650.\n- **The cheaper exact route found:** the G-buffer pass writes gl_FragDepth for every texel (gbufDepthFragment), which turns early depth off for every face: 1.04 ms on the Radeon at a quarter of the pixels the colour pass's vertex-depth program shades in 1.16; 1.73 against 0.93 in houseLightScene at the same size. E-378's split (vertex depth where a frame has no heights) given to the G-buffer pass makes it cheaper with no cache and no copy: E-463's direction, handed to the E-500 agent (same files). E-520 (a house's faces as one instance) goes after the instance count, which R-1360 found to be the cost.\nParked: reopen if the soft and half face texels can be made binary in the barrio's sheets, or a game asks for a still-camera cache that may change its soft edges."
+    },
+    {
+      "id": "R-2047",
+      "date": "2026-11-28",
+      "time": "01:25",
+      "timeFrom": "recorded",
+      "title": "PixiJS after 8.23.0 read: no new release, 19 commits on dev, nothing that changes speed or pictures, every patch anchor intact; 8.23.0's own _touchKeys allocation and SST-7's stale fields handed to the port",
+      "verdict": "note",
+      "text": "The owner asked (2026-11-28) what pixijs/pixijs added after v8.23.0. An agent read it (read only): npm's latest is still 8.23.0 (2026-11-11); the dev tag is 8.23.0-dev.99fce53 (2026-11-27), unreleased. 19 commits on dev from 2026-11-20 to 11-27: 10 do not reach the engine (text 2820a81 39abe10, docs 92500d8, DOM c1c6951 90ebea8, Assets c8afa30 ed9a8a3, compressed-texture loaders ba86df6 ceb5278, Safari video f432d4d); 9 read diff by diff:\n- 99fce53 #12466 WGSL modules labelled with the program's name: useful, small (Chrome's WGSL errors name the program; no per-frame cost); PipelineSystem's three anchors (E-152's getPipeline cache, SST-7's pipelinesAhead) still appear once.\n- 5c593fa #12418 an index buffer made with a size and no data declares indexFormat: maybe, a small step towards E-516 (indexed draws filled on the GPU).\n- ee3f365 #12434 tileBasedGpu option: MSAA colour only, the engine draws no antialiased target; not E-523's depth and stencil discard.\n- 8ee5e44 #12414 Pixi's requestDevice asks the adapter's maxBufferSize and maxStorageBufferBindingSize: the engine brings its own device (requestGpuDevice.js asks only sampler limits), so filed as N-464.\n- 37c78ba #12429 (for...of at init), 76d1069 #12400 (Color rounding, tints use toBgrNumber/toArray), 16011d7 #12407 (canvas format fallback), 5480f2c #12425 (empty cube textures, layered depth on WebGPU), a860c71 #12416 (two renderers sharing a buffer): no effect here.\nEvery buildPixi.mjs anchor counts the same in 8.23.0 and the dev tip (script anchors.mjs): the next tag should be a version bump after DX-PIXI823's port.\nTwo problems in 8.23.0 itself, handed to the DX-PIXI823 agent: (1) upstream's replacement for E-152's BindGroup patch, `get _touchKeys()`, holds an arrow capturing `this`, so a context is allocated at every bind-group switch on WebGPU (fix in open PR #12460, issue #12391): keep a small patch until it lands; (2) SST-7's weedPipelineAhead saves `_colorTargetCount` and `_colorFormat`, which 8.23.0 replaced with `_colorFormats` (an array rewritten in place) and added `_stencilReadOnly`; the anchors still match, so the build does not catch it.\nOpen upstream PRs to watch: #12415 renderer.buffer.write/copy (copy submits its own encoder on WebGPU, E-464's pattern), #12460, #12474 (integer textures and the global mipmap default).\nRecommendation: upgrade on 8.23.0, not a dev commit."
     }
   ],
   "leads": [
