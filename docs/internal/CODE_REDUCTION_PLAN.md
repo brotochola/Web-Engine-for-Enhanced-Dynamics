@@ -1,6 +1,11 @@
 # Less code in src/ without losing speed (N-303)
 
-A plan, not started. The owner asked on 2026-11-18 for less code overall: duplicated code, code kept for backwards
+**Status (2026-11-28, from the register's N-303):** under way. 35 of the 40 items were done by 2026-11-23 (R-1816 to
+R-1905, each batch through a Predator gate, neutral); CR-27 was dropped, CR-28 had gone before it and CR-36 stays.
+Left: CR-17 (pixiWorker's cold copies), CR-39 (the physics worker as a module) and the rests of CR-5, CR-12 and
+CR-21. What follows is the plan as written on 2026-11-18; each item's outcome is in the register.
+
+The owner asked on 2026-11-18 for less code overall: duplicated code, code kept for backwards
 compatibility, dead code, and code that could be managed better, all without losing speed. Register row N-303
 (`REVIEW_PLAN.md#N-303`); the audit behind it is its first record (R-1430). Items CR-0 to CR-39 below.
 
@@ -263,7 +268,8 @@ CR-37 and CR-38 touch no public API. The owner approved both on 2026-11-23 (R-18
 
 - **Phase A first**, with CR-33 and CR-34, which the owner decided. It depends on nothing, it is mostly deletion,
   and it shrinks what N-256 (the pixiWorker split into subsystem classes) has to move.
-- **pixiWorker and N-256.** N-256 is not started, and DX-BARRIOS's group R lands before its PW-1.
+- **pixiWorker and N-256.** When this was written N-256 had not started, and DX-BARRIOS's group R landed before its
+  PW-1 (PW-1 to PW-10 were done on 2026-11-22).
   - CR-4 and CR-7 go before PW-1.
   - CR-17 is done subsystem by subsystem, right after the PW item that moves that subsystem, in its new module. That
     way the two plans never edit the same lines twice.

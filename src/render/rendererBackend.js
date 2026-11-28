@@ -290,6 +290,20 @@ export function keyedLiquidFunFit(entities, keyedDecorations, liquidFun, maxSpri
     && (entities | 0) + (keyedDecorations | 0) + (liquidFun | 0) + (maxSprites | 0) <= max;
 }
 
+/**
+ * E-492: whether a keyed scene keys its particles too, by particle slot past the keyed decorations and LiquidFun
+ * particles: when the statics also hold a row for every particle slot.
+ * @param {number} entities the scene's entities
+ * @param {number} keyedBefore the decoration slots and LiquidFun particles keyed before them (0: none)
+ * @param {number} particles particle.maxParticles
+ * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
+ * @param {number} [max] the backend's keys (keyedStaticsMax; WebGL's by default)
+ * @returns {boolean}
+ */
+export function keyedParticlesFit(entities, keyedBefore, particles, maxSprites, max = INDEXED_SPRITES_MAX_WEBGL) {
+  return (particles | 0) > 0 && (entities | 0) + (keyedBefore | 0) + (particles | 0) + (maxSprites | 0) <= max;
+}
+
 export function pixiRendererTypeName(type, RendererType) {
   if (RendererType) {
     if (type === RendererType.WEBGPU) return 'WEBGPU';

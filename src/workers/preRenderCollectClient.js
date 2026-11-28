@@ -4,6 +4,9 @@
 // (renderQueueMemoryRegions' collect spec). collect_sprites and collect_sprites_turned walk the sprites as
 // collectVisibleEntities' two loops did; a sprite with a layer mask, or whose sort line needs a frame not resolved
 // yet, is handed back for collectRenderable in JS. The JS loops are tests/reference/preRenderCollectJs.mjs.
+// E-520: collect_decorations walks the visible decorations as collectVisibleDecorations' loops did, on a copy of the
+// particle worker's published list in the memory (DecorationComponent is among the emit's blocks); an attached or masked
+// decoration is handed back to the JS.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { COLLECT_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
@@ -19,6 +22,9 @@ export const COLLECT_SLOTS = [
   'bActive', 'pX', 'pY', 'pRotC', 'pRotS', 'qX', 'qY', 'qRotC', 'qRotS', 'bInterpolate',
   'sAnchorX', 'sAnchorY', 'sScaleX', 'sScaleY', 'sInherit', 'sFaceC', 'sFaceS',
   'eLastTexture', 'eFrameW', 'eFrameH', 'eFrames',
+  // E-520, collect_decorations.
+  'dList', 'dListU32', 'dParent', 'dParentU32',
+  'dMask', 'dX', 'dY', 'dOffX', 'dOffY', 'dSortOffY', 'dInnerZ', 'dRotC', 'dRotS', 'dFoot',
 ];
 /** The kernel's mode bits: the bodies' published poses, the foot-line sort key. */
 export const COLLECT_MODE_BODIES = 1;
@@ -27,15 +33,23 @@ if (COLLECT_SLOTS.length > COLLECT_TABLE_SLOTS) throw new Error('preRenderCollec
 const SLOT = Object.fromEntries(COLLECT_SLOTS.map((name, k) => [name, k]));
 
 export async function bindPreRenderCollect(memory, collect) {
-  const k = await loadWasmKernel('preRenderCollect', engineWasmUrl, memory, ['collect_sprites', 'collect_sprites_turned']);
+  const k = await loadWasmKernel('preRenderCollect', engineWasmUrl, memory,
+    ['collect_sprites', 'collect_sprites_turned', 'collect_decorations']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, collect.tableByte, COLLECT_SLOTS.length);
   table[SLOT.listU32] = 1;
   table[SLOT.results] = collect.resultsByte;
+  const decorations = collect.decoListByte > 0 ? collect.decorations | 0 : 0;
   return {
     buffer,
     collectSprites: k.collect_sprites,
     collectSpritesTurned: k.collect_sprites_turned,
+    collectDecorations: k.collect_decorations,
+    // E-520: the visible decorations' copy, viewed at both slot widths (room for `decorations` ids).
+    decoList16: new Uint16Array(buffer, decorations > 0 ? collect.decoListByte : 0, decorations > 0 ? decorations : 0),
+    decoList32: new Uint32Array(buffer, decorations > 0 ? collect.decoListByte : 0, decorations > 0 ? decorations : 0),
+    decoListByte: decorations > 0 ? collect.decoListByte : 0,
+    decorations,
     table,
     tableByte: collect.tableByte,
     results: new Int32Array(buffer, collect.resultsByte, 4),
@@ -135,4 +149,46 @@ export function writeCollectList(b, ids, n = ids ? ids.length : 0, published = f
   }
   b.table[SLOT.list] = 0;
   return 0;
+}
+
+/**
+ * E-520: collect_decorations' table for this frame: `visible`'s first `count` ids (the particle worker's published list,
+ * its count at [0]) copied into the memory, DecorationComponent's columns the collect reads and its depthFootDy, and the
+ * main collector (the queue buffer being written, as writeCollectColumns points it). False when the kernel cannot take
+ * the frame: no list region or no room for the ids, or a column outside the memory.
+ * @param {Awaited<ReturnType<typeof bindPreRenderCollect>>} b
+ * @returns {boolean}
+ */
+export function writeDecorationCollect(b, worker, DecorationComponent, visible, count) {
+  if (count > b.decorations || !visible) return false;
+  const t = b.table;
+  const buffer = b.buffer;
+  let ok = 1;
+  const parent = DecorationComponent.parentEntityIndex;
+  ok &= putColumn(t, SLOT.dParent, parent, true, buffer);
+  t[SLOT.dParentU32] = parent && parent.BYTES_PER_ELEMENT === 4 ? 1 : 0;
+  ok &= putColumn(t, SLOT.dMask, DecorationComponent.layerMask, true, buffer);
+  ok &= putColumn(t, SLOT.dX, DecorationComponent.x, true, buffer);
+  ok &= putColumn(t, SLOT.dY, DecorationComponent.y, true, buffer);
+  ok &= putColumn(t, SLOT.dOffX, DecorationComponent.offsetX, true, buffer);
+  ok &= putColumn(t, SLOT.dOffY, DecorationComponent.offsetY, true, buffer);
+  ok &= putColumn(t, SLOT.dSortOffY, DecorationComponent.sortOffsetY, true, buffer);
+  ok &= putColumn(t, SLOT.dInnerZ, DecorationComponent.innerZ, true, buffer);
+  ok &= putColumn(t, SLOT.dRotC, DecorationComponent.rotC, true, buffer);
+  ok &= putColumn(t, SLOT.dRotS, DecorationComponent.rotS, true, buffer);
+  ok &= putColumn(t, SLOT.dFoot, DecorationComponent.depthFootDy, true, buffer);
+  ok &= putColumn(t, SLOT.oY, worker._renderableY, true, buffer);
+  ok &= putColumn(t, SLOT.oType, worker._renderableType, true, buffer);
+  ok &= putColumn(t, SLOT.oIndex, worker._renderableIndex, true, buffer);
+  ok &= putColumn(t, SLOT.oX, worker._collectPx, true, buffer);
+  ok &= putColumn(t, SLOT.oPy, worker._collectPy, true, buffer);
+  ok &= putColumn(t, SLOT.oRotC, worker._collectRotC, true, buffer);
+  ok &= putColumn(t, SLOT.oRotS, worker._collectRotS, true, buffer);
+  if (ok !== 1) return false;
+  const wide = visible.BYTES_PER_ELEMENT === 4;
+  if (wide) b.decoList32.set(visible.subarray(1, 1 + count));
+  else b.decoList16.set(visible.subarray(1, 1 + count));
+  t[SLOT.dList] = b.decoListByte;
+  t[SLOT.dListU32] = wide ? 1 : 0;
+  return true;
 }

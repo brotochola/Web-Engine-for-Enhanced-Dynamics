@@ -1,5 +1,7 @@
 # DX-LAYERPASSES: a layer's look in several passes
 
+**Status (2026-11-28):** built on `feat/layer-passes` and kept on 2026-11-23 (R-1914).
+
 The owner's yes of 2026-11-23 ("si, queremos esa nueva api!"). A look is one full-screen draw, so a blur that could run
 along x and then along y (9 + 9 fetches a pixel) has to run both at once (81 in the platformer's bloom after E-450: about
 4.3 ms of GPU at 1080p on the GTX 1650, R-1442). With several passes, each draws into a target the next one samples.

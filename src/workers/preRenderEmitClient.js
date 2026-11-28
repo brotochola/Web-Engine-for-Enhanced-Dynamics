@@ -69,6 +69,8 @@ export const EMIT_SLOTS = [
   // N-450: DecorationComponent.depthFootDy, for the depth foot codes of the decoration rows that are no face (0: the
   // camera draws no pixel depth).
   'dDepthFoot',
+  // E-492: the key of particle slot 0 and how many particle slots are keyed (values; 0: particle rows keyless).
+  'pKeyBase', 'pKeyedCount',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -225,6 +227,10 @@ export async function bindPreRenderEmit(memory, emit) {
     // changed a static (its counter, lfStaticsSeen), Pixi asked for every statics again, or the texture tables changed.
     lfCheckedByte: emit.keyHeaderByte >= 0 && emit.lfCheckedByte >= 0 ? emit.lfCheckedByte : -1,
     lfCmpEpoch: 1,
+    // E-492: its particles, by slot past the keyed LiquidFun particles (0: keyless), every row marked (Pixi's keyed
+    // pack sends what its texture does not hold).
+    pKeyBase: (emit.entities | 0) + (emit.keyedDecorations | 0) + (emit.keyedLiquidFun | 0),
+    pKeyedCount: emit.keyHeaderByte >= 0 ? emit.keyedParticles | 0 : 0,
     lfStaticsSeen: -1,
     // E-312: the change frames' regions (-1: none) and the frames the next main-queue emit marks keys with (the queue
     // frame it writes and Pixi's last keyed one: setEmitKeyFrames).
@@ -508,6 +514,10 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   b.table[SLOT.lfKeyedCount] = lfKeyed ? b.lfKeyedCount : 0;
   b.table[SLOT.lfChecked] = lfKeyed && b.lfCheckedByte >= 0 ? b.lfCheckedByte : 0;
   b.table[SLOT.lfCmpEpoch] = b.lfCmpEpoch;
+  // E-492: and its particle rows by slot.
+  const pKeyed = keyed && b.pKeyedCount > 0;
+  b.table[SLOT.pKeyBase] = pKeyed ? b.pKeyBase : 0;
+  b.table[SLOT.pKeyedCount] = pKeyed ? b.pKeyedCount : 0;
   // E-312: the change frames and the frames (keyed queues only; 0 keeps the old marks, this frame's changes alone).
   b.table[SLOT.kChange] = keyed && b.keyChangeByte >= 0 ? b.keyChangeByte : 0;
   b.table[SLOT.dChange] = decoKeyed && b.decoChangeByte >= 0 ? b.decoChangeByte : 0;

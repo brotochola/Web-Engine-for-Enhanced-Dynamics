@@ -6,11 +6,21 @@ import {
   GPU_KEYED_CASTER_FLOATS, GPU_STATIC_FLOATS, makePackContext,
 } from '../../src/render/gpuQueueLayout.js';
 import {
-  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_ONLY, GPU_KEYED_TEX_WORDS, bindGpuPack,
-  packKeyedCastersScanWasm, packKeyedCastersWasm,
-  packKeyedRowsByRowWasm, packKeyedRowsWasm, packSplitRowsWasm,
+  GPU_KEYED_CHANGED, GPU_KEYED_HELD_WORDS, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_ONLY, GPU_KEYED_TEX_WORDS,
+  bindGpuPack, packKeyedCastersScanWasm, packKeyedCastersWasm,
+  packKeyedRowsByRowWasm as packByRowHeld, packKeyedRowsWasm as packHeld, packSplitRowsWasm, resetKeyedHeld,
 } from '../../src/render/gpuPackClient.js';
 import { compactShadowCasterIndices } from '../../src/render/gpuShadowCasters.js';
+
+// E-492: the pack compares each row it would send with the held words (what the renderer's statics hold) and sends only
+// what they lack. The tests below that predate them pack from held words no row matches (resetKeyedHeld's unknown), so
+// each row goes up as it did without them; the held words' own test is at the end.
+const fromUnknown = (pack) => (b, q, ctx, at, slots, keyed, cap) => {
+  resetKeyedHeld(b.buffer, keyed, true);
+  return pack(b, q, ctx, at, slots, keyed, cap);
+};
+const packKeyedRowsWasm = fromUnknown(packHeld);
+const packKeyedRowsByRowWasm = fromUnknown(packByRowHeld);
 
 // E-177: the keyed pack writes, for each draw slot, the pose the split pack writes there and the slot pair (the row's
 // key, its entity without the changed bit, or for a row without one the slot past the entities, and the depth the split
@@ -24,6 +34,7 @@ const DEPTH = 4; // the depth's float in the statics (gpuPack.c sprite_static)
 const TEX = 6; // the texture's float in the statics
 const KEY_FLAGS = (GPU_KEYED_CHANGED | GPU_KEYED_TEX_ONLY) >>> 0;
 const KEY_NONE = 0xffffffff;
+const HELD_KEYS = KEY_BASE + N;
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -97,6 +108,8 @@ async function setup(seed) {
   const slots = alloc(Float32Array, N * GPU_INDEXED_SLOT_FLOATS);
   const updates = alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS);
   const texUpdates = alloc(Uint32Array, N * GPU_KEYED_TEX_WORDS);
+  // E-492: the held words, a key each: keyBase and a slot a row.
+  const held = alloc(Uint32Array, HELD_KEYS * GPU_KEYED_HELD_WORDS);
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
   const indexByte = (top = (top + 63) & ~63);
@@ -105,8 +118,8 @@ async function setup(seed) {
   top += 16 + 16 * 8;
   if (top > buf.byteLength) throw new Error('the test memory is too small');
   const b = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
-  const keyed = { keyBase: KEY_BASE, updatesByte: updates.byteOffset, updates: 0 };
-  return { rng, q, b, order, splitPose, splitStat, pose, slots, updates, texUpdates, keyed };
+  const keyed = { keyBase: KEY_BASE, updatesByte: updates.byteOffset, updates: 0, heldByte: held.byteOffset, heldKeys: HELD_KEYS };
+  return { rng, q, b, order, splitPose, splitStat, pose, slots, updates, texUpdates, held, keyed };
 }
 
 const words = (f32, n) => new Uint32Array(f32.buffer, f32.byteOffset, n);
@@ -205,6 +218,24 @@ test('the keyed pack declines what it does not take', async () => {
     'a key column outside the memory');
   assert.equal(run({ space: GPU_SPACE_WORLD, indices: order, indexCount: N }, q, new Float32Array(N * 4)), -1, 'poses outside');
   assert.equal(run({ space: GPU_SPACE_WORLD, indices: order, indexCount: N }, q, pose, new Float32Array(N * 2)), -1, 'slots outside');
+  // E-492: without held words, or with too few for keyBase and a slot a row, or past the memory.
+  const all = { space: GPU_SPACE_WORLD, indices: order, indexCount: N };
+  const withHeld = (h, fn) => {
+    const was = { heldByte: keyed.heldByte, heldKeys: keyed.heldKeys };
+    Object.assign(keyed, h);
+    try {
+      return fn();
+    } finally {
+      Object.assign(keyed, was);
+    }
+  };
+  assert.equal(withHeld({ heldByte: 0 }, () => packHeld(b, q, makePackContext(q, all, N, {}), pose, slots, keyed, N)), -1, 'no held words');
+  assert.equal(withHeld({ heldKeys: HELD_KEYS - 1 }, () => packHeld(b, q, makePackContext(q, all, N, {}), pose, slots, keyed, N)), -1,
+    'a key short');
+  assert.equal(withHeld({ heldKeys: HELD_KEYS - 1 }, () => packHeld(b, q, makePackContext(q, all, N - 1, {}), pose, slots, keyed, N - 1)),
+    N - 1, 'enough for a capacity a row under');
+  assert.equal(withHeld({ heldByte: b.buffer.byteLength - 64 }, () => packHeld(b, q, makePackContext(q, all, N, {}), pose, slots, keyed, N)),
+    -1, 'past the memory');
 });
 
 test('pack_casters_keyed writes a pose, a key and the shadow terms a listed row, and declines a row without a key', async () => {
@@ -361,4 +392,97 @@ test('pack_casters_keyed_scan_xy writes the scan\'s rows, their x and y, and the
   assert.equal(packKeyedCastersScanWasm(b, q, N, got, KEY_BASE, N, null, scan), -1, 'a caster without a key');
   assert.deepEqual([...bounds], [-5, -5, -5, -5, -5, -5], 'a declined scan writes no bounds');
   assert.throws(() => packKeyedCastersScanWasm(b, q, N, got, KEY_BASE, N + 1, null, scan), /outruns/, 'a cap past the arrays');
+});
+
+// E-492: the held words are what the renderer's statics hold. A row the pack would send goes up only when its words are
+// not all there: as an update, or as a texture update when its texture word alone differs (with room for them); a row
+// marked for its texture alone only when that word differs. What it sends lands in the held words, the rows first and
+// then the texture words (the renderer's order). heldFrame is that rule in JavaScript, from the split pack's statics.
+function heldFrame(s, opts, cap, texOn, held) {
+  const n = packSplitRowsWasm(s.b, s.q, makePackContext(s.q, opts, cap, {}), s.splitPose, s.splitStat, cap);
+  const ss = words(s.splitStat, n * GPU_STATIC_FLOATS);
+  const ups = [];
+  const texs = [];
+  for (let k = 0; k < n; k++) {
+    const i = opts.indices ? opts.indices[k] : k;
+    const raw = s.q.key[i];
+    let key = (raw & ~KEY_FLAGS) >>> 0;
+    let send = (raw & GPU_KEYED_CHANGED) !== 0;
+    if (key >= KEY_BASE) {
+      key = KEY_BASE + k;
+      send = true;
+    } else if (send && texOn && (raw & GPU_KEYED_TEX_ONLY) !== 0) {
+      const w = ss[k * GPU_STATIC_FLOATS + TEX];
+      if (held[key * GPU_KEYED_HELD_WORDS + TEX] !== w) texs.push(key, w);
+      send = false;
+    }
+    if (!send) continue;
+    const w = new Uint32Array(GPU_KEYED_HELD_WORDS);
+    for (let j = 0; j < GPU_STATIC_FLOATS; j++) w[j] = j === DEPTH ? 0 : ss[k * GPU_STATIC_FLOATS + j];
+    let diff = 0;
+    for (let j = 0; j < GPU_KEYED_HELD_WORDS; j++) if (w[j] !== held[key * GPU_KEYED_HELD_WORDS + j]) diff |= 1 << j;
+    if (texOn && diff === 1 << TEX) {
+      texs.push(key, w[TEX]);
+    } else if (diff !== 0) {
+      ups.push(...w, key, 0, 0, 0);
+      held.set(w, key * GPU_KEYED_HELD_WORDS);
+    }
+  }
+  for (let t = 0; t < texs.length; t += 2) held[texs[t] * GPU_KEYED_HELD_WORDS + TEX] = texs[t + 1];
+  return { n, ups: Uint32Array.from(ups), texs: Uint32Array.from(texs) };
+}
+
+/** One frame through the pack against heldFrame: the same updates, texture updates and held words after. */
+function checkHeldFrame(s, label, opts, cap, byRow, texOn, want) {
+  s.keyed.texUpdatesByte = texOn ? s.texUpdates.byteOffset : 0;
+  const before = Uint32Array.from(s.held);
+  const model = heldFrame(s, opts, cap, texOn, before);
+  const first = byRow ? s.rows : s.pose;
+  const pack = byRow ? packByRowHeld : packHeld;
+  assert.equal(pack(s.b, s.q, makePackContext(s.q, opts, cap, {}), first, s.slots, s.keyed, cap), model.n, `${label}: rows`);
+  assert.equal(s.keyed.updates, model.ups.length / GPU_KEYED_ROW_WORDS, `${label}: updates`);
+  assert.equal(s.keyed.texUpdates, texOn ? model.texs.length / GPU_KEYED_TEX_WORDS : 0, `${label}: texture updates`);
+  assert.deepEqual(s.updates.subarray(0, model.ups.length), model.ups, `${label}: the updates' words`);
+  if (texOn) assert.deepEqual(s.texUpdates.subarray(0, model.texs.length), model.texs, `${label}: the texture updates`);
+  assert.equal(s.held.findIndex((w, j) => w !== before[j]), -1, `${label}: the held words after`);
+  if (want) want(s.keyed, label);
+  return s.keyed.updates + s.keyed.texUpdates;
+}
+
+test('E-492: the keyed pack sends only what the held words lack, and keeps them as the renderer lands its updates', async () => {
+  for (const seed of [492, 493]) {
+    for (const byRow of [false, true]) {
+      for (const texOn of [false, true]) {
+        const s = await setup(seed);
+        s.rows = new Float32Array(s.b.buffer, s.pose.byteOffset, N);
+        const form = `seed ${seed}, ${byRow ? 'by row' : 'pose'}${texOn ? ', texture updates' : ''}`;
+        const sorted = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N, type: s.q.type };
+        // From statics just made (zeros): every row sends.
+        resetKeyedHeld(s.b.buffer, s.keyed);
+        const first = checkHeldFrame(s, `${form}, from zeros`, sorted, N, byRow, texOn);
+        assert.ok(first > N * 0.1, `${form}: the first frame sends (${first})`);
+        // The same frame again: the held words have it all; only keys whose rows in the frame differ (the random
+        // queue repeats keys) send again.
+        const again = checkHeldFrame(s, `${form}, again`, sorted, N, byRow, texOn);
+        assert.ok(again < first * 0.1, `${form}: the frame again sends little (${again} of ${first})`);
+        // A frame that changes things: some textures alone, some scales, some rows marked that did not change, and the
+        // order turned, so the keyless slots hold other rows.
+        for (let c = 0; c < N / 10; c++) {
+          const i = (s.rng() * N) | 0;
+          const r = s.rng();
+          if (r < 0.4) s.q.textureId[i] = (s.q.textureId[i] + 1) & 0xffff;
+          else if (r < 0.7) s.q.scaleX[i] += 0.5;
+          if (s.q.key[i] !== KEY_NONE && ((s.q.key[i] & ~KEY_FLAGS) >>> 0) < KEY_BASE) s.q.key[i] = (s.q.key[i] | GPU_KEYED_CHANGED) >>> 0;
+        }
+        const turned = Uint32Array.from(s.order);
+        for (let k = 0; k < N; k++) s.order[k] = turned[(k + 37) % N];
+        const changed = checkHeldFrame(s, `${form}, changes`, sorted, N, byRow, texOn, (keyed, label) => {
+          if (texOn) assert.ok(keyed.texUpdates > 0, `${label}: texture-only changes go as texture updates`);
+        });
+        assert.ok(changed > again, `${form}: the changes send (${changed})`);
+        checkHeldFrame(s, `${form}, capacity under count`, sorted, 3210, byRow, texOn);
+        checkHeldFrame(s, `${form}, no list`, { space: GPU_SPACE_WORLD, type: s.q.type }, N, byRow, texOn);
+      }
+    }
+  }
 });

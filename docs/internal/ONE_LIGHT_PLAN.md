@@ -1,10 +1,11 @@
 # One light system for every camera (plan)
 
 **Opened:** 2026-11-17, planned in a chat session with the owner. **Revised:** 2026-11-18 against
-`main` at `4f60d4bd` (section 8 says what changed). **Status:** being built since 2026-11-18 on the
-branch `dx/one-light`, the code first and every measurement after it (the owner's order, section 8);
-nothing is measured yet. **Estimate:** about 16 to 23 hours of work in a row (section 4).
-**Registry:** `DX-ONELIGHT` and its items `OL-1` to `OL-4` in [`hypotheses.json`](./hypotheses.json).
+`main` at `4f60d4bd` (section 8 says what changed). **Status (2026-11-28):** done. Built on 2026-11-18 on the
+branch `dx/one-light`, the code first and every measurement after it (the owner's order, section 8), and merged to
+main that day (85ca7900; the Predator gate at crowd 2.5 is R-1404). **Estimate:** about 16 to 23 hours of work in a
+row (section 4).
+**Registry:** `DX-ONELIGHT` and its items `OL-1` to `OL-15`, all closed, in [`hypotheses.json`](./hypotheses.json).
 **Who builds it:** a session of its own (the owner asked for a plan another model can follow without
 the chat it came from, so everything it needs is here).
 

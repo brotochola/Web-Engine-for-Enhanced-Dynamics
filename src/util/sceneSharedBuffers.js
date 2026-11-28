@@ -55,7 +55,8 @@ import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
 import {
-  SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, keyedDecorationsFit, keyedLiquidFunFit, keyedSpritesEnabled,
+  SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, keyedDecorationsFit, keyedLiquidFunFit, keyedParticlesFit,
+  keyedSpritesEnabled,
   keyedStaticsMax,
   ySortEnabled,
 } from '../render/rendererBackend.js';
@@ -638,6 +639,8 @@ export function renderQueueMemorySpec(scene) {
         rigidBodyBytes: physics ? RigidBody.getBufferSize(n) : 0,
         bullets,
         visibility,
+        // E-520: the decoration collect's list, where DecorationComponent is among the emit's blocks.
+        decorations: emit && emit.decorationBytes > 0 ? config.decoration?.maxDecorations | 0 : 0,
       }
     : null;
   // W10: the painter sort's state for the worker that sorts the main queue (preRender.sortSprites, which the
@@ -831,6 +834,7 @@ function emitBlocks(scene) {
   const pixiKeyed = Boolean(pools.SpriteRenderer?.ComponentClass) && keyedSpritesEnabled(config, n, maxSprites);
   const keyMax = keyedStaticsMax(config);
   const keyedDecorations = pixiKeyed && keyedDecorationsFit(n, maxDecorations, maxSprites, keyMax) ? maxDecorations : 0;
+  const keyedLiquidFun = pixiKeyed && keyedLiquidFunFit(n, keyedDecorations, lfMax, maxSprites, keyMax) ? lfMax : 0;
   return {
     entities: n,
     spriteBytes: pools.SpriteRenderer?.ComponentClass ? SpriteRenderer.getBufferSize(n) : 0,
@@ -857,7 +861,10 @@ function emitBlocks(scene) {
     // E-188: and its decorations, keyed by pool slot past the entities, where the statics texture holds them.
     keyedDecorations,
     // E-194: and its LiquidFun particles, keyed by particle index past the decorations, where the texture holds them.
-    keyedLiquidFun: pixiKeyed && keyedLiquidFunFit(n, keyedDecorations, lfMax, maxSprites, keyMax) ? lfMax : 0,
+    keyedLiquidFun,
+    // E-492: and its particles, keyed by slot past the LiquidFun particles, so a particle that holds still sends nothing.
+    keyedParticles: pixiKeyed && keyedParticlesFit(n, keyedDecorations + keyedLiquidFun, maxParticles, maxSprites, keyMax)
+      ? maxParticles : 0,
   };
 }
 

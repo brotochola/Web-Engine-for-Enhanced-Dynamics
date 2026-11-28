@@ -23713,14 +23713,15 @@
         "face batching"
       ],
       "records": [
-        "R-1360"
+        "R-1360",
+        "R-2057"
       ],
-      "result": "",
+      "result": "Kept 2026-11-28 (8306af79): collect_decorations kernel, pre-render 10.45 -> 8.65 ms at faceLightScene town=80000; the GPU merge not doable identically and worth under 0.3 ms",
       "next": "Design the merged form (one mesh of the house's face quads, its texture ids and normals per vertex or per face; or the faces packed as one instance with a face table), keep the picture identical (compareCaptures), then measure on the main PC: the barrio's pre-render STEP_MS and GPU per pass, houseLightScene ?bench=faces.",
       "id": "E-520",
       "kind": "speed",
       "area": "render",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-18",
       "title": "A house's faces drawn as one instance (or one mesh) instead of one decoration each: fewer rows for pre-render's collect, emit and sort, and fewer instances for the GPU",
       "statusText": "proposed 2026-11-18 and chosen by the owner, from the ASUS's faces-against-maps sitting: the faces' cost is the count of pieces (pre-render, Intel by day), not the format"
@@ -45237,6 +45238,21 @@
       "title": "Every bundle compressed inside again, by default: one gzip stream started as the bundle loads; production ESM 3 955 -> 2 238 KB; first visits as fast or faster, repeat visits 7 to 24 ms later",
       "verdict": "kept",
       "text": "The owner, 2026-11-28 (after seeing 4 MB bundles): the workers and wasm compressed inside, by default (as R-2009 asked on 2026-11-24: the file itself small, brotli is the server's; I had dropped the .compressed kinds that morning, the opposite of his words).\n- **Built** (10029ba2, dist 246df504): every bundle gzips its workers, Box2D glue, shaders and debug CSS inside, as engine.wasm and Box2D's wasm always were; one gzip stream (base64) with each payload's [key, length], sliced back at run time (one base64 decode with Uint8Array.fromBase64, one DecompressionStream, one TextDecoder), started as the bundle loads (ensureEmbeddedSources() at module evaluation, awaited before the first Worker()). Names unchanged (three bundles). Production ESM 3 955 -> 2 238 KB raw (gzip 1 295 -> 1 299, brotli 951 -> 1 249).\n- **Start** (loadWaterfall --t0 prepare --http-cache, production ESM, headed Chrome on this PC (GTX 1650), visits cold then warm in a fresh browser each run, 5 alternated runs a side, balls 10; ms from the bench page's prepare to the first drawn frame, medians; 2026-11-28 03:28 to 03:40 by the files):\n  - first version (each payload inflated alone, at the first scene): cold equal (Predator crowd 0.4 1993 -> 1979, Boids 1086 -> 1092, balls 1231 -> 1215), warm +24 to +30 ms (734 -> 758, 398 -> 428, 456 -> 484);\n  - kept version (one stream, started at load): cold Predator 1978 -> 1968, Boids 1142 -> 1109, balls 1219 -> 1197 (a smaller file to parse); warm Predator 707 -> 714 (+7 ms), Boids 391 -> 399 (+8), balls 476 -> 500 (+24, 10 pairs, noisy). The inflate itself, timed in Node: base64 1.1 ms, gunzip of 1.06 MB into 3.1 MB 21 ms, TextDecoder 5 ms; it hides behind the rest of the start except where a scene starts very fast (balls).\n  - Not in this measure: the download. A server that sends brotli sends 298 KB more (about +240 ms at 10 Mbit/s, +24 ms at 100); with gzip the same; with no server compression (file://, simple hosts) 1.7 MB less.\n- Tests: node 3675/0, the three bundles' smokes and node-on-bundle 372/0 each; prodBundleDevChecks inflates the payloads to find the guards' texts; smokeBundleEmbed expects every bundle compressed.\n- Left: the workers could start from the inflated bytes without TextDecoder (Blob of a byte range) to save about 5 ms more."
+    },
+    {
+      "id": "R-2057",
+      "date": "2026-11-28",
+      "time": "04:20",
+      "timeFrom": "recorded",
+      "title": "Pre-render half kept: world-owned decorations collected in a wasm kernel (faceLightScene town=80000 pre-render -15 to -18 %); no merged GPU form keeps the pictures (painter steps, blend order, faces not consecutive)",
+      "verdict": "kept",
+      "text": "An agent read E-520 and built its pre-render half instead (opt/e520: 9e8f7b59 the microbench's faces case, bcb41864 the kernel, 35749632 the fix), merged to main.\n- **Why no merged form keeps the pictures:** a non-face sprite's painter step is its instance index (gl_InstanceID & 127), so removing instances moves every later sprite's step and flips ties; the edge pass and the half texels blend in instance order (R-2046); a house's faces are not consecutive in painter order (each has its own sortOffsetY: runs of 4.0 to 4.5 rows in parquechas.scene.json), and an instanced draw needs a fixed vertex count. And the GPU side is small: a full instance walk costs the Radeon (Vega, Ryzen 7 4800H) 0.02 to 0.04 ms (the unshaded mask walks 11 613 barrio instances in 0.037 ms; GTX 1650 0.018), under about 0.3 ms over the roughly 7 walks.\n- **Where the cost is:** pre-render's per-row cost on main: collect 37-48 ns, emit 28-41, pack 35-39, sort 5-7; the collect was the last phase in JS.\n- **Built:** collect_decorations (wasm/preRenderCollect.c) collects every decoration with no parent that goes only to the main collector (a spawned decoration's mask is the entities' bit: faces qualify), from a copy of the particle worker's visible list in a render-queue region (collectDecoList, laid after every other region so no region moves); attached ones and those a custom layer takes go back to the JS a run at a time; the JS loops stay for frames the kernel cannot take, and run alone while under a quarter of the pool is world-owned (DecorationPool's attached count). Generic, on by itself, no API change.\n- **Rows and instances unchanged** (barrio 11 665 / 11 662; houseLightScene bench=faces 6 817 / 6 779); the queue's bytes identical, so the GPU passes are as before.\n- **Speed** (runPredatorAbab, 4 pairs, 2026-11-28 by the files): faceLightScene town=80000 pre-render 8.606 -> 7.190 ms (-15.4 %, 4/4; f18ffda2 against bcb41864) and after the fix 10.453 -> 8.648 (-17.9 %, 2/2, stopped early; against 35749632). Predator: bcb41864 read pre-render 5.020 -> 5.458 at crowd 2.5 (+8.7 %, below the floor) and about +10 % with light3d, though Predator collects no decoration (its 20 000 are grass faded out by the zoom: VISIBLE_DECORATIONS 0): the moved memory regions, a new worker field and the module's code layout; after the fix crowd 2.5 6.701 -> 5.933 (-11.7 %, KEPT, noise the other way) and light3d 5.781 -> 5.490 (NEUTRAL).\n- **Kernel** (runKernelsVsRev, 40 000 visible): faces 680 -> 2 756 ops/s (+305 %), ysort 545 -> 751 (+38 %), collect with half attached 526 -> 567 (+7.8 %, a tie).\n- **Pictures** --vs main: 0 of 921 600 pixels on WebGL and WebGPU in houseLightScene (default; bench=faces at 22 and 15 h), faceLightScene (default; town=80000), dxCaptureScene (default; hour=22 deco=1); the barrio is not still even with people=0, so the kernel was run against the JS loops on its 254 000 real decorations: bit-identical. Tests: decorationCollectWasm.test.js 12/12 (y-sort on and off, attached in runs and shuffled, custom layers, inactive parents, a full collector, 32-bit ids, the quarter rule); node 3686/0, demos 149/0.\n- Next for faces: the emit (EMIT_MS 2.1 ms at town=80000, decoration rows rewritten in full each frame) and the pack (SPRITE_PACK_MS 2.9 ms). Left: the ASan harness tests/asan/kernels/preRenderCollect.mjs does not cover collect_decorations.",
+      "commits": [
+        "9e8f7b59",
+        "bcb41864",
+        "35749632",
+        "8306af79"
+      ]
     }
   ],
   "leads": [

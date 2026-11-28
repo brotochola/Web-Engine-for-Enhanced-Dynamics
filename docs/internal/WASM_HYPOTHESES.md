@@ -4,7 +4,12 @@ The plan named **WASM migration** (umbrella id **E-76**, opened 2026-10-22): fin
 engine that are JavaScript today would be faster, or more predictable, as WebAssembly, measure each
 one alone, and then check that the winners still win together. Phase 0 (the desk inventory) and Q1
 (four post-E-77 profiles) are done; see [Phase 0 inventory](#phase-0-inventory-2026-10-22) and the
-[Results log](#results-log). No product code has changed for it yet.
+[Results log](#results-log).
+
+**Status (2026-11-28):** done on 2026-10-26 and released in v0.13.0 (E-76; R-0642, R-0643): 18 kernels in one
+`engine.wasm`, their JavaScript in `tests/reference`. The rows below are the plan and its premises as written; each
+candidate's outcome is in the register (its W rows: none open; W7 was screened on 2026-10-28, R-0685). The baseline of
+3 ms in its protocol table was the floor of October; it is 6 ms since 2026-11-13.
 
 Same protocol family as [`LIQUIDFUN_HYPOTHESES.md`](./reports/LIQUIDFUN_HYPOTHESES.md) and
 [`PARTICLE_HYPOTHESES.md`](./reports/PARTICLE_HYPOTHESES.md). Speed rules come from

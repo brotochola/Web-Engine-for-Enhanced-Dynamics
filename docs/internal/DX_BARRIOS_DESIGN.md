@@ -1,5 +1,9 @@
 # The barrio editor's package, and the engine pieces it needs
 
+**Status (2026-11-28, from the register's DX-BARRIOS):** merged into main on 2026-11-17 (Parque Chas on the 3D light,
+the editor apart). Left, for the end of the backlog (the owner, 2026-11-23, R-1890): the final pass of traces and
+optimization, E-497's tournament, N-258 and DX-BARRIOSTREETS.
+
 Approved by the owner on 2026-11-16 (the plan was written in Spanish in the chat; this document is its contract for the
 code). The buenos-aires repo (`D:\weed-games\buenos-aires`) becomes only the **editor de barrios**: it generates a barrio
 and exports a package. `demos/buenosAiresScene` shows one barrio, Parque Chas, from that package, with DX-LIGHT3D's light,
@@ -42,7 +46,7 @@ Parallel agents, one owner per file; shared files one writer at a time.
 | D (demo) | `demos/buenosAiresScene/**`, `demos/tests/barrio*.test.js` | DX-BARRIOS |
 
 `types/weed.d.ts`, `src/index.js`, `docs/guide/**` and the saved-game schema are merged last, one writer.
-`pixiWorker.js` is also the subject of N-256 (its split into subsystem classes, planned, not started): R's changes there
+`pixiWorker.js` is also the subject of N-256 (its split into subsystem classes, not started when this was written; PW-1 to PW-10 were done on 2026-11-22): R's changes there
 land before that split starts.
 
 ## DX-BARRIOS

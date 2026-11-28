@@ -1,5 +1,8 @@
 # DX-LIGHTAPI and DX-SPOT: a clearer light API, then cone lights
 
+**Status (2026-11-28):** done: both merged on 2026-11-13 (ff255c01) and kept in the register. Its sittings asked for
+an owner worker past 3 ms, the floor of that week; it is 6 ms since 2026-11-13.
+
 Written 2026-11-12, after the owner asked for cone lights (platformer flashlights, top-down headlights) and then for the
 light and shadow API to be made clear first. The owner's terms: we choose the clearest API; no demo gets worse in speed
 or look (better is fine); no backwards compatibility, every demo, test and guide page moves to the new API (Conurbano, another project, later);

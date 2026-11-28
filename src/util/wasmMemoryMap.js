@@ -141,7 +141,8 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * @param {null | { decorations: number, buckets: number }} [sway]
  * @param {number} [pixiRows] rows of Pixi's plain sprite batch when Pixi packs it with gpuPack.wasm (W9d), else 0
  * @param {null | { entities: number, transformBytes: number, colliderBytes: number }} [collect] the sprite collect's
- *   blocks (W4b, a scene without physics); a component with 0 bytes gets no block
+ *   blocks (W4b, a scene without physics); a component with 0 bytes gets no block (E-520: the decoration collect's list,
+ *   collect.decorations, is laid after every region: renderQueueMemory.js withDecorationListRegion)
  * @param {null | { preRender: boolean, pixi: boolean }} [painter] the painter sort's state (W10
  *   `painterRadix.wasm`) for each worker that sorts the main queue, one set each (painterStateRegions):
  *   `preRenderPainter*` owned by pre-render, `pixiPainter*` by Pixi, so the kernel reads the sort keys where
@@ -308,6 +309,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
       // E-189: their texture updates (gpuPack.c KEYED_TEX_WORDS each), as many as its rows.
       { name: 'pixiKeyTexUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_TEX_BYTES },
+      // E-492: what its statics hold, a key's words each (gpuPack.c KEYED_HELD_WORDS), which the keyed pack compares with.
+      { name: 'pixiKeyHeld', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * PIXI_KEYED_HELD_BYTES },
     );
   }
   if (collect) {
@@ -476,6 +479,9 @@ export const EMIT_DECO_KEYED_BYTES = 32;
 
 /** E-189: a keyed frame's texture update (gpuPack.c KEYED_TEX_WORDS u32: the statics row, the texture's float bits). */
 export const PIXI_KEYED_TEX_BYTES = 8;
+
+/** E-492: a key's held words, what the renderer's statics hold for it (gpuPack.c KEYED_HELD_WORDS u32). */
+export const PIXI_KEYED_HELD_BYTES = 48;
 
 /**
  * E-177: the keyed frames' resync header, u32 words. Pixi raises REQUEST when its statics texture may miss a change (its
