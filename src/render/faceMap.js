@@ -671,16 +671,20 @@ export function shaderWithFlag(source, name, on) {
  * pixels are told by their id).
  * lighting.shadowSamples: the shadow maps' taps a point averages, 1 to 9 of the 3 x 3 texels around it (pixelArt takes 1),
  * kept by SHADOW_TAP_CENTER and the pairs SHADOW_TAPS_X, _Y, _DIAGONAL and _ANTIDIAGONAL, with SHADOW_TAP_WEIGHT written
- * as 1 over their count (shadowTapsOf says which taps each count takes).
+ * as 1 over their count (shadowTapsOf says which taps each count takes). E-423: SELFSHADOW_DDA / !SELFSHADOW_DDA
+ * (lighting.selfShadowMarch: 'dda' walks every cell the ray crosses, 'steps' reads it at fixed steps), inside SELFSHADOW,
+ * cut first (SELFSHADOW's end mark would match theirs).
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
- * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean, ids?: boolean, pixelArt?: boolean,
- *   edges?: boolean, dither?: boolean, walls?: boolean, shadowSamples?: number }} flags
+ * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, selfShadowMarch?: 'steps' | 'dda', lampMap?: boolean,
+ *   ids?: boolean, pixelArt?: boolean, edges?: boolean, dither?: boolean, walls?: boolean, shadowSamples?: number }} flags
  */
 export function lightingSource(source, {
-  faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false, edges = false, dither = false,
-  walls = false, shadowSamples = 5,
+  faces, sunMap, selfShadow = false, selfShadowMarch = 'steps', lampMap = false, ids = false, pixelArt = false, edges = false,
+  dither = false, walls = false, shadowSamples = 5,
 }) {
-  const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
+  const dda = selfShadowMarch === 'dda';
+  const marched = shaderWithFlag(shaderWithFlag(source, 'SELFSHADOW_DDA', dda), '!SELFSHADOW_DDA', !dda);
+  const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(marched, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
   const withLamps = shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
   const withIds = shaderWithFlag(shaderWithFlag(withLamps, 'IDS', faces && ids), '!IDS', !(faces && ids));
   const withEdges = shaderWithFlag(shaderWithFlag(withIds, 'EDGES', edges), '!EDGES', !edges);

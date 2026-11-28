@@ -343,6 +343,7 @@ export class PixiLighting {
     }
     if (this.worker._selfShadowOn && facesOn) {
       // A step of 4 floor px, 6 steps, 3 px of bias (plus a quarter of the distance): src/shaders/lightingBasic.frag.glsl.
+      // E-423: the DDA (lighting.selfShadowMarch 'dda') walks to the same reach, 4 x (6 + 1), with the same bias.
       lightingResources.uniforms.uSelfShadow = { value: new Float32Array([4, 6, 3, 0]), type: 'vec4<f32>' };
     }
     if (this.worker._lampMapOn) {
@@ -396,6 +397,7 @@ export class PixiLighting {
       faces: facesOn,
       sunMap: this.worker._sunMapOn,
       selfShadow: this.worker._selfShadowOn,
+      selfShadowMarch: this.worker._selfShadowMarch,
       lampMap: this.worker._lampMapOn,
       ids: this.faceIdsOn,
       pixelArt: this.worker._pixelArtLight,

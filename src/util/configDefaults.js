@@ -878,6 +878,14 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   selfShadow: false,
   /**
+   * E-423: how the self-shadow walks towards a light over the heights, out to 28 floor px. 'steps' reads them at 6 fixed
+   * steps of 4 px from 8 px on (an edge thinner than a step can fall between two, the first 8 px are not read); 'dda' reads
+   * every cell the ray crosses, in order, its own skipped (Pixel Art Parallax's walk): a world px of the picture plane, or a
+   * light texel where that is coarser (lighting.resolution under 1 at zoom 1), so its reads grow with the resolution
+   * (about 9 at 0.25, 17 at 0.5, 34 at 1). Read when the scene starts (selfShadowMarchOf).
+   */
+  selfShadowMarch: 'steps',
+  /**
    * OL-6: the shading a sprite's own normals cause (its normal map's, or the ones its height map gives), for the sun and
    * for the lamps apart. A light's shading on a pixel is what the normal takes from it: 0 where the pixel gets what it
    * gets as drawn, 1 where it gets nothing. `subtract` comes off it first (what falls under 0 stays 0: a face shaded
@@ -1016,6 +1024,19 @@ export function shadowSamplesOf(lighting) {
   if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.shadowSamples;
   const n = Math.round(v);
   return n < 1 ? 1 : n > SHADOW_SAMPLES_MAX ? SHADOW_SAMPLES_MAX : n;
+}
+
+/** E-423: lighting.selfShadowMarch's walks. */
+export const SELF_SHADOW_MARCHES = Object.freeze(['steps', 'dda']);
+
+/**
+ * A scene's lighting.selfShadowMarch: 'steps' or 'dda' (SELF_SHADOW_MARCHES); the default's for anything else.
+ * @param {object|undefined} lighting config.lighting
+ * @returns {'steps' | 'dda'}
+ */
+export function selfShadowMarchOf(lighting) {
+  const v = lighting?.selfShadowMarch;
+  return v === 'steps' || v === 'dda' ? v : LIGHTING_DEFAULTS.selfShadowMarch;
 }
 
 /**
