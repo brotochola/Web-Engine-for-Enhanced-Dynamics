@@ -17763,7 +17763,8 @@
         "cross-env"
       ],
       "records": [
-        "R-1890"
+        "R-1890",
+        "R-2043"
       ]
     },
     {
@@ -44930,6 +44931,15 @@
         "4db0c4ce",
         "05720daf"
       ]
+    },
+    {
+      "id": "R-2043",
+      "date": "2026-11-28",
+      "time": "00:30",
+      "timeFrom": "recorded",
+      "title": "esbuild build tried and not kept: green and 368 packages fewer, but Predator at crowd 2.5 is 20-58 % slower in every worker; cause not found",
+      "verdict": "dropped",
+      "text": "Tried 2026-11-27/28 on branch build/rollup-esbuild (local; f42b6c34 .. ab247001), not merged: the owner's rule was to keep webpack if it got complicated.\n- Built: esbuild alone (3 bundles: prod ESM, prod classic IIFE, debug ESM; the compressed variants and the file mode gone; the scene workers as ES modules from blob URLs with esbuild's shared chunks linked by blob URL; engine.wasm a gzipped data URL; Box2D unchanged). 3.5 s builds against minutes; npm packages 496 -> 128 (webpack, Babel, Terser, the obfuscator, cross-env, rimraf; acorn for checkBundleSetters). Every suite green (node 3632/0, demos 149/0, node on bundles 373/0, browser smoke 3/3, the N-234 setter check).\n- Size (prod ESM): webpack 3 898 KB raw, 1 275 gzip, 936 brotli; esbuild 3 899 / 1 365 / 985 (keepNames costs about 85 KB raw and is required: the engine reads class names in 164 places, Predator does not start without it); esbuild + Terser 3 876 / 1 332 / 951.\n- Speed, Radeon integrated GPU, window, 4 pairs against v0.16.0's webpack bundle (each side's dist/.build-version stamped: the page refuses another version and the harness shows it as ETIMEDOUT): Predator default crowd level (logic +1.7 %); Predator crowd 2.5 much slower: esbuild logic +26 %, particle +24 %, renderer +18 %, pre-render +10 %; a Rollup-bundled variant (top-level const kept) logic +42 %; esbuild + Terser logic +58 %, physics +20 %, renderer +34 %.\n- Found: esbuild does not inline a module's constants when the module is in an import cycle (a two-file cycle keeps `var c=3 ... t[c]`), and the engine's core modules are; Ray._circleRayDistance read t[<var>] (twice its time in a CPU trace) where webpack's read t[0]. Terser on top restores t[0], yet the bundle stayed slower in every worker, physics (wasm) too: the cause is elsewhere (candidates: ES module workers against webpack's classic ones, cross-chunk import bindings). Unresolved.\n- Kept on main: measure:all runs the scenes from each side's production bundle too and Predator at crowd 2.5 (300994a7). measure:all measure-esbuild-n172 (v0.16.0 against the esbuild-only branch) was still running on GitHub."
     }
   ],
   "leads": [
