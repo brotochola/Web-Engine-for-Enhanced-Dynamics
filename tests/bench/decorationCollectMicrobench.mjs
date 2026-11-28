@@ -3,13 +3,16 @@
  * Kernel: pre-render's decoration collect (PreRenderWorker.collectVisibleDecorations) on a real worker: each visible
  * decoration's sort key, and its row through collectRenderable into the main collector with the pose the emit reads.
  * Half the decorations are world-owned, half attached to one of PARENTS entities (stand-in Transform columns, as the
- * E-179c test gives the particle worker). Two cases, one process:
+ * E-179c test gives the particle worker). Three cases, one process:
  *
  *   collect  no layer y-sorts; attached ones spread over the parents and the visible list in no order, as Predator's
  *            grass is against the camera.
  *   ysort    the entities layer y-sorts, so each key counts: the parents have sprites (a quarter anchored at their
  *            centre, an eighth with a zIndex), and each one's decorations are next to each other in the list, as
  *            addDecoration spawns them.
+ *   faces    E-520: every decoration world-owned, y-sorted, with a sort offset and an innerZ, in spawn order: the
+ *            barrio's houses, whose faces are world decorations spawned together (barrioLoader.js), each with its own
+ *            sortOffsetY.
  *
  * The checksum is the collected poses, which no key change moves (the keys' values are the tests' to hold:
  * decorationSortOffset.test.js); `keys` is their own checksum, for information.
@@ -72,8 +75,9 @@ function bindParentSprites(pre, parents) {
 
 /**
  * A pre-render worker with `n` visible decorations, half of them attached, and an empty main collector of `n` rows.
- * `frame()` runs one collect from an empty collector and returns how many rows it wrote.
- * @param {{ n?: number, parents?: number, attachedShare?: number, seed?: number, ySort?: boolean }} [opts]
+ * `frame()` runs one collect from an empty collector and returns how many rows it wrote. `sortOffset`: the world-owned
+ * ones get a sortOffsetY (0 to 160 px) and an innerZ of 0 to 7, as a house's faces have them.
+ * @param {{ n?: number, parents?: number, attachedShare?: number, seed?: number, ySort?: boolean, sortOffset?: boolean }} [opts]
  */
 export async function setupDecorationCollect(opts = {}) {
   const n = opts.n ?? DECOS;
@@ -102,6 +106,10 @@ export async function setupDecorationCollect(opts = {}) {
     } else {
       dc.x[d] = rng() * WORLD_W;
       dc.y[d] = rng() * WORLD_H;
+      if (opts.sortOffset) {
+        dc.sortOffsetY[d] = rng() * 160;
+        dc.innerZ[d] = Math.floor(rng() * 8);
+      }
     }
     const a = (rng() - 0.5) * 0.05;
     dc.rotC[d] = Math.cos(a);
@@ -172,9 +180,10 @@ async function timeCase(name, opts) {
 async function main() {
   const args = parseArgs();
   const n = Number(args.n ?? DECOS);
+  const facesOpts = { n, ySort: true, attachedShare: 0, sortOffset: true };
   if (args.check) {
-    for (const [name, ySort] of [['collect', false], ['ysort', true]]) {
-      const s = await setupDecorationCollect({ n, ySort });
+    for (const [name, opts] of [['collect', { n }], ['ysort', { n, ySort: true }], ['faces', facesOpts]]) {
+      const s = await setupDecorationCollect(opts);
       const rows = s.frame();
       console.log(`${name}: checksum ${s.checksum()} keys ${s.keys()} rows ${rows} attached ${s.attached}`);
     }
@@ -182,14 +191,15 @@ async function main() {
   }
   const plain = await timeCase('collect', { n });
   const ysort = await timeCase('ysort', { n, ySort: true });
+  const faces = await timeCase('faces', facesOpts);
   const report = {
     feature: 'decoration-collect',
     functions: ['PreRenderWorker.collectVisibleDecorations', 'PreRenderWorker.collectRenderable', 'PreRenderWorker._writeRenderable'],
     decorations: n,
     attached: plain.s.attached,
-    checksum: (plain.checksum ^ ysort.checksum) >>> 0,
-    keys: { collect: plain.keys, ysort: ysort.keys },
-    cases: { collect: plain.timed, ysort: ysort.timed },
+    checksum: (plain.checksum ^ ysort.checksum ^ faces.checksum) >>> 0,
+    keys: { collect: plain.keys, ysort: ysort.keys, faces: faces.keys },
+    cases: { collect: plain.timed, ysort: ysort.timed, faces: faces.timed },
   };
   if (args.output) writeReport(String(args.output), report);
   else {

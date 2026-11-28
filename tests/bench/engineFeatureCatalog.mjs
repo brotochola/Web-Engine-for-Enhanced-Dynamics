@@ -792,6 +792,17 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'decorationCollectFaces',
+    name: 'Pre-render decoration collect, world-owned faces',
+    module: 'src/workers/preRenderWorker.js',
+    // E-520: 40 000 world-owned decorations, y-sorted, each with a sort offset and an innerZ, in spawn order (a barrio's
+    // house faces).
+    kernel: { script: 'tests/bench/decorationCollectMicrobench.mjs', opsKey: 'cases.faces.opsPerSec' },
+    scene: null,
+    primary: ['preRender_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'attachedSway',
     name: 'Attached decorations placed and swayed',
     module: 'src/workers/particleWorker.js',
