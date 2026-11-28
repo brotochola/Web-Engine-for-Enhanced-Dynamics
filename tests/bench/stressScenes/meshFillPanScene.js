@@ -2,6 +2,8 @@
  * Static MESH fill + camera orbit. Forces RT every frame; pack should skip.
  * Passthrough look: engine allocates cl.rt only when a look exists.
  * Primary: pixi_STEP_MS. Load: BODY_COUNT, MESH_FILL_INSTANCES. Gate: MESH_RT_DRAWS ≈ 1.
+ * `?repaint=N` (default 0, E-477): N of the islands change their tint every tick, so the layer's paint moves and its
+ * rows go up whole every frame (the case where a fill buffer changes whole each frame).
  */
 import WEED from '/src/index.js';
 import { MeshFillIsland } from './compoundFixture/meshFillIsland.js';
@@ -14,6 +16,14 @@ export const TRIANGLES_PER_ISLAND = 8;
 export const VERTS_PER_POLY = 8;
 export const WORLD_W = 12000;
 export const WORLD_H = 12000;
+export const REPAINT = Math.min(ISLAND_COUNT, Math.max(0, Math.floor(Number(WEED.params?.get('repaint') ?? 0) || 0)));
+
+/** An island whose tint flips every tick: a paint change every frame. */
+class MeshFillRepainter extends MeshFillIsland {
+  tick() {
+    this.meshRenderer.tint = this.meshRenderer.tint === 0x88aa66 ? 0x99bb77 : 0x88aa66;
+  }
+}
 
 export class MeshFillPanScene extends Scene {
   static config = {
@@ -62,7 +72,8 @@ export class MeshFillPanScene extends Scene {
   };
 
   static entities = [
-    [MeshFillIsland, ISLAND_COUNT],
+    [MeshFillIsland, ISLAND_COUNT - REPAINT],
+    ...(REPAINT > 0 ? [[MeshFillRepainter, REPAINT]] : []),
     [CameraOrbitDriver, 1],
   ];
 
@@ -74,7 +85,7 @@ export class MeshFillPanScene extends Scene {
     for (let i = 0; i < ISLAND_COUNT; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      MeshFillIsland.spawn({
+      (i < REPAINT ? MeshFillRepainter : MeshFillIsland).spawn({
         x: startX + col * spacing,
         y: startY + row * spacing,
         triangles: TRIANGLES_PER_ISLAND,

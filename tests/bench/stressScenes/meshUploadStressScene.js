@@ -21,12 +21,10 @@ const VERTS_PER_PLANE = (SEG + 1) * (SEG + 1);
 const MOVER_SEG = 4;
 const MOVER_VERTS = (MOVER_SEG + 1) * (MOVER_SEG + 1);
 
+// WEED.params, not location.search: in a worker that is the worker script's URL, and the movers spawn there (E-477: with
+// location.search, movers=one left them on the small layer).
 function query(key) {
-  try {
-    return new URLSearchParams(globalThis.location?.search || '').get(key);
-  } catch {
-    return null;
-  }
+  return WEED.params?.get(key) ?? null;
 }
 
 function queryNumber(key, fallback) {
