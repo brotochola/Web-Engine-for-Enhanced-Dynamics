@@ -44894,6 +44894,7 @@
       "id": "R-2040",
       "date": "2026-11-27",
       "time": "21:11",
+      "timeFrom": "recorded",
       "title": "Found and fixed: the halo lost to its own post whenever the painter step wrapped",
       "verdict": "kept-hygiene",
       "text": "The owner saw a TallLight near the screen's right edge flicker dark (Predator ?hour=22&light3d=1, zoom 1 and 1.5). Filmed (filmScene, 10 s) and read frame by frame, the post's square was lit (about 62) or dark (about 54): in the dark frames the post had no red halo over it. Not N-187 (the queue never had rows past the collector's in 1 800 frames). With ?lightGlow=add (halos drawn last) the owner saw none and the films counted 0 and 0; ?pixelDepth=0 0. Cause: the edge pass draws unshaded pixels testing the depth, and two pixels at one floor place are ordered by the painter step, the instance's low 7 bits, which wrap; the halo follows its post by a few instances, and the queue's rows move every frame. Fix: an unshaded pixel takes one floor step nearer and the last painter step (pixelDepth.js GLOW_IN_FRONT, GLSL and WGSL). Films after it: 0, 0 and 0 dark frames (before: 59, 0, 2).",
