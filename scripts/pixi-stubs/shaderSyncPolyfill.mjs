@@ -1,12 +1,16 @@
 // Pixi's WebGL shader sync for a build without eval (pixi.js/unsafe-eval, which the worker bundle installs), without
 // its garbage. The upstream polyfill walks `shader.groups` and every `BindGroup.resources` with for…in on each draw.
 // Both are integer-keyed (`resources` is Object.create(null)), so V8 builds a key list every time: 0.7 MB/s in
-// Predator's Pixi worker, 6 MB/s with GPU particle groups drawn among the entities.
+// Predator's Pixi worker, 6 MB/s with GPU particle groups drawn among the entities. Pixi 8.23's polyfill still does.
 //
 // This walks a per-shader plan of [group, binding] pairs instead, built once with for…in, as Pixi's generated sync
 // (its default where eval is allowed) bakes them per program at the first bind. The plan is rebuilt when a group
-// slot holds another BindGroup or a BindGroup gained a resource slot (`_weedKeys`, counted by the BindGroup patch
-// in scripts/buildPixi.mjs). The body per resource is upstream's, in upstream's order, but for integer textures.
+// slot holds another BindGroup with other bindings, or a BindGroup gained a binding: Pixi 8.23 lists a group's binding
+// numbers in `_resourceKeys`, a new array each time one is added. A group keyed by name (8.23's `layout`, #12293)
+// binds each resource under its layout name, a group keyed by number under the shader's `_uniformBindMap` name, as
+// upstream's polyfill does. A slot the shader gains after the plan is built is not seen (the plan walks its own slots).
+// Pixi 8.23 binds each uniform block to a fixed slot when the program links (#12307): a block is bound by its name,
+// only when the program has it. The body per resource is upstream's, in upstream's order, but for textures.
 //
 // N-109: an integer texture (a `…uint` or `…sint` format: the statics of indexed and keyed sprites, the GPU particle
 // rings) goes to the top texture units, counting down from the last one, not to the next unit up. WebGL2 checks every
@@ -29,44 +33,104 @@ import { UniformGroup } from '../../node_modules/pixi.js/lib/rendering/renderers
 import { TextureSource } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/texture/sources/TextureSource.mjs';
 import { TextureView } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/texture/TextureView.mjs';
 
-/** @type {WeakMap<object, { pairs: Int32Array, count: number, slots: Array<number | object> }>} */
+/**
+ * @type {WeakMap<object, { pairs: Int32Array, names: Array<string | null>, count: number, slots: Array<unknown> }>}
+ */
 const plans = new WeakMap();
 
-/** Entries per group slot in a plan's `slots`: the slot, its BindGroup, that group's `_weedKeys`, a copy of its keys. */
-const SLOT_STRIDE = 4;
+/**
+ * Entries per group slot in a plan's `slots`: the slot, its BindGroup, that group's bindings (`groupBindings`), a copy
+ * of them (`bindingsCopy`) and whether the group is keyed by name (1) or by number (0).
+ */
+const SLOT_STRIDE = 5;
 
 /**
- * The shader's [group, binding] pairs in for…in order, and per group slot its BindGroup, `_weedKeys` and a copy of its
- * key list (`_weedKeyList`, kept in for…in order by the BindGroup patch), to validate the plan on later binds.
+ * What a group binds, compared by identity on each bind: a group keyed by name walks its `layout` (made once, in its
+ * constructor), one keyed by number its `_resourceKeys` (a new array when it gains a binding); null once destroyed.
+ */
+function groupBindings(bindGroup) {
+  if (!bindGroup.resources) return null;
+  const layout = bindGroup.layout;
+  return layout ? layout : bindGroup._resourceKeys;
+}
+
+/** A copy of what a group binds: its binding numbers, or for a group keyed by name its [name, binding] pairs. */
+function bindingsCopy(bindGroup) {
+  if (!bindGroup.resources) return null;
+  const layout = bindGroup.layout;
+  if (!layout) return bindGroup._resourceKeys.slice();
+  const copy = [];
+  for (const name in layout) copy.push(name, layout[name]);
+  return copy;
+}
+
+/** Whether `bindGroup` binds what `copy` (bindingsCopy of another group, keyed by name or not) holds, in its order. */
+function bindsAsCopy(bindGroup, copy, named) {
+  if (copy === null || !bindGroup.resources) return false;
+  const layout = bindGroup.layout;
+  if (named) {
+    if (!layout) return false;
+    let k = 0;
+    for (const name in layout) {
+      if (copy[k] !== name || copy[k + 1] !== layout[name]) return false;
+      k += 2;
+    }
+    return k === copy.length;
+  }
+  if (layout) return false;
+  const keys = bindGroup._resourceKeys;
+  if (keys.length !== copy.length) return false;
+  for (let k = 0; k < keys.length; k++) if (keys[k] !== copy[k]) return false;
+  return true;
+}
+
+/**
+ * The shader's [group, binding] pairs in upstream's order (the groups for…in, then a group's layout names or its
+ * binding numbers), the layout name of each pair (null: the shader's `_uniformBindMap` names it, read at each bind as
+ * upstream does), and per group slot what `planMatches` checks on later binds.
  */
 function buildPlan(shader) {
   const groupIndex = [];
   const bindIndex = [];
+  const names = [];
   const slots = [];
   for (const i in shader.groups) {
+    const g = Number(i);
     const bindGroup = shader.groups[i];
-    const keyList = bindGroup && bindGroup._weedKeyList ? bindGroup._weedKeyList.slice() : null;
-    slots.push(Number(i), bindGroup, bindGroup ? bindGroup._weedKeys : 0, keyList);
-    if (!bindGroup) continue;
-    for (const j in bindGroup.resources) {
-      groupIndex.push(Number(i));
-      bindIndex.push(Number(j));
+    if (!bindGroup || !bindGroup.resources) {
+      slots.push(g, bindGroup, null, null, 0);
+      continue;
     }
+    const layout = bindGroup.layout;
+    if (layout) {
+      for (const name in layout) {
+        groupIndex.push(g);
+        bindIndex.push(layout[name]);
+        names.push(name);
+      }
+    } else {
+      const keys = bindGroup._resourceKeys;
+      for (let k = 0; k < keys.length; k++) {
+        groupIndex.push(g);
+        bindIndex.push(keys[k]);
+        names.push(null);
+      }
+    }
+    slots.push(g, bindGroup, groupBindings(bindGroup), bindingsCopy(bindGroup), layout ? 1 : 0);
   }
   const pairs = new Int32Array(groupIndex.length * 2);
   for (let k = 0; k < groupIndex.length; k++) {
     pairs[k * 2] = groupIndex[k];
     pairs[k * 2 + 1] = bindIndex[k];
   }
-  return { pairs, count: groupIndex.length, slots };
+  return { pairs, names, count: groupIndex.length, slots };
 }
 
 /**
- * The plan still matches the shader: every slot holds a BindGroup with the plan's keys in the plan's order, none with a
- * new resource slot. E-236: Pixi's batcher, meshes, graphics and tiling sprites put another BindGroup in a slot at each
- * batch or draw (a batch's textures, a mesh's local uniforms, the pass's globals) with the same keys; the plan holds
- * for it, and the slot remembers that group, so its next bind takes the identity test. A group without a key list
- * (not the bundle's BindGroup) rebuilds the plan as before.
+ * The plan still matches the shader: every slot holds the plan's BindGroup with the bindings it had, or another one
+ * that binds the same, in the same order. E-236: Pixi's batcher, meshes, graphics and tiling sprites put another
+ * BindGroup in a slot at each batch or draw (a batch's textures, a mesh's local uniforms, the pass's globals) with the
+ * same bindings; the plan holds for it, and the slot remembers that group, so its next bind takes the identity test.
  */
 function planMatches(plan, shader) {
   const slots = plan.slots;
@@ -75,16 +139,12 @@ function planMatches(plan, shader) {
     const bindGroup = groups[slots[s]];
     const held = slots[s + 1];
     if (bindGroup === held) {
-      if (bindGroup && bindGroup._weedKeys !== slots[s + 2]) return false;
+      if (bindGroup && groupBindings(bindGroup) !== slots[s + 2]) return false;
       continue;
     }
-    if (!bindGroup || !held) return false;
-    const keys = bindGroup._weedKeyList;
-    const planKeys = slots[s + 3];
-    if (!keys || !planKeys || keys.length !== planKeys.length) return false;
-    for (let k = 0; k < keys.length; k++) if (keys[k] !== planKeys[k]) return false;
+    if (!bindGroup || !held || !bindsAsCopy(bindGroup, slots[s + 3], slots[s + 4] === 1)) return false;
     slots[s + 1] = bindGroup;
-    slots[s + 2] = bindGroup._weedKeys;
+    slots[s + 2] = groupBindings(bindGroup);
   }
   return true;
 }
@@ -203,6 +263,7 @@ function syncShader(renderer, shader, syncData) {
   }
   const groups = shader.groups;
   const pairs = plan.pairs;
+  const names = plan.names;
   // The unit the next integer texture takes; -1 until the shader has one.
   let integerUnit = -1;
   // E-417: this sync's tick, for the float units it takes, and the texture system's per-unit sources.
@@ -213,14 +274,16 @@ function syncShader(renderer, shader, syncData) {
     const i = pairs[k * 2];
     const j = pairs[k * 2 + 1];
     const resource = groups[i].resources[j];
-    if (resource instanceof UniformGroup) {
-      if (resource.ubo) {
-        shaderSystem.bindUniformBlock(resource, shader._uniformBindMap[i][j], syncData.blockIndex++);
-      } else {
-        shaderSystem.updateUniformGroup(resource);
-      }
-    } else if (resource instanceof BufferResource) {
-      shaderSystem.bindUniformBlock(resource, shader._uniformBindMap[i][j], syncData.blockIndex++);
+    if (!resource) continue;
+    let name = names[k];
+    if (name === null) {
+      const bindingNames = shader._uniformBindMap[i];
+      name = bindingNames === undefined ? undefined : bindingNames[j];
+    }
+    if (resource instanceof UniformGroup && !resource.ubo) {
+      shaderSystem.updateUniformGroup(resource);
+    } else if (resource instanceof UniformGroup || resource instanceof BufferResource) {
+      if (shader.glProgram._uniformBlockData[name]) shaderSystem.bindUniformBlock(resource, name);
     } else if (resource instanceof TextureSource || resource instanceof TextureView) {
       const integer = isIntegerTexture(resource);
       if (units === null) {
@@ -240,8 +303,7 @@ function syncShader(renderer, shader, syncData) {
         unit = floatUnit(units, bound, resource.source, tick);
       }
       renderer.texture.bind(resource, unit);
-      const uniformName = shader._uniformBindMap[i][j];
-      const uniformData = programData.uniformData[uniformName];
+      const uniformData = programData.uniformData[name];
       if (uniformData) {
         if (uniformData.value !== unit) {
           gl.uniform1i(uniformData.location, unit);

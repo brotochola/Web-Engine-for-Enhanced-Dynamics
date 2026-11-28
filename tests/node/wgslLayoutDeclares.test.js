@@ -31,6 +31,8 @@ function declared(wgsl) {
 }
 
 function assertLayoutDeclared(label, program) {
+  // Pixi's ProgramLayout is an array: 8.23's encoder sets the groups from 0 to layout.length (an object set none).
+  assert.ok(Array.isArray(program.layout), `${label}: the layout is an array`);
   const source = program.vertex.source;
   const have = declared(source);
   for (const [group, names] of Object.entries(program.layout)) {
@@ -123,5 +125,24 @@ test('the pixel depth programs with words, and their edge entries, declare every
       `sprite-indexed-depth-gbuf ${entry}`,
       instancedSpriteIndexedGpuProgram(GpuProgram, pixelDepthWgsl(spriteIndexedWgsl(sprite), { poseAlpha: true, gbuf: true }), entry, 'i', { maps: true }),
     );
+  }
+});
+
+test('Pixi\'s encoder sets every group an engine program\'s layout lists', async () => {
+  const { GpuEncoderSystem } = await import('../../node_modules/pixi.js/lib/rendering/renderers/gpu/GpuEncoderSystem.mjs');
+  const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');
+  const { lightTilesGpuProgram } = await import('../../src/render/lightTiles.js');
+  const { lightEdgesGpuProgram } = await import('../../src/render/lightEdges.js');
+  const programs = [
+    ['sun-map', sunShadowGpuProgram(GpuProgram, sunMapWgsl(shader('instancedSpriteShadow.wgsl')), 'mainFragMap', 'sun-map', {})],
+    ['lighting with tiles', lightTilesGpuProgram(GpuProgram, (G) => lightingGpuProgram(G, shader('lightingBasic.wgsl'), 'l'))],
+    ['light edges', lightEdgesGpuProgram(GpuProgram, 'unshadedFloor')],
+  ];
+  for (const [label, gpuProgram] of programs) {
+    const set = [];
+    const encoder = Object.create(GpuEncoderSystem.prototype);
+    encoder.setBindGroup = (index) => set.push(index);
+    encoder._setShaderBindGroups({ gpuProgram, groups: { 0: {}, 1: {}, 2: {} } }, true);
+    assert.deepEqual(set, [0, 1, 2], label);
   }
 });

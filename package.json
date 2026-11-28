@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.16.32",
+  "version": "0.16.33",
   "description": "A multi-threaded 2D web game engine for high-entity-count browser games",
   "type": "module",
   "main": "dist/weed.prod.bundle.min.js",
@@ -221,7 +221,7 @@
     "esbuild": "^0.27.3",
     "eslint": "^9.39.2",
     "javascript-obfuscator": "^4.1.0",
-    "pixi.js": "8.20.1",
+    "pixi.js": "8.23.0",
     "playwright": "^1.62.1",
     "prettier": "^3.8.0",
     "rimraf": "^5.0.5",

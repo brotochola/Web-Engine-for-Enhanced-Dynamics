@@ -325,7 +325,9 @@ export function lightTilesGpuProgram(GpuProgram, make) {
   return make({
     from: (options) => {
       const stage = globalThis.GPUShaderStage ? globalThis.GPUShaderStage.FRAGMENT : 2;
-      const layout = { ...options.layout, 2: { ...options.layout[2], uLightTiles: LIGHT_TILES_BINDING } };
+      // An array, as Pixi's ProgramLayout (pixiGroupsLayout).
+      const layout = options.layout.slice();
+      layout[2] = { ...options.layout[2], uLightTiles: LIGHT_TILES_BINDING };
       const gpuLayout = options.gpuLayout.slice();
       gpuLayout[2] = [
         ...gpuLayout[2],

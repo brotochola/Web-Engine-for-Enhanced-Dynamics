@@ -1,6 +1,6 @@
 /**
  * Point a Pixi TextureSource at an engine-owned GPUTexture (no CPU readback).
- * Pixi 8.20 stores GPU objects on source._gpuData[renderer.uid]
+ * Pixi 8 stores GPU objects on source._gpuData[renderer.uid]
  * (`gpuTexture` + `textureViews` cache).
  */
 const RGBA32_BYTES = 16;
@@ -8,6 +8,8 @@ const RGBA8_BYTES = 4;
 
 let _padBuf = null;
 let _padU8 = null;
+/** The bind group cache ids pinGpuTexture gives Pixi's BindGroupSystem: negative, Pixi's own count from 1 up. */
+let _pinCacheId = 0;
 
 /**
  * WebGPU writeTexture of rgba32float, bytesPerRow padded to 256; E-511: `columns` under `width` writes only each row's first
@@ -161,7 +163,12 @@ export function pinGpuTexture(renderer, source, gpuTexture) {
   if (texSys && texSys._bindGroupHash) {
     texSys._bindGroupHash[source.uid] = null;
   }
-  if (renderer.bindGroup?._hash) {
-    renderer.bindGroup._hash = Object.create(null);
+  // The GPU bind groups made with the source's old view, found by keys that did not change (the source's resource id
+  // moves only on a resize): Pixi 8.23 keeps them in the hash and on each BindGroup (_gpuEntry), valid while the entry's
+  // cache id is the system's. A new cache id makes every group look its bind group up again, in the emptied hash.
+  const bindGroups = renderer.bindGroup;
+  if (bindGroups?._hash) {
+    bindGroups._hash = Object.create(null);
+    bindGroups._cacheId = --_pinCacheId;
   }
 }
