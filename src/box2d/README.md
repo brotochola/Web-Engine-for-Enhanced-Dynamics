@@ -21,16 +21,14 @@ Classic physics worker for **Box2D 3.2.0 WASM** (pthread + SharedArrayBuffer). S
 
 ## Dist / npm bundle
 
-`npm run make_bundle` emits **8** single-file artifacts into `dist/` (UMD/ESM × debug/prod × raw/gzip-embed workers):
+`npm run make_bundle` emits **3** single-file artifacts into `dist/`:
 
-| Artifact                                                        | Notes                                                    |
-| --------------------------------------------------------------- | -------------------------------------------------------- |
-| `weed.bundle.min.js` / `.esm.min.js`                            | Debug UI, raw worker strings (`exports["./debug"]`)      |
-| `weed.prod.bundle.min.js` / `.esm.min.js`                       | Debug stubs, raw worker strings (`main` / `module` / `exports["."]` ) |
-| `weed.bundle.compressed.min.js` / `.esm.compressed.min.js`      | Debug UI, gzip-embedded workers                          |
-| `weed.prod.bundle.compressed.min.js` / `.esm.compressed.min.js` | Debug stubs, gzip-embedded workers                       |
+| Artifact                                          | Notes                                                                 |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `weed.prod.bundle.esm.min.js` / `.prod.bundle.min.js` | Debug stubs, ESM and UMD (`main` / `module` / `exports["."]`)     |
+| `weed.bundle.esm.min.js`                          | Debug UI, ESM only (`exports["./debug"]`)                             |
 
-WASM is gzip-embedded in all 8. `.compressed` extra-gzips worker/glue/css strings; call `WEED.ensureEmbeddedSources()` before the first `Worker()` (Scene bootstrap does this). Uncompressed skips inflate (faster first load).
+WASM is gzip-embedded in all 3; worker strings are plain (a server compresses the file).
 
 At runtime `getBox2dWorkerUrl()` creates one blob URL; that blob **is** the physics worker. Pthreads re-fetch the same worker URL via `_scriptName`. Smoke: `dist/index.html` (`?bundle=` to pick an artifact).
 

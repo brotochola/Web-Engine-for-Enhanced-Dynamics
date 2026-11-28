@@ -5,7 +5,7 @@
 //  2. the new version into package.json, package-lock.json and src/version.js, and the
 //     create-weed-game template's engine range (^x.y.z), so a new game asks for the engine just
 //     published;
-//  3. the 8 bundles (make_bundle), then every check: check:dist, the embed and browser smokes, the
+//  3. the 3 bundles (make_bundle), then every check: check:dist, the embed and browser smokes, the
 //     node tests against the bundles, and the node suite;
 //  4. one commit, "release vX.Y.Z", with exactly those files, and the tag vX.Y.Z;
 //  5. npm publish, then git push of main and the tag.

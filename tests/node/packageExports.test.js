@@ -16,7 +16,9 @@ test('npm default is prod; ./debug is the debug bundle', () => {
   assert.equal(pkg.exports['.'].import, './dist/weed.prod.bundle.esm.min.js');
   assert.equal(pkg.exports['.'].require, './dist/weed.prod.bundle.min.js');
   assert.equal(pkg.exports['./debug'].import, './dist/weed.bundle.esm.min.js');
-  assert.equal(pkg.exports['./debug'].require, './dist/weed.bundle.min.js');
+  // N-172: the debug build is ESM only.
+  assert.equal(pkg.exports['./debug'].require, undefined);
+  assert.equal(pkg.exports['./debug'].default, './dist/weed.bundle.esm.min.js');
 });
 
 // DX-SW, SW-6. The isolation service worker ships with the package and resolves as

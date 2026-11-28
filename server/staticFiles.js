@@ -100,7 +100,7 @@ export function serveStaticFile(req, res, { root, headers = {}, special = null, 
     }
     if (stat !== null && stat.isDirectory()) {
       // A folder without its slash: send it there, so its page's relative URLs resolve inside it
-      // (/dist + src="weed.bundle.min.js" would otherwise fetch /weed.bundle.min.js).
+      // (/dist + src="weed.prod.bundle.min.js" would otherwise fetch /weed.prod.bundle.min.js).
       if (!rawPath.endsWith('/')) {
         res.writeHead(301, { Location: `${rawPath}/${query ? `?${query}` : ''}` });
         res.end();

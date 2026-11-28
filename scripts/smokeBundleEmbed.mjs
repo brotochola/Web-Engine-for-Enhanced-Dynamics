@@ -1,5 +1,5 @@
 /**
- * Offline smoke: all 8 dist artifacts, wasm gzip, Box2D sibling remap, worker embed mode; the file mode's folder when built.
+ * Offline smoke: every dist artifact, wasm gzip, Box2D sibling remap, worker embed mode; the file mode's folder when built.
  */
 import fs from 'fs';
 import path from 'path';
