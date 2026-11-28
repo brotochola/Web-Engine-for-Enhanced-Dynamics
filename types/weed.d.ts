@@ -4664,6 +4664,7 @@ export declare class DecorationComponent extends Component {
     inheritParentRotation: typeof Uint8Array;
     innerZ: typeof Int8Array;
     sortOffsetY: typeof Float32Array;
+    depthFootDy: typeof Float32Array;
     skewX: typeof Float32Array;
     skewY: typeof Float32Array;
     faceOct: typeof Uint16Array;
@@ -4700,6 +4701,11 @@ export declare class DecorationComponent extends Component {
   static innerZ: Int8Array;
   /** World px added to the y the decoration sorts at; not the y it draws or culls at. */
   static sortOffsetY: Float32Array;
+  /**
+   * N-450: pre-render's (the collect writes it each frame, nothing else should): how far below its drawn y the painter
+   * sorts the decoration, the foot the depth programs stand it on when it is no face (renderer.pixelDepth).
+   */
+  static depthFootDy: Float32Array;
   /** The shear as set (DX-DECOSKEW); what is drawn is in the facing columns. */
   static skewX: Float32Array;
   static skewY: Float32Array;

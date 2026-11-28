@@ -66,6 +66,9 @@ export const EMIT_SLOTS = [
   'kSkip',
   // DX-GLOWRADIUS: the glow rows' halo radius (LightEmitter.glowRadius).
   'lGlowRadius',
+  // N-450: DecorationComponent.depthFootDy, for the depth foot codes of the decoration rows that are no face (0: the
+  // camera draws no pixel depth).
+  'dDepthFoot',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -477,6 +480,8 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   }
   if (!putSlot(b, 'dFaceOct', w._faces ? DecorationComponent.faceOct : null, true)) return false;
   if (!putSlot(b, 'dFaceZ', w._faces ? DecorationComponent.faceZ : null, true)) return false;
+  // N-450: where the camera may draw pixel depth, each decoration row that is no face carries its depth foot code.
+  if (!putSlot(b, 'dDepthFoot', w._depthFeet ? DecorationComponent.depthFootDy : null, true)) return false;
   if (!putSlot(b, 'aFrame', w.entityFrameIndex) || !putSlot(b, 'aAccum', w.entityFrameAccumulator)) return false;
   b.table[SLOT.aEntities] = w.entityFrameIndex.length;
   if (!putSlot(b, 'aLastTex', w.entityLastTextureId, true)) return false;

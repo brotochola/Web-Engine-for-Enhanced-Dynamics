@@ -57,6 +57,11 @@ export class DecorationComponent extends Component {
     // World px added to the y the decoration sorts at (its own y, or its parent's sort line when attached); the y it
     // is drawn and culled at stays. Lets a tall piece sort at its foot and cull at its centre.
     sortOffsetY: Float32Array,
+    // N-450: pre-render's, set by nothing else: how far below its drawn y the painter sorts it this frame (world px: its
+    // y plus sortOffsetY, or its parent's sort line plus sortOffsetY, less where it is drawn), written by the collect
+    // and read by the emit, which hands it to the depth programs (renderer.pixelDepth) as the foot they stand a
+    // decoration that is no face on (src/render/pixelDepth.js depthFootCode).
+    depthFootDy: Float32Array,
 
     // === Shear (DX-DECOSKEW) ===
     // The scaled sprite, about its anchor: x += skewX·y, y += skewY·x (a wall seen at an angle: vertical lines stay

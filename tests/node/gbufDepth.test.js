@@ -24,7 +24,9 @@ test('N-274: the G-buffer\'s vertex passes on the floor place and painter step t
     assert.match(v, /depthFloor = \(world\.y \+ uDepth\.y \* dfZ\) \* uDepth\.x \+ dfInner \* 0\.2500;/, `${name}: a face's plane and its innerZ tie`);
     assert.match(v, /gbufFootRy = footBase\.x > 0\.0 && footBase\.y > 0\.0 \? 0\.6 \* footBase\.y \* abs\(aInstScale\.x\) : 0\.0;/, name);
     assert.match(v, /vGbufFloor = depthFloor;/, name);
-    assert.match(v, /vGbufPainter = vec3\(depthPainter, aInstXY\.y \* uDepth\.x, gbufFootRy\);/, name);
+    // N-450: the foot the painter sorts it at (a decoration's depth foot code), as the colour pass's.
+    assert.match(v, /vGbufPainter = vec3\(depthPainter, depthFootY \* uDepth\.x, gbufFootRy\);/, name);
+    assert.match(v, /float depthFloor = depthFootY \* uDepth\.x;/, name);
   }
   // The indexed form keeps it (its pose comes from the statics; the depth reads the same names).
   const indexed = spriteIndexedVertex(gbufDepthVertex(faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true })));
@@ -75,7 +77,8 @@ test('N-274: the G-buffer\'s WGSL writes frag_depth from the one pass\'s entry, 
     assert.match(w, /fn mainFragGbuf\(in: VertexOut\) -> WeedGbufOut \{\n {2}var o: WeedGbufOut;\n {2}o\.depth = weedGbufDepth\(in\);/);
     assert.equal(count(w, '@builtin(instance_index) weedInstance: u32'), 1);
     // N-262: the foot clamp, its terms in vGbufPainter's y, z (no new output: the 16 are taken).
-    assert.ok(w.includes('out.vGbufPainter = vec3<f32>(depthPainter, aInstXY.y * weedDepth.x, footRy);'));
+    assert.ok(w.includes('out.vGbufPainter = vec3<f32>(depthPainter, depthFootY * weedDepth.x, footRy);'));
+    assert.ok(w.includes('var depthFloor = depthFootY * weedDepth.x;'), 'N-450: the foot the painter sorts it at');
     assert.ok(w.includes('if (gp.z > 0.0) { floorY = clamp(floorY, gp.y - gp.z, gp.y + gp.z); }'));
     const out = w.slice(w.indexOf('struct VertexOut {'), w.indexOf('}', w.indexOf('struct VertexOut {')));
     const locations = [...out.matchAll(/@location\((\d+)\)/g)].map((m) => +m[1]);

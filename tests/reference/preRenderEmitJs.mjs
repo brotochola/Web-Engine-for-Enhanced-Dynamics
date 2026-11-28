@@ -13,6 +13,7 @@ import { ShadowCaster } from '../../src/components/shadowCaster.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
 import { AdobeAnimRegistry } from '../../src/core/adobeAnimRegistry.js';
+import { depthFootCode } from '../../src/render/pixelDepth.js';
 import { CAMERA_TYPES, SPRITE_TILE_MODE } from '../../src/util/configDefaults.js';
 import { LIGHT_GLOW_COMPACT_SPAN, LIGHT_GRADIENT_TEXTURE_RADIUS, lightGlowScale } from '../../src/util/utils.js';
 
@@ -214,7 +215,7 @@ function emitSpriteQueue(deltaTime, source) {
     ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
     ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
     ref.tileMulX = rqTileMulX; ref.tileMulY = rqTileMulY;
-    const tilesDirty = rqTileMode !== null && (this._faces || this._tiledTileColumns.has(rqTileMode));
+    const tilesDirty = rqTileMode !== null && (this._faces || this._depthFeet || this._tiledTileColumns.has(rqTileMode));
     ref.tilesDirty = tilesDirty;
     let tiledRows = false;
     const rqShadowH = this.renderQueueShadowH;
@@ -509,7 +510,12 @@ function emitSpriteQueue(deltaTime, source) {
                 decoRotCos = decoRotC[idx];
                 decoRotSin = decoRotS[idx];
             }
-            if (this._faces) {
+            if (this._depthFeet) {
+                // N-450: one that is no face carries its depth foot code (U 0).
+                const oct = this._faces ? DecorationComponent.faceOct[idx] : 0;
+                ref.tileOffsetU[out] = oct;
+                ref.tileOffsetV[out] = oct !== 0 ? DecorationComponent.faceZ[idx] : depthFootCode(DecorationComponent.depthFootDy[idx]);
+            } else if (this._faces) {
                 ref.tileOffsetU[out] = DecorationComponent.faceOct[idx];
                 ref.tileOffsetV[out] = DecorationComponent.faceZ[idx];
             }

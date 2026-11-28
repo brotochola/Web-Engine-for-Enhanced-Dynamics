@@ -25,6 +25,7 @@ import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { Layer } from '../../src/core/layer.js';
 import { computeBufferSize, createViews, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
+import { depthFootCode } from '../../src/render/pixelDepth.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { createParticleMemory, particleMemoryBytes } from '../../src/util/particleMemory.js';
 import { liquidFunRenderByteSize } from '../../src/render/liquidFunRender.js';
@@ -123,7 +124,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, keyedLiquidFun = false, faces = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, keyedLiquidFun = false, faces = false, feet = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -293,6 +294,14 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     DecorationComponent.faceZ[d] = faces && d % 3 !== 0 ? (r() * 0xffff) | 0 : 0;
   }
   worker._faces = faces;
+  // N-450: where the camera may draw pixel depth, the decorations' depth feet (the collect's: none, tiny, past the code's
+  // reach both ways, NaN, -0, and anything in between).
+  for (let d = 0; d < DECOS; d++) {
+    const dy = d % 5 === 0 ? 0 : d % 7 === 0 ? NaN : d % 11 === 0 ? -0 : d % 13 === 0 ? 1e9 : d % 17 === 0 ? -1e9
+      : d % 19 === 0 ? 0.001 : (r() - 0.5) * 600;
+    DecorationComponent.depthFootDy[d] = feet ? dy : 0;
+  }
+  worker._depthFeet = feet;
 
   // Bullets (W4d), from a generator of their own: inactive ones, trails of no length (start at the bullet), shorter
   // than 0.1, with a -0 difference (x -0, start +0), muzzle offsets, a texture past the animations.
@@ -682,10 +691,27 @@ async function runCase(t, opts) {
         if (worker._renderableType[r] !== 2) continue;
         const d = worker._renderableIndex[r];
         assert.equal(worker.renderQueueTileOffsetU[r], DecorationComponent.faceOct[d], `frame ${f} row ${r}: the normal`);
-        assert.equal(worker.renderQueueTileOffsetV[r], DecorationComponent.faceZ[d], `frame ${f} row ${r}: the height`);
+        // N-450: with feet, one that is no face carries its foot instead (below).
+        if (!worker._depthFeet || DecorationComponent.faceOct[d] !== 0) {
+          assert.equal(worker.renderQueueTileOffsetV[r], DecorationComponent.faceZ[d], `frame ${f} row ${r}: the height`);
+        }
         if (DecorationComponent.faceOct[d] !== 0) faces++;
       }
       assert.ok(faces > 50, `frame ${f}: ${faces} faces drawn`);
+    }
+    if (worker._depthFeet) {
+      // N-450: one that is no face carries its depth foot code in V (U 0), whatever its slot's height says.
+      let codes = 0;
+      for (let r = 0; r < n; r++) {
+        if (worker._renderableType[r] !== 2) continue;
+        const d = worker._renderableIndex[r];
+        const oct = worker._faces ? DecorationComponent.faceOct[d] : 0;
+        assert.equal(worker.renderQueueTileOffsetU[r], oct, `frame ${f} row ${r}: the normal`);
+        const v = oct !== 0 ? DecorationComponent.faceZ[d] : depthFootCode(DecorationComponent.depthFootDy[d]);
+        assert.equal(worker.renderQueueTileOffsetV[r], v, `frame ${f} row ${r}: the height or the foot`);
+        if (oct === 0 && v !== 0) codes++;
+      }
+      assert.ok(codes > 50, `frame ${f}: ${codes} feet drawn`);
     }
     if (results[2] && worker.renderQueueTileMode !== null) worker._tiledTileColumns.add(worker.renderQueueTileMode);
     if (k.keyed) keyMarks.push(checkKeys(k, n, `frame ${f}`, keySt));
@@ -773,6 +799,11 @@ test('the emit kernel writes what emitSpriteQueue writes, without Y-sort', async
 
 test('DX-FACES: a decoration\'s row carries its face in the tile offsets, and a sprite\'s row stays untiled', async (t) => {
   await runCase(t, { ySort: true, faces: true });
+});
+
+test('N-450: a decoration that is no face carries its depth foot code in V where the camera may draw pixel depth', async (t) => {
+  await runCase(t, { ySort: true, faces: true, feet: true, seed: 0x450 });
+  await runCase(t, { ySort: true, feet: true, seed: 0x451 });
 });
 
 test("E-177: the emit marks a sprite's key when its statics changed since the emit before", async (t) => {
@@ -1796,6 +1827,38 @@ test('DX-FACES: a decoration keyed by its slot is marked when its face changes',
   DecorationComponent.faceZ[d1] = (DecorationComponent.faceZ[d1] + 8) & 0xffff;
   const m = frame();
   assert.deepEqual(drawn.filter((d) => m.get(d)), [d0, d1], 'a normal and a height mark their slot alone');
+});
+
+test('N-450: a decoration keyed by its slot is marked when its depth foot code changes, a face never by its foot', async () => {
+  const k = await setup({ ySort: true, keyed: true, keyedDecorations: true, faces: true, feet: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  SpriteRenderer.keyedDirty.fill(1);
+  const frame = () => {
+    assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS | EMIT_TILES_DIRTY;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+    const marked = new Map();
+    for (let r = 0; r < n; r++) {
+      if (w._renderableType[r] !== 2) continue;
+      const d = w._renderableIndex[r];
+      if (!marked.has(d)) marked.set(d, w.renderQueueKey[r] >= KEY_CHANGED);
+    }
+    return marked;
+  };
+  const drawn = [...frame().keys()];
+  assert.ok(drawn.length > 50, 'decorations drawn');
+  assert.ok([...frame().values()].every((x) => !x), 'feet that held mark none');
+  const plain = drawn.filter((d) => DecorationComponent.faceOct[d] === 0 && Math.abs(DecorationComponent.depthFootDy[d]) < 1000);
+  const face = drawn.find((d) => DecorationComponent.faceOct[d] !== 0);
+  assert.ok(plain.length >= 2 && face !== undefined);
+  const [d0, d1] = plain;
+  DecorationComponent.depthFootDy[d0] = DecorationComponent.depthFootDy[d0] === 37.5 ? 38.5 : 37.5;
+  DecorationComponent.depthFootDy[d1] += 1;
+  DecorationComponent.depthFootDy[face] = 99;
+  const m = frame();
+  assert.deepEqual(drawn.filter((d) => m.get(d)), [d0, d1], 'a foot whose code moved marks its slot alone, a face none');
 });
 
 // A row belongs to whatever sorts there next: a zoom changes what is on screen, and every row after that changes hands.

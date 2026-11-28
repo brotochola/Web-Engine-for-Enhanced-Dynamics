@@ -26,6 +26,11 @@
  * pixels' depth (gl_FragDepth), every other instance the depth its vertices wrote, so its fragments keep the early depth
  * test (E-378). The batch draws the vertex-depth one first (InstancedSpriteBatch's vdepthMesh).
  *
+ * N-450: a sprite's foot is where the painter sorts it, not always where it is drawn. A decoration that is no face carries
+ * how far below its drawn y that is (its y plus sortOffsetY, or its parent's sort line plus sortOffsetY: a water tank on a
+ * roof, sorted at its house's front) in its row's V tile offset (depthFootCode); without it the roof's plane, nearer than
+ * the tank's drawn y, hid it.
+ *
  * WebGL (pixelDepthVertex, pixelDepthFragment) and WebGPU (pixelDepthWgsl).
  */
 
@@ -48,6 +53,70 @@ export const PIXEL_DEPTH_PAINTER_STEPS = 128;
  * stands that close to it.
  */
 export const FACE_INNER_Z_TIE = 0.25;
+
+/**
+ * N-450: the depth foot code, which pre-render's emit writes in the V tile offset of each decoration row that is no face
+ * (its U 0, untiled: wasm/preRenderEmit.c depth_foot_code, this function's twin), where the camera may draw pixel depth:
+ * how far below its drawn y (world px) the painter sorts it, DEPTH_FOOT_BIAS + that · DEPTH_FOOT_UNITS rounded half up,
+ * within 24 bits (the GPU reads the offset as code / 65536, exact in a float32). 0: none, the foot is the drawn y. The
+ * depth programs add it to the instance's y (DEPTH_FOOT_GLSL, DEPTH_FOOT_WGSL).
+ */
+export const DEPTH_FOOT_UNITS = 256;
+export const DEPTH_FOOT_BIAS = 8388608;
+export const DEPTH_FOOT_MAX = 16777215;
+
+/**
+ * The code of a foot `dy` world px below the drawn y (a float32, as DecorationComponent.depthFootDy holds it); 0 when it
+ * rounds to 0 or is not a number.
+ * @param {number} dy
+ * @returns {number}
+ */
+export function depthFootCode(dy) {
+  const r = Math.floor(Math.fround(dy) * DEPTH_FOOT_UNITS + 0.5);
+  if (!(r !== 0 && r === r)) return 0;
+  if (r <= -DEPTH_FOOT_BIAS) return 1;
+  if (r >= DEPTH_FOOT_MAX - DEPTH_FOOT_BIAS) return DEPTH_FOOT_MAX;
+  return DEPTH_FOOT_BIAS + r;
+}
+
+/**
+ * The y the depth programs stand an instance on (DEPTH_FOOT_GLSL in JS, from a render-queue row): its y, plus its foot
+ * code's px where it carries one (no tile multiplier, U 0, V a code).
+ * @param {number} y the row's y
+ * @param {number} tileMulX
+ * @param {number} tileMulY
+ * @param {number} tileOffU the row's U tile offset (the queue's u32)
+ * @param {number} tileOffV its V tile offset
+ * @returns {number}
+ */
+export function depthFootY(y, tileMulX, tileMulY, tileOffU, tileOffV) {
+  const fy = Math.fround(y);
+  if (tileOffV === 0 || tileOffU !== 0 || tileMulX !== 0 || tileMulY !== 0) return fy;
+  return Math.fround(fy + (tileOffV - DEPTH_FOOT_BIAS) / DEPTH_FOOT_UNITS);
+}
+
+/**
+ * N-450 (GLSL, in a sprite vertex after its place): the local depthFootY, the world y of the foot the instance stands on
+ * for the depth: its y, or with a depth foot code (depthFootCode: U 0, untiled) the painter's foot.
+ */
+const DEPTH_FOOT_GLSL = `
+  // N-450: the foot the painter sorts this sprite at (pixelDepth.js depthFootCode).
+  float depthFootY = aInstXY.y;
+  {
+    uint dfFoot = uint(aInstTileOff.y * ${FACE_CODE_SCALE}.0 + 0.5);
+    if (dfFoot != 0u && aInstTileOff.x == 0.0 && aInstTileInv == vec2(0.0)) {
+      depthFootY += (float(dfFoot) - ${DEPTH_FOOT_BIAS}.0) / ${DEPTH_FOOT_UNITS}.0;
+    }
+  }`;
+
+/** DEPTH_FOOT_GLSL in WGSL (the vertex's `depthFootY`). */
+const DEPTH_FOOT_WGSL = `  // N-450: the foot the painter sorts this sprite at (pixelDepth.js depthFootCode).
+  var depthFootY = aInstXY.y;
+  let dfFoot = u32(aInstTileOff.y * ${FACE_CODE_SCALE}.0 + 0.5);
+  if (dfFoot != 0u && aInstTileOff.x == 0.0 && all(aInstTileInv == vec2<f32>(0.0))) {
+    depthFootY += (f32(dfFoot) - ${DEPTH_FOOT_BIAS}.0) / ${DEPTH_FOOT_UNITS}.0;
+  }
+`;
 
 /** The terms the programs read (uDepth): 1 / floorScaleY, heightScaleY, the view's nearest-to-north floor y, 1 / range. */
 export function pixelDepthTerms(out, floorScaleY, heightScaleY, viewTopY, viewHeight, margin = PIXEL_DEPTH_MARGIN) {
@@ -137,12 +206,13 @@ const FIRST_INSTANCE_DECL = 'uniform int uWeedFirstInstance;\n';
 const firstInstanceDecl = (source) => (source.includes(FIRST_INSTANCE_DECL) ? '' : FIRST_INSTANCE_DECL);
 
 /**
- * facesDepthGlsl's work without its outputs (GLSL, in a sprite vertex after its place): the locals depthFloor and
- * depthPainter, from uDepth (x: 1 / floorScaleY, y: heightScaleY; a uniform, or a local of that name).
+ * facesDepthGlsl's work without its outputs (GLSL, in a sprite vertex after its place, and after DEPTH_FOOT_GLSL): the
+ * locals depthFloor and depthPainter, from uDepth (x: 1 / floorScaleY, y: heightScaleY; a uniform, or a local of that
+ * name).
  */
 function facesDepthCoreGlsl(gbuf) {
   return `
-  float depthFloor = aInstXY.y * uDepth.x;
+  float depthFloor = depthFootY * uDepth.x;
   float depthPainter = ${PAINTER_STEP_GLSL};
   {
     uint dfCode = uint(aInstTileOff.x * ${FACE_CODE_SCALE}.0 + 0.5);
@@ -221,7 +291,7 @@ export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = '
     )
     .replace(
       pos,
-      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n${FOOT_RY_GLSL}\n  vPainter = vec2(${PAINTER_STEP_GLSL}, abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
+      () => `${pos}${DEPTH_FOOT_GLSL}\n  vFootFloor = depthFootY * uDepth.x;\n${FOOT_RY_GLSL}\n  vPainter = vec2(${PAINTER_STEP_GLSL}, abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
         (gbuf ? '\n  vDepthWord = aInstGbuf.xy;' : '') + plainGlsl(gbuf) + plainEdgeCull +
         (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
     );
@@ -436,9 +506,12 @@ function facesDepthWgsl(gbuf, cull) {
 ${keep}`;
 }
 
-/** facesDepthCoreGlsl in WGSL: the locals depthFloor and depthPainter, from uniforms.uDepth (after the sprite's place). */
+/**
+ * facesDepthCoreGlsl in WGSL: the locals depthFloor and depthPainter, from uniforms.uDepth (after the sprite's place, and
+ * after DEPTH_FOOT_WGSL).
+ */
 function facesDepthCoreWgsl(gbuf) {
-  return `  var depthFloor = aInstXY.y * uniforms.uDepth.x;
+  return `  var depthFloor = depthFootY * uniforms.uDepth.x;
   var depthPainter = f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u);
   let dfCode = u32(aInstTileOff.x * ${FACE_CODE_SCALE}.0 + 0.5);
   if (dfCode != 0u && all(aInstTileInv == vec2<f32>(0.0))) {
@@ -503,7 +576,7 @@ export function pixelDepthWgsl(source, { gbuf = false, faces = false, cull = 'no
     out,
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
     // N-194: z, the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
-    `${FOOT_RY_WGSL}  out.vDepthFoot = vec4<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y), footRy);\n` +
+    `${DEPTH_FOOT_WGSL}${FOOT_RY_WGSL}  out.vDepthFoot = vec4<f32>(depthFootY * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y), footRy);\n` +
       (gbuf ? '  out.vDepthWord = aInstGbuf.xy;\n' : '') + '  out.vMapsWin = twinWindow(tid);\n' + plainWgsl(gbuf) +
       plainEdgeCull + (faces ? facesDepthWgsl(gbuf, cull) : ''),
     'out.position',
@@ -579,7 +652,7 @@ export function gbufDepthVertex(source) {
   return gbufOnce(
     out,
     'vTileOff = aInstTileOff;\n',
-    `  {\n    ${GBUF_DEPTH_TERMS_GLSL}${facesDepthCoreGlsl(true)}\n${GBUF_FOOT_RY_GLSL}\n    vGbufFloor = depthFloor;\n    // N-262: the painter step, the sprite's foot on the floor and its feet's half depth (the colour pass's clamp)\n    vGbufPainter = vec3(depthPainter, aInstXY.y * uDepth.x, gbufFootRy);\n  }\n`,
+    `  {\n    ${GBUF_DEPTH_TERMS_GLSL}${DEPTH_FOOT_GLSL}${facesDepthCoreGlsl(true)}\n${GBUF_FOOT_RY_GLSL}\n    vGbufFloor = depthFloor;\n    // N-262: the painter step, the sprite's foot on the floor and its feet's half depth (the colour pass's clamp)\n    vGbufPainter = vec3(depthPainter, depthFootY * uDepth.x, gbufFootRy);\n  }\n`,
     'vTileOff',
   );
 }
@@ -687,7 +760,7 @@ export function gbufDepthWgsl(source, { faces = true } = {}) {
   out = gbufOnce(
     out,
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
-    `  {\n    ${GBUF_DEPTH_TERMS_WGSL}\n${facesDepthCoreWgsl(true).split('uniforms.uDepth').join('weedDepth')}\n${FOOT_RY_WGSL}    out.vGbufFloor = depthFloor;\n    // N-262: the painter step, the foot and its feet's half depth (the colour pass's clamp).\n    out.vGbufPainter = vec3<f32>(depthPainter, aInstXY.y * weedDepth.x, footRy);\n  }\n`,
+    `  {\n    ${GBUF_DEPTH_TERMS_WGSL}\n${DEPTH_FOOT_WGSL}${facesDepthCoreWgsl(true).split('uniforms.uDepth').join('weedDepth')}\n${FOOT_RY_WGSL}    out.vGbufFloor = depthFloor;\n    // N-262: the painter step, the foot and its feet's half depth (the colour pass's clamp).\n    out.vGbufPainter = vec3<f32>(depthPainter, depthFootY * weedDepth.x, footRy);\n  }\n`,
     'out.position',
   );
   out = gbufOnce(out, '  @location(1) ids: vec4<f32>,\n', '  @builtin(frag_depth) depth: f32,\n', 'the one pass\'s outputs');
