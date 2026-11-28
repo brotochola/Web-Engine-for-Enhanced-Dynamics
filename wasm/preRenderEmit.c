@@ -74,7 +74,8 @@ enum {
   LF_PREV_X, LF_PREV_Y, LF_PREV_COUNT,
   /* E-177: the queue's key column (0: a queue without one, or one whose frames are not keyed): a sprite row's entity,
      KEY_CHANGED or-ed in when its statics changed since the emit before (E-189: with KEY_TEX_ONLY too when its texture
-     alone did); KEY_NONE for every other row. */
+     alone did); a keyed decoration's, LiquidFun particle's (E-188, E-194) or particle's (E-492) its own; KEY_NONE for
+     every other row. */
   Q_KEY,
   /* E-177: SpriteRenderer.keyedDirty (set by whatever changes a sprite's statics; the emit clears it as it flags them).
      E-189: bit 1 (KEYED_DIRTY_STATICS, what the setters write) any static, bit 2 (KEYED_DIRTY_TEXTURE, the persist
@@ -114,6 +115,11 @@ enum {
      collect writes it), for the depth foot codes of the rows that are no face (0: none, the camera draws no pixel
      depth). */
   D_DEPTH_FOOT,
+  /* E-492: the key of particle slot 0 (a value: past the keyed LiquidFun particles) and how many particle slots are keyed
+     (a value; 0: particle rows keyless). A keyed particle row is always marked: Pixi's keyed pack sends its statics only
+     where they differ from what its texture holds for the key (gpuPack.c's held words), so a particle that holds still
+     sends nothing however the draw order moves it. */
+  P_KEY_BASE, P_KEYED_COUNT,
   SLOT_COUNT
 };
 
@@ -323,6 +329,8 @@ typedef struct {
   uint32_t dKeyBase, dKeyEpoch;
   uint32_t *lfKeyed;
   uint32_t lfKeyBase, lfKeyedCount;
+  /* E-492: the particle slots' keys (P_KEY_BASE, P_KEYED_COUNT). */
+  uint32_t pKeyBase, pKeyedCount;
   uint32_t *lfChecked;
   uint32_t lfCmpEpoch;
   /* E-312: the change frames (0 when the scene has none: this frame's changes alone mark a key) and the frames. */
@@ -450,6 +458,8 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->lfKeyed = PTR(uint32_t, LF_KEYED);
   e->lfKeyBase = t[LF_KEY_BASE];
   e->lfKeyedCount = t[LF_KEYED_COUNT];
+  e->pKeyBase = t[P_KEY_BASE];
+  e->pKeyedCount = t[P_KEYED_COUNT];
   e->lfChecked = PTR(uint32_t, LF_CHECKED);
   e->lfCmpEpoch = t[LF_CMP_EPOCH];
   e->kChange = PTR(uint32_t, K_CHANGE);
@@ -1099,7 +1109,8 @@ INLINE void particle_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 1;
-  if (e->qKey) e->qKey[out] = KEY_NONE;
+  /* E-492: its slot's key past the keyed LiquidFun particles, always marked (P_KEY_BASE); keyless past the keyed slots. */
+  if (e->qKey) e->qKey[out] = (uint32_t)idx < e->pKeyedCount ? (e->pKeyBase + (uint32_t)idx) | KEY_CHANGED : KEY_NONE;
 }
 
 /* E-194: a LiquidFun row's key: its particle index past the keyed decorations, marked as deco_key marks a decoration

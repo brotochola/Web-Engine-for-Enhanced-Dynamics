@@ -480,6 +480,21 @@ export const GPU_KEYED_CHANGED = 0x80000000;
 export const GPU_KEYED_TEX_ONLY = 0x40000000;
 /** E-189: a texture update's u32 words (gpuPack.c KEYED_TEX_WORDS): the statics row, then the texture's float bits. */
 export const GPU_KEYED_TEX_WORDS = 2;
+/** E-492: a key's held words (gpuPack.c KEYED_HELD_WORDS): the statics row the renderer's statics hold for it. */
+export const GPU_KEYED_HELD_WORDS = 12;
+
+/**
+ * E-492: the keyed pack's held words (`keyed.heldByte`, `keyed.heldKeys` keys) set to what a statics texture or buffer
+ * just made from zeros holds: zeros. With `unknown`, words no update ever carries instead (an update's depth term, word
+ * 4, is always 0), so the next pack sends every row it would without them.
+ * @param {ArrayBufferLike} buffer the memory the held words are in
+ * @param {{ heldByte: number, heldKeys: number }} keyed
+ * @param {boolean} [unknown]
+ */
+export function resetKeyedHeld(buffer, keyed, unknown = false) {
+  if (!(keyed.heldByte > 0) || !(keyed.heldKeys > 0)) return;
+  new Uint32Array(buffer, keyed.heldByte, keyed.heldKeys * GPU_KEYED_HELD_WORDS).fill(unknown ? 0xffffffff : 0);
+}
 
 /**
  * E-387: the block's first six words (gpuPack.c GB_DST to GB_ENTITIES) that have a pack of `n` rows write their
@@ -560,6 +575,10 @@ function splitGbufByte(b, gbuf, n, rows) {
  * `keyed.gbufChanged` says whether any slot's words differ from what its place held (always true without the words).
  * A keyed pack counts no particles (ctx.particleCount 0): no caller of one reads it (N-414: the shadow terms that read the
  * type column went with E-191's sun pass over the entity batch).
+ * E-492: `keyed.heldByte` (in the memory; 0: none, and the call is declined) holds the words the renderer's statics hold,
+ * GPU_KEYED_HELD_WORDS u32 a key for `keyed.heldKeys` keys (at least keyBase plus the rows the frame packs): a row whose
+ * words are all there sends nothing, one whose texture word alone differs a texture update (with room for them), and
+ * the pack writes there what it sends. The caller zeroes it with the statics (both start at zeros: resetKeyedHeld).
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
@@ -591,21 +610,26 @@ function keyedPack(b, q, ctx, at, slots, keyed, capacity, pack, packGbuf, packGb
   const table = tableFor(b, q);
   if (table < 0) return -1;
   const count = ctx.scanCount | 0;
+  // E-492: room in the held words for every key the frame can write (keyBase plus a slot a packed row).
+  const packed = count < (capacity | 0) ? count : capacity | 0;
+  const heldByte = keyed.heldByte > 0 ? keyed.heldByte : 0;
+  if (heldByte === 0 || heldByte + (keyed.heldKeys >>> 0) * GPU_KEYED_HELD_WORDS * 4 > b.buffer.byteLength
+    || (keyed.heldKeys >>> 0) < (keyed.keyBase >>> 0) + packed) return -1;
   const indexByte = indexByteFor(b, ctx, count, capacity);
   if (indexByte < 0) return -1;
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   // E-387: the slots' G-buffer words too where the caller hands their columns (the kernel packs min(count, capacity)).
-  const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
+  const gbufByte = keyedGbufByte(b, keyed, packed);
   const texByte = keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0;
   // E-455 step 3: with keyed.gbufStatics and no bands, the words ride in the slots' statics (every gbuf form writes them
   // there), none a drawn instance: keyed.gbufInStatics says so.
   const inStatics = gbufByte > 0 && keyed.gbufStatics === true && !(keyed.gbufZ && keyed.gbufZ.length > 0) && !!packGbufStatics;
   const out = gbufByte > 0
     ? (inStatics ? packGbufStatics : packGbuf)(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, b.particlesByte, texByte, gbufByte)
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, b.particlesByte, texByte, heldByte, gbufByte)
     : pack(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, at.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, b.particlesByte, texByte);
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, b.particlesByte, texByte, heldByte);
   keyed.gbufWritten = gbufByte > 0 && !inStatics;
   keyed.gbufInStatics = inStatics;
   const r = b.particlesByte >> 2;

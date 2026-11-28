@@ -39,7 +39,7 @@ import { RenderStep, STENCIL_MASK_ACTIVE, STENCIL_MASK_ADD, STENCIL_OFF, stencil
 import {
   opaqueKeyedRowsWasm,
   GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
-  packSplitRowsWasm,
+  packSplitRowsWasm, resetKeyedHeld,
 } from './gpuPackClient.js';
 import {
   faceFragmentGlsl, faceGbufFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, faceUnshadedFragment,
@@ -383,8 +383,9 @@ export class InstancedSpriteBatch {
    *   pixiWorker._gpuRecordTexture); WebGPU: `{ maxStorageBytes }`, the device's storage binding size
    * @param {object|null} [opts.keyed] - E-177, a split batch with `statics` whose helper scatters (`scatter`) and that
    *   packs through the kernel: the render-queue memory's keyed regions (renderQueueMemory.js pixiKey*: `keyBase`,
-   *   `keyRows`, `updatesByte`, `headerByte`), so its frames go keyed: the poses and the slot pairs in draw order, the
-   *   sprites' statics by entity in the texture, sent when the emit marked them changed. Each upload then needs the
+   *   `keyRows`, `updatesByte`, `headerByte`; E-492: `heldByte`, the words the texture holds, keyRows keys), so its
+   *   frames go keyed: the poses and the slot pairs in draw order, the sprites' statics by entity in the texture, sent
+   *   when the emit marked them changed and the texture does not hold them already. Each upload then needs the
    *   queue's frame number and buffer (`keyedFrame`, `keyedBuffer`, set by the caller). E-191: `shadowByte` (-1 for none),
    *   the shadow stream's region, which enableKeyedShadows turns on for the sun's pass over these instances
    * @param {object|null} [opts.opaquePass] - E-448 (opaquePass.js): the instances whose frames are binary drawn first,
@@ -559,6 +560,10 @@ export class InstancedSpriteBatch {
       // E-189: the texture updates' byte (0: none, the texture-only rows go up whole) and the last pack's count.
       texUpdatesByte: k && k.texUpdatesByte > 0 ? k.texUpdatesByte | 0 : 0,
       texUpdates: 0,
+      // E-492: the words the statics hold, a key's each (keyRows keys; byte 0: none, no keyed frame), which the pack
+      // compares each row with: one already there goes up no more.
+      heldByte: k && k.heldByte > 0 ? k.heldByte | 0 : 0,
+      heldKeys: k && k.heldByte > 0 ? k.keyRows | 0 : 0,
       // E-387: the G-buffer words' destination, the columns they come from (setGbufColumns; empty: none) and whether
       // the last pack wrote them.
       gbufOut: this._sharedGbuf,
@@ -569,6 +574,8 @@ export class InstancedSpriteBatch {
       // E-455: whether any slot's words differ from what its place held.
       gbufChanged: true,
     };
+    // E-492: the statics start at zeros (made from them below), and so do the words the pack takes them to hold.
+    if (k) resetKeyedHeld(buf, this._keyedPack);
     this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
     // E-479: a by-row keyed frame's opaque rows, which the kernel writes where a pose stream would go on (a by-row frame
     // writes one float a slot of it), and room for the frames' tables past the slots and the G-buffer words.
@@ -2134,7 +2141,9 @@ export class InstancedSpriteBatch {
   /**
    * E-177. A keyed batch's frame: the poses and the slot pairs (each row's key and depth) in draw order, and the statics
    * of the sprites the emit marked changed and of the rows without a key, scattered into the texture by key (the statics
-   * helper's scatter): 24 bytes a sprite and 64 an update, against 60 a sprite for a split frame. E-312: the marks say
+   * helper's scatter): 24 bytes a sprite and 64 an update, against 60 a sprite for a split frame. E-492: only the ones
+   * the texture does not hold already (the pack compares each with the held words: a mark the texture took the frame
+   * before, a keyless slot that holds the same row), a row whose texture word alone differs as a texture update. E-312: the marks say
    * what changed after the queue frame pre-render read from the header's DRAWN (the header's SINCE for this buffer), so
    * the texture is right after this frame whenever that is not past the last frame this batch drew keyed: a queue frame
    * it skipped, or one it drew split, loses nothing. Behind it (never with this batch's one texture) the frame is drawn
@@ -2486,13 +2495,24 @@ export class InstancedSpriteBatch {
   /**
    * E-549: the textures that can cast columns from a keyed row (keyedColumnTextures), after the atlas's table is built:
    * the copy then keeps only the slots that hold one or held one (a slot's texture, scale and all), none in an atlas
-   * without one. Set before the keyed frames start, as the atlas loads.
+   * without one. Set as the atlas loads, which may come after the first keyed frames. E-492: each slot's flag is then
+   * taken from the texture its copy holds (every update before went in): the keyed pack sends a slot's statics again
+   * only when they change, so no update that the frames before would have repeated comes to flag it, and the slot's next
+   * change, to a frame that casts none, would be left out of the copy.
    * @param {Uint8Array} flags a flag a textureId
    * @param {number} count how many are set
    */
   setColumnTextures(flags, count) {
     this._columnTex = flags;
     this._columnTexCount = count | 0;
+    const M = this._staticsMirror;
+    const S = this._columnSlot;
+    const n = S.length < M.length / 3 ? S.length : (M.length / 3) | 0;
+    const ids = flags.length;
+    for (let s = 0; s < n; s++) {
+      const t = M[s * 3] | 0;
+      S[s] = t >= 0 && t < ids ? flags[t] : 0;
+    }
   }
 
   /** E-549: how many textures can cast columns from a keyed row (-1 before setColumnTextures). */

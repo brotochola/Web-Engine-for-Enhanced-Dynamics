@@ -135,6 +135,8 @@ async function setup(seed) {
     keyBase: ENTITIES,
     keyRows: KEY_ROWS,
     updatesByte: alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS).byteOffset,
+    // E-492: the words the statics hold (12 u32 a key), which the pack compares each row with.
+    heldByte: alloc(Uint32Array, KEY_ROWS * 12).byteOffset,
     headerByte: header.byteOffset,
     shadowByte: alloc(Float32Array, N * 3).byteOffset,
     // E-189: room for the texture updates.
@@ -364,10 +366,16 @@ test('a keyed batch draws a split batch\'s sprites, the statics the emit marks c
   // E-312: the first frame marks every sprite and is drawn keyed: every row goes up.
   assert.equal(emit(s), N);
   assert.equal(draw(s, 'first frame', sortedOpts(s)), N, 'every row goes up');
-  assert.equal(draw(s, 'the first frame again', sortedOpts(s)), N, 'the same frame again sends its marks again');
+  // E-492: the same frame again finds its marks' statics in the texture (the held words): only the rows without a key go
+  // up, whose slots (their draw slots) the new order moved.
+  assert.equal(draw(s, 'the first frame again', sortedOpts(s)), keyless, 'the same frame again sends the marks no more');
   assert.equal(emit(s), keyless);
   assert.equal(draw(s, 'nothing changed', sortedOpts(s)), keyless, 'nothing changed: only the rows without a key go up');
   assert.equal(draw(s, 'the same queue frame again', sortedOpts(s)), keyless);
+  // In the same order, their slots hold what they held: nothing.
+  const order = sortedOpts(s);
+  draw(s, 'one order', order);
+  assert.equal(draw(s, 'the same queue frame in the same order', order), 0, 'the same frame in the same order sends nothing');
   change(s, N / 20);
   const few = emit(s);
   assert.ok(few > keyless && few <= keyless + N / 20, `the changed sprites and the rows without a key (${few})`);
