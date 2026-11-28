@@ -17534,12 +17534,12 @@
     {
       "id": "E-339",
       "title": "Pixi waits about 7 ms for the queue, then uploads the decal tiles and the texture lookup table, which do not need it",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pixi",
       "kind": "speed",
-      "result": "Read (R-1104). CPU pass (R-1100): _waitForQueue 47.9 % of Pixi's busy time at crowd 2.5 (a wait), _uploadDecalRgba8 2.7 %.",
+      "result": "Kept 2026-11-28 (dd0d4e2d): decal uploads before the queue wait; Predator crowd 2.5 NEUTRAL",
       "next": "Issue the decal and lookup uploads and a gl.flush before _waitForQueue, so the GPU process uploads during the wait (the chain's tail 0.2-0.5 ms shorter); Predator crowd 2.5 Pixi and the frame clock.",
       "refs": [
         "EXECUTION_PLAN.md#E-339"
@@ -17549,7 +17549,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1104"
+        "R-1104",
+        "R-2053"
       ]
     },
     {
@@ -17915,12 +17916,12 @@
     {
       "id": "E-353",
       "title": "The particle worker computes RigidBody speed from Box2D's velocities a core away, per opted-in body (updateDerivedProperties 14.1 % of the particle worker)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested; approved 2026-11-23 (owner): RigidBody speed computed in Box2D's finalize (C; SIMD and no-SIMD builds, the LiquidFun gates)",
       "date": "2026-11-15",
       "area": "particle",
       "kind": "speed",
-      "result": "CPU pass (R-1100): updateDerivedProperties 14.1 % of the particle worker at crowd 2.5. Read (R-1103): b2FinalizeBodies holds each velocity in a register, in a parallel task; a sleeping body gets 0. R-0752 kept this off the logic workers.",
+      "result": "Kept 2026-11-28: speed in a ninth Box2D state channel from b2FinalizeBodies (no new sqrt on the common path); particle 0.686 -> 0.484 ms at Predator crowd 2.5 (below floor), physics NEUTRAL, LiquidFun stress NEUTRAL, body couple KEPT -3.9 %",
       "next": "Write speed in the finalize (C: SIMD and no-SIMD builds, the LiquidFun gates; the owner decides); the particle worker's and physics' STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-353"
@@ -17932,7 +17933,8 @@
       "records": [
         "R-1100",
         "R-1103",
-        "R-1890"
+        "R-1890",
+        "R-2052"
       ]
     },
     {
@@ -45087,6 +45089,35 @@
       "text": "The G-buffer pass split (from R-2046's reading), built by the E-500 agent on opt/e500 (e73e2757), not merged.\n- **What it did:** faces on with some frame that has heights: AUX_GBUF_VDEPTH draws the instances without heights first, depth written in the vertex, no frag depth, then AUX_GBUF the ones with heights at their texels' depth (gbufMesh a host Container of both). With faces and no height frames, the vertex-depth program alone. Without faces nothing changes (the stepped depth formula is not linear across floor sprites). Captures 0 of 921 600 pixels in 16 cases on both backends; node 3659/0, demos 149/0.\n- **houseLightScene bench=faces hour=15** (agent, 1 round): Radeon 1.766 -> 1.558 ms (-12 %), GTX 1650 at about 900 MHz 0.891 -> 0.755 (-15 %).\n- **The barrio** (demos/buenosAiresScene hour=22 dayMinutes=0, walkers moving), my alternating sitting 2026-11-28 by the files, Radeon, glFrameRecorder --gpu-draws, the G-buffer passes (the 958 x 538 target) a frame, main against e73e2757, 3 pairs: base 0.968 / 0.730 / 0.730 ms, new 1.169 / 1.097 / 0.737 (medians 0.730 -> 1.097); the agent's own: Radeon 0.742 -> 1.021 then 0.818 -> 0.777, GTX 1650 at 600-660 MHz 0.361 -> 0.381. The second walk over about 11 600 instances outweighs the early depth it buys there.\nNot kept: the game scene is the barrio. Left as E-463's notes; the binary-frames-front-to-back idea in its row stays the open direction.",
       "commits": [
         "e73e2757"
+      ]
+    },
+    {
+      "id": "R-2052",
+      "date": "2026-11-28",
+      "time": "01:49",
+      "timeFrom": "recorded",
+      "title": "Kept: Box2D's finalize writes each body's speed (the length it already computed); the particle worker's derive pass is gone: Predator crowd 2.5 particle 0.69 -> 0.48 ms, physics neutral there and on both LiquidFun scenes",
+      "verdict": "kept",
+      "text": "An agent built it (Box2D fork 27e01db, merged 3426580 and pushed; WeedJS 09467a66 the module, 2419a3bc the engine change, merged b99768be).\n- **C:** a ninth state channel (b2_weed_speed = 8; the first eight unchanged). b2FinalizeBodiesTask keeps the b2Length(v) it already computed for every awake body (maxVelocity, the sleep and continuous tests): no new square root on the common path; again after a non-bullet time of impact (its lost gravity changes the velocity); the bullet task computes it after its impact. Stored only when it changed, on every export that writes vx/vy (moved, velocity only, commands, LiquidFun re-export, fell asleep: 0). set_body_speed_export(int), off by default; bind_game_buffers keeps it. Both builds (SIMD, no-SIMD; sse2_scalar 23 cases) pass; the code is scalar.\n- **JS:** RigidBody.speed bound to STATE_CHANNELS.SPEED (box2dHotFields.js), a read-only getter, out of RigidBody's ARRAY_SCHEMA and physicsHostImpl's mirror; config.physics.deriveSpeed (set by sceneWorkerBootstrap when a type sets deriveSpeed; config.particle.deriveSpeed gone); the particle worker's updateDerivedProperties and _buildDeriveSpeedLists removed. 4 bytes more a body slot. Save golden 16 982 -> 16 822 bytes (speed is no longer saved: RigidBody's save fingerprint changes).\n- **Behaviour:** float32 sqrtf against a double sqrt stored as float32 (at most 1 ulp); with any type opting in every body gets a speed; speed follows each physics step or command, not each particle frame.\n- **Tests:** bodySpeedExport.wasm.test.js on the real module (speed = sqrt(vx^2+vy^2) within 1 float32 ulp after a command, over 10 steps, asleep by command, fell asleep, woken; off: 0); node 3653/0, demos 149/0 on the branch; 3668/0 and 149/0 on main after the merges.\n- **Speed**, the batched sitting of 2026-11-28 (runPredatorAbab, headed, main fd1d1179 against dd0d4e2d with E-525, E-500, E-353, E-339; 01:36 to 01:45 by the files): Predator crowd 2.5 NEUTRAL, particle 0.686 -> 0.484 ms (below the 6 ms floor, not judged), physics 8.325 -> 7.512 (paired -9.4 %, worse 1/4); liquidFunStressScene water=1.5 NEUTRAL (stopped early at 2 pairs, every kind within 2 %); liquidFunBodyCoupleStressScene KEPT (physics 6.462 -> 6.242, paired -3.9 %, worse 1/4). Box2D does no measurable extra work.\nLeft: tests/bench/falseSharingAudit.mjs keeps an old 'RigidBody.speed' writers entry and the C9 finding (C9 skips itself); EXECUTION_PLAN.md#E-178 and old measure files name the deleted deriveSpeedMicrobench.",
+      "commits": [
+        "27e01db",
+        "3426580",
+        "09467a66",
+        "2419a3bc",
+        "b99768be"
+      ]
+    },
+    {
+      "id": "R-2053",
+      "date": "2026-11-28",
+      "time": "01:49",
+      "timeFrom": "recorded",
+      "title": "Kept as hygiene: the decal tiles go up and are flushed before Pixi's queue wait; Predator crowd 2.5 neutral",
+      "verdict": "kept-hygiene",
+      "text": "Pixi uploads the decal tiles and flushes them (WebGL) before it waits for pre-render's queue, so the GPU process copies them during the wait; a tile stamped this frame is culled in the frame it goes up. ab9c0aae, merged dd0d4e2d; tests/node/pixiQueueRelease.test.js checks the order (decals, flush, queue, camera) and no flush without an upload or on WebGPU; node 3655/0 on the branch.\nSpeed: in the batched sitting of 2026-11-28 (runPredatorAbab, Predator crowd 2.5, fd1d1179 against dd0d4e2d with E-525, E-500, E-353, E-339): NEUTRAL, renderer 2.615 -> 2.228 ms (below the 6 ms floor, not judged), no worker worse. Hygiene: the chain's tail after the queue is shorter by the decal upload; input lag not measured.",
+      "commits": [
+        "ab9c0aae",
+        "dd0d4e2d"
       ]
     }
   ],
