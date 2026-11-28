@@ -240,6 +240,7 @@ import {
   PROXY, PROXY_CAMERA, PROXY_KIND, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, localProxyHalf, proxyView,
 } from '../render/gpuParticleProxies.js';
 import { EntityChunks, RegionQuads } from '../render/gpuParticleChunks.js';
+import { texRecordRangeGl } from '../render/gpuParticleBatch.js';
 import { LagMeter, stampNow } from '../util/latencyStamp.js';
 import { addWaitMs, waitMeterMs } from '../util/waitMeter.js';
 import { withShaderChunks } from '../render/shaderChunks.js';
@@ -1726,6 +1727,8 @@ class PixiRenderer extends AbstractWorker {
         return source;
       },
       upload: (source, bits, width, height, y0, rows) => this._gpuRecordRowsGl(source, bits, width, height, y0, rows),
+      // E-488: records [from, from + n) of a GPU particle ring, their own texels only, straight from the shared memory.
+      uploadRecords: (source, bits, from, n) => this._gpuRecordRangeGl(source, bits, from, n),
       // E-448: the first rows of a record texture from a vertex buffer's words, on the GPU (at render time).
       fromBuffer: (renderer, source, buffer, width, rows) => this._gpuRecordRowsFromBufferGl(renderer, source, buffer, width, rows),
       // E-177: a keyed batch's changed statics into its texture.
@@ -1785,6 +1788,34 @@ class PixiRenderer extends AbstractWorker {
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, y0 * width * 4);
     }
     gl.bindTexture(gl.TEXTURE_2D, prev);
+  }
+
+  /** E-488: records [from, from + n) of a GPU particle ring's record texture from `bits` (texRecordRangeGl). */
+  _gpuRecordRangeGl(source, bits, from, n) {
+    const renderer = this.pixiApp?.renderer;
+    const gl = renderer?.gl;
+    const texSys = renderer?.texture;
+    if (!gl || !texSys) return;
+    texSys.bind(source, this._gpuRecordTextureOps.unit);
+    const glSource = texSys.getGlSource(source);
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    gl.bindTexture(gl.TEXTURE_2D, glSource.texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    texRecordRangeGl(gl, bits, from, n);
+    gl.bindTexture(gl.TEXTURE_2D, prev);
+  }
+
+  /**
+   * E-488: what a WebGPU GPU particle layer stages its records through (webgpu/ringStaging.js): the device and Pixi's
+   * GPU buffer of a Buffer; null without a device.
+   */
+  _gpuRingUploads() {
+    const renderer = this.pixiApp?.renderer;
+    const device = renderer?.gpu?.device;
+    if (!device || !renderer.buffer) return null;
+    return { device, gpuBufferOf: (buffer) => renderer.buffer.getGPUBuffer(buffer) };
   }
 
   /**
