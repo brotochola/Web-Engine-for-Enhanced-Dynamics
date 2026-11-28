@@ -115,6 +115,7 @@ for (const [file, className, minFields, make] of [
   ['render/pixi/meshLayers.js', 'PixiMeshLayers', 3, async () => new (await import('../../src/render/pixi/meshLayers.js')).PixiMeshLayers({})],
   ['render/pixi/customLayers.js', 'PixiCustomLayers', 5, async () => new (await import('../../src/render/pixi/customLayers.js')).PixiCustomLayers({})],
   ['render/pixi/lookShaders.js', 'PixiLookShaders', -1, async () => new (await import('../../src/render/pixi/lookShaders.js')).PixiLookShaders({})],
+  ['render/pixi/lookPasses.js', 'PixiLookPasses', -1, async () => new (await import('../../src/render/pixi/lookPasses.js')).PixiLookPasses({})],
   ['render/pixi/glowLayer.js', 'PixiGlowLayer', 4, async () => new (await import('../../src/render/pixi/glowLayer.js')).PixiGlowLayer({})],
   ['render/pixi/shadowMaps.js', 'PixiShadowMaps', 10, async () => new (await import('../../src/render/pixi/shadowMaps.js')).PixiShadowMaps({})],
   ['render/pixi/lampMap.js', 'PixiLampMap', 15, async () => new (await import('../../src/render/pixi/lampMap.js')).PixiLampMap({})],

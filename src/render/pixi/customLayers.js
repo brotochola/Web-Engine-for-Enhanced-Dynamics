@@ -124,6 +124,8 @@ export class PixiCustomLayers {
       }
       if (old && old.gpu) old.gpu.destroy();
       if (old && old.earlierPasses) this.worker.lookPasses.destroy(old);
+      // E-525: the shared picture target given back (the layer's own targets are left as they were).
+      if (old && old.rtShared) this.worker.lookPasses.giveTarget(old.rt);
       const sources = old && old.sharedSources;
       if (!sources) continue;
       const keys = Object.keys(sources);
@@ -329,6 +331,12 @@ export class PixiCustomLayers {
         // N-79: the config set shader.containerBlend (a batch drawn in one pass takes it over blendMode).
         containerBlendSet: config.containerBlendSet === true,
         rt: null,
+        // E-525: rt is one of the shared targets (lookPasses.js), which a look that reads it in the pass that draws it takes
+        // turns on with the other layers of its size; a layer that shows rt (no look) or keeps it (MESH) has its own.
+        rtShared: false,
+        // E-525: the look's earlier passes draw into shared targets: read in the pass that draws them, but on a MESH layer
+        // (its look on the stage reads them while the stage draws).
+        sharesTargets: !isMesh,
         rtOut: null,
         shaderMesh: null,
         shader: null,
@@ -422,7 +430,8 @@ export class PixiCustomLayers {
         const h = this.worker.canvasHeight * resolution;
 
         if (!isCompute) {
-          cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
+          cl.rtShared = !isMesh;
+          cl.rt = isMesh ? PIXI.RenderTexture.create({ width: w, height: h }) : this.worker.lookPasses.takeTarget(w, h, 0);
         }
         if (!isMesh) {
           cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
@@ -627,6 +636,7 @@ export class PixiCustomLayers {
           }
           this._renderGpuParticlesToRt(cl);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+            this._sharedRtMode(cl);
             this._drawEarlierPasses(cl);
             rtOpts.transform = null;
             rtOpts.container = cl.shaderMesh;
@@ -918,6 +928,7 @@ export class PixiCustomLayers {
           rtOpts.clearColor = this.worker._clearTransparent;
           this.worker._submitRender(rtOpts);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+            this._sharedRtMode(cl);
             this._drawEarlierPasses(cl);
             rtOpts.container = cl.shaderMesh;
             rtOpts.target = cl.rtOut;
@@ -937,6 +948,17 @@ export class PixiCustomLayers {
     const size = cl.rtOut || cl.rt;
     this.worker.lookPasses.draw(cl, Layer.customLayerLookTexture(cl), size.source.pixelWidth, size.source.pixelHeight);
     applyTexelSizeUniform(cl, cl.shader.resources.uTexture);
+  }
+
+  /**
+   * E-525: a shared picture target sampled as this layer samples it (its scaleMode), as its own was: a layer of another mode,
+   * or a SCREEN pass, took its turn on it since.
+   */
+  _sharedRtMode(cl) {
+    if (!cl.rtShared) return;
+    const mode = Layer.scaleModeString(cl.scaleMode);
+    const source = cl.rt.source;
+    if (source.scaleMode !== mode) source.scaleMode = mode;
   }
 
   /**
@@ -974,15 +996,26 @@ export class PixiCustomLayers {
     return onePass && cl.containerBlendSet === true;
   }
 
-  _ensureDensityRT(cl) {
+  /**
+   * The layer drawn into its picture's target (rt) and, with a look, the look's output (rtOut), shown by a sprite.
+   * @param {boolean} [shows] the sprite will show rt itself (no look), so it is the layer's own (E-525)
+   */
+  _ensureDensityRT(cl, shows = cl.shaderBypass) {
     const resolution = cl.resolution || 1.0;
     const w = this.worker.canvasWidth * resolution;
     const h = this.worker.canvasHeight * resolution;
     if (cl.batch?.mesh?.parent) cl.batch.mesh.parent.removeChild(cl.batch.mesh);
     if (cl.fillBatch?.mesh?.parent) cl.fillBatch.mesh.parent.removeChild(cl.fillBatch.mesh);
     if (cl.uvFillBatch?.mesh?.parent) cl.uvFillBatch.mesh.parent.removeChild(cl.uvFillBatch.mesh);
-    if (!cl.rt) cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
     const meshLook = !!cl.fillBatch;
+    // E-525: a look reads rt in the pass that draws it: a shared target. A layer that shows rt, or a MESH layer (rt is a
+    // cache), has its own.
+    const shared = !meshLook && !shows;
+    if (cl.rt && cl.rtShared !== shared) this._dropDensityRT(cl);
+    if (!cl.rt) {
+      cl.rt = shared ? this.worker.lookPasses.takeTarget(w, h, 0) : PIXI.RenderTexture.create({ width: w, height: h });
+      cl.rtShared = shared;
+    }
     if (!meshLook && !cl.rtOut) cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
     this.applyScaleMode(cl);
     if (meshLook && !cl.shaderBypass) return;
@@ -998,6 +1031,26 @@ export class PixiCustomLayers {
       cl.displaySprite.scale.set(1.0 / resolution);
       if (!cl.displaySprite.parent) this.worker.pixiApp.stage.addChild(cl.displaySprite);
     }
+  }
+
+  /** E-525: the layer's picture's target let go of (a shared one given back, its own destroyed), its draws off it first. */
+  _dropDensityRT(cl) {
+    if (cl.displaySprite && cl.displaySprite.texture === cl.rt) cl.displaySprite.texture = PIXI.Texture.EMPTY;
+    this.worker.lookShaders.unbindTexture(cl.shader);
+    if (cl.earlierPasses) this.worker.lookPasses.unbind(cl);
+    this._letGoRT(cl.rt, cl.rtShared);
+    cl.rt = null;
+    cl.rtShared = false;
+  }
+
+  /** A target of the layer's let go of: a shared one given back (lookPasses.js), one of its own destroyed. */
+  _letGoRT(rt, shared) {
+    if (shared) {
+      this.worker.lookPasses.giveTarget(rt);
+      return;
+    }
+    this.worker._releaseTextureBindGroups(rt);
+    rt.destroy(true);
   }
 
   resizeRTs(cl, width, height) {
@@ -1018,9 +1071,9 @@ export class PixiCustomLayers {
     if (regions !== null) regions.setTexture(PIXI.Texture.EMPTY);
 
     if (cl.rt) {
-      this.worker._releaseTextureBindGroups(cl.rt);
-      cl.rt.destroy(true);
-      cl.rt = PIXI.RenderTexture.create({ width: lw, height: lh });
+      // E-525: a shared one given back and the one of the new size taken (the last layer to give it back destroys it).
+      this._letGoRT(cl.rt, cl.rtShared);
+      cl.rt = cl.rtShared ? this.worker.lookPasses.takeTarget(lw, lh, 0) : PIXI.RenderTexture.create({ width: lw, height: lh });
     }
     if (cl.rtOut) {
       this.worker._releaseTextureBindGroups(cl.rtOut);
