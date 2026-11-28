@@ -1,6 +1,11 @@
 # Splitting pixiWorker.js into subsystems (N-256)
 
-A plan, not started. Asked by the owner on 2026-11-16: the file is too big to read, to navigate and for agents to
+**Status (2026-11-28, from the register's N-256):** PW-1 to PW-10 done on 2026-11-22 (R-1852 to R-1857 and R-1863;
+Predator neutral each time): `pixiWorker.js` went from 11 481 to 4 413 lines, and every module under
+`src/render/pixi/` is under 1 500. Left: PW-11 (the backend seam) and PW-12 (`preRenderWorker.js`). What follows is
+the plan as written.
+
+Asked by the owner on 2026-11-16: the file is too big to read, to navigate and for agents to
 work in. Register row N-256; items PW-1 to PW-12 below.
 
 ## Why

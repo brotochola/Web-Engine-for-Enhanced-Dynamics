@@ -4,7 +4,8 @@ There is no JavaScript that is "equivalent to assembler" everywhere. V8 gets clo
 loops and almost never in code with dynamic objects. This guide orders the rules by impact; the last
 section is the way out, WebAssembly, for when the work really wants machine code.
 
-The rules this engine paid for, each with its measurement, are in `CLAUDE.md` (Engine code rules) and in
+The rules this engine paid for, each with its measurement, are in
+[`ENGINE_CODE_RULES.md`](./ENGINE_CODE_RULES.md) (`CLAUDE.md` keeps one line of each) and in
 [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). This page is the general background behind them.
 
 ## 0. How V8 thinks

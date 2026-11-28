@@ -1,29 +1,29 @@
-**Dropped 2026-11-13 (R-0972).** With `--no-maglev` on side B, Predator's spatial ran 5.4 % slower (3/4 pairs) and every worker
-under the floor higher: without Maglev, code waits in Sparkplug. The inline loops already reach TurboFan OSR code early.
-
-**Answered 2026-11-13 (R-0961): a trace artifact; in a plain run the per-frame code is in Maglev or TurboFan.**
-The counts above came from the `--trace-turbo --no-concurrent-recompilation` run, whose compiles are slow and late. A
-plain run (`--log-code` only, 20 s and 10 s) joined with a CPU trace of the same scene and length: logic's time is
-half TurboFan, a tenth Maglev; spatial and the particle worker mostly TurboFan and WASM. Maglev's large rows are the waits
-(`_waitForQueue` 277 ms/s, `_waitForPose` 157, `waitForLogic` 102, `beforeUpdate`'s input wait 10: V8 counts
-Atomics.wait as busy). Without them the lower tiers hold 1 to 10 ms/s per worker (0.02 to 0.17 ms a frame). Lesson: tiers
-are read from a plain run, never from a TurboFan trace run.
-
 # Execution plan — frame-schedule and hot-path campaign, October 2026
 
 **Opened:** 2026-10-18. **Anchor rev:** `d4933190`.
 **Protocol:** [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). Nothing here overrides it.
 
-Living plan. Every hypothesis gets an id, a status, a one-sentence claim, the primary
-named **before** the run, and a link to its report in [`reports/`](./reports/).
-New hypotheses raised while coding or writing a report are appended **here**, never to
-a side file. Old hypotheses are re-opened in place with a new sitting.
+Living plan. Every hypothesis gets an id, a one-sentence claim, its premise, the primary
+named **before** the run with the gain expected, and a link to its report in [`reports/`](./reports/)
+when it has one. New hypotheses raised while coding or writing a report are appended **here**, never to
+a side file. An old hypothesis is reopened as a new row that points at the old one (HOW_WE_MEASURE, "Old
+records are evidence, not a ban").
+
+## How to read this file
+
+**A row's status is the register's** ([`hypotheses.json`](./hypotheses.json): `node scripts/hypotheses.mjs show <id>`,
+or the page). This file holds what each row claims, its premise and how it is measured. The rows of Waves 1 to 12
+carry a status in their heading, as written when they closed. The rows of Waves 13 to 15 mostly carry none: on
+2026-11-28 the register had closed 99 rows whose text here shows no outcome, and of the 364 rows here it still held
+46 as pending. When a heading and the register disagree, the register is right. The order of the open rows is the
+register's `rank`, not their order here.
 
 ## Status vocabulary
 
-Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scene` ·
-`screened` · `kept` · `dropped` · `tie` · `hygiene` · `fail` · `closed` ·
-`superseded` · `mixed`.
+The register's: `running` · `open` · `blocked` · `parked` · `screened` · `kept` · `kept-kernel` ·
+`kept-hygiene` · `tie` · `mixed` · `dropped` · `rejected` · `fail` · `superseded` · `answered` · `note` ·
+`passed`. Headings written before the register existed also say `not-started`, `in-progress`, `kernel`, `scene`,
+`hygiene` and `closed`.
 
 ## Machine and toolchain (verified 2026-10-18)
 
@@ -947,11 +947,11 @@ at byte 0 of a WebAssembly.Memory with the scratch after it (`6fe64c1a`), the mo
 (`0995b2cf`), the particle worker (`0786a06c`); a test boots a worker on that memory, 60 flowfields bit for bit.
 Gate, navStress, both sides in worktrees: FLOWFIELDS_COMPUTED 6.1 → 36.8 a frame (+509 %, 4/4); particle 8.689 → 3.729 ms (−56.9 %, 0/4 worse).
 
-### E-121 The mesh corner rewrite in WASM (E-76 W11) — **kernel +35.7 %, wiring in progress, 2026-10-24**
+### E-121 The mesh corner rewrite in WASM (E-76 W11) — **kept 2026-10-24 (R-0575): renderer −7.1 % in meshApiStressScene, kernel +35.7 %**
 An agent's `wasm/test/meshCorners.c` (`517a41bd`), `rewriteExplicitMeshCorners` whole: 688.7 → 934.9 ops/s
 (25/25). The rewrite is 53.1 % of Pixi in meshApiStressScene; E-118 first.
 
-### E-120 Decal stamping in WASM with SIMD (E-76 W26) — **kernel +377.9 %, wiring next, 2026-10-24**
+### E-120 Decal stamping in WASM with SIMD (E-76 W26) — **kept 2026-10-24 (R-0576): decalStampStressScene's particle worker −63.7 % (4/4), kernel +377.9 %**
 An agent's `wasm/test/decalStamp.c` (`db9f9f3a`), exact: 304.1 → 1 453.0 ops/s (25/25); the scalar port loses
 (−11.4 %). Wiring needs the tiles in a WebAssembly.Memory of their own (every consumer views them at byte 0).
 
@@ -959,7 +959,7 @@ An agent's `wasm/test/decalStamp.c` (`db9f9f3a`), exact: 304.1 → 1 453.0 ops/s
 Kernel +94.5 % (25/25); wired in `0433e6cc`, `f86afae5`, `4bad5d36`. No scene can lift the particle worker past
 the 3 ms floor (65 535 decorations at most, about 1.6 ms). Predator (both sides in worktrees): particle 0.942 → 0.870 ms (−7.6 %, under the floor); nothing regressed.
 
-### E-118 A UV generation for the mesh corners — **open (from W11's screen), 2026-10-24**
+### E-118 A UV generation for the mesh corners — **kept (kernel) 2026-10-24 (R-0567): the JS rewrite +24.1 % with the UV generation; in the product with W11**
 `setVertices` writes positions only, yet the UV batch rewrites every corner's UVs each frame (half of 9.5 MB
 of writes in meshApiStressScene). A UV generation next to the vertex generation lets the JS and the kernel skip
 them, bit-identical. Being built by an agent with the W11 wiring.
@@ -1019,7 +1019,7 @@ quiet machine (diff `D:\tmp\p4\e111.patch`); W23's port would absorb it.
 With `maxShadowsPerEntity` the order of one light's candidates changes nothing, so the comparator sort is skipped.
 Kernel 672 → 916 ops/s (+36.4 %); Predator pair NEUTRAL (pre-render +0.9 %).
 
-### E-109 Leads from the 2026-10-23 heap pass — **open**
+### E-109 Leads from the 2026-10-23 heap pass — **answered 2026-10-28 (R-0679): every lead done or owned elsewhere**
 GameObject instance fields that hold fractional doubles allocate per write in Chrome (`painterMoveStressScene`
 21 MB/s, `bichosScene` 7 MB/s in game code): a guide note, or an engine-side per-entity scratch. Pixi's
 vendored WebGL bind (`for…in` per draw, 0.5–0.7 MB/s). `_emscripten_get_now` in the Box2D thread
@@ -1579,7 +1579,7 @@ Cold path, but a main-thread stall: a synthetic Predator-scale payload took ~930
 encode (~625 ms `TextEncoder` on repeated names). A per-save string table plus a single
 writer. **Primary:** time-to-save on Predator; no STEP_MS claim.
 
-### E-50 Small review items — **in progress**
+### E-50 Small review items — **kept 2026-10-28 (R-0645's triage): its two kernel keeps stand**
 **`collectSolidSegments` order — kept (kernel)** `64d0caa9`, kernel cases `6b7ad641`. The facing
 test (a cross product) runs before the range test (a division). A back-facing edge is range-tested
 only until something hit, because pre-render reads only `hit > 0`. The polar writes are the same,
@@ -4102,6 +4102,13 @@ small KB/s rows of N-158 and R-0958 are mostly theirs) and run slower. It is als
 Maglev code. If it matters: the per-frame glue made hot enough to tier (fewer, larger functions that loop), and the
 sittings' warm-up checked against the time the owner's hot functions reach TurboFan. Owner: each worker's STEP_MS; the
 tiers' share of it.
+**Answered 2026-11-13 (R-0961): a trace artifact; in a plain run the per-frame code is in Maglev or TurboFan.**
+The counts above came from the `--trace-turbo --no-concurrent-recompilation` run, whose compiles are slow and late. A
+plain run (`--log-code` only, 20 s and 10 s) joined with a CPU trace of the same scene and length: logic's time is
+half TurboFan, a tenth Maglev; spatial and the particle worker mostly TurboFan and WASM. Maglev's large rows are the waits
+(`_waitForQueue` 277 ms/s, `_waitForPose` 157, `waitForLogic` 102, `beforeUpdate`'s input wait 10: V8 counts
+Atomics.wait as busy). Without them the lower tiers hold 1 to 10 ms/s per worker (0.02 to 0.17 ms a frame). Lesson: tiers
+are read from a plain run, never from a TurboFan trace run.
 
 ### E-240 Logic reads its neighbour rows a core away: `get neighborCount` 12 % and `getNeighbor` 8 % of Predator's logic
 
@@ -4292,6 +4299,8 @@ lookups, the arguments). Owner: logic's STEP_MS in Predator.
 functions only have OSR code in 100 s (their loops in TurboFan); smaller ones with loops may sit in Maglev.
 **Plan:** Predator ABAB, one build, side B with `--js-flags=--no-maglev` (`runPredatorAbab --js-flags-b`). If B is faster:
 the functions in Maglev (`--log-code`), and a structure that reaches TurboFan early in a stock Chrome. Owner: every worker.
+**Dropped 2026-11-13 (R-0972).** With `--no-maglev` on side B, Predator's spatial ran 5.4 % slower (3/4 pairs) and every worker
+under the floor higher: without Maglev, code waits in Sparkplug. The inline loops already reach TurboFan OSR code early.
 
 ### E-255 Box2D's scheduler spin reads the clock every 64 turns
 

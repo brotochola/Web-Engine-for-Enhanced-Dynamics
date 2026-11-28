@@ -1,5 +1,9 @@
 # DX-VOLUME: an object's volume, for the sun and for point lights
 
+**Status (2026-11-28):** phases 0 and 1 are in main (e54f701f) and went out in 0.14.0; the component a game uses is
+`ShadowCaster` since DX-CASTER. Phases 2 to 4 stay a plan: the lamps' shadows came from DX-LIGHT3D's shadow maps
+instead. Its sittings asked for a renderer past 3 ms, the floor of that week; it is 6 ms since 2026-11-13.
+
 Phases 0 and 1 are built, on `dx/volume-shadow-caster`: see [What was built](#what-was-built-phases-0-and-1). The owner took the
 recommended answers to the decisions below on 2026-11-06. Phases 2 to 4 are still a plan: a lamp's shadow needs its prototype first. Written 2026-11-05 on
 `dx/sun-lights-meshes`, after Sun Street tried volumes and occluders side by side. It goes with [`DX_SUNMASK_DESIGN.md`](./reports/DX_SUNMASK_DESIGN.md) and

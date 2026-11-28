@@ -2,7 +2,8 @@
 
 Plan escrito el 2026-11-14 contra `main` en `d1158cc` (versión 0.14.0), después de probar todo esto en el
 "Banco de luz y sombras" (la webapp chica donde iteramos la API). Es un plan para que el dueño decida y para que
-las sesiones de código lo ejecuten fase por fase. Se está construyendo en la rama `dx/light3d`: lo hecho está en §16 y en el
+las sesiones de código lo ejecuten fase por fase. **Estado (2026-11-28):** construido en la
+rama `dx/light3d`, mergeado a main, y cerrado en el registro el 2026-11-21 (R-1681); lo hecho está en §16 y en el
 «Cómo quedó (rama)» de cada fase; el estado y lo que falta, en §17.3.
 
 Filas propuestas para [REVIEW_PLAN.md](./REVIEW_PLAN.md): **DX-DIRSPRITE**, **DX-CAMERA**, **DX-MAPS**,

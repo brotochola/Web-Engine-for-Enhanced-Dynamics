@@ -1,7 +1,8 @@
 # The debug UI catches up with the engine (plan)
 
-**Opened:** 2026-11-18, from the owner's report in a chat session. **Status:** a plan, not started;
-nothing in it is built, run or measured (the owner asked for reading only: no tests, no benchmarks).
+**Opened:** 2026-11-18, from the owner's report in a chat session. **Status (2026-11-28):** done on
+2026-11-22: DBG-1 to DBG-12 (closed by R-1771). What follows is the plan as written on 2026-11-18, from reading
+alone (the owner had asked for no tests and no benchmarks then), before anything was built.
 **Estimate:** about 15 to 23 hours of work in a row (section 5). **Registry:** `DX-DEBUGUI` and its
 items `DBG-1` to `DBG-12` in [`hypotheses.json`](./hypotheses.json). **Who builds it:** a session of
 its own, from this plan alone.
