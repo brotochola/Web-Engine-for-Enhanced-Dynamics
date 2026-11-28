@@ -2,17 +2,18 @@
 
 import WEED from '/src/index.js';
 
-const { enums, GameObject, RigidBody, Collider, SpriteRenderer, Mouse, Transform } = WEED;
+const { enums, GameObject, RigidBody, Collider, SpriteRenderer, Mouse, Transform, NeighborAggregates } = WEED;
 const { ShapeType } = enums;
-// ?steer=0: every boid reads and weighs its neighbours as before, but their pull is scaled by 1e-9, so the flock's
-// path no longer depends on how fresh a list is. A fixed load for spatial sittings (E-200), not a look.
+// ?steer=0: every boid weighs its neighbours as before, but their pull is scaled by 1e-9, so the flock's path no
+// longer depends on how fresh a list is. A fixed load for spatial sittings (E-200), not a look.
 const STEER = WEED.params?.get('steer') === '0' ? 1e-9 : 1;
 class Boid extends GameObject {
   static deriveSpeed = true;
 
   static turnFactor = 2;
   static tickInterval = 30;
-  static protectedRangeSq = 75 * 75
+  /** Boids closer than this push each other away; the rest of the neighbours pull the boid into the flock. */
+  static protectedRange = 75;
   static centeringFactor = 1;
   static avoidFactor = 18;
   static matchingFactor = 2;
@@ -20,7 +21,16 @@ class Boid extends GameObject {
   static mouseAvoidRangeSq = 250 * 250;
   static mouseAvoidStrength = 1000;
   static faceSpeedMin = 8;
-  static maxNeighbors = 32;
+
+  // The three flocking rules need sums over the neighbours, which the spatial workers compute with each boid's list
+  // (E-199), so the tick reads one row instead of every neighbour's position and velocity:
+  // - separation: each boid inside the protected range pushes by its offset over d², fading to 0 at the range;
+  // - cohesion: the centre of the boids past the protected range, and (velocity) their average velocity, the
+  //   alignment rule's target.
+  static neighborAggregates = {
+    separation: { radius: this.protectedRange, falloff: 'linear' },
+    cohesion: { minDistance: this.protectedRange, velocity: true },
+  };
 
   static components = [RigidBody, Collider, SpriteRenderer];
 
@@ -54,57 +64,23 @@ class Boid extends GameObject {
 
   tick(_dtRatio, deltaTime) {
     const i = this.index;
-    const tX = Transform.x;
-    const tY = Transform.y;
     const rbVX = RigidBody.vx;
     const rbVY = RigidBody.vy;
 
-    const myX = tX[i];
-    const myY = tY[i];
-    const protectedRangeSq = Boid.protectedRangeSq;
+    const myX = Transform.x[i];
+    const myY = Transform.y[i];
 
-    let centerX = 0;
-    let centerY = 0;
-    let avgVX = 0;
-    let avgVY = 0;
-    let separateX = 0;
-    let separateY = 0;
-    let flockCount = 0;
+    // Separation: away from the boids inside the protected range (the spatial worker's sum, as old as the list).
+    let ax = NeighborAggregates.separationX[i] * Boid.avoidFactor;
+    let ay = NeighborAggregates.separationY[i] * Boid.avoidFactor;
 
-    const neighborCount = this.neighborCount;
-    const nMax = neighborCount//neighborCount < Boid.maxNeighbors ? neighborCount : Boid.maxNeighbors;
-
-    for (let n = 0; n < nMax; n++) {
-      const j = this.getNeighbor(n);
-      const dx = tX[j] - myX;
-      const dy = tY[j] - myY;
-      const dist2 = dx * dx + dy * dy;
-
-      if (dist2 < protectedRangeSq && dist2 > 1) {
-        const strength = (protectedRangeSq - dist2) / protectedRangeSq;
-        separateX -= (dx / dist2) * strength;
-        separateY -= (dy / dist2) * strength;
-        continue;
-      }
-
-      centerX += tX[j];
-      centerY += tY[j];
-      avgVX += rbVX[j];
-      avgVY += rbVY[j];
-      flockCount++;
-    }
-
-    let ax = separateX * Boid.avoidFactor;
-    let ay = separateY * Boid.avoidFactor;
-
-    if (flockCount > 0) {
-      const inv = 1 / flockCount;
-      centerX *= inv;
-      centerY *= inv;
-      ax += (centerX - myX) * Boid.centeringFactor;
-      ay += (centerY - myY) * Boid.centeringFactor;
-      ax += (avgVX * inv - rbVX[i]) * Boid.matchingFactor;
-      ay += (avgVY * inv - rbVY[i]) * Boid.matchingFactor;
+    // Cohesion and alignment: towards the centre of the rest of the flock and to its average velocity, from where this
+    // boid is now.
+    if (NeighborAggregates.cohesionCount[i] > 0) {
+      ax += (NeighborAggregates.centroidX[i] - myX) * Boid.centeringFactor;
+      ay += (NeighborAggregates.centroidY[i] - myY) * Boid.centeringFactor;
+      ax += (NeighborAggregates.averageVelocityX[i] - rbVX[i]) * Boid.matchingFactor;
+      ay += (NeighborAggregates.averageVelocityY[i] - rbVY[i]) * Boid.matchingFactor;
     }
 
     ax *= STEER;
