@@ -2,16 +2,19 @@
 // the ring's records, which are uploaded once, when published. The vertex shader evaluates every particle from its
 // record and age (src/shaders/gpuParticle.*), so a frame costs the CPU a few uniforms and a range per ring.
 //
-// Each frame, per ring: copy what was published since the last frame out of the shared memory into the ring's own
-// array and upload that range (uploading from the shared memory itself slows the other workers: E-123); a range
-// that wraps the ring end goes up as its two pieces (Pixi 8.23 sends each Buffer.update at the call, on both backends,
-// #12316). Then draw only the live window: from the first record of the oldest group that may still be alive to the
-// last published one.
+// Each frame, per ring: upload what was published since the last frame, straight from the ring in the shared memory
+// (E-488: the ring has no copy of its own; a copy cost GPU Galaxy's Pixi 16 to 19 ms/s, and the upload is a copy
+// already); a range that wraps the ring end goes up as its two pieces. On WebGPU a large range goes through a staging
+// buffer mapped ahead (webgpu/ringStaging.js: writeBuffer costs Chrome's thread more than a copy does), anything else
+// by Buffer.update (Pixi 8.23 sends each at the call, on both backends, #12316). Only the range's own records reach the
+// GPU: the rest of the shared memory may be records a writer has not published yet. Then draw only the live window:
+// from the first record of the oldest group that may still be alive to the last published one.
 // A window that wraps the ring is two draws. Unborn and dead records inside it cost four vertex invocations each.
 //
 // WebGL reads the records from a texture instead (`recordTexture`, E-157): seven texels a record, fetched by
 // gl_InstanceID from a first instance each mesh holds in a uniform. Seven instanced vec4 attributes cost ANGLE's D3D11
-// about 51 ms a frame for a million records, the texture 6 (tests/bench/webglParticleUploadKernel.mjs).
+// about 51 ms a frame for a million records, the texture 6 (tests/bench/webglParticleUploadKernel.mjs). A range goes
+// up as its own texels (texRecordRangeGl).
 
 import {
   Buffer,
@@ -27,6 +30,7 @@ import {
 } from '../vendor/pixi.min.js';
 
 import { gpuStageF, gpuStageVF, pixiGroupsGpuLayout, pixiGroupsLayout } from './webgpu/pixiMeshWgsl.js';
+import { RingStaging, STAGE_BLOCK } from './webgpu/ringStaging.js';
 import {
   GPU_GROUP,
   GPU_GROUP_WORDS,
@@ -41,9 +45,11 @@ export const GPU_PARTICLE_ATTRIBUTES = Object.freeze(['aMove', 'aHeight', 'aTime
 /** Animation indices per row of the anim-start lookup (uAnimStart). */
 export const GPU_ANIM_LUT_WIDTH = 64;
 
-/** Records per pre-made copy view (RingDraw._copy); a power of two. */
-const COPY_BLOCK = 256;
-const COPY_BLOCK_SHIFT = 8;
+/**
+ * Records a range needs for WebGPU's staging (ringStaging.js); a smaller one goes by Buffer.update. The staging copies
+ * the whole blocks of STAGE_BLOCK records a range is on, so a range this long copies at most half as much again.
+ */
+export const GPU_STAGE_MIN_RECORDS = 4 * STAGE_BLOCK;
 
 const QUAD = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
 const QUAD_INDEX = new Uint32Array([0, 1, 2, 0, 2, 3]);
@@ -77,6 +83,38 @@ export function gpuRecordTexturesFit(rings, maxSize) {
     if (!(size.width <= maxSize && size.height <= maxSize)) return false; // no maxSize: no texture
   }
   return true;
+}
+
+/**
+ * Records [from, from + n) of a ring (inside it: a range that wraps the ring end is two calls) from `bits`, the ring's
+ * words in the shared memory, to its record texture, bound on TEXTURE_2D with the unpack state at its defaults: those
+ * records' texels and no other (E-488), as a partial first row, the whole rows, then a partial last row. The rest of
+ * those rows in the shared memory may be records a writer has not published yet.
+ * @param {WebGL2RenderingContext} gl
+ * @param {Uint32Array} bits
+ * @param {number} from
+ * @param {number} n
+ */
+export function texRecordRangeGl(gl, bits, from, n) {
+  const end = from + n;
+  let r = from;
+  if ((r & (TEX_ROW - 1)) !== 0 || end - r < TEX_ROW) {
+    const rowEnd = (r | (TEX_ROW - 1)) + 1;
+    const stop = end < rowEnd ? end : rowEnd;
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, (r & (TEX_ROW - 1)) * TEXELS_PER_RECORD, r >> GPU_RECORD_TEX_ROW_SHIFT,
+      (stop - r) * TEXELS_PER_RECORD, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, r * GPU_RECORD_FLOATS);
+    r = stop;
+  }
+  const rows = (end - r) >> GPU_RECORD_TEX_ROW_SHIFT;
+  if (rows > 0) {
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r >> GPU_RECORD_TEX_ROW_SHIFT, TEX_ROW * TEXELS_PER_RECORD, rows,
+      gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, r * GPU_RECORD_FLOATS);
+    r += rows << GPU_RECORD_TEX_ROW_SHIFT;
+  }
+  if (r < end) {
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r >> GPU_RECORD_TEX_ROW_SHIFT, (end - r) * TEXELS_PER_RECORD, 1,
+      gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, r * GPU_RECORD_FLOATS);
+  }
 }
 
 /**
@@ -167,40 +205,35 @@ class RingDraw {
    * @param {State} state
    * @param {string} label
    * @param {object|null} records WebGL's record texture (GpuParticleLayerBatch's `recordTexture`): `make` and
-   *   `upload`, and `resources`, the ring's shader resources every mesh's shader shares
+   *   `uploadRecords`, and `resources`, the ring's shader resources every mesh's shader shares
+   * @param {RingStaging|null} staging WebGPU: the layer's staging (ringStaging.js), or null
    */
-  constructor(ring, shader, state, label, records) {
+  constructor(ring, shader, state, label, records, staging) {
     this.ring = ring;
     this.shader = shader;
-    this.mirror = new Float32Array(ring.records.length);
-    this.mirrorBits = new Uint32Array(this.mirror.buffer);
-    // Whole blocks of COPY_BLOCK records copy through views made once (TypedArray.set); a view per upload was
-    // garbage. A range's ends copy word by word (_copyWords).
-    const blockCount = (ring.capacity / COPY_BLOCK) | 0;
-    const blockWords = COPY_BLOCK * GPU_RECORD_FLOATS;
-    this.srcBlocks = new Array(blockCount);
-    this.dstBlocks = new Array(blockCount);
-    for (let k = 0; k < blockCount; k++) {
-      this.srcBlocks[k] = ring.records.subarray(k * blockWords, (k + 1) * blockWords);
-      this.dstBlocks[k] = this.mirror.subarray(k * blockWords, (k + 1) * blockWords);
-    }
-    // WebGPU: the records are the meshes' instance buffer. WebGL: a texture they read by instance (E-157).
+    // WebGPU: the records are the meshes' instance buffer. WebGL: a texture they read by instance (E-157). Either holds
+    // the ring in the shared memory as it is: no copy of its own (E-488).
     this.records = records || null;
+    this.staging = this.records === null && staging ? staging : null;
+    // The staging copies whole blocks of STAGE_BLOCK records through views made once (a view a frame was garbage).
+    this.blocks = [];
+    if (this.staging !== null) {
+      const blockWords = STAGE_BLOCK * GPU_RECORD_FLOATS;
+      for (let k = 0; k < ((ring.capacity / STAGE_BLOCK) | 0); k++) {
+        this.blocks.push(ring.recordBits.subarray(k * blockWords, (k + 1) * blockWords));
+      }
+    }
     this.buffer = null;
     this.recordSource = null;
-    this.texWidth = 0;
-    this.texHeight = 0;
     if (this.records === null) {
       this.buffer = new Buffer({
-        data: this.mirror,
+        data: ring.records,
         label: `${label}-records`,
         usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
       });
     } else {
       const size = gpuRecordTextureSize(ring.capacity);
-      this.texWidth = size.width;
-      this.texHeight = size.height;
-      this.recordSource = this.records.make(this.mirrorBits, size.width, size.height, `${label}-records`);
+      this.recordSource = this.records.make(ring.recordBits, size.width, size.height, `${label}-records`);
     }
     this.quad = new Buffer({ data: QUAD, usage: BufferUsage.VERTEX });
     this.index = new Buffer({ data: QUAD_INDEX, usage: BufferUsage.INDEX });
@@ -282,36 +315,7 @@ class RingDraw {
     }
   }
 
-  /** Records [from, from + n) of the mirror to the record texture: the rows they are on. */
-  _sendRows(from, n) {
-    const y0 = from >> GPU_RECORD_TEX_ROW_SHIFT;
-    const y1 = (from + n - 1) >> GPU_RECORD_TEX_ROW_SHIFT;
-    this.records.upload(this.recordSource, this.mirrorBits, this.texWidth, this.texHeight, y0, y1 - y0 + 1);
-  }
-
-  /** Records [from, from + n) of the ring into the mirror (a range that does not wrap the ring end). */
-  _copy(from, n) {
-    const end = from + n;
-    let r = from;
-    let blocks = (r + COPY_BLOCK - 1) & ~(COPY_BLOCK - 1);
-    if (blocks > end) blocks = end;
-    this._copyWords(r * GPU_RECORD_FLOATS, blocks * GPU_RECORD_FLOATS);
-    r = blocks;
-    while (r + COPY_BLOCK <= end) {
-      this.dstBlocks[r >> COPY_BLOCK_SHIFT].set(this.srcBlocks[r >> COPY_BLOCK_SHIFT]);
-      r += COPY_BLOCK;
-    }
-    this._copyWords(r * GPU_RECORD_FLOATS, end * GPU_RECORD_FLOATS);
-  }
-
-  /** Words [from, to) as Uint32: bit for bit, the bit-packed fields included. */
-  _copyWords(from, to) {
-    const src = this.ring.recordBits;
-    const dst = this.mirrorBits;
-    for (let w = from; w < to; w++) dst[w] = src[w];
-  }
-
-  /** Copy and upload the records published since the last call. */
+  /** Upload the records published since the last call, straight from the shared memory. */
   upload(published) {
     const cap = this.ring.capacity;
     let fresh = (published - this.uploaded) >>> 0;
@@ -320,22 +324,28 @@ class RingDraw {
     const start = (published - fresh) >>> 0;
     const from = start & (cap - 1);
     const head = fresh < cap - from ? fresh : cap - from;
-    this._copy(from, head);
     const tail = fresh - head;
-    if (tail > 0) this._copy(0, tail);
     if (this.records !== null) {
-      // The texture takes both pieces at once, sent now, as the buffer's updates are.
-      this._sendRows(from, head);
-      if (tail > 0) this._sendRows(0, tail);
-      this.uploaded = published >>> 0;
-      return;
+      // The texture takes each piece's own texels, sent now, as the buffer's updates are.
+      this.records.uploadRecords(this.recordSource, this.ring.recordBits, from, head);
+      if (tail > 0) this.records.uploadRecords(this.recordSource, this.ring.recordBits, 0, tail);
+    } else {
+      this._send(from, head);
+      if (tail > 0) this._send(0, tail);
     }
-    // Pixi 8.23 sends each update at the call, on both backends (#12316): across the ring end the head goes up, then
-    // the tail, and a frame that draws nothing of this ring loses nothing it published. Before the buffer's first
-    // draw there is nothing to send to: that draw uploads the whole array.
-    this.buffer.update(head * GPU_RECORD_BYTES, from * GPU_RECORD_BYTES);
-    if (tail > 0) this.buffer.update(tail * GPU_RECORD_BYTES, 0);
     this.uploaded = published >>> 0;
+  }
+
+  /**
+   * Records [from, from + n) to the instance buffer: a large range through the layer's staging (copied on the GPU
+   * before the frame draws), anything else by Buffer.update. Pixi 8.23 sends each update at the call, on both backends
+   * (#12316): across the ring end the head goes up, then the tail, and a frame that draws nothing of this ring loses
+   * nothing it published. Before the buffer's first draw there is nothing to send to: that draw uploads the whole
+   * array (a staged range makes the GPU buffer, from the whole array, first).
+   */
+  _send(from, n) {
+    if (n >= GPU_STAGE_MIN_RECORDS && this.staging !== null && this.staging.stage(this.blocks, from, n, this.buffer)) return;
+    this.buffer.update(n * GPU_RECORD_BYTES, from * GPU_RECORD_BYTES);
   }
 
   /**
@@ -439,9 +449,12 @@ export class GpuParticleLayerBatch {
    * @param {string} [opts.label]
    * @param {object|null} [opts.recordTexture] WebGL: the rings' records as textures (E-157), made and filled
    *   where the GL context is: `make(bits, width, height, label)` returns a TextureSource holding `bits` (the
-   *   ring's Uint32Array, RGBA32UI, already on the GPU); `upload(source, bits, width, height, y0, rows)` sends
-   *   rows [y0, y0 + rows); `maxSize`, the context's MAX_TEXTURE_SIZE. Without it, or when a ring would need a
-   *   larger texture, WebGL draws from instance attributes, as WebGPU does.
+   *   ring's Uint32Array in the shared memory, RGBA32UI, already on the GPU); `uploadRecords(source, bits, from, n)`
+   *   sends records [from, from + n) of it (texRecordRangeGl); `maxSize`, the context's MAX_TEXTURE_SIZE. Without it,
+   *   or when a ring would need a larger texture, WebGL draws from instance attributes, as WebGPU does.
+   * @param {object|null} [opts.ringUploads] WebGPU: `{ device, gpuBufferOf }` for the layer's staging (E-488,
+   *   webgpu/ringStaging.js), `gpuBufferOf(buffer)` a Pixi Buffer's GPUBuffer (renderer.buffer.getGPUBuffer). Without
+   *   it every range goes by Buffer.update.
    */
   constructor(opts) {
     this.info = opts.info;
@@ -472,12 +485,15 @@ export class GpuParticleLayerBatch {
           `${opts.recordTexture.maxSize} texels (slower on WebGL; lower maxParticles or split the layer).`
       );
     }
+    // One staging for the layer's rings, flushed once a frame (update).
+    const uploads = this.useWebGpu ? opts.ringUploads : null;
+    this.staging = uploads && uploads.device ? new RingStaging(uploads.device, uploads.gpuBufferOf, this.label) : null;
     for (let r = 0; r < this.info.rings.length; r++) {
       const name = `${this.label}-ring${r}`;
       const resources = this._resources(opts, textured);
       const shader = this._makeShader(shaders, opts, name, resources, textured);
-      const records = textured ? { make: opts.recordTexture.make, upload: opts.recordTexture.upload, resources } : null;
-      const draw = new RingDraw(this.info.rings[r], shader, this.state, name, records);
+      const records = textured ? { make: opts.recordTexture.make, uploadRecords: opts.recordTexture.uploadRecords, resources } : null;
+      const draw = new RingDraw(this.info.rings[r], shader, this.state, name, records, this.staging);
       for (const m of draw.meshes) {
         m.blendMode = this.state.blendMode;
         this.container.addChild(m);
@@ -543,6 +559,8 @@ export class GpuParticleLayerBatch {
       if (typeof group.update === 'function') group.update();
       live += count;
     }
+    // The staged ranges go to the GPU now, before the frame draws (the Pixi worker updates the layers first).
+    if (this.staging !== null) this.staging.flush();
     this.liveRecords = live;
     return live;
   }
@@ -601,6 +619,7 @@ export class GpuParticleLayerBatch {
   destroy() {
     for (const r of this.rings) r.destroy();
     this.rings.length = 0;
+    if (this.staging !== null) this.staging.destroy();
     this.container.destroy({ children: false });
   }
 }

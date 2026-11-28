@@ -285,6 +285,7 @@ export class PixiCustomLayers {
           look: looks,
           label: `gpu-particles-${layerName}`,
           recordTexture: this.worker._useWebGpu ? null : this.worker._gpuRecordTexture(),
+          ringUploads: this.worker._useWebGpu ? this.worker._gpuRingUploads() : null,
         });
         gpuBatch.container.blendMode = blend;
         this.worker._gpuParticleBatches.push(gpuBatch);

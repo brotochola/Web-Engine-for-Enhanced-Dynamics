@@ -12,15 +12,19 @@ import { seededRandom } from '../../src/util/utils.js';
 import { GPU_RECORD_BYTES } from '../../src/util/gpuParticleLayout.js';
 import {
   GPU_PARTICLE_ATTRIBUTES,
+  GPU_STAGE_MIN_RECORDS,
   GpuParticleLayerBatch,
   gpuParticleTextureVertex,
   gpuRecordTextureSize,
   gpuRecordTexturesFit,
   packAnimStartLookup,
+  texRecordRangeGl,
 } from '../../src/render/gpuParticleBatch.js';
 import { installInstanceRangeDraw } from '../../src/render/instanceRangeDraw.js';
+import { RingStaging } from '../../src/render/webgpu/ringStaging.js';
 import { Texture, TextureSource } from '../../src/vendor/pixi.min.js';
 import { GlBufferSystem } from '../../node_modules/pixi.js/lib/rendering/renderers/gl/buffer/GlBufferSystem.mjs';
+import { GpuBufferSystem } from '../../node_modules/pixi.js/lib/rendering/renderers/gpu/buffer/GpuBufferSystem.mjs';
 import { readEngineShader } from './engineShaderSources.mjs';
 
 // The renderer's side of a GPU particle layer, without a GPU: what it uploads each frame (only what was published,
@@ -71,15 +75,15 @@ const clockNow = () => {
 
 const emit = (n, lifespan, extra = {}) => ParticleEmitter.emitGpu({ layer: 'smoke', count: n, x: 0, y: 0, lifespan, ...extra });
 
-test('a frame uploads only the records published since the last one, out of a private copy', { concurrency: false }, () => {
+test('a frame uploads only the records published since the last one, straight from the shared ring', { concurrency: false }, () => {
   const { batch, draw, restore } = setup();
   try {
-    assert.notEqual(draw.mirror.buffer, draw.ring.records.buffer, 'uploads come from the ring\'s own array');
+    assert.equal(draw.buffer.data, draw.ring.records, 'the buffer\'s data is the ring in the shared memory (E-488)');
+    assert.ok(draw.buffer.data.buffer instanceof SharedArrayBuffer);
     emit(10, 1000);
     batch.update(clockNow());
     assert.equal(draw.buffer._updateOffset, 0);
     assert.equal(draw.buffer._updateSize, 10 * GPU_RECORD_BYTES);
-    assert.deepEqual(Array.from(draw.mirror.subarray(0, 4)), Array.from(draw.ring.records.subarray(0, 4)));
     emit(5, 1000);
     batch.update(clockNow());
     assert.equal(draw.buffer._updateOffset, 10 * GPU_RECORD_BYTES, 'the next range starts where the last ended');
@@ -338,7 +342,7 @@ test('the texture vertex shader reads the seven record vec4 from texels of recor
   assert.throws(() => gpuParticleTextureVertex(VERT.replace('in vec4 aSpin;', 'in vec4 aSpinX;')), /aSpin/);
 });
 
-test('WebGL draws from a record texture: the rows each frame publishes go up, both pieces across the ring end', { concurrency: false }, () => {
+test('WebGL draws from a record texture: the records each frame publishes go up, both pieces across the ring end', { concurrency: false }, () => {
   const made = [];
   const uploads = [];
   const recordTexture = {
@@ -347,10 +351,12 @@ test('WebGL draws from a record texture: the rows each frame publishes go up, bo
       made.push({ bits, width, height, label });
       return new TextureSource({ width, height, label });
     },
-    upload(source, bits, width, height, y0, rows) {
-      uploads.push([y0, rows]);
+    uploadRecords(source, bits, from, n) {
+      sentFrom.add(bits);
+      uploads.push([from, n]);
     },
   };
+  const sentFrom = new Set();
   // 2048 records a ring: four rows of 512.
   const { batch, draw, restore } = setup(2048 * 3, {
     useWebGpu: false,
@@ -360,7 +366,7 @@ test('WebGL draws from a record texture: the rows each frame publishes go up, bo
   try {
     assert.equal(draw.buffer, null, 'no instance buffer');
     assert.equal(made.length, batch.rings.length);
-    assert.equal(made[0].bits, draw.mirrorBits, 'the texture holds the ring\'s own copy');
+    assert.equal(made[0].bits, draw.ring.recordBits, 'the texture holds the ring in the shared memory (E-488)');
     assert.deepEqual([made[0].width, made[0].height], [7 * 512, 4]);
     assert.deepEqual(gpuRecordTextureSize(64), { width: 7 * 64, height: 1 }, 'a small ring is one row');
     const [a, b] = draw.meshes;
@@ -369,19 +375,20 @@ test('WebGL draws from a record texture: the rows each frame publishes go up, bo
 
     emit(600, 5000);
     batch.update(clockNow());
-    assert.deepEqual(uploads.splice(0), [[0, 2]], 'records 0..599: rows 0 and 1');
+    assert.deepEqual(uploads.splice(0), [[0, 600]], 'records 0..599');
     // Calls a frame apart: each opens its own group (calls closer than GPU_GROUP_JOIN_MS share one, E-161).
     Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
     emit(1000, 5000);
     batch.update(clockNow());
-    assert.deepEqual(uploads.splice(0), [[1, 3]], 'records 600..1599: rows 1 to 3');
+    assert.deepEqual(uploads.splice(0), [[600, 1000]], 'records 600..1599');
     batch.update(clockNow());
     assert.deepEqual(uploads, [], 'nothing published, nothing sent');
 
     Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
     emit(600, 5000); // 1600..2199 of a 2048-record ring: wraps
     batch.update(clockNow());
-    assert.deepEqual(uploads.splice(0), [[3, 1], [0, 1]], 'the head on row 3, the tail on row 0');
+    assert.deepEqual(uploads.splice(0), [[1600, 448], [0, 152]], 'the head to the ring end, the tail from slot 0');
+    assert.deepEqual([...sentFrom], [draw.ring.recordBits], 'every piece from the ring\'s words in the shared memory');
     assert.equal(a.visible && b.visible, true, 'the live window wraps: two draws');
     // The tail wrote over records 0..151, so the first group is gone: the window starts at the second, record 600.
     assert.equal(a.shader.resources.firstInstance.uniforms.uFirstInstance, 600, 'from the oldest group still whole');
@@ -426,4 +433,215 @@ test('a layer whose rings need a texture past the GPU limit draws from instance 
     console.warn = warn;
     if (restoreLayer) restoreLayer();
   }
+});
+
+/**
+ * A record texture of `capacity` records as texels, and a context whose texSubImage2D writes into it as WebGL does
+ * (rows packed at the upload's width, UNPACK_ROW_LENGTH 0). Every texel starts as `fill`.
+ */
+function recordTextureGl(capacity, fill) {
+  const { width, height } = gpuRecordTextureSize(capacity);
+  const texels = new Uint32Array(width * height * 4).fill(fill);
+  const calls = [];
+  const gl = {
+    TEXTURE_2D: 0x0de1,
+    RGBA_INTEGER: 0x8d99,
+    UNSIGNED_INT: 0x1405,
+    texSubImage2D(target, level, x, y, w, h, format, type, src, srcOffset) {
+      assert.ok(x >= 0 && y >= 0 && x + w <= width && y + h <= height, `[${x}, ${y}, ${w}, ${h}] inside ${width} x ${height}`);
+      calls.push([x, y, w, h]);
+      for (let row = 0; row < h; row++) {
+        texels.set(src.subarray(srcOffset + row * w * 4, srcOffset + (row + 1) * w * 4), ((y + row) * width + x) * 4);
+      }
+    },
+  };
+  return { gl, texels, calls, width };
+}
+
+test('E-488: a range of a ring goes to its record texture as its own texels and no other', () => {
+  const FILL = 0xdeadbeef;
+  for (const [capacity, ranges] of [
+    [2048, [[0, 600], [600, 1000], [1600, 448], [5, 3], [512, 1024], [0, 2048], [700, 30], [511, 2], [1024, 512]]],
+    [64, [[0, 64], [10, 20], [63, 1]]],
+  ]) {
+    const bits = new Uint32Array(new SharedArrayBuffer(capacity * 28 * 4));
+    for (let w = 0; w < bits.length; w++) bits[w] = w + 1;
+    for (const [from, n] of ranges) {
+      const { gl, texels, calls, width } = recordTextureGl(capacity, FILL);
+      texRecordRangeGl(gl, bits, from, n);
+      assert.ok(calls.length <= 3, 'a partial first row, the whole rows, a partial last row');
+      for (let s = 0; s < capacity; s++) {
+        const at = ((s >> 9) * width + (s & 511) * 7) * 4;
+        const inside = s >= from && s < from + n;
+        for (let k = 0; k < 28; k++) {
+          const want = inside ? bits[s * 28 + k] : FILL;
+          if (texels[at + k] !== want) assert.fail(`ring ${capacity}, [${from}, ${from + n}): record ${s} word ${k} is ${texels[at + k]}, not ${want}`);
+        }
+      }
+    }
+  }
+});
+
+/**
+ * A WebGPU device that keeps what each buffer holds: writeBuffer and a submit's copies land at the call, a mapping is a
+ * copy of the buffer's bytes made at getMappedRange and written back at unmap, and mapAsync resolves only at catchUp()
+ * (the GPU caught up).
+ */
+function gpuDevice() {
+  const pending = [];
+  const device = {
+    submits: 0,
+    ringWrites: [],
+    createBuffer({ size, usage, mappedAtCreation, label }) {
+      const b = {
+        size,
+        usage,
+        label,
+        bytes: new Uint8Array(size),
+        state: mappedAtCreation ? 'mapped' : 'unmapped',
+        range: null,
+        getMappedRange() {
+          assert.equal(b.state, 'mapped');
+          b.range = new ArrayBuffer(size);
+          new Uint8Array(b.range).set(b.bytes);
+          return b.range;
+        },
+        unmap() {
+          if (b.range) b.bytes.set(new Uint8Array(b.range));
+          b.range = null;
+          b.state = 'unmapped';
+        },
+        mapAsync() {
+          assert.equal(b.state, 'unmapped', 'mapped again only once unmapped');
+          b.state = 'pending';
+          return new Promise((resolve) => {
+            pending.push(() => {
+              if (b.state !== 'pending') return;
+              b.state = 'mapped';
+              resolve();
+            });
+          });
+        },
+        destroy() {
+          b.state = 'destroyed';
+        },
+      };
+      return b;
+    },
+    createCommandEncoder() {
+      const copies = [];
+      return {
+        copyBufferToBuffer: (src, srcOffset, dst, dstOffset, size) => copies.push([src, srcOffset, dst, dstOffset, size]),
+        finish: () => ({ copies }),
+      };
+    },
+    queue: {
+      writeBuffer(dst, offset, data, dataOffset, size) {
+        dst.bytes.set(new Uint8Array(data, dataOffset, size), offset);
+        if (/-records$/.test(dst.label)) device.ringWrites.push([offset / GPU_RECORD_BYTES, size / GPU_RECORD_BYTES]);
+      },
+      submit(list) {
+        device.submits++;
+        for (const cb of list) {
+          for (const [src, srcOffset, dst, dstOffset, size] of cb.copies) {
+            assert.equal(src.state, 'unmapped', 'a staging buffer is unmapped when its copies run');
+            assert.ok(srcOffset % 4 === 0 && dstOffset % 4 === 0 && size % 4 === 0);
+            dst.bytes.set(src.bytes.subarray(srcOffset, srcOffset + size), dstOffset);
+          }
+        }
+      },
+    },
+    async catchUp() {
+      while (pending.length) pending.shift()();
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+  };
+  return device;
+}
+
+test('E-488: WebGPU stages large ranges through mapped buffers, small ones by Buffer.update; the GPU holds the ring', { concurrency: false }, async () => {
+  const device = gpuDevice();
+  const system = new GpuBufferSystem({ uid: 1, gc: { now: 0, addResourceHash() {} } });
+  system.contextChange({ device });
+  const { batch, draw, restore } = setup(8192 * 3, {
+    ringUploads: { device, gpuBufferOf: (buffer) => system.getGPUBuffer(buffer) },
+  });
+  try {
+    const staging = batch.staging;
+    assert.ok(staging instanceof RingStaging);
+    assert.equal(draw.ring.capacity, 8192);
+    const gpu = system.getGPUBuffer(draw.buffer); // made now, from the empty ring
+    const records = draw.ring.records;
+    const ringBytes = new Uint8Array(records.buffer, records.byteOffset, records.byteLength);
+    const recordOnGpu = (s) => Array.from(gpu.bytes.subarray(s * GPU_RECORD_BYTES, (s + 1) * GPU_RECORD_BYTES));
+    const recordInRing = (s) => Array.from(ringBytes.subarray(s * GPU_RECORD_BYTES, (s + 1) * GPU_RECORD_BYTES));
+    /** Records the writer has not published, as they are mid-call: they must not go up. */
+    const inFlight = (from, n) => draw.ring.recordBits.fill(0x7fc0beef, from * 28, (from + n) * 28);
+    const sameUpTo = (published, label) => {
+      for (let s = 0; s < Math.min(published, 8192); s++) {
+        assert.deepEqual(recordOnGpu(s), recordInRing(s), `${label}: record ${s}`);
+      }
+    };
+
+    emit(3000, 60000);
+    inFlight(3000, 100);
+    batch.update(clockNow());
+    assert.deepEqual([staging.stagedRanges, device.ringWrites.length, device.submits], [1, 0, 1], 'staged, one submit');
+    sameUpTo(3000, 'frame 1');
+    assert.ok(recordOnGpu(3001).every((b) => b === 0), 'the in-flight records past the range stay off the GPU');
+
+    Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
+    emit(3000, 60000); // 3000..5999: the first buffer is still mapping; a second is made
+    batch.update(clockNow());
+    assert.deepEqual([staging.stagedRanges, staging.pool.length], [2, 2]);
+    sameUpTo(6000, 'frame 2');
+
+    Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
+    emit(GPU_STAGE_MIN_RECORDS - 1, 60000); // small: Buffer.update, at the call
+    batch.update(clockNow());
+    assert.deepEqual(device.ringWrites, [[6000, GPU_STAGE_MIN_RECORDS - 1]]);
+    assert.equal(device.submits, 2, 'nothing staged, nothing submitted');
+    const published = 6000 + GPU_STAGE_MIN_RECORDS - 1;
+    sameUpTo(published, 'frame 3');
+
+    Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
+    emit(3000, 60000); // 7023..10022, across the ring end: both pieces staged, in a third buffer
+    batch.update(clockNow());
+    assert.deepEqual([staging.stagedRanges, staging.pool.length, device.submits], [4, 3, 3], 'one submit a frame');
+    Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
+    emit(1500, 60000); // the pool is full and every buffer still mapping: Buffer.update
+    batch.update(clockNow());
+    assert.deepEqual([staging.stagedRanges, staging.declinedRanges, staging.pool.length], [4, 1, 3]);
+    assert.deepEqual(device.ringWrites.slice(1), [[(published + 3000) & 8191, 1500]]);
+
+    await device.catchUp(); // the buffers mapped again
+    Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
+    emit(2000, 60000);
+    batch.update(clockNow());
+    assert.equal(staging.stagedRanges, 5, 'a buffer mapped again takes the next frame');
+    for (let s = 0; s < 8192; s++) assert.deepEqual(recordOnGpu(s), recordInRing(s), `after the wrap: record ${s}`);
+  } finally {
+    restore();
+    system.destroy();
+  }
+});
+
+test('E-488: a staging buffer is made for the frames it serves, and remade when too small', () => {
+  const device = gpuDevice();
+  const target = device.createBuffer({ size: 1 << 22, usage: 0, label: 'ring-records' });
+  const staging = new RingStaging(device, () => target, 'test');
+  const ring = new Uint32Array(new SharedArrayBuffer((1 << 15) * 28 * 4));
+  const blocks = [];
+  for (let k = 0; k < (1 << 15) / 256; k++) blocks.push(ring.subarray(k * 256 * 28, (k + 1) * 256 * 28));
+  const block = 256 * 28 * 4;
+  assert.equal(staging.stage(blocks, 0, 2048, null), true);
+  assert.equal(staging.pool[0].bytes, 1 << 18, 'the smallest buffer: 9 blocks');
+  assert.equal(staging.stage(blocks, 2048, 1024, null), false, 'no room left: the caller writes it');
+  staging.flush();
+  assert.equal(staging.want, 12 * block, 'what the frame asked for, staged or not');
+  assert.equal(staging.stage(blocks, 4096, 1024, null), true, 'a new buffer, made at the size the last frame asked for');
+  assert.equal(staging.pool[1].bytes, 1 << 19);
+  staging.flush();
+  staging.destroy();
+  assert.equal(staging.pool.length, 0);
 });
