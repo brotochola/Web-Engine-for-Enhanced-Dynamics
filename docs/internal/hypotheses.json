@@ -18971,12 +18971,12 @@
     {
       "id": "E-423",
       "title": "Self-shadow could walk the face map texel by texel (a 2D DDA, as Pixel Art Parallax walks its heightmap) instead of 6 fixed steps of 4 floor px: no thin edge lost between two steps, the first 8 px read, crisp on the art's grid with lighting.pixelArt",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from reading Ville Mönkkönen's Pixel Art Parallax (shadertoy t33yRl; instantkingdom.com/2026/01/16, its HLSL in instantkingdom.com/2026/01/pixelartparallax.txt)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "gpu",
-      "result": "Not measured. selfShadowToward (lightingBasic.frag.glsl and .wgsl) reads the face map at t = 8, 12, ..., 28 floor px (uSelfShadow 4, 6, 3 in pixiWorker.js), with a bias of 3 px plus a quarter of t: an occluder thinner than 4 px (a lid's edge, an arm, a pole) can fall between two reads, and the first 8 px are never read. The shadertoy's DDA projects the ray's two ends once, visits every texel the ray crosses in order (one fetch, a min, a compare and an add each) and tests the ray's height entering and leaving the texel against the texel's height; its own side-by-side shows fixed steps at texel centres (what we do) banding and pancaking where the DDA is exact. A shadow needs only yes or no, so the hit's interpolation (tHit) goes. Reads for the 28 px reach: about 7 at lighting.resolution 0.25 (as now), 14 at 0.5, 28 at 1 (what pixelArt asks), so it may cost more exactly where it shows most; the author himself kept contact refinement for dense maps.",
+      "result": "Kept opt-in 2026-11-28 (d63fd227): 'dda' cleaner, selfShadowStress sun res 1 light pass 3.87 -> 10.69 ms Radeon, 1.39 -> 3.16 GTX 1650; default 'steps' 0 pixels apart from before",
       "next": "A contender in E-365's rays and steps tournament: (a) today's steps; (b) E-424; (c) the DDA with the same reach, the ray rising towards the light so a texel shades when its height passes the ray's height where it enters plus the bias, skipping only the pixel's own texel, ids filter as now, a fixed loop bound with a break (ANGLE); (d) (c) with a thickness, the HLSL version's bottom height (a constant a sprite, or its footprint as footprintSolids does for the sun's map), so an arm in front of a body stops shading a ray that passes behind it. Judge the pictures (freckles, checkerboard, thin edges) and the ms: selfShadowStressScene and gpuPassBench, sun only and 32 lamps, WebGL and WebGPU, lighting.resolution 0.5 and 1.",
       "refs": [
         "EXECUTION_PLAN.md#E-365"
@@ -18986,7 +18986,9 @@
         "pixel art parallax",
         "self-shadow grid traversal"
       ],
-      "records": []
+      "records": [
+        "R-2062"
+      ]
     },
     {
       "id": "E-424",
@@ -45334,6 +45336,21 @@
       "title": "Fixed: setLayerBlend reaches the vertex-depth twin",
       "verdict": "kept-hygiene",
       "text": "N-467 fixed: setLayerBlend sets vdepthMesh's blend too (the flat face instances' opaque draw took its blend once, when made). A test in tests/node/instancedSpriteHeightFrames.test.js on real batches (WebGL and WebGPU, faces with height frames): after setLayerBlend('add') the mesh, the edge pass and the vertex-depth twin all draw 'add'; it fails without the fix. Suites with a46291ed: node 3707/0, demos 149/0, bundles 372/0 each. Off the hot path: not timed."
+    },
+    {
+      "id": "R-2062",
+      "date": "2026-11-28",
+      "time": "06:00",
+      "timeFrom": "recorded",
+      "title": "Built opt-in: the self-shadow DDA (lighting.selfShadowMarch 'dda') clears the freckles and adds contact shade but costs 2 to 3 times the self-shadow pass; the default 'steps' unchanged",
+      "verdict": "kept",
+      "text": "An agent built it on fix/e423 (e1219a0e the knobs ?selfShadowMarch= and ?lightResolution=, gpuPassBench march=; 8df18fb3 the DDA behind lighting.selfShadowMarch, both backends, selfShadowMarchOf, types, guide, tests/node/selfShadowMarch.test.js; 3aa003d6 the cost in the docs), merged d63fd227.\n- **The DDA** (lightingBasic.frag.glsl and .wgsl inside `// #if SELFSHADOW_DDA` blocks, resolved by faceMap.js lightingSource before SELFSHADOW): walks every cell the ray crosses on the picture plane (Amanatides-Woo, one texelFetch/textureLoad plus the ids fetch), skips the pixel's own cell, keeps the steps' 28 px reach and bias (3 px plus t/4); a cell shades when its height passes the ray's lowest point in it; a cell is one world px, or one face-map texel where coarser (about 9 / 17 / 34 reads at resolution 0.25 / 0.5 / 1), on the pixelArt grid; a fixed bound of 48 with a break. Two cells in a row must be under the ray to shade: the plain column test drew 1-px streaks along the light (renders drawn at 0.3 to 1.2 scale alias their height maps into one-texel spikes; the steps hit them as freckles).\n- **Pictures** (tests/results/e423-captures/, per case -steps, -dda, -diffmap, -zoom3x): selfShadowStress sun res 1: 0.57 % of pixels differ (the freckles on car roofs and tables gone, a little contact shade at rims; best: selfShadowStress-sun-webgl-res1-cars-zoom8x.png); res 0.5: 2.25 %; 32 lamps by night: 1.93 % (res 1), 3.61 % (res 0.5); WebGPU within about 30 px of WebGL; houseLight and light3dCompare 0 pixels (nothing self-shades there by default); the barrio 0.2-0.44 % (tree foliage speckle both ways, houses identical).\n- **Cost, the light pass** (glFrameRecorder --gpu-draws, WebGL, steps -> dda, 2 alternating rounds): selfShadowStress sun res 1: Radeon (Vega, Ryzen 7 4800H) 3.87 -> 10.69 ms, GTX 1650 1.39 -> 3.16; res 0.5: 1.18 -> 2.62, 0.53 -> 1.13; 32 lamps res 1: 9.53 -> 20.10, 3.36 -> 8.40; light3dCompare res 1 (no pixel self-shades): 6.36 -> 7.74 Radeon (ANGLE flattens the branch), 2.95 -> 2.91 GTX; houseLight 1.40 -> 1.49; barrio night res 0.5 1.60 -> 1.76, 0.99 -> 1.12. gpuPassBench self-shadow pass (GTX 1650, 1080p, 32 lamps): WebGL 1.96 -> 5.71 ms (res 1), 0.64 -> 1.15 (0.5); WebGPU 2.49 -> 6.58, 0.76 -> 1.22.\n- **Verdict:** better pictures, 2 to 3 times the self-shadow pass, past the bar: kept opt-in ('dda'), default 'steps'. The default draws as main does: compareCaptures --vs main, selfShadowStressScene and light3dCompareScene still=1, WebGL and WebGPU: 0 of 921 600 pixels (my check, 2026-11-28). Tests: node 3714/0, demos 149/0 on the branch.\n- Open: a 2 x 2-max half-resolution face map to walk half the cells; a hybrid (the DDA for the first 8 px, steps beyond); the ids folded into the face texel; variant (d), a thickness, not built (no per-sprite bottom height in the G-buffer).",
+      "commits": [
+        "e1219a0e",
+        "8df18fb3",
+        "3aa003d6",
+        "d63fd227"
+      ]
     }
   ],
   "leads": [
