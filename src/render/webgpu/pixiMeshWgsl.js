@@ -27,10 +27,11 @@ export function gpuStageF() {
 
 /**
  * N-303 CR-18: a program's bind layout with Pixi's two first groups, as every engine program declares them (group 0 the
- * global uniforms, group 1 the mesh's local uniforms), and `group2`, its own resources, when it has any.
+ * global uniforms, group 1 the mesh's local uniforms), and `group2`, its own resources, when it has any. An array, as
+ * Pixi's ProgramLayout is: since 8.23 its encoder sets the groups from 0 to `layout.length` (an object set none).
  */
 export function pixiGroupsLayout(group2) {
-  const layout = { 0: { globalUniforms: 0 }, 1: { localUniforms: 0 } };
+  const layout = [{ globalUniforms: 0 }, { localUniforms: 0 }];
   if (group2 !== undefined) layout[2] = group2;
   return layout;
 }
