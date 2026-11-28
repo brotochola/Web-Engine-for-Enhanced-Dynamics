@@ -11275,10 +11275,10 @@
     {
       "id": "E-199",
       "title": "Neighbour aggregates published by the spatial kernel",
-      "status": "open",
+      "status": "kept",
       "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured; approved 2026-11-23 (owner): build, measure and test the engine's K-nearest-of-a-type query, after the lights and shadows",
       "date": "2026-11-10",
-      "result": "",
+      "result": "Kept 2026-11-28 (500c33d2): separation, cohesion/average velocity and nearest-of-a-type from the spatial kernel; Boids' tick on it; Predator's ticks left",
       "next": "Boid, soldier and civilian read Transform.x[j] per neighbour (3.9 ns a read, E-141). publish_batch already has d² per candidate: it also writes, opt-in by type, separation, centroid and the nearest of a type; average velocity needs vx/vy in the kernel (second step). Kernel, then the demos' ticks on it. Owner: logic in Predator and Boids.",
       "area": "spatial",
       "kind": "wasm",
@@ -11295,7 +11295,8 @@
       "records": [
         "R-0854",
         "R-0898",
-        "R-1890"
+        "R-1890",
+        "R-2054"
       ]
     },
     {
@@ -45118,6 +45119,21 @@
       "commits": [
         "ab9c0aae",
         "dd0d4e2d"
+      ]
+    },
+    {
+      "id": "R-2054",
+      "date": "2026-11-28",
+      "time": "02:08",
+      "timeFrom": "recorded",
+      "title": "Kept: neighbour aggregates written by the spatial publish (NeighborAggregates); Boids at 100 000: logic 4.53 -> 0.87 ms a worker, spatial 17.2 -> 16.0, physics 14.0 -> 11.2, pre-render 7.4 -> 4.1 (the old side past its limit)",
+      "verdict": "kept",
+      "text": "An agent built it on opt/e199 (3a280712 kernel, API, parity, guide; 532b917b spatialWorkerMicrobench --aggregates; 4996aa6f Boids), main merged in (7960e1b7), merged to main.\n- **API:** a class asks with `static neighborAggregates` = { separation: { radius, floor, falloff: 'none'|'linear', ofType }, cohesion: { minDistance, velocity, ofType }, nearest: { count 1-16, ofType } }; ofType is an entity class (turned into its slot range: no memory read for the type test); bad options throw. Results as columns by entity index on `NeighborAggregates` (named export, WEED object, types/weed.d.ts): separationX/Y/Count, centroidX/Y, cohesionCount, averageVelocityX/Y, nearestCount, nearestIndex, nearestDistanceSq, nearestSlots, nearestOffset(i). Outputs no type asks for are empty arrays, their memory not made. Guide: docs/guide/SPATIAL_HASHING.md \"Neighbour aggregates\", runnable docs/guide/neighbor-aggregates/.\n- **Kernel:** wasm/spatialPublish.c publish_batch_agg (+ _u32): the same rows, the sums in the same pass over the candidates; each mix of aggregates its own copy of the loop chosen once per entity by a class byte; scenes where no type asks run the plain publish_batch. Velocities read in place from RigidBody's columns in Box2D's block.\n- **Parity:** neighborAggregatesWasm.test.js bit for bit against tests/reference/neighborAggregates.mjs (9 mixes, 16- and 32-bit ids, lists cut at maxNeighbors, with and without velocities); neighborAggregatesWorker.test.js on the real spatial worker. Kernel cost (Node microbench, noisy): Predator mix about 235 -> 225 frames/s, Boids about 315 -> 298 (checksums identical).\n- **Boids' behaviour, the same in kind:** neighbours' positions and velocities from the list's frame (two logic frames before the tick, E-200), boids within 1 px left out of cohesion, sums rounded differently.\n- **Speed**, runPredatorAbab headed, 2026-11-28 by the files: Boids default (40 000) with only src/ swapped measured the engine without the demo's change (NEUTRAL, all below the floor: the runner takes scenes from the main folder without --full-rev); then `--full-rev --query boids=100000 --owner spatial`, dd0d4e2d against 7960e1b7, 4 pairs: logic 4.532 -> 0.868 ms a worker (4 workers; below the floor, not judged), spatial 17.218 -> 16.026 (paired -4.2 %, worse 1/4), physics 13.994 -> 11.225 (-18.5 %, 0/4), pre-render 7.358 -> 4.106 (-44.6 %, 0/4), renderer 2.14 -> 1.41; verdict FAIL (load): the old side was past its limit (its spatial workers 30 ms a step at 42 fps in a run) while the new one held 60.\nKept on judgment: logic a fifth of what it was, no worker worse. Left: Predator's soldier and civilian ticks (nearest for targets filtered by health, separation from soldiers for the flee); publish_row_agg's separation does two divisions per pushing neighbour (q = w/dd once would save one).",
+      "commits": [
+        "3a280712",
+        "532b917b",
+        "4996aa6f",
+        "500c33d2"
       ]
     }
   ],
