@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-27",
+  "updated": "2026-11-28",
   "about": "The register of WeedJS's work, the project's one backlog, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, every bug (kind `bug`, with its review item in REVIEW_PLAN.md) and the approved features and developer-experience todos (kinds `feature`, `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, docs/internal/hypotheses.html, which reads this file itself: `npm run dev`, then `/docs/internal/hypotheses.html` (it reads the file again when it changes). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -25091,7 +25091,8 @@
     {
       "records": [
         "R-1839",
-        "R-1890"
+        "R-1890",
+        "R-2042"
       ],
       "refs": [],
       "id": "N-331",
@@ -44914,6 +44915,20 @@
       "commits": [
         "f83f30a7",
         "47db59f9"
+      ]
+    },
+    {
+      "id": "R-2042",
+      "date": "2026-11-28",
+      "time": "00:03",
+      "timeFrom": "recorded",
+      "title": "Buenos Aires, the zenithal test and Boids done (Boids' warning explained, kept); Predator's pool sizes held for the owner",
+      "verdict": "note",
+      "text": "An agent (fix/n331, reviewed) measured each warning headless with devChecks on, then sized the caps. Merged: Buenos Aires maxNeighbors 48 -> 96 (the longest list over 40-60 s is 80; 12-16 lists reached 48; spatial0/1 STEP_MS 2.02/1.97 at 96 against 1.97/2.01 at 48); the zenithal particle test maxEntitiesPerCell 64 -> 128 (its 100 cars spawn at (i*50, i*80), about 80 outside the 1920x1080 world, clamped into edge cells; 15x9 cells, no memory to speak of); Boids keeps 128 and 20 with a comment: its flock packs into knots of more than 1 000 neighbours from the third second, and 256/32, 512/64 and 1024/128 all still warned once or twice, while a bigger cap raises the spatial load the scene is there to set. Held for the owner: Predator's battle start (Flash pool 32 holds 565 to 804 flashes alive, particles peak 20 700 to 25 600, 570 to 735 cell entries past 64): the agent's 1024 flashes, 1024 lights, 32 000 particles and 96 per cell remove the warnings but make every battle flash a light, which changes the gate scene's work (one run: physics 3.39 -> 3.73, renderer 5.86 -> 6.09, pre-render 4.90 -> 5.17 ms) and N-167 had kept its pool warnings by design.",
+      "commits": [
+        "6e8ddf45",
+        "4db0c4ce",
+        "05720daf"
       ]
     }
   ],
