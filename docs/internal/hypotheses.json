@@ -26250,6 +26250,26 @@
         "webgpu updateBuffer",
         "writeBuffer ranges"
       ]
+    },
+    {
+      "refs": [
+        "LIGHTING_WORKER_PLAN.md"
+      ],
+      "aliases": [
+        "lighting worker",
+        "light worker",
+        "lighting.ownWorker"
+      ],
+      "records": [],
+      "result": "",
+      "next": "LW-0 before any code: Predator crowd 2.5 light3d by night and by day, and plain, with detailed stats (pre-render's COLLECT_MS, EMIT_MS, SPRITE_PACK_MS, SHADOW_Q_MS, VISIBILITY_MS, VISIBLE_LIGHTS_MS; Pixi's LIGHTS_MS, SHADOWS_MS, QUEUE_MS, WAIT_MS), a CPU trace of the light functions in both workers, runFramePhase, and one run of each light stress scene. Build when the work the worker would take is at least 2 ms a frame or Pixi often draws the previous vsync's queue; else park it with the numbers.",
+      "id": "E-563",
+      "kind": "speed",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-28",
+      "title": "The CPU light and shadow work in a lighting worker of its own, beside pre-render: pre-render's shadow rows, stamp, lamp frames and walls' sweep, and Pixi's light data, light tiles, lamps' map layout and light splats; half of it can start with the frame, the shadows wait only for pre-render's emit, and Pixi draws its sprites while the worker finishes",
+      "statusText": "proposed 2026-11-28 by the owner (a worker of its own, in parallel with pre-render, taking work off both); the plan is a reading of the code and the register, nothing measured for it yet"
     }
   ],
   "records": [
