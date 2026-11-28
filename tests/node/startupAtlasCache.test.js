@@ -252,7 +252,10 @@ test('a hit decodes the slot\'s entry while the key hashes the sources (SST-16);
     };
     try {
       const hit = run(assets, storage);
-      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+      // Wait for the condition, not a number of turns: a slow VM needs more of them. The gate keeps every source
+      // unanswered meanwhile, so a decode seen before release() is one that started before any source answered.
+      const deadline = Date.now() + 10_000;
+      while (decodes === 0 && Date.now() < deadline) await new Promise((r) => setImmediate(r));
       assert.ok(decodes > 0, 'the entry is being decoded before any source has answered');
       release();
       assert.equal((await hit).result.cache, 'hit');
