@@ -1,0 +1,91 @@
+{
+  "name": "measure-pixi823",
+  "plan": {
+    "revs": {
+      "a": "dd23b6464abcc7a81680575e5bde216f368aab87",
+      "b": "faaec88357c0b740c3bd33bef9a0caf9a6a2e31b"
+    }
+  },
+  "jobs": [
+    {
+      "task": "sweep",
+      "label": "kernels",
+      "machines": [
+        "linux",
+        "linuxArm",
+        "win"
+      ],
+      "vms": 4,
+      "shards": 4,
+      "args": {
+        "plan": "ci-request.json",
+        "rounds": 5
+      }
+    },
+    {
+      "task": "sceneAb",
+      "label": "scenes",
+      "machines": [
+        "linux",
+        "linuxArm",
+        "win"
+      ],
+      "vms": 4,
+      "args": {
+        "a": "dd23b6464abcc7a81680575e5bde216f368aab87",
+        "b": "faaec88357c0b740c3bd33bef9a0caf9a6a2e31b",
+        "pairs": 3
+      }
+    },
+    {
+      "task": "sceneAb",
+      "label": "scenes-bundle",
+      "machines": [
+        "linux",
+        "linuxArm",
+        "win"
+      ],
+      "vms": 4,
+      "args": {
+        "a": "dd23b6464abcc7a81680575e5bde216f368aab87",
+        "b": "faaec88357c0b740c3bd33bef9a0caf9a6a2e31b",
+        "pairs": 3,
+        "bundle": "weed.prod.bundle.esm.min.js"
+      }
+    },
+    {
+      "task": "tests",
+      "machines": [
+        "linux",
+        "linuxArm",
+        "win",
+        "winArm"
+      ]
+    },
+    {
+      "task": "race",
+      "machines": [
+        "linux",
+        "linuxArm",
+        "winArm"
+      ],
+      "args": {
+        "seconds": 15,
+        "rounds": 2
+      }
+    },
+    {
+      "task": "scenes",
+      "machines": [
+        "linux"
+      ],
+      "shards": 2,
+      "label": "demos",
+      "args": {
+        "browser": "chromium",
+        "set": "demos",
+        "seconds": 4
+      }
+    }
+  ]
+}
