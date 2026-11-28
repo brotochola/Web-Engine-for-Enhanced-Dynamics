@@ -1,0 +1,21 @@
+{
+ "id": "tests-winArm-1",
+ "task": "tests",
+ "args": {},
+ "machineKey": "winArm",
+ "machine": {
+  "platform": "win32",
+  "arch": "arm64",
+  "release": "10.0.26200",
+  "cpu": "Cobalt 100",
+  "threads": 4,
+  "memoryGB": 16,
+  "node": "v22.16.0",
+  "v8": "12.4.254.21-node.26",
+  "image": "win11-vs2026-arm64 20261123.225.2",
+  "sha": "4e551913cd694af3e0ebd9d9ab53448317f5e8ac"
+ },
+ "started": "2026-11-28T05:56:12.944Z",
+ "status": 0,
+ "minutes": 2.2
+}

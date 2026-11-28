@@ -1,0 +1,37 @@
+0.1 min  accessorTables 3 rates, 2.2 s
+0.2 min  attachedDecorationScan 2 rates, 3.8 s
+0.2 min  audioPanel 2 rates, 2.8 s
+0.5 min  bodyDirtyFlush 6 rates, 18.1 s
+3.0 min  bulletTick 32 rates, 149.2 s
+3.2 min  colliderFillPack 9 rates, 9 s
+3.2 min  componentGetter 2 rates, 2.9 s
+3.4 min  decal 5 rates, 9.6 s
+3.4 min  decorationSpatial 1 rates, 1.4 s
+3.5 min  decorationVisibility 2 rates, 3.6 s
+3.6 min  emitGpuCall 2 rates, 10.5 s
+3.7 min  fsmTick 1 rates, 2.4 s
+3.7 min  gpuPackCastersKeyed 2 rates, 1.1 s
+3.8 min  gpuPackWasm wasm 2 rates, 3 s
+4.0 min  layerCollect 2 rates, 13.5 s
+4.3 min  liquidFunComputeDepth 1 rates, 19.3 s
+4.3 min  liquidFunReactive 0 rates, 1.3 s
+4.3 min  logicBlockRange 2 rates, 1.4 s
+4.5 min  navFlowfieldWasm 2 rates, 10.6 s
+4.6 min  painterRadix 3 rates, 5.2 s
+5.6 min  particleEmit 10 rates, 58.1 s
+5.9 min  particleListsWasm 4 rates, 16.3 s
+6.2 min  preRenderCollectWasm wasm 4 rates, 23.7 s
+6.4 min  preRenderEmitWasm wasmKeyedSkip 1 rates, 9.8 s
+6.5 min  querySnapshotRead 2 rates, 4.8 s
+6.6 min  rebuildOwnedRows 3 rates, 5.4 s
+6.6 min  sceneryCam 2 rates, 1.4 s
+7.0 min  shadowStamp 6 rates, 26.4 s
+7.2 min  solidSegmentsWasm 1 rates, 12.1 s
+8.3 min  spatialGridMovers auto 5 rates, 64.9 s
+8.5 min  spatialRebuildWasm 1 rates, 10.6 s
+8.6 min  spawnPath 6 rates, 4.3 s
+8.6 min  tickLoop 2 rates, 3.5 s
+8.7 min  treiber 2 rates, 2.3 s
+9.5 min  wallRow 6 rates, 50.1 s
+9.5 min  swayBucketCache FAILED b: exit 0:   hit rate after one frame: 100.00%  (0 misses - these are the cold-start recomputes, expected once) || as it was at a: b: exit 0:   hit rate after o
+35 of 36 comparisons ran

@@ -1,0 +1,25 @@
+{
+ "id": "scenes-win-1",
+ "task": "sceneAb",
+ "args": {
+  "a": "dd23b6464abcc7a81680575e5bde216f368aab87",
+  "b": "faaec88357c0b740c3bd33bef9a0caf9a6a2e31b",
+  "pairs": 3
+ },
+ "machineKey": "win",
+ "machine": {
+  "platform": "win32",
+  "arch": "x64",
+  "release": "10.0.26100",
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "threads": 4,
+  "memoryGB": 16,
+  "node": "v22.16.0",
+  "v8": "12.4.254.21-node.26",
+  "image": "win25-vs2026 20261123.321.1",
+  "sha": "4e551913cd694af3e0ebd9d9ab53448317f5e8ac"
+ },
+ "started": "2026-11-28T05:57:17.521Z",
+ "status": 0,
+ "minutes": 16.4
+}

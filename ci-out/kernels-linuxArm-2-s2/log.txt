@@ -1,0 +1,36 @@
+0.2 min  angularSweep 5 rates, 6.3 s
+0.3 min  attachedSway 3 rates, 7 s
+0.6 min  audioSlot 6 rates, 17.1 s
+0.9 min  bodyForceCall 18 rates, 17.4 s
+1.0 min  bulletTickWasm wasm_lean 2 rates, 7 s
+1.1 min  colliderFixtureBounds 2 rates, 4.4 s
+1.5 min  compoundSolid 5 rates, 26.1 s
+1.6 min  despawnBatch 3 rates, 5 s
+1.7 min  entityInstanceBoot 2 rates, 5.3 s
+1.9 min  gameObjectAccess 2 rates, 13.2 s
+1.9 min  gpuPackIndexed 3 rates, 3.3 s
+2.1 min  gpuQueuePack 3 rates, 9.8 s
+2.2 min  layerFeed 2 rates, 2.8 s
+3.1 min  liquidFunExtract 3 rates, 54.6 s
+3.3 min  liquidFunRigidDamping 0 rates, 13.4 s
+3.3 min  navGrid 1 rates, 2.2 s
+3.5 min  painterRadixWasm simd_inplace 5 rates, 7.1 s
+5.2 min  particleIntegrate 14 rates, 103 s
+5.3 min  particleShot 6 rates, 7.1 s
+5.6 min  preRenderEmitAdobe wasm 2 rates, 16.3 s
+5.7 min  preRenderPersistWasm wasm 2 rates, 10.7 s
+5.8 min  querySystem 3 rates, 6.2 s
+5.9 min  replacePolygons 1 rates, 2.2 s
+6.0 min  setAnimation 2 rates, 7 s
+6.4 min  sortPrefix 18 rates, 21.6 s
+6.5 min  spatial 2 rates, 10.9 s
+6.7 min  spatialWorker 1 rates, 11.7 s
+7.0 min  spawnSoA 3 rates, 18 s
+7.1 min  swayBucket 2 rates, 3.2 s
+7.1 min  tileMap 6 rates, 3.4 s
+7.2 min  tweenPool 2 rates, 3.2 s
+7.2 min  decalPremultiplyWasm FAILED b: exit 1: Error: ENOENT: no such file or directory, open '/home/runner/work/Web-Engine-for-Enhanced-Dynamics/weed-sweep/b/demos/img/blood.png' || as it was at 
+7.2 min  decorationSway FAILED b: exit 0:  || as it was at a: b: exit 0: 
+7.2 min  meshApi FAILED b: exit 0: Wrote /home/runner/work/Web-Engine-for-Enhanced-Dynamics/weed-sweep/b/tests/results/mesh-api-trace/kernel.json || as it was at a: b: exit 0: Wrote /h
+7.2 min  shadowStampReplay FAILED b: exit 1:   if (!fs.existsSync(file)) throw new Error(`missing ${file} (run captureStampInputs.mjs)`); || as it was at a: b: exit 1:   if (!fs.existsSync(file)
+31 of 35 comparisons ran

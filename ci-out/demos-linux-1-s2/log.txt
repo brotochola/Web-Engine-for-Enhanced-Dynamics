@@ -1,0 +1,30 @@
+chromium 151.0.7922.34 {"isolated":true,"threads":4,"userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36","webgl":"ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)","maxTextureSize":8192,"timerQuery":false,"webgpu":"google / swiftshader","webgpuFallback":true,"webgpuTimestamps":true,"sharedIdentity":{"mainStable":true,"sameObject":true,"viewSameObject":true,"bufferStable":true,"aliased":true,"sabIsView":true,"plainSabSame":true},"bitmapAlpha":{"pngDefault":{"unpackOn":"128,128","unpackOff":"128,128"},"pngPremultiply":{"unpackOn":"128,128","unpackOff":"128,128"},"pngNone":{"unpackOn":"255,128","unpackOff":"255,128"},"canvasDefault":{"unpackOn":"128,128","unpackOff":"128,128"},"canvasPremultiply":{"unpackOn":"128,128","unpackOff":"128,128"},"imageDataDefault":{"unpackOn":"128,128","unpackOff":"128,128"},"imageDataPremultiply":{"unpackOn":"128,128","unpackOff":"128,128"},"imageDataNone":{"unpackOn":"255,128","unpackOff":"255,128"},"transferred":{"unpackOn":"128,128","unpackOff":"128,128"},"canvasItself":{"unpackOn":"128,128","unpackOff":"255,128"}}}
+ok   bichosScene                    boot 2380 ms  fps {"spatial0":60.1,"spatial1":60.1,"physics":60.4,"renderer":4,"particle":60.1,"logic0":60.4,"preRender":4.7}
+ok   ballsScene                     boot 1959 ms  fps {"spatial0":60.1,"physics":58.3,"renderer":23.4,"particle":60.1,"logic0":60.1,"preRender":23.7}
+ok   blastforgeScene                boot 1851 ms  fps {"spatial0":60.1,"renderer":4,"particle":60.1,"logic0":60.1,"preRender":4}
+ok   box2dQueryAabbScene            boot 1498 ms  fps {"spatial0":59.9,"physics":59.9,"renderer":59.9,"particle":59.9,"logic0":59.9,"preRender":59.9}
+ok   burningBoxesScene              boot 2677 ms  fps {"spatial0":60,"spatial1":60,"physics":60,"renderer":0,"particle":60,"logic0":60,"preRender":60}
+       [error] WeedJS: frame threw (worker). Later repeats are counted, not logged. RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (32) is too large for the implementation when mappedAtCreation == true
+    at rs.createGPUBuffer (http://127.0.0.1:46161/src/vendor/pixi.min.js:
+       [error] WeedJS: frame threw (worker). Later repeats are counted, not logged. RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (262140) is too large for the implementation when mappedAtCreation == true
+    at rs.createGPUBuffer (http://127.0.0.1:46161/src/vendor/pixi.min
+ok   constraintBoxScene             boot 1497 ms  fps {"spatial0":59.9,"physics":59.9,"renderer":50.7,"particle":59.9,"logic0":59.9,"preRender":50.7}
+ok   destructibleTerrainScene       boot 2214 ms  fps {"spatial0":60,"physics":60,"renderer":0.5,"particle":60,"logic0":60,"logic1":60,"preRender":54.5}
+       [page error] OperationError: A valid external Instance reference no longer exists. (x4)
+       [error] WeedJS: frame threw (worker). Later repeats are counted, not logged. RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (32) is too large for the implementation when mappedAtCreation == true
+    at rs.createGPUBuffer (http://127.0.0.1:46161/src/vendor/pixi.min.js:
+ok   gpuGalaxyScene                 boot 1767 ms  fps {"renderer":0,"particle":60,"logic0":60,"logic1":60,"logic2":60,"logic3":60,"preRender":58.7}
+       [page error] OperationError: A valid external Instance reference no longer exists. (x2)
+       [error] WeedJS: frame threw (worker). Later repeats are counted, not logged. RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (32) is too large for the implementation when mappedAtCreation == true
+    at rs.createGPUBuffer (http://127.0.0.1:46161/src/vendor/pixi.min.js:
+ok   liquidFunDemoScene             boot 1498 ms  fps {"spatial0":59.9,"physics":59.9,"renderer":17.5,"particle":59.9,"logic0":59.9,"preRender":17.7}
+ok   lightBenchScene                boot 2887 ms  fps {"spatial0":57.4,"physics":57.6,"renderer":3,"particle":57.4,"logic0":57.4,"preRender":3.2}
+ok   mamushkaDigScene               boot 1606 ms  fps {"spatial0":59.8,"physics":59.8,"renderer":8,"particle":59.8,"logic0":59.8,"preRender":8.2}
+ok   orientedBoxScene               boot 1477 ms  fps {"spatial0":60,"physics":60,"renderer":52,"particle":60,"logic0":60,"preRender":51.7}
+ok   planetScene                    boot 1489 ms  fps {"spatial0":60,"renderer":13.4,"particle":60,"logic0":60,"preRender":13.7}
+ok   platformerGameScene            boot 1500 ms  fps {"spatial0":60.1,"physics":60.1,"renderer":6.2,"particle":60.1,"logic0":60.1,"preRender":6.2}
+ok   proceduralTreeScene            boot 1466 ms  fps {"physics":60.1,"renderer":8,"particle":60.1,"logic0":60.1,"preRender":8.2}
+ok   uChainScene                    boot 1502 ms  fps {"spatial0":59.9,"physics":59.9,"renderer":23.2,"particle":59.9,"logic0":59.9,"preRender":22.9}
+ok   weldBreakScene                 boot 1439 ms  fps {"spatial0":60,"physics":60,"renderer":60,"particle":60,"logic0":60,"preRender":60}
+ok   zenithalParticleTestScene      boot 1523 ms  fps {"spatial0":60.1,"physics":60.1,"renderer":6.7,"particle":60.1,"logic0":60.1,"preRender":7}
+18 of 18 booted

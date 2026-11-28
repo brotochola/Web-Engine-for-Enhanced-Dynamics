@@ -1,0 +1,33 @@
+{
+ "kind": "tests",
+ "suites": {
+  "node": {
+   "status": [
+    0,
+    0,
+    0
+   ],
+   "seconds": 124.2,
+   "files": 730,
+   "tests": 3675,
+   "pass": 3675,
+   "fail": 0,
+   "skipped": 0,
+   "cancelled": 0,
+   "failed": []
+  },
+  "demos": {
+   "status": [
+    0
+   ],
+   "seconds": 7.4,
+   "files": 30,
+   "tests": 149,
+   "pass": 149,
+   "fail": 0,
+   "skipped": 0,
+   "cancelled": 0,
+   "failed": []
+  }
+ }
+}

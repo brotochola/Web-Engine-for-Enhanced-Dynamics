@@ -1,0 +1,27 @@
+{
+ "id": "kernels-linux-4-s4",
+ "task": "sweep",
+ "args": {
+  "plan": "ci-request.json",
+  "rounds": 5,
+  "shard": "4/4"
+ },
+ "machineKey": "linux",
+ "machine": {
+  "platform": "linux",
+  "arch": "x64",
+  "release": "7.0.0-1018-aws",
+  "cpu": "Intel(R) Xeon(R) 6975P-C",
+  "threads": 4,
+  "memoryGB": 15.3,
+  "node": "v22.16.0",
+  "v8": "12.4.254.21-node.26",
+  "image": "ubuntu24 20261122.23.1",
+  "sha": "4e551913cd694af3e0ebd9d9ab53448317f5e8ac",
+  "threadsPerCore": 2,
+  "caches": "L1d 96 KiB (2 instances), L2 4 MiB (2 instances), L3 480 MiB (1 instance)"
+ },
+ "started": "2026-11-28T05:35:40.222Z",
+ "status": 0,
+ "minutes": 6.7
+}

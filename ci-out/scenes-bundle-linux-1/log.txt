@@ -1,0 +1,11 @@
+Preparing worktree (detached HEAD dd23b64)
+Preparing worktree (detached HEAD faaec88)
+1.6 min  bunnyMark@bundle  logic 0.63>0.62  renderer 2.42>1.90  particle 0.01>0.01  preRender 3.25>1.92
+3.2 min  predator@bundle  logic 0.64>0.64  spatial 1.21>1.21  physics 1.14>0.99  renderer 1.98>2.00  particle 0.17>0.18  preRender 1.08>1.09
+4.9 min  predatorCrowd@bundle  logic 6.92>6.62  spatial 8.93>9.10  physics 11.32>10.57  renderer 28.16>31.07  particle 0.57>0.54  preRender 13.37>18.89
+6.5 min  boids@bundle  logic 0.19>0.18  spatial 3.78>3.73  physics 3.39>3.32  renderer 0.54>0.57  particle 0.01>0.01  preRender 1.28>1.30
+8.0 min  balls@bundle  logic 0.16>0.16  spatial 0.44>0.46  physics 8.49>9.06  renderer 0.41>0.44  particle 0.01>0.01  preRender 0.42>0.44
+9.7 min  littleCity@bundle  logic 2.36>2.23  spatial 4.97>4.88  physics 5.79>5.92  renderer 0.57>0.57  particle 0.09>0.08  preRender 0.43>0.42
+11.2 min  particles@bundle  logic 0.21>0.21  spatial 0.01>0.01  physics 0.04>0.03  renderer 1.00>1.13  particle 0.72>0.72  preRender 2.12>2.05
+12.8 min  decals@bundle  logic 0.14>0.14  spatial 0.02>0.02  physics 0.04>0.05  renderer 1.14>1.11  particle 1.40>1.42  preRender 0.08>0.08
+14.3 min  ray@bundle  logic 2.02>2.04  spatial 0.04>0.04  physics 0.09>0.10  renderer 0.24>0.27  particle 0.01>0.01  preRender 0.17>0.18

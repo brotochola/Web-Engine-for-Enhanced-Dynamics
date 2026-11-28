@@ -1,0 +1,36 @@
+0.6 min  astar 4 rates, 34.1 s
+0.7 min  audioMetrics 2 rates, 2.3 s
+0.8 min  auditFix 13 rates, 10.3 s
+0.9 min  bodyPack 1 rates, 2.7 s
+0.9 min  cameraDeadzone 1 rates, 2 s
+2.3 min  collisionHooks 28 rates, 83.2 s
+2.5 min  computePack 12 rates, 9.7 s
+3.5 min  decorationSway 6 rates, 61.1 s
+3.6 min  directionalSprite 12 rates, 7.4 s
+3.8 min  fl4Head 4 rates, 9.8 s
+5.8 min  gpuPackKeyedCrossCore 1 rates, 0.9 s
+12.0 min  keyboardInput 3 rates, 370.5 s
+13.4 min  liquidFunBodyCouple 0 rates, 87 s
+14.6 min  liquidFunOverlapSubstep 0 rates, 71.9 s
+14.7 min  liquidFunSparseStep 0 rates, 3.9 s
+14.8 min  meshCornersWasm wasm 1 rates, 5.1 s
+14.9 min  neighborAccess 3 rates, 5.8 s
+15.3 min  pairKeySmi 2 rates, 25 s
+16.2 min  particleIntegrateWasm 1 rates, 56.7 s
+16.3 min  physicsImportCalls 1 rates, 2.2 s
+16.3 min  preRenderEmitBullet 1 rates, 4.5 s
+16.5 min  preRenderPersistWasm keyed 1 rates, 11.9 s
+17.3 min  ray 6 rates, 47.4 s
+17.4 min  saveEncode 4 rates, 2.9 s
+17.4 min  setter 2 rates, 3.2 s
+17.5 min  shadowStampWasm 1 rates, 3.8 s
+17.5 min  spatialPublishRecount 3 rates, 1.6 s
+17.6 min  spawnCommandRing 2 rates, 2.8 s
+17.6 min  spriteBounds 2 rates, 3.5 s
+17.6 min  textureUpload 1 rates, 1 s
+17.7 min  tilemapGid 2 rates, 3.6 s
+17.8 min  visibilityPolar 2 rates, 4 s
+17.8 min  decalStampWasm FAILED b: exit 1: Error: ENOENT: no such file or directory, open '/home/runner/work/Web-Engine-for-Enhanced-Dynamics/weed-sweep/b/demos/img/blood.png' || as it was at 
+19.8 min  gatherInstancedRows FAILED b: spawnSync /opt/hostedtoolcache/node/22.16.0/arm64/bin/node ETIMEDOUT || as it was at a: b: spawnSync /opt/hostedtoolcache/node/22.16.0/arm64/bin/node ETIMEDO
+19.8 min  spatialGatherReplay FAILED b: exit 0:  || as it was at a: b: exit 0: 
+32 of 35 comparisons ran

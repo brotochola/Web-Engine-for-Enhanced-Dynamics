@@ -1,0 +1,1203 @@
+{
+ "kind": "sceneAb",
+ "a": "dd23b6464abcc7a81680575e5bde216f368aab87",
+ "b": "faaec88357c0b740c3bd33bef9a0caf9a6a2e31b",
+ "pairs": 3,
+ "mode": "shell",
+ "draw": false,
+ "channel": "chromium",
+ "durationMs": 8000,
+ "rows": [
+  {
+   "scene": "bunnyMark@bundle",
+   "query": "bunnies=60000&weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 0.63486,
+      "renderer": 2.355,
+      "particle": 0.010344,
+      "preRender": 2.53
+     },
+     "frames": {
+      "logic": 480,
+      "renderer": 2,
+      "particle": 480,
+      "preRender": 2
+     },
+     "entities": 60000,
+     "queue": 60000,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.64361,
+      "renderer": 1.865,
+      "particle": 0.010354,
+      "preRender": 1.8
+     },
+     "frames": {
+      "logic": 480,
+      "renderer": 1,
+      "particle": 480,
+      "preRender": 1
+     },
+     "entities": 60000,
+     "queue": 60000,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.66088,
+      "renderer": 2.535,
+      "particle": 0.010792,
+      "preRender": 1.89
+     },
+     "frames": {
+      "logic": 480,
+      "renderer": 1,
+      "particle": 480,
+      "preRender": 1
+     },
+     "entities": 60000,
+     "queue": 60000,
+     "particles": 0
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 0.61881,
+      "renderer": 1.86,
+      "particle": 0.012281,
+      "preRender": 1.825
+     },
+     "frames": {
+      "logic": 480,
+      "renderer": 1,
+      "particle": 480,
+      "preRender": 1
+     },
+     "entities": 60000,
+     "queue": 60000,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.6314,
+      "renderer": 1.8,
+      "particle": 0.01001,
+      "preRender": 1.885
+     },
+     "frames": {
+      "logic": 480,
+      "renderer": 1,
+      "particle": 480,
+      "preRender": 1
+     },
+     "entities": 60000,
+     "queue": 60000,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.65331,
+      "renderer": 1.925,
+      "particle": 0.013417,
+      "preRender": 1.89
+     },
+     "frames": {
+      "logic": 480,
+      "renderer": 1,
+      "particle": 480,
+      "preRender": 1
+     },
+     "entities": 60000,
+     "queue": 60000,
+     "particles": 0
+    }
+   ]
+  },
+  {
+   "scene": "predator@bundle",
+   "query": "crowd=0.4&weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 0.76847,
+      "spatial": 1.281,
+      "physics": 1.2223,
+      "renderer": 2.1034,
+      "particle": 0.23011,
+      "preRender": 1.3081
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 19,
+      "particle": 480,
+      "preRender": 18
+     },
+     "entities": 4438.283950617284,
+     "queue": 4591.530864197531,
+     "particles": 83.77777777777777
+    },
+    {
+     "ms": {
+      "logic": 0.65327,
+      "spatial": 1.2961,
+      "physics": 1.3004,
+      "renderer": 1.9255,
+      "particle": 0.20558,
+      "preRender": 1.1445
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 19,
+      "particle": 480,
+      "preRender": 19
+     },
+     "entities": 4425.518518518518,
+     "queue": 4516.111111111111,
+     "particles": 33.19753086419753
+    },
+    {
+     "ms": {
+      "logic": 0.73252,
+      "spatial": 1.2024,
+      "physics": 1.1862,
+      "renderer": 2.0786,
+      "particle": 0.23826,
+      "preRender": 1.3256
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 481,
+      "renderer": 18,
+      "particle": 480,
+      "preRender": 18
+     },
+     "entities": 4475.197530864198,
+     "queue": 4649.308641975309,
+     "particles": 109.88888888888889
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 0.77608,
+      "spatial": 1.2894,
+      "physics": 1.2507,
+      "renderer": 2.1129,
+      "particle": 0.20725,
+      "preRender": 1.1521
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 19,
+      "particle": 480,
+      "preRender": 19
+     },
+     "entities": 4433.283950617284,
+     "queue": 4601.506172839506,
+     "particles": 90.12345679012346
+    },
+    {
+     "ms": {
+      "logic": 0.69689,
+      "spatial": 1.2761,
+      "physics": 1.1804,
+      "renderer": 2.3028,
+      "particle": 0.26314,
+      "preRender": 1.145
+     },
+     "frames": {
+      "logic": 481,
+      "spatial": 481,
+      "physics": 481,
+      "renderer": 18,
+      "particle": 480,
+      "preRender": 18
+     },
+     "entities": 4459.2962962962965,
+     "queue": 4592.950617283951,
+     "particles": 75.55555555555556
+    },
+    {
+     "ms": {
+      "logic": 0.7941,
+      "spatial": 1.3439,
+      "physics": 1.5872,
+      "renderer": 2.2203,
+      "particle": 0.25649,
+      "preRender": 1.2389
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 18,
+      "particle": 480,
+      "preRender": 18
+     },
+     "entities": 4484.086419753086,
+     "queue": 4615.481481481482,
+     "particles": 74.98765432098766
+    }
+   ]
+  },
+  {
+   "scene": "predatorCrowd@bundle",
+   "query": "crowd=2.5&weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 6.867,
+      "spatial": 8.6749,
+      "physics": 10.87,
+      "renderer": 37.788,
+      "particle": 0.65048,
+      "preRender": 22.027
+     },
+     "frames": {
+      "logic": 475,
+      "spatial": 476,
+      "physics": 470,
+      "renderer": 2,
+      "particle": 480,
+      "preRender": 2
+     },
+     "entities": 36357.148148148146,
+     "queue": 42353.654320987655,
+     "particles": 2916.8271604938273
+    },
+    {
+     "ms": {
+      "logic": 6.7527,
+      "spatial": 9.3731,
+      "physics": 10.984,
+      "renderer": 31.017,
+      "particle": 0.52383,
+      "preRender": 13.317
+     },
+     "frames": {
+      "logic": 473,
+      "spatial": 472,
+      "physics": 461,
+      "renderer": 2,
+      "particle": 480,
+      "preRender": 2
+     },
+     "entities": 36299.234567901236,
+     "queue": 42153.82716049383,
+     "particles": 2891.0123456790125
+    },
+    {
+     "ms": {
+      "logic": 6.2966,
+      "spatial": 8.2534,
+      "physics": 10.303,
+      "renderer": 13.725,
+      "particle": 0.49578,
+      "preRender": 9.245
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 475,
+      "renderer": 1,
+      "particle": 480,
+      "preRender": 1
+     },
+     "entities": 36776.27160493827,
+     "queue": 41986.83950617284,
+     "particles": 2811.8024691358023
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 7.4264,
+      "spatial": 9.4808,
+      "physics": 11.512,
+      "renderer": 30.345,
+      "particle": 0.53605,
+      "preRender": 17.758
+     },
+     "frames": {
+      "logic": 467,
+      "spatial": 473,
+      "physics": 457,
+      "renderer": 2,
+      "particle": 480,
+      "preRender": 2
+     },
+     "entities": 36422.91358024691,
+     "queue": 42056.18518518518,
+     "particles": 2819.320987654321
+    },
+    {
+     "ms": {
+      "logic": 6.6,
+      "spatial": 9.3389,
+      "physics": 11.454,
+      "renderer": 37.94,
+      "particle": 0.5924,
+      "preRender": 23.12
+     },
+     "frames": {
+      "logic": 475,
+      "spatial": 476,
+      "physics": 469,
+      "renderer": 2,
+      "particle": 481,
+      "preRender": 2
+     },
+     "entities": 36521.92592592593,
+     "queue": 43258.25925925926,
+     "particles": 3074.8765432098767
+    },
+    {
+     "ms": {
+      "logic": 6.4237,
+      "spatial": 9.1575,
+      "physics": 10.519,
+      "renderer": 26.232,
+      "particle": 0.45533,
+      "preRender": 24.505
+     },
+     "frames": {
+      "logic": 478,
+      "spatial": 473,
+      "physics": 467,
+      "renderer": 2,
+      "particle": 480,
+      "preRender": 2
+     },
+     "entities": 36213.432098765436,
+     "queue": 41800.77777777778,
+     "particles": 2934.4938271604938
+    }
+   ]
+  },
+  {
+   "scene": "boids@bundle",
+   "query": "weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 0.19146,
+      "spatial": 3.7149,
+      "physics": 3.3419,
+      "renderer": 0.63592,
+      "particle": 0.0069687,
+      "preRender": 1.4302
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 60,
+      "particle": 480,
+      "preRender": 61
+     },
+     "entities": 9917.098765432098,
+     "queue": 9917.098765432098,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.17746,
+      "spatial": 3.635,
+      "physics": 3.359,
+      "renderer": 0.60721,
+      "particle": 0.012625,
+      "preRender": 1.3202
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 481,
+      "renderer": 61,
+      "particle": 480,
+      "preRender": 61
+     },
+     "entities": 9443.074074074075,
+     "queue": 9443.074074074075,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.2131,
+      "spatial": 3.7905,
+      "physics": 3.4747,
+      "renderer": 0.52531,
+      "particle": 0.015031,
+      "preRender": 1.4185
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 64,
+      "particle": 480,
+      "preRender": 64
+     },
+     "entities": 8412.839506172839,
+     "queue": 8412.839506172839,
+     "particles": 0
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 0.18401,
+      "spatial": 3.52,
+      "physics": 3.5815,
+      "renderer": 0.68862,
+      "particle": 0.0073854,
+      "preRender": 1.3792
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 58,
+      "particle": 480,
+      "preRender": 59
+     },
+     "entities": 10205.814814814816,
+     "queue": 10205.814814814816,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.20183,
+      "spatial": 3.7271,
+      "physics": 3.4204,
+      "renderer": 0.54132,
+      "particle": 0.0076354,
+      "preRender": 1.3549
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 68,
+      "particle": 480,
+      "preRender": 68
+     },
+     "entities": 7910.481481481482,
+     "queue": 7910.481481481482,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.21665,
+      "spatial": 3.6107,
+      "physics": 3.6648,
+      "renderer": 0.65259,
+      "particle": 0.018885,
+      "preRender": 1.3851
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 58,
+      "particle": 480,
+      "preRender": 58
+     },
+     "entities": 9920.024691358025,
+     "queue": 9920.024691358025,
+     "particles": 0
+    }
+   ]
+  },
+  {
+   "scene": "balls@bundle",
+   "query": "weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 0.15222,
+      "spatial": 0.46124,
+      "physics": 8.6502,
+      "renderer": 0.41676,
+      "particle": 0.0075417,
+      "preRender": 0.41835
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 88,
+      "particle": 480,
+      "preRender": 88
+     },
+     "entities": 1976.5061728395062,
+     "queue": 1976.5061728395062,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.19607,
+      "spatial": 0.45958,
+      "physics": 8.7294,
+      "renderer": 0.44444,
+      "particle": 0.0087083,
+      "preRender": 0.42258
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 481,
+      "renderer": 89,
+      "particle": 480,
+      "preRender": 89
+     },
+     "entities": 1962,
+     "queue": 1962,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.19935,
+      "spatial": 0.49541,
+      "physics": 8.2955,
+      "renderer": 0.42851,
+      "particle": 0.018906,
+      "preRender": 0.45282
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 479,
+      "renderer": 87,
+      "particle": 480,
+      "preRender": 87
+     },
+     "entities": 1977.2345679012346,
+     "queue": 1977.2345679012346,
+     "particles": 0
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 0.18551,
+      "spatial": 0.47879,
+      "physics": 8.9839,
+      "renderer": 0.4342,
+      "particle": 0.0088229,
+      "preRender": 0.43948
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 87,
+      "particle": 480,
+      "preRender": 87
+     },
+     "entities": 1964.0987654320988,
+     "queue": 1964.0987654320988,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.2108,
+      "spatial": 0.44486,
+      "physics": 8.5291,
+      "renderer": 0.41826,
+      "particle": 0.013302,
+      "preRender": 0.43886
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 89,
+      "particle": 480,
+      "preRender": 88
+     },
+     "entities": 1973.79012345679,
+     "queue": 1973.79012345679,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.19783,
+      "spatial": 0.45641,
+      "physics": 8.5759,
+      "renderer": 0.41125,
+      "particle": 0.0094583,
+      "preRender": 0.43494
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 479,
+      "renderer": 88,
+      "particle": 480,
+      "preRender": 88
+     },
+     "entities": 1981.5185185185185,
+     "queue": 1981.5185185185185,
+     "particles": 0
+    }
+   ]
+  },
+  {
+   "scene": "littleCity@bundle",
+   "query": "weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 2.2592,
+      "spatial": 4.7491,
+      "physics": 6.1054,
+      "renderer": 0.61811,
+      "particle": 0.081573,
+      "preRender": 0.41693
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 114,
+      "particle": 480,
+      "preRender": 114
+     },
+     "entities": 323.8395061728395,
+     "queue": 327.7283950617284,
+     "particles": 1520.7654320987654
+    },
+    {
+     "ms": {
+      "logic": 2.2472,
+      "spatial": 4.7423,
+      "physics": 5.8652,
+      "renderer": 0.68623,
+      "particle": 0.086323,
+      "preRender": 0.42404
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 114,
+      "particle": 480,
+      "preRender": 114
+     },
+     "entities": 346.2962962962963,
+     "queue": 346.75308641975306,
+     "particles": 1679.888888888889
+    },
+    {
+     "ms": {
+      "logic": 2.3823,
+      "spatial": 4.7741,
+      "physics": 5.8708,
+      "renderer": 0.57175,
+      "particle": 0.090489,
+      "preRender": 0.4197
+     },
+     "frames": {
+      "logic": 481,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 117,
+      "particle": 481,
+      "preRender": 117
+     },
+     "entities": 319.2098765432099,
+     "queue": 322.0246913580247,
+     "particles": 1277.1604938271605
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 2.3381,
+      "spatial": 5.1634,
+      "physics": 5.6538,
+      "renderer": 0.5682,
+      "particle": 0.094437,
+      "preRender": 0.44781
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 111,
+      "particle": 480,
+      "preRender": 112
+     },
+     "entities": 341.4320987654321,
+     "queue": 357.0987654320988,
+     "particles": 1692.7037037037037
+    },
+    {
+     "ms": {
+      "logic": 2.4217,
+      "spatial": 4.8711,
+      "physics": 5.8312,
+      "renderer": 0.58415,
+      "particle": 0.070613,
+      "preRender": 0.42768
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 112,
+      "particle": 481,
+      "preRender": 112
+     },
+     "entities": 345.51851851851853,
+     "queue": 357.1111111111111,
+     "particles": 1261.0246913580247
+    },
+    {
+     "ms": {
+      "logic": 2.3258,
+      "spatial": 4.8054,
+      "physics": 6.0784,
+      "renderer": 0.70774,
+      "particle": 0.082713,
+      "preRender": 0.41948
+     },
+     "frames": {
+      "logic": 481,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 115,
+      "particle": 481,
+      "preRender": 115
+     },
+     "entities": 325.85185185185185,
+     "queue": 335.8024691358025,
+     "particles": 1541.7777777777778
+    }
+   ]
+  },
+  {
+   "scene": "particles@bundle",
+   "query": "weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 0.20859,
+      "spatial": 0.015677,
+      "physics": 0.032094,
+      "renderer": 1.0653,
+      "particle": 0.72138,
+      "preRender": 2.1697
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 18,
+      "particle": 480,
+      "preRender": 18
+     },
+     "entities": 0,
+     "queue": 38792.17283950617,
+     "particles": 64941.38271604938
+    },
+    {
+     "ms": {
+      "logic": 0.22706,
+      "spatial": 0.016115,
+      "physics": 0.034688,
+      "renderer": 1.0292,
+      "particle": 0.78617,
+      "preRender": 2.2174
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 18,
+      "particle": 480,
+      "preRender": 19
+     },
+     "entities": 0,
+     "queue": 38726.50617283951,
+     "particles": 64935.39506172839
+    },
+    {
+     "ms": {
+      "logic": 0.2258,
+      "spatial": 0.014417,
+      "physics": 0.03549,
+      "renderer": 0.98053,
+      "particle": 0.74806,
+      "preRender": 2.2578
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 19,
+      "particle": 481,
+      "preRender": 18
+     },
+     "entities": 0,
+     "queue": 38891.8024691358,
+     "particles": 64858.48148148148
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 0.20483,
+      "spatial": 0.013167,
+      "physics": 0.034021,
+      "renderer": 1.0532,
+      "particle": 0.75507,
+      "preRender": 2.0721
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 19,
+      "particle": 480,
+      "preRender": 19
+     },
+     "entities": 0,
+     "queue": 38470.98765432099,
+     "particles": 64922.30864197531
+    },
+    {
+     "ms": {
+      "logic": 0.21553,
+      "spatial": 0.01976,
+      "physics": 0.03174,
+      "renderer": 1.0531,
+      "particle": 0.74727,
+      "preRender": 2.1433
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 18,
+      "particle": 480,
+      "preRender": 18
+     },
+     "entities": 0,
+     "queue": 38986.07407407407,
+     "particles": 64903.98765432099
+    },
+    {
+     "ms": {
+      "logic": 0.21326,
+      "spatial": 0.010833,
+      "physics": 0.031365,
+      "renderer": 1.0353,
+      "particle": 0.71661,
+      "preRender": 2.2624
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 19,
+      "particle": 480,
+      "preRender": 19
+     },
+     "entities": 0,
+     "queue": 38733.20987654321,
+     "particles": 64936.9012345679
+    }
+   ]
+  },
+  {
+   "scene": "decals@bundle",
+   "query": "weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 0.14377,
+      "spatial": 0.016198,
+      "physics": 0.047651,
+      "renderer": 1.045,
+      "particle": 1.4497,
+      "preRender": 0.066556
+     },
+     "frames": {
+      "logic": 481,
+      "spatial": 480,
+      "physics": 481,
+      "renderer": 314,
+      "particle": 480,
+      "preRender": 315
+     },
+     "entities": 0,
+     "queue": 0,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.14386,
+      "spatial": 0.013906,
+      "physics": 0.038833,
+      "renderer": 1.0414,
+      "particle": 1.4461,
+      "preRender": 0.066254
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 315,
+      "particle": 479,
+      "preRender": 315
+     },
+     "entities": 0,
+     "queue": 0,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.13801,
+      "spatial": 0.021229,
+      "physics": 0.03749,
+      "renderer": 1.0719,
+      "particle": 1.3194,
+      "preRender": 0.067363
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 311,
+      "particle": 480,
+      "preRender": 311
+     },
+     "entities": 0,
+     "queue": 0,
+     "particles": 0
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 0.13978,
+      "spatial": 0.016688,
+      "physics": 0.040875,
+      "renderer": 1.0042,
+      "particle": 1.3177,
+      "preRender": 0.068133
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 317,
+      "particle": 480,
+      "preRender": 316
+     },
+     "entities": 0,
+     "queue": 0,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.15073,
+      "spatial": 0.021125,
+      "physics": 0.039792,
+      "renderer": 1.0439,
+      "particle": 1.3682,
+      "preRender": 0.077412
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 314,
+      "particle": 480,
+      "preRender": 313
+     },
+     "entities": 0,
+     "queue": 0,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 0.14484,
+      "spatial": 0.022406,
+      "physics": 0.036372,
+      "renderer": 1.0709,
+      "particle": 1.4632,
+      "preRender": 0.066198
+     },
+     "frames": {
+      "logic": 481,
+      "spatial": 480,
+      "physics": 481,
+      "renderer": 312,
+      "particle": 481,
+      "preRender": 313
+     },
+     "entities": 0,
+     "queue": 0,
+     "particles": 0
+    }
+   ]
+  },
+  {
+   "scene": "ray@bundle",
+   "query": "weedBundle=weed.prod.bundle.esm.min.js",
+   "changed": [],
+   "a": [
+    {
+     "ms": {
+      "logic": 2.0458,
+      "spatial": 0.038708,
+      "physics": 0.078729,
+      "renderer": 0.26506,
+      "particle": 0.0080417,
+      "preRender": 0.18983
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 264,
+      "particle": 480,
+      "preRender": 265
+     },
+     "entities": 1599,
+     "queue": 1599,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 2.0292,
+      "spatial": 0.039385,
+      "physics": 0.080656,
+      "renderer": 0.24865,
+      "particle": 0.0093125,
+      "preRender": 0.18369
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 266,
+      "particle": 480,
+      "preRender": 267
+     },
+     "entities": 1599,
+     "queue": 1599,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 2.0807,
+      "spatial": 0.030604,
+      "physics": 0.080365,
+      "renderer": 0.23891,
+      "particle": 0.0073437,
+      "preRender": 0.16704
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 265,
+      "particle": 480,
+      "preRender": 265
+     },
+     "entities": 1599,
+     "queue": 1599,
+     "particles": 0
+    }
+   ],
+   "b": [
+    {
+     "ms": {
+      "logic": 2.0357,
+      "spatial": 0.033354,
+      "physics": 0.10064,
+      "renderer": 0.21324,
+      "particle": 0.0068437,
+      "preRender": 0.15776
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 270,
+      "particle": 480,
+      "preRender": 270
+     },
+     "entities": 1599,
+     "queue": 1599,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 2.0168,
+      "spatial": 0.042573,
+      "physics": 0.087833,
+      "renderer": 0.2368,
+      "particle": 0.0082083,
+      "preRender": 0.16441
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 270,
+      "particle": 480,
+      "preRender": 269
+     },
+     "entities": 1599,
+     "queue": 1599,
+     "particles": 0
+    },
+    {
+     "ms": {
+      "logic": 2.0744,
+      "spatial": 0.04001,
+      "physics": 0.088125,
+      "renderer": 0.26892,
+      "particle": 0.0083125,
+      "preRender": 0.18559
+     },
+     "frames": {
+      "logic": 480,
+      "spatial": 480,
+      "physics": 480,
+      "renderer": 263,
+      "particle": 480,
+      "preRender": 263
+     },
+     "entities": 1599,
+     "queue": 1599,
+     "particles": 0
+    }
+   ]
+  }
+ ]
+}

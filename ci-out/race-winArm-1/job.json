@@ -1,0 +1,24 @@
+{
+ "id": "race-winArm-1",
+ "task": "race",
+ "args": {
+  "seconds": 15,
+  "rounds": 2
+ },
+ "machineKey": "winArm",
+ "machine": {
+  "platform": "win32",
+  "arch": "arm64",
+  "release": "10.0.26200",
+  "cpu": "Cobalt 100",
+  "threads": 4,
+  "memoryGB": 16,
+  "node": "v22.16.0",
+  "v8": "12.4.254.21-node.26",
+  "image": "win11-vs2026-arm64 20261123.225.2",
+  "sha": "4e551913cd694af3e0ebd9d9ab53448317f5e8ac"
+ },
+ "started": "2026-11-28T06:02:55.790Z",
+ "status": 0,
+ "minutes": 12.2
+}

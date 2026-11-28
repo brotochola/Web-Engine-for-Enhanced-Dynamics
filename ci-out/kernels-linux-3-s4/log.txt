@@ -1,0 +1,36 @@
+0.2 min  atlasPack 2 rates, 8.9 s
+0.2 min  audioMixer 4 rates, 2 s
+0.5 min  bodyAccelerations 1 rates, 19.1 s
+0.6 min  clearShapes 1 rates, 2.2 s
+0.7 min  componentField 2 rates, 5.7 s
+0.7 min  contacts 2 rates, 4.1 s
+0.8 min  decorationCollect 2 rates, 5.5 s
+0.9 min  decorationSwayWasm wasm-f32x4 1 rates, 4.8 s
+2.0 min  easeDispatch 15 rates, 64.2 s
+2.6 min  fsmTickAll 12 rates, 34.8 s
+2.6 min  glowSplit 12 rates, 4.2 s
+2.7 min  gpuPackKeyed 2 rates, 0.9 s
+2.8 min  lampFrames 1 rates, 7.7 s
+2.8 min  liquidFunCapturePairs 1 rates, 0.9 s
+3.2 min  liquidFunPassProfile 16 rates, 23.3 s
+3.3 min  liquidFunStrictContact 0 rates, 5 s
+3.3 min  moveExport 2 rates, 3.1 s
+3.4 min  opaqueKeyedRows 6 rates, 4.6 s
+3.5 min  particleLightPack 2 rates, 3.5 s
+3.5 min  preRenderEmitWasm 1 rates, 4.5 s
+3.6 min  prismaticJoint 1 rates, 1.5 s
+3.8 min  rayVsBox2d 4 rates, 12.8 s
+5.1 min  saveRestore 0 rates, 78 s
+5.3 min  skipWork 6 rates, 11.8 s
+5.4 min  spatialGatherWasm ordered 1 rates, 8.9 s
+5.5 min  spatialPublishWasm 2 rates, 7.4 s
+5.6 min  spawnOptions 1 rates, 1.7 s
+5.8 min  sunFrames 1 rates, 11.2 s
+6.7 min  tickAllInterval 18 rates, 56.9 s
+6.7 min  timeScale 1 rates, 0.9 s
+6.8 min  visibilitySweepWasm 2 rates, 5.1 s
+6.8 min  bulletTick FAILED b: exit 0:  || as it was at a: b: exit 0: 
+6.8 min  particleEase FAILED b: exit 1:     throw new Error( || as it was at a: b: exit 1:     throw new Error(
+6.8 min  preRenderCollect FAILED b: exit 0:  || as it was at a: b: exit 0: 
+6.8 min  shadowStamp FAILED b: exit 0:  || as it was at a: b: exit 0: 
+31 of 35 comparisons ran

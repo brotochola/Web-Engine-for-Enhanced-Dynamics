@@ -1,0 +1,11 @@
+Preparing worktree (detached HEAD dd23b64)
+Preparing worktree (detached HEAD faaec88)
+1.8 min  bunnyMark  logic 0.41>0.42  renderer 0.94>0.93  particle 0.01>0.01  preRender 0.91>0.91
+3.6 min  predator  logic 0.63>0.64  spatial 0.98>0.99  physics 1.31>1.29  renderer 1.19>1.14  particle 0.23>0.21  preRender 0.87>0.88
+5.5 min  predatorCrowd  logic 5.62>6.08  spatial 7.62>7.56  physics 8.37>8.81  renderer 3.49>3.56  particle 0.62>0.68  preRender 4.78>4.75
+7.4 min  boids  logic 0.17>0.16  spatial 3.33>3.01  physics 2.80>2.85  renderer 0.43>0.49  particle 0.01>0.02  preRender 1.09>1.06
+9.2 min  balls  logic 0.15>0.15  spatial 0.32>0.33  physics 3.86>3.85  renderer 0.33>0.34  particle 0.01>0.01  preRender 0.35>0.35
+11.0 min  littleCity  logic 1.81>1.82  spatial 3.11>3.24  physics 3.29>3.41  renderer 0.72>0.72  particle 0.11>0.32  preRender 0.37>0.37
+12.7 min  particles  logic 0.25>0.26  spatial 0.02>0.03  physics 0.07>0.06  renderer 0.56>0.57  particle 0.70>0.71  preRender 2.20>2.20
+14.5 min  decals  logic 0.14>0.13  spatial 0.03>0.02  physics 0.06>0.06  renderer 0.92>0.92  particle 1.24>1.20  preRender 0.08>0.07
+16.2 min  ray  logic 2.22>2.20  spatial 0.03>0.03  physics 0.10>0.09  renderer 0.25>0.27  particle 0.01>0.01  preRender 0.17>0.18

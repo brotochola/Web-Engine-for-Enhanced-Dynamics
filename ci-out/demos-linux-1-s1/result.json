@@ -1,0 +1,345 @@
+{
+ "kind": "sceneSmoke",
+ "browser": "chromium",
+ "set": "demos",
+ "query": "",
+ "rows": [
+  {
+   "scene": "adobeAnimateScene",
+   "booted": true,
+   "bootMs": 2065,
+   "fps": {
+    "spatial0": 60.2,
+    "physics": 60.2,
+    "renderer": 17,
+    "particle": 60.2,
+    "logic0": 60.2,
+    "preRender": 17.2
+   },
+   "logs": []
+  },
+  {
+   "scene": "badPiggiesScene",
+   "booted": true,
+   "bootMs": 1736,
+   "fps": {
+    "spatial0": 59.9,
+    "physics": 59.9,
+    "renderer": 0,
+    "particle": 59.9,
+    "logic0": 59.9,
+    "preRender": 59.9
+   },
+   "logs": [
+    "[error] WeedJS: frame threw (worker). Later repeats are counted, not logged. RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (32) is too large for the implementation when mappedAtCreation == true\n    at rs.createGPUBuffer (http://127.0.0.1:38625/src/vendor/pixi.min.js:",
+    "[error] WeedJS: frame threw (worker). Later repeats are counted, not logged. RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (262140) is too large for the implementation when mappedAtCreation == true\n    at rs.createGPUBuffer (http://127.0.0.1:38625/src/vendor/pixi.min"
+   ]
+  },
+  {
+   "scene": "buenosAiresScene",
+   "booted": true,
+   "bootMs": 4867,
+   "fps": {
+    "spatial0": 54.2,
+    "physics": 54.2,
+    "renderer": 1,
+    "particle": 54,
+    "logic0": 54.2,
+    "logic1": 54.5,
+    "preRender": 1.5
+   },
+   "logs": []
+  },
+  {
+   "scene": "boidsScene",
+   "booted": true,
+   "bootMs": 2360,
+   "fps": {
+    "spatial0": 59.2,
+    "spatial1": 59.4,
+    "physics": 59.7,
+    "renderer": 17.2,
+    "particle": 59.9,
+    "logic0": 55.4,
+    "logic1": 59.9,
+    "logic2": 59.9,
+    "logic3": 59.9,
+    "preRender": 17.2
+   },
+   "logs": []
+  },
+  {
+   "scene": "bunnyMarkScene",
+   "booted": true,
+   "bootMs": 1642,
+   "fps": {
+    "renderer": 0.2,
+    "particle": 60,
+    "logic0": 60,
+    "preRender": 0.2
+   },
+   "logs": []
+  },
+  {
+   "scene": "carScene",
+   "booted": true,
+   "bootMs": 11991,
+   "fps": {
+    "spatial0": 60.2,
+    "physics": 60.2,
+    "renderer": 27.7,
+    "particle": 60.2,
+    "logic0": 60.2,
+    "preRender": 28
+   },
+   "logs": []
+  },
+  {
+   "scene": "constraintsTestScene",
+   "booted": true,
+   "bootMs": 1705,
+   "fps": {
+    "spatial0": 60.2,
+    "spatial1": 60.2,
+    "physics": 60.2,
+    "renderer": 60,
+    "particle": 60.2,
+    "logic0": 60.2,
+    "preRender": 60.2
+   },
+   "logs": []
+  },
+  {
+   "scene": "gearChainScene",
+   "booted": true,
+   "bootMs": 1413,
+   "fps": {
+    "physics": 59.9,
+    "renderer": 0,
+    "particle": 59.9,
+    "logic0": 59.9,
+    "preRender": 59.9
+   },
+   "logs": [
+    "[error] WeedJS: frame threw (worker). Later repeats are counted, not logged. RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (32) is too large for the implementation when mappedAtCreation == true\n    at rs.createGPUBuffer (http://127.0.0.1:38625/src/vendor/pixi.min.js:",
+    "[page error] OperationError: A valid external Instance reference no longer exists."
+   ]
+  },
+  {
+   "scene": "headlightsScene",
+   "booted": true,
+   "bootMs": 1614,
+   "fps": {
+    "spatial0": 49.7,
+    "physics": 49.7,
+    "renderer": 3,
+    "particle": 49.7,
+    "logic0": 49.7,
+    "preRender": 3.2
+   },
+   "logs": []
+  },
+  {
+   "scene": "liquidFunStressScene",
+   "booted": true,
+   "bootMs": 1525,
+   "fps": {
+    "spatial0": 60,
+    "physics": 60,
+    "renderer": 5.2,
+    "particle": 60,
+    "logic0": 60,
+    "preRender": 5.2
+   },
+   "logs": []
+  },
+  {
+   "scene": "littleCityScene",
+   "booted": true,
+   "bootMs": 2366,
+   "fps": {
+    "spatial0": 60.1,
+    "spatial1": 60.1,
+    "physics": 60.3,
+    "renderer": 14.5,
+    "particle": 60.1,
+    "logic0": 59.8,
+    "preRender": 14.7
+   },
+   "logs": []
+  },
+  {
+   "scene": "meshGalleryScene",
+   "booted": true,
+   "bootMs": 1613,
+   "fps": {
+    "spatial0": 60,
+    "physics": 60,
+    "renderer": 6.7,
+    "particle": 60,
+    "logic0": 60,
+    "preRender": 6.7
+   },
+   "logs": [
+    "[page error] OperationError: A valid external Instance reference no longer exists. (x29)"
+   ]
+  },
+  {
+   "scene": "particleLabScene",
+   "booted": true,
+   "bootMs": 1474,
+   "fps": {
+    "spatial0": 60.2,
+    "physics": 60.2,
+    "renderer": 60.2,
+    "particle": 60.2,
+    "logic0": 60.2,
+    "preRender": 60.2
+   },
+   "logs": []
+  },
+  {
+   "scene": "planetPhysicsScene",
+   "booted": true,
+   "bootMs": 3294,
+   "fps": {
+    "spatial0": 59.9,
+    "physics": 59.9,
+    "renderer": 6.5,
+    "particle": 59.9,
+    "logic0": 59.9,
+    "logic1": 59.9,
+    "preRender": 6.5
+   },
+   "logs": []
+  },
+  {
+   "scene": "predatorScene",
+   "booted": true,
+   "bootMs": 2522,
+   "fps": {
+    "spatial0": 59.9,
+    "physics": 59.4,
+    "renderer": 0.5,
+    "particle": 60.1,
+    "logic0": 55.6,
+    "logic1": 55.6,
+    "preRender": 1.2
+   },
+   "logs": [
+    "[warning] WeedJS: the Flash pool is full (32 slots), so spawns return null until one despawns. Raise its count in static entities ([Flash, N]). Further failed spawns are counted (getPoolStats(Flash).dropped), not logged.",
+    "[warning] ParticleEmitter.emit: pool exhausted; spawned 10/13. Increase particle.maxParticles.",
+    "[warning] ParticleEmitter.emit: pool exhausted; spawned 15/16. Increase particle.maxParticles."
+   ]
+  },
+  {
+   "scene": "sunStreetScene",
+   "booted": true,
+   "bootMs": 2341,
+   "fps": {
+    "spatial0": 45.7,
+    "physics": 45.7,
+    "renderer": 1.2,
+    "particle": 45.7,
+    "logic0": 45.7,
+    "preRender": 1.5
+   },
+   "logs": [
+    "[warning] PixiJS Warning:  [BindGroup] a 'textureSource' was destroyed while still bound to a shader. Remove it from the shader before destroying it."
+   ]
+  },
+  {
+   "scene": "waterAndBoxesScene",
+   "booted": true,
+   "bootMs": 2104,
+   "fps": {
+    "spatial0": 60.1,
+    "spatial1": 60.1,
+    "physics": 59.9,
+    "renderer": 11.7,
+    "particle": 60.1,
+    "logic0": 60.1,
+    "preRender": 12
+   },
+   "logs": []
+  },
+  {
+   "scene": "ySortOverlayScene",
+   "booted": true,
+   "bootMs": 1326,
+   "fps": {
+    "renderer": 6,
+    "particle": 60,
+    "logic0": 60,
+    "preRender": 12
+   },
+   "logs": [
+    "[page error] OperationError: A valid external Instance reference no longer exists. (x26)",
+    "[error] WeedJS: frame threw (worker). Later repeats are counted, not logged. RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed, size (32) is too large for the implementation when mappedAtCreation == true\n    at rs.createGPUBuffer (http://127.0.0.1:38625/src/vendor/pixi.min.js:"
+   ]
+  }
+ ],
+ "version": "151.0.7922.34",
+ "gpu": {
+  "isolated": true,
+  "threads": 4,
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+  "webgl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+  "maxTextureSize": 8192,
+  "timerQuery": false,
+  "webgpu": "google / swiftshader",
+  "webgpuFallback": true,
+  "webgpuTimestamps": true,
+  "sharedIdentity": {
+   "mainStable": true,
+   "sameObject": true,
+   "viewSameObject": true,
+   "bufferStable": true,
+   "aliased": true,
+   "sabIsView": true,
+   "plainSabSame": true
+  },
+  "bitmapAlpha": {
+   "pngDefault": {
+    "unpackOn": "128,128",
+    "unpackOff": "128,128"
+   },
+   "pngPremultiply": {
+    "unpackOn": "128,128",
+    "unpackOff": "128,128"
+   },
+   "pngNone": {
+    "unpackOn": "255,128",
+    "unpackOff": "255,128"
+   },
+   "canvasDefault": {
+    "unpackOn": "128,128",
+    "unpackOff": "128,128"
+   },
+   "canvasPremultiply": {
+    "unpackOn": "128,128",
+    "unpackOff": "128,128"
+   },
+   "imageDataDefault": {
+    "unpackOn": "128,128",
+    "unpackOff": "128,128"
+   },
+   "imageDataPremultiply": {
+    "unpackOn": "128,128",
+    "unpackOff": "128,128"
+   },
+   "imageDataNone": {
+    "unpackOn": "255,128",
+    "unpackOff": "255,128"
+   },
+   "transferred": {
+    "unpackOn": "128,128",
+    "unpackOff": "128,128"
+   },
+   "canvasItself": {
+    "unpackOn": "128,128",
+    "unpackOff": "255,128"
+   }
+  }
+ }
+}

@@ -1,0 +1,25 @@
+{
+ "id": "kernels-win-3-s1",
+ "task": "sweep",
+ "args": {
+  "plan": "ci-request.json",
+  "rounds": 5,
+  "shard": "1/4"
+ },
+ "machineKey": "win",
+ "machine": {
+  "platform": "win32",
+  "arch": "x64",
+  "release": "10.0.26100",
+  "cpu": "AMD EPYC 7763 64-Core Processor",
+  "threads": 4,
+  "memoryGB": 16,
+  "node": "v22.16.0",
+  "v8": "12.4.254.21-node.26",
+  "image": "win25-vs2026 20261123.321.1",
+  "sha": "4e551913cd694af3e0ebd9d9ab53448317f5e8ac"
+ },
+ "started": "2026-11-28T05:51:30.383Z",
+ "status": 0,
+ "minutes": 14.8
+}
