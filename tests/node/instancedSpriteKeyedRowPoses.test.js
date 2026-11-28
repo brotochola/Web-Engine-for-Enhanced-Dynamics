@@ -61,6 +61,8 @@ async function setup(seed) {
     keyBase: ENTITIES + DECORATIONS,
     keyRows: gpuIndexedStaticRows(ENTITIES + DECORATIONS + N),
     updatesByte: alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS).byteOffset,
+    // E-492: the words the statics hold (12 u32 a key).
+    heldByte: alloc(Uint32Array, gpuIndexedStaticRows(ENTITIES + DECORATIONS + N) * 12).byteOffset,
     headerByte: header.byteOffset,
     shadowByte: -1,
     texUpdatesByte: alloc(Uint32Array, N * GPU_KEYED_TEX_WORDS).byteOffset,

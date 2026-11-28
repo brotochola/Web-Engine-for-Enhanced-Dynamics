@@ -308,6 +308,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
       // E-189: their texture updates (gpuPack.c KEYED_TEX_WORDS each), as many as its rows.
       { name: 'pixiKeyTexUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_TEX_BYTES },
+      // E-492: what its statics hold, a key's words each (gpuPack.c KEYED_HELD_WORDS), which the keyed pack compares with.
+      { name: 'pixiKeyHeld', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * PIXI_KEYED_HELD_BYTES },
     );
   }
   if (collect) {
@@ -476,6 +478,9 @@ export const EMIT_DECO_KEYED_BYTES = 32;
 
 /** E-189: a keyed frame's texture update (gpuPack.c KEYED_TEX_WORDS u32: the statics row, the texture's float bits). */
 export const PIXI_KEYED_TEX_BYTES = 8;
+
+/** E-492: a key's held words, what the renderer's statics hold for it (gpuPack.c KEYED_HELD_WORDS u32). */
+export const PIXI_KEYED_HELD_BYTES = 48;
 
 /**
  * E-177: the keyed frames' resync header, u32 words. Pixi raises REQUEST when its statics texture may miss a change (its

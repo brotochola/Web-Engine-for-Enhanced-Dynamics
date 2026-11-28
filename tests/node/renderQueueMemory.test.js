@@ -328,6 +328,7 @@ test("E-177: with emit.pixiKeyed, the keyed frames' resync header and Pixi's upd
   assert.equal(plain.pixiKeyRows, 0);
   assert.equal(plain.pixiKeyUpdatesByte, -1);
   assert.equal(plain.pixiKeyHeaderByte, -1);
+  assert.equal(plain.pixiKeyHeldByte, -1);
   assert.equal(plain.emit.keyHeaderByte, -1);
   const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(true), null, null, true);
   const L = m.layout;
@@ -342,6 +343,8 @@ test("E-177: with emit.pixiKeyed, the keyed frames' resync header and Pixi's upd
     ['pixiTables', L.pixiTableByte, L.pixiTableSlots * GPU_PACK_COLUMNS.length * 4],
     ['keyHeader', L.pixiKeyHeaderByte, 64],
     ['keyUpdates', L.pixiKeyUpdatesByte, MAX * 64],
+    // E-492: the words the statics hold, a key's (48 bytes) for every key the texture has.
+    ['keyHeld', L.pixiKeyHeldByte, L.pixiKeyRows * 48],
   ].sort((a, b) => a[1] - b[1]);
   for (let k = 0; k < spans.length; k++) {
     const [name, at, bytes] = spans[k];

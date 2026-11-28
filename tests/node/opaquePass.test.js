@@ -402,6 +402,8 @@ test('a keyed batch draws its frames by queue row with the opaque pass, at the p
     keyBase: ENT,
     keyRows: gpuIndexedStaticRows(ENT + K),
     updatesByte: alloc(Uint32Array, K * 16).byteOffset,
+    // E-492: the words the statics hold (12 u32 a key).
+    heldByte: alloc(Uint32Array, gpuIndexedStaticRows(ENT + K) * 12).byteOffset,
     headerByte: header.byteOffset,
     shadowByte: -1,
     texUpdatesByte: alloc(Uint32Array, K * 2).byteOffset,

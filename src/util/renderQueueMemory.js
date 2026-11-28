@@ -132,6 +132,8 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         // E-191: the keyed frames' shadow stream, -1 without keyed frames.
         // E-189: the keyed frames' texture updates, -1 without keyed frames.
         pixiKeyTexUpdatesByte: keyed && r.pixiKeyTexUpdates && r.pixiKeyTexUpdates.bytes > 0 ? r.pixiKeyTexUpdates.byte : -1,
+        // E-492: the words its statics hold, a key's each (pixiKeyRows keys), -1 without keyed frames.
+        pixiKeyHeldByte: keyed && r.pixiKeyHeld && r.pixiKeyHeld.bytes > 0 ? r.pixiKeyHeld.byte : -1,
         // E-372: pre-render's sun frames' region (gpuPackClient.js keyedSunViews), -1 without DirectionalSprite.
         keyedSunByte: r.keyedSun ? r.keyedSun.byte : -1,
         // W10: each sorting worker's painter state (null: that worker sorts in JS on arrays of its own).
