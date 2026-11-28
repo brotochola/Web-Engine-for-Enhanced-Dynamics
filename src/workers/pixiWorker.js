@@ -1677,6 +1677,8 @@ class PixiRenderer extends AbstractWorker {
       // E-549: which frames a keyed row's columns can come from (the keyed statics' copy keeps only those slots).
       const columns = keyedColumnTextures(this.assets.texLut, TEX_LUT_FLOATS);
       this.entitiesBatch.setColumnTextures(columns.flags, columns.count);
+      // E-500: whether some frame has heights (the opaque pass with faces in one program or two; a twin made now placed).
+      if (this.entitiesBatch.setHeightFrames(this.assets.mapsTableHeights)) this._placeDepthMeshes();
     }
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setAtlasSource(src);
@@ -2106,6 +2108,8 @@ class PixiRenderer extends AbstractWorker {
       depthFaces: facesDepth,
       // E-496: each frame's window in the twin page, for every program of the batch that reads it.
       mapsTable: this.assets.mapsTableSourceOrEmpty(),
+      // E-500: whether some frame of that table has heights (after it, which builds the table).
+      heightFrames: this.assets.mapsTableHeights,
       // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), where the G-buffer pass runs (faces, a sheet
       // with maps, a shadow map: gbufWanted, as pre-render decides it).
       gbuf: gbufWanted(this.config, { maps: this.assets.atlasMapsSource !== null, unshaded: this.assets.atlasUnshaded }),
@@ -2734,6 +2738,12 @@ class PixiRenderer extends AbstractWorker {
       this._newQueueThisFrame = 0;
       return;
     }
+    // E-339: the decal tiles go up before the queue wait (they never read the queue), flushed, so the GPU process copies
+    // them while Pixi waits instead of after it, and a tile stamped this frame is culled in the same frame it goes up.
+    this._decalTilesDirtyThisFrame = 0;
+    this._decalTilesUploadedThisFrame = 0;
+    this.decalTiles.update();
+    if (this._decalTilesUploadedThisFrame !== 0 && !this._useWebGpu) this.pixiApp.renderer.gl.flush();
     const consumedNewFrame = this.consumeNextRenderQueue();
     this._newQueueThisFrame = consumedNewFrame ? 1 : 0;
 
@@ -2743,8 +2753,6 @@ class PixiRenderer extends AbstractWorker {
     this.sortTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
     this.miscTimeThisFrame = 0;
-    this._decalTilesDirtyThisFrame = 0;
-    this._decalTilesUploadedThisFrame = 0;
     this.customLayers.meshFillInstancesThisFrame = 0;
     this.customLayers.meshRtDrawsThisFrame = 0;
     this._gpuPassesThisFrame = 0;
@@ -2757,7 +2765,6 @@ class PixiRenderer extends AbstractWorker {
       this.updateGpuParticleLayers();
       this.syncLayerAlphaFromSharedState();
       this.syncLayerPresentationFromSharedState();
-      this.decalTiles.update();
       if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
         this.syncLayerResolutionFromSharedState();
         this.uploadTextureLookupIfNeeded();

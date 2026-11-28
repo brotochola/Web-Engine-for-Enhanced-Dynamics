@@ -335,7 +335,6 @@ function buildRegisteredClassesInfo(scene) {
     startIndex: r.startIndex,
     endIndex: r.startIndex + r.count,
     entityType: r.entityType,
-    deriveSpeed: r.class.deriveSpeed === true,
     isStatic: r.class.isStatic === true,
     animationEnd: definesHook(r.class, GameObject, 'onAnimationEnd'),
     // E-200: the spatial worker gives a class that ticks every few frames its lists before its ticks.
@@ -430,9 +429,8 @@ function postBootMessages(scene, workers, pageOrigin, scriptsToLoad, scriptTexts
 function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
   if (scene.config.physics) {
     scene.config.physics.publishContactRing = scene._anyCollisionListener === true;
-  }
-  if (scene.config.particle) {
-    scene.config.particle.deriveSpeed = scene._anyDeriveSpeed === true;
+    // E-353: Box2D writes RigidBody.speed with the velocities when a registered type sets deriveSpeed.
+    scene.config.physics.deriveSpeed = scene._anyDeriveSpeed === true;
   }
   // DX-SHADOW3D: a class with a DirectionalSprite and a ShadowCaster casts the frame the sun sees, which pre-render writes
   // into its caster rows (full or keyed, plan §17.2): the entity batch's own instances (E-191) have no room for it.

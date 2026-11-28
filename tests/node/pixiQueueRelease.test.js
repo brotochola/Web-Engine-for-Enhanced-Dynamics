@@ -312,3 +312,53 @@ test('E-97: a paced tick publishes no stats', { concurrency: false }, () => {
     r.stats = prevStats;
   }
 });
+
+/**
+ * E-339: the decal tiles go up before the queue is taken (Pixi may wait for it there), and a WebGL upload is flushed so
+ * the GPU process copies it during the wait. The stats the upload writes survive the rest of the frame.
+ */
+function decalOrderContext({ webgpu, uploaded }) {
+  const sync = makeSync();
+  Atomics.store(sync, 0, 1);
+  const ctx = makeContext({ sync, gpuLive: true });
+  const order = [];
+  ctx._useWebGpu = webgpu;
+  ctx._decalTilesDirtyThisFrame = 0;
+  ctx._decalTilesUploadedThisFrame = 0;
+  ctx.decalTiles = {
+    update() {
+      order.push('decals');
+      ctx._decalTilesDirtyThisFrame = uploaded;
+      ctx._decalTilesUploadedThisFrame = uploaded;
+    },
+  };
+  ctx.pixiApp = { renderer: { gl: { flush() { order.push('flush'); } } } };
+  ctx._setReadBuffer = () => { order.push('queue'); };
+  ctx.ensureCameraBeforeFirstFrame = () => {};
+  ctx.updateCameraTransform = () => { order.push('camera'); };
+  ctx.updateGpuParticleLayers = () => {};
+  ctx.syncLayerAlphaFromSharedState = () => {};
+  ctx.syncLayerPresentationFromSharedState = () => {};
+  ctx.shouldDrawFrameLockedPasses = () => false;
+  ctx.applyLayerVisibility = () => {};
+  ctx.presentStage = () => {};
+  return { ctx, order };
+}
+
+test('E-339: decal tiles go up and are flushed before the queue is taken (WebGL)', { concurrency: false }, () => {
+  const { ctx, order } = decalOrderContext({ webgpu: false, uploaded: 3 });
+  update(ctx);
+  assert.deepEqual(order, ['decals', 'flush', 'queue', 'camera']);
+  assert.equal(ctx._decalTilesUploadedThisFrame, 3, 'the frame keeps the upload count');
+  assert.equal(ctx._decalTilesDirtyThisFrame, 3);
+  assert.equal(Atomics.load(ctx.renderQueueSync, 1), 1, 'the frame is still released');
+});
+
+test('E-339: no flush without an upload, none on WebGPU', { concurrency: false }, () => {
+  const idle = decalOrderContext({ webgpu: false, uploaded: 0 });
+  update(idle.ctx);
+  assert.deepEqual(idle.order, ['decals', 'queue', 'camera']);
+  const gpu = decalOrderContext({ webgpu: true, uploaded: 2 });
+  update(gpu.ctx);
+  assert.deepEqual(gpu.order, ['decals', 'queue', 'camera']);
+});

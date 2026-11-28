@@ -40,6 +40,11 @@ export class PixiScreenLayers {
     this.sceneRT = null;
     // DX-DEPTH: the frame target given a depth attachment for the entities' pixel depth (WebGPU), so it is asked once.
     this.sceneDepth = null;
+    // E-525: the passes before the last draw into two targets a size, in turn (each reads the one before it): the shared
+    // ones of slots 0 and 3 (lookPasses.js), each { rt, slot }, held from a pass's first draw at that size to a resize.
+    this.chainTargets = [];
+    // E-525: no pass reads uScene, so once the first pass has read the frame its target can take a later pass's output.
+    this.sceneFree = false;
     this.clearColor = [0, 0, 0, 1];
     // DX-GBUFSHADER: gbufSources' answer, one object kept.
     this._gbuf = { face: null, ids: null };
@@ -69,11 +74,10 @@ export class PixiScreenLayers {
       uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
       mesh: null,
       reads: null,
-      // DX-LAYERPASSES: the passes of its look before the last one, or null.
+      // DX-LAYERPASSES: the passes of its look before the last one, or null; E-525: in shared targets (read in this pass).
       earlierPasses: null,
+      sharesTargets: true,
       compute: null,
-      // Its output when it is not the last visible pass: the canvas's size times its resolution.
-      target: null,
       // DX-POSTFUSE: its map's source when it is pointwise (the fused draw has the shader), what the fusing needs, and where
       // each of its uniforms went in the fused one's.
       pointwise: config.shaderPointwise === true ? config.shaderFragment : null,
@@ -127,6 +131,14 @@ export class PixiScreenLayers {
       this.steps.push(this._fuse(layers.slice(i, end)));
       i = end;
     }
+    let readsScene = false;
+    for (let i = 0; i < this.steps.length; i++) {
+      const step = this.steps[i];
+      if (step.reads.scene) readsScene = true;
+      const earlier = step.earlierPasses;
+      if (earlier !== null) for (let p = 0; p < earlier.length; p++) if (earlier[p].reads.scene) readsScene = true;
+    }
+    this.sceneFree = !readsScene;
   }
 
   /** One fused draw of consecutive pointwise layers: their maps in order, each behind a uniform that says it is shown. */
@@ -184,8 +196,8 @@ export class PixiScreenLayers {
       mesh: this.worker.lookShaders.makeMesh(shader, false),
       reads: lookReads(null, true, false),
       earlierPasses: null,
+      sharesTargets: true,
       compute: null,
-      target: null,
       pointwise: null,
       uniformMap: map,
       uniformTypes: types,
@@ -201,14 +213,12 @@ export class PixiScreenLayers {
       const step = steps[i];
       this._unbindTextures(step);
       this.worker.lookPasses.destroy(step);
-      if (step.target) {
-        this.worker._releaseTextureBindGroups(step.target);
-        step.target.destroy(true);
-      }
       step.mesh.destroy();
     }
     this.passes = [];
     this.steps = [];
+    this._giveChainTargets();
+    this.sceneFree = false;
     if (this.sceneRT) {
       this.worker._releaseTextureBindGroups(this.sceneRT);
       this.sceneRT.destroy(true);
@@ -241,7 +251,7 @@ export class PixiScreenLayers {
     if (this.worker.entitiesBatch !== null) this.worker.entitiesBatch.dropOpaquePass();
     const width = this.worker.canvasWidth;
     const height = this.worker.canvasHeight;
-    this.sceneRT = this._target(this.sceneRT, width, height);
+    this.sceneRT = this._sceneTarget(width, height);
     // DX-DEPTH: the entities' pixel depth writes frag_depth on WebGPU, and a pipeline that does needs a depth attachment
     // in its target (WebGL draws the painter alone in a target without one).
     if (this.sceneDepth !== this.sceneRT && this.worker._useWebGpu && this.worker.entitiesBatch !== null
@@ -286,6 +296,8 @@ export class PixiScreenLayers {
     frame.worldH = finiteOrZero(this.worker.worldHeight);
 
     let source = this.sceneRT;
+    // E-525: with a depth attachment (DX-DEPTH) the frame's target is the stage's alone.
+    const sceneFree = this.sceneFree && this.sceneDepth !== this.sceneRT;
     for (let i = 0; i <= last; i++) {
       const cl = layers[i];
       if (!stepIsVisible(cl)) continue;
@@ -306,13 +318,13 @@ export class PixiScreenLayers {
         // The canvas, cleared to its background first: a pass that copies gives the frame the stage would have.
         this.worker._submitRender(cl.mesh);
       } else {
-        cl.target = this._target(cl.target, rtPixelSize(width, cl.resolution), rtPixelSize(height, cl.resolution));
+        const out = this._chainTarget(source, rtPixelSize(width, cl.resolution), rtPixelSize(height, cl.resolution), sceneFree);
         opts.container = cl.mesh;
-        opts.target = cl.target;
+        opts.target = out;
         opts.clear = true;
         opts.clearColor = this.worker._clearTransparent;
         this.worker._submitRender(opts);
-        source = cl.target;
+        source = out;
       }
     }
     opts.container = null;
@@ -322,18 +334,51 @@ export class PixiScreenLayers {
   }
 
   /**
-   * A target of width × height: `rt` when it has that size, else a new one. The old one is unbound from every pass
-   * first and destroyed (a resized source keeps a stale framebuffer, as the other viewport targets found).
+   * The frame's target at the canvas's size, width × height: the one there is when it has that size, else a new one. A
+   * new size unbinds every pass first, then destroys the old one (a resized source keeps a stale framebuffer, as the other
+   * viewport targets found) and gives back the chain's targets, which were its shares.
    */
-  _target(rt, width, height) {
+  _sceneTarget(width, height) {
+    const rt = this.sceneRT;
     if (rt && rt.width === width && rt.height === height) return rt;
+    const layers = this.steps;
+    for (let i = 0; i < layers.length; i++) this._unbindTextures(layers[i]);
+    this._giveChainTargets();
     if (rt) {
-      const layers = this.steps;
-      for (let i = 0; i < layers.length; i++) this._unbindTextures(layers[i]);
       this.worker._releaseTextureBindGroups(rt);
       rt.destroy(true);
     }
     return PIXI.RenderTexture.create({ width, height });
+  }
+
+  /**
+   * E-525: where a pass that is not the last draws, width × height: of the chain's two targets of that size the one it
+   * does not read (`source`, the pass before it), or, with `sceneFree`, the frame's target once a pass has read it.
+   */
+  _chainTarget(source, width, height, sceneFree) {
+    const scene = this.sceneRT;
+    if (sceneFree && source !== scene && scene.width === width && scene.height === height) return scene;
+    const first = this._chainHeld(width, height, 0);
+    return first !== source ? first : this._chainHeld(width, height, 3);
+  }
+
+  /** E-525: the chain's shared target of width × height in `slot`, taken on its first draw (lookPasses.js). */
+  _chainHeld(width, height, slot) {
+    const held = this.chainTargets;
+    for (let i = 0; i < held.length; i++) {
+      const e = held[i];
+      if (e.slot === slot && e.rt.width === width && e.rt.height === height) return e.rt;
+    }
+    const rt = this.worker.lookPasses.takeTarget(width, height, slot);
+    held.push({ rt, slot });
+    return rt;
+  }
+
+  /** E-525: the chain's targets given back (a resize, the scene's end); every pass is off them already. */
+  _giveChainTargets() {
+    const held = this.chainTargets;
+    for (let i = 0; i < held.length; i++) this.worker.lookPasses.giveTarget(held[i].rt);
+    held.length = 0;
   }
 
   _unbindTextures(cl) {

@@ -1,17 +1,16 @@
 /**
  * Build script for single-file bundle with inline workers
  *
- * Emits 8 artifacts (UMD/ESM × debug/prod × raw/gzip-embed workers):
- *   weed.bundle.min.js / weed.bundle.esm.min.js
- *   weed.prod.bundle.min.js / weed.prod.bundle.esm.min.js
- *   weed.bundle.compressed.min.js / weed.bundle.esm.compressed.min.js
- *   weed.prod.bundle.compressed.min.js / weed.prod.bundle.esm.compressed.min.js
+ * Emits 3 artifacts (N-172): the production build as ESM and UMD, the debug build as ESM:
+ *   weed.prod.bundle.esm.min.js / weed.prod.bundle.min.js
+ *   weed.bundle.esm.min.js
+ * The variants with gzip-embedded workers are gone (a server compresses the file; inflating them cost every start),
+ * and so is the debug UMD.
  *
  * Workers share one worker_common chunk (AbstractWorker graph). Box2D WASM is
- * gzip'd then base64-embedded in every artifact. Compressed artifacts also
- * gzip worker/glue/css strings (inflate via DecompressionStream on first load).
+ * gzip'd then base64-embedded in every artifact.
  *
- * --files adds the file mode (SST-8) in dist/files/: the four raw bundles again, each starting its
+ * --files adds the file mode (SST-8) in dist/files/: the three bundles again, each starting its
  * workers, Box2D and engine.wasm from files in a folder beside it (debug-<hash>/, prod-<hash>/).
  */
 
@@ -58,14 +57,9 @@ export const BUILD_STAMP_FILE = '.build-version';
 
 export const BUNDLE_ARTIFACTS = [
 
-    'weed.bundle.min.js',
     'weed.bundle.esm.min.js',
     'weed.prod.bundle.min.js',
     'weed.prod.bundle.esm.min.js',
-    'weed.bundle.compressed.min.js',
-    'weed.bundle.esm.compressed.min.js',
-    'weed.prod.bundle.compressed.min.js',
-    'weed.prod.bundle.esm.compressed.min.js',
 ];
 
 /**
@@ -84,8 +78,8 @@ export const ISOLATION_SERVICE_WORKER_FILE = 'weed-sw.js';
  * CDNs: a browser starts a worker only from the page's origin.
  */
 export const FILE_MODE_DIR = 'files';
-/** The file mode's page bundles, in dist/files/ (no compressed twins: a server compresses files itself). */
-export const FILE_MODE_ARTIFACTS = BUNDLE_ARTIFACTS.filter((name) => !name.includes('.compressed.'));
+/** The file mode's page bundles, in dist/files/. */
+export const FILE_MODE_ARTIFACTS = BUNDLE_ARTIFACTS;
 
 const KEEP_DIST_FILES = new Set([...BUNDLE_ARTIFACTS, 'index.html', ISOLATION_SERVICE_WORKER_FILE]);
 
@@ -785,10 +779,8 @@ function webpackFileModeBundle({ prod, box2dFileSource, audioWorkletSource, debu
     } finally {
         fs.rmSync(bundleEntryPath, { force: true });
     }
-    return [
-        `${FILE_MODE_DIR}/${bundleFileName({ prod, esm: false, compressed: false })}`,
-        `${FILE_MODE_DIR}/${bundleFileName({ prod, esm: true, compressed: false })}`,
-    ];
+    const esmOnly = [`${FILE_MODE_DIR}/${bundleFileName({ prod, esm: true, compressed: false })}`];
+    return prod ? [`${FILE_MODE_DIR}/${bundleFileName({ prod, esm: false, compressed: false })}`, ...esmOnly] : esmOnly;
 }
 
 function printSizeBreakdown(label, sizes, box2dSourceLen) {
@@ -832,10 +824,10 @@ function webpackBundle({ prod, compressed, workers, workerCommon, engineWasmSpan
         fs.rmSync(bundleEntryPath, { force: true });
     }
 
-    return [
-        bundleFileName({ prod, esm: false, compressed }),
-        bundleFileName({ prod, esm: true, compressed }),
-    ];
+    // webpack.bundle.config.js: the production build as UMD and ESM, the debug build as ESM only.
+    return prod
+        ? [bundleFileName({ prod, esm: false, compressed }), bundleFileName({ prod, esm: true, compressed })]
+        : [bundleFileName({ prod, esm: true, compressed })];
 }
 
 function buildProdAxis({ prod, box2dWorkerSource, box2dFileSource, audioWorkletSource }) {
@@ -857,22 +849,17 @@ function buildProdAxis({ prod, box2dWorkerSource, box2dFileSource, audioWorkletS
 
     printSizeBreakdown(label, sizes, Buffer.byteLength(box2dWorkerSource, 'utf8'));
 
-    const names = [];
-    for (const compressed of [false, true]) {
-        names.push(
-            ...webpackBundle({
-                prod,
-                compressed,
-                workers,
-                workerCommon,
-                engineWasmSpan,
-                box2dWorkerSource,
-                audioWorkletSource,
-                debugUICSS,
-                engineShaders,
-            }),
-        );
-    }
+    const names = webpackBundle({
+        prod,
+        compressed: false,
+        workers,
+        workerCommon,
+        engineWasmSpan,
+        box2dWorkerSource,
+        audioWorkletSource,
+        debugUICSS,
+        engineShaders,
+    });
     // The file mode, while this build's workers are still in dist/workers/ (the next build writes over them).
     if (box2dFileSource) {
         names.push(...webpackFileModeBundle({ prod, box2dFileSource, audioWorkletSource, debugUICSS, engineShaders }));
@@ -929,7 +916,7 @@ function copySmokeTest() {
 function main() {
     const buildFileMode = process.argv.includes('--files');
     console.log(
-        '🌿 Building WeedJS single-file bundles (debug + prod, raw + compressed)' +
+        '🌿 Building WeedJS single-file bundles (prod ESM + UMD, debug ESM)' +
         (buildFileMode ? ' and the file mode (dist/files/)' : '') + '...\n',
     );
 
@@ -1003,7 +990,7 @@ function main() {
         const pad = ' '.repeat(Math.max(1, 42 - name.length));
         console.log(`   ${name}:${pad}${kb(stats.size)}`);
     }
-    console.log('   (workers share worker_common; WASM gzip in all 8; .compressed gzip-embeds worker JS)');
+    console.log('   (workers share worker_common; WASM gzip in all 3)');
     if (buildFileMode) {
         console.log(`   (${FILE_MODE_DIR}/: the file mode, its workers, Box2D and wasm in ${FILE_MODE_DIR}/debug-<hash>/ and ${FILE_MODE_DIR}/prod-<hash>/)`);
     }

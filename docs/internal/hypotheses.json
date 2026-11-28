@@ -17739,12 +17739,12 @@
     {
       "id": "N-172",
       "title": "The dev toolchain pulls 496 packages, most of them for webpack, babel and an obfuscator: build the bundles with esbuild alone and keep five tools (128 packages)",
-      "status": "open",
+      "status": "dropped",
       "statusText": "owner 2026-11-15: asked whether node_modules holds links and what vendoring every dependency would give; vendoring the tooling advised against, trimming it filed; backlog, not started; not yet (owner, 2026-11-23, R-1890)",
       "date": "2026-11-15",
       "area": "build",
       "kind": "dx",
-      "result": "Checked 2026-11-15 in the main folder: node_modules is a plain folder (238 MB, 295 top-level entries) with no symlink or junction in it (`find -type l`, `dir /A:L /S`). The engine already ships with no runtime dependency: package.json lists devDependencies only, Pixi is vendored as src/vendor/pixi.min.js (440 KB, built by `npm run build:pixi` from node_modules/pixi.js with esbuild) and Box2D comes from the Box2d_3.2 repo. node_modules holds tooling: 17 devDependencies, 496 packages in package-lock.json. webpack, webpack-cli, babel-loader, @babel/core, @babel/preset-env, css-loader, style-loader, terser-webpack-plugin, webpack-obfuscator and javascript-obfuscator run buildBundle.js through webpack.config.js and webpack.bundle.config.js; esbuild builds Pixi; Playwright drives the browser benches and smokes (over 20 scripts in tests/bench); eslint and prettier lint and format; cross-env is used nowhere and rimraf only by `clean`. Packages reachable from esbuild, eslint, playwright, prettier and pixi.js: 128 of the 496 (webpack-obfuscator alone reaches 188, @babel/preset-env 133, webpack-cli 119; counted on the lockfile, platform binaries included). Babel targets `> 1%, last 2 versions, not dead`, while the engine needs SharedArrayBuffer, cross-origin isolation and module workers. The obfuscator runs only under `make_bundle:obfuscate`; release.mjs calls `make_bundle`. Four of the eight bundles are UMD, which esbuild does not write (esm, iife, cjs). Vendoring the tooling into git was weighed and advised against: esbuild and Playwright ship per-platform binaries (Playwright's Chromium lives outside node_modules anyway), 238 MB would stay in the history for good and grow with each update (against N-164 and N-165), and package-lock.json already pins every version with its integrity hash for `npm ci`.",
+      "result": "Closed 2026-11-28 (R-2048): esbuild's module workers with shared chunks were 20-58 % slower; classic whole workers level but 2 395 KB gzip against 1 275; webpack kept, three bundles on main",
       "next": "One commit each. (1) cross-env out of devDependencies; `clean` as a node one-liner (`fs.rmSync` of dist, recursive) and rimraf out. (2) buildBundle.js builds the same eight bundles with esbuild's API instead of the two webpack configs: CSS imported as text, minified, no babel (target the browsers that have SharedArrayBuffer and module workers), the UMD four as an iife with a global name inside a small UMD wrapper; the webpack, babel, loader, terser and obfuscator packages go, and `make_bundle:obfuscate` with them unless the owner still uses it. Check: check:dist, test:bundle, test:node:bundle, test:demos, each bundle's size before and after, and the prod bundle against src as at every merge (Boids 8 pairs and per-function traces, since bundle vs src reads -3 to +10 % in Predator). (3) pixi.js stays a devDependency (build:pixi needs it, and pixiDrawGarbage.test.js and pixiShaderSync.test.js import it), unless those tests move to the vendored copy. Playwright, eslint and prettier stay.",
       "refs": [
         "REVIEW_PLAN.md#N-172"
@@ -17765,7 +17765,8 @@
       "records": [
         "R-1890",
         "R-2043",
-        "R-2044"
+        "R-2044",
+        "R-2048"
       ]
     },
     {
@@ -22373,7 +22374,8 @@
       ],
       "records": [
         "R-1315",
-        "R-1952"
+        "R-1952",
+        "R-2047"
       ]
     },
     {
@@ -23724,14 +23726,15 @@
         "baked houses"
       ],
       "records": [
-        "R-1360"
+        "R-1360",
+        "R-2046"
       ],
-      "result": "",
+      "result": "Parked 2026-11-28 (R-2046): soft and half face texels blend in painter order, a cache changes it; full design ~0.6 ms Radeon, ~0 GTX 1650; the G-buffer pass split (E-463) is exact and cheaper",
       "next": "Follow E-504's adaptive policy (cached after held frames, drawn live while the view keeps changing). The G-buffer half is the intermediate idea of 2026-11-18 (height and normal maps made from the faces, kept for the houses in view): the face map the light pass reads, cached instead of redrawn. Measure on the main PC: GPU per pass and pre-render in the barrio, still and panning.",
       "id": "E-521",
       "kind": "speed",
       "area": "render",
-      "status": "open",
+      "status": "parked",
       "date": "2026-11-18",
       "title": "Houses do not move: draw them once into a cached layer (their colour, and their G-buffer data: face normals, heights, ids) and redraw it only when the view changes, as E-504 caches the floor",
       "statusText": "proposed 2026-11-18 and chosen by the owner, from the ASUS's faces-against-maps sitting: the faces' cost is the count of pieces (pre-render, Intel by day), not the format"
@@ -26155,6 +26158,57 @@
         "painter step wrap"
       ],
       "date": "2026-11-27"
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-463",
+      "title": "An entities batch drawn in chunks (GPU particle groups or look-layer regions sorted among the entities) with faces and some frame with heights may lose the instances without heights",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "statusText": "Found reading the code 2026-11-28 by the E-500 agent, not seen in a browser",
+      "next": "src/render/gpuParticleChunks.js builds its chunk meshes from batch.mesh.shader (with faces and height frames, the heights-only program) and hides vdepthMesh, so the flat instances may go undrawn; chunk meshes also keep the program of their first use after setDepthFaces or setHeightFrames rebuild the programs. A scene with faces, height maps and a GPU particle group between the entities (capture), then the chunks given both programs.",
+      "aliases": [
+        "chunks faces heights",
+        "gpuParticleChunks vdepth"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-464",
+      "title": "The engine's WebGPU device asks only the two sampler limits: buffers stay at the 128 MiB default, the cap of the indexed sprites' statics on WebGPU",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "statusText": "Found 2026-11-28 reading Pixi after 8.23 (upstream 8ee5e44 asks the adapter for them in its own requestDevice)",
+      "next": "Ask the adapter's maxBufferSize and maxStorageBufferBindingSize in requestWeedGpu (src/render/webgpu/requestGpuDevice.js); the cap read in rendererBackend.js follows.",
+      "aliases": [
+        "webgpu buffer limits",
+        "maxStorageBufferBindingSize"
+      ]
+    },
+    {
+      "records": [],
+      "refs": [],
+      "result": "",
+      "date": "2026-11-28",
+      "id": "N-465",
+      "title": "A world-rect layer's cache target keeps its size after a canvas resize (Blastforge: 1920 x 1080 after a resize to 1280 x 720); customLayers.initialize run again does not destroy a layer's own rt and rtOut",
+      "status": "open",
+      "kind": "bug",
+      "area": "render",
+      "statusText": "Found 2026-11-28 by the E-525 agent's render-target probe (tests/bench/renderTargetProbe.mjs --resize)",
+      "next": "customLayers.js makes worldRt at the canvas size: check whether it is redrawn at the new size or only lazily; destroy the old rt/rtOut in initialize. Probe before and after.",
+      "aliases": [
+        "worldRt resize",
+        "customLayers leak"
+      ]
     }
   ],
   "records": [
@@ -44965,6 +45019,33 @@
         "f59f2216",
         "9c444974"
       ]
+    },
+    {
+      "id": "R-2046",
+      "date": "2026-11-28",
+      "time": "00:58",
+      "timeFrom": "recorded",
+      "title": "Read, not built: a houses cache cannot keep the barrio's soft and half face texels identical; about 0.6 ms on the Radeon, none on the GTX 1650, for two days; the G-buffer pass's gl_FragDepth is the cheaper exact target (E-463)",
+      "verdict": "parked",
+      "text": "An agent read the frame for E-521 (2026-11-28, main e6db68a6) and stopped before building, as briefed for a design that cannot keep every picture.\n- **Design read:** one queue, a uniform per batch program choosing all / cached only / uncached only (each instance keeps its index, so painter steps and depth stay bit-identical); cached = face instances with no heights, no soft, half or glow texels, tint alpha 1, a nearest atlas without mip levels; the cache holds colour + depth, the G-buffer + depth and the unshaded pass's depth (depth as colour: WebGPU cannot copy depth24plus), copied back each frame with gl_FragDepth / frag_depth before the live rows.\n- **Why not identical:** the barrio's face sheets are full of soft and half texels (caras0 165 of 226 frames binary, 70 % of the area; caras1 603 of 1 031, 44 %; caras2 59 of 108, 57 %). A person behind a soft roof edge shows through it today (the edge pass draws soft face pixels after every opaque one, without depth); from a cache the person would draw over it. A half pixel in front of a person the painter drew first blends over the person today and over the floor from a cache. houseLightScene uses a linear atlas with mip levels, so even its binary frames have fractional edges. Only the G-buffer half is order-independent (unblended writes, coverage at alpha 0.5).\n- **Size:** cull and paint variants in every program of the batch (colour vertex-depth, frag-depth, edge; G-buffer MRT or face + ids; unshaded mask, mesh, edge), plain, indexed and by row, GLSL and WGSL, plus copy programs and invalidation: about 2 days, and pre-render's ~2 ms for faces (R-1360) unchanged.\n- **GPU before, still camera, glFrameRecorder --gpu-draws.** Barrio hour=22 (11 675 instances): all draws Radeon (Vega, Ryzen 7 4800H) 7.35 ms, GTX 1650 3.43 (855 MHz median); colour vertex-depth / frag-depth / edge 1.16 / 0.19 / 0.29 (GTX 0.44 / 0.05 / 0.10); G-buffer 958 x 538 1.04 (0.29); unshaded 1080p 0.62 (0.25); floor cache copy 0.36 (0.18); light pass 1.66 (0.96). houseLightScene bench=faces hour=15 (6 800 instances, lighting resolution 1): all 6.57 / 4.18; G-buffer 1.73 / 1.15; colour vertex-depth / edge 0.93 / 0.58 (0.71 / 0.57); light pass 1.83 / 0.73.\n- **Expected net of the full design in the barrio:** about 0.6 ms on the Radeon (about 1.5 saved by cacheable faces, about 0.9 of copies), about zero on the GTX 1650.\n- **The cheaper exact route found:** the G-buffer pass writes gl_FragDepth for every texel (gbufDepthFragment), which turns early depth off for every face: 1.04 ms on the Radeon at a quarter of the pixels the colour pass's vertex-depth program shades in 1.16; 1.73 against 0.93 in houseLightScene at the same size. E-378's split (vertex depth where a frame has no heights) given to the G-buffer pass makes it cheaper with no cache and no copy: E-463's direction, handed to the E-500 agent (same files). E-520 (a house's faces as one instance) goes after the instance count, which R-1360 found to be the cost.\nParked: reopen if the soft and half face texels can be made binary in the barrio's sheets, or a game asks for a still-camera cache that may change its soft edges."
+    },
+    {
+      "id": "R-2047",
+      "date": "2026-11-28",
+      "time": "01:25",
+      "timeFrom": "recorded",
+      "title": "PixiJS after 8.23.0 read: no new release, 19 commits on dev, nothing that changes speed or pictures, every patch anchor intact; 8.23.0's own _touchKeys allocation and SST-7's stale fields handed to the port",
+      "verdict": "note",
+      "text": "The owner asked (2026-11-28) what pixijs/pixijs added after v8.23.0. An agent read it (read only): npm's latest is still 8.23.0 (2026-11-11); the dev tag is 8.23.0-dev.99fce53 (2026-11-27), unreleased. 19 commits on dev from 2026-11-20 to 11-27: 10 do not reach the engine (text 2820a81 39abe10, docs 92500d8, DOM c1c6951 90ebea8, Assets c8afa30 ed9a8a3, compressed-texture loaders ba86df6 ceb5278, Safari video f432d4d); 9 read diff by diff:\n- 99fce53 #12466 WGSL modules labelled with the program's name: useful, small (Chrome's WGSL errors name the program; no per-frame cost); PipelineSystem's three anchors (E-152's getPipeline cache, SST-7's pipelinesAhead) still appear once.\n- 5c593fa #12418 an index buffer made with a size and no data declares indexFormat: maybe, a small step towards E-516 (indexed draws filled on the GPU).\n- ee3f365 #12434 tileBasedGpu option: MSAA colour only, the engine draws no antialiased target; not E-523's depth and stencil discard.\n- 8ee5e44 #12414 Pixi's requestDevice asks the adapter's maxBufferSize and maxStorageBufferBindingSize: the engine brings its own device (requestGpuDevice.js asks only sampler limits), so filed as N-464.\n- 37c78ba #12429 (for...of at init), 76d1069 #12400 (Color rounding, tints use toBgrNumber/toArray), 16011d7 #12407 (canvas format fallback), 5480f2c #12425 (empty cube textures, layered depth on WebGPU), a860c71 #12416 (two renderers sharing a buffer): no effect here.\nEvery buildPixi.mjs anchor counts the same in 8.23.0 and the dev tip (script anchors.mjs): the next tag should be a version bump after DX-PIXI823's port.\nTwo problems in 8.23.0 itself, handed to the DX-PIXI823 agent: (1) upstream's replacement for E-152's BindGroup patch, `get _touchKeys()`, holds an arrow capturing `this`, so a context is allocated at every bind-group switch on WebGPU (fix in open PR #12460, issue #12391): keep a small patch until it lands; (2) SST-7's weedPipelineAhead saves `_colorTargetCount` and `_colorFormat`, which 8.23.0 replaced with `_colorFormats` (an array rewritten in place) and added `_stencilReadOnly`; the anchors still match, so the build does not catch it.\nOpen upstream PRs to watch: #12415 renderer.buffer.write/copy (copy submits its own encoder on WebGPU, E-464's pattern), #12460, #12474 (integer textures and the global mipmap default).\nRecommendation: upgrade on 8.23.0, not a dev commit."
+    },
+    {
+      "id": "R-2048",
+      "date": "2026-11-28",
+      "time": "01:27",
+      "timeFrom": "recorded",
+      "title": "Last esbuild trial: classic whole workers are as fast as webpack (the slowdown was the ES module workers' shared chunks) but the bundle nearly doubles (2.4 MB gzip against 1.3); closed, webpack stays",
+      "verdict": "dropped",
+      "text": "The last N-172 trial (owner, 2026-11-28: one more test, then close it). On build/rollup-esbuild (ab247001) every worker built whole by esbuild as a classic script (format iife, no shared chunks, createWorker without type 'module'), Terser after esbuild as before; the trial's edit stayed in a scratch worktree, not committed.\n- Speed, Predator crowd 2.5, window, Radeon integrated GPU (Vega, Ryzen 7 4800H), 4 pairs alternating against v0.16.0's webpack bundle, each side's dist/.build-version stamped (2026-11-28 01:20 to 01:26, by the files): medians webpack -> esbuild classic: logic 6.89 -> 6.57 ms (-4.6 %), spatial 8.14 -> 8.30 (+2.0 %), physics 14.94 -> 14.70 (-1.6 %), renderer 4.71 -> 4.65 (-1.4 %), particle 1.18 -> 1.08 (-9.0 %), pre-render 7.34 -> 7.13 (-2.9 %). Pair 3 ran loaded on both sides (agents' builds and suites on the machine), pairs 1 and 2 had esbuild 12-19 % higher in logic and pair 0 lower: level within the noise, where the module-worker build read +26 to +58 % in every sitting.\n- So the cause was the ES module workers with esbuild's shared chunks (code reached across modules through import bindings), not esbuild's code itself.\n- But whole classic workers carry the common code once each: the production ESM bundle 6 688 KB raw, 2 395 KB gzip, 1 031 KB brotli, against webpack's 3 898 / 1 275 / 936. esbuild has no shared chunk for classic scripts (webpack's workers share worker_common through importScripts), so a build that is both as small and as fast would need that sharing made by hand.\nClosed: webpack stays. Main ships three bundles since 406b4c69 (production ESM and UMD, debug ESM)."
     }
   ],
   "leads": [

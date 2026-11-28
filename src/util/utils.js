@@ -2191,7 +2191,7 @@ export function getComponentPropertyNames(ComponentClass) {
 /** HEAP / Weed-SAB pose (not in ARRAY_SCHEMA). Inspect only. */
 const TRANSFORM_POSE_PROPS = ['x', 'y', 'rotation', 'rotC', 'rotS'];
 /** HEAP-backed RigidBody fields (not in ARRAY_SCHEMA). Inspect only. */
-const RIGID_BODY_HEAP_PROPS = ['vx', 'vy', 'angularVelocity', 'sleeping'];
+const RIGID_BODY_HEAP_PROPS = ['vx', 'vy', 'angularVelocity', 'sleeping', 'speed'];
 
 /**
  * Schema props plus bound pose/HEAP extras.

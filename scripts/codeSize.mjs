@@ -15,7 +15,7 @@ const SRC = path.join(ROOT, 'src');
 /** Generated or vendored: not the engine's own lines. */
 const GENERATED = new Set(['box2d/box2dWasm.js', 'wasm/engine.js', 'vendor/pixi.min.js', 'version.js']);
 const COUNTED = /\.(m?js|glsl|wgsl|frag|vert)$/;
-const BUNDLES = ['weed.bundle.min.js', 'weed.prod.bundle.min.js', 'weed.bundle.esm.min.js', 'weed.prod.bundle.esm.min.js'];
+const BUNDLES = ['weed.prod.bundle.min.js', 'weed.bundle.esm.min.js', 'weed.prod.bundle.esm.min.js'];
 const WASM = ['src/wasm/engine.wasm', 'src/box2d/box2dWasm.wasm'];
 
 function parseArgs(argv) {

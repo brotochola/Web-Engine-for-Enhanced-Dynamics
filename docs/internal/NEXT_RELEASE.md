@@ -3,7 +3,19 @@
 What a game built on the last release may see differently. Whoever writes the release's notes reads this file, then
 empties it.
 
-Since v0.15.0:
+Since v0.16.0:
+
+- **Three bundles instead of eight** (N-172): `weed.prod.bundle.esm.min.js` and `weed.prod.bundle.min.js` (production,
+  ESM and UMD) and `weed.bundle.esm.min.js` (debug, ESM). The `.compressed` variants are gone (they gzipped their workers
+  inside the file and inflated them at every start; a server compresses the file better), and so is the debug UMD
+  `weed.bundle.min.js`: `@weed.js/engine/debug` is ESM only. A page that loads one of the removed files loads
+  `weed.prod.bundle.min.js` (or the debug ESM) instead.
+- **A decoration stands where the painter puts it** (N-450): with pixel depth on, a decoration that was not a face (a
+  sprite on a roof, a flag on a pole) took its depth from its own position, while the painter ordered it by its foot
+  (`sortOffsetY`, or its parent's line when it is attached). A tank on a roof or a flag above a wall could vanish behind
+  the roof it stood on. Its depth now comes from the same foot, on WebGL and WebGPU. Faces keep their planes' depth.
+
+In v0.16.0:
 
 - **A lamp's halo no longer flickers off its own post** (N-462): with pixel depth on, a halo drawn just after its lamp
   could land behind it at some frames and leave the post dark; unshaded pixels (halos, fires) now always go in front of

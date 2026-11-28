@@ -13,7 +13,9 @@ test('every webpack config resolves modules and loaders as found, not through a 
   const { default: workers } = await import('../../webpack.config.js');
   const { default: bundles } = await import('../../webpack.bundle.config.js');
   const configs = [...workers, ...bundles];
-  assert.equal(configs.length, 4);
+  // N-172: the debug build (WEED_PROD unset here) is ESM only; the production build adds the UMD.
+  assert.equal(workers.length, 2);
+  assert.equal(bundles.length, process.env.WEED_PROD === 'true' ? 2 : 1);
   for (const config of configs) {
     const name = config.output?.filename || config.name;
     assert.equal(config.resolve?.symlinks, false, `${name}: resolve.symlinks`);

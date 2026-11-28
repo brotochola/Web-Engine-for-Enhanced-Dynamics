@@ -22,8 +22,6 @@ function parseArgs(argv) {
     umd: false,
     prod: false,
     debug: false,
-    compressed: false,
-    raw: false,
     list: false,
   };
   for (const a of argv) {
@@ -31,8 +29,6 @@ function parseArgs(argv) {
     else if (a === '--umd') flags.umd = true;
     else if (a === '--prod') flags.prod = true;
     else if (a === '--debug') flags.debug = true;
-    else if (a === '--compressed') flags.compressed = true;
-    else if (a === '--raw') flags.raw = true;
     else if (a === '--list') flags.list = true;
     else if (a === '--') continue;
     else if (a.startsWith('-')) {
@@ -58,8 +54,6 @@ function filterArtifacts(names, flags) {
   if (flags.umd) list = list.filter((n) => !n.includes('.esm.'));
   if (flags.prod) list = list.filter((n) => n.includes('.prod.'));
   if (flags.debug) list = list.filter((n) => !n.includes('.prod.'));
-  if (flags.compressed) list = list.filter((n) => n.includes('.compressed.'));
-  if (flags.raw) list = list.filter((n) => !n.includes('.compressed.'));
   return list;
 }
 

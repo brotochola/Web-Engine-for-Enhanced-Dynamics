@@ -62,9 +62,10 @@ test('a scene binds only its own count: the body tables follow the slots asked f
   const small = fn('weedjs_heap_bytes_used')() >>> 0;
   assert.equal(fn('bind_game_buffers')(101000, 0), 1);
   const large = fn('weedjs_heap_bytes_used')() >>> 0;
-  // 100 000 more slots, 78 bytes each: the pose (32), meta (16), moved (4 + 1), sleeping (1), slot (20), free stack (4).
+  // 100 000 more slots, 82 bytes each: the state channels (36: the pose, the velocities and E-353's speed), meta (16),
+  // moved (4 + 1), sleeping (1), slot (20), free stack (4).
   const perSlot = (large - small) / 100000;
-  assert.ok(perSlot > 77 && perSlot < 80, `${perSlot.toFixed(2)} bytes a slot`);
+  assert.ok(perSlot > 81 && perSlot < 84, `${perSlot.toFixed(2)} bytes a slot`);
   assert.ok(worldId);
 });
 

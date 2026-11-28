@@ -175,4 +175,5 @@ const esmConfig = {
     resolveLoader: umdConfig.resolveLoader,
 };
 
-export default [umdConfig, esmConfig];
+// N-172: the production build as UMD (script tags, CommonJS) and ESM; the debug build as ESM only (@weed.js/engine/debug).
+export default isProd ? [umdConfig, esmConfig] : [esmConfig];

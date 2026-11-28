@@ -73,20 +73,24 @@ export function writeMapsTexel(maps, frame, out, at, atlasLayout = false, unshad
  * atlas's json and its `frame`), at the layout mapsTableLayout gives; the slots past them stay 0.
  * @param {Array<{ weedMaps?: object, weedUnshaded?: boolean, frame?: { x: number, y: number } } | null>} textures
  * @param {boolean} [atlasLayout] the twin page has the atlas's layout (writeMapsTexel)
- * @returns {{ data: Float32Array, width: number, height: number, mapped: number }} mapped: the textureIds with a window
+ * @returns {{ data: Float32Array, width: number, height: number, mapped: number, heights: number }} mapped: the textureIds
+ *   with a window; heights: those marked MAPS_HEIGHTS (E-500: with none, no instance's frame has heights)
  */
 export function packMapsTable(textures, atlasLayout = false) {
   const n = textures ? textures.length : 0;
   const { width, height } = mapsTableLayout(n);
   const data = new Float32Array(width * height * 4);
   let mapped = 0;
+  let heights = 0;
   for (let i = 0; i < n; i++) {
     const t = textures[i];
     if (!t) continue;
     writeMapsTexel(t.weedMaps, t.frame, data, i * 4, atlasLayout, t.weedUnshaded === true);
-    if ((data[i * 4 + 2] & MAPS_TWIN) !== 0) mapped++;
+    const marks = data[i * 4 + 2];
+    if ((marks & MAPS_TWIN) !== 0) mapped++;
+    if ((marks & MAPS_HEIGHTS) !== 0) heights++;
   }
-  return { data, width, height, mapped };
+  return { data, width, height, mapped, heights };
 }
 
 /** A size rounded up to an even number of texels (E-497's half resolution). */

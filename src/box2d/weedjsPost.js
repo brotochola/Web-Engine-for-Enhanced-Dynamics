@@ -392,6 +392,7 @@
     angChan = new Float32Array(sab, off[STATE_CHANNELS.ANG_VEL] << 2, n);
     const rotCChan = new Float32Array(sab, off[STATE_CHANNELS.ROT_C] << 2, n);
     const rotSChan = new Float32Array(sab, off[STATE_CHANNELS.ROT_S] << 2, n);
+    const speedChan = new Float32Array(sab, off[STATE_CHANNELS.SPEED] << 2, n);
     sleepingU8 =
       ready.sleepingByteOffset >= 0
         ? new Uint8Array(sab, ready.sleepingByteOffset, n)
@@ -407,6 +408,7 @@
     angChan.fill(0, 0, count);
     rotCChan.fill(1, 0, count);
     rotSChan.fill(0, 0, count);
+    speedChan.fill(0, 0, count);
     if (sleepingU8) sleepingU8.fill(0, 0, count);
 
     views.x = pxChan;
@@ -3417,6 +3419,8 @@
     world.setStepSpin(data.stepSpin !== false);
     // E-322: Box2D's awake bodies back in body id order every this many steps (0: never; results are the same).
     world.setAwakeReorderInterval(data.awakeReorderInterval | 0);
+    // E-353: RigidBody.speed from Box2D's exports, before any body is made (a registered type sets deriveSpeed).
+    world.setBodySpeedExport(data.deriveSpeed === true);
     const slots = world.getMaxBodySlots();
     if (maxBodies <= 0 || maxBodies > slots) {
       throw new Error(

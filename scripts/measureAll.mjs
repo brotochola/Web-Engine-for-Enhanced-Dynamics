@@ -33,7 +33,7 @@ import { areaOf } from '../tests/bench/ci/shipped.mjs';
 import { countLines } from './codeSize.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const BUNDLES = ['weed.prod.bundle.esm.min.js', 'weed.prod.bundle.esm.compressed.min.js', 'weed.bundle.esm.min.js'];
+const BUNDLES = ['weed.prod.bundle.esm.min.js', 'weed.prod.bundle.min.js', 'weed.bundle.esm.min.js'];
 const WASM = ['src/wasm/engine.wasm', 'src/box2d/box2dWasm.wasm'];
 /** Generated or vendored: not the engine's own lines (codeSize.mjs). */
 const GENERATED = new Set(['src/box2d/box2dWasm.js', 'src/wasm/engine.js', 'src/vendor/pixi.min.js', 'src/version.js']);

@@ -25,7 +25,7 @@ for (const name of ['weed.prod.bundle.min.js', 'weed.prod.bundle.esm.min.js']) {
   });
 }
 
-for (const name of ['weed.bundle.min.js', 'weed.bundle.esm.min.js']) {
+for (const name of ['weed.bundle.esm.min.js']) {
   test(`${name} (debug) holds every run-time guard's text`, { skip: !existsSync(dist(name)) && 'not built' }, () => {
     const text = readFileSync(dist(name), 'utf8');
     assert.deepEqual(RUN_TIME.filter((piece) => !text.includes(piece)), []);

@@ -288,5 +288,5 @@ if (failed) {
   console.error('bundle browser smoke failed');
   process.exitCode = 1;
 } else {
-  console.log(`smoke-bundle-browser OK (all 8${fileModeBundles.length ? `, and the file mode's ${fileModeBundles.length}` : ''})`);
+  console.log(`smoke-bundle-browser OK (all ${BUNDLE_ARTIFACTS.length}${fileModeBundles.length ? `, and the file mode's ${fileModeBundles.length}` : ''})`);
 }

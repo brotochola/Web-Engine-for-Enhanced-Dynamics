@@ -3,7 +3,7 @@
  * DX-SW, phase 2's bundle rows. Every bundle in dist/ through weed-sw.js, as a deploy without COOP/COEP serves it:
  * dist/index.html?bundle=<file> (BallsScene, Box2D on four threads) with dist/weed-sw.js next to it.
  *
- *   node tests/bench/isolationBundleSmoke.mjs [--headed] [--only weed.bundle.min.js,...] [--output report.json]
+ *   node tests/bench/isolationBundleSmoke.mjs [--headed] [--only weed.bundle.esm.min.js,...] [--output report.json]
  *
  * Per bundle: a first visit on a server without the headers (two loads: register, activate, reload), a return visit
  * in the same context (one load), a hard reload (it bypasses the worker, so two loads again), and a first visit on a
@@ -28,16 +28,7 @@ const value = (name) => {
 };
 const headed = argv.includes('--headed');
 const output = value('--output');
-const BUNDLES = [
-  'weed.bundle.min.js',
-  'weed.bundle.esm.min.js',
-  'weed.prod.bundle.min.js',
-  'weed.prod.bundle.esm.min.js',
-  'weed.bundle.compressed.min.js',
-  'weed.bundle.esm.compressed.min.js',
-  'weed.prod.bundle.compressed.min.js',
-  'weed.prod.bundle.esm.compressed.min.js',
-];
+const BUNDLES = ['weed.bundle.esm.min.js', 'weed.prod.bundle.min.js', 'weed.prod.bundle.esm.min.js'];
 const only = value('--only') ? value('--only').split(',') : BUNDLES;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
