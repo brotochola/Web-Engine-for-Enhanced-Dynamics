@@ -5,6 +5,9 @@ empties it.
 
 Since v0.15.0:
 
+- **A lamp's halo no longer flickers off its own post** (N-462): with pixel depth on, a halo drawn just after its lamp
+  could land behind it at some frames and leave the post dark; unshaded pixels (halos, fires) now always go in front of
+  what stands at their own place.
 - **The atlas has mip levels by default** (E-204): `renderer.autoGenerateMipmaps` is null, which is on with a linear atlas
   and off with a nearest one (pixel art stays as it was). Zoomed out, sprites read a small copy of the atlas: Predator's
   people at a crowd of 35 000 drew in 1.73 ms instead of 3.07 on an integrated Radeon. They are read one level sharper than

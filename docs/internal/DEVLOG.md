@@ -27,6 +27,13 @@ the draw to 1.73 ms, the frame's GPU time from 9.5 to 6.5. So the atlas has mip 
 (`renderer.mipmapBias`), except a pixel-art atlas, which stays crisp (E-204). The first picture shown of it was wrong: the
 demo had its own line turning mip levels off, and both sides of the comparison had none.
 
+**A lamp that blinked.** The owner saw a street lamp near the screen's edge go dark for a frame now and then, with the 3D
+light at night. Filmed and read frame by frame, the post had its red halo in most frames and none in one of seven. Two
+pixels at one place on the floor are ordered by a painter step made of the instance number's last seven bits, which wrap;
+a halo is drawn a few instances after its own post, and the queue's rows move every frame, so whenever the post's step
+sat near the wrap the halo fell behind it. Unshaded pixels now always go in front of what stands at their own place, and
+the films count no dark frame (N-462).
+
 **And the notes got shorter.** The page of every measure says its unit and which way is better, and CLAUDE.md keeps the
 rules most tasks need, pointing to the rest.
 
