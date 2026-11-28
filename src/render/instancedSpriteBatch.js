@@ -1721,6 +1721,8 @@ export class InstancedSpriteBatch {
     this.mesh.blendMode = mode;
     this._blendState.blendMode = mode;
     if (this.edgeMesh !== null) this.edgeMesh.blendMode = mode;
+    // N-467: the vertex-depth twin (the flat face instances' opaque draw) took its blend once, when made.
+    if (this.vdepthMesh !== null) this.vdepthMesh.blendMode = mode;
   }
 
   /** E-448: this frame draws no opaque pass (the batch's own mesh blends every instance, untested, as without it). */

@@ -170,3 +170,14 @@ test('without faces, height frames change nothing: one opaque program over every
     }
   }
 });
+
+test('N-467: a run-time layer blend reaches the vertex-depth twin as it reaches the batch\'s mesh and its edge pass', () => {
+  for (const useWebGpu of [false, true]) {
+    const batch = makeBatch({ useWebGpu, indexed: false, heightFrames: true });
+    assert.ok(batch.vdepthMesh !== null, 'faces and height frames make the twin');
+    batch.setLayerBlend('add');
+    assert.equal(batch.mesh.blendMode, 'add');
+    if (batch.edgeMesh !== null) assert.equal(batch.edgeMesh.blendMode, 'add');
+    assert.equal(batch.vdepthMesh.blendMode, 'add', `${useWebGpu ? 'WebGPU' : 'WebGL'}: the twin takes the layer's blend`);
+  }
+});
