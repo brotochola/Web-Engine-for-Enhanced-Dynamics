@@ -110,6 +110,10 @@ enum {
   K_SKIP,
   /* DX-GLOWRADIUS: the glow rows' halo radius (LightEmitter.glowRadius, px; 0: 0.85 of the light's radius). */
   L_GLOW_RADIUS,
+  /* N-450: DecorationComponent.depthFootDy, how far below its drawn y each decoration's painter foot is this frame (the
+     collect writes it), for the depth foot codes of the rows that are no face (0: none, the camera draws no pixel
+     depth). */
+  D_DEPTH_FOOT,
   SLOT_COUNT
 };
 
@@ -291,6 +295,7 @@ typedef struct {
   const float *dScaleX, *dScaleY, *dAlpha;
   const uint32_t *dTint;
   const uint32_t *dFaceOct, *dFaceZ;
+  const float *dDepthFoot;
   const uint16_t *dTexture;
   const float *dAnchorX, *dAnchorY;
   uint16_t *aFrame;
@@ -399,6 +404,7 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->dTint = PTR(const uint32_t, D_TINT);
   e->dFaceOct = PTR(const uint32_t, D_FACE_OCT);
   e->dFaceZ = PTR(const uint32_t, D_FACE_Z);
+  e->dDepthFoot = PTR(const float, D_DEPTH_FOOT);
   e->dTexture = PTR(const uint16_t, D_TEXTURE);
   e->dAnchorX = PTR(const float, D_ANCHOR_X);
   e->dAnchorY = PTR(const float, D_ANCHOR_Y);
@@ -789,6 +795,21 @@ INLINE uint32_t change_mark(const Emit *e, uint32_t *c, uint32_t changed) {
   return mark;
 }
 
+/* N-450: the depth foot code (src/render/pixelDepth.js depthFootCode, which the depth programs decode): how far below its
+   drawn y a decoration that is no face stands for the depth, the painter's foot (the collect's depthFootDy, world px), as
+   DEPTH_FOOT_BIAS + that · DEPTH_FOOT_UNITS rounded half up, within 24 bits (a float32 holds the GPU's code / 65536
+   exactly); 0 for none (it rounds to 0, or is not a number). It rides in the row's V tile offset, whose U is 0. */
+#define DEPTH_FOOT_UNITS 256.0
+#define DEPTH_FOOT_BIAS 8388608
+#define DEPTH_FOOT_MAX 16777215u
+INLINE uint32_t depth_foot_code(float dy) {
+  const double r = __builtin_floor((double)dy * DEPTH_FOOT_UNITS + 0.5);
+  if (!(r != 0.0 && r == r)) return 0u;
+  if (r <= -(double)DEPTH_FOOT_BIAS) return 1u;
+  if (r >= (double)(DEPTH_FOOT_MAX - DEPTH_FOOT_BIAS)) return DEPTH_FOOT_MAX;
+  return (uint32_t)((int32_t)DEPTH_FOOT_BIAS + (int32_t)r);
+}
+
 /* E-188: a decoration row's key: its pool slot past the entities, with KEY_CHANGED when the statics the row got differ
    from the ones the slot last emitted, or those are from an earlier epoch (a resync, or never emitted: the records start
    at zero and the epochs at 1); the record then takes this row's. */
@@ -796,8 +817,11 @@ INLINE uint32_t deco_key(const Emit *e, int32_t idx, uint32_t out) {
   union { float f; uint32_t u; } sx = {e->qScaleX[out]}, sy = {e->qScaleY[out]}, al = {e->qAlpha[out]},
                                  ax = {e->qAnchorX[out]}, ay = {e->qAnchorY[out]};
   uint32_t *r = e->dKeyed + (uint32_t)idx * DECO_KEYED_WORDS;
-  /* DX-FACES: a slot's face is a static too. It joins the tint's word, so a record needs no room for it. */
-  const uint32_t face = e->dFaceOct ? (uint32_t)e->dFaceOct[idx] * 65599u + (uint32_t)e->dFaceZ[idx] : 0u;
+  /* DX-FACES: a slot's face is a static too. It joins the tint's word, so a record needs no room for it. N-450: so does
+     the depth foot code of one that is no face (an odd factor: every code a different term). */
+  const uint32_t oct = e->dFaceOct ? e->dFaceOct[idx] : 0u;
+  uint32_t face = e->dFaceOct ? oct * 65599u + (uint32_t)e->dFaceZ[idx] : 0u;
+  if (e->dDepthFoot && oct == 0u) face += depth_foot_code(e->dDepthFoot[idx]) * 2654435761u;
   const uint32_t tint = e->qTint[out] ^ face;
   const uint32_t tex = e->qTexture[out];
   const uint32_t changed = (r[0] != sx.u) | (r[1] != sy.u) | (r[2] != al.u) | (r[3] != tint) | (r[4] != tex)
@@ -859,6 +883,15 @@ INLINE void deco_face(const Emit *e, uint32_t i, uint32_t out) {
   e->qTileOffV[out] = e->dFaceZ[idx];
 }
 
+/* N-450: deco_face where the depth reads feet (D_DEPTH_FOOT): a face's normal and height as before, and one that is no
+   face U 0 and its depth foot code in V (a stale height in its slot never reaches the depth). Faces may be off. */
+INLINE void deco_foot(const Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  const uint32_t oct = e->dFaceOct ? e->dFaceOct[idx] : 0u;
+  e->qTileOffU[out] = oct;
+  e->qTileOffV[out] = oct != 0u ? e->dFaceZ[idx] : depth_foot_code(e->dDepthFoot[idx]);
+}
+
 /* The rows of a frame without Adobe roots, where row i is collector row i: a loop of their own, so that a scene without
    faces pays one test a frame and deco_row none (it is on every decoration's path). It takes the columns, not the Emit:
    a call the inliner leaves out would otherwise put emit_rows' Emit on the stack (E-330's copy made it leave it out). */
@@ -869,6 +902,20 @@ static void deco_faces(const uint8_t *cType, const int32_t *cIndex, const uint32
       const int32_t idx = cIndex[i];
       offU[i] = faceOct[idx];
       offV[i] = faceZ[idx];
+    }
+  }
+}
+
+/* N-450: deco_faces where the depth reads feet, deco_foot's words (faceOct 0: no faces), a loop of its own so neither
+   scene pays the other's test. */
+static void deco_feet(const uint8_t *cType, const int32_t *cIndex, const uint32_t *faceOct, const uint32_t *faceZ,
+                      const float *footDy, uint32_t *offU, uint32_t *offV, uint32_t n) {
+  for (uint32_t i = 0; i < n; i++) {
+    if (cType[i] == 2) {
+      const int32_t idx = cIndex[i];
+      const uint32_t oct = faceOct ? faceOct[idx] : 0u;
+      offU[i] = oct;
+      offV[i] = oct != 0u ? faceZ[idx] : depth_foot_code(footDy[idx]);
     }
   }
 }
@@ -1273,7 +1320,8 @@ INLINE uint32_t rows_in_place(Emit *e, uint32_t n, uint32_t *foreign, int others
       nForeign++;
     }
   }
-  if (e->dFaceOct) deco_faces(cType, e->cIndex, e->dFaceOct, e->dFaceZ, e->qTileOffU, e->qTileOffV, n);
+  if (e->dDepthFoot) deco_feet(cType, e->cIndex, e->dFaceOct, e->dFaceZ, e->dDepthFoot, e->qTileOffU, e->qTileOffV, n);
+  else if (e->dFaceOct) deco_faces(cType, e->cIndex, e->dFaceOct, e->dFaceZ, e->qTileOffU, e->qTileOffV, n);
   return nForeign;
 }
 
@@ -1331,7 +1379,8 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         sprite_row(&e, i, w, 0, 0);
       } else if (ty == 2) {
         deco_row(&e, i, w, 0, 0);
-        if (e.dFaceOct) deco_face(&e, i, w);
+        if (e.dDepthFoot) deco_foot(&e, i, w);
+        else if (e.dFaceOct) deco_face(&e, i, w);
       } else if (ty == 4 && e.bActive) {
         bullet_row(&e, i, w);
       } else if (ty == 5 && e.bActive) {

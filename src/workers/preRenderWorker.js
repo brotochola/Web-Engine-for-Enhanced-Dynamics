@@ -2,7 +2,7 @@
 // Handles all visual calculations AFTER physics, BEFORE pixi_worker renders
 // This worker is purely visual - no physics or game logic
 
-import { cameraFloorScaleY } from '../util/cameraView.js';
+import { cameraFloorScaleY, cameraHeightScaleY } from '../util/cameraView.js';
 import { ParticleComponent as ParticleComponentImport } from '../components/particleComponent.js';
 import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
 import { DecorationPool } from '../core/decorationPool.js';
@@ -1379,9 +1379,12 @@ const Y_SORT_K = DECORATION_Y_SORT_SCALE;
 // heap number per visible particle, bullet, decoration and glow. Callers write it here first.
 // Sprites (types 0 and 6) need none: _writeRenderable stores their drawn Y.
 const COLLECT_Y = new Float64Array(1);
+// N-450: the y the painter sorts the decoration being collected at (world px, before the key's rounding and innerZ; NaN
+// where no layer y-sorts): _writeRenderable keeps it, less where the decoration is drawn, in DecorationComponent.depthFootDy.
+const COLLECT_FOOT = new Float64Array(1);
 // N-110: the key an attached decoration's parent sorts at, from _storeAttachedParentKey (a store, not a returned
-// double, which a call TurboFan does not inline boxes).
-const PARENT_SORT_KEY = new Float64Array(1);
+// double, which a call TurboFan does not inline boxes); N-450: [1] its sort line, unrounded, outside its zIndex band.
+const PARENT_SORT_KEY = new Float64Array(2);
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *
@@ -1596,6 +1599,10 @@ class PreRenderWorker extends AbstractWorker {
         // decoration got a normal), in a lit scene (_facesWatch).
         this._faces = false;
         this._facesWatch = false;
+        // N-450: the decoration rows that are no face carry their depth foot code (pixelDepth.js depthFootCode) in the
+        // tile offsets, where the camera may draw pixel depth (renderer.pixelDepth true, or not false and oblique: a
+        // superset of where Pixi does), so every other row clears what they left there (tilesDirty).
+        this._depthFeet = false;
         // DX-GBUF (plan §6.4): the sprite rows' G-buffer words go with the GPU queue (gbufWord.js): a lit scene whose Pixi
         // worker runs the G-buffer pass (faces, a sheet with maps, a shadow map).
         this._gbufOn = false;
@@ -2406,6 +2413,11 @@ class PreRenderWorker extends AbstractWorker {
         this._spriteSortArrays = null;
         this._facesWatch = resolveFaces(this.config?.lighting).enabled;
         this._faces = false;
+        {
+            const wantDepth = this.config?.renderer?.pixelDepth;
+            this._depthFeet = wantDepth === true
+                || (wantDepth !== false && cameraFloorScaleY(this.config) < 1 && cameraHeightScaleY(this.config) > 0);
+        }
         // The atlas meta whole: a sheet with maps, or an unshaded one, turns the words on.
         this._gbufOn = gbufWanted(this.config, data.spritesheetMetadata?.spritesheets?.bigAtlas?.meta ?? null);
 
@@ -3362,8 +3374,10 @@ class PreRenderWorker extends AbstractWorker {
         const visibleCount = visibleData[0];
         if (!Layer.anyYSorting()) {
             // A key orders a decoration only in a layer that y-sorts (the emit writes none otherwise): with none this
-            // frame they all take one key and none is made, in a loop of its own, as the particles do.
+            // frame they all take one key and none is made, in a loop of its own, as the particles do. N-450: nor a
+            // foot (the depth stands each where it is drawn).
             COLLECT_Y[0] = 0;
+            COLLECT_FOOT[0] = NaN;
             for (let idx = 0; idx < visibleCount; idx++) {
                 this.collectRenderable(2, visibleData[1 + idx]);
                 this.visibleDecorationsCount++;
@@ -3390,8 +3404,11 @@ class PreRenderWorker extends AbstractWorker {
                 }
                 // The offset as given (rounding it to whole px cost the y-sorted collect 4 to 8 %).
                 sortY = parentKey[0] + sortOffsetY[i] * Y_SORT_K + innerZ[i];
+                // N-450: its foot for the depth, the parent's line unrounded (the parent's own depth stands on it).
+                COLLECT_FOOT[0] = parentKey[1] + sortOffsetY[i];
             } else {
                 sortY = (y[i] + sortOffsetY[i]) * Y_SORT_K + innerZ[i];
+                COLLECT_FOOT[0] = y[i] + sortOffsetY[i];
             }
             COLLECT_Y[0] = sortY;
             this.collectRenderable(2, i);
@@ -3442,14 +3459,16 @@ class PreRenderWorker extends AbstractWorker {
     /**
      * N-110. The key the parent of an attached decoration sorts at, into out[0]: the one its sprite gets
      * (_storeEntitySortY on the drawn pose, the foot line rounded to a pixel) in its zIndex band (_orderKey's), or
-     * its drawn y rounded when it has no sprite, as an Adobe root's line is.
+     * its drawn y rounded when it has no sprite, as an Adobe root's line is. N-450: out[1], that line unrounded
+     * (_storeEntitySortLine), the foot the depth stands its decorations on.
      */
     _storeAttachedParentKey(p, out) {
         const pose = this._displayPoseOut;
         this._displayPose(p, pose);
         const sr = SpriteRenderer;
-        if (sr.active && sr.active[p]) this._storeEntitySortY(0, p, pose, out, 0);
-        else out[0] = spriteYSortKey(pose[1], Y_SORT_K);
+        if (sr.active && sr.active[p]) this._storeEntitySortLine(p, pose, out, 1);
+        else out[1] = pose[1];
+        out[0] = spriteYSortKey(out[1], Y_SORT_K);
         const z = sr.zIndex ? sr.zIndex[p] | 0 : 0;
         if (z !== 0) out[0] += z * this._zBand;
     }
@@ -3653,6 +3672,26 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
+     * N-450: _storeEntitySortY's line for a sprite (type 0) before its rounding, into dst[at]: the pose's y, or its
+     * picture's lower edge when it is not feet-anchored (spriteSortFootY).
+     */
+    _storeEntitySortLine(index, pose, dst, at) {
+        let y = pose[1];
+        const src = this._spriteSortSrc();
+        if (!(src.anchorX[index] === 0.5 && src.anchorY[index] === 1.0)) {
+            const textureId = this._entityTextureIdOrResolve(index);
+            let w = 0;
+            let h = 0;
+            if (textureId !== INVALID_TEXTURE_ID && this.frameWidth && this.frameHeight) {
+                w = this.frameWidth[textureId] || 0;
+                h = this.frameHeight[textureId] || 0;
+            }
+            y = spriteSortFootY(src, index, y, pose[2], pose[3], w, h);
+        }
+        dst[at] = y;
+    }
+
+    /**
      * Component arrays the sort line reads, bound once. Rebuilt never: these
      * are the worker's own SoA views for its lifetime.
      */
@@ -3706,6 +3745,7 @@ class PreRenderWorker extends AbstractWorker {
                         collector.stashY[wi] = pose[1];
                         collector.stashRotC[wi] = DecorationComponent.rotC[index];
                         collector.stashRotS[wi] = DecorationComponent.rotS[index];
+                        DecorationComponent.depthFootDy[index] = COLLECT_FOOT[0] - pose[1];
                     }
                     collector.type[wi] = type;
                     collector.index[wi] = index;
@@ -3746,6 +3786,8 @@ class PreRenderWorker extends AbstractWorker {
             this._collectPy[writeIdx] = pose[1];
             this._collectRotC[writeIdx] = DecorationComponent.rotC[index];
             this._collectRotS[writeIdx] = DecorationComponent.rotS[index];
+            // N-450: the painter's foot, from where it is drawn (the depth programs stand it there).
+            DecorationComponent.depthFootDy[index] = COLLECT_FOOT[0] - pose[1];
         }
         this._renderableCount = writeIdx + 1;
     }
@@ -4209,7 +4251,7 @@ class PreRenderWorker extends AbstractWorker {
         // DX-FACES: faces have no switch: once a decoration carries a normal (one atomic read a frame), decoration rows
         // write their face in the tile offsets, so every other row must clear what a face left in its slot.
         this._faces = this._facesWatch && DecorationPool.facesInUse();
-        const tilesDirty = rqTileMode !== null && (this._faces || this._tiledTileColumns.has(rqTileMode));
+        const tilesDirty = rqTileMode !== null && (this._faces || this._depthFeet || this._tiledTileColumns.has(rqTileMode));
         const writeSortKey = !!(this.renderQueueSortKey && source.hasOrder);
         const ySort = !!source.ySort;
         // -1 when off: buffer 0 is a valid persist target (it used to read as false).
