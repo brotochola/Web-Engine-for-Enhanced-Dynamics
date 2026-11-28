@@ -3,6 +3,7 @@
 // neighbor rows in place. There is no result copy.
 
 import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
+import { writeNeighborAggregateTable } from '../util/neighborAggregatesSpec.js';
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
@@ -68,20 +69,25 @@ export async function bindSpatialGather(memory, layout, workerIndex, entityCount
 
 /**
  * @param {WebAssembly.Memory} memory
- * @param {{ posByte: number, rangeByte: number, neighborByte: number, candByte: number, listByte: number, listStride: number }} layout
+ * @param {{ posByte: number, rangeByte: number, neighborByte: number, candByte: number, listByte: number, listStride: number, aggregates?: object | null }} layout
  * @param {number} workerIndex
  * @param {number} entityCount
  * @param {number} maxNeighbors
  */
 export async function bindSpatialPublish(memory, layout, workerIndex, entityCount, maxNeighbors) {
-  // W8b: publish_batch_u32 for 32-bit entity ids.
-  const name = entityIdBytes() === 4 ? 'publish_batch_u32' : 'publish_batch';
+  // E-199: with neighbour aggregates the publish that also writes them (the same rows), else the plain one. W8b: the
+  // _u32 forms for 32-bit entity ids.
+  const agg = layout.aggregates || null;
+  const wide = entityIdBytes() === 4;
+  const name = agg ? (wide ? 'publish_batch_agg_u32' : 'publish_batch_agg') : (wide ? 'publish_batch_u32' : 'publish_batch');
   const publish = (await loadWasmKernel('spatialPublish', engineWasmUrl, memory, [name]))[name];
   const count = entityCount | 0;
   const stride = 1 + (maxNeighbors | 0);
   // Each spatial worker's batch list is its own slice, on its own cache lines.
   const listByte = (layout.listByte | 0) + (workerIndex | 0) * (layout.listStride | 0);
   const buffer = memory.buffer;
+  // The kernel's table and the class byte of each entity: every spatial worker writes the same bytes.
+  if (agg) writeNeighborAggregateTable(buffer, agg);
   const pub = {
     range: new Float32Array(buffer, layout.rangeByte, count),
     list: new (EntityIdArray())(buffer, listByte, count),
@@ -89,6 +95,15 @@ export async function bindSpatialPublish(memory, layout, workerIndex, entityCoun
     publish,
     listByte,
     queued: 0,
+    buffer,
+    // E-199: the aggregates' table (0: the plain publish, which takes no more arguments), each entity's config index
+    // (an empty array without), whether a type averages velocities, and RigidBody's vx and vy columns in this memory
+    // (0 until bound: SpatialWorker._bindAggregateVelocity).
+    aggByte: agg ? agg.tableByte | 0 : 0,
+    aggClass: agg ? new Uint8Array(buffer, agg.classByte, count) : new Uint8Array(0),
+    velocity: agg ? agg.velocity === true : false,
+    vxByte: 0,
+    vyByte: 0,
   };
   return pub;
 }

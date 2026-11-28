@@ -6,6 +6,7 @@
 // a cache line with a region another worker writes. Inside a region, entities owned by different
 // workers still interleave (each spatial worker writes the rows of the entities it owns).
 
+import { neighborAggregateTableBytes } from './neighborAggregatesSpec.js';
 import { poolSlotBytes } from './poolSlotWidth.js';
 import { publishedListBytes } from './publishedList.js';
 
@@ -75,12 +76,16 @@ export function layoutRegions(regions) {
  * - sync: an i32 every spatial worker adds 2 to (Atomics) after a frame in which it wrote a pose that
  *   changed: a kept row whose last publish saw the same value has the same inputs (E-136).
  * Ids are 16-bit: the module has no 32-bit form (W8).
+ * With `aggregates` (E-199, neighborAggregatesSpec.js's resolveNeighborAggregates), after the rest: the kernel's table
+ * (aggTable), the class byte of each entity (aggClass, which type's config, 0 for none), and the columns of the outputs
+ * a type asks for, one value per entity (the nearest ones `nearestSlots` per entity): written by publish_batch_agg for
+ * the entities each spatial worker owns, read by logic (NeighborAggregates).
  * @param {number} entityCount
  * @param {number} maxNeighbors
  * @param {number} spatialWorkers
  */
-export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers, gather = null, idBytes = 2) {
-  const { regions, ...strides } = spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather, idBytes);
+export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers, gather = null, idBytes = 2, aggregates = null) {
+  const { regions, ...strides } = spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather, idBytes, aggregates);
   return { ...layoutRegions(regions), ...strides };
 }
 
@@ -649,7 +654,7 @@ export function spatialPatternTableBytes(maxCellRadius) {
  * - rebuilds: one u16 list slice per spatial worker (the entities whose lists rebuild this frame);
  * - patterns: the circle-pattern table, the same in every worker (spatialPatternTableBytes).
  */
-export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather = null, idBytes = 2) {
+export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather = null, idBytes = 2, aggregates = null) {
   const count = entityCount | 0;
   const workers = Math.max(1, spatialWorkers | 0);
   // W8b: ids are 2 or 4 bytes (the scene's entity id width) in the rows, the lists and the rebuild lists.
@@ -665,21 +670,68 @@ export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorke
     { name: 'lists', owner: 'spatial, one slice per worker', bytes: workers * listStride },
     { name: 'sync', owner: 'spatial, every worker (Atomics)', bytes: CACHE_LINE_BYTES },
   ];
-  if (!gather) return { regions, listStride };
-  const markerStride = alignToLine(count * 4);
-  const truncatedStride = alignToLine(count);
-  const rebuildStride = alignToLine(count * id);
-  // order_batch_by_cell: a u32 histogram[256], then two u16 key lists and a list of ids, each of the entity count.
-  const orderStride = alignToLine(1024 + count * (4 + id));
-  regions.push(
-    { name: 'grid', owner: 'spatial, each worker its own rows', bytes: gather.gridBytes },
-    { name: 'markers', owner: 'spatial, one slice per worker', bytes: workers * markerStride },
-    { name: 'truncated', owner: 'spatial, one slice per worker', bytes: workers * truncatedStride },
-    { name: 'rebuilds', owner: 'spatial, one slice per worker', bytes: workers * rebuildStride },
-    { name: 'patterns', owner: 'spatial, identical in every worker', bytes: gather.patternBytes },
-    { name: 'orders', owner: 'spatial, one slice per worker', bytes: workers * orderStride },
-  );
-  return { regions, listStride, markerStride, truncatedStride, rebuildStride, orderStride };
+  let strides = { listStride };
+  if (gather) {
+    const markerStride = alignToLine(count * 4);
+    const truncatedStride = alignToLine(count);
+    const rebuildStride = alignToLine(count * id);
+    // order_batch_by_cell: a u32 histogram[256], then two u16 key lists and a list of ids, each of the entity count.
+    const orderStride = alignToLine(1024 + count * (4 + id));
+    regions.push(
+      { name: 'grid', owner: 'spatial, each worker its own rows', bytes: gather.gridBytes },
+      { name: 'markers', owner: 'spatial, one slice per worker', bytes: workers * markerStride },
+      { name: 'truncated', owner: 'spatial, one slice per worker', bytes: workers * truncatedStride },
+      { name: 'rebuilds', owner: 'spatial, one slice per worker', bytes: workers * rebuildStride },
+      { name: 'patterns', owner: 'spatial, identical in every worker', bytes: gather.patternBytes },
+      { name: 'orders', owner: 'spatial, one slice per worker', bytes: workers * orderStride },
+    );
+    strides = { listStride, markerStride, truncatedStride, rebuildStride, orderStride };
+  }
+  if (aggregates) regions.push(...neighborAggregateRegions(count, aggregates));
+  return { regions, ...strides };
+}
+
+/**
+ * E-199: the aggregates' regions (spatialPublishRegionList): the table and the class bytes, then the columns of each
+ * output some type asks for. The names are the `<name>Byte` keys createSpatialPublishMemory hands on.
+ * @param {number} count entities
+ * @param {{ separation: boolean, cohesion: boolean, velocity: boolean, nearestSlots: number, classes: unknown[] }} spec
+ */
+function neighborAggregateRegions(count, spec) {
+  const out = 'spatial (publish_batch_agg), each worker its own entities';
+  const regions = [
+    { name: 'aggTable', owner: 'spatial, identical in every worker', bytes: neighborAggregateTableBytes(spec) },
+    { name: 'aggClass', owner: 'spatial, identical in every worker', bytes: count },
+  ];
+  if (spec.separation) {
+    regions.push(
+      { name: 'aggSeparationX', owner: out, bytes: count * 4 },
+      { name: 'aggSeparationY', owner: out, bytes: count * 4 },
+      { name: 'aggSeparationCount', owner: out, bytes: count * 2 },
+    );
+  }
+  if (spec.cohesion) {
+    regions.push(
+      { name: 'aggCentroidX', owner: out, bytes: count * 4 },
+      { name: 'aggCentroidY', owner: out, bytes: count * 4 },
+      { name: 'aggCohesionCount', owner: out, bytes: count * 2 },
+    );
+  }
+  if (spec.velocity) {
+    regions.push(
+      { name: 'aggAverageVelocityX', owner: out, bytes: count * 4 },
+      { name: 'aggAverageVelocityY', owner: out, bytes: count * 4 },
+    );
+  }
+  const slots = spec.nearestSlots | 0;
+  if (slots > 0) {
+    regions.push(
+      { name: 'aggNearestIndex', owner: out, bytes: count * slots * 4 },
+      { name: 'aggNearestDistanceSq', owner: out, bytes: count * slots * 4 },
+      { name: 'aggNearestCount', owner: out, bytes: count * 2 },
+    );
+  }
+  return regions;
 }
 
 /** A stamp record of decalStamp.wasm: f64 x, y, scaleX, scaleY, alpha; u32 tint, blendMode, texture byte, width, height, pad. */

@@ -24,6 +24,9 @@
  * stationarySpatialWideScene's and WaterAndBoxes' regime (until SST-21 their types had a visualRange no code read).
  *   node tests/bench/spatialWorkerMicrobench.mjs --still --skin 0.04 --max-frames 15 --tick 1
  *   node tests/bench/spatialWorkerMicrobench.mjs --types boids
+ * `--aggregates` (E-199, with --types): the classes also ask for the neighbour aggregates their demo code reads
+ * (AGGREGATE_PRESETS), so the publish is publish_batch_agg: the same frame with and without them.
+ *   node tests/bench/spatialWorkerMicrobench.mjs --types predator --aggregates
  */
 import assert from 'node:assert/strict';
 
@@ -37,6 +40,7 @@ import { ShapeType } from '../../src/util/configDefaults.js';
 import { bindEntityIdWidth, EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../../src/util/colliderUtils.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
+import { resolveNeighborAggregates } from '../../src/util/neighborAggregatesSpec.js';
 import { spatialJsClass } from '../reference/spatialGather.mjs';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
@@ -101,6 +105,32 @@ export function kernelClasses(name, n) {
   return out;
 }
 
+/**
+ * E-199 (`--aggregates`): per TYPE_PRESETS entry, the aggregates its classes' demo code reads (the Boid's separation and
+ * cohesion, the civilian's soldiers to flee, the soldier's civilians to shoot). No velocity: in Node RigidBody's
+ * columns are not in the publish memory, so the kernel would average none.
+ */
+const AGGREGATE_PRESETS = {
+  boids: () => ({ Boid: { separation: { radius: 75, falloff: 'linear' }, cohesion: { minDistance: 75 } } }),
+  predator: (c) => ({
+    Civilian: { separation: { ofType: c.Soldier, floor: 10 }, nearest: { ofType: c.Soldier, count: 4 } },
+    Soldier: { nearest: { ofType: c.Civilian, count: 8 } },
+    Boid: { separation: { radius: 75, falloff: 'linear' }, cohesion: { minDistance: 75 } },
+  }),
+};
+
+/**
+ * E-199: the neighbour aggregates for kernelClasses' entries, resolved as a scene resolves them. `configsOf` gets
+ * stand-in classes by name (for ofType) and returns each class's static neighborAggregates by name.
+ */
+export function kernelAggregates(classes, configsOf) {
+  const byName = {};
+  for (const c of classes) byName[c.name] = { [c.name]: class {} }[c.name];
+  const configs = configsOf(byName);
+  for (const [name, cfg] of Object.entries(configs)) byName[name].neighborAggregates = cfg;
+  return resolveNeighborAggregates(classes.map((c) => ({ class: byName[c.name], startIndex: c.startIndex, count: c.poolSize })));
+}
+
 /** Module identifiers the SpatialWorker methods use (for methodVariant patches). */
 export const SCOPE = {
   Transform,
@@ -147,6 +177,10 @@ export async function setupSpatialKernel(opts = {}) {
   bindEntityIdWidth(idWidth);
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   buffers.componentData = coreComponentData(n);
+  // E-199: `opts.aggregates` (with `opts.types`) gives the preset's classes neighbour aggregates: a function of the
+  // classes by name (stand-ins, for ofType) that returns { [className]: its static neighborAggregates }.
+  const classes = opts.types ? kernelClasses(opts.types, n) : [];
+  const aggregates = opts.aggregates && opts.types ? kernelAggregates(classes, opts.aggregates) : null;
   // Poses, rows, candidates and (E-78) the grid in the publish memory, as sceneSharedBuffers builds it; a
   // function in `opts.publishMemory` is a factory, so a kernel can lay out more regions. `opts.wasm` is the
   // scene's wasm switches (T7); `opts.js` ({ publish: 'js' | 'kernel' }) runs the JS search on the workers.
@@ -155,16 +189,15 @@ export async function setupSpatialKernel(opts = {}) {
     : createSpatialPublishMemory(n, cfg.maxNeighbors, workersCount, {
         totalCells: gridMetadata.totalCells,
         cellByteSize: 4 + cfg.maxEntitiesPerCell * gridMetadata.entityIdBytes,
-      });
+      }, null, aggregates);
   if (!mem) throw new Error('no publish memory');
   bindPublishMemory(buffers, gridMetadata, mem);
 
   const jsMake = opts.js ? (Base) => spatialJsClass(Base, opts.js) : null;
   const make = jsMake && opts.make ? (Base) => opts.make(jsMake(Base)) : jsMake || opts.make;
   const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', make);
-  // E-200: classes with logic tick intervals, and logic 0's frame number where the scene publishes it (slot 1 of
-  // its frameRateData row, after the spatial workers' rows).
-  const classes = opts.types ? kernelClasses(opts.types, n) : [];
+  // E-200: classes with logic tick intervals (`classes`, above), and logic 0's frame number where the scene publishes
+  // it (slot 1 of its frameRateData row, after the spatial workers' rows).
   const FRAME_RATE_STRIDE = 16;
   const logicRow = workersCount;
   let logicFrames = null;
@@ -334,7 +367,7 @@ export async function setupSpatialKernel(opts = {}) {
     return h >>> 0;
   }
 
-  return { n, workers, frame, checksum, listRates, cfg, mem, gridMetadata, classes };
+  return { n, workers, frame, checksum, listRates, cfg, mem, gridMetadata, classes, aggregates: mem.aggregates || null };
 }
 
 async function main() {
@@ -347,7 +380,11 @@ async function main() {
   if (args.tick !== undefined) spatial.neighborTickInterval = Number(args.tick);
   const types = args.types !== undefined ? String(args.types) : null;
   const unread = Boolean(args.unread);
-  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial, types, unread });
+  // E-199: --aggregates (with --types) gives the preset's classes the neighbour aggregates their demo code reads.
+  const withAggregates = Boolean(args.aggregates);
+  if (withAggregates && !AGGREGATE_PRESETS[types]) throw new Error('--aggregates needs --types boids or predator');
+  const aggregates = withAggregates ? AGGREGATE_PRESETS[types] : null;
+  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial, types, unread, aggregates });
   // 45 frames: every entity passes a full rebuild and the stagger at least twice.
   for (let f = 0; f < 45; f++) k.frame();
   const checksum = k.checksum();
@@ -358,7 +395,7 @@ async function main() {
   // 60 frames: a whole number of every preset's periods (4, 6, 15, 30, and their multiples up to 30).
   const rates = k.listRates(60);
 
-  const label = `spatial frame ${variant}${still ? ' still' : ''}${types ? ` types=${types}` : ''}${unread ? ' unread' : ''}`;
+  const label = `spatial frame ${variant}${still ? ' still' : ''}${types ? ` types=${types}` : ''}${unread ? ' unread' : ''}${withAggregates ? ' aggregates' : ''}`;
   const cases = {
     frame: timeIt(`${label} (${k.workers.length} workers, n=${k.n})`, () => k.frame(), { iterations: 20, warmup: 30 }),
   };
@@ -367,6 +404,7 @@ async function main() {
     variant,
     still,
     types,
+    aggregates: withAggregates,
     rates,
     spatial: k.cfg,
     functions: ['SpatialWorker.rebuildOwnedRows', 'SpatialWorker._findNeighbors (spatialGather, spatialPublish)'],

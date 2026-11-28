@@ -150,6 +150,8 @@ export function bindPublishMemory(buffers, gridMetadata, mem) {
     orderStride: mem.orderStride | 0,
     patternByte: mem.patternByte | 0,
     patternBytes: mem.patternBytes | 0,
+    // E-199: the neighbour aggregates' spec and regions, when the memory was laid out with them.
+    aggregates: mem.aggregates || null,
   });
 }
 

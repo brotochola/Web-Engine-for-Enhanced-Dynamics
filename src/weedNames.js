@@ -20,6 +20,7 @@ export { Noise2D } from './core/noise2D.js';
 export { Ray } from './core/ray.js';
 export { NavGrid } from './core/navGrid.js';
 export { Grid } from './core/grid.js';
+export { NeighborAggregates } from './core/neighborAggregates.js';
 export { Sun } from './core/sun.js';
 export { Layer } from './core/layer.js';
 export { TileMap } from './core/tileMap.js';

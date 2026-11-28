@@ -2,6 +2,7 @@ import { resetSpriteLookups } from '../components/spriteRenderer.js';
 import { debugWorkerLog } from './debugLog.js';
 import { clearEntityTypes } from '../core/entityTypes.js';
 import { createSpatialPublishMemory, spatialPublishMemoryBytes } from './spatialPublishMemory.js';
+import { resolveNeighborAggregates } from './neighborAggregatesSpec.js';
 import { createParticleMemory, particleMemoryBytes } from './particleMemory.js';
 import { createRenderQueueMemory, renderQueueMemoryBytes } from './renderQueueMemory.js';
 import { createNavigationMemory } from './navigationMemory.js';
@@ -260,10 +261,12 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   if (spatialOn) {
     // The neighbour search runs only in WASM (spatialGather, spatialPublish), on the publish memory. Phase 4: in the
     // spatial part of Box2D's block when there is one (sized from the same spec), else a memory of its own.
-    const args = spatialPublishSpec(scene);
+    // E-199: with the regions of the neighbour aggregates the scene's types ask for (the spec's fifth entry).
+    const [count, maxNeighbors, workers, grid, aggregates] = spatialPublishSpec(scene);
     const block = scene.box2dBlock;
     const place = block && block.spatialBytes > 0 ? { memory: block.memory, baseByte: block.spatialByte } : null;
-    scene.spatialPublish = (place && createSpatialPublishMemory(...args, place)) || createSpatialPublishMemory(...args);
+    scene.spatialPublish = (place && createSpatialPublishMemory(count, maxNeighbors, workers, grid, place, aggregates))
+      || createSpatialPublishMemory(count, maxNeighbors, workers, grid, null, aggregates);
     buffers.neighborData = scene.spatialPublish.buffer;
   } else {
     buffers.neighborData = null;
@@ -687,11 +690,16 @@ export function sceneEntitySlots(registered) {
   return registered > 0 ? registered | 0 : 1;
 }
 
+/**
+ * [entities, maxNeighbors, spatial workers, the grid's spec, the neighbour aggregates (E-199: resolveNeighborAggregates,
+ * null when no type asks)]: createSpatialPublishMemory's arguments but its place, or null without a spatial worker.
+ */
 export function spatialPublishSpec(scene) {
   const { config } = scene;
   const workers = config.spatial?.numberOfSpatialWorkers | 0;
   if (!(workers > 0)) return null;
-  return [scene.totalEntityCount, config.spatial.maxNeighbors, workers, spatialGridSpec(config)];
+  const aggregates = resolveNeighborAggregates(scene.registeredClasses, { physics: config.physics?.enabled !== false });
+  return [scene.totalEntityCount, config.spatial.maxNeighbors, workers, spatialGridSpec(config), aggregates];
 }
 
 /**
@@ -1304,6 +1312,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       orderStride: publish ? publish.orderStride : 0,
       patternByte: publish ? publish.patternByte : 0,
       patternBytes: publish ? publish.patternBytes : 0,
+      // E-199: the neighbour aggregates' spec and regions (null when no type asks for them).
+      aggregates: publish ? publish.aggregates : null,
     };
 
     Grid.initialize(
@@ -1324,6 +1334,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
         entityIdBytes: entityIdBytes(),
         neighborByte: scene.gridMetadata.neighborByte,
         gridByte: scene.gridMetadata.gridByte,
+        aggregates: scene.gridMetadata.aggregates,
       }
     );
   } else {
