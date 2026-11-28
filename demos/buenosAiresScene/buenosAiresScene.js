@@ -219,7 +219,9 @@ export class BuenosAiresScene extends Scene {
     seed: 7,
     // ?twinFormat=B or C: the twin page's other formats (E-497's tournament), to compare.
     assets: { maxAtlasWidth: 8192, maxAtlasHeight: 4096, twinFormat: ['A', 'B', 'C'].includes(WEED.params?.get('twinFormat')) ? WEED.params.get('twinFormat') : 'A' },
-    spatial: { cellSize: 64, maxNeighbors: 48, maxEntitiesPerCell: 192, numberOfSpatialWorkers: CORES >= 6 ? 2 : 1 },
+    // maxNeighbors 96: with 48 up to 16 lists a frame were cut (the drivers' 220 px range among the crowd); the longest
+    // list seen in 60 s is 80, 2 of them past 64 (N-331). No spatial STEP_MS difference at 96 (2.0 ms either way).
+    spatial: { cellSize: 64, maxNeighbors: 96, maxEntitiesPerCell: 192, numberOfSpatialWorkers: CORES >= 6 ? 2 : 1 },
     logic: { numberOfLogicWorkers: CORES >= 8 ? 3 : 2, staggeredUpdates: true },
     physics: {
       gravity: { x: 0, y: 0 }, sleeping: true, subStepCount: 0, commandRingCapacity: 65536,
