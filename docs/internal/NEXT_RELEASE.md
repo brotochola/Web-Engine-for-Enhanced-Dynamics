@@ -5,6 +5,11 @@ empties it.
 
 Since v0.16.0:
 
+- **Three bundles instead of eight** (N-172): `weed.prod.bundle.esm.min.js` and `weed.prod.bundle.min.js` (production,
+  ESM and UMD) and `weed.bundle.esm.min.js` (debug, ESM). The `.compressed` variants are gone (they gzipped their workers
+  inside the file and inflated them at every start; a server compresses the file better), and so is the debug UMD
+  `weed.bundle.min.js`: `@weed.js/engine/debug` is ESM only. A page that loads one of the removed files loads
+  `weed.prod.bundle.min.js` (or the debug ESM) instead.
 - **A decoration stands where the painter puts it** (N-450): with pixel depth on, a decoration that was not a face (a
   sprite on a roof, a flag on a pole) took its depth from its own position, while the painter ordered it by its foot
   (`sortOffsetY`, or its parent's line when it is attached). A tank on a roof or a flag above a wall could vanish behind
