@@ -27,6 +27,7 @@ import { Collider } from '../components/collider.js';
 import { distanceSq2D } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 import { entityIdBytes } from '../util/entityIdWidth.js';
+import { NeighborAggregates } from './neighborAggregates.js';
 
 // =============================================================================
 // CONSTANTS - Configurable via scene (defaults shown)
@@ -175,6 +176,8 @@ export class Grid {
         neighborByte,
       );
     }
+    // E-199: the neighbour aggregates the publish writes beside the rows, when a type asks for them.
+    NeighborAggregates._bind(buffers.neighborBuffer || null, metadata.aggregates || null);
 
     // ===== CELL SLEEPING STATE (Single Buffer) =====
     if (buffers.cellSleepingBuffer) {
@@ -205,6 +208,7 @@ export class Grid {
     Grid._markerArray = null;
     Grid._processedSet = null;
     Grid._idBytes = 2;
+    NeighborAggregates._reset();
   }
 
   // =============================================================================

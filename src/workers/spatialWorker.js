@@ -44,6 +44,7 @@ import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRend
 import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { Grid as GridImport } from '../core/grid.js';
+import { NeighborAggregates } from '../core/neighborAggregates.js';
 import { cellOverflow, neighborCapHit } from '../core/debug/devChecks.js';
 import {
   SPATIAL_STATS,
@@ -152,6 +153,11 @@ const REFRESH_SPREADS = Object.freeze({
   none: REFRESH_SPREAD_NONE,
   idBlocks: REFRESH_SPREAD_ID_BLOCKS,
 });
+// E-199 (SpatialWorker._aggVelocityState): the publish averages velocities once RigidBody's columns are views of its
+// memory (Box2D's block); until physics binds them it averages none, and in another memory it never can.
+const AGG_VELOCITY_PENDING = 0;
+const AGG_VELOCITY_BOUND = 1;
+const AGG_VELOCITY_UNAVAILABLE = 2;
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -221,6 +227,11 @@ class SpatialWorker extends AbstractWorker {
 
     // The WASM candidate gather (E-78), bound in initialize when the publish memory has its regions.
     this._wasmGather = null;
+    // E-199: per entity, its type's neighbour-aggregate config (0: none; an empty array when no type asks), read where
+    // a row is cleared, so its aggregates' counts go to 0 with it.
+    this._aggClassOf = new Uint8Array(0);
+    /** E-199: RigidBody's velocities for the cohesion average: AGG_VELOCITY_* (pending until box2dReady binds them). */
+    this._aggVelocityState = AGG_VELOCITY_PENDING;
 
     // Performance stats
     this.entitiesProcessedThisFrame = 0;
@@ -511,6 +522,8 @@ class SpatialWorker extends AbstractWorker {
     ]);
     this._wasmPub = wasmPub;
     this._wasmMeta = data.gridMetadata;
+    this._aggClassOf = wasmPub.aggClass;
+    this._aggVelocityState = wasmPub.velocity ? AGG_VELOCITY_PENDING : AGG_VELOCITY_UNAVAILABLE;
     this._neighborCandidateData = this._wasmPub.cand;
     this._candidateCountOf = new (EntityIdArray())(this.globalEntityCount);
     this._ownedEntityList = new (EntityIdArray())(this.globalEntityCount);
@@ -2212,8 +2225,10 @@ class SpatialWorker extends AbstractWorker {
         if (rowPoseGen[entityA] !== POSE_GEN_NONE) {
           neighborData[entityA * stride] = 0;
           rowPoseGen[entityA] = POSE_GEN_NONE;
+          this._clearRowAggregates(entityA);
         } else if (sharedRows && clearHeld[entityA] !== clearHeldBefore && neighborData[entityA * stride] !== 0) {
           neighborData[entityA * stride] = 0;
+          this._clearRowAggregates(entityA);
         }
         clearHeld[entityA] = clearFrame;
         continue;
@@ -2318,6 +2333,9 @@ class SpatialWorker extends AbstractWorker {
       if (n > 1 && this._gatherCellOrder && g !== null && g.order) {
         g.order(n, this._wasmPub.listByte, meta.posByte, this.invCellSize, this.gridWidth, this.gridHeight, g.orderByte);
       }
+      // E-199: the velocities the cohesion average reads, once physics has bound them (one test a frame until then).
+      if (this._aggVelocityState === AGG_VELOCITY_PENDING) this._bindAggregateVelocity();
+      // The last three are the aggregates' (publish_batch_agg): the plain publish_batch takes seven and ignores them.
       this._wasmPub.publish(
         n,
         Grid.maxNeighbors,
@@ -2326,6 +2344,9 @@ class SpatialWorker extends AbstractWorker {
         meta.candByte,
         meta.neighborByte,
         this._wasmPub.listByte,
+        this._wasmPub.aggByte,
+        this._wasmPub.vxByte,
+        this._wasmPub.vyByte,
       );
       // E-02. This recount is a SECOND full pass over the neighbor array after
       // the WASM publish, and it exists only to fill `neighborsFoundThisFrame`.
@@ -2355,6 +2376,47 @@ class SpatialWorker extends AbstractWorker {
         this.neighborsFoundThisFrame += found;
       }
     }
+  }
+
+  /**
+   * E-199: hand the publish RigidBody's vx and vy columns once physics has bound them (box2dReady). The kernel reads
+   * them in place, so they must be views of the publish memory: Box2D's block, where the spatial regions sit with
+   * physics. Elsewhere (a scene whose spatial memory is not in the block) the cohesion group's average velocity stays 0,
+   * and worker 0 says so once.
+   */
+  _bindAggregateVelocity() {
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+    if (!vx || !vy) return; // physics has not bound them yet
+    const pub = this._wasmPub;
+    if (vx.buffer === pub.buffer && vy.buffer === pub.buffer && vx.length >= this.globalEntityCount && vy.length >= this.globalEntityCount) {
+      pub.vxByte = vx.byteOffset;
+      pub.vyByte = vy.byteOffset;
+      this._aggVelocityState = AGG_VELOCITY_BOUND;
+      return;
+    }
+    this._aggVelocityState = AGG_VELOCITY_UNAVAILABLE;
+    if (this.workerId === 0) {
+      console.warn(
+        'WeedJS: neighborAggregates cohesion.velocity: RigidBody\'s velocities are not in the spatial publish memory '
+          + '(it is not in Box2D\'s block), so NeighborAggregates.averageVelocityX/Y stay 0.',
+      );
+    }
+  }
+
+  /**
+   * E-199: a row just cleared (no visualRange, so no list): its aggregates' counts go to 0 with it, so code that reads
+   * them sees no neighbours, as the row says. Called only where a row is cleared, which a row is once until it has a
+   * list again.
+   * @param {number} entityA
+   */
+  _clearRowAggregates(entityA) {
+    const classOf = this._aggClassOf;
+    if (classOf.length === 0 || classOf[entityA] === 0) return;
+    const A = NeighborAggregates;
+    if (A.separationCount.length !== 0) A.separationCount[entityA] = 0;
+    if (A.cohesionCount.length !== 0) A.cohesionCount[entityA] = 0;
+    if (A.nearestCount.length !== 0) A.nearestCount[entityA] = 0;
   }
 
   /**

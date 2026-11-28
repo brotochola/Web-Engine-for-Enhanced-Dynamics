@@ -16,6 +16,8 @@ export const SPATIAL_MAX_CELL_RADIUS = 12;
  * @param {{ totalCells: number, cellByteSize: number } | null} [grid] lays out the gather's regions too
  * @param {null | { memory: WebAssembly.Memory, baseByte: number }} [place] lay the regions in that memory from
  *   baseByte (Phase 4: the spatial part of Box2D's block) instead of making a memory of their own
+ * @param {null | object} [aggregates] E-199: the scene's neighbour aggregates (resolveNeighborAggregates), whose
+ *   regions are laid out after the rest; the result's `aggregates` is that spec with each region's byte
  * @returns {null | {
  *   memory: WebAssembly.Memory,
  *   buffer: SharedArrayBuffer,
@@ -37,11 +39,12 @@ export const SPATIAL_MAX_CELL_RADIUS = 12;
  *   orderStride: number,
  *   patternByte: number,
  *   patternBytes: number,
+ *   aggregates: null | object,
  *   regions: Record<string, { byte: number, bytes: number, owner: string }>,
  * }}
  */
-export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWorkers, grid = null, place = null) {
-  const layout = spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid);
+export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWorkers, grid = null, place = null, aggregates = null) {
+  const layout = spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid, aggregates);
   if (!layout) return null;
   const gather = layout.gather;
   const base = place ? place.baseByte | 0 : 0;
@@ -77,12 +80,39 @@ export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWor
     orderStride: gather ? layout.orderStride : 0,
     patternByte: gather ? regions.patterns.byte : 0,
     patternBytes: gather ? regions.patterns.bytes : 0,
+    aggregates: aggregates ? neighborAggregateLayout(aggregates, regions, entityCount | 0) : null,
     regions,
   };
 }
 
+/**
+ * E-199: the aggregates' spec with its regions' bytes, as the spatial workers write the table from it
+ * (writeNeighborAggregateTable) and every worker views the columns (NeighborAggregates); 0 for an output no type asks
+ * for. Structured-cloneable: it travels in gridMetadata.
+ */
+function neighborAggregateLayout(spec, regions, entityCount) {
+  const at = (name) => (regions[name] ? regions[name].byte : 0);
+  return {
+    ...spec,
+    entityCount,
+    tableByte: at('aggTable'),
+    classByte: at('aggClass'),
+    separationXByte: at('aggSeparationX'),
+    separationYByte: at('aggSeparationY'),
+    separationCountByte: at('aggSeparationCount'),
+    centroidXByte: at('aggCentroidX'),
+    centroidYByte: at('aggCentroidY'),
+    cohesionCountByte: at('aggCohesionCount'),
+    averageVelocityXByte: at('aggAverageVelocityX'),
+    averageVelocityYByte: at('aggAverageVelocityY'),
+    nearestIndexByte: at('aggNearestIndex'),
+    nearestDistanceSqByte: at('aggNearestDistanceSq'),
+    nearestCountByte: at('aggNearestCount'),
+  };
+}
+
 /** The regions' layout (spatialPublishRegions) for these counts, or null when the scene keeps plain buffers. */
-function spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid) {
+function spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid, aggregates = null) {
   const idBytes = entityIdBytes();
   if (idBytes !== 2 && idBytes !== 4) return null;
   const count = entityCount | 0;
@@ -91,11 +121,11 @@ function spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid) {
   const gather = grid
     ? { gridBytes: (grid.totalCells | 0) * (grid.cellByteSize | 0), patternBytes: spatialPatternTableBytes(SPATIAL_MAX_CELL_RADIUS) }
     : null;
-  return { ...spatialPublishRegions(count, maxN, spatialWorkers, gather, idBytes), gather };
+  return { ...spatialPublishRegions(count, maxN, spatialWorkers, gather, idBytes, aggregates), gather };
 }
 
 /** The bytes createSpatialPublishMemory's regions take, for a block reserved before the memory is made (Phase 4). */
-export function spatialPublishMemoryBytes(entityCount, maxNeighbors, spatialWorkers, grid = null) {
-  const layout = spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid);
+export function spatialPublishMemoryBytes(entityCount, maxNeighbors, spatialWorkers, grid = null, aggregates = null) {
+  const layout = spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid, aggregates);
   return layout ? layout.bytes : 0;
 }

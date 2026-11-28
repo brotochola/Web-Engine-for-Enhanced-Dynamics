@@ -855,6 +855,67 @@ export interface GridRadiusQueryResult {
   entities: Uint16Array;
 }
 
+/**
+ * E-199: an entity type's `static neighborAggregates`: what the spatial workers write in {@link NeighborAggregates}
+ * with each neighbour list of an entity of that type. Every key is optional; ask only for what the type's code reads.
+ * `ofType` is an entity class of the scene (its own slots; not a parent class): only neighbours of that type count.
+ * In an import cycle, write the property as a static getter so the class it names is defined when the scene reads it.
+ */
+export interface NeighborAggregatesConfig {
+  /** The push away from the neighbours: NeighborAggregates.separationX/Y/Count. */
+  separation?: {
+    /** Neighbours closer than this push (px); default Infinity: the whole list. */
+    radius?: number;
+    /** A neighbour closer than this pushes as if it were this far (px): no rocketing at contact. Default 0. */
+    floor?: number;
+    /** 'linear' scales each push by 1 - d² / radius² (needs a radius); default 'none'. */
+    falloff?: 'none' | 'linear';
+    ofType?: typeof GameObject;
+  };
+  /** The centroid of the neighbours at minDistance or more: NeighborAggregates.centroidX/Y, cohesionCount. */
+  cohesion?: {
+    /** Neighbours closer than this are left out (px), as Boids' separation range; default 0. */
+    minDistance?: number;
+    /** Also average their RigidBody velocities (NeighborAggregates.averageVelocityX/Y); needs physics. */
+    velocity?: boolean;
+    ofType?: typeof GameObject;
+  };
+  /** The `count` nearest neighbours, nearest first: NeighborAggregates.nearestIndex/DistanceSq/Count. */
+  nearest?: {
+    /** 1 to 16; default 1. */
+    count?: number;
+    ofType?: typeof GameObject;
+  };
+}
+
+/**
+ * E-199: per entity index, the aggregates of its neighbour list its type asks for ({@link NeighborAggregatesConfig}),
+ * written by the spatial workers with the list (as old as it), from the positions they searched with (collider
+ * centres). Neighbours within 1 px push nothing. An output no type of the scene asks for is an empty array.
+ */
+export declare class NeighborAggregates {
+  /** Sum over the separation group of (entity - neighbour) / max(d², floor²), times the falloff. */
+  static separationX: Float32Array;
+  static separationY: Float32Array;
+  static separationCount: Uint16Array;
+  /** Centroid of the cohesion group (0 when cohesionCount is 0). */
+  static centroidX: Float32Array;
+  static centroidY: Float32Array;
+  static cohesionCount: Uint16Array;
+  /** The cohesion group's average RigidBody velocity, px/s (cohesion.velocity). */
+  static averageVelocityX: Float32Array;
+  static averageVelocityY: Float32Array;
+  static nearestCount: Uint16Array;
+  /** nearestSlots per entity from nearestOffset(i): entity indices, nearest first. */
+  static nearestIndex: Int32Array;
+  /** Their squared distances (float32), in the same slots. */
+  static nearestDistanceSq: Float32Array;
+  /** Slots per entity: the largest nearest.count of the scene's types (0: none asks). */
+  static nearestSlots: number;
+  /** Entity i's first slot in nearestIndex and nearestDistanceSq. */
+  static nearestOffset(i: number): number;
+}
+
 export interface GridCellSleepingStats {
   totalCells: number;
   sleepingCells: number;
@@ -1652,6 +1713,11 @@ export declare class GameObject {
   static typeRunsFsmTickAll(EntityClass?: typeof GameObject): boolean;
   /** Save this class's active entities (or an ancestor's flag). See docs/guide/SAVE_GAME.md. */
   static serializable?: boolean;
+  /**
+   * E-199: neighbour aggregates the spatial workers write for this type's entities with their neighbour lists
+   * ({@link NeighborAggregates}); the entities need a visualRange. See docs/guide/SPATIAL_HASHING.md.
+   */
+  static neighborAggregates?: NeighborAggregatesConfig;
   /** Optional per-entity filter on a serializable class: false leaves that entity out of a save. */
   static shouldSaveEntity?(entityIndex: number): boolean;
   /**
@@ -5789,6 +5855,7 @@ export interface WeedNamespace extends WeedEnums {
   Ray: typeof Ray;
   NavGrid: typeof NavGrid;
   Grid: typeof Grid;
+  NeighborAggregates: typeof NeighborAggregates;
   Sun: typeof Sun;
   Layer: typeof Layer;
   TileMap: typeof TileMap;

@@ -37,6 +37,7 @@ import { ShapeType } from '../../src/util/configDefaults.js';
 import { bindEntityIdWidth, EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../../src/util/colliderUtils.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
+import { resolveNeighborAggregates } from '../../src/util/neighborAggregatesSpec.js';
 import { spatialJsClass } from '../reference/spatialGather.mjs';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
@@ -101,6 +102,18 @@ export function kernelClasses(name, n) {
   return out;
 }
 
+/**
+ * E-199: the neighbour aggregates for kernelClasses' entries, resolved as a scene resolves them. `configsOf` gets
+ * stand-in classes by name (for ofType) and returns each class's static neighborAggregates by name.
+ */
+export function kernelAggregates(classes, configsOf) {
+  const byName = {};
+  for (const c of classes) byName[c.name] = { [c.name]: class {} }[c.name];
+  const configs = configsOf(byName);
+  for (const [name, cfg] of Object.entries(configs)) byName[name].neighborAggregates = cfg;
+  return resolveNeighborAggregates(classes.map((c) => ({ class: byName[c.name], startIndex: c.startIndex, count: c.poolSize })));
+}
+
 /** Module identifiers the SpatialWorker methods use (for methodVariant patches). */
 export const SCOPE = {
   Transform,
@@ -147,6 +160,10 @@ export async function setupSpatialKernel(opts = {}) {
   bindEntityIdWidth(idWidth);
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   buffers.componentData = coreComponentData(n);
+  // E-199: `opts.aggregates` (with `opts.types`) gives the preset's classes neighbour aggregates: a function of the
+  // classes by name (stand-ins, for ofType) that returns { [className]: its static neighborAggregates }.
+  const classes = opts.types ? kernelClasses(opts.types, n) : [];
+  const aggregates = opts.aggregates && opts.types ? kernelAggregates(classes, opts.aggregates) : null;
   // Poses, rows, candidates and (E-78) the grid in the publish memory, as sceneSharedBuffers builds it; a
   // function in `opts.publishMemory` is a factory, so a kernel can lay out more regions. `opts.wasm` is the
   // scene's wasm switches (T7); `opts.js` ({ publish: 'js' | 'kernel' }) runs the JS search on the workers.
@@ -155,16 +172,15 @@ export async function setupSpatialKernel(opts = {}) {
     : createSpatialPublishMemory(n, cfg.maxNeighbors, workersCount, {
         totalCells: gridMetadata.totalCells,
         cellByteSize: 4 + cfg.maxEntitiesPerCell * gridMetadata.entityIdBytes,
-      });
+      }, null, aggregates);
   if (!mem) throw new Error('no publish memory');
   bindPublishMemory(buffers, gridMetadata, mem);
 
   const jsMake = opts.js ? (Base) => spatialJsClass(Base, opts.js) : null;
   const make = jsMake && opts.make ? (Base) => opts.make(jsMake(Base)) : jsMake || opts.make;
   const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', make);
-  // E-200: classes with logic tick intervals, and logic 0's frame number where the scene publishes it (slot 1 of
-  // its frameRateData row, after the spatial workers' rows).
-  const classes = opts.types ? kernelClasses(opts.types, n) : [];
+  // E-200: classes with logic tick intervals (`classes`, above), and logic 0's frame number where the scene publishes
+  // it (slot 1 of its frameRateData row, after the spatial workers' rows).
   const FRAME_RATE_STRIDE = 16;
   const logicRow = workersCount;
   let logicFrames = null;
@@ -334,7 +350,7 @@ export async function setupSpatialKernel(opts = {}) {
     return h >>> 0;
   }
 
-  return { n, workers, frame, checksum, listRates, cfg, mem, gridMetadata, classes };
+  return { n, workers, frame, checksum, listRates, cfg, mem, gridMetadata, classes, aggregates: mem.aggregates || null };
 }
 
 async function main() {
