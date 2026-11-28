@@ -23724,14 +23724,15 @@
         "baked houses"
       ],
       "records": [
-        "R-1360"
+        "R-1360",
+        "R-2046"
       ],
-      "result": "",
+      "result": "Parked 2026-11-28 (R-2046): soft and half face texels blend in painter order, a cache changes it; full design ~0.6 ms Radeon, ~0 GTX 1650; the G-buffer pass split (E-463) is exact and cheaper",
       "next": "Follow E-504's adaptive policy (cached after held frames, drawn live while the view keeps changing). The G-buffer half is the intermediate idea of 2026-11-18 (height and normal maps made from the faces, kept for the houses in view): the face map the light pass reads, cached instead of redrawn. Measure on the main PC: GPU per pass and pre-render in the barrio, still and panning.",
       "id": "E-521",
       "kind": "speed",
       "area": "render",
-      "status": "open",
+      "status": "parked",
       "date": "2026-11-18",
       "title": "Houses do not move: draw them once into a cached layer (their colour, and their G-buffer data: face normals, heights, ids) and redraw it only when the view changes, as E-504 caches the floor",
       "statusText": "proposed 2026-11-18 and chosen by the owner, from the ASUS's faces-against-maps sitting: the faces' cost is the count of pieces (pre-render, Intel by day), not the format"
@@ -44965,6 +44966,15 @@
         "f59f2216",
         "9c444974"
       ]
+    },
+    {
+      "id": "R-2046",
+      "date": "2026-11-28",
+      "time": "00:58",
+      "timeFrom": "recorded",
+      "title": "Read, not built: a houses cache cannot keep the barrio's soft and half face texels identical; about 0.6 ms on the Radeon, none on the GTX 1650, for two days; the G-buffer pass's gl_FragDepth is the cheaper exact target (E-463)",
+      "verdict": "parked",
+      "text": "An agent read the frame for E-521 (2026-11-28, main e6db68a6) and stopped before building, as briefed for a design that cannot keep every picture.\n- **Design read:** one queue, a uniform per batch program choosing all / cached only / uncached only (each instance keeps its index, so painter steps and depth stay bit-identical); cached = face instances with no heights, no soft, half or glow texels, tint alpha 1, a nearest atlas without mip levels; the cache holds colour + depth, the G-buffer + depth and the unshaded pass's depth (depth as colour: WebGPU cannot copy depth24plus), copied back each frame with gl_FragDepth / frag_depth before the live rows.\n- **Why not identical:** the barrio's face sheets are full of soft and half texels (caras0 165 of 226 frames binary, 70 % of the area; caras1 603 of 1 031, 44 %; caras2 59 of 108, 57 %). A person behind a soft roof edge shows through it today (the edge pass draws soft face pixels after every opaque one, without depth); from a cache the person would draw over it. A half pixel in front of a person the painter drew first blends over the person today and over the floor from a cache. houseLightScene uses a linear atlas with mip levels, so even its binary frames have fractional edges. Only the G-buffer half is order-independent (unblended writes, coverage at alpha 0.5).\n- **Size:** cull and paint variants in every program of the batch (colour vertex-depth, frag-depth, edge; G-buffer MRT or face + ids; unshaded mask, mesh, edge), plain, indexed and by row, GLSL and WGSL, plus copy programs and invalidation: about 2 days, and pre-render's ~2 ms for faces (R-1360) unchanged.\n- **GPU before, still camera, glFrameRecorder --gpu-draws.** Barrio hour=22 (11 675 instances): all draws Radeon (Vega, Ryzen 7 4800H) 7.35 ms, GTX 1650 3.43 (855 MHz median); colour vertex-depth / frag-depth / edge 1.16 / 0.19 / 0.29 (GTX 0.44 / 0.05 / 0.10); G-buffer 958 x 538 1.04 (0.29); unshaded 1080p 0.62 (0.25); floor cache copy 0.36 (0.18); light pass 1.66 (0.96). houseLightScene bench=faces hour=15 (6 800 instances, lighting resolution 1): all 6.57 / 4.18; G-buffer 1.73 / 1.15; colour vertex-depth / edge 0.93 / 0.58 (0.71 / 0.57); light pass 1.83 / 0.73.\n- **Expected net of the full design in the barrio:** about 0.6 ms on the Radeon (about 1.5 saved by cacheable faces, about 0.9 of copies), about zero on the GTX 1650.\n- **The cheaper exact route found:** the G-buffer pass writes gl_FragDepth for every texel (gbufDepthFragment), which turns early depth off for every face: 1.04 ms on the Radeon at a quarter of the pixels the colour pass's vertex-depth program shades in 1.16; 1.73 against 0.93 in houseLightScene at the same size. E-378's split (vertex depth where a frame has no heights) given to the G-buffer pass makes it cheaper with no cache and no copy: E-463's direction, handed to the E-500 agent (same files). E-520 (a house's faces as one instance) goes after the instance count, which R-1360 found to be the cost.\nParked: reopen if the soft and half face texels can be made binary in the barrio's sheets, or a game asks for a still-camera cache that may change its soft edges."
     }
   ],
   "leads": [
