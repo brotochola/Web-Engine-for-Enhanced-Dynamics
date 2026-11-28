@@ -26130,6 +26130,26 @@
         "minify"
       ],
       "date": "2026-11-24"
+    },
+    {
+      "records": [
+        "R-2040"
+      ],
+      "refs": [],
+      "id": "N-462",
+      "title": "With pixel depth on, a lamp's halo now and then lost the depth test to its own post (the painter step wraps), and the post went dark for a frame",
+      "status": "kept-hygiene",
+      "kind": "bug",
+      "area": "render",
+      "result": "fixed (31a67dee): an unshaded pixel goes one floor step nearer, at the last painter step",
+      "statusText": "Found and fixed 2026-11-27 (the owner saw Predator's lamps flicker near the screen's right edge, light3d by night)",
+      "next": "",
+      "aliases": [
+        "halo flicker",
+        "lamp post flicker",
+        "painter step wrap"
+      ],
+      "date": "2026-11-27"
     }
   ],
   "records": [
@@ -44869,6 +44889,17 @@
       "title": "Three more tries leave the light pass where it was; only a smaller lamps' map saves (1.29 -> 0.57 ms)",
       "verdict": "note",
       "text": "Three more tries on the Radeon integrated GPU (Vega, Ryzen 7 4800H), Predator ?light3d=1 by night, glFrameRecorder --gpu-draws, the light pass, 2026-11-27: (1) shadowSamples=3: 4.297 against 4.332 ms today (nothing; 1 sample gave 3.60); (2) the self-shadow at 3 steps of 8 px instead of 6 of 4 (uSelfShadow edited for the run): 4.301 (nothing); (3) the march's loop cap from 9 to 7 (the 6 steps it uses), before/after alternating twice: zoom 1 4.254/4.311 -> 4.368/4.310, crowd 2.5 2.736/2.905 -> 2.858/2.947 (nothing; not kept). Only the lamps' map's tile pays: lampTile=128 takes the map from 1.290 to 0.570 ms (the light pass 4.195), a coarser lamp shadow; Predator's captures cannot judge it (each side another camera and moment): the light bench should."
+    },
+    {
+      "id": "R-2040",
+      "date": "2026-11-27",
+      "time": "21:11",
+      "title": "Found and fixed: the halo lost to its own post whenever the painter step wrapped",
+      "verdict": "kept-hygiene",
+      "text": "The owner saw a TallLight near the screen's right edge flicker dark (Predator ?hour=22&light3d=1, zoom 1 and 1.5). Filmed (filmScene, 10 s) and read frame by frame, the post's square was lit (about 62) or dark (about 54): in the dark frames the post had no red halo over it. Not N-187 (the queue never had rows past the collector's in 1 800 frames). With ?lightGlow=add (halos drawn last) the owner saw none and the films counted 0 and 0; ?pixelDepth=0 0. Cause: the edge pass draws unshaded pixels testing the depth, and two pixels at one floor place are ordered by the painter step, the instance's low 7 bits, which wrap; the halo follows its post by a few instances, and the queue's rows move every frame. Fix: an unshaded pixel takes one floor step nearer and the last painter step (pixelDepth.js GLOW_IN_FRONT, GLSL and WGSL). Films after it: 0, 0 and 0 dark frames (before: 59, 0, 2).",
+      "commits": [
+        "31a67dee"
+      ]
     }
   ],
   "leads": [
